@@ -25,11 +25,12 @@ import {
   Chart,
   ChartData,
   LayoutType,
+  PlotData,
   PlotType,
 } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
-import { ChartCardComponent, getChartKey } from './chart_card';
+import { ChartCardComponent, getChartKey, PlotDataPipe } from './chart_card';
 import { ChartCardHarness } from './chart_card_harness';
 
 @Component({
@@ -161,11 +162,17 @@ describe('ChartCardComponent', () => {
     expect(getChartKey({ xid: 123, wid: 2, title: 'eval' })).toBe('123_2_eval');
   });
 
-  it('should look up plot data using cached plotDataMap via getPlotData', () => {
+  it('should look up plot data using cached plotDataMap via PlotDataPipe', () => {
+    const pipe = new PlotDataPipe();
     const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
-    const lossKpi = chartCard.getPlotData('loss_kpi');
+    const map = (
+      chartCard as unknown as { plotDataMap: () => Map<string, PlotData> }
+    ).plotDataMap();
+
+    const lossKpi = pipe.transform('loss_kpi', map);
     expect(lossKpi?.plotId).toBe('loss_kpi');
-    expect(chartCard.getPlotData('nonexistent')).toBeUndefined();
+    expect(pipe.transform('nonexistent', map)).toBeUndefined();
+    expect(pipe.transform(undefined, map)).toBeUndefined();
   });
 
   it('should emit unique getChartKey when onRemove is called', () => {

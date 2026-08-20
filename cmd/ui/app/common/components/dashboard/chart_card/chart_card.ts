@@ -22,6 +22,8 @@ import {
   OnDestroy,
   OnInit,
   output,
+  Pipe,
+  PipeTransform,
   signal,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -51,6 +53,26 @@ export function getChartKey(chart: Chart): string {
 }
 
 /**
+ * Pure Angular pipe to look up a PlotData object by plot ID from a plot data map.
+ */
+@Pipe({
+  name: 'plotData',
+  standalone: true,
+  pure: true,
+})
+export class PlotDataPipe implements PipeTransform {
+  transform(
+    plotId: string | null | undefined,
+    plotDataMap?: ReadonlyMap<string, PlotData> | null,
+  ): PlotData | undefined {
+    if (!plotId || !plotDataMap) {
+      return undefined;
+    }
+    return plotDataMap.get(plotId);
+  }
+}
+
+/**
  * Chart card component representing an experiment's visualization column.
  */
 @Component({
@@ -68,6 +90,7 @@ export function getChartKey(chart: Chart): string {
     MatMenuModule,
     MatProgressSpinnerModule,
     PlotCardComponent,
+    PlotDataPipe,
   ],
 })
 export class ChartCardComponent implements OnInit, OnDestroy {
@@ -147,7 +170,7 @@ export class ChartCardComponent implements OnInit, OnDestroy {
     });
   }
 
-  private readonly plotDataMap = computed(() => {
+  protected readonly plotDataMap = computed(() => {
     const map = new Map<string, PlotData>();
     for (const p of this.chartData()?.plotsData ?? []) {
       if (p.plotId) {
@@ -156,10 +179,6 @@ export class ChartCardComponent implements OnInit, OnDestroy {
     }
     return map;
   });
-
-  getPlotData(plotId?: string): PlotData | undefined {
-    return plotId ? this.plotDataMap().get(plotId) : undefined;
-  }
 
   onRemove(): void {
     this.remove.emit(getChartKey(this.chart()));

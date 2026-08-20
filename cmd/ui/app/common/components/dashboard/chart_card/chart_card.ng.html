@@ -53,8 +53,7 @@ limitations under the License.
     @if (summaryPlots().length) {
       <div class="summary-boxes-row">
         @for (plot of summaryPlots(); track plot.plotId || $index) {
-          @let pData = getPlotData(plot.plotId);
-          <xmc-plot-card [plotSpec]="plot" [plotData]="pData" />
+          <xmc-plot-card [plotSpec]="plot" [plotData]="plot.plotId | plotData: plotDataMap()" />
         }
       </div>
     }
@@ -62,8 +61,7 @@ limitations under the License.
     <!-- Curve / Visualization Plots -->
     <div class="curve-plots-container">
       @for (plot of curvePlots(); track plot.plotId || $index) {
-        @let pData = getPlotData(plot.plotId);
-        <xmc-plot-card [plotSpec]="plot" [plotData]="pData" />
+        <xmc-plot-card [plotSpec]="plot" [plotData]="plot.plotId | plotData: plotDataMap()" />
       }
     </div>
   }
