@@ -71,7 +71,7 @@ function processUser(user: User | null) {
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
 
 ## 6. Post-Implementation Reflection & Meta-Learning
-- **Selective Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+- **Iterative Reflection Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) after major implementations, following PR review comment resolutions (to diagnose and codify missing guidelines/tools), or upon explicit user request. Validate candidate rule additions empirically using the [XMC Trajectory Comparison Skill](../skills/xmc_trajectory_comparison/SKILL.md). Do NOT trigger for routine minor typo fixes where no underlying guideline was violated.
 
 
 ## 7. System Attribute Immutability & Precedence
