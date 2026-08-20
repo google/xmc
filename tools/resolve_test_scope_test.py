@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from resolve_test_scope import (
+    _parse_build_file_test_targets,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     get_git_modified_files,
@@ -196,6 +197,26 @@ class TestResolveTestScope(unittest.TestCase):
             targets_ui = discover_bazel_rdeps_targets(["cmd/ui/server.py"], cwd=tmppath)
             self.assertIn("//cmd/ui:server_test", targets_ui)
             self.assertNotIn("//cmd/ui:ui_unit_tests", targets_ui)
+
+    def test_parse_build_file_test_targets_ast(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            build_path = Path(tmpdir) / "BUILD.bazel"
+            build_path.write_text(
+                "compat_go_test(\n"
+                '    name = "manual_test",\n'
+                '    tags = ["manual", "local"],\n'
+                ")\n"
+                "go_test(\n"
+                '    name = "unit_test",\n'
+                '    tags = ["unit"],\n'
+                ")\n"
+                "py_test(\n"
+                '    name = "py_unit_test",\n'
+                ")\n"
+            )
+            targets = _parse_build_file_test_targets(build_path)
+            self.assertEqual(targets, ["unit_test", "py_unit_test"])
+            self.assertNotIn("manual_test", targets)
 
     @patch("subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
