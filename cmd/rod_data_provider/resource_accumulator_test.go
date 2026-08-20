@@ -259,6 +259,34 @@ func TestExtractRequestedResources(t *testing.T) {
 			}),
 			want: []*spb.Resource{},
 		},
+		{
+			name: "case insensitive GPU and TPU type matching",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_GpuResources{
+								GpuResources: &essmsgpb.GpuResources{Type: "gpu", Count: 2},
+							},
+						},
+					},
+					Sidecars: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{Type: "tpu", Topology: "2x2x2"},
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "GPU", Count: 2.0},
+				{ResourceType: "TPU", Count: 8.0},
+			},
+		},
 	}
 
 	for _, tt := range tests {
