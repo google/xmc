@@ -49,7 +49,7 @@ class SpannerManager:
                     "--format=value(NAME)",
                 ],
                 capture_output=True,
-                check=False,
+                check=True,
             )
             current_ts = int(time.time())
             for line in res.stdout.splitlines():

@@ -49,7 +49,7 @@ class E2EConfig:
         if not self.xid_db:
             self.xid_db = f"e2e-xid-{ts}-{suffix}"
         if not self.temp_dir:
-            self.temp_dir = tempfile.mkdtemp(prefix="xmc_e2e_")
+            self.temp_dir = os.path.join(tempfile.gettempdir(), f"xmc_e2e_{suffix}")
 
 
 def parse_args(args: list[str] | None = None) -> E2EConfig:

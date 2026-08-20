@@ -51,9 +51,9 @@ class TestSpannerManager(unittest.TestCase):
             returncode=0,
             stdout=(
                 f"projects/test-proj/instances/test-inst/databases/e2e-ess-{old_ts}-123456\n"
-                f"e2e-xid-{fresh_ts}-abcdef\n"
-                "prod-db\n"
-                "e2e-invalid-format\n"
+                f"projects/test-proj/instances/test-inst/databases/e2e-xid-{fresh_ts}-abcdef\n"
+                f"projects/test-proj/instances/test-inst/databases/prod-db\n"
+                f"projects/test-proj/instances/test-inst/databases/e2e-invalid-format\n"
             ),
         )
         mock_run.return_value = mock_res
@@ -72,7 +72,7 @@ class TestSpannerManager(unittest.TestCase):
                 "--format=value(NAME)",
             ],
             capture_output=True,
-            check=False,
+            check=True,
         )
 
         # Should delete only the stale DB
