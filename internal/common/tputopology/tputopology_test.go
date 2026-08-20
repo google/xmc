@@ -62,21 +62,20 @@ func TestParseTotalChips(t *testing.T) {
 
 			parsed, err := Parse(tt.input)
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("Parse(%q) expected error, got nil", tt.input)
-				} else if !errors.Is(err, ErrInvalidTopology) {
+				if !errors.Is(err, ErrInvalidTopology) {
 					t.Errorf("Parse(%q) error = %v, want errors.Is ErrInvalidTopology", tt.input, err)
 				}
 				if parsed != 0 {
 					t.Errorf("Parse(%q) on error returned %d, want 0", tt.input, parsed)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Parse(%q) unexpected error = %v", tt.input, err)
-				}
-				if parsed != tt.want {
-					t.Errorf("Parse(%q) = %d, want %d", tt.input, parsed, tt.want)
-				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error = %v", tt.input, err)
+			}
+			if parsed != tt.want {
+				t.Errorf("Parse(%q) = %d, want %d", tt.input, parsed, tt.want)
 			}
 		})
 	}
