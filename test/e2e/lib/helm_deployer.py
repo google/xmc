@@ -1,0 +1,291 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Helm chart preparation, values configuration, and KinD stack deployment."""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+
+from test.e2e.lib.command import run_cmd
+from test.e2e.lib.config import E2EConfig
+
+logger = logging.getLogger("xmc_e2e_runner")
+
+
+class HelmDeployer:
+    """Manages Helm release installation on the KinD cluster."""
+
+    def __init__(self, config: E2EConfig) -> None:
+        self.cfg = config
+        self.helm_dir = os.path.join(self.cfg.temp_dir, "helm")
+        self.values_file = os.path.join(self.cfg.temp_dir, "values.yaml")
+
+    def _prepare_helm_chart(self) -> None:
+        """Copies chart and removes cloud-only resources incompatible with local KinD."""
+        if os.path.exists(self.helm_dir):
+            shutil.rmtree(self.helm_dir)
+        shutil.copytree(
+            os.path.join(self.cfg.workspace_root, "deploy", "helm"),
+            self.helm_dir,
+        )
+
+        # Remove templates that require GKE-specific CRDs not present in local KinD
+        for prune_target in [
+            "certs",
+            "kueue",
+            "kueue-dev",
+            "wpc",
+            "dashboard-service",
+            "health-service",
+            "ingestion-gateway",
+            "rod",
+            "ess/gateway.yaml",
+            "ess/httproute.yaml",
+            "ess/grpc-backend-config.yaml",
+            "ess/grpc-healthcheck-policy.yaml",
+            "ess/managed-certificate.yaml",
+            "ess/bootstrap-tls.yaml",
+            "ess/secretproviderclass.yaml",
+            "ess/hpa.yaml",
+            "xid/hpa.yaml",
+            "actuator/vpa.yaml",
+            "reconciler/vpa.yaml",
+        ]:
+            path = os.path.join(self.helm_dir, "templates", prune_target)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            elif os.path.isfile(path):
+                os.remove(path)
+
+    def _patch_image_pull_policy(self) -> None:
+        """Replaces imagePullPolicy: Always with IfNotPresent so KinD uses local images."""
+        for root, _, files in os.walk(self.helm_dir):
+            for file in files:
+                if file.endswith(".yaml") or file.endswith(".tpl"):
+                    file_path = os.path.join(root, file)
+                    with open(file_path, encoding="utf-8") as f:
+                        content = f.read()
+                    if "imagePullPolicy: Always" in content:
+                        content = content.replace(
+                            "imagePullPolicy: Always",
+                            "imagePullPolicy: IfNotPresent",
+                        )
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+
+    def _generate_values_file(self) -> None:
+        """Generates dynamic Helm values connecting to local Dex and Spanner."""
+        values_content = f"""
+projectId: "{self.cfg.project_id}"
+environment: "dev"
+domainSuffix: "e2e.xmc.local"
+isDevEnvironment: true
+imageTag: latest
+gcpServiceAccount: "xmc-dev-sa@{self.cfg.project_id}.iam.gserviceaccount.com"
+taskSignatureTtlSeconds: 300
+statusMessageHistoryEnabled: false
+redisAddr: "redis-service.xmc.svc.cluster.local:6379"
+
+xid_custom_image: "xid_service_image:latest"
+actuator_custom_image: "actuator_image:latest"
+reconciler_custom_image: "reconciler_image:latest"
+ess_custom_image: "experiment_state_server_image:latest"
+
+experimentStateServer:
+  spannerDatabaseName: "projects/{self.cfg.project_id}/instances/{self.cfg.spanner_instance}/databases/{self.cfg.ess_db}"
+
+xidService:
+  spannerDatabaseName: "projects/{self.cfg.project_id}/instances/{self.cfg.spanner_instance}/databases/{self.cfg.xid_db}"
+  hpa:
+    minReplicas: 1
+    maxReplicas: 1
+
+essDeployment:
+  enabled: true
+  hpa:
+    minReplicas: 1
+    maxReplicas: 1
+
+auth:
+  disableAuthentication: false
+  isNonProdAuth: true
+  allowedEmails: "admin@xmc.local"
+  clientId: "xmc-client"
+  iap:
+    clientId: "xmc-client"
+    iapIssuer: "http://dex.dex.svc.cluster.local:5556/dex"
+  googleApplicationCredentials: "/etc/gcp-secrets/key.json"
+  redirectUrl: "http://localhost:8080/api/callback"
+  frontendUrl: "http://localhost:8080"
+  authUrl: "http://localhost:5556/dex/auth"
+  tokenUrl: "http://dex.dex.svc.cluster.local:5556/dex/token"
+  apiUrl: "http://dex.dex.svc.cluster.local:5556/dex/userinfo"
+  secureCookie: false
+  issuerUrl: "http://dex.dex.svc.cluster.local:5556/dex"
+
+secrets:
+  csi:
+    enabled: false
+  development:
+    jwtSecret: "e2e-development-secret-must-be-at-least-32-chars-long"
+    clientSecret: "xmc-client-secret"
+
+ui:
+  enabled: true
+  image: "ui-image:latest"
+  apiUrl: "http://localhost:8080/v1"
+"""
+        with open(self.values_file, "w", encoding="utf-8") as vf:
+            vf.write(values_content)
+
+    def _wait_for_rollouts(self) -> None:
+        """Waits for deployments across namespaces to complete rollouts."""
+        logger.info("Waiting for core pods to reach Ready status...")
+        run_cmd(
+            [
+                "kubectl",
+                "rollout",
+                "status",
+                "deployment/dex",
+                "-n",
+                "dex",
+                "--timeout=180s",
+            ]
+        )
+        try:
+            for deploy in [
+                "gateway-proxy",
+                "xid-service-deployment",
+                "experiment-state-server-deployment",
+                "ui-deployment",
+            ]:
+                run_cmd(
+                    [
+                        "kubectl",
+                        "rollout",
+                        "status",
+                        f"deployment/{deploy}",
+                        "-n",
+                        "xmc",
+                        "--timeout=180s",
+                    ]
+                )
+        except Exception:
+            logger.error("Deployment rollout failed! Capturing diagnostics...")
+            diag_file = os.path.join(self.cfg.screenshots_dir, "k8s_diagnostics.log")
+            os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
+            with open(diag_file, "w", encoding="utf-8") as df:
+                for ns in ["xmc", "dex"]:
+                    df.write(f"=== PODS (ns: {ns}) ===\n")
+                    pods_res = run_cmd(
+                        ["kubectl", "get", "pods", "-n", ns, "-o", "wide"],
+                        check=False,
+                        capture_output=True,
+                    )
+                    df.write(pods_res.stdout + "\n" + pods_res.stderr + "\n")
+                    df.write(f"=== EVENTS (ns: {ns}) ===\n")
+                    events_res = run_cmd(
+                        [
+                            "kubectl",
+                            "get",
+                            "events",
+                            "-n",
+                            ns,
+                            "--sort-by=.metadata.creationTimestamp",
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+                    df.write(events_res.stdout + "\n" + events_res.stderr + "\n")
+                    df.write(f"=== ALL LOGS (ns: {ns}) ===\n")
+                    pods_list_res = run_cmd(
+                        [
+                            "kubectl",
+                            "get",
+                            "pods",
+                            "-n",
+                            ns,
+                            "-o",
+                            "jsonpath={.items[*].metadata.name}",
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+                    pod_names = pods_list_res.stdout.strip().split()
+                    for pod_name in pod_names:
+                        df.write(f"--- Logs for pod: {pod_name} ---\n")
+                        logs_res = run_cmd(
+                            [
+                                "kubectl",
+                                "logs",
+                                "-n",
+                                ns,
+                                pod_name,
+                                "--all-containers=true",
+                                "--tail=100",
+                            ],
+                            check=False,
+                            capture_output=True,
+                        )
+                        df.write(logs_res.stdout + "\n" + logs_res.stderr + "\n")
+            logger.info("Diagnostics saved to %s", diag_file)
+            raise
+
+    def deploy(self) -> None:
+        """Copies chart, generates values, and executes helm upgrade --install."""
+        logger.info("=== [Helm] Deploying XMC Stack ===")
+        self._prepare_helm_chart()
+        self._patch_image_pull_policy()
+        self._generate_values_file()
+
+        run_cmd(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                "xmc",
+                self.helm_dir,
+                "--kube-context",
+                f"kind-{self.cfg.cluster_name}",
+                "-n",
+                "xmc",
+                "-f",
+                self.values_file,
+            ]
+        )
+
+        manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
+        run_cmd(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join(manifests_dir, "gateway_proxy.yaml"),
+            ]
+        )
+        run_cmd(
+            [
+                "kubectl",
+                "rollout",
+                "restart",
+                "deployment/gateway-proxy",
+                "-n",
+                "xmc",
+            ],
+            check=False,
+        )
+        self._wait_for_rollouts()

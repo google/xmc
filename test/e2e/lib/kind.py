@@ -1,0 +1,233 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""KinD cluster bootstrap, certificates, secrets, and lifecycle management."""
+
+from __future__ import annotations
+
+import logging
+import os
+
+from test.e2e.lib.command import run_cmd
+from test.e2e.lib.config import E2EConfig
+
+logger = logging.getLogger("xmc_e2e_runner")
+
+
+class KindClusterManager:
+    """Manages ephemeral Kubernetes in Docker (KinD) cluster."""
+
+    def __init__(self, config: E2EConfig) -> None:
+        self.cfg = config
+
+    def exists(self) -> bool:
+        """Checks if the configured KinD cluster exists."""
+        res = run_cmd(
+            [self.cfg.kind_bin, "get", "clusters"],
+            capture_output=True,
+            check=False,
+        )
+        return self.cfg.cluster_name in res.stdout.splitlines()
+
+    def setup(self) -> None:
+        """Creates KinD cluster and applies manifests."""
+        logger.info("=== [KinD] Provisioning cluster %s ===", self.cfg.cluster_name)
+        if self.exists():
+            logger.info(
+                "Cluster %s already exists, deleting first...",
+                self.cfg.cluster_name,
+            )
+            run_cmd(
+                [
+                    self.cfg.kind_bin,
+                    "delete",
+                    "cluster",
+                    "--name",
+                    self.cfg.cluster_name,
+                ],
+                check=False,
+            )
+
+        manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
+        kind_config = os.path.join(manifests_dir, "kind_config.yaml")
+        run_cmd(
+            [
+                self.cfg.kind_bin,
+                "create",
+                "cluster",
+                "--name",
+                self.cfg.cluster_name,
+                f"--config={kind_config}",
+            ]
+        )
+        run_cmd(["kubectl", "config", "use-context", f"kind-{self.cfg.cluster_name}"])
+
+        logger.info("Creating namespace 'xmc' and service account secret...")
+        run_cmd(["kubectl", "create", "namespace", "xmc"])
+
+        adc_file = os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
+        )
+        if not os.path.isfile(adc_file):
+            raise FileNotFoundError(
+                f"GCP credentials file not found at '{adc_file}'. "
+                "A valid credentials file is required to create the 'gcp-sa-key' secret "
+                "for Spanner access in the KinD cluster."
+            )
+
+        run_cmd(
+            [
+                "kubectl",
+                "create",
+                "secret",
+                "generic",
+                "gcp-sa-key",
+                "-n",
+                "xmc",
+                f"--from-file=key.json={adc_file}",
+            ]
+        )
+
+        logger.info("Creating backend secrets...")
+        secrets_cmd = [
+            "kubectl",
+            "create",
+            "secret",
+            "generic",
+            "backend-oauth-secrets",
+            "-n",
+            "xmc",
+            "--from-literal=jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
+            "--from-literal=client-secret=xmc-client-secret",
+            f"--from-file=key.json={adc_file}",
+        ]
+        run_cmd(secrets_cmd)
+
+        tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
+        tls_crt_path = os.path.join(self.cfg.temp_dir, "e2e-validation.crt")
+        if not os.path.exists(tls_key_path):
+            run_cmd(
+                [
+                    "openssl",
+                    "genpkey",
+                    "-algorithm",
+                    "RSA",
+                    "-out",
+                    tls_key_path,
+                    "-pkeyopt",
+                    "rsa_keygen_bits:2048",
+                ]
+            )
+            run_cmd(
+                [
+                    "openssl",
+                    "req",
+                    "-new",
+                    "-x509",
+                    "-key",
+                    tls_key_path,
+                    "-out",
+                    tls_crt_path,
+                    "-days",
+                    "365",
+                    "-subj",
+                    "/CN=xmc-e2e-signer",
+                ]
+            )
+        run_cmd(
+            [
+                "kubectl",
+                "create",
+                "secret",
+                "generic",
+                "validation-secret",
+                "-n",
+                "xmc",
+                f"--from-file=tls.key={tls_key_path}",
+                f"--from-file=tls.crt={tls_crt_path}",
+            ]
+        )
+
+        logger.info("Applying dummy CRDs, Redis, and Gateway Proxy...")
+        run_cmd(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join(manifests_dir, "dummy_crds.yaml"),
+            ]
+        )
+        run_cmd(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join(manifests_dir, "redis.yaml"),
+            ]
+        )
+        run_cmd(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join(manifests_dir, "dex.yaml"),
+            ]
+        )
+        run_cmd(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join(manifests_dir, "gateway_proxy.yaml"),
+            ]
+        )
+
+    def load_images(self, images: list[str]) -> None:
+        """Loads Docker images into KinD nodes."""
+        logger.info("=== [KinD] Loading container images into cluster ===")
+        for img in images:
+            logger.info("Loading image %s...", img)
+            run_cmd(
+                [
+                    self.cfg.kind_bin,
+                    "load",
+                    "docker-image",
+                    img,
+                    "--name",
+                    self.cfg.cluster_name,
+                ]
+            )
+
+    def teardown(self) -> None:
+        """Destroys the KinD cluster."""
+        if not self.cfg.keep_cluster:
+            try:
+                if self.exists():
+                    logger.info(
+                        "=== [KinD] Deleting cluster %s ===",
+                        self.cfg.cluster_name,
+                    )
+                    run_cmd(
+                        [
+                            self.cfg.kind_bin,
+                            "delete",
+                            "cluster",
+                            "--name",
+                            self.cfg.cluster_name,
+                        ],
+                        check=False,
+                    )
+            except Exception as e:
+                logger.warning("Failed to safely teardown KinD cluster: %s", e)
