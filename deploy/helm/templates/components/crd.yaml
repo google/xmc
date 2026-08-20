@@ -120,6 +120,11 @@ spec:
                 wrapperRef:
                   type: object
                   description: "Configuration and reference metadata for third-party CRDs and controllers."
+                  required:
+                    - group
+                    - version
+                    - kind
+                    - name
                   properties:
                     group:
                       type: string
