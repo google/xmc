@@ -49,6 +49,7 @@ NON_CODE_FILES: set[str] = {
     ".tflint.hcl",
     ".golangci.yml",
     "pyproject.toml",
+    "test/__init__.py",
 }
 
 
@@ -191,16 +192,21 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
             except Exception:
                 continue
 
-            for match in re.finditer(r'(go_test|py_test)\s*\(\s*name\s*=\s*"([^"]+)"', content):
+            for match in re.finditer(
+                r'(go_test|py_test|compat_go_test)\s*\(\s*name\s*=\s*"([^"]+)"(?P<body>.*?)(?=\n\s*(?:go_test|py_test|compat_go_test|go_binary|py_binary|py_library|go_library|load|\Z))',
+                content,
+                re.DOTALL,
+            ):
                 target_name = match.group(2)
+                body = match.group("body")
+                if '"manual"' in body:
+                    continue
                 pkg_path = "" if rel_root == "." else rel_root
                 target_label = f"//{pkg_path}:{target_name}" if pkg_path else f"//:{target_name}"
                 if target_label in EXCLUDED_TEST_TARGETS:
                     continue
                 for cd in changed_dirs:
-                    if (pkg_path == cd) or (
-                        cd and (cd.startswith(pkg_path) or pkg_path.startswith(cd))
-                    ):
+                    if (pkg_path == cd) or (cd and pkg_path.startswith(f"{cd}/")):
                         test_targets.add(target_label)
     return sorted(test_targets)
 
