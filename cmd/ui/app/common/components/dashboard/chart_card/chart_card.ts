@@ -53,6 +53,14 @@ export function getChartKey(chart: Chart): string {
 }
 
 /**
+ * Checks whether a chart is associated with a specific work unit (wid > 0).
+ * In proto3, wid defaults to 0 when unset (indicating an experiment-level chart).
+ */
+export function hasWorkUnit(chart: Chart): boolean {
+  return chart.wid !== undefined && chart.wid !== null && Number(chart.wid) > 0;
+}
+
+/**
  * Pure Angular pipe to look up a PlotData object by plot ID from a plot data map.
  */
 @Pipe({
@@ -108,14 +116,14 @@ export class ChartCardComponent implements OnInit, OnDestroy {
   protected readonly headerTitle = computed(() => {
     const c = this.chart();
     const xidStr = `XID/${c.xid}`;
-    const widStr = c.wid !== undefined && c.wid !== null ? ` - WorkUnitID ${c.wid}` : '';
+    const widStr = hasWorkUnit(c) ? ` - WorkUnitID ${c.wid}` : '';
     const titleStr = c.title ? ` - ${c.title}` : '';
     return `${xidStr}${titleStr}${widStr}`;
   });
 
   protected readonly experimentUrl = computed(() => {
     const c = this.chart();
-    if (c.wid !== undefined && c.wid !== null) {
+    if (hasWorkUnit(c)) {
       return `/experiments/${c.xid}/workUnits/${c.wid}`;
     }
     return `/experiments/${c.xid}`;

@@ -30,7 +30,7 @@ import {
 } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
-import { ChartCardComponent, getChartKey, PlotDataPipe } from './chart_card';
+import { ChartCardComponent, getChartKey, hasWorkUnit, PlotDataPipe } from './chart_card';
 import { ChartCardHarness } from './chart_card_harness';
 
 @Component({
@@ -112,8 +112,9 @@ describe('ChartCardComponent', () => {
     harness = await loader.getHarness(ChartCardHarness);
   });
 
-  it('should render header with formatted experiment title', async () => {
+  it('should render header with formatted experiment title and work unit link', async () => {
     expect(await harness.getHeaderTitle()).toBe('XID/234911122 - VCC Baseline - WorkUnitID 1');
+    expect(await harness.getHeaderLinkHref()).toBe('/experiments/234911122/workUnits/1');
   });
 
   it('should fetch chart data on init', () => {
@@ -180,5 +181,27 @@ describe('ChartCardComponent', () => {
     const emitSpy = spyOn(chartCard.remove, 'emit');
     chartCard.onRemove();
     expect(emitSpy).toHaveBeenCalledWith('experiments/9001/workUnits/1/charts/mixed_overview');
+  });
+
+  it('should correctly identify whether a chart has a work unit via hasWorkUnit', () => {
+    expect(hasWorkUnit({ xid: 123, wid: 1, title: 'run 1' })).toBeTrue();
+    expect(hasWorkUnit({ xid: 123, wid: '2', title: 'run 2' })).toBeTrue();
+    expect(hasWorkUnit({ xid: 123, wid: 0, title: 'experiment level' })).toBeFalse();
+    expect(hasWorkUnit({ xid: 123, wid: '0', title: 'experiment level' })).toBeFalse();
+    expect(hasWorkUnit({ xid: 123, title: 'no wid' })).toBeFalse();
+  });
+
+  it('should omit WorkUnitID from title and link to experiment root when wid is 0 or unset', async () => {
+    host.chart.set({
+      name: 'experiments/9001/workUnits/0/charts/overview',
+      title: 'Experiment Overview',
+      xid: 234911122,
+      wid: 0,
+      plots: [],
+    });
+    fixture.detectChanges();
+
+    expect(await harness.getHeaderTitle()).toBe('XID/234911122 - Experiment Overview');
+    expect(await harness.getHeaderLinkHref()).toBe('/experiments/234911122');
   });
 });

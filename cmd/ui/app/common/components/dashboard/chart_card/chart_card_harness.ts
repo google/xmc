@@ -31,6 +31,10 @@ export class ChartCardHarness extends ComponentHarness {
     return (await this.headerLink()).text();
   }
 
+  async getHeaderLinkHref(): Promise<string | null> {
+    return (await this.headerLink()).getAttribute('href');
+  }
+
   async getSummaryBoxCount(): Promise<number> {
     return (await this.summaryBoxes()).length;
   }
