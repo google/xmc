@@ -14,77 +14,81 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import {
+  bootstrap,
+  cleanState,
+  getEl,
+  getEls,
+  setupModule,
+} from 'xmanager_cloud/ui/app/testing/test';
 
 import { DashboardsListPage, extractDashboardId } from './dashboards_list_page';
 
+const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
+const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
+
+const MOCK_DASHBOARDS: Dashboard[] = [
+  {
+    name: 'dashboards/vcc_comparison',
+    title: 'VCC baseline tune comparison',
+    description: 'Comparative evaluation of VCC baseline tuning across hyperparameter runs',
+    charts: [
+      { name: 'experiments/1/charts/c1', title: 'Chart 1', xid: 1, plots: [] },
+      { name: 'experiments/2/charts/c2', title: 'Chart 2', xid: 2, plots: [] },
+    ],
+  },
+  {
+    name: 'dashboards/testdata_overview',
+    title: 'Data Engine Golden Testcases',
+    description: 'Overview of all testcases',
+    charts: [],
+  },
+];
+
 describe('DashboardsListPage', () => {
-  let component: DashboardsListPage;
-  let fixture: ComponentFixture<DashboardsListPage>;
-  let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
-
-  const mockDashboards: Dashboard[] = [
-    {
-      name: 'dashboards/vcc_comparison',
-      title: 'VCC baseline tune comparison',
-      description: 'Comparative evaluation of VCC baseline tuning across hyperparameter runs',
-      charts: [
-        { name: 'experiments/1/charts/c1', title: 'Chart 1', xid: 1, plots: [] },
-        { name: 'experiments/2/charts/c2', title: 'Chart 2', xid: 2, plots: [] },
-      ],
-    },
-    {
-      name: 'dashboards/testdata_overview',
-      title: 'Data Engine Golden Testcases',
-      description: 'Overview of all testcases',
-      charts: [],
-    },
-  ];
-
-  beforeEach(async () => {
-    dashboardServiceSpy = jasmine.createSpyObj<DashboardService>('DashboardService', [
+  const state = cleanState(() => {
+    const dashboardServiceSpy = jasmine.createSpyObj<DashboardService>('DashboardService', [
       'listDashboards',
+      'createDashboard',
     ]);
-    dashboardServiceSpy.listDashboards.and.returnValue(of({ dashboards: mockDashboards }));
+    const snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
+    dashboardServiceSpy.listDashboards.and.returnValue(of({ dashboards: MOCK_DASHBOARDS }));
 
-    await TestBed.configureTestingModule({
-      imports: [DashboardsListPage],
+    setupModule({
+      imports: [DashboardsListPage, NoopAnimationsModule],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        provideNoopAnimations(),
         { provide: DashboardService, useValue: dashboardServiceSpy },
-        {
-          provide: SnackbarService,
-          useValue: jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']),
-        },
+        { provide: SnackbarService, useValue: snackbarServiceSpy },
       ],
-    }).compileComponents();
+    });
 
-    fixture = TestBed.createComponent(DashboardsListPage);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-  });
+    return { dashboardServiceSpy, snackbarServiceSpy };
+  }, beforeEach);
 
   it('should create the component', () => {
+    const component = bootstrap(DashboardsListPage);
     expect(component).toBeTruthy();
   });
 
   it('should load and display dashboards on init', () => {
-    expect(dashboardServiceSpy.listDashboards).toHaveBeenCalled();
+    const component = bootstrap(DashboardsListPage);
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalled();
     expect(component.dashboards().length).toBe(2);
     expect(component.filteredDashboards().length).toBe(2);
   });
 
   it('should filter dashboards by search query', () => {
+    const component = bootstrap(DashboardsListPage);
     component.searchQuery.set('vcc');
     expect(component.filteredDashboards().length).toBe(1);
     expect(component.filteredDashboards()[0].title).toBe('VCC baseline tune comparison');
@@ -97,6 +101,7 @@ describe('DashboardsListPage', () => {
   });
 
   it('should extract dashboard ID correctly', () => {
+    const component = bootstrap(DashboardsListPage);
     expect(extractDashboardId('dashboards/vcc_comparison')).toBe('vcc_comparison');
     expect(extractDashboardId('my_dashboard')).toBe('my_dashboard');
     expect(extractDashboardId('')).toBe('');
@@ -104,36 +109,35 @@ describe('DashboardsListPage', () => {
   });
 
   it('should render table rows in the DOM', () => {
-    const compiled = fixture.nativeElement as HTMLElement;
-    const rows = compiled.querySelectorAll('.dashboard-row');
+    bootstrap(DashboardsListPage);
+    const rows = getEls(DASHBOARD_ROW_SELECTOR);
     expect(rows.length).toBe(2);
 
-    const firstTitle = compiled.querySelector('.dashboard-title-text');
+    const firstTitle = getEl(DASHBOARD_TITLE_TEXT_SELECTOR);
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
   });
 
   it('should call createDashboard when dialog returns a valid dashboard', () => {
+    const component = bootstrap(DashboardsListPage);
     const newDash: Dashboard = {
       name: 'dashboards/new_evaluation',
       title: 'New Evaluation',
       charts: [],
     };
-    dashboardServiceSpy.createDashboard = jasmine
-      .createSpy('createDashboard')
-      .and.returnValue(of(newDash));
+    state.dashboardServiceSpy.createDashboard.and.returnValue(of(newDash));
 
     component.createDashboard(newDash);
 
-    expect(dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
   });
 
   it('should show error snackbar when listDashboards fails', () => {
-    const snackbarService = TestBed.inject(SnackbarService) as jasmine.SpyObj<SnackbarService>;
-    dashboardServiceSpy.listDashboards.and.returnValue(throwError(() => new Error('Server error')));
-
-    component.loadDashboards();
+    state.dashboardServiceSpy.listDashboards.and.returnValue(
+      throwError(() => new Error('Server error')),
+    );
+    const component = bootstrap(DashboardsListPage);
 
     expect(component.isLoading()).toBeFalse();
-    expect(snackbarService.open).toHaveBeenCalledWith('Failed to load dashboards');
+    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to load dashboards');
   });
 });

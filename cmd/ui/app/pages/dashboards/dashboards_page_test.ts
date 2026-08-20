@@ -14,9 +14,6 @@
 
 import 'jasmine';
 
-import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
-import { Component } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
@@ -25,64 +22,55 @@ import { of } from 'rxjs';
 import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { bootstrap, cleanState, getHarness, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { DashboardsPage } from './dashboards_page';
 import { DashboardsPageHarness } from './dashboards_page_harness';
 
-@Component({
-  standalone: true,
-  imports: [DashboardsPage],
-  template: `<xmc-dashboards-page />`,
-})
-class TestHostComponent {}
+const MOCK_DASHBOARD = {
+  name: 'dashboards/vcc_comparison',
+  title: 'VCC baseline tune comparison',
+  charts: [
+    {
+      name: 'experiments/234911122/charts/baseline',
+      title: 'VCC Baseline',
+      xid: 234911122,
+      plots: [],
+    },
+    {
+      name: 'experiments/234911123/charts/tuned_v1',
+      title: 'VCC tuned_v1',
+      xid: 234911123,
+      plots: [],
+    },
+    {
+      name: 'experiments/234911124/charts/tuned_v2',
+      title: 'VCC tuned_v2',
+      xid: 234911124,
+      plots: [],
+    },
+  ],
+};
 
 describe('DashboardsPage', () => {
-  let fixture: ComponentFixture<TestHostComponent>;
-  let pageComponent: DashboardsPage;
-  let harness: DashboardsPageHarness;
-  let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
-
-  beforeEach(async () => {
-    dashboardServiceSpy = jasmine.createSpyObj('DashboardService', [
+  const state = cleanState(() => {
+    const dashboardServiceSpy = jasmine.createSpyObj<DashboardService>('DashboardService', [
       'getDashboard',
       'getChartData',
       'updateDashboard',
     ]);
+    const snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
+
     dashboardServiceSpy.updateDashboard.and.returnValue(of({}));
     dashboardServiceSpy.getChartData.and.returnValue(
       of({
         plotsData: [],
       }),
     );
-    dashboardServiceSpy.getDashboard.and.returnValue(
-      of({
-        name: 'dashboards/vcc_comparison',
-        title: 'VCC baseline tune comparison',
-        charts: [
-          {
-            name: 'experiments/234911122/charts/baseline',
-            title: 'VCC Baseline',
-            xid: 234911122,
-            plots: [],
-          },
-          {
-            name: 'experiments/234911123/charts/tuned_v1',
-            title: 'VCC tuned_v1',
-            xid: 234911123,
-            plots: [],
-          },
-          {
-            name: 'experiments/234911124/charts/tuned_v2',
-            title: 'VCC tuned_v2',
-            xid: 234911124,
-            plots: [],
-          },
-        ],
-      }),
-    );
+    dashboardServiceSpy.getDashboard.and.returnValue(of(MOCK_DASHBOARD));
 
-    await TestBed.configureTestingModule({
-      imports: [TestHostComponent, NoopAnimationsModule],
+    setupModule({
+      imports: [DashboardsPage, NoopAnimationsModule],
       providers: [
         provideRouter([]),
         {
@@ -96,30 +84,28 @@ describe('DashboardsPage', () => {
           },
         },
         { provide: DashboardService, useValue: dashboardServiceSpy },
-        {
-          provide: SnackbarService,
-          useValue: jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']),
-        },
+        { provide: SnackbarService, useValue: snackbarServiceSpy },
       ],
-    }).compileComponents();
+    });
 
-    fixture = TestBed.createComponent(TestHostComponent);
-    fixture.detectChanges();
-    pageComponent = fixture.debugElement.children[0].componentInstance as DashboardsPage;
-    const loader = TestbedHarnessEnvironment.loader(fixture);
-    harness = await loader.getHarness(DashboardsPageHarness);
-  });
+    return { dashboardServiceSpy, snackbarServiceSpy };
+  }, beforeEach);
 
   it('should render default dashboard title from Figma', async () => {
+    bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
     expect(await harness.getTitle()).toBe('VCC baseline tune comparison');
   });
 
   it('should render initial comparative experiment columns', async () => {
+    bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
     const grid = await harness.getGridHarness();
     expect(await grid.getChartCount()).toBe(3);
   });
 
   it('should open AddExperimentDialog when clicking add experiment and deep-copy template plots', () => {
+    const pageComponent = bootstrap(DashboardsPage);
     const initialPlot = { plotId: 'val_loss_kpi', title: 'Test Plot' } as any;
     pageComponent.charts.set([
       {
@@ -144,6 +130,7 @@ describe('DashboardsPage', () => {
   });
 
   it('should create default comparison charts with independent plots array instances', () => {
+    const pageComponent = bootstrap(DashboardsPage);
     (
       pageComponent as unknown as { initDefaultComparisonDashboard: () => void }
     ).initDefaultComparisonDashboard();
@@ -154,19 +141,15 @@ describe('DashboardsPage', () => {
   });
 
   it('should remove chart from comparison', () => {
+    const pageComponent = bootstrap(DashboardsPage);
     expect(pageComponent.charts().length).toBe(3);
     pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
     expect(pageComponent.charts().length).toBe(2);
   });
 
   describe('onShare', () => {
-    let snackbarService: jasmine.SpyObj<SnackbarService>;
-
-    beforeEach(() => {
-      snackbarService = TestBed.inject(SnackbarService) as jasmine.SpyObj<SnackbarService>;
-    });
-
     it('should open success snackbar when clipboard write succeeds', async () => {
+      const pageComponent = bootstrap(DashboardsPage);
       const mockClipboard = {
         writeText: jasmine.createSpy('writeText').and.returnValue(Promise.resolve()),
       };
@@ -179,10 +162,13 @@ describe('DashboardsPage', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockClipboard.writeText).toHaveBeenCalled();
-      expect(snackbarService.open).toHaveBeenCalledWith('Dashboard link copied to clipboard');
+      expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
+        'Dashboard link copied to clipboard',
+      );
     });
 
     it('should open error snackbar when clipboard write fails', async () => {
+      const pageComponent = bootstrap(DashboardsPage);
       const mockClipboard = {
         writeText: jasmine
           .createSpy('writeText')
@@ -196,15 +182,18 @@ describe('DashboardsPage', () => {
       pageComponent.onShare();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(snackbarService.open).toHaveBeenCalledWith('Failed to copy link to clipboard');
+      expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
+        'Failed to copy link to clipboard',
+      );
     });
   });
 
   it('should persist dashboard update when removing a chart and autosave is enabled', () => {
+    const pageComponent = bootstrap(DashboardsPage);
     pageComponent.loadDashboard('dashboards/vcc_comparison');
-    dashboardServiceSpy.updateDashboard.calls.reset();
+    state.dashboardServiceSpy.updateDashboard.calls.reset();
 
     pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
-    expect(dashboardServiceSpy.updateDashboard).toHaveBeenCalled();
+    expect(state.dashboardServiceSpy.updateDashboard).toHaveBeenCalled();
   });
 });

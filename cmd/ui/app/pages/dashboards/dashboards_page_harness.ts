@@ -20,7 +20,7 @@ import { DashboardGridHarness } from 'xmanager_cloud/ui/app/common/components/da
  * Component harness for DashboardsPage.
  */
 export class DashboardsPageHarness extends ComponentHarness {
-  static hostSelector = 'xmc-dashboards-page';
+  static hostSelector = 'xmc-dashboards-page, [data-component-selector="xmc-dashboards-page"]';
 
   private readonly titleEl = this.locatorFor('.dashboard-title');
   private readonly gridHarness = this.locatorFor(DashboardGridHarness);
