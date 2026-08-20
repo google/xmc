@@ -111,6 +111,8 @@ export class DashboardsPage implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly snackbar = inject(SnackbarService, { optional: true });
 
+  private currentDashboardName = '';
+
   readonly dashboardTitle = signal<string>('Dashboard');
   readonly autosaveEnabled = signal<boolean>(true);
   readonly charts = signal<Chart[]>([]);
@@ -130,6 +132,7 @@ export class DashboardsPage implements OnInit {
   }
 
   loadDashboard(name: string): void {
+    this.currentDashboardName = name;
     this.isLoading.set(true);
     this.dashboardNotFound.set(false);
     this.dashboardService.getDashboard(name).subscribe({
@@ -170,7 +173,9 @@ export class DashboardsPage implements OnInit {
     dialogRef.afterClosed().subscribe((result?: AddExperimentDialogResult) => {
       if (!result) return;
 
-      const templatePlots = this.charts()[0]?.plots ?? createDefaultPlots();
+      const templatePlots = this.charts()[0]?.plots
+        ? structuredClone(this.charts()[0].plots)
+        : createDefaultPlots();
       const newChart: Chart = {
         name: `experiments/${result.xid}/charts/custom_${Date.now()}`,
         title: result.title || `Experiment ${result.xid}`,
@@ -181,6 +186,7 @@ export class DashboardsPage implements OnInit {
       };
 
       this.charts.update((c) => [...c, newChart]);
+      this.triggerAutosave();
       this.snackbar?.open?.(`Added experiment ${result.xid} to comparison`);
     });
   }
@@ -189,6 +195,23 @@ export class DashboardsPage implements OnInit {
     this.charts.update((c) =>
       c.filter((chart) => chart.name !== chartName && `${chart.xid}` !== chartName),
     );
+    this.triggerAutosave();
+  }
+
+  private triggerAutosave(): void {
+    if (!this.autosaveEnabled() || !this.currentDashboardName) return;
+
+    this.dashboardService
+      .updateDashboard({
+        dashboard: {
+          name: this.currentDashboardName,
+          title: this.dashboardTitle(),
+          charts: this.charts(),
+        },
+      })
+      .subscribe({
+        error: (err) => console.error('Failed to autosave dashboard:', err),
+      });
   }
 
   onShare(): void {

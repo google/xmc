@@ -35,6 +35,7 @@ import { Router, RouterLink } from '@angular/router';
 import { CreateDashboardDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /**
  * Strips 'dashboards/' prefix to obtain a clean dashboard ID for routing.
@@ -71,6 +72,7 @@ export class DashboardsListPage implements OnInit {
   private readonly dashboardService = inject(DashboardService);
   private readonly dialog = inject(MatDialog);
   private readonly router = inject(Router);
+  private readonly snackbar = inject(SnackbarService, { optional: true });
 
   readonly dashboards = signal<Dashboard[]>([]);
   readonly isLoading = signal<boolean>(false);
@@ -78,10 +80,10 @@ export class DashboardsListPage implements OnInit {
   readonly displayedColumns: string[] = ['title', 'description', 'chartsCount', 'actions'];
 
   readonly filteredDashboards = computed(() => {
-    const query = this.searchQuery().toLowerCase().trim();
-    const list = this.dashboards();
-    if (!query) return list;
-    return list.filter((d) => {
+    const query = this.searchQuery().trim().toLowerCase();
+    if (!query) return this.dashboards();
+
+    return this.dashboards().filter((d) => {
       const matchTitle = (d.title || '').toLowerCase().includes(query);
       const matchDesc = (d.description || '').toLowerCase().includes(query);
       const matchName = (d.name || '').toLowerCase().includes(query);
@@ -100,8 +102,10 @@ export class DashboardsListPage implements OnInit {
         this.dashboards.set(res.dashboards ?? []);
         this.isLoading.set(false);
       },
-      error: () => {
+      error: (err) => {
         this.isLoading.set(false);
+        this.snackbar?.open?.('Failed to load dashboards');
+        console.error('Error loading dashboards:', err);
       },
     });
   }

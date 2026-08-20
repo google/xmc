@@ -45,7 +45,9 @@ describe('DashboardsPage', () => {
     dashboardServiceSpy = jasmine.createSpyObj('DashboardService', [
       'getDashboard',
       'getChartData',
+      'updateDashboard',
     ]);
+    dashboardServiceSpy.updateDashboard.and.returnValue(of({}));
     dashboardServiceSpy.getChartData.and.returnValue(
       of({
         plotsData: [],
@@ -140,26 +142,44 @@ describe('DashboardsPage', () => {
     });
 
     it('should open success snackbar when clipboard write succeeds', async () => {
-      const clipboardSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(
-        Promise.resolve(),
-      );
+      const mockClipboard = {
+        writeText: jasmine.createSpy('writeText').and.returnValue(Promise.resolve()),
+      };
+      Object.defineProperty(navigator, 'clipboard', {
+        value: mockClipboard,
+        configurable: true,
+      });
 
       pageComponent.onShare();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(clipboardSpy).toHaveBeenCalled();
+      expect(mockClipboard.writeText).toHaveBeenCalled();
       expect(snackbarOpenSpy).toHaveBeenCalledWith('Dashboard link copied to clipboard');
     });
 
     it('should open error snackbar when clipboard write fails', async () => {
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(
-        Promise.reject(new Error('Permission denied')),
-      );
+      const mockClipboard = {
+        writeText: jasmine
+          .createSpy('writeText')
+          .and.returnValue(Promise.reject(new Error('Permission denied'))),
+      };
+      Object.defineProperty(navigator, 'clipboard', {
+        value: mockClipboard,
+        configurable: true,
+      });
 
       pageComponent.onShare();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(snackbarOpenSpy).toHaveBeenCalledWith('Failed to copy link to clipboard');
     });
+  });
+
+  it('should persist dashboard update when removing a chart and autosave is enabled', () => {
+    pageComponent.loadDashboard('dashboards/vcc_comparison');
+    dashboardServiceSpy.updateDashboard.calls.reset();
+
+    pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
+    expect(dashboardServiceSpy.updateDashboard).toHaveBeenCalled();
   });
 });

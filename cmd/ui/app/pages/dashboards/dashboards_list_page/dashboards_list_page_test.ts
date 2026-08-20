@@ -17,7 +17,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
@@ -120,5 +120,18 @@ describe('DashboardsListPage', () => {
     component.createDashboard(newDash);
 
     expect(dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
+  });
+
+  it('should show error snackbar when listDashboards fails', () => {
+    const snackbarOpenSpy = jasmine.createSpy('open');
+    (component as unknown as { snackbar: { open: jasmine.Spy } }).snackbar = {
+      open: snackbarOpenSpy,
+    };
+    dashboardServiceSpy.listDashboards.and.returnValue(throwError(() => new Error('Server error')));
+
+    component.loadDashboards();
+
+    expect(component.isLoading()).toBeFalse();
+    expect(snackbarOpenSpy).toHaveBeenCalledWith('Failed to load dashboards');
   });
 });
