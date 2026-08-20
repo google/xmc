@@ -57,12 +57,12 @@ func validateComponentName(name string) (string, error) {
 
 // validateComponentRequest validates the component name format and verifies store initialization.
 func (s *Server) validateComponentRequest(name string) (string, error) {
+	if s.store == nil {
+		return "", status.Error(codes.Unavailable, "component store is uninitialized")
+	}
 	canonical, err := validateComponentName(name)
 	if err != nil {
 		return "", err
-	}
-	if s.store == nil {
-		return "", status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return canonical, nil
 }

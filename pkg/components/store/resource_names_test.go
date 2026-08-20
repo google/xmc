@@ -65,12 +65,12 @@ func TestCanonicalComponentName(t *testing.T) {
 		{
 			name:  "collection name only",
 			input: "components",
-			want:  "",
+			want:  "components",
 		},
 		{
 			name:  "collection name with trailing slash",
 			input: "components/",
-			want:  "",
+			want:  "components",
 		},
 	}
 

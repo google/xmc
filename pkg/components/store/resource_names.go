@@ -15,7 +15,6 @@
 package store
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -28,10 +27,8 @@ const (
 // "components/" resource prefix to return the canonical resource ID.
 func CanonicalComponentName(name string) string {
 	name = strings.Trim(strings.TrimSpace(name), "/")
-	if name == "components" {
-		return ""
-	}
-	return strings.Trim(strings.TrimPrefix(name, componentPrefix), "/")
+	canonical := strings.TrimPrefix(name, componentPrefix)
+	return strings.Trim(canonical, "/")
 }
 
 // FullComponentName formats a canonical or relative name into AIP-122
@@ -41,7 +38,7 @@ func FullComponentName(name string) string {
 	if canonical == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s%s", componentPrefix, canonical)
+	return componentPrefix + canonical
 }
 
 // IsValidComponentName validates that a component name conforms to DNS-1123 / AIP-122
