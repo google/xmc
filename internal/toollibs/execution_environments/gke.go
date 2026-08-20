@@ -193,6 +193,9 @@ func applyCPUResources(cpuRes *epb.CpuResources, reqs *corev1.ResourceRequiremen
 // Only requests are set. A limit would cap a job at a figure it never chose,
 // and the memory one would be enforced by the OOM killer.
 func applyGPUResources(gpuRes *epb.GpuResources, reqs *corev1.ResourceRequirements) {
+	if gpuRes == nil || reqs == nil {
+		return
+	}
 	if reqs.Requests == nil {
 		reqs.Requests = make(corev1.ResourceList)
 	}
