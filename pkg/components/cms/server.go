@@ -92,8 +92,8 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", req.GetSpec().GetVersion(), err)
 		}
 	}
-	// TODO(b/548435291): In Task 2.5/2.7, pass extracted dependencies to store.SetIntent
-	// to persist into the ComponentDependencies relational table and validate against the DAG engine.
+	// TODO(Task 2.5 / Task 2.7): Pass extracted dependencies to store.SetIntent to persist
+	// into the ComponentDependencies relational table and validate against the DAG engine.
 	_ = store.ExtractDependencies(req.GetSpec(), nil, canonicalName)
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
