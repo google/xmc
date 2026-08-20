@@ -67,6 +67,12 @@ class PlaywrightTestExecutor:
         env["XMC_BASE_URL"] = "http://localhost:8080"
         env["XMC_DEX_URL"] = "http://localhost:5556"
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{self.cfg.workspace_root}:{existing_pythonpath}"
+            if existing_pythonpath
+            else self.cfg.workspace_root
+        )
 
         run_cmd([py_venv, test_script], cwd=self.cfg.workspace_root, env=env)
 
