@@ -72,99 +72,233 @@ func (s *stubStore) GetPlatformHealth(ctx context.Context, filter string, pageSi
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func TestCMSServer_Scaffold_Handlers(t *testing.T) {
-	ctx := context.Background()
+func TestCMSServer_StoreAccessor(t *testing.T) {
 	stub := &stubStore{}
 	server := NewServer(stub)
-
 	if server.Store() != stub {
 		t.Errorf("Store() = %v, want %v", server.Store(), stub)
 	}
+}
 
-	// 1. SetComponentIntent
+func TestCMSServer_Scaffold_Handlers(t *testing.T) {
+	ctx := context.Background()
+	server := NewServer(&stubStore{})
+
 	validSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
-	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: validSpec}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("SetComponentIntent(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.SetComponentIntent(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("SetComponentIntent(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("SetComponentIntent(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: nil}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("SetComponentIntent(nil spec) got code %v, want InvalidArgument", status.Code(err))
+
+	tests := []struct {
+		name     string
+		call     func() error
+		wantCode codes.Code
+	}{
+		// SetComponentIntent
+		{
+			name: "SetComponentIntent_Valid",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "SetComponentIntent_NilRequest",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "SetComponentIntent_EmptyName",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "SetComponentIntent_NilSpec",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: nil})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// PrepareDeactivation
+		{
+			name: "PrepareDeactivation_Valid",
+			call: func() error {
+				_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "comp-1"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "PrepareDeactivation_NilRequest",
+			call: func() error {
+				_, err := server.PrepareDeactivation(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "PrepareDeactivation_EmptyName",
+			call: func() error {
+				_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// CompleteDeactivation
+		{
+			name: "CompleteDeactivation_Valid",
+			call: func() error {
+				_, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: "comp-1"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "CompleteDeactivation_NilRequest",
+			call: func() error {
+				_, err := server.CompleteDeactivation(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "CompleteDeactivation_EmptyName",
+			call: func() error {
+				_, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// UpdateObservedGeneration
+		{
+			name: "UpdateObservedGeneration_Valid",
+			call: func() error {
+				_, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: "comp-1", ObservedGeneration: 1})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "UpdateObservedGeneration_NilRequest",
+			call: func() error {
+				_, err := server.UpdateObservedGeneration(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "UpdateObservedGeneration_EmptyName",
+			call: func() error {
+				_, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// ExecuteDeletion
+		{
+			name: "ExecuteDeletion_Valid",
+			call: func() error {
+				_, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: "comp-1"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "ExecuteDeletion_NilRequest",
+			call: func() error {
+				_, err := server.ExecuteDeletion(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "ExecuteDeletion_EmptyName",
+			call: func() error {
+				_, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// ResolveComponentSnapshot
+		{
+			name: "ResolveComponentSnapshot_Valid",
+			call: func() error {
+				_, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: "comp-1"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "ResolveComponentSnapshot_NilRequest",
+			call: func() error {
+				_, err := server.ResolveComponentSnapshot(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "ResolveComponentSnapshot_EmptyName",
+			call: func() error {
+				_, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// ValidateComponentRequirement
+		{
+			name: "ValidateComponentRequirement_Valid",
+			call: func() error {
+				_, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "comp-1"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "ValidateComponentRequirement_NilRequest",
+			call: func() error {
+				_, err := server.ValidateComponentRequirement(ctx, nil)
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "ValidateComponentRequirement_EmptyName",
+			call: func() error {
+				_, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: ""})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+
+		// GetPlatformHealth
+		{
+			name: "GetPlatformHealth_Valid",
+			call: func() error {
+				_, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
 	}
 
-	// 2. PrepareDeactivation
-	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "comp-1"}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("PrepareDeactivation(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.PrepareDeactivation(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("PrepareDeactivation(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("PrepareDeactivation(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 3. CompleteDeactivation
-	if _, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: "comp-1"}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("CompleteDeactivation(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.CompleteDeactivation(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("CompleteDeactivation(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("CompleteDeactivation(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 4. UpdateObservedGeneration
-	if _, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: "comp-1", ObservedGeneration: 1}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("UpdateObservedGeneration(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.UpdateObservedGeneration(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("UpdateObservedGeneration(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("UpdateObservedGeneration(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 5. ExecuteDeletion
-	if _, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: "comp-1"}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ExecuteDeletion(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.ExecuteDeletion(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ExecuteDeletion(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ExecuteDeletion(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 6. ResolveComponentSnapshot
-	if _, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: "comp-1"}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ResolveComponentSnapshot(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.ResolveComponentSnapshot(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ResolveComponentSnapshot(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ResolveComponentSnapshot(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 7. ValidateComponentRequirement
-	if _, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "comp-1"}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ValidateComponentRequirement(valid) got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := server.ValidateComponentRequirement(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ValidateComponentRequirement(nil) got code %v, want InvalidArgument", status.Code(err))
-	}
-	if _, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("ValidateComponentRequirement(empty name) got code %v, want InvalidArgument", status.Code(err))
-	}
-
-	// 8. GetPlatformHealth
-	if _, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("GetPlatformHealth(valid) got code %v, want Unimplemented", status.Code(err))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if status.Code(err) != tc.wantCode {
+				t.Errorf("%s got code %v, want %v", tc.name, status.Code(err), tc.wantCode)
+			}
+		})
 	}
 }
 
@@ -172,28 +306,74 @@ func TestCMSServer_UninitializedStore(t *testing.T) {
 	ctx := context.Background()
 	uninitializedServer := NewServer(nil)
 
-	if _, err := uninitializedServer.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "foo", Spec: &componentspb.ComponentSpec{}}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "SetComponentIntent",
+			call: func() error {
+				_, err := uninitializedServer.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "foo", Spec: &componentspb.ComponentSpec{}})
+				return err
+			},
+		},
+		{
+			name: "PrepareDeactivation",
+			call: func() error {
+				_, err := uninitializedServer.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "CompleteDeactivation",
+			call: func() error {
+				_, err := uninitializedServer.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "UpdateObservedGeneration",
+			call: func() error {
+				_, err := uninitializedServer.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "ExecuteDeletion",
+			call: func() error {
+				_, err := uninitializedServer.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "ResolveComponentSnapshot",
+			call: func() error {
+				_, err := uninitializedServer.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "ValidateComponentRequirement",
+			call: func() error {
+				_, err := uninitializedServer.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "foo"})
+				return err
+			},
+		},
+		{
+			name: "GetPlatformHealth",
+			call: func() error {
+				_, err := uninitializedServer.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{})
+				return err
+			},
+		},
 	}
-	if _, err := uninitializedServer.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "foo"}); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
-	}
-	if _, err := uninitializedServer.GetPlatformHealth(ctx, nil); status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable", status.Code(err))
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if status.Code(err) != codes.Unavailable {
+				t.Errorf("%s got code %v, want %v", tc.name, status.Code(err), codes.Unavailable)
+			}
+		})
 	}
 }

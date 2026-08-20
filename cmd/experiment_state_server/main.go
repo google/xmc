@@ -102,7 +102,9 @@ func main() {
 	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
-	initCMS(ctx, s, healthServer, cfg.EnableComponents)
+	if cfg.EnableComponents {
+		initCMS(ctx, s, healthServer)
+	}
 
 	reflection.Register(s)
 
@@ -162,13 +164,9 @@ func main() {
 	logging.Info(ctx, "Server gracefully stopped")
 }
 
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, enabled bool) {
-	if !enabled {
-		logging.Info(ctx, "Component Manager Service (CMS) is disabled (enable_components: false)")
-		return
-	}
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
-	// TODO(b/548436183): Initialize with concrete store implementation (MemoryStore in Task 2.5 / SpannerStore in Task 2.8).
+	// TODO: Initialize with a concrete store implementation.
 	var cmsStore store.Store
 	cmsServer := cms.NewServer(cmsStore)
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
