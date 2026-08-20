@@ -23,6 +23,15 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+const (
+	versionPrefix        = "v"
+	requiredCoreSegments = 3
+	prereleaseDelimiter  = "-"
+	buildDelimiter       = "+"
+	segmentDelimiter     = "."
+	metadataDelimiters   = "-+"
+)
+
 // Version represents a parsed Semantic Version 2.0.0 structure.
 type Version struct {
 	Major      uint64
@@ -33,30 +42,10 @@ type Version struct {
 	Raw        string
 }
 
-// normalize prepares a version string for golang.org/x/mod/semver by ensuring the 'v' prefix
-// and validating strict SemVer 2.0.0 (3 numeric segments: major.minor.patch).
-func normalize(v string) (string, error) {
-	s := strings.TrimSpace(v)
-	if s == "" {
-		return "", errors.New("empty version string")
-	}
-	if !strings.HasPrefix(s, "v") && !strings.HasPrefix(s, "V") {
-		s = "v" + s
-	} else if strings.HasPrefix(s, "V") {
-		s = "v" + s[1:]
-	}
-	if !semver.IsValid(s) {
-		return "", fmt.Errorf("invalid semver 2.0.0 string %q", v)
-	}
-	core := strings.TrimPrefix(s, "v")
-	if idx := strings.IndexAny(core, "-+"); idx != -1 {
-		core = core[:idx]
-	}
-	parts := strings.Split(core, ".")
-	if len(parts) != 3 {
-		return "", fmt.Errorf("invalid semver 2.0.0 string %q: expected major.minor.patch", v)
-	}
-	return s, nil
+type coreVersion struct {
+	major uint64
+	minor uint64
+	patch uint64
 }
 
 // Parse parses a semantic version string conforming to SemVer 2.0.0 with optional leading 'v' or 'V'.
@@ -66,50 +55,18 @@ func Parse(v string) (*Version, error) {
 		return nil, err
 	}
 
-	majStr := strings.TrimPrefix(semver.Major(norm), "v")
-	maj, err := strconv.ParseUint(majStr, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid major version in %q: %w", v, err)
-	}
-
-	majMin := strings.TrimPrefix(semver.MajorMinor(norm), "v")
-	parts := strings.Split(majMin, ".")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid major.minor in %q", v)
-	}
-	min, err := strconv.ParseUint(parts[1], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid minor version in %q: %w", v, err)
-	}
-
 	canonical := semver.Canonical(norm)
-	pre := semver.Prerelease(canonical)
-	build := semver.Build(norm)
-
-	core := strings.TrimPrefix(canonical, "v")
-	if idx := strings.IndexAny(core, "-+"); idx != -1 {
-		core = core[:idx]
-	}
-	coreParts := strings.Split(core, ".")
-	if len(coreParts) != 3 {
-		return nil, fmt.Errorf("expected 3 segments in %q", v)
-	}
-	patch, err := strconv.ParseUint(coreParts[2], 10, 64)
+	core, err := parseCoreSegments(canonical, v)
 	if err != nil {
-		return nil, fmt.Errorf("invalid patch version in %q: %w", v, err)
-	}
-
-	var preList []string
-	if pre != "" {
-		preList = strings.Split(strings.TrimPrefix(pre, "-"), ".")
+		return nil, err
 	}
 
 	return &Version{
-		Major:      maj,
-		Minor:      min,
-		Patch:      patch,
-		PreRelease: preList,
-		Build:      strings.TrimPrefix(build, "+"),
+		Major:      core.major,
+		Minor:      core.minor,
+		Patch:      core.patch,
+		PreRelease: extractPreRelease(semver.Prerelease(canonical)),
+		Build:      strings.TrimPrefix(semver.Build(norm), buildDelimiter),
 		Raw:        v,
 	}, nil
 }
@@ -167,11 +124,11 @@ func (v *Version) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch))
 	if len(v.PreRelease) > 0 {
-		sb.WriteString("-")
-		sb.WriteString(strings.Join(v.PreRelease, "."))
+		sb.WriteString(prereleaseDelimiter)
+		sb.WriteString(strings.Join(v.PreRelease, segmentDelimiter))
 	}
 	if v.Build != "" {
-		sb.WriteString("+")
+		sb.WriteString(buildDelimiter)
 		sb.WriteString(v.Build)
 	}
 	return sb.String()
@@ -190,8 +147,7 @@ func IsPatchUpdate(current, target string) (bool, error) {
 	if semver.MajorMinor(nCur) != semver.MajorMinor(nTarget) {
 		return false, nil
 	}
-	// Disallow stable to pre-release update
-	if semver.Prerelease(nCur) == "" && semver.Prerelease(nTarget) != "" {
+	if isStableToPrerelease(nCur, nTarget) {
 		return false, nil
 	}
 	return semver.Compare(nTarget, nCur) > 0, nil
@@ -208,4 +164,98 @@ func SatisfiesMinVersion(version, minVersion string) (bool, error) {
 		return false, fmt.Errorf("invalid minVersion %q: %w", minVersion, err)
 	}
 	return semver.Compare(nVer, nMin) >= 0, nil
+}
+
+// --- Helper Functions ---
+
+// normalize prepares a version string for golang.org/x/mod/semver by ensuring the 'v' prefix
+// and validating strict SemVer 2.0.0 (3 numeric segments: major.minor.patch).
+func normalize(v string) (string, error) {
+	s := ensureVPrefix(strings.TrimSpace(v))
+	if s == "" {
+		return "", errors.New("empty version string")
+	}
+	if !semver.IsValid(s) {
+		return "", fmt.Errorf("invalid semver 2.0.0 string %q", v)
+	}
+	if err := validateCoreSegmentCount(s, v); err != nil {
+		return "", err
+	}
+	return s, nil
+}
+
+// ensureVPrefix ensures the version string starts with a lowercase 'v'.
+func ensureVPrefix(s string) string {
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "v") {
+		return s
+	}
+	if strings.HasPrefix(s, "V") {
+		return versionPrefix + s[1:]
+	}
+	return versionPrefix + s
+}
+
+// validateCoreSegmentCount checks that the version's core (excluding prerelease and build)
+// contains exactly 3 numeric segments (major.minor.patch).
+func validateCoreSegmentCount(normalized, raw string) error {
+	core := strings.TrimPrefix(normalized, versionPrefix)
+	if idx := strings.IndexAny(core, metadataDelimiters); idx != -1 {
+		core = core[:idx]
+	}
+	if len(strings.Split(core, segmentDelimiter)) != requiredCoreSegments {
+		return fmt.Errorf("invalid semver 2.0.0 string %q: expected major.minor.patch", raw)
+	}
+	return nil
+}
+
+// parseCoreSegments extracts and parses major, minor, and patch uint64 numbers from canonical semver.
+func parseCoreSegments(canonical, raw string) (coreVersion, error) {
+	core := strings.TrimPrefix(canonical, versionPrefix)
+	if idx := strings.IndexAny(core, metadataDelimiters); idx != -1 {
+		core = core[:idx]
+	}
+	parts := strings.Split(core, segmentDelimiter)
+	if len(parts) != requiredCoreSegments {
+		return coreVersion{}, fmt.Errorf("expected %d segments in %q", requiredCoreSegments, raw)
+	}
+
+	maj, err := parseSegment(parts[0], "major", raw)
+	if err != nil {
+		return coreVersion{}, err
+	}
+	min, err := parseSegment(parts[1], "minor", raw)
+	if err != nil {
+		return coreVersion{}, err
+	}
+	patch, err := parseSegment(parts[2], "patch", raw)
+	if err != nil {
+		return coreVersion{}, err
+	}
+	return coreVersion{major: maj, minor: min, patch: patch}, nil
+}
+
+// parseSegment parses an individual non-negative numeric segment as uint64.
+func parseSegment(segment, segmentName, raw string) (uint64, error) {
+	val, err := strconv.ParseUint(segment, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s version in %q: %w", segmentName, raw, err)
+	}
+	return val, nil
+}
+
+// extractPreRelease splits a non-empty prerelease tag into dot-separated identifiers.
+func extractPreRelease(prerelease string) []string {
+	if prerelease == "" {
+		return nil
+	}
+	clean := strings.TrimPrefix(prerelease, prereleaseDelimiter)
+	return strings.Split(clean, segmentDelimiter)
+}
+
+// isStableToPrerelease checks if current is a stable version while target is a pre-release.
+func isStableToPrerelease(currentNorm, targetNorm string) bool {
+	return semver.Prerelease(currentNorm) == "" && semver.Prerelease(targetNorm) != ""
 }
