@@ -45,6 +45,20 @@ describe('CreateDashboardDialogComponent', () => {
     expect(component.plots().length).toBe(getDefaultPlotSpecs().length);
   });
 
+  it('should render correct chip classes and labels for SUMMARY_BOX and SCATTER plots', () => {
+    const chips = fixture.nativeElement.querySelectorAll('.plot-type-chip');
+    expect(chips.length).toBe(4);
+
+    const chipTexts = Array.from(chips).map((el: any) => el.textContent.trim());
+    expect(chipTexts.filter((t) => t === 'Summary KPI').length).toBe(2);
+    expect(chipTexts.filter((t) => t === 'Curve Plot').length).toBe(2);
+
+    const kpiChips = fixture.nativeElement.querySelectorAll('.plot-type-chip.kpi-chip');
+    const curveChips = fixture.nativeElement.querySelectorAll('.plot-type-chip.curve-chip');
+    expect(kpiChips.length).toBe(2);
+    expect(curveChips.length).toBe(2);
+  });
+
   it('should add custom plot when valid metric name is entered', () => {
     const initialCount = component.plots().length;
     component.newPlotForm.patchValue({

@@ -120,11 +120,11 @@ limitations under the License.
                 <div class="plot-item-header">
                   <span
                     class="plot-type-chip"
-                    [class.kpi-chip]="plot.type === PlotType.SUMMARY_BOX || plot.type === 1"
-                    [class.curve-chip]="plot.type === PlotType.SCATTER || plot.type === 2"
+                    [class.kpi-chip]="plot.type === PlotType.SUMMARY_BOX"
+                    [class.curve-chip]="plot.type === PlotType.SCATTER"
                   >
                     {{
-                      plot.type === PlotType.SUMMARY_BOX || plot.type === 1
+                      plot.type === PlotType.SUMMARY_BOX
                         ? 'Summary KPI'
                         : 'Curve Plot'
                     }}
