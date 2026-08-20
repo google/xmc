@@ -140,7 +140,7 @@ limitations under the License.
                 <div class="plot-item-title">{{ plot.title || 'Untitled Plot' }}</div>
                 <div class="plot-item-metric">
                   <mat-icon class="metric-icon">query_stats</mat-icon>
-                  <span>{{ plot.data.metrics[0] || '—' }}</span>
+                  <span>{{ plot.data?.metrics?.[0] || '—' }}</span>
                 </div>
               </div>
             }

@@ -225,8 +225,7 @@ export class CreateDashboardDialogComponent {
 
     const formVal = this.form.value;
     const baseXid = Number(formVal.baseXid);
-    const baseWid =
-      formVal.baseWid !== null && formVal.baseWid !== undefined ? Number(formVal.baseWid) : 1;
+    const baseWid = formVal.baseWid != null ? Number(formVal.baseWid) : 1;
     const rawTitle = formVal.title?.trim() || `Dashboard for Experiment ${baseXid}`;
 
     const baseChart = buildBaseChart(

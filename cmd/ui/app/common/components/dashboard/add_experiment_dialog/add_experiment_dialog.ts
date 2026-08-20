@@ -63,7 +63,7 @@ export class AddExperimentDialogComponent {
     const val = this.form.value;
     const result: AddExperimentDialogResult = {
       xid: Number(val.xid),
-      wid: val.wid !== null && val.wid !== undefined ? Number(val.wid) : undefined,
+      wid: val.wid != null ? Number(val.wid) : undefined,
       title: val.title?.trim() || undefined,
     };
     this.dialogRef.close(result);
