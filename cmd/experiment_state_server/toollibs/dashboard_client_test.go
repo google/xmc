@@ -50,12 +50,12 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 	}{
 		{
 			name: "success",
-			req:  &pb.CreateChartRequest{Parent: "dashboards/123"},
+			req:  &pb.CreateChartRequest{Parent: "experiments/100/workUnits/1"},
 			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
 					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
-						if in.Parent != "dashboards/123" {
-							t.Errorf("expected parent dashboards/123, got %s", in.Parent)
+						if in.Parent != "experiments/100/workUnits/1" {
+							t.Errorf("expected parent experiments/100/workUnits/1, got %s", in.Parent)
 						}
 						return expectedChart, nil
 					},
@@ -65,7 +65,7 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 		},
 		{
 			name: "rpc_error",
-			req:  &pb.CreateChartRequest{Parent: "dashboards/123"},
+			req:  &pb.CreateChartRequest{Parent: "experiments/100/workUnits/1"},
 			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
 					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
