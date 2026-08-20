@@ -42,12 +42,26 @@ func TestParseRules(t *testing.T) {
 			},
 		},
 		{
-			name: "valid static checks config",
+			name: "full valid rules config",
 			yamlData: `
 staticChecks:
   enforceNamespaceScope: true
   enforceDeletionProtection: true
   maxDrainTimeoutSeconds: 300
+compatibilityMatrix:
+  componentDependencies:
+    - component: jobset
+      componentVersion: ">=1.0.0"
+      requires:
+        - component: cert-manager
+          version: "^1.12.0"
+          optional: false
+  platformRequirements:
+    - component: jobset
+      platform:
+        minK8sVersion: "1.28.0"
+        requiredCRDs:
+          - jobsets.jobset.x-k8s.io
 `,
 			wantErr: false,
 			wantChecks: linter.StaticChecksConfig{

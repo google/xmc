@@ -19,11 +19,13 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "linter",
     srcs = [
+        "constraints.go",
         "diagnostic.go",
         "linter.go",
         "manifest.go",
         "pass1_schema.go",
         "pass2_dag.go",
+        "pass3_matrix.go",
         "rules.go",
     ],
     importpath = "xmanager_cloud/pkg/components/linter",
@@ -36,11 +38,13 @@ go_library(
 go_test(
     name = "linter_test",
     srcs = [
+        "constraints_test.go",
         "diagnostic_test.go",
         "linter_test.go",
         "manifest_test.go",
         "pass1_schema_test.go",
         "pass2_dag_test.go",
+        "pass3_matrix_test.go",
         "rules_test.go",
         "test_helpers_test.go",
     ],

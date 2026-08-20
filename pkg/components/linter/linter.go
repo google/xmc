@@ -64,6 +64,7 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 	l.runPass1(rawManifests, compManifests, res)
 	compMap := l.buildComponentMap(compManifests, res)
 	l.runPass2(compManifests, compMap, res)
+	l.runPass3(compManifests, compMap, res)
 
 	res.Valid = (len(res.Errors) == 0)
 	return res, nil

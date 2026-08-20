@@ -44,6 +44,9 @@ metadata:
   name: jobset
 spec:
   version: "0.2.0"
+  dependencies:
+    - name: cert-manager
+      version: "^1.12.0"
 `
 		if err := os.WriteFile(filepath.Join(dir, "cert-manager.yaml"), []byte(manifestA), 0644); err != nil {
 			t.Fatalf("failed to write cert-manager.yaml: %v", err)
@@ -56,6 +59,19 @@ spec:
 			StaticChecks: linter.StaticChecksConfig{
 				EnforceNamespaceScope:     false,
 				EnforceDeletionProtection: false,
+			},
+			CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+				ComponentDependencies: []linter.ComponentDependencyRule{
+					{
+						Component: "jobset",
+						Requires: []linter.DependencyRequirement{
+							{
+								Component: "cert-manager",
+								Version:   "^1.12.0",
+							},
+						},
+					},
+				},
 			},
 		}
 
@@ -121,6 +137,8 @@ metadata:
   name: comp-1
 spec:
   version: "1.0.0"
+  dependencies:
+    comp-2: ">=1.0.0"
 ---
 apiVersion: components.xmc.dev/v1alpha1
 kind: Component
