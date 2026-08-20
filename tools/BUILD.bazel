@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
@@ -371,6 +372,37 @@ py_test(
     deps = [
         ":github_utils_lib",
         ":review_pr_verify_posted_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "analyze_ci_performance_lib",
+    srcs = ["analyze_ci_performance.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_binary(
+    name = "analyze_ci_performance",
+    srcs = ["analyze_ci_performance.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":analyze_ci_performance_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "analyze_ci_performance_test",
+    srcs = ["analyze_ci_performance_test.py"],
+    imports = ["."],
+    deps = [
+        ":analyze_ci_performance_lib",
         ":tool_utils",
     ],
 )
