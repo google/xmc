@@ -228,7 +228,10 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
     backend_universe = (
         "//cmd/... + //internal/... + //pkg/... + //sdks/... + //test/... + //tools/..."
     )
-    query_expr = f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
+    query_expr = (
+        f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
+        f" except attr('tags', 'manual', kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))))"
+    )
 
     try:
         res = subprocess.run(
