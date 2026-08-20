@@ -21,6 +21,8 @@ py_library(
         "__init__.py",
         "command.py",
         "config.py",
+        "image_builder.py",
+        "kind.py",
         "spanner.py",
     ],
     visibility = ["//visibility:public"],
@@ -35,6 +37,18 @@ py_test(
 py_test(
     name = "config_test",
     srcs = ["config_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "image_builder_test",
+    srcs = ["image_builder_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "kind_test",
+    srcs = ["kind_test.py"],
     deps = [":orchestration_lib"],
 )
 
