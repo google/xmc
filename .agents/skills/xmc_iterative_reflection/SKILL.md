@@ -1,22 +1,24 @@
 ---
 name: XMC Iterative Reflection
-description: Audits active session trajectory and thought history to identify friction points, rule gaps, missing helper tools, and token inefficiencies. Use when requested by the user, after major implementations, or when addressing PRs with high comment volume.
+description: Audits active session trajectory, thought history, and PR review comments to identify friction points, rule gaps, missing helper tools, and token inefficiencies. Use when requested by the user, after major implementations, or following PR review comment resolutions.
 ---
 
 # Iterative Reflection & Meta-Learning Workflow
 
-This skill provides a systematic retrospective workflow to evaluate an agent's recent thought history and tool execution trajectory. It identifies friction, inefficiencies, rule gaps, and missing scripts, and formulates non-destructive, high-ROI improvement proposals.
+This skill provides a systematic retrospective workflow to evaluate an agent's recent thought history, tool execution trajectory, and PR review comments. It identifies friction, inefficiencies, rule gaps, and missing scripts, and formulates non-destructive, high-ROI improvement proposals.
 
 ```mermaid
 graph TD
-    A[Trigger Event] -->|Major Implementation / High PR Comments / User Prompt| B[1. Inspect Trajectory Log]
-    A -->|Minor Edit / Routine 1-Comment Fix| Stop[Do NOT Trigger Reflection]
+    A[Trigger Event] -->|Major Implementation / PR Comment Resolution / User Prompt| B[1. Inspect Trajectory Log & Review Comments]
+    A -->|Minor Typo / Routine Zero-Rule Fix| Stop[Do NOT Trigger Reflection]
     B --> C[2. Perform 4-Pillar Trajectory Audit]
     C --> D[3. Apply Pragmatism & Anti-Hallucination Filter]
-    D -->|Recurrent Friction Found| E[Formulate High-ROI Proposals]
+    D -->|Recurrent Friction / Rule Gap Found| E[Formulate High-ROI Proposals & Synthesize Scenario]
     D -->|Smooth Trajectory / One-off Friction| F[Report: No Action Needed]
     E & F --> G[4. Present Review Report & Await Approval]
-    G -->|Do NOT apply fixes automatically| End[User Decision]
+    G -->|Approved| H[5. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
+    G -->|Rejected / No Action| End[Workflow Complete]
+    H --> End
 ```
 
 > [!IMPORTANT]
@@ -28,13 +30,14 @@ graph TD
 
 ## 1. Trigger Criteria
 
-Run this skill **only** when one of the following conditions is met:
+Run this skill when one of the following conditions is met:
 - **Explicit User Prompt**: The user asks for a retrospective, prompt audit, or performance reflection.
+- **PR Review Comment Resolution**: Resolving PR review comments (from human reviewers or automated review bots) via [XMC Address PR Comment](../xmc_address_pr_comment/SKILL.md), diagnosing why the initial submission lacked this quality and codifying missing rules or validation tooling.
 - **Major Task Completion**: Completion of a complex, multi-step feature or architectural refactor.
 - **High PR Comment Volume**: Resolving a Pull Request with high review comment volume (>3-5 comments or multiple review iterations), indicating friction or missing rule clarity.
 
 > [!CAUTION]
-> **Do NOT Trigger For**: Routine minor edits, simple single-line fixes, or 1-comment PR updates. Avoid over-eager reflection that adds token bloat for simple tasks.
+> **Do NOT Trigger For**: Routine minor edits or trivial typo fixes where no underlying guideline or structural invariant was violated. Avoid over-eager reflection that adds token bloat for trivial tasks.
 
 ---
 
@@ -55,6 +58,7 @@ If `transcript.jsonl` for a conversation ID is unindexed or missing from local d
 
 ### Pillar 2: Rule & Guideline Gaps (`.agents/rules/`)
 - **Signal**: Did review comments or agent trajectory show wrong assumptions, path wandering, or style guideline violations?
+- **PR Review Comment Tracing**: When triggered following PR comment resolutions, trace each comment back to the missing guideline, convention, or structural invariant in `.agents/rules/`. Diagnose why the initial implementation was not created with higher quality.
 - **Action**: Formulate exact rule additions in `.agents/rules/` to prevent future missteps.
 
 ### Pillar 3: Skill & Workflow Gaps (`.agents/skills/`)
@@ -83,14 +87,14 @@ Structure findings into a clean report:
 
 ### 📊 Retrospective Summary
 - **Primary Task**: Short summary of what was implemented or reviewed.
-- **Trigger Reason**: Major Implementation / High PR Comment Volume / User Request.
+- **Trigger Reason**: Major Implementation / High PR Comment Volume / PR Comment Resolution / User Request.
 - **Trajectory Health**: Smooth / Minor Friction / Significant Friction.
 - **Outcome**: Actionable Enhancements Proposed OR No Action Needed (Trajectory Optimal / One-off).
 
 
 ### 💡 Proposed Enhancements (If Applicable)
 
-| Category | Component | Current Friction | Proposed Fix / Enhancement | Impact |
+| Category | Component | Current Friction / Review Feedback | Proposed Fix / Enhancement | Impact |
 | :--- | :--- | :--- | :--- | :--- |
 | **Tool / Script** | `tools/...` | Repetitive manual parsing | Create python script `tools/parse_x.py` | Saves 3-5 turns |
 | **Rule** | `.agents/rules/...` | Reviewer caught missing style | Add rule to `.agents/rules/...` | Prevents PR feedback |
@@ -99,14 +103,27 @@ End by presenting the report in markdown with clickable file links and awaiting 
 
 ---
 
-## 5. Draft PR Creation & Workspace Safety
+## 5. Validation Handshake & Draft PR Creation
 
-If the user requests creating a separate Draft PR for approved rule or skill enhancements:
+When the user approves candidate rule, skill, or tooling enhancements:
 
+### Step 1: Synthesize Benchmark Scenario Prompt
+Formulate a realistic test scenario prompt reproducing the conditions where the previous agent made the mistake or received review feedback.
+
+### Step 2: Propose Trajectory Comparison Benchmark
+Propose running [XMC Trajectory Comparison](../xmc_trajectory_comparison/SKILL.md) to empirically validate the new rule before opening a remote PR:
+> *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` to benchmark this candidate rule against baseline on the test prompt: '[test prompt]'?"*
+
+### Step 3: Dual Subagent Benchmark & Scorecard
+- If approved, invoke [XMC Trajectory Comparison](../xmc_trajectory_comparison/SKILL.md).
+- The benchmark runs dual subagents (Baseline vs. Candidate on clean worktrees), compares trajectories via `tools/compare_trajectories.py`, and generates the benchmark artifact `/tmp/benchmark_report_<branch>.md`.
+
+### Step 4: Draft PR Creation with Auto-Embedded Benchmark
 1. **Isolated Subagent Workspace (Preferred)**:
-   - If subagent execution with workspace isolation is supported (`Workspace: "branch"` or `"share"`), launch a worker subagent to handle PR creation.
+   - Launch a worker subagent with `Workspace: "branch"`.
    - **Clean Head Checkout**: The subagent MUST start by fetching and creating its dedicated branch directly from clean `origin/main` (e.g., `git fetch origin && git checkout -b docs/rules-update-... origin/main`). This ensures the reflection PR contains strictly rule/tooling enhancements and never mixes scope with the parent agent's active feature branch.
-   - The subagent commits `.agents/` or `tools/` enhancements, pushes to remote, and opens a Draft PR (`gh pr create --draft`).
+   - Follow [XMC Create PR](../xmc_create_pr/SKILL.md): `xmc_create_pr` auto-detects `/tmp/benchmark_report_<branch>.md` and embeds the empirical A/B benchmark scorecard into `pr_body.md` under `🧪 Trajectory & Outcome Benchmark Results`.
+   - Obtain user confirmation and open a Draft PR (`gh pr create --draft`).
    - The primary agent's active worktree remains 100% untouched and safe from branch switching conflicts.
 
 2. **Single-Workspace Fallback (Safeguard)**:
