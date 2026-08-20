@@ -97,8 +97,7 @@ func (v *Version) Compare(other *Version) int {
 	if other == nil {
 		return 1
 	}
-	cmp, _ := Compare(v.String(), other.String())
-	return cmp
+	return semver.Compare(versionPrefix+v.String(), versionPrefix+other.String())
 }
 
 // Equal returns true if the two versions have identical precedence.
@@ -122,7 +121,7 @@ func (v *Version) String() string {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch))
+	_, _ = fmt.Fprintf(&sb, "%d.%d.%d", v.Major, v.Minor, v.Patch)
 	if len(v.PreRelease) > 0 {
 		sb.WriteString(prereleaseDelimiter)
 		sb.WriteString(strings.Join(v.PreRelease, segmentDelimiter))
