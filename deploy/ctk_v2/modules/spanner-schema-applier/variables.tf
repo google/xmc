@@ -39,3 +39,8 @@ variable "db_type" {
   description = "Database type (e.g. ess or xid)"
 }
 
+variable "depends_on_anchor" {
+  type        = any
+  default     = null
+  description = "Point this at another module's output to order this module after it. The value is never read, but the resource depends on it, which is what builds the graph edge."
+}

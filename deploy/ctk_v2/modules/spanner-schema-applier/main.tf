@@ -15,6 +15,8 @@
  */
 
 resource "null_resource" "apply_schema" {
+  depends_on = [var.depends_on_anchor]
+
   triggers = {
     schema_hash   = filesha256(var.schema_file)
     instance_name = var.instance_name
