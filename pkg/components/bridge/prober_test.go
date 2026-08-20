@@ -843,3 +843,47 @@ func TestDetectStatus_ConditionWithoutMessage(t *testing.T) {
 		t.Errorf("Message = %q, want %q", res.Message, `Expected ready value "True", got "False"`)
 	}
 }
+
+func TestDetectStatus_CustomConditionMessageExtraction(t *testing.T) {
+	scheme := runtime.NewScheme()
+	obj := newTestUnstructured(
+		"custom.io/v1",
+		"CustomService",
+		"default",
+		"svc-1",
+		1,
+		map[string]any{
+			"conditions": []any{
+				map[string]any{
+					"type":    "Available",
+					"status":  "False",
+					"message": "Custom service dependency unavailable",
+				},
+			},
+		},
+	)
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme, obj)
+	p := New(dynClient)
+
+	ref := WrapperRef{
+		Group:              "custom.io",
+		Version:            "v1",
+		Kind:               "CustomService",
+		Name:               "svc-1",
+		Namespace:          "default",
+		ReadyConditionPath: `$.status.conditions[?(@.type=="Available")].status`,
+		ExpectedReadyValue: "True",
+	}
+
+	res, err := p.DetectStatus(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("DetectStatus unexpected error: %v", err)
+	}
+	if res.Ready {
+		t.Errorf("Expected Ready = false")
+	}
+	if res.Message != "Custom service dependency unavailable" {
+		t.Errorf("Message = %q, want %q", res.Message, "Custom service dependency unavailable")
+	}
+}

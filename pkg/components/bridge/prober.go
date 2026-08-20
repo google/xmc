@@ -339,25 +339,54 @@ func (p *Prober) evaluateReadiness(obj *unstructured.Unstructured, path, expecte
 	}
 
 	if val == "" {
-		if path == "" {
-			phase, found, _ := unstructured.NestedString(obj.Object, "status", "phase")
-			if found && (strings.EqualFold(phase, "Running") || strings.EqualFold(phase, "Ready") || strings.EqualFold(phase, "Active")) {
-				return true, fmt.Sprintf("Phase is %s", phase), nil
-			}
-		}
-		return false, "Readiness status not reported", nil
+		return p.fallbackPhaseReadiness(obj, path)
 	}
 
 	if strings.EqualFold(strings.TrimSpace(val), strings.TrimSpace(expected)) {
 		return true, "Readiness condition satisfied", nil
 	}
 
-	condMsg, _ := EvaluateJSONPath(obj.Object, "{.status.conditions[?(@.type==\"Ready\")].message}")
-	if condMsg != "" {
-		return false, condMsg, nil
+	return false, p.extractConditionFailureMessage(obj, path, expected, val), nil
+}
+
+func (p *Prober) fallbackPhaseReadiness(obj *unstructured.Unstructured, path string) (bool, string, error) {
+	if path == "" {
+		phase, found, _ := unstructured.NestedString(obj.Object, "status", "phase")
+		if found && (strings.EqualFold(phase, "Running") || strings.EqualFold(phase, "Ready") || strings.EqualFold(phase, "Active")) {
+			return true, fmt.Sprintf("Phase is %s", phase), nil
+		}
+	}
+	return false, "Readiness status not reported", nil
+}
+
+func deriveSiblingMessagePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	trimmed := strings.TrimSuffix(strings.TrimSpace(path), "}")
+	const statusSuffix = ".status"
+	if !strings.HasSuffix(trimmed, statusSuffix) {
+		return ""
+	}
+	msgPath := trimmed[:len(trimmed)-len(statusSuffix)] + ".message"
+	if strings.HasSuffix(strings.TrimSpace(path), "}") {
+		msgPath += "}"
+	}
+	return msgPath
+}
+
+func (p *Prober) extractConditionFailureMessage(obj *unstructured.Unstructured, path, expected, val string) string {
+	if msgPath := deriveSiblingMessagePath(path); msgPath != "" {
+		if msg, err := EvaluateJSONPath(obj.Object, msgPath); err == nil && msg != "" {
+			return msg
+		}
 	}
 
-	return false, fmt.Sprintf("Expected ready value %q, got %q", expected, val), nil
+	if condMsg, _ := EvaluateJSONPath(obj.Object, "{.status.conditions[?(@.type==\"Ready\")].message}"); condMsg != "" {
+		return condMsg
+	}
+
+	return fmt.Sprintf("Expected ready value %q, got %q", expected, val)
 }
 
 func (p *Prober) extractEndpoint(obj *unstructured.Unstructured, path string) (string, error) {
