@@ -13,4 +13,4 @@
 -- limitations under the License.
 
 ALTER TABLE Charts ADD COLUMN Description STRING(MAX);
-ALTER TABLE Charts ADD COLUMN Wid INT64 NOT NULL DEFAULT (0);
+ALTER TABLE Charts ADD COLUMN Wid INT64 NOT NULL;
