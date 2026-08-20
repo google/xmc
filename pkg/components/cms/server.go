@@ -43,10 +43,33 @@ func (s *Server) Store() store.Store {
 	return s.store
 }
 
+// validateComponentName validates and returns the canonical component name.
+func validateComponentName(name string) (string, error) {
+	canonical := store.CanonicalComponentName(name)
+	if canonical == "" {
+		return "", status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !store.IsValidComponentName(canonical) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	return canonical, nil
+}
+
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	if req == nil || req.GetName() == "" || req.GetSpec() == nil {
-		return nil, status.Error(codes.InvalidArgument, "component name and spec are required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
+	}
+	if req.GetSpec() == nil {
+		return nil, status.Error(codes.InvalidArgument, "component spec is required")
+	}
+	if req.GetSpec().GetVersion() != "" {
+		if _, err := store.Parse(req.GetSpec().GetVersion()); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", req.GetSpec().GetVersion(), err)
+		}
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -56,8 +79,11 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -67,8 +93,11 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -78,8 +107,11 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -89,8 +121,11 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -100,8 +135,11 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -111,8 +149,16 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if _, err := validateComponentName(req.GetName()); err != nil {
+		return nil, err
+	}
+	if req.GetMinimumVersion() != "" {
+		if _, err := store.Parse(req.GetMinimumVersion()); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", req.GetMinimumVersion(), err)
+		}
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
@@ -122,6 +168,9 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
