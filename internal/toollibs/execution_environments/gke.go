@@ -201,7 +201,15 @@ func applyGPUResources(gpuRes *epb.GpuResources, reqs *corev1.ResourceRequiremen
 	}
 
 	count := gpuRes.GetCount()
+	count := gpuRes.GetCount()
+	if count < 1 {
+		// Validation rejects this, so it is reached only by a caller that skipped
+		// it. One card's worth is a safer floor than none.
+		count = 1
+	}
 	reqs.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", count))
+	reqs.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", count*defaultCPUMillicoresPerGPU))
+	reqs.Requests[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", count*defaultMemoryBytesPerGPU))
 	if count < 1 {
 		// Validation rejects this, so it is reached only by a caller that skipped
 		// it. One card's worth is a safer floor than none.
