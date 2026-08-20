@@ -962,6 +962,7 @@ func TestParseChartName(t *testing.T) {
 			chartName: "experiments/1001/charts/chart-1",
 			want: ParsedChartName{
 				XID:     1001,
+				WID:     0,
 				ChartID: "chart-1",
 				Parent:  "experiments/1001",
 			},
