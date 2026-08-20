@@ -131,6 +131,17 @@ describe('DashboardsPage', () => {
     expect(pageComponent.charts()[0].plots).toEqual([]);
   });
 
+  it('should not modify charts when AddExperimentDialog is cancelled', () => {
+    const pageComponent = bootstrap(DashboardsPage);
+    const mockDialogRef = {
+      afterClosed: () => of(undefined),
+    } as MatDialogRef<AddExperimentDialogComponent>;
+    spyOn(TestBed.inject(MatDialog), 'open').and.returnValue(mockDialogRef);
+
+    pageComponent.onOpenAddExperiment();
+    expect(pageComponent.charts().length).toBe(3);
+  });
+
   it('should refresh dashboard charts when clicking refresh button', async () => {
     bootstrap(DashboardsPage);
     const harness = await getHarness(DashboardsPageHarness);
@@ -154,6 +165,15 @@ describe('DashboardsPage', () => {
     bootstrap(DashboardsPage);
     const harness = await getHarness(DashboardsPageHarness);
     expect(await harness.isNotFoundVisible()).toBeTrue();
+  });
+
+  it('should display not-found state when dashboard ID does not exist', () => {
+    state.dashboardServiceSpy.getDashboard.and.returnValue(
+      throwError(() => new Error('Not found')),
+    );
+    const comp = bootstrap(DashboardsPage);
+    comp.loadDashboard('dashboards/unknown_id');
+    expect(comp.dashboardNotFound()).toBeTrue();
   });
 
   it('should remove chart from comparison', () => {
