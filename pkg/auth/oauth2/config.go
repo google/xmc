@@ -15,7 +15,6 @@
 package oauth2
 
 import (
-	"cmp"
 	"fmt"
 	"log"
 	"net/url"
@@ -231,7 +230,10 @@ func getEnvOrFile(key, defaultVal string) (string, error) {
 }
 
 func getEnv(key, defaultVal string) string {
-	return cmp.Or(os.Getenv(key), defaultVal)
+	if val, ok := os.LookupEnv(key); ok {
+		return val
+	}
+	return defaultVal
 }
 
 func getEnvBool(key string, defaultVal bool) bool {

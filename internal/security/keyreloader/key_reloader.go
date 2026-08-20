@@ -315,7 +315,7 @@ func convertToVerifier(block *pem.Block, recentCerts []x509.Certificate, maxRece
 
 func validCerts(certs []x509.Certificate) []x509.Certificate {
 	now := time.Now()
-	return slices.DeleteFunc(certs, func(cert x509.Certificate) bool {
+	return slices.DeleteFunc(slices.Clone(certs), func(cert x509.Certificate) bool {
 		return !now.After(cert.NotBefore) || !now.Before(cert.NotAfter)
 	})
 }

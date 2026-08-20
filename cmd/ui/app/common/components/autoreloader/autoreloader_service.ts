@@ -98,6 +98,9 @@ export class AutoReloadService {
   }
 
   private getVisibilityObservable(): Observable<boolean> {
+    if (typeof this.document?.addEventListener !== 'function') {
+      return new BehaviorSubject(true);
+    }
     return fromEvent(this.document, 'visibilitychange').pipe(
       startWith(null),
       map(() => !this.document.hidden),

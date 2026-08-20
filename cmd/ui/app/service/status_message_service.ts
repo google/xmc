@@ -34,7 +34,7 @@ export class StatusMessageService {
     const { parent, pageSize, pageToken, filter, orderBy } = request;
     const params = new HttpParams({
       fromObject: Object.fromEntries(
-        Object.entries({ pageSize, pageToken, filter, orderBy }).filter(([_, v]) => v != null),
+        Object.entries({ pageSize, pageToken, filter, orderBy }).filter(([_, v]) => Boolean(v)),
       ),
     });
 

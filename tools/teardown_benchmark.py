@@ -67,9 +67,9 @@ def teardown_resources(
 
     # 3. Cleanup Scratch Files
     for file_path in temp_files:
-        with contextlib.suppress(OSError):
+        with contextlib.suppress(FileNotFoundError, OSError):
             p = Path(file_path)
-            p.unlink(missing_ok=True)
+            p.unlink()
             cleaned_files.append(file_path)
 
     return {

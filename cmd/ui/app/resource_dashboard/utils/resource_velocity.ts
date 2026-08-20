@@ -34,6 +34,7 @@ export const VELOCITY_PERIOD_OPTIONS: readonly VelocityPeriodOption[] = [
 
 const rateFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
+  useGrouping: false,
 });
 
 /**
