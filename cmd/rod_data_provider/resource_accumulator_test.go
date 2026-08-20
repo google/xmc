@@ -22,7 +22,6 @@ import (
 
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/common/tputopology"
 )
 
 func TestExtractRequestedResources(t *testing.T) {
@@ -309,31 +308,5 @@ func buildWorkUnitWithJobSet(jobs []*essmsgpb.KubernetesJob) *essmsgpb.WorkUnit 
 				},
 			},
 		},
-	}
-}
-
-func TestParseTotalChips(t *testing.T) {
-	tests := []struct {
-		topology string
-		want     int64
-	}{
-		{"", 1},
-		{"2x2", 4},
-		{"2x2x4", 16},
-		{"2X2X4", 16},
-		{" 2x2x4 ", 16},
-		{"  4X4  ", 16},
-		{"8x8", 64},
-		{"2x2xX", 1},
-		{"2x-2x4", 1},
-		{"invalid", 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.topology, func(t *testing.T) {
-			if got := tputopology.ParseTotalChips(tt.topology); got != tt.want {
-				t.Errorf("tputopology.ParseTotalChips(%q) = %d, want %d", tt.topology, got, tt.want)
-			}
-		})
 	}
 }

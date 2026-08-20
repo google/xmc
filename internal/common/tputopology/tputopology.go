@@ -31,48 +31,57 @@ var ErrInvalidTopology = errors.New("invalid TPU topology")
 func Parse(topologyOrSlice string) (int64, error) {
 	s := strings.TrimSpace(topologyOrSlice)
 	if s == "" {
-		return 1, fmt.Errorf("%w: empty topology string", ErrInvalidTopology)
+		return 0, fmt.Errorf("%w: empty topology string", ErrInvalidTopology)
 	}
 
 	// Remove suffix modifier if present (e.g., "2x2x4:2" -> "2x2x4")
 	if idx := strings.Index(s, ":"); idx != -1 {
 		s = strings.TrimSpace(s[:idx])
 		if s == "" {
-			return 1, fmt.Errorf("%w: empty topology string before colon", ErrInvalidTopology)
+			return 0, fmt.Errorf("%w: empty topology string before colon", ErrInvalidTopology)
 		}
 	}
 
 	sLower := strings.ToLower(s)
 
-	// Check for topology format with 'x' (e.g., "2x2x4", "4x4")
+	// Check for topology format with 'x' (e.g., "2x2x4", "4x4").
+	// Only treat as 'x' dimension topology if every split component is a valid integer.
 	if strings.Contains(sLower, "x") {
 		dims := strings.Split(sLower, "x")
-		totalChips := int64(1)
+		allNumeric := true
+		parsedDims := make([]int64, 0, len(dims))
 		for _, d := range dims {
 			v, err := strconv.ParseInt(strings.TrimSpace(d), 10, 64)
 			if err != nil {
-				return 1, fmt.Errorf("%w: invalid dimension %q: %w", ErrInvalidTopology, d, err)
+				allNumeric = false
+				break
 			}
-			if v <= 0 {
-				return 1, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
-			}
-			if totalChips > math.MaxInt64/v {
-				return 1, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
-			}
-			totalChips *= v
+			parsedDims = append(parsedDims, v)
 		}
-		return totalChips, nil
+		if allNumeric {
+			totalChips := int64(1)
+			for _, v := range parsedDims {
+				if v <= 0 {
+					return 0, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
+				}
+				if totalChips > math.MaxInt64/v {
+					return 0, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
+				}
+				totalChips *= v
+			}
+			return totalChips, nil
+		}
 	}
 
 	// Check if it's a numeric string (e.g., "8")
 	if v, err := strconv.ParseInt(sLower, 10, 64); err == nil {
 		if v <= 0 {
-			return 1, fmt.Errorf("%w: numeric value must be positive, got %d", ErrInvalidTopology, v)
+			return 0, fmt.Errorf("%w: numeric value must be positive, got %d", ErrInvalidTopology, v)
 		}
 		return v, nil
 	}
 
-	// Check for slice names ending with a number after a hyphen (e.g., "v5p-8", "v4-16")
+	// Check for slice names ending with a number after a hyphen (e.g., "v5p-8", "v4-16", "flex-16")
 	if idx := strings.LastIndex(sLower, "-"); idx != -1 {
 		numStr := strings.TrimSpace(sLower[idx+1:])
 		if v, err := strconv.ParseInt(numStr, 10, 64); err == nil && v > 0 {
@@ -80,7 +89,7 @@ func Parse(topologyOrSlice string) (int64, error) {
 		}
 	}
 
-	return 1, fmt.Errorf("%w: unable to parse %q", ErrInvalidTopology, topologyOrSlice)
+	return 0, fmt.Errorf("%w: unable to parse %q", ErrInvalidTopology, topologyOrSlice)
 }
 
 // ParseTotalChips returns the total chip count for a topology or slice string,

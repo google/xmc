@@ -1,0 +1,27 @@
+mode: set
+xmanager_cloud/internal/common/tputopology/tputopology.go:31.51,33.13 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:33.13,35.3 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:38.2,38.45 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:38.45,40.14 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:40.14,42.4 1 0
+xmanager_cloud/internal/common/tputopology/tputopology.go:45.2,48.35 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:48.35,51.26 3 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:51.26,53.18 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:53.18,55.5 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:56.4,56.14 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:56.14,58.5 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:59.4,59.36 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:59.36,61.5 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:62.4,62.19 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:64.3,64.25 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:68.2,68.60 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:68.60,69.13 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:69.13,71.4 1 0
+xmanager_cloud/internal/common/tputopology/tputopology.go:72.3,72.16 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:76.2,76.54 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:76.54,78.70 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:78.70,80.4 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:83.2,83.85 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:88.52,90.16 2 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:90.16,92.3 1 1
+xmanager_cloud/internal/common/tputopology/tputopology.go:93.2,93.14 1 1
