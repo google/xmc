@@ -168,6 +168,7 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, e
 		return
 	}
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
+	// TODO(b/548436183): Initialize with concrete store implementation (MemoryStore in Task 2.5 / SpannerStore in Task 2.8).
 	var cmsStore store.Store
 	cmsServer := cms.NewServer(cmsStore)
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)

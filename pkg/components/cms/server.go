@@ -111,8 +111,8 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request is required")
+	if req == nil || req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "component name is required")
 	}
 	if s.store == nil {
 		return nil, status.Error(codes.Unavailable, "component store is uninitialized")

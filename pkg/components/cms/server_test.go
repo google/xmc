@@ -158,6 +158,9 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 	if _, err := server.ValidateComponentRequirement(ctx, nil); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("ValidateComponentRequirement(nil) got code %v, want InvalidArgument", status.Code(err))
 	}
+	if _, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: ""}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ValidateComponentRequirement(empty name) got code %v, want InvalidArgument", status.Code(err))
+	}
 
 	// 8. GetPlatformHealth
 	if _, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{}); status.Code(err) != codes.Unimplemented {
