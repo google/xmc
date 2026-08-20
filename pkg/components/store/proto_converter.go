@@ -34,6 +34,9 @@ const (
 func CanonicalComponentName(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.Trim(name, "/")
+	if name == "components" {
+		return ""
+	}
 	name = strings.TrimPrefix(name, componentPrefix)
 	name = strings.Trim(name, "/")
 	return strings.TrimSpace(name)
@@ -84,9 +87,19 @@ func ToProto(record *ComponentRecord) *componentspb.Component {
 	}
 	if record.Spec != nil {
 		comp.Spec = proto.Clone(record.Spec).(*componentspb.ComponentSpec)
+		comp.Spec.Generation = record.Generation
 	}
 	if record.Status != nil {
 		comp.Status = proto.Clone(record.Status).(*componentspb.ComponentAccessStatus)
+	}
+	if comp.Status != nil || record.State != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED || record.ObservedGeneration != nil {
+		if comp.Status == nil {
+			comp.Status = &componentspb.ComponentAccessStatus{}
+		}
+		comp.Status.State = record.State
+		if record.ObservedGeneration != nil {
+			comp.Status.ObservedGeneration = *record.ObservedGeneration
+		}
 	}
 	if !record.CreateTime.IsZero() {
 		comp.CreateTime = timestamppb.New(record.CreateTime)

@@ -68,6 +68,16 @@ func TestCanonicalComponentName(t *testing.T) {
 			input: "///",
 			want:  "",
 		},
+		{
+			name:  "collection name only",
+			input: "components",
+			want:  "",
+		},
+		{
+			name:  "collection name with trailing slash",
+			input: "components/",
+			want:  "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -244,6 +254,31 @@ func TestToProto(t *testing.T) {
 		}
 		if got.GetDeleteTime() != nil {
 			t.Errorf("ToProto().GetDeleteTime() = %v, want nil", got.GetDeleteTime())
+		}
+	})
+
+	t.Run("top-level fields sync to spec and status", func(t *testing.T) {
+		obs := int64(5)
+		record := &store.ComponentRecord{
+			Name:               "synced-comp",
+			Generation:         5,
+			State:              componentspb.ComponentState_COMPONENT_STATE_DISABLING,
+			ObservedGeneration: &obs,
+			Spec: &componentspb.ComponentSpec{
+				Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Generation: 1, // should be overwritten by record.Generation
+			},
+		}
+
+		got := store.ToProto(record)
+		if got.GetSpec().GetGeneration() != 5 {
+			t.Errorf("ToProto().Spec.Generation = %d, want 5", got.GetSpec().GetGeneration())
+		}
+		if got.GetStatus().GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+			t.Errorf("ToProto().Status.State = %v, want DISABLING", got.GetStatus().GetState())
+		}
+		if got.GetStatus().GetObservedGeneration() != 5 {
+			t.Errorf("ToProto().Status.ObservedGeneration = %d, want 5", got.GetStatus().GetObservedGeneration())
 		}
 	})
 }
