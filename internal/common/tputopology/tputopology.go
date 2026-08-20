@@ -17,6 +17,7 @@ package tputopology
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -54,6 +55,9 @@ func Parse(topologyOrSlice string) (int64, error) {
 			}
 			if v <= 0 {
 				return 1, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
+			}
+			if totalChips > math.MaxInt64/v {
+				return 1, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
 			}
 			totalChips *= v
 		}

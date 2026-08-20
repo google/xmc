@@ -44,6 +44,7 @@ func TestParseTotalChips(t *testing.T) {
 		{name: "zero_dimension", input: "2x0", want: 1, wantErr: true},
 		{name: "negative_dimension", input: "2x-2", want: 1, wantErr: true},
 		{name: "invalid_dimension", input: "2x2xX", want: 1, wantErr: true},
+		{name: "multiplication_overflow", input: "9223372036854775807x2", want: 1, wantErr: true},
 	}
 
 	for _, tt := range tests {
