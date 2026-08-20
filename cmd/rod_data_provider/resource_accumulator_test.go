@@ -22,6 +22,7 @@ import (
 
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/toollibs/tputopology"
 )
 
 func TestExtractRequestedResources(t *testing.T) {
@@ -330,8 +331,8 @@ func TestParseTotalChips(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.topology, func(t *testing.T) {
-			if got := parseTotalChips(tt.topology); got != tt.want {
-				t.Errorf("parseTotalChips(%q) = %d, want %d", tt.topology, got, tt.want)
+			if got := tputopology.ParseTotalChips(tt.topology); got != tt.want {
+				t.Errorf("tputopology.ParseTotalChips(%q) = %d, want %d", tt.topology, got, tt.want)
 			}
 		})
 	}
