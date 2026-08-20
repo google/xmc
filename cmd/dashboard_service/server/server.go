@@ -229,6 +229,9 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
 	chart, err := s.repo.GetChart(ctx, name)
 	if err == nil {
+		if chart == nil {
+			return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", name)
+		}
 		if xid := s.resolveChartXID(chart, name); xid > 0 {
 			chart.Xid = xid
 		}

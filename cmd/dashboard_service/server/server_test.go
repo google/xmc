@@ -189,6 +189,22 @@ func TestGetChart(t *testing.T) {
 		}
 	})
 
+	t.Run("returns internal error when repository returns nil chart without error", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+		ctx := context.Background()
+
+		req := &spb.GetChartRequest{Name: "dashboards/123/charts/456"}
+		_, err := s.GetChart(ctx, req)
+		if status.Code(err) != codes.Internal {
+			t.Errorf("GetChart(nil chart) code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
 	t.Run("synthesizes default chart when experiment chart is not in repository", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
@@ -371,6 +387,19 @@ func TestGetChartData(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return nil, status.Error(codes.Unknown, "database failure")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
+	t.Run("chart repo returning nil chart returns Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, nil
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
