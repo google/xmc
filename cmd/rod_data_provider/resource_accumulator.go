@@ -36,13 +36,20 @@ type resourceAccumulator struct {
 }
 
 func (a *resourceAccumulator) add(resType string, count float64) {
-	if count <= 0 {
+	if count <= 0 || resType == "" {
 		return
 	}
-	if _, exists := a.totals[resType]; !exists {
-		a.order = append(a.order, resType)
+	matchedKey := resType
+	for existingKey := range a.totals {
+		if strings.EqualFold(existingKey, resType) {
+			matchedKey = existingKey
+			break
+		}
 	}
-	a.totals[resType] += count
+	if _, exists := a.totals[matchedKey]; !exists {
+		a.order = append(a.order, matchedKey)
+	}
+	a.totals[matchedKey] += count
 }
 
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources
@@ -99,7 +106,7 @@ func accumulateCpuResource(cpu *essmsgpb.CpuResources, acc *resourceAccumulator)
 
 func accumulateGpuResource(gpu *essmsgpb.GpuResources, acc *resourceAccumulator) {
 	resType := gpu.GetType()
-	if resType == "" {
+	if resType == "" || strings.EqualFold(resType, resourceTypeGPU) {
 		resType = resourceTypeGPU
 	}
 	acc.add(resType, float64(gpu.GetCount()))
@@ -107,7 +114,7 @@ func accumulateGpuResource(gpu *essmsgpb.GpuResources, acc *resourceAccumulator)
 
 func accumulateTpuResource(tpu *essmsgpb.TpuResources, acc *resourceAccumulator) {
 	resType := tpu.GetType()
-	if resType == "" {
+	if resType == "" || strings.EqualFold(resType, resourceTypeTPU) {
 		resType = resourceTypeTPU
 	}
 	chips := parseTotalChips(tpu.GetTopology())
