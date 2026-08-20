@@ -22,6 +22,8 @@ import { Dashboard, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/d
 
 import { CreateDashboardDialogComponent, getDefaultPlotSpecs } from './create_dashboard_dialog';
 
+const ADD_COMPARISON_BUTTON_SELECTOR = '.add-comp-btn';
+
 describe('CreateDashboardDialogComponent', () => {
   let fixture: ComponentFixture<CreateDashboardDialogComponent>;
   let component: CreateDashboardDialogComponent;
@@ -128,6 +130,28 @@ describe('CreateDashboardDialogComponent', () => {
 
     component.removeComparison(0);
     expect(component.comparisons().length).toBe(0);
+  });
+
+  it('should render "Add Experiment" on the comparison button and add comparison when clicked', () => {
+    const addButton = fixture.nativeElement.querySelector(
+      ADD_COMPARISON_BUTTON_SELECTOR,
+    ) as HTMLButtonElement;
+    expect(addButton).toBeTruthy();
+    expect(addButton.textContent?.trim()).toContain('Add Experiment');
+
+    component.newComparisonForm.patchValue({
+      xid: 234911123,
+      wid: 1,
+      title: 'VCC tuned_v1',
+    });
+    fixture.detectChanges();
+
+    expect(addButton.disabled).toBeFalse();
+    addButton.click();
+    fixture.detectChanges();
+
+    expect(component.comparisons().length).toBe(1);
+    expect(component.comparisons()[0].xid).toBe(234911123);
   });
 
   it('should not add comparison experiment when form is invalid or WID is null', () => {

@@ -123,11 +123,7 @@ limitations under the License.
                     [class.kpi-chip]="plot.type === PlotType.SUMMARY_BOX"
                     [class.curve-chip]="plot.type === PlotType.SCATTER"
                   >
-                    {{
-                      plot.type === PlotType.SUMMARY_BOX
-                        ? 'Summary KPI'
-                        : 'Curve Plot'
-                    }}
+                    {{ plot.type === PlotType.SUMMARY_BOX ? 'Summary KPI' : 'Curve Plot' }}
                   </span>
                   <button
                     mat-icon-button
@@ -193,7 +189,7 @@ limitations under the License.
 
       <mat-divider class="section-divider" />
 
-      <!-- Section 4: (Optional) Comparison Runs -->
+      <!-- Section 4: (Optional) Comparison Experiments -->
       <div class="section-title">4. Add comparison experiments (Optional)</div>
       <p class="section-hint">
         You can attach comparison experiments now or add them later directly on the dashboard.
@@ -253,7 +249,7 @@ limitations under the License.
             (click)="addComparison()"
           >
             <mat-icon>add</mat-icon>
-            <span>Add Run</span>
+            <span>Add Experiment</span>
           </button>
         </div>
       </div>
