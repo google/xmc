@@ -85,8 +85,8 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
-    def _provision_and_migrate_db(self, db_name: str, mig_dir: str) -> None:
-        """Creates a single Spanner database and applies its schema migrations."""
+    def _create_database(self, db_name: str) -> None:
+        """Creates a single Spanner database."""
         logger.info("Creating Spanner database %s...", db_name)
         run_cmd(
             [
@@ -99,6 +99,9 @@ class SpannerManager:
                 f"--project={self.cfg.project_id}",
             ]
         )
+
+    def _apply_migrations(self, db_name: str, mig_dir: str) -> None:
+        """Applies schema migrations for a database."""
         logger.info("Applying migrations for %s (%s)...", db_name, mig_dir)
         for attempt in range(1, 4):
             try:
@@ -128,20 +131,22 @@ class SpannerManager:
                 time.sleep(5)
 
     def setup(self) -> None:
-        """Creates ephemeral databases and runs migrations concurrently."""
+        """Creates ephemeral databases and applies migrations."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
         targets = [
             (self.cfg.ess_db, "ess"),
             (self.cfg.xid_db, "xid"),
         ]
+        # Provision both databases concurrently via gcloud
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
-            futures = [
-                executor.submit(self._provision_and_migrate_db, db_name, mig_dir)
-                for db_name, mig_dir in targets
-            ]
+            futures = [executor.submit(self._create_database, db_name) for db_name, _ in targets]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
+
+        # Apply migrations sequentially to prevent Bazel server output base lock contention
+        for db_name, mig_dir in targets:
+            self._apply_migrations(db_name, mig_dir)
 
     def _drop_database(self, db_name: str) -> None:
         """Drops a single Spanner database safely."""
