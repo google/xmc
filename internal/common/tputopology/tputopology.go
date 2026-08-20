@@ -44,11 +44,11 @@ func Parse(topologyOrSlice string) (int64, error) {
 
 	sLower := strings.ToLower(s)
 
-	if chips, ok, err := parseXDimensions(sLower); ok {
-		if err != nil {
-			return 0, err
+	if res := parseXDimensions(sLower); res.matched {
+		if res.err != nil {
+			return 0, res.err
 		}
-		return chips, nil
+		return res.chips, nil
 	}
 
 	// Check if it's a numeric string (e.g., "8")
@@ -70,16 +70,22 @@ func Parse(topologyOrSlice string) (int64, error) {
 	return 0, fmt.Errorf("%w: unable to parse %q", ErrInvalidTopology, topologyOrSlice)
 }
 
-func parseXDimensions(s string) (int64, bool, error) {
+type parseResult struct {
+	chips   int64
+	matched bool
+	err     error
+}
+
+func parseXDimensions(s string) parseResult {
 	if !strings.Contains(s, "x") {
-		return 0, false, nil
+		return parseResult{matched: false}
 	}
 	dims := strings.Split(s, "x")
 	parsedDims := make([]int64, 0, len(dims))
 	for _, d := range dims {
 		v, err := strconv.ParseInt(strings.TrimSpace(d), 10, 64)
 		if err != nil {
-			return 0, false, nil
+			return parseResult{matched: false}
 		}
 		parsedDims = append(parsedDims, v)
 	}
@@ -87,14 +93,14 @@ func parseXDimensions(s string) (int64, bool, error) {
 	totalChips := int64(1)
 	for _, v := range parsedDims {
 		if v <= 0 {
-			return 0, true, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
+			return parseResult{matched: true, err: fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)}
 		}
 		if totalChips > math.MaxInt64/v {
-			return 0, true, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
+			return parseResult{matched: true, err: fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)}
 		}
 		totalChips *= v
 	}
-	return totalChips, true, nil
+	return parseResult{chips: totalChips, matched: true}
 }
 
 // ParseTotalChips returns the total chip count for a topology or slice string,
