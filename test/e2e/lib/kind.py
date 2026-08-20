@@ -64,6 +64,7 @@ class KindClusterManager:
             )
 
         self._create_cluster()
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
         adc_file = self._resolve_adc_file()
         self._create_secrets(adc_file)
         self._generate_tls_secret()
@@ -95,6 +96,7 @@ class KindClusterManager:
         )
         if not os.path.isfile(adc_file):
             if "SPANNER_EMULATOR_HOST" in os.environ:
+                os.makedirs(self.cfg.temp_dir, exist_ok=True)
                 dummy_path = os.path.join(self.cfg.temp_dir, "dummy-credentials.json")
                 if not os.path.exists(dummy_path):
                     with open(dummy_path, "w", encoding="utf-8") as f:
@@ -139,6 +141,7 @@ class KindClusterManager:
 
     def _generate_tls_secret(self) -> None:
         """Generates self-signed TLS certificates and creates validation-secret."""
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
         tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
         tls_crt_path = os.path.join(self.cfg.temp_dir, "e2e-validation.crt")
         if not os.path.exists(tls_key_path):
