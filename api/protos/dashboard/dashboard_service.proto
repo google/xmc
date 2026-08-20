@@ -77,6 +77,9 @@ service DashboardService {
     option (google.api.http) = {
       get: "/v1/{name=experiments/*/workUnits/*/charts/*}"
       additional_bindings {
+        get: "/v1/{name=experiments/*/charts/*}"
+      }
+      additional_bindings {
         get: "/v1/{name=charts/*}"
       }
       additional_bindings {
@@ -89,6 +92,9 @@ service DashboardService {
   rpc GetChartData(GetChartDataRequest) returns (ChartData) {
     option (google.api.http) = {
       get: "/v1/{name=experiments/*/workUnits/*/charts/*}:getData"
+      additional_bindings {
+        get: "/v1/{name=experiments/*/charts/*}:getData"
+      }
       additional_bindings {
         get: "/v1/{name=charts/*}:getData"
       }

@@ -393,12 +393,12 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "invalid_request_experiment_chart_without_wid",
+			name: "valid_request_experiment_chart",
 			req: &spb.GetChartDataRequest{
 				Name:             "experiments/1001/charts/chart-1",
 				ChartWidthPixels: 800,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: nil,
 		},
 		{
 			name: "valid_request_work_unit_chart",
@@ -499,6 +499,13 @@ func TestValidateGetChartRequest(t *testing.T) {
 			name: "valid_request",
 			req: &spb.GetChartRequest{
 				Name: "dashboards/dash-1/charts/chart-1",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_experiment_chart_request",
+			req: &spb.GetChartRequest{
+				Name: "experiments/1001/charts/chart-1",
 			},
 			wantErr: nil,
 		},

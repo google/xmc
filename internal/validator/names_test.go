@@ -958,6 +958,16 @@ func TestParseChartName(t *testing.T) {
 		wantErr   error
 	}{
 		{
+			name:      "experiment_chart",
+			chartName: "experiments/1001/charts/chart-1",
+			want: ParsedChartName{
+				XID:     1001,
+				WID:     1,
+				ChartID: "chart-1",
+				Parent:  "experiments/1001",
+			},
+		},
+		{
 			name:      "work_unit_chart",
 			chartName: "experiments/1001/workUnits/2002/charts/chart-1",
 			want: ParsedChartName{

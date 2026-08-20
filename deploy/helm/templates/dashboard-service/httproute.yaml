@@ -29,6 +29,9 @@ spec:
         - path:
             type: PathPrefix
             value: /v1/dashboards
+        - path:
+            type: PathPrefix
+            value: /v1/charts
       backendRefs:
         - name: dashboard-service
           port: 8080
