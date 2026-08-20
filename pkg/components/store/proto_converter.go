@@ -16,7 +16,9 @@ package store
 
 import (
 	"fmt"
+	"maps"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -32,14 +34,11 @@ const (
 // CanonicalComponentName strips whitespace, leading/trailing slashes, and the AIP-122
 // "components/" resource prefix to return the canonical resource ID.
 func CanonicalComponentName(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.Trim(name, "/")
+	name = strings.Trim(strings.TrimSpace(name), "/")
 	if name == "components" {
 		return ""
 	}
-	name = strings.TrimPrefix(name, componentPrefix)
-	name = strings.Trim(name, "/")
-	return strings.TrimSpace(name)
+	return strings.Trim(strings.TrimPrefix(name, componentPrefix), "/")
 }
 
 // FullComponentName formats a canonical or relative name into AIP-122
@@ -81,9 +80,12 @@ func ToProto(record *ComponentRecord) *componentspb.Component {
 		return nil
 	}
 	comp := &componentspb.Component{
-		Name:   FullComponentName(record.Name),
-		Etag:   record.Etag,
-		Labels: copyLabels(record.Labels),
+		Name:       FullComponentName(record.Name),
+		Etag:       record.Etag,
+		Labels:     copyLabels(record.Labels),
+		CreateTime: toTimestamp(record.CreateTime),
+		UpdateTime: toTimestamp(record.UpdateTime),
+		DeleteTime: toTimestampPtr(record.DeleteTime),
 	}
 	if record.Spec != nil {
 		comp.Spec = proto.Clone(record.Spec).(*componentspb.ComponentSpec)
@@ -101,15 +103,6 @@ func ToProto(record *ComponentRecord) *componentspb.Component {
 			comp.Status.ObservedGeneration = *record.ObservedGeneration
 		}
 	}
-	if !record.CreateTime.IsZero() {
-		comp.CreateTime = timestamppb.New(record.CreateTime)
-	}
-	if !record.UpdateTime.IsZero() {
-		comp.UpdateTime = timestamppb.New(record.UpdateTime)
-	}
-	if record.DeleteTime != nil && !record.DeleteTime.IsZero() {
-		comp.DeleteTime = timestamppb.New(*record.DeleteTime)
-	}
 	return comp
 }
 
@@ -120,9 +113,12 @@ func FromProto(comp *componentspb.Component) *ComponentRecord {
 		return nil
 	}
 	rec := &ComponentRecord{
-		Name:   CanonicalComponentName(comp.GetName()),
-		Etag:   comp.GetEtag(),
-		Labels: copyLabels(comp.GetLabels()),
+		Name:       CanonicalComponentName(comp.GetName()),
+		Etag:       comp.GetEtag(),
+		Labels:     copyLabels(comp.GetLabels()),
+		CreateTime: fromTimestamp(comp.GetCreateTime()),
+		UpdateTime: fromTimestamp(comp.GetUpdateTime()),
+		DeleteTime: fromTimestampPtr(comp.GetDeleteTime()),
 	}
 	if comp.GetSpec() != nil {
 		rec.Spec = proto.Clone(comp.GetSpec()).(*componentspb.ComponentSpec)
@@ -134,27 +130,39 @@ func FromProto(comp *componentspb.Component) *ComponentRecord {
 		obsGen := comp.GetStatus().GetObservedGeneration()
 		rec.ObservedGeneration = &obsGen
 	}
-	if comp.GetCreateTime() != nil {
-		rec.CreateTime = comp.GetCreateTime().AsTime()
-	}
-	if comp.GetUpdateTime() != nil {
-		rec.UpdateTime = comp.GetUpdateTime().AsTime()
-	}
-	if comp.GetDeleteTime() != nil {
-		dt := comp.GetDeleteTime().AsTime()
-		rec.DeleteTime = &dt
-	}
 	return rec
 }
 
 // copyLabels creates an isolated shallow copy of a label map.
 func copyLabels(labels map[string]string) map[string]string {
-	if len(labels) == 0 {
+	return maps.Clone(labels)
+}
+
+func toTimestamp(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
 		return nil
 	}
-	result := make(map[string]string, len(labels))
-	for k, v := range labels {
-		result[k] = v
+	return timestamppb.New(t)
+}
+
+func toTimestampPtr(t *time.Time) *timestamppb.Timestamp {
+	if t == nil || t.IsZero() {
+		return nil
 	}
-	return result
+	return timestamppb.New(*t)
+}
+
+func fromTimestamp(ts *timestamppb.Timestamp) time.Time {
+	if ts == nil {
+		return time.Time{}
+	}
+	return ts.AsTime()
+}
+
+func fromTimestampPtr(ts *timestamppb.Timestamp) *time.Time {
+	if ts == nil {
+		return nil
+	}
+	t := ts.AsTime()
+	return &t
 }

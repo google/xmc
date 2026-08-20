@@ -55,19 +55,36 @@ func validateComponentName(name string) (string, error) {
 	return canonical, nil
 }
 
+// validateComponentRequest validates the component name format and verifies store initialization.
+func (s *Server) validateComponentRequest(name string) (string, error) {
+	canonical, err := validateComponentName(name)
+	if err != nil {
+		return "", err
+	}
+	if s.store == nil {
+		return "", status.Error(codes.Unavailable, "component store is uninitialized")
+	}
+	return canonical, nil
+}
+
+// checkStoreReady verifies that the component store is initialized.
+func (s *Server) checkStoreReady() error {
+	if s.store == nil {
+		return status.Error(codes.Unavailable, "component store is uninitialized")
+	}
+	return nil
+}
+
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
 	}
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
@@ -77,11 +94,8 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented")
 }
@@ -91,11 +105,8 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented")
 }
@@ -105,11 +116,8 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
 }
@@ -119,11 +127,8 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented")
 }
@@ -133,11 +138,8 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented")
 }
@@ -147,11 +149,8 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := validateComponentName(req.GetName()); err != nil {
+	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
 		return nil, err
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
 	}
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
 }
@@ -161,8 +160,8 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if err := s.checkStoreReady(); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented")
 }
