@@ -80,7 +80,8 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	canonicalName, err := s.validateComponentRequest(req.GetName())
+	if err != nil {
 		return nil, err
 	}
 	if req.GetSpec() == nil {
@@ -91,6 +92,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", req.GetSpec().GetVersion(), err)
 		}
 	}
+	_ = store.ExtractDependencies(req.GetSpec(), nil, canonicalName)
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
 
