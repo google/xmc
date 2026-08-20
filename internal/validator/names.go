@@ -322,7 +322,6 @@ func parse4PartChartName(parts []string) (ParsedChartName, bool, error) {
 		}
 		return ParsedChartName{
 			XID:     xid,
-			WID:     1,
 			ChartID: parts[3],
 			Parent:  fmt.Sprintf("experiments/%d", xid),
 		}, true, nil

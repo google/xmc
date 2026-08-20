@@ -242,7 +242,7 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 		return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
 	}
 	wid := parsed.WID
-	if wid <= 0 {
+	if wid < 0 {
 		wid = 1
 	}
 	return &dpb.Chart{
