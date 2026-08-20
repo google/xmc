@@ -38,8 +38,9 @@ func Parse(v string) (*Version, error) {
 	if s == "" {
 		return nil, errors.New("empty version string")
 	}
-	s = strings.TrimPrefix(s, "v")
-	s = strings.TrimPrefix(s, "V")
+	if strings.HasPrefix(s, "v") || strings.HasPrefix(s, "V") {
+		s = s[1:]
+	}
 
 	var build string
 	if idx := strings.IndexByte(s, '+'); idx != -1 {

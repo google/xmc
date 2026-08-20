@@ -145,6 +145,16 @@ func TestParse(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "double leading v prefix",
+			input:   "vv1.0.0",
+			wantErr: true,
+		},
+		{
+			name:    "mixed double leading v prefix",
+			input:   "vV1.0.0",
+			wantErr: true,
+		},
+		{
 			name:    "empty prerelease segment",
 			input:   "1.0.0-alpha..1",
 			wantErr: true,

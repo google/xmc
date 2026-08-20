@@ -81,6 +81,14 @@ This is the main worker controller.
 			want:     []string{},
 		},
 		{
+			name: "description directive with inline comment",
+			spec: &componentspb.ComponentSpec{
+				Description: "@depends-on: storage-service, auth-service # required for DB access",
+			},
+			selfName: "app",
+			want:     []string{"auth-service", "storage-service"},
+		},
+		{
 			name: "self name filter with components prefix",
 			spec: &componentspb.ComponentSpec{
 				Description: "@depends-on: self-comp, dep-a",
@@ -172,6 +180,13 @@ spec:
 `,
 			},
 			want: []string{"string-dep-1, string-dep-2"},
+		},
+		{
+			name: "manifest with multi-line string containing document separator",
+			manifests: []string{
+				"metadata:\n  annotations:\n    xmc.dev/depends-on: script-dep\nspec:\n  script: |\n    echo \"start\"\n    ---\n    echo \"end\"\n",
+			},
+			want: []string{"script-dep"},
 		},
 		{
 			name: "manifest with line exceeding 64KB",

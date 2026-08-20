@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"sigs.k8s.io/yaml"
+	"gopkg.in/yaml.v3"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -58,36 +58,18 @@ func ExtractDependenciesFromManifests(manifests []string) []string {
 		if trimmed == "" {
 			continue
 		}
-		for _, docStr := range splitYAMLDocuments(trimmed) {
+		dec := yaml.NewDecoder(strings.NewReader(trimmed))
+		for {
 			var doc map[string]any
-			if err := yaml.Unmarshal([]byte(docStr), &doc); err != nil || doc == nil {
-				continue
+			if err := dec.Decode(&doc); err != nil {
+				break
 			}
-			raw = append(raw, extractFromDoc(doc)...)
+			if doc != nil {
+				raw = append(raw, extractFromDoc(doc)...)
+			}
 		}
 	}
 	return raw
-}
-
-// splitYAMLDocuments splits a multi-doc YAML string by '---' document separators.
-func splitYAMLDocuments(manifest string) []string {
-	var docs []string
-	var current []string
-	for _, line := range strings.Split(manifest, "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if strings.TrimSpace(line) == "---" {
-			if len(current) > 0 {
-				docs = append(docs, strings.Join(current, "\n"))
-				current = current[:0]
-			}
-			continue
-		}
-		current = append(current, line)
-	}
-	if len(current) > 0 {
-		docs = append(docs, strings.Join(current, "\n"))
-	}
-	return docs
 }
 
 // extractFromDoc extracts annotations and spec dependencies from an unmarshaled YAML document.
@@ -204,8 +186,11 @@ func NormalizeDependencies(rawDeps []string, selfName string) []string {
 	return result
 }
 
-// cleanRawDependencyString replaces delimiters and enclosing brackets/quotes with spaces.
+// cleanRawDependencyString strips comments and replaces delimiters and enclosing brackets/quotes with spaces.
 func cleanRawDependencyString(raw string) string {
+	if idx := strings.Index(raw, "#"); idx != -1 {
+		raw = raw[:idx]
+	}
 	return strings.Map(func(r rune) rune {
 		if r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == '[' || r == ']' || r == '"' || r == '\'' {
 			return ' '

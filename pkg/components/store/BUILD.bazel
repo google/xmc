@@ -27,7 +27,7 @@ go_library(
     importpath = "xmanager_cloud/pkg/components/store",
     deps = [
         "//api/protos/components/v1alpha1",
-        "@io_k8s_sigs_yaml//:yaml",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
