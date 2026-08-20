@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import time
 
@@ -84,72 +85,91 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
+    def _provision_and_migrate_db(self, db_name: str, mig_dir: str) -> None:
+        """Creates a single Spanner database and applies its schema migrations."""
+        logger.info("Creating Spanner database %s...", db_name)
+        run_cmd(
+            [
+                "gcloud",
+                "spanner",
+                "databases",
+                "create",
+                db_name,
+                f"--instance={self.cfg.spanner_instance}",
+                f"--project={self.cfg.project_id}",
+            ]
+        )
+        logger.info("Applying migrations for %s (%s)...", db_name, mig_dir)
+        for attempt in range(1, 4):
+            try:
+                run_cmd(
+                    [
+                        "bazel",
+                        "run",
+                        "//internal/storage/spanner/migrations:migrations",
+                        "--",
+                        f"-project={self.cfg.project_id}",
+                        f"-instance={self.cfg.spanner_instance}",
+                        f"-database={db_name}",
+                        f"-migrations_dir={mig_dir}",
+                        "-command=up",
+                    ],
+                    cwd=self.cfg.workspace_root,
+                )
+                break
+            except Exception as e:
+                if attempt == 3:
+                    raise
+                logger.warning(
+                    "Migration attempt %d failed: %s. Retrying in 5s...",
+                    attempt,
+                    e,
+                )
+                time.sleep(5)
+
     def setup(self) -> None:
-        """Creates ephemeral databases and runs migrations."""
+        """Creates ephemeral databases and runs migrations concurrently."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
-        for db_name, mig_dir in [
+        targets = [
             (self.cfg.ess_db, "ess"),
             (self.cfg.xid_db, "xid"),
-        ]:
-            logger.info("Creating Spanner database %s...", db_name)
+        ]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+            futures = [
+                executor.submit(self._provision_and_migrate_db, db_name, mig_dir)
+                for db_name, mig_dir in targets
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+
+    def _drop_database(self, db_name: str) -> None:
+        """Drops a single Spanner database safely."""
+        try:
+            logger.info("Dropping Spanner database %s...", db_name)
             run_cmd(
                 [
                     "gcloud",
                     "spanner",
                     "databases",
-                    "create",
+                    "delete",
                     db_name,
                     f"--instance={self.cfg.spanner_instance}",
                     f"--project={self.cfg.project_id}",
-                ]
+                    "--quiet",
+                ],
+                check=False,
             )
-            logger.info("Applying migrations for %s (%s)...", db_name, mig_dir)
-            for attempt in range(1, 4):
-                try:
-                    run_cmd(
-                        [
-                            "bazel",
-                            "run",
-                            "//internal/storage/spanner/migrations:migrations",
-                            "--",
-                            f"-project={self.cfg.project_id}",
-                            f"-instance={self.cfg.spanner_instance}",
-                            f"-database={db_name}",
-                            f"-migrations_dir={mig_dir}",
-                            "-command=up",
-                        ],
-                        cwd=self.cfg.workspace_root,
-                    )
-                    break
-                except Exception as e:
-                    if attempt == 3:
-                        raise
-                    logger.warning(
-                        "Migration attempt %d failed: %s. Retrying in 5s...",
-                        attempt,
-                        e,
-                    )
-                    time.sleep(5)
+        except Exception as e:
+            logger.warning("Failed to delete database %s: %s", db_name, e)
 
     def teardown(self) -> None:
-        """Drops ephemeral databases safely."""
+        """Drops ephemeral databases safely in parallel."""
         logger.info("=== [Spanner] Cleaning up ephemeral databases ===")
-        for db_name in [self.cfg.ess_db, self.cfg.xid_db]:
-            try:
-                logger.info("Dropping Spanner database %s...", db_name)
-                run_cmd(
-                    [
-                        "gcloud",
-                        "spanner",
-                        "databases",
-                        "delete",
-                        db_name,
-                        f"--instance={self.cfg.spanner_instance}",
-                        f"--project={self.cfg.project_id}",
-                        "--quiet",
-                    ],
-                    check=False,
-                )
-            except Exception as e:
-                logger.warning("Failed to drop database %s: %s", db_name, e)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(self._drop_database, db_name)
+                for db_name in [self.cfg.ess_db, self.cfg.xid_db]
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
