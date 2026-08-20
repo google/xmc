@@ -116,8 +116,7 @@ class DexAuthenticator:
         self, page: Page | Any, screenshots_dir: Path, email: str
     ) -> None:
         """Approves Dex OAuth consent / grant access prompt if presented."""
-        current_parsed = urllib.parse.urlparse(page.url)
-        if "dex" in page.url or current_parsed.netloc == self.dex_parsed.netloc:
+        if "/approval" in page.url:
             user_prefix = email.split("@")[0]
             save_screenshot(page, screenshots_dir, f"dex_approval_prompt_{user_prefix}")
             grant_btn = page.locator(

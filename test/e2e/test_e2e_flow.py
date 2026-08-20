@@ -217,7 +217,7 @@ def main() -> None:
         finally:
             browser.close()
             trace_handler.close()
-            logger.removeHandler(trace_handler)
+            logging.getLogger().removeHandler(trace_handler)
 
 
 if __name__ == "__main__":

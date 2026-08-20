@@ -53,7 +53,7 @@ class TestUIDiagnostics(unittest.TestCase):
                 self.assertTrue(trace_file.exists())
             finally:
                 handler.close()
-                logging.getLogger("test.e2e.lib.ui_diagnostics").removeHandler(handler)
+                logging.getLogger().removeHandler(handler)
 
     def test_save_screenshot_success(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

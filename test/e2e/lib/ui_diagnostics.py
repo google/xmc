@@ -59,7 +59,7 @@ def setup_logging(screenshots_dir: Path) -> logging.Handler:
     trace_path = screenshots_dir / "playwright_e2e_trace.txt"
     trace_handler = logging.FileHandler(trace_path, mode="w", encoding="utf-8")
     trace_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(trace_handler)
+    logging.getLogger().addHandler(trace_handler)
     return trace_handler
 
 
