@@ -44,33 +44,11 @@ func Parse(topologyOrSlice string) (int64, error) {
 
 	sLower := strings.ToLower(s)
 
-	// Check for topology format with 'x' (e.g., "2x2x4", "4x4").
-	// Only treat as 'x' dimension topology if every split component is a valid integer.
-	if strings.Contains(sLower, "x") {
-		dims := strings.Split(sLower, "x")
-		allNumeric := true
-		parsedDims := make([]int64, 0, len(dims))
-		for _, d := range dims {
-			v, err := strconv.ParseInt(strings.TrimSpace(d), 10, 64)
-			if err != nil {
-				allNumeric = false
-				break
-			}
-			parsedDims = append(parsedDims, v)
+	if chips, ok, err := parseXDimensions(sLower); ok {
+		if err != nil {
+			return 0, err
 		}
-		if allNumeric {
-			totalChips := int64(1)
-			for _, v := range parsedDims {
-				if v <= 0 {
-					return 0, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
-				}
-				if totalChips > math.MaxInt64/v {
-					return 0, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
-				}
-				totalChips *= v
-			}
-			return totalChips, nil
-		}
+		return chips, nil
 	}
 
 	// Check if it's a numeric string (e.g., "8")
@@ -90,6 +68,33 @@ func Parse(topologyOrSlice string) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("%w: unable to parse %q", ErrInvalidTopology, topologyOrSlice)
+}
+
+func parseXDimensions(s string) (int64, bool, error) {
+	if !strings.Contains(s, "x") {
+		return 0, false, nil
+	}
+	dims := strings.Split(s, "x")
+	parsedDims := make([]int64, 0, len(dims))
+	for _, d := range dims {
+		v, err := strconv.ParseInt(strings.TrimSpace(d), 10, 64)
+		if err != nil {
+			return 0, false, nil
+		}
+		parsedDims = append(parsedDims, v)
+	}
+
+	totalChips := int64(1)
+	for _, v := range parsedDims {
+		if v <= 0 {
+			return 0, true, fmt.Errorf("%w: dimension must be positive, got %d", ErrInvalidTopology, v)
+		}
+		if totalChips > math.MaxInt64/v {
+			return 0, true, fmt.Errorf("%w: multiplication overflow", ErrInvalidTopology)
+		}
+		totalChips *= v
+	}
+	return totalChips, true, nil
 }
 
 // ParseTotalChips returns the total chip count for a topology or slice string,
