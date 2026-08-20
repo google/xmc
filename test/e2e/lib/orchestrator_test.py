@@ -41,14 +41,12 @@ class TestE2EOrchestrator(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
-    def test_managed_lifecycle_calls_setup_and_teardown(self):
+    def test_managed_lifecycle_guarantees_teardown_on_exit(self):
         self.orch.spanner = MagicMock()
         self.orch.kind = MagicMock()
 
         with self.orch.managed_lifecycle():
-            self.orch.spanner.setup.assert_called_once()
-            self.orch.kind.setup.assert_called_once()
-            # Teardown not called yet
+            # Teardown not called yet inside block
             self.orch.spanner.teardown.assert_not_called()
             self.orch.kind.teardown.assert_not_called()
 

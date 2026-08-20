@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import logging
 import os
@@ -52,8 +53,6 @@ class E2EOrchestrator:
         """Guarantees cleanup on success, failure, or interrupt."""
         os.makedirs(self.cfg.temp_dir, exist_ok=True)
         try:
-            self.spanner.setup()
-            self.kind.setup()
             yield
         finally:
             logger.info("=== Executing Teardown ===")
@@ -91,7 +90,17 @@ class E2EOrchestrator:
         signal.signal(signal.SIGTERM, _signal_handler)
 
         with self.managed_lifecycle():
-            images = self.builder.build_all()
+            logger.info("=== Starting Concurrent Environment & Image Build ===")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                spanner_future = executor.submit(self.spanner.setup)
+                kind_future = executor.submit(self.kind.setup)
+                build_future = executor.submit(self.builder.build_all)
+
+                # Wait for all concurrent setup tasks to complete
+                spanner_future.result()
+                kind_future.result()
+                images = build_future.result()
+
             self.kind.load_images(images)
             self.helm.deploy()
             self.tester.execute()
