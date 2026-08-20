@@ -2123,13 +2123,20 @@ func TestApplyGPUResources(t *testing.T) {
 	tests := []struct {
 		name            string
 		gpuRes          *epb.GpuResources
+		reqs            *corev1.ResourceRequirements
 		wantGPU         string
 		wantCPU         string
 		wantMemoryBytes int64
 	}{
 		{
+			name:   "nil inputs",
+			gpuRes: nil,
+			reqs:   nil,
+		},
+		{
 			name:            "one card",
 			gpuRes:          &epb.GpuResources{Type: "T4", Count: 1},
+			reqs:            &corev1.ResourceRequirements{},
 			wantGPU:         "1",
 			wantCPU:         "1",
 			wantMemoryBytes: 4 << 30,
@@ -2137,6 +2144,7 @@ func TestApplyGPUResources(t *testing.T) {
 		{
 			name:            "host resources scale with the card count",
 			gpuRes:          &epb.GpuResources{Type: "T4", Count: 4},
+			reqs:            &corev1.ResourceRequirements{},
 			wantGPU:         "4",
 			wantCPU:         "4",
 			wantMemoryBytes: 16 << 30,
@@ -2145,9 +2153,12 @@ func TestApplyGPUResources(t *testing.T) {
 			name: "a count validation would have rejected still gets a floor",
 			// Validation requires a count of at least one. A pod with no request
 			// at all is BestEffort and evicted first, so an unvalidated caller
-			// gets one card's worth rather than nothing.
+			// gets one card's worth rather than nothing. The clamp happens before
+			// the limit is set, so the cards asked for and the host resources that
+			// feed them describe the same job.
 			gpuRes:          &epb.GpuResources{Type: "T4"},
-			wantGPU:         "0",
+			reqs:            &corev1.ResourceRequirements{},
+			wantGPU:         "1",
 			wantCPU:         "1",
 			wantMemoryBytes: 4 << 30,
 		},
@@ -2155,13 +2166,15 @@ func TestApplyGPUResources(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			reqs := &corev1.ResourceRequirements{}
-			applyGPUResources(tc.gpuRes, reqs)
+			applyGPUResources(tc.gpuRes, tc.reqs)
+			if tc.reqs == nil {
+				return
+			}
 
-			checkQuantityMatch(t, reqs.Limits, nvidiaGPUKey, tc.wantGPU)
-			checkQuantityMatch(t, reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
+			checkQuantityMatch(t, tc.reqs.Limits, nvidiaGPUKey, tc.wantGPU)
+			checkQuantityMatch(t, tc.reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
 
-			mem, ok := reqs.Requests[corev1.ResourceMemory]
+			mem, ok := tc.reqs.Requests[corev1.ResourceMemory]
 			if !ok {
 				t.Fatalf("memory request missing, want %d bytes", tc.wantMemoryBytes)
 			}
@@ -2171,10 +2184,10 @@ func TestApplyGPUResources(t *testing.T) {
 
 			// A limit on either would cap a job at a figure it never chose, and
 			// the memory one would be enforced by the OOM killer.
-			if _, ok := reqs.Limits[corev1.ResourceCPU]; ok {
+			if _, ok := tc.reqs.Limits[corev1.ResourceCPU]; ok {
 				t.Errorf("CPU limit was set, want none")
 			}
-			if _, ok := reqs.Limits[corev1.ResourceMemory]; ok {
+			if _, ok := tc.reqs.Limits[corev1.ResourceMemory]; ok {
 				t.Errorf("memory limit was set, want none")
 			}
 		})
