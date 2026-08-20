@@ -16,10 +16,14 @@
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig, parse_args
+from test.e2e.lib.image_builder import ImageBuilder
+from test.e2e.lib.kind import KindClusterManager
 from test.e2e.lib.spanner import SpannerManager
 
 __all__ = [
     "E2EConfig",
+    "ImageBuilder",
+    "KindClusterManager",
     "SpannerManager",
     "parse_args",
     "run_cmd",
