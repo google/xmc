@@ -25,28 +25,27 @@ from test.e2e.lib.config import E2EConfig
 logger = logging.getLogger("xmc_e2e_runner")
 
 
+def _get_service_specs() -> list[tuple[str, str, str]]:
+    """Generates Bazel package, target, and image tag specifications."""
+    standard_services = [
+        "experiment_state_server",
+        "xid_service",
+        "actuator",
+        "reconciler",
+    ]
+    specs = [
+        (f"cmd/{name}", f"{name}_image_tarball", f"{name}_image:latest")
+        for name in standard_services
+    ]
+    # UI frontend builder produces ui-image:latest
+    specs.append(("cmd/ui", "ui_image_tarball", "ui-image:latest"))
+    return specs
+
+
 class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
-    _SERVICES = [
-        (
-            "cmd/experiment_state_server",
-            "experiment_state_server_image_tarball",
-            "experiment_state_server_image:latest",
-        ),
-        (
-            "cmd/xid_service",
-            "xid_service_image_tarball",
-            "xid_service_image:latest",
-        ),
-        ("cmd/ui", "ui_image_tarball", "ui-image:latest"),
-        ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest"),
-        (
-            "cmd/reconciler",
-            "reconciler_image_tarball",
-            "reconciler_image:latest",
-        ),
-    ]
+    _SERVICES = _get_service_specs()
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
