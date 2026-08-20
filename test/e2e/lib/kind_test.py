@@ -104,29 +104,48 @@ class TestKindClusterManager(unittest.TestCase):
             ]
         )
 
+    @patch.dict(os.environ, {"SPANNER_EMULATOR_HOST": "localhost:9010"}, clear=True)
+    @patch("os.path.isfile", return_value=False)
+    @patch.object(KindClusterManager, "exists", return_value=False)
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_load_images(self, mock_run):
-        self.mgr.load_images(["img1:latest", "img2:latest"])
+    def test_setup_creates_dummy_credentials_when_emulator_host_set(
+        self, mock_run, mock_exists, mock_isfile
+    ):
+        self.mgr.setup()
+        dummy_cred = os.path.join(self.tmp_dir.name, "dummy-credentials.json")
+        self.assertTrue(os.path.exists(dummy_cred))
         mock_run.assert_any_call(
+            [
+                "kubectl",
+                "create",
+                "secret",
+                "generic",
+                "gcp-sa-key",
+                "-n",
+                "xmc",
+                f"--from-file=key.json={dummy_cred}",
+            ]
+        )
+
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_load_images_batches_all_images(self, mock_run):
+        self.mgr.load_images(["img1:latest", "img2:latest"])
+        mock_run.assert_called_once_with(
             [
                 "kind",
                 "load",
                 "docker-image",
                 "img1:latest",
-                "--name",
-                "test-cluster",
-            ]
-        )
-        mock_run.assert_any_call(
-            [
-                "kind",
-                "load",
-                "docker-image",
                 "img2:latest",
                 "--name",
                 "test-cluster",
             ]
         )
+
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_load_images_skips_when_empty(self, mock_run):
+        self.mgr.load_images([])
+        mock_run.assert_not_called()
 
     @patch.object(KindClusterManager, "exists", return_value=True)
     @patch("test.e2e.lib.kind.run_cmd")

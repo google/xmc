@@ -94,6 +94,12 @@ class KindClusterManager:
             os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         )
         if not os.path.isfile(adc_file):
+            if "SPANNER_EMULATOR_HOST" in os.environ:
+                dummy_path = os.path.join(self.cfg.temp_dir, "dummy-credentials.json")
+                if not os.path.exists(dummy_path):
+                    with open(dummy_path, "w", encoding="utf-8") as f:
+                        f.write('{"type": "service_account", "project_id": "dummy"}')
+                return dummy_path
             raise FileNotFoundError(
                 f"GCP credentials file not found at '{adc_file}'. "
                 "A valid credentials file is required to create the 'gcp-sa-key' secret "
@@ -195,19 +201,19 @@ class KindClusterManager:
 
     def load_images(self, images: list[str]) -> None:
         """Loads Docker images into KinD nodes."""
+        if not images:
+            return
         logger.info("=== [KinD] Loading container images into cluster ===")
-        for img in images:
-            logger.info("Loading image %s...", img)
-            run_cmd(
-                [
-                    self.cfg.kind_bin,
-                    "load",
-                    "docker-image",
-                    img,
-                    "--name",
-                    self.cfg.cluster_name,
-                ]
-            )
+        run_cmd(
+            [
+                self.cfg.kind_bin,
+                "load",
+                "docker-image",
+                *images,
+                "--name",
+                self.cfg.cluster_name,
+            ]
+        )
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""
