@@ -66,7 +66,6 @@ function createDefaultPlots(): PlotSpec[] {
 }
 
 function createDefaultCharts(): Chart[] {
-  const plots = createDefaultPlots();
   const experiments = [
     { xid: 234911122, name: 'baseline', title: 'VCC Baseline' },
     { xid: 234911123, name: 'tuned_v1', title: 'VCC tuned_v1' },
@@ -79,7 +78,7 @@ function createDefaultCharts(): Chart[] {
     xid: exp.xid,
     wid: 1,
     plotLayout: { type: LayoutType.GRID },
-    plots,
+    plots: createDefaultPlots(),
   }));
 }
 

@@ -114,7 +114,17 @@ describe('DashboardsPage', () => {
     expect(await grid.getChartCount()).toBe(3);
   });
 
-  it('should open AddExperimentDialog when clicking add experiment', () => {
+  it('should open AddExperimentDialog when clicking add experiment and deep-copy template plots', () => {
+    const initialPlot = { plotId: 'val_loss_kpi', title: 'Test Plot' } as any;
+    pageComponent.charts.set([
+      {
+        name: 'experiments/1/charts/1',
+        title: 'Exp 1',
+        xid: 1,
+        plots: [initialPlot],
+      },
+    ]);
+
     const mockDialogRef = {
       afterClosed: () => of({ xid: 234911125, wid: 1, title: 'VCC tuned_v3' }),
     } as MatDialogRef<AddExperimentDialogComponent>;
@@ -122,7 +132,19 @@ describe('DashboardsPage', () => {
 
     pageComponent.onOpenAddExperiment();
     expect(MatDialog.prototype.open).toHaveBeenCalled();
-    expect(pageComponent.charts().length).toBe(4);
+    expect(pageComponent.charts().length).toBe(2);
+    expect(pageComponent.charts()[1].plots).toEqual([initialPlot]);
+    expect(pageComponent.charts()[1].plots).not.toBe(pageComponent.charts()[0].plots);
+    expect(pageComponent.charts()[1].plots![0]).not.toBe(pageComponent.charts()[0].plots![0]);
+  });
+
+  it('should create default comparison charts with independent plots array instances', () => {
+    (pageComponent as unknown as { initDefaultComparisonDashboard: () => void })
+      .initDefaultComparisonDashboard();
+    const charts = pageComponent.charts();
+    expect(charts.length).toBe(3);
+    expect(charts[0].plots).not.toBe(charts[1].plots);
+    expect(charts[1].plots).not.toBe(charts[2].plots);
   });
 
   it('should remove chart from comparison', () => {
