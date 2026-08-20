@@ -22,7 +22,7 @@ import (
 
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/toollibs/tputopology"
+	"xmanager_cloud/internal/common/tputopology"
 )
 
 func TestExtractRequestedResources(t *testing.T) {

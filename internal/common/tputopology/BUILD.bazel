@@ -17,7 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 compat_go_library(
     name = "tputopology",
     srcs = ["tputopology.go"],
-    importpath = "xmanager_cloud/internal/toollibs/tputopology",
+    importpath = "xmanager_cloud/internal/common/tputopology",
     visibility = ["//:__subpackages__"],
 )
 
