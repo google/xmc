@@ -21,7 +21,11 @@ graph TD
     J --> K["Agent builds & pushes OCI Images"]
     K --> L["Agent performs Kubectl Rollout Restart"]
     L --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
-    M --> N["Agent reports status & completes task"]
+    M --> N["Agent conducts Root-Cause Retrospective & Proposes /XMC Iterative Reflection"]
+    N --> O{"User approves reflection?"}
+    O -->|Yes| P["Invoke /XMC Iterative Reflection (Benchmark & Update Rules/Skills)"]
+    P --> Q["Agent reports status & completes task"]
+    O -->|No / Done| Q
 ```
 
 > [!IMPORTANT]
@@ -262,7 +266,35 @@ Before marking the PR review task as complete:
 
 ---
 
-## 9. Workflow Example
+## 9. Root-Cause Retrospective & Iterative Reflection Proposal
+
+Whenever review comments (from human reviewers or automated review bots) are addressed and verified, the agent must not merely "fix and forget". The agent performs a fast root-cause classification on why the initial PR implementation missed the expected standard and proposes invoking the [Iterative Reflection Skill](../xmc_iterative_reflection/SKILL.md).
+
+### Root-Cause Classification Framework
+Classify each addressed review comment into one of three categories:
+1. **Rule & Guideline Gap (`.agents/rules/`)**: The codebase guidelines lacked an explicit rule, style constraint, or invariant (e.g., missing error wrapping convention, naming convention, or mock contract).
+2. **Tooling & Automation Gap (`tools/`)**: The feedback could have been caught mechanically before PR submission by a script, linter, or pre-commit hook (e.g., missing parameter validation, formatting check, or test coverage threshold).
+3. **Skill & Workflow Gap (`.agents/skills/`)**: The development workflow playbook lacked a necessary pre-PR inspection step or verification phase.
+
+### Presenting the Retrospective Proposal
+At the end of the comment resolution report, present a structured proposal table and ask the user if they wish to trigger iterative reflection:
+
+```markdown
+### 🔄 PR Comment Retrospective & Meta-Learning Proposal
+
+| Comment ID | Reviewer Feedback Summary | Root-Cause Category | Proposed Rule / Tool Enhancement |
+| :--- | :--- | :--- | :--- |
+| #1234 | "Wrap internal errors with `%w`" | Rule Gap (`.agents/rules/languages/golang.md`) | Add explicit Go error wrapping rule |
+| #1235 | "Missing unit test for helper function" | Skill Gap (`.agents/skills/xmc_feature_development/SKILL.md`) | Enforce 1-to-1 helper unit test check |
+
+> Would you like to invoke `/XMC Iterative Reflection` to analyze these root causes, benchmark candidate rule updates with `/XMC Trajectory Comparison`, and open a dedicated improvement PR?
+```
+
+If the user approves, proceed to invoke the [XMC Iterative Reflection Skill](../xmc_iterative_reflection/SKILL.md).
+
+---
+
+## 10. Workflow Example
 
 Here is a step-by-step example of how you can invoke this agent:
 
@@ -287,3 +319,4 @@ Here is a step-by-step example of how you can invoke this agent:
    - Restarts GKE pods: `kubectl rollout restart deployment/xid-service-deployment -n xmc`.
    - Programmatically verifies 1-to-1 thread resolution for all comment IDs against the checklist.
    - Updates checklist artifact and replies with test outputs and rollout status confirmation.
+   - **Presents PR Comment Retrospective table** and proposes invoking `/XMC Iterative Reflection` to codify learnings into `.agents/rules/` and prevent future review feedback.

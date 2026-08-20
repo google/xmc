@@ -30,7 +30,3 @@ Key tools for PR comment processing:
 - **Post Thread Reply**: `./tools/reply_pr_comment.py "<comment_url>" "<reply_message>"`
 - **Verify Thread Resolution**: `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
 
----
-
-## 3. Post-PR Reflection Trigger
-If resolving PR comments involved a high volume of review feedback (>3-5 comments or multiple review iterations), trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) to identify missing project rules or guidelines that led to the review feedback.
