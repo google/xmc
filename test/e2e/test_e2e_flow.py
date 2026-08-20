@@ -120,7 +120,7 @@ def _navigate_to_landing_and_sign_in(page: Page, screenshots_dir: Path, email: s
         email: User email identifier for diagnostic screenshot labelling.
     """
     logger.info("Navigating to landing page: %s", BASE_URL)
-    page.goto(BASE_URL, wait_until="networkidle")
+    page.goto(BASE_URL)
     user_prefix = email.split("@")[0]
     save_screenshot(page, screenshots_dir, f"landing_page_{user_prefix}")
 
@@ -130,10 +130,10 @@ def _navigate_to_landing_and_sign_in(page: Page, screenshots_dir: Path, email: s
     sign_in_btn.click()
 
     logger.info("Waiting for Dex auth page (current URL: %s)...", page.url)
-    dex_netloc = urllib.parse.urlparse(DEX_URL).netloc
+    dex_parsed = urllib.parse.urlparse(DEX_URL)
     try:
         page.wait_for_url(
-            lambda u: dex_netloc in u or "dex" in u,
+            lambda u: urllib.parse.urlparse(u).netloc == dex_parsed.netloc or "dex" in u,
             timeout=NAVIGATION_TIMEOUT_MS,
         )
     except (PlaywrightTimeoutError, PlaywrightError) as e:
@@ -205,8 +205,9 @@ def _handle_consent_if_present(page: Page, screenshots_dir: Path, email: str) ->
         screenshots_dir: Destination directory for diagnostic screenshots.
         email: User email identifier for diagnostic screenshot labelling.
     """
-    dex_netloc = urllib.parse.urlparse(DEX_URL).netloc
-    if "dex" in page.url or dex_netloc in page.url:
+    dex_parsed = urllib.parse.urlparse(DEX_URL)
+    current_parsed = urllib.parse.urlparse(page.url)
+    if "dex" in page.url or current_parsed.netloc == dex_parsed.netloc:
         user_prefix = email.split("@")[0]
         save_screenshot(page, screenshots_dir, f"dex_approval_prompt_{user_prefix}")
         grant_btn = page.locator(
@@ -217,7 +218,7 @@ def _handle_consent_if_present(page: Page, screenshots_dir: Path, email: str) ->
             grant_btn.click(timeout=SHORT_TIMEOUT_MS)
             logger.info("Clicked Dex grant access button.")
             page.wait_for_url(
-                lambda u: dex_netloc not in u and "dex" not in u,
+                lambda u: urllib.parse.urlparse(u).netloc != dex_parsed.netloc and "dex" not in u,
                 timeout=DEFAULT_TIMEOUT_MS,
             )
         except (PlaywrightTimeoutError, PlaywrightError) as e:
@@ -252,11 +253,12 @@ def test_admin_flow_and_experiment_lifecycle(page: Page, screenshots_dir: Path) 
     logger.info("=== Testing Admin Authentication and Experiment Creation Lifecycle ===")
     login_via_dex(page, screenshots_dir, ADMIN_USER, ADMIN_PASSWORD)
 
-    dex_netloc = urllib.parse.urlparse(DEX_URL).netloc
-    if dex_netloc in page.url or "dex" in page.url:
+    dex_parsed = urllib.parse.urlparse(DEX_URL)
+    current_parsed = urllib.parse.urlparse(page.url)
+    if "dex" in page.url or current_parsed.netloc == dex_parsed.netloc:
         logger.info("Waiting for redirect from Dex back to XMC dashboard...")
         page.wait_for_url(
-            lambda u: dex_netloc not in u and "dex" not in u,
+            lambda u: urllib.parse.urlparse(u).netloc != dex_parsed.netloc and "dex" not in u,
             timeout=DEFAULT_TIMEOUT_MS,
         )
 
@@ -312,7 +314,7 @@ def test_admin_flow_and_experiment_lifecycle(page: Page, screenshots_dir: Path) 
 
     # 4. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
-    page.reload(wait_until="networkidle")
+    page.reload()
 
     exp_cell = page.get_by_text(experiment_title)
     expect(exp_cell).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
