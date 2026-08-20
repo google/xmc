@@ -14,6 +14,7 @@
 
 import 'jasmine';
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -145,40 +146,27 @@ describe('DashboardsPage', () => {
   });
 
   describe('onShare', () => {
-    it('should open success snackbar when clipboard write succeeds', async () => {
+    it('should open success snackbar when clipboard copy succeeds', () => {
+      const clipboard = TestBed.inject(Clipboard);
+      spyOn(clipboard, 'copy').and.returnValue(true);
       const pageComponent = bootstrap(DashboardsPage);
-      const mockClipboard = {
-        writeText: jasmine.createSpy('writeText').and.returnValue(Promise.resolve()),
-      };
-      Object.defineProperty(navigator, 'clipboard', {
-        value: mockClipboard,
-        configurable: true,
-      });
 
       pageComponent.onShare();
-      await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(mockClipboard.writeText).toHaveBeenCalled();
+      expect(clipboard.copy).toHaveBeenCalledWith(window.location.href);
       expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
         'Dashboard link copied to clipboard',
       );
     });
 
-    it('should open error snackbar when clipboard write fails', async () => {
+    it('should open error snackbar when clipboard copy fails', () => {
+      const clipboard = TestBed.inject(Clipboard);
+      spyOn(clipboard, 'copy').and.returnValue(false);
       const pageComponent = bootstrap(DashboardsPage);
-      const mockClipboard = {
-        writeText: jasmine
-          .createSpy('writeText')
-          .and.returnValue(Promise.reject(new Error('Permission denied'))),
-      };
-      Object.defineProperty(navigator, 'clipboard', {
-        value: mockClipboard,
-        configurable: true,
-      });
 
       pageComponent.onShare();
-      await new Promise((resolve) => setTimeout(resolve, 0));
 
+      expect(clipboard.copy).toHaveBeenCalledWith(window.location.href);
       expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
         'Failed to copy link to clipboard',
       );

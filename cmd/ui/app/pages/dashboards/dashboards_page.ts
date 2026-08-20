@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -58,6 +59,7 @@ export class DashboardsPage implements OnInit {
   private readonly dashboardService = inject(DashboardService);
   private readonly dialog = inject(MatDialog);
   private readonly snackbar = inject(SnackbarService, { optional: true });
+  private readonly clipboard = inject(Clipboard);
 
   private currentDashboardName = '';
 
@@ -150,18 +152,12 @@ export class DashboardsPage implements OnInit {
   }
 
   onShare(): void {
-    if (navigator.clipboard) {
-      navigator.clipboard
-        .writeText(window.location.href)
-        .then(() => {
-          this.snackbar?.open?.('Dashboard link copied to clipboard');
-        })
-        .catch(() => {
-          this.snackbar?.open?.('Failed to copy link to clipboard');
-        });
-    } else {
-      this.snackbar?.open?.('Clipboard API not supported');
+    const success = this.clipboard.copy(window.location.href);
+    if (!success) {
+      this.snackbar?.open?.('Failed to copy link to clipboard');
+      return;
     }
+    this.snackbar?.open?.('Dashboard link copied to clipboard');
   }
 
   onBackToDashboards(): void {
