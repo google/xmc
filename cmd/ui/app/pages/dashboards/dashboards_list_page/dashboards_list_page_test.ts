@@ -25,6 +25,7 @@ import { createMockDashboardList } from 'xmanager_cloud/ui/app/testing/mock_dash
 import {
   bootstrap,
   cleanState,
+  flush,
   getEl,
   getEls,
   setupModule,
@@ -83,6 +84,19 @@ describe('DashboardsListPage', () => {
 
     component.searchQuery.set('');
     expect(component.filteredDashboards().length).toBe(2);
+  });
+
+  it('should render accessible aria-labels on the filter input and clear button', async () => {
+    const component = bootstrap(DashboardsListPage);
+    const filterInput = getEl('.search-field input');
+    expect(filterInput?.getAttribute('aria-label')).toBe(
+      'Filter dashboards by name or description',
+    );
+
+    component.searchQuery.set('vcc');
+    await flush();
+    const clearButton = getEl('.search-field button');
+    expect(clearButton?.getAttribute('aria-label')).toBe('Clear search query');
   });
 
   it('should extract dashboard ID correctly', () => {

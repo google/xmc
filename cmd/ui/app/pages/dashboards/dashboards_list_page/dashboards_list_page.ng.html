@@ -49,11 +49,18 @@ limitations under the License.
       <input
         matInput
         placeholder="Filter dashboards by name or description..."
+        aria-label="Filter dashboards by name or description"
         [ngModel]="searchQuery()"
         (ngModelChange)="searchQuery.set($event)"
       />
       @if (searchQuery()) {
-        <button mat-icon-button matSuffix type="button" (click)="searchQuery.set('')">
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          aria-label="Clear search query"
+          (click)="searchQuery.set('')"
+        >
           <mat-icon>close</mat-icon>
         </button>
       }
