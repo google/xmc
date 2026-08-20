@@ -255,11 +255,7 @@ def load_and_validate_config(
     path = Path(config_file)
     yaml_vars = parse_yaml_vars(path)
 
-    config: dict[str, Any] = {}
-    if defaults:
-        config.update(defaults)
-
-    config.update(yaml_vars)
+    config: dict[str, Any] = (defaults or {}) | yaml_vars
 
     for env_var, config_key in ENV_VAR_MAPPING.items():
         val = os.getenv(env_var)
@@ -339,9 +335,7 @@ def run_command(
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}")
 
-    proc_env = os.environ.copy()
-    if env:
-        proc_env.update({str(k): str(v) for k, v in env.items()})
+    proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
 
     try:
         return subprocess.run(

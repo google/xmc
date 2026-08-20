@@ -23,6 +23,7 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"k8s.io/utils/ptr"
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -116,7 +117,7 @@ func TestToWorkUnitState(t *testing.T) {
 			name: "Failed condition takes precedence",
 			jobSet: &v1alpha2.JobSet{
 				Spec: v1alpha2.JobSetSpec{
-					Suspend: boolPtr(true),
+					Suspend: ptr.To(true),
 				},
 				Status: v1alpha2.JobSetStatus{
 					Conditions: []metav1.Condition{

@@ -16,6 +16,7 @@
 """Tool for executing teardown and cleanup of benchmark test resources."""
 
 import argparse
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -48,7 +49,7 @@ def teardown_resources(
 
     # 2. Cleanup Git Remote Branches
     for branch in branches:
-        clean_branch = branch.replace("origin/", "").replace("origins/", "").strip()
+        clean_branch = branch.removeprefix("origin/").removeprefix("origins/").strip()
         try:
             cmd = ["git", "push", "origin", "--delete", clean_branch]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -66,13 +67,10 @@ def teardown_resources(
 
     # 3. Cleanup Scratch Files
     for file_path in temp_files:
-        try:
+        with contextlib.suppress(OSError):
             p = Path(file_path)
-            if p.exists():
-                p.unlink()
-                cleaned_files.append(file_path)
-        except OSError:
-            pass
+            p.unlink(missing_ok=True)
+            cleaned_files.append(file_path)
 
     return {
         "cleaned_prs": cleaned_prs,

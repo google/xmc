@@ -89,7 +89,7 @@ export function goToPreviousPage<T extends { pagination: PaginationState }>(stat
     ...state,
     pagination: {
       ...pagination,
-      currentPageToken: previousTokens[previousTokens.length - 1],
+      currentPageToken: previousTokens.at(-1) ?? '',
       previousTokens: previousTokens.slice(0, -1),
       pageIndex: pageIndex - 1,
     },

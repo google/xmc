@@ -358,7 +358,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -367,7 +367,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": true};'
+                    ' "performanceDashboardEnabled": true, "isNonProdAuth": false};'
                 ),
             },
         ]

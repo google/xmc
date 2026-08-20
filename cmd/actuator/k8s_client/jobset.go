@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,7 +33,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
-	"golang/protobuf/v2/proto/proto"
+	"k8s.io/utils/ptr"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/jobsetutil"
 	"xmanager_cloud/logging/logging"
@@ -311,12 +313,12 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 
 	var activeDeadlineSeconds *int64
 	if job.GetActiveDeadlineSeconds() > 0 {
-		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
+		activeDeadlineSeconds = ptr.To(job.GetActiveDeadlineSeconds())
 	}
 
 	var terminationGracePeriodSeconds *int64
 	if job.TerminationGracePeriodSeconds != nil && *job.TerminationGracePeriodSeconds >= 0 {
-		terminationGracePeriodSeconds = proto.Int64(*job.TerminationGracePeriodSeconds)
+		terminationGracePeriodSeconds = ptr.To(*job.TerminationGracePeriodSeconds)
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
@@ -350,10 +352,10 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 			},
 			Spec: batchv1.JobSpec{
 				BackoffLimit:            &retryLimit,
-				CompletionMode:          completionModePtr(batchv1.IndexedCompletion),
-				Completions:             proto.Int32(1),
+				CompletionMode:          ptr.To(batchv1.IndexedCompletion),
+				Completions:             ptr.To(int32(1)),
 				PodFailurePolicy:        pfp,
-				TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
+				TTLSecondsAfterFinished: ptr.To(int32(defaultTTLSeconds)),
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
@@ -493,8 +495,8 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 	args = append(args, spec.GetArgsList()...)
 	sc := defaultSecurityContext()
 	if c != nil && c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
-		sc.Privileged = proto.Bool(true)
-		sc.AllowPrivilegeEscalation = proto.Bool(true)
+		sc.Privileged = ptr.To(true)
+		sc.AllowPrivilegeEscalation = ptr.To(true)
 	}
 
 	return corev1.Container{
@@ -520,17 +522,15 @@ type jobMetadata struct {
 }
 
 func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobMetadata {
-	annotations := make(map[string]string)
-	for k, v := range jobAnnotations {
-		annotations[k] = v
+	annotations := maps.Clone(jobAnnotations)
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
-	for k, v := range job.GetAnnotations() {
-		annotations[k] = v
-	}
+	maps.Copy(annotations, job.GetAnnotations())
 
-	labels := make(map[string]string, len(jobLabels)+len(job.GetLabels()))
-	for k, v := range jobLabels {
-		labels[k] = v
+	labels := maps.Clone(jobLabels)
+	if labels == nil {
+		labels = make(map[string]string)
 	}
 	for k, v := range job.GetLabels() {
 		if _, exists := labels[k]; !exists {
@@ -538,15 +538,8 @@ func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, job
 		}
 	}
 
-	podLabels := make(map[string]string, len(labels))
-	for k, v := range labels {
-		podLabels[k] = v
-	}
-
-	podAnnotations := make(map[string]string, len(annotations))
-	for k, v := range annotations {
-		podAnnotations[k] = v
-	}
+	podLabels := maps.Clone(labels)
+	podAnnotations := maps.Clone(annotations)
 
 	return jobMetadata{
 		labels:         labels,
@@ -583,17 +576,13 @@ func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, au
 		constants.WorkUnitIDLabel:   wid,
 		constants.ExecutionIDLabel:  eid,
 	}
-	for k, v := range defaultLabels {
-		jobLabels[k] = v
-	}
+	maps.Copy(jobLabels, defaultLabels)
 
 	jobSetLabels := map[string]string{
 		kueueQueueLabel:         namespace,
 		constants.LastEditLabel: strconv.FormatInt(operationTime.Unix(), 10),
 	}
-	for k, v := range jobLabels {
-		jobSetLabels[k] = v
-	}
+	maps.Copy(jobSetLabels, jobLabels)
 	jobSetLabels[kueuePriorityClassLabel] = getPriorityClassName(priorities)
 
 	defaultAnnotations := map[string]string{
@@ -601,10 +590,7 @@ func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, au
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
-	jobSetAnnotations := make(map[string]string, len(defaultAnnotations))
-	for k, v := range defaultAnnotations {
-		jobSetAnnotations[k] = v
-	}
+	jobSetAnnotations := maps.Clone(defaultAnnotations)
 
 	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
 		for k, v := range jobset.GetAnnotations() {
@@ -678,7 +664,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
 			Coordinator:    buildJobSetCoordinator(workUnit),
-			Suspend:        boolPtr(false),
+			Suspend:        ptr.To(false),
 			SuccessPolicy:  buildJobSetSuccessPolicy(workUnit),
 			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
 				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
@@ -686,7 +672,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 				MaxRestarts: 0,
 				Rules:       []jobsetv1alpha2.FailurePolicyRule{},
 			},
-			TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
+			TTLSecondsAfterFinished: ptr.To(int32(defaultTTLSeconds)),
 		},
 	}
 
@@ -833,9 +819,9 @@ func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1al
 	}
 
 	return &jobsetv1alpha2.Network{
-		EnableDNSHostnames:       boolPtr(true),
+		EnableDNSHostnames:       ptr.To(true),
 		Subdomain:                subdomain,
-		PublishNotReadyAddresses: boolPtr(publishNotReady),
+		PublishNotReadyAddresses: ptr.To(publishNotReady),
 	}
 }
 
@@ -869,12 +855,9 @@ func translateSuccessPolicy(policy *esspb.JobSetExecutable_SuccessPolicy) *jobse
 }
 
 func hasJobNamed(jobs []*esspb.KubernetesJob, name string) bool {
-	for _, job := range jobs {
-		if job.GetName() == name {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(jobs, func(job *esspb.KubernetesJob) bool {
+		return job.GetName() == name
+	})
 }
 
 // buildJobSetCoordinator builds the JobSet Coordinator specification or returns nil.
@@ -898,14 +881,6 @@ func shouldEnableJobSetCoordinator(workUnit *esspb.WorkUnit) bool {
 	}
 	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
 	return coord != nil && coord.GetReplicatedJob() != ""
-}
-
-func boolPtr(b bool) *bool {
-	return &b
-}
-
-func completionModePtr(cm batchv1.CompletionMode) *batchv1.CompletionMode {
-	return &cm
 }
 
 func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
@@ -1006,13 +981,13 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 // thoroughly before changing this. Unless you're absolutely sure what you're doing, please don't change this.
 func defaultSecurityContext() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: proto.Bool(false),
+		AllowPrivilegeEscalation: ptr.To(false),
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{
 				"ALL",
 			},
 		},
-		Privileged: proto.Bool(false),
+		Privileged: ptr.To(false),
 	}
 }
 
@@ -1021,8 +996,8 @@ func defaultSecurityContext() *corev1.SecurityContext {
 // thoroughly before changing this. Unless you're absolutely sure what you're doing, please don't change this.
 func defaultPodSecurityContext() *corev1.PodSecurityContext {
 	return &corev1.PodSecurityContext{
-		RunAsGroup: proto.Int64(1000),
-		RunAsUser:  proto.Int64(1000),
+		RunAsGroup: ptr.To(int64(1000)),
+		RunAsUser:  ptr.To(int64(1000)),
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},
@@ -1050,7 +1025,7 @@ func podFailurePolicy(containerName string) *batchv1.PodFailurePolicy {
 			{
 				Action: batchv1.PodFailurePolicyActionFailJob,
 				OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{
-					ContainerName: proto.String(containerName),
+					ContainerName: ptr.To(containerName),
 					Operator:      "In",
 					Values:        []int32{50},
 				},
@@ -1060,7 +1035,7 @@ func podFailurePolicy(containerName string) *batchv1.PodFailurePolicy {
 			{
 				Action: batchv1.PodFailurePolicyActionIgnore,
 				OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{
-					ContainerName: proto.String(containerName),
+					ContainerName: ptr.To(containerName),
 					Operator:      "In",
 					Values:        []int32{42},
 				},

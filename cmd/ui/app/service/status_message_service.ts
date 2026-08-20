@@ -32,19 +32,11 @@ export class StatusMessageService {
   /** List status messages for a given parent (experiment or work unit). */
   listStatusMessages(request: ListStatusMessagesRequest): Observable<ListStatusMessagesResponse> {
     const { parent, pageSize, pageToken, filter, orderBy } = request;
-    let params = new HttpParams();
-    if (pageSize) {
-      params = params.set('pageSize', pageSize);
-    }
-    if (pageToken) {
-      params = params.set('pageToken', pageToken);
-    }
-    if (filter) {
-      params = params.set('filter', filter);
-    }
-    if (orderBy) {
-      params = params.set('orderBy', orderBy);
-    }
+    const params = new HttpParams({
+      fromObject: Object.fromEntries(
+        Object.entries({ pageSize, pageToken, filter, orderBy }).filter(([_, v]) => v != null),
+      ),
+    });
 
     return this.http.get<ListStatusMessagesResponse>(`${XMC_API_DOMAIN}/${parent}/statusMessages`, {
       params,

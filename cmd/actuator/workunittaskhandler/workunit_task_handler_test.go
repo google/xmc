@@ -29,6 +29,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/validation/field/field"
 	"golang/prometheus/client/prometheus/testutil/testutil"
+	"k8s.io/utils/ptr"
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -436,8 +437,6 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 	}
 }
 
-func stringPtr(s string) *string { return &s }
-
 type actuatorPayloadTestCase struct {
 	name        string
 	action      *actuatortaskpb.Action
@@ -585,7 +584,7 @@ func TestHandleActuatorPayload(t *testing.T) {
 			h := newTestTaskHandler(t, withK8sClient(&mockK8sClient{err: tc.k8sErr}))
 
 			payload := &actuatortaskpb.ActuatorPayload{
-				Target: stringPtr("workunits/123"),
+				Target: ptr.To("workunits/123"),
 				Action: tc.action,
 			}
 
@@ -760,13 +759,13 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 	defaultOpts := validJWTOptions(payload, testAudience, testServiceAccount)
 
 	failOptsAud := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsAud.Audience = stringPtr("another-audience")
+	failOptsAud.Audience = ptr.To("another-audience")
 
 	failOptsIss := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsIss.Issuer = stringPtr("another-issuer")
+	failOptsIss.Issuer = ptr.To("another-issuer")
 
 	failOptsSub := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsSub.Subject = stringPtr("another-subject")
+	failOptsSub.Subject = ptr.To("another-subject")
 
 	failOptsNoExp := validJWTOptions(payload, testAudience, testServiceAccount)
 	failOptsNoExp.ExpiresAt = nil
@@ -780,7 +779,7 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 	failOptsNoIat.IssuedAt = nil
 
 	failOptsDigest := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsDigest.MessageDigest = stringPtr("sha256:invalid")
+	failOptsDigest.MessageDigest = ptr.To("sha256:invalid")
 
 	testCases := []struct {
 		name        string

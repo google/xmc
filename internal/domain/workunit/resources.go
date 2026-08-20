@@ -16,7 +16,8 @@
 package workunit
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"golang/protobuf/v2/proto/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -36,9 +37,7 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 		if replicas <= 0 {
 			replicas = 1
 		}
-		specs := []*essmsgpb.ExecutableSpec{job.GetSpec()}
-		specs = append(specs, job.GetSidecars()...)
-		specs = append(specs, job.GetInitContainers()...)
+		specs := slices.Concat([]*essmsgpb.ExecutableSpec{job.GetSpec()}, job.GetSidecars(), job.GetInitContainers())
 		for _, spec := range specs {
 			if spec == nil || spec.GetResources() == nil {
 				continue
@@ -82,9 +81,7 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 // MergeResourceSets merges two sets of resources into a single set.
 // If the same resource type is present in both sets, total amounts are summed.
 func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
-	var allRes []*essmsgpb.ResourceSet
-	allRes = append(allRes, a...)
-	allRes = append(allRes, b...)
+	allRes := slices.Concat(a, b)
 	if len(allRes) == 0 {
 		return nil
 	}
@@ -129,7 +126,7 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 	for gpuType := range gpus {
 		gpuTypes = append(gpuTypes, gpuType)
 	}
-	sort.Strings(gpuTypes)
+	slices.Sort(gpuTypes)
 
 	for _, gpuType := range gpuTypes {
 		gpu := gpus[gpuType]
@@ -140,13 +137,13 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 	}
 
 	// Sort TPU types for deterministic order.
-	sort.Slice(tpus, func(i, j int) bool {
-		resI := tpus[i].GetTpuResources()
-		resJ := tpus[j].GetTpuResources()
-		if resI.GetType() != resJ.GetType() {
-			return resI.GetType() < resJ.GetType()
-		}
-		return resI.GetTopology() < resJ.GetTopology()
+	slices.SortFunc(tpus, func(a, b *essmsgpb.ResourceSet) int {
+		resA := a.GetTpuResources()
+		resB := b.GetTpuResources()
+		return cmp.Or(
+			cmp.Compare(resA.GetType(), resB.GetType()),
+			cmp.Compare(resA.GetTopology(), resB.GetTopology()),
+		)
 	})
 	merged = append(merged, tpus...)
 

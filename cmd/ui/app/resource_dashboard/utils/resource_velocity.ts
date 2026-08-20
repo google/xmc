@@ -32,13 +32,16 @@ export const VELOCITY_PERIOD_OPTIONS: readonly VelocityPeriodOption[] = [
   { value: '7d', label: '7 days' },
 ];
 
+const rateFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 2,
+});
+
 /**
  * Format numerical velocity rate cleanly.
  */
 export function formatRate(val: number): string {
   if (val === 0) return '0';
-  if (Number.isInteger(val)) return `${val}`;
-  return parseFloat(val.toFixed(2)).toString();
+  return rateFormatter.format(val);
 }
 
 /**
@@ -95,13 +98,7 @@ export function findQueuePredictability(
  * Calculate pending jobs count for a cluster queue.
  */
 export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number {
-  const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (p.pendingJobs !== undefined && p.pendingJobs !== null) {
-      return p.pendingJobs;
-    }
-  }
-  return 0;
+  return queue?.queuePredictability?.find((p) => p.pendingJobs != null)?.pendingJobs ?? 0;
 }
 
 /**
@@ -130,14 +127,8 @@ export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period
  * Calculate pending resource requests display text for a cluster queue.
  */
 export function calculatePendingRequestsDisplay(queue: ClusterQueueSecondaryMetrics): string {
-  const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (
-      p.pendingResourceRequests?.count !== undefined &&
-      p.pendingResourceRequests?.count !== null
-    ) {
-      return formatRate(p.pendingResourceRequests.count);
-    }
-  }
-  return '0';
+  const match = queue?.queuePredictability?.find((p) => p.pendingResourceRequests?.count != null);
+  return match?.pendingResourceRequests?.count != null
+    ? formatRate(match.pendingResourceRequests.count)
+    : '0';
 }

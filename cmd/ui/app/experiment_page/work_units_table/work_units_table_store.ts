@@ -125,7 +125,7 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
       return state;
     }
 
-    const newCurrentPageToken = previousTokens[previousTokens.length - 1];
+    const newCurrentPageToken = previousTokens.at(-1) ?? '';
     const newPreviousTokens = previousTokens.slice(0, -1);
 
     return {

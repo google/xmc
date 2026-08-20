@@ -24,6 +24,7 @@ import (
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -318,7 +319,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(1),
 									Completions:    proto.Int32(1),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -404,7 +405,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(4),
 									Completions:    proto.Int32(4),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -505,7 +506,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(2),
 									Completions:    proto.Int32(2),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -603,7 +604,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(1),
 									Completions:    proto.Int32(1),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -706,7 +707,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(1),
 									Completions:    proto.Int32(1),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -943,7 +944,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(1),
 									Completions:    proto.Int32(1),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -1183,7 +1184,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Parallelism:    proto.Int32(1),
 									Completions:    proto.Int32(1),
-									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									CompletionMode: ptr.To(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -1350,10 +1351,6 @@ func TestUpdateNodeSelectorGPU(t *testing.T) {
 			}
 		})
 	}
-}
-
-func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
-	return &m
 }
 
 func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {

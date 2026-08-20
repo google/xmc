@@ -194,11 +194,11 @@ func isRetryableError(err error) bool {
 
 // extractOIDCToken extracts the Authorization token from the Authorization header.
 func extractOIDCToken(authHeader string) (string, bool) {
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+	scheme, token, ok := strings.Cut(authHeader, " ")
+	if !ok || !strings.EqualFold(scheme, "bearer") {
 		return "", false
 	}
-	return parts[1], true
+	return token, true
 }
 
 // validateAuthTokenString validates the auth token string, including the service account email.

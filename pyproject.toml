@@ -47,6 +47,7 @@ combine-as-imports = true
 
 [tool.mypy]
 files = ["."]
+mypy_path = ["tools", "."]
 disallow_subclassing_any = true
 ignore_missing_imports = true
 explicit_package_bases = true

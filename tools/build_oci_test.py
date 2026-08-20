@@ -82,7 +82,7 @@ class TestBuildOci(unittest.TestCase):
     @patch("os.path.realpath")
     @patch("tarfile.open")
     @patch("builtins.open", new_callable=mock_open)
-    @patch("hashlib.sha256")
+    @patch("hashlib.file_digest")
     @patch("os.rename")
     @patch("tempfile.TemporaryDirectory")
     def test_build_oci_success_amd64(
@@ -174,7 +174,7 @@ class TestBuildOci(unittest.TestCase):
     @patch("os.path.realpath")
     @patch("tarfile.open")
     @patch("builtins.open", new_callable=mock_open)
-    @patch("hashlib.sha256")
+    @patch("hashlib.file_digest")
     @patch("os.rename")
     @patch("tempfile.TemporaryDirectory")
     def test_build_oci_success_arm64(

@@ -21,6 +21,7 @@ import os
 import struct
 import tarfile
 import tempfile
+from pathlib import Path
 
 from tool_utils import HandledError, run_tool
 
@@ -33,14 +34,8 @@ FILE_PERMISSION = 0o644
 
 def get_sha256(filepath: str) -> str:
     """Computes the SHA256 checksum of a file in binary mode."""
-    h = hashlib.sha256()
     with open(filepath, "rb") as f:
-        while True:
-            chunk = f.read(65536)
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def detect_elf_architecture(binary_path: str):
@@ -108,11 +103,7 @@ def build_oci(args):
         "/etc/ssl/ca-bundle.pem",
         "/etc/ssl/cert.pem",
     ]
-    host_ca_path = None
-    for path in ca_paths:
-        if os.path.exists(path):
-            host_ca_path = path
-            break
+    host_ca_path = next((p for p in ca_paths if Path(p).is_file()), None)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         layer_tar_path = os.path.join(tmpdir, "layer.tar")
