@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "store",
     srcs = [
-        "proto_converter.go",
+        "resource_names.go",
         "store.go",
     ],
     importpath = "xmanager_cloud/pkg/components/store",
@@ -33,7 +33,7 @@ go_library(
 go_test(
     name = "store_test",
     srcs = [
-        "proto_converter_test.go",
+        "resource_names_test.go",
     ],
     deps = [
         ":store",
