@@ -29,7 +29,7 @@ const (
 	annotationDependencies = "xmc.dev/dependencies"
 )
 
-var descDirectivePattern = regexp.MustCompile(`(?i)(?:^|\n)\s*(?:@|xmc:|xmc\.dev/)?(?:depends-on|dependencies)\s*:\s*([^\n]+)`)
+var descDirectivePattern = regexp.MustCompile(`(?i)(?:^|\n)\s*(?:[-*+]\s+)?(?:@|xmc:|xmc\.dev/)?(?:depends-on|dependencies)\s*:\s*([^\n]+)`)
 
 // ExtractDependencies extracts all component dependency references from the component spec and labels.
 // It deduplicates, canonicalizes, filters out self-references, and returns sorted dependencies.
@@ -111,7 +111,7 @@ func extractFromDocSpec(doc map[string]any) []string {
 	return parseSpecDependencies(depVal)
 }
 
-// parseSpecDependencies extracts dependencies from string, list of strings, or list of named objects.
+// parseSpecDependencies extracts dependencies from string, list of strings, list of named objects, or maps.
 func parseSpecDependencies(val any) []string {
 	var res []string
 	switch v := val.(type) {
@@ -127,6 +127,10 @@ func parseSpecDependencies(val any) []string {
 					res = append(res, name)
 				}
 			}
+		}
+	case map[string]any:
+		for k := range v {
+			res = append(res, k)
 		}
 	}
 	return res
@@ -161,7 +165,7 @@ func ExtractDependenciesFromLabels(labels map[string]string) []string {
 func NormalizeDependencies(rawDeps []string, selfName string) []string {
 	canonicalSelf := CanonicalComponentName(selfName)
 	seen := make(map[string]bool)
-	var result []string
+	result := []string{}
 
 	for _, raw := range rawDeps {
 		cleaned := cleanRawDependencyString(raw)
@@ -180,9 +184,6 @@ func NormalizeDependencies(rawDeps []string, selfName string) []string {
 		}
 	}
 	sort.Strings(result)
-	if result == nil {
-		return []string{}
-	}
 	return result
 }
 
