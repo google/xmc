@@ -14,6 +14,7 @@
 
 import 'jasmine';
 
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -25,12 +26,12 @@ import {
   CreateDashboardDialogComponent,
   getDefaultPlotSpecs,
 } from './create_dashboard_dialog';
-
-const ADD_COMPARISON_BUTTON_SELECTOR = '.add-comp-btn';
+import { CreateDashboardDialogHarness } from './create_dashboard_dialog_harness';
 
 describe('CreateDashboardDialogComponent', () => {
   let fixture: ComponentFixture<CreateDashboardDialogComponent>;
   let component: CreateDashboardDialogComponent;
+  let harness: CreateDashboardDialogHarness;
   let dialogRefSpy: jasmine.SpyObj<MatDialogRef<CreateDashboardDialogComponent>>;
 
   beforeEach(async () => {
@@ -44,58 +45,67 @@ describe('CreateDashboardDialogComponent', () => {
     fixture = TestBed.createComponent(CreateDashboardDialogComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    harness = await TestbedHarnessEnvironment.harnessForFixture(
+      fixture,
+      CreateDashboardDialogHarness,
+    );
   });
 
-  it('should initialize with default plot specs and invalid form', () => {
+  it('should initialize with default plot specs and invalid form', async () => {
     expect(component.form.invalid).toBeTrue();
+    expect(await harness.getPlotCount()).toBe(getDefaultPlotSpecs().length);
     expect(component.plots().length).toBe(getDefaultPlotSpecs().length);
   });
 
-  it('should render correct chip classes and labels for SUMMARY_BOX and SCATTER plots', () => {
-    const chips = fixture.nativeElement.querySelectorAll('.plot-type-chip');
-    expect(chips.length).toBe(4);
+  it('should render correct chip classes and labels for SUMMARY_BOX and SCATTER plots', async () => {
+    const plotItems = await harness.getPlotItems();
+    expect(plotItems.length).toBe(4);
 
-    const chipTexts = Array.from(chips).map((el: any) => el.textContent.trim());
+    const chipTexts = await Promise.all(plotItems.map((p) => p.getChipText()));
     expect(chipTexts.filter((t) => t === 'Summary KPI').length).toBe(2);
     expect(chipTexts.filter((t) => t === 'Curve Plot').length).toBe(2);
 
-    const kpiChips = fixture.nativeElement.querySelectorAll('.plot-type-chip.kpi-chip');
-    const curveChips = fixture.nativeElement.querySelectorAll('.plot-type-chip.curve-chip');
-    expect(kpiChips.length).toBe(2);
-    expect(curveChips.length).toBe(2);
+    const kpiCount = (await Promise.all(plotItems.map((p) => p.isKpiChip()))).filter(
+      Boolean,
+    ).length;
+    const curveCount = (await Promise.all(plotItems.map((p) => p.isCurveChip()))).filter(
+      Boolean,
+    ).length;
+    expect(kpiCount).toBe(2);
+    expect(curveCount).toBe(2);
   });
 
-  it('should add custom plot when valid metric name is entered', () => {
-    const initialCount = component.plots().length;
+  it('should add custom plot when valid metric name is entered', async () => {
+    const initialCount = await harness.getPlotCount();
     component.newPlotForm.patchValue({
       type: PlotType.SUMMARY_BOX,
       metricName: 'custom/f1_score',
       title: 'Last F1 Score',
     });
 
-    component.addPlot();
+    await harness.clickAddPlot();
 
-    expect(component.plots().length).toBe(initialCount + 1);
+    expect(await harness.getPlotCount()).toBe(initialCount + 1);
     const added = component.plots()[component.plots().length - 1];
     expect(added.title).toBe('Last F1 Score');
     expect(added.data?.metrics).toEqual(['custom/f1_score']);
     expect(added.plotId).toMatch(/^custom_f1_score_[a-z0-9]+$/);
   });
 
-  it('should generate collision-resistant plotIds when adding multiple plots rapidly', () => {
+  it('should generate collision-resistant plotIds when adding multiple plots rapidly', async () => {
     component.newPlotForm.patchValue({
       type: PlotType.SUMMARY_BOX,
       metricName: 'val/loss',
       title: 'Validation Loss 1',
     });
-    component.addPlot();
+    await harness.clickAddPlot();
 
     component.newPlotForm.patchValue({
       type: PlotType.SUMMARY_BOX,
       metricName: 'val/loss',
       title: 'Validation Loss 2',
     });
-    component.addPlot();
+    await harness.clickAddPlot();
 
     const plots = component.plots();
     const lastPlot = plots[plots.length - 1];
@@ -106,73 +116,70 @@ describe('CreateDashboardDialogComponent', () => {
     expect(secondLastPlot.plotId).toMatch(/^val_loss_[a-z0-9]+$/);
   });
 
-  it('should remove a plot by index', () => {
-    const initialCount = component.plots().length;
-    component.removePlot(0);
-    expect(component.plots().length).toBe(initialCount - 1);
+  it('should remove a plot by index', async () => {
+    const initialCount = await harness.getPlotCount();
+    await harness.removePlot(0);
+    expect(await harness.getPlotCount()).toBe(initialCount - 1);
   });
 
-  it('should reset plots to default', () => {
-    component.removePlot(0);
-    component.removePlot(0);
-    expect(component.plots().length).toBe(2);
+  it('should reset plots to default', async () => {
+    await harness.removePlot(0);
+    await harness.removePlot(0);
+    expect(await harness.getPlotCount()).toBe(2);
 
-    component.resetPlotsToDefault();
-    expect(component.plots().length).toBe(4);
+    await harness.clickResetPlotsToDefault();
+    expect(await harness.getPlotCount()).toBe(4);
   });
 
-  it('should add and remove comparison experiments', () => {
+  it('should add and remove comparison experiments', async () => {
     component.newComparisonForm.patchValue({
       xid: 234911123,
       wid: 1,
       title: 'VCC tuned_v1',
     });
-    component.addComparison();
+    await harness.clickAddComparison();
 
-    expect(component.comparisons().length).toBe(1);
+    expect(await harness.getComparisonCount()).toBe(1);
     expect(component.comparisons()[0].xid).toBe(234911123);
+    const comparisonItems = await harness.getComparisonItems();
+    expect(await comparisonItems[0].getText()).toContain('234911123');
 
-    component.removeComparison(0);
-    expect(component.comparisons().length).toBe(0);
+    await harness.removeComparison(0);
+    expect(await harness.getComparisonCount()).toBe(0);
   });
 
-  it('should render "Add Experiment" on the comparison button and add comparison when clicked', () => {
-    const addButton = fixture.nativeElement.querySelector(
-      ADD_COMPARISON_BUTTON_SELECTOR,
-    ) as HTMLButtonElement;
-    expect(addButton).toBeTruthy();
-    expect(addButton.textContent?.trim()).toContain('Add Experiment');
+  it('should render "Add Experiment" on the comparison button and add comparison when clicked', async () => {
+    expect(await harness.getAddComparisonButtonText()).toContain('Add Experiment');
 
     component.newComparisonForm.patchValue({
       xid: 234911123,
       wid: 1,
       title: 'VCC tuned_v1',
     });
-    fixture.detectChanges();
 
-    expect(addButton.disabled).toBeFalse();
-    addButton.click();
-    fixture.detectChanges();
+    expect(await harness.isAddComparisonButtonDisabled()).toBeFalse();
+    await harness.clickAddComparison();
 
-    expect(component.comparisons().length).toBe(1);
+    expect(await harness.getComparisonCount()).toBe(1);
     expect(component.comparisons()[0].xid).toBe(234911123);
   });
 
-  it('should not add comparison experiment when form is invalid or WID is null', () => {
+  it('should not add comparison experiment when form is invalid or WID is null', async () => {
     component.newComparisonForm.patchValue({
       xid: -1,
       wid: 1,
     });
-    component.addComparison();
-    expect(component.comparisons().length).toBe(0);
+    await harness.clickAddComparison();
+    expect(await harness.getComparisonCount()).toBe(0);
 
     component.newComparisonForm.patchValue({
       xid: 234911123,
       wid: null,
     });
     expect(component.newComparisonForm.invalid).toBeTrue();
-    component.addComparison();
-    expect(component.comparisons().length).toBe(0);
+    expect(await harness.isAddComparisonButtonDisabled()).toBeTrue();
+    await harness.clickAddComparison();
+    expect(await harness.getComparisonCount()).toBe(0);
   });
 
   it('should be invalid when baseWid is null', () => {
@@ -184,7 +191,7 @@ describe('CreateDashboardDialogComponent', () => {
     expect(component.form.invalid).toBeTrue();
   });
 
-  it('should build and return Dashboard object on submit', () => {
+  it('should build and return Dashboard object on submit', async () => {
     component.form.patchValue({
       title: 'Custom Evaluation Benchmark',
       description: 'Benchmark dashboard comparing tuning iterations',
@@ -198,10 +205,11 @@ describe('CreateDashboardDialogComponent', () => {
       wid: 1,
       title: 'VCC tuned_v1',
     });
-    component.addComparison();
+    await harness.clickAddComparison();
 
     expect(component.form.valid).toBeTrue();
-    component.onSubmit();
+    expect(await harness.isSubmitButtonDisabled()).toBeFalse();
+    await harness.clickSubmit();
 
     expect(dialogRefSpy.close).toHaveBeenCalledTimes(1);
     const resultDashboard = dialogRefSpy.close.calls.mostRecent().args[0] as Dashboard;
@@ -222,8 +230,8 @@ describe('CreateDashboardDialogComponent', () => {
     expect(compChart.title).toBe('VCC tuned_v1');
   });
 
-  it('should close without value on cancel', () => {
-    component.onCancel();
+  it('should close without value on cancel', async () => {
+    await harness.clickCancel();
     expect(dialogRefSpy.close).toHaveBeenCalledWith();
   });
 });

@@ -14,17 +14,18 @@
 
 import 'jasmine';
 
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { AddExperimentDialogComponent } from './add_experiment_dialog';
-
-const SUBMIT_BUTTON_SELECTOR = 'mat-dialog-actions button[color="primary"]';
+import { AddExperimentDialogHarness } from './add_experiment_dialog_harness';
 
 describe('AddExperimentDialogComponent', () => {
   let fixture: ComponentFixture<AddExperimentDialogComponent>;
   let component: AddExperimentDialogComponent;
+  let harness: AddExperimentDialogHarness;
   let dialogRefSpy: jasmine.SpyObj<MatDialogRef<AddExperimentDialogComponent>>;
 
   beforeEach(async () => {
@@ -38,11 +39,16 @@ describe('AddExperimentDialogComponent', () => {
     fixture = TestBed.createComponent(AddExperimentDialogComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    harness = await TestbedHarnessEnvironment.harnessForFixture(
+      fixture,
+      AddExperimentDialogHarness,
+    );
   });
 
-  it('should initialize with default WID 1 and invalid form', () => {
+  it('should initialize with default WID 1 and invalid form', async () => {
     expect(component.form.get('wid')?.value).toBe(1);
     expect(component.form.invalid).toBeTrue();
+    expect(await harness.isSubmitButtonDisabled()).toBeTrue();
   });
 
   it('should be invalid when WID is null', () => {
@@ -53,15 +59,16 @@ describe('AddExperimentDialogComponent', () => {
     expect(component.form.invalid).toBeTrue();
   });
 
-  it('should close dialog with entered data on valid submit', () => {
+  it('should close dialog with entered data on valid submit', async () => {
     component.form.patchValue({
       xid: 234911123,
       wid: 1,
       title: 'VCC tuned_v1',
     });
     expect(component.form.valid).toBeTrue();
+    expect(await harness.isSubmitButtonDisabled()).toBeFalse();
 
-    component.onSubmit();
+    await harness.clickSubmit();
     expect(dialogRefSpy.close).toHaveBeenCalledWith({
       xid: 234911123,
       wid: 1,
@@ -69,26 +76,21 @@ describe('AddExperimentDialogComponent', () => {
     });
   });
 
-  it('should close without value on cancel', () => {
-    component.onCancel();
+  it('should close without value on cancel', async () => {
+    await harness.clickCancel();
     expect(dialogRefSpy.close).toHaveBeenCalledWith();
   });
 
-  it('should render "Add to comparison" on the submit button and submit when clicked', () => {
-    const submitButton = fixture.nativeElement.querySelector(
-      SUBMIT_BUTTON_SELECTOR,
-    ) as HTMLButtonElement;
-    expect(submitButton).toBeTruthy();
-    expect(submitButton.textContent?.trim()).toBe('Add to comparison');
+  it('should render "Add to comparison" on the submit button and submit when clicked', async () => {
+    expect(await harness.getSubmitButtonText()).toBe('Add to comparison');
 
     component.form.patchValue({
       xid: 234911123,
       wid: 1,
     });
-    fixture.detectChanges();
 
-    expect(submitButton.disabled).toBeFalse();
-    submitButton.click();
+    expect(await harness.isSubmitButtonDisabled()).toBeFalse();
+    await harness.clickSubmit();
     expect(dialogRefSpy.close).toHaveBeenCalledWith({
       xid: 234911123,
       wid: 1,
