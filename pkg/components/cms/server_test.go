@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -530,5 +531,49 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	}
 	if resp2.GetComponent().GetSpec().GetDescription() != "Updated description" {
 		t.Errorf("GetSpec().GetDescription() = %q, want 'Updated description'", resp2.GetComponent().GetSpec().GetDescription())
+	}
+}
+
+func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create initial component
+	initialSpec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Initial description",
+	}
+	_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "comp-mask-test",
+		Spec: initialSpec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent() initial create failed: %v", err)
+	}
+
+	// Partial update with update_mask only updating description
+	updateSpec := &componentspb.ComponentSpec{
+		Description: "Updated description only",
+	}
+	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name:       "comp-mask-test",
+		Spec:       updateSpec,
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(update_mask) unexpected error: %v", err)
+	}
+
+	comp := resp.GetComponent()
+	if comp.GetSpec().GetDescription() != "Updated description only" {
+		t.Errorf("GetDescription() = %q, want 'Updated description only'", comp.GetSpec().GetDescription())
+	}
+	if comp.GetSpec().GetVersion() != "v1.0.0" {
+		t.Errorf("GetVersion() preserved = %q, want 'v1.0.0'", comp.GetSpec().GetVersion())
+	}
+	if comp.GetSpec().GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		t.Errorf("GetType() preserved = %v, want CUSTOM_1P_COMPONENT", comp.GetSpec().GetType())
 	}
 }

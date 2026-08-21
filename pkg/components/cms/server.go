@@ -94,6 +94,13 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}
 
 	specToSet := req.GetSpec()
+	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
+		existingRec, err := s.store.GetComponent(ctx, canonicalName)
+		if err == nil && existingRec != nil && existingRec.Spec != nil {
+			specToSet = store.ApplySpecUpdateMask(existingRec.Spec, req.GetSpec(), req.GetUpdateMask().GetPaths())
+		}
+	}
+
 	if version := specToSet.GetVersion(); version != "" {
 		if _, err := store.Parse(version); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
