@@ -17,19 +17,29 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
-from xdash.client import DashboardClient, XDashRPCError, _is_local_endpoint
+from xdash.client import DashboardClient, XDashError, XDashRPCError, _is_local_endpoint
 
 
-class MockRpcError(Exception):
-    """Custom exception simulating grpc.RpcError in unit tests."""
+class FakeRpcError(Exception):
+    """Stands in for grpc.RpcError, which these targets do not depend on.
 
-    is_rpc_error = True
+    The production code identifies an RPC failure with isinstance(err, grpc.RpcError),
+    so tests patch xdash.client.grpc and point its RpcError at this class rather than
+    asking the client to recognise a marker attribute no real gRPC error carries.
+    """
 
     def code(self) -> str:
         return "NOT_FOUND"
 
     def details(self) -> str:
         return "Resource not found"
+
+
+class DetaillessRpcError(FakeRpcError):
+    """An RPC failure whose details() is empty, as a cancelled call's can be."""
+
+    def details(self) -> str:
+        return ""
 
 
 class DashboardClientTest(unittest.TestCase):
@@ -58,6 +68,13 @@ class DashboardClientTest(unittest.TestCase):
         results = self.client.list_dashboards()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].title, "D1")
+        self.mock_stub.ListDashboards.assert_called_once()
+        req = self.mock_stub.ListDashboards.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.ListDashboardsRequest)
+
+    def test_list_dashboards_on_empty_response(self) -> None:
+        self.mock_stub.ListDashboards.return_value = dashboard_service_pb2.ListDashboardsResponse()
+        self.assertEqual(self.client.list_dashboards(), [])
 
     def test_get_chart(self) -> None:
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
@@ -66,24 +83,57 @@ class DashboardClientTest(unittest.TestCase):
         result = self.client.get_chart("experiments/1001/charts/c1")
         self.assertEqual(result.title, "Exp Chart")
         self.mock_stub.GetChart.assert_called_once()
+        req = self.mock_stub.GetChart.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.GetChartRequest)
+        self.assertEqual(req.name, "experiments/1001/charts/c1")
 
     def test_validation_errors(self) -> None:
-        with self.assertRaises(ValueError):
-            self.client.get_dashboard("")
-        with self.assertRaises(ValueError):
-            self.client.get_chart("")
+        for blank in ("", "   ", "\t\n"):
+            with self.assertRaises(ValueError):
+                self.client.get_dashboard(blank)
+            with self.assertRaises(ValueError):
+                self.client.get_chart(blank)
+        self.mock_stub.GetDashboard.assert_not_called()
+        self.mock_stub.GetChart.assert_not_called()
 
     def test_rpc_error_handling(self) -> None:
-        self.mock_stub.GetDashboard.side_effect = MockRpcError()
-        with self.assertRaises(XDashRPCError) as cm:
-            self.client.get_dashboard("dashboards/invalid")
+        self.mock_stub.GetDashboard.side_effect = FakeRpcError()
+        with patch("xdash.client.grpc") as mock_grpc:
+            mock_grpc.RpcError = FakeRpcError
+            with self.assertRaises(XDashRPCError) as cm:
+                self.client.get_dashboard("dashboards/invalid")
         self.assertEqual(cm.exception.code, "NOT_FOUND")
+        self.assertEqual(str(cm.exception), "GetDashboard failed: Resource not found")
 
-    def test_context_manager_closes_channel(self) -> None:
+    def test_rpc_error_without_details_falls_back_to_the_exception(self) -> None:
+        self.mock_stub.GetDashboard.side_effect = DetaillessRpcError("channel closed")
+        with patch("xdash.client.grpc") as mock_grpc:
+            mock_grpc.RpcError = FakeRpcError
+            with self.assertRaises(XDashRPCError) as cm:
+                self.client.get_dashboard("dashboards/invalid")
+        self.assertEqual(str(cm.exception), "GetDashboard failed: channel closed")
+
+    def test_non_rpc_error_is_wrapped_as_xdash_error(self) -> None:
+        self.mock_stub.GetChart.side_effect = RuntimeError("boom")
+        with patch("xdash.client.grpc") as mock_grpc:
+            mock_grpc.RpcError = FakeRpcError
+            with self.assertRaises(XDashError) as cm:
+                self.client.get_chart("experiments/1/charts/c1")
+        self.assertNotIsInstance(cm.exception, XDashRPCError)
+        self.assertEqual(str(cm.exception), "Unexpected error in GetChart: boom")
+
+    def test_injected_channel_is_left_open(self) -> None:
         mock_channel = MagicMock()
         with DashboardClient(stub=self.mock_stub, channel=mock_channel) as client:
             self.assertIs(client._channel, mock_channel)
-        mock_channel.close.assert_called_once()
+        # The caller may be sharing this channel with other clients; closing it is not ours to do.
+        mock_channel.close.assert_not_called()
+
+    def test_owned_channel_is_closed(self) -> None:
+        with patch("xdash.client.grpc") as mock_grpc, patch("xdash.client.DashboardServiceStub"):
+            with DashboardClient(endpoint="localhost:8080"):
+                pass
+        mock_grpc.insecure_channel.return_value.close.assert_called_once()
 
     def test_close_without_channel_is_noop(self) -> None:
         self.client.close()

@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
@@ -25,8 +24,6 @@ except ImportError:
     grpc = None  # type: ignore[assignment]
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 
@@ -98,7 +95,8 @@ class DashboardClient:
         Args:
             endpoint: Optional gRPC address (e.g. 'localhost:8080'). Defaults to
                 XMC_DASHBOARD_ENDPOINT env var or 'localhost:8080'.
-            channel: Optional pre-configured grpc.Channel.
+            channel: Optional pre-configured grpc.Channel. The caller keeps ownership of
+                it; close() leaves an injected channel open.
             stub: Optional pre-configured or mock stub object for testing.
             secure: Whether to open a TLS channel. Defaults to True for every endpoint
                 except a local one, since the hosted service requires TLS.
@@ -108,6 +106,10 @@ class DashboardClient:
         Raises:
             ValueError: If credentials are supplied alongside secure=False.
         """
+        # Only a channel this constructor opened is ours to close. An injected one may be
+        # shared with other clients, and tearing it down under them is not our call.
+        self._owns_channel = False
+
         if stub is not None:
             self._stub = stub
             self._channel = channel
@@ -140,12 +142,13 @@ class DashboardClient:
                 raise XDashConnectionError(
                     f"Failed to create gRPC channel to {resolved_endpoint}: {e}"
                 ) from e
+            self._owns_channel = True
 
         self._stub = DashboardServiceStub(self._channel)
 
     def close(self) -> None:
-        """Closes the underlying gRPC channel if one is open."""
-        if self._channel is not None and hasattr(self._channel, "close"):
+        """Closes the gRPC channel, unless the caller injected one it owns itself."""
+        if self._owns_channel and self._channel is not None:
             self._channel.close()
 
     def __enter__(self) -> DashboardClient:
@@ -166,18 +169,19 @@ class DashboardClient:
         try:
             return call(request)
         except Exception as err:
-            is_rpc = getattr(err, "is_rpc_error", False)
-            if (grpc is not None and isinstance(err, grpc.RpcError)) or is_rpc:
+            if grpc is not None and isinstance(err, grpc.RpcError):
                 code_fn = getattr(err, "code", None)
                 code = code_fn() if callable(code_fn) else None
                 details_fn = getattr(err, "details", None)
-                details = details_fn() if callable(details_fn) else str(err)
-                raise XDashRPCError(f"{rpc_name} failed: {details}", code=code) from err
+                details = details_fn() if callable(details_fn) else None
+                # details() is empty on some statuses (a cancelled call, for one), and
+                # "GetDashboard failed: None" tells the caller nothing.
+                raise XDashRPCError(f"{rpc_name} failed: {details or err}", code=code) from err
             raise XDashError(f"Unexpected error in {rpc_name}: {err}") from err
 
     def get_dashboard(self, name: str) -> messages_pb2.Dashboard:
         """Retrieves a dashboard by its full resource name."""
-        if not name:
+        if not name or not name.strip():
             raise ValueError("Dashboard resource name is required")
         req = dashboard_service_pb2.GetDashboardRequest(name=name)
         return self._execute_rpc(self._stub.GetDashboard, req, "GetDashboard")
@@ -190,7 +194,7 @@ class DashboardClient:
 
     def get_chart(self, name: str) -> messages_pb2.Chart:
         """Retrieves a chart by its full resource name."""
-        if not name:
+        if not name or not name.strip():
             raise ValueError("Chart resource name is required")
         req = dashboard_service_pb2.GetChartRequest(name=name)
         return self._execute_rpc(self._stub.GetChart, req, "GetChart")
