@@ -206,7 +206,7 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		      ),
 		      LatestPending AS (
 		        SELECT h.QueueName, h.BitReversedXid, h.WorkUnitId, h.ResourceType, h.ResourceUnits
-		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime} h
+		        FROM WorkUnitStatusHistory h
 		        JOIN MaxHistory m
 		          ON h.BitReversedXid = m.BitReversedXid
 		         AND h.WorkUnitId = m.WorkUnitId

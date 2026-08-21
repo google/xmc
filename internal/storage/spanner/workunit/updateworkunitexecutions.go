@@ -116,11 +116,15 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			queueNames[wid] = qName
 
 			var execBytes []byte
-			if err := row.ColumnByName("Executable", &execBytes); err == nil && len(execBytes) > 0 {
+			if err := row.ColumnByName("Executable", &execBytes); err != nil {
+				return fmt.Errorf("failed to scan Executable column: %w", err)
+			}
+			if len(execBytes) > 0 {
 				var exec essmsgpb.Executable
-				if err := proto.Unmarshal(execBytes, &exec); err == nil {
-					executables[wid] = &exec
+				if err := proto.Unmarshal(execBytes, &exec); err != nil {
+					return fmt.Errorf("failed to unmarshal Executable proto: %w", err)
 				}
+				executables[wid] = &exec
 			}
 
 			updatedExecutions[wid] = workUnitExecution
