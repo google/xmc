@@ -30,6 +30,69 @@ class CliTest(unittest.TestCase):
         ret = run_cli([], client=self.mock_client)
         self.assertEqual(ret, 1)
 
+    def test_create_dashboard(self) -> None:
+        dash = messages_pb2.Dashboard(name="dashboards/d1", title="Dash 1")
+        self.mock_client.create_dashboard.return_value = dash
+
+        ret = run_cli(
+            [
+                "create-dashboard",
+                "--title",
+                "Dash 1",
+                "--dashboard-id",
+                "d1",
+                "--description",
+                "First dashboard",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        self.assertEqual(built.name, "dashboards/d1")
+        self.assertEqual(built.description, "First dashboard")
+
+    def test_create_chart(self) -> None:
+        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/c1", title="Chart 1")
+        self.mock_client.create_chart.return_value = chart
+
+        ret = run_cli(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/1",
+                "--xid",
+                "1001",
+                "--wid",
+                "1",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_chart.assert_called_once()
+
+    def test_create_chart_rejects_empty_metrics(self) -> None:
+        ret = run_cli(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/1",
+                "--xid",
+                "1001",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                " , ",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 1)
+        self.mock_client.create_chart.assert_not_called()
+
     def test_get_dashboard_and_chart(self) -> None:
         dash = messages_pb2.Dashboard(name="dashboards/d1", title="D1")
         self.mock_client.get_dashboard.return_value = dash
@@ -58,6 +121,20 @@ class CliTest(unittest.TestCase):
         self.mock_client.get_dashboard.side_effect = ValueError("boom")
         ret = run_cli(["get", "dashboards/d1"], client=self.mock_client)
         self.assertEqual(ret, 1)
+
+    def test_get_data(self) -> None:
+        pdata = messages_pb2.ChartData.PlotData(
+            plot_id="kpi",
+            summary_data=messages_pb2.ChartData.SummaryBoxValue(latest_value=0.1234),
+        )
+        cdata = messages_pb2.ChartData(
+            name="experiments/1001/charts/c1", xid=1001, wid=1, plots_data=[pdata]
+        )
+        self.mock_client.get_chart_data.return_value = cdata
+
+        ret = run_cli(["get-data", "experiments/1001/charts/c1"], client=self.mock_client)
+        self.assertEqual(ret, 0)
+        self.mock_client.get_chart_data.assert_called_once_with("experiments/1001/charts/c1")
 
     def test_list(self) -> None:
         self.mock_client.list_dashboards.return_value = [

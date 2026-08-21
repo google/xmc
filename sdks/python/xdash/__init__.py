@@ -13,6 +13,13 @@
 # limitations under the License.
 """Public API for xdash: XMC Python SDK & CLI for Metrics Dashboards."""
 
+from xdash.builders import (
+    ChartBuilder,
+    DashboardBuilder,
+    bar_plot,
+    scatter_plot,
+    summary_kpi_plot,
+)
 from xdash.client import (
     DashboardClient,
     XDashConnectionError,
@@ -21,6 +28,11 @@ from xdash.client import (
 )
 
 __all__ = [
+    "DashboardBuilder",
+    "ChartBuilder",
+    "summary_kpi_plot",
+    "scatter_plot",
+    "bar_plot",
     "DashboardClient",
     "XDashError",
     "XDashConnectionError",
