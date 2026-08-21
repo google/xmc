@@ -25,23 +25,20 @@ import { bootstrap, hasEl, setupModule } from './testing/test';
 
 describe('App Component', () => {
   let isResourceDashboardEnabled = true;
-  let isNonProdAuthFlag = false;
-  let userIsNonProdAuth = false;
+  let isPerformanceDashboardEnabled = true;
 
   beforeEach(() => {
     isResourceDashboardEnabled = true;
-    isNonProdAuthFlag = false;
-    userIsNonProdAuth = false;
+    isPerformanceDashboardEnabled = true;
 
     const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
-    authServiceMock.getUser.and.callFake(() =>
+    authServiceMock.getUser.and.returnValue(
       of({
         email: 'user@google.com',
         name: 'Test User',
         pictureUrl: 'pic.jpg',
         sessionExpiresAt: 12345,
         allowedDomains: ['google.com'],
-        isNonProdAuth: userIsNonProdAuth,
       }),
     );
 
@@ -54,14 +51,14 @@ describe('App Component', () => {
       get isResourceDashboardEnabled() {
         return isResourceDashboardEnabled;
       },
+      get isPerformanceDashboardEnabled() {
+        return isPerformanceDashboardEnabled;
+      },
       get isAdminPanelEnabled() {
         return false;
       },
       get isStatusMessageHistoryEnabled() {
         return true;
-      },
-      get isNonProdAuth() {
-        return isNonProdAuthFlag;
       },
     } as FeatureFlagService;
 
@@ -93,22 +90,14 @@ describe('App Component', () => {
     expect(hasEl('a[routerLink="/resources"]')).toBeFalse();
   });
 
-  it('should display non-prod auth banner when isNonProdAuth feature flag is true', () => {
-    isNonProdAuthFlag = true;
+  it('should display Dashboards menu item when isPerformanceDashboardEnabled is true', () => {
     bootstrap(App);
-    expect(hasEl('.non-prod-auth-banner')).toBeTrue();
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeTrue();
   });
 
-  it('should display non-prod auth banner when user isNonProdAuth is true', () => {
-    userIsNonProdAuth = true;
+  it('should hide Dashboards menu item when isPerformanceDashboardEnabled is false', () => {
+    isPerformanceDashboardEnabled = false;
     bootstrap(App);
-    expect(hasEl('.non-prod-auth-banner')).toBeTrue();
-  });
-
-  it('should hide non-prod auth banner when non-prod auth is false', () => {
-    isNonProdAuthFlag = false;
-    userIsNonProdAuth = false;
-    bootstrap(App);
-    expect(hasEl('.non-prod-auth-banner')).toBeFalse();
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeFalse();
   });
 });

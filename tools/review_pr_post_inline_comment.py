@@ -22,7 +22,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from github_utils import GithubAPIError, GithubAuthError, call_github_api
+from github_utils import (
+    GithubAPIError,
+    GithubAuthError,
+    call_github_api,
+    resolve_review_thread,
+)
 from tool_utils import HandledError, run_tool
 
 
@@ -37,8 +42,71 @@ def get_git_username() -> str:
     return os.environ.get("USER", "unknown")
 
 
+def _handle_resolve_thread(
+    args: argparse.Namespace,
+    raw_resolve_thread: str | int,
+) -> dict[str, Any]:
+    """Resolves a review thread via GitHub GraphQL API."""
+    try:
+        res = resolve_review_thread(
+            args.owner,
+            args.repo,
+            args.pr_number,
+            raw_resolve_thread,
+            user_agent="XMC-PR-Review-Agent",
+        )
+        return {
+            "status": "success",
+            "owner": args.owner,
+            "repo": args.repo,
+            "pr_number": args.pr_number,
+            "resolved_thread_id": res["thread_id"],
+            "is_resolved": res["is_resolved"],
+        }
+    except (GithubAuthError, GithubAPIError) as e:
+        raise HandledError(
+            f"Failed to resolve review thread '{raw_resolve_thread}': {e}",
+            "Verify that the thread ID exists and that you have permission to resolve review threads.",
+        ) from e
+
+
+def _read_comment_message(
+    message: str | None,
+    message_file: str | None,
+) -> str:
+    """Reads and validates the comment body from either a string or a file path."""
+    if message and message_file:
+        raise HandledError(
+            "Cannot specify both a message string (--message) and a message file (-f/--message-file).",
+            "Provide either direct text via --message or file input via -f/--message-file.",
+        )
+    if message_file:
+        p = Path(message_file)
+        if not p.is_file():
+            raise HandledError(
+                f"Message file '{message_file}' does not exist.",
+                "Ensure the message file path is valid and readable.",
+            )
+        raw_message = p.read_text(encoding="utf-8")
+    elif message is not None:
+        raw_message = message
+    else:
+        raise HandledError(
+            "Review comment message content is required.",
+            "Pass comment content via --message or --message-file.",
+        )
+
+    clean_message = raw_message.strip()
+    if not clean_message:
+        raise HandledError(
+            "Review comment body cannot be empty.",
+            "Ensure the review comment file or message string contains meaningful text.",
+        )
+    return clean_message
+
+
 def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
-    """Post an inline review comment or thread counter-reply to a Pull Request.
+    """Post an inline review comment, counter-reply, or resolve a thread on a PR.
 
     Handles arbitrary long comments (multi-page markdown descriptions and extensive
     git diff blocks) safely without backtick subshell interpolation or length truncation.
@@ -46,35 +114,11 @@ def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
     and single line backticks are read verbatim and serialized as standard JSON payloads
     sent via stdin to gh API or HTTP urllib, bypassing shell command evaluation completely.
     """
-    if args.message and args.message_file:
-        raise HandledError(
-            "Cannot specify both a message string (--message) and a message file (-f/--message-file).",
-            "Provide either direct text via --message or file input via -f/--message-file.",
-        )
+    raw_resolve_thread = getattr(args, "resolve_thread", None)
+    if isinstance(raw_resolve_thread, (str, int)) and str(raw_resolve_thread).strip():
+        return _handle_resolve_thread(args, raw_resolve_thread)
 
-    if args.message_file:
-        p = Path(args.message_file)
-        if not p.is_file():
-            raise HandledError(
-                f"Message file '{args.message_file}' does not exist.",
-                "Ensure the message file path is valid and readable.",
-            )
-        # Preserve multi-line markdown formatting, backticks, and diff blocks verbatim
-        raw_message = p.read_text(encoding="utf-8")
-    elif args.message is not None:
-        raw_message = args.message
-    else:
-        raise HandledError(
-            "Review comment message content is required.",
-            "Pass comment content via --message or --message-file.",
-        )
-
-    raw_message = raw_message.strip()
-    if not raw_message:
-        raise HandledError(
-            "Review comment body cannot be empty.",
-            "Ensure the review comment file or message string contains meaningful text.",
-        )
+    raw_message = _read_comment_message(args.message, args.message_file)
 
     # Append audit usage telemetry
     now_utc = datetime.now(timezone.utc)
@@ -165,6 +209,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-f",
         "--message-file",
         help="File containing markdown content of the review comment (handles arbitrary long comments).",
+    )
+    parser.add_argument(
+        "--resolve-thread",
+        help="Review thread ID (GraphQL Node ID 'PRRT_...' or comment database ID) to resolve on GitHub.",
     )
     return parser
 

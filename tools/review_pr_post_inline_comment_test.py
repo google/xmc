@@ -176,6 +176,27 @@ class TestReviewPRPostInlineComment(unittest.TestCase):
         self.assertIn("`handleRequest()`", posted_payload["body"])
         self.assertIn("```diff\n-if req != nil", posted_payload["body"])
 
+    @patch("review_pr_post_inline_comment.resolve_review_thread")
+    def test_post_inline_comment_resolve_thread_success(self, mock_resolve):
+        mock_resolve.return_value = {
+            "status": "success",
+            "thread_id": "PRRT_12345",
+            "is_resolved": True,
+        }
+        args = MagicMock()
+        args.owner = "google"
+        args.repo = "xmc"
+        args.pr_number = 490
+        args.resolve_thread = "PRRT_12345"
+
+        res = post_inline_comment(args)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["resolved_thread_id"], "PRRT_12345")
+        self.assertTrue(res["is_resolved"])
+        mock_resolve.assert_called_once_with(
+            "google", "xmc", 490, "PRRT_12345", user_agent="XMC-PR-Review-Agent"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

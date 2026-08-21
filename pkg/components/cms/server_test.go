@@ -101,6 +101,61 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 			wantCode: codes.Unimplemented,
 		},
 		{
+			name: "SetComponentIntent_AIP122Name",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "components/comp-1", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "SetComponentIntent_ValidSemVer",
+			call: func() error {
+				spec := &componentspb.ComponentSpec{
+					Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Version: "v1.2.3-alpha.1+build.10",
+				}
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: spec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "SetComponentIntent_WithDependencies",
+			call: func() error {
+				spec := &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Manifests: []string{
+						"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: dep-a",
+					},
+					Description: "@depends-on: dep-b",
+				}
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: spec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "SetComponentIntent_InvalidSemVer",
+			call: func() error {
+				spec := &componentspb.ComponentSpec{
+					Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Version: "invalid.semver.version",
+				}
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: spec})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "SetComponentIntent_InvalidName",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "-invalid-name-", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
 			name: "SetComponentIntent_NilRequest",
 			call: func() error {
 				_, err := server.SetComponentIntent(ctx, nil)
@@ -133,6 +188,14 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 				return err
 			},
 			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "PrepareDeactivation_InvalidName",
+			call: func() error {
+				_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "INVALID NAME"})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "PrepareDeactivation_NilRequest",
@@ -263,6 +326,22 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 				return err
 			},
 			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "ValidateComponentRequirement_ValidMinVersion",
+			call: func() error {
+				_, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "comp-1", MinimumVersion: "v1.0.0"})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "ValidateComponentRequirement_InvalidMinVersion",
+			call: func() error {
+				_, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "comp-1", MinimumVersion: "invalid.min.ver"})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "ValidateComponentRequirement_NilRequest",

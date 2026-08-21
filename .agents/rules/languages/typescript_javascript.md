@@ -45,8 +45,8 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 - **Standardized Batch Operations**: Centralize repetitive multi-step asynchronous UI workflows (confirmation dialogs, spinners, snackbars) into standardized reusable helper methods (e.g., `executeBatchOperation`).
 
 ## 5. Dependency Injection (DI) & Hermetic Mocking
-- **Eradicate Embedded Mock Data**: Follow DI mock decoupling standards defined in [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling). Never import static mock datasets or embed conditional mock execution branches inside production Angular service classes.
-- **Standalone Mock Classes**: Move all mock implementations and stubbed responses into dedicated standalone mock service classes (e.g., `MockExperimentService extends ExperimentService`) located in dedicated testing directories (e.g., `service/testing/`).
+- **Eradicate Embedded Mock Data & Fixtures**: Follow DI mock decoupling standards defined in [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling). Never import static mock datasets, define hardcoded sample entity arrays (`createDefaultCharts()`), or embed conditional mock execution/fallback branches inside production Angular components or service classes.
+- **Standalone Mock Classes & Reusable Test Fixtures**: Move all mock implementations and stubbed responses into dedicated standalone mock service classes (e.g., `MockExperimentService extends ExperimentService`) or reusable fixture helpers (e.g., `cmd/ui/app/testing/mock_dashboards.ts`) located strictly in dedicated testing directories (e.g., `service/testing/` or `app/testing/`).
 - **Application DI Polymorphism**: Register DI factory providers in the core application configuration (`app_config.ts`) to dynamically resolve the correct service implementation based on runtime environmental tokens:
 ```typescript
 {
@@ -60,7 +60,9 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 - **Lifecycle Initialization Helpers**: Extract complex multi-pipe observable constructions out of constructors and `ngOnInit` hooks into clear initialization methods (e.g., `initExperimentStream()`, `initUrlsStream()`).
 - Cleanly import RxJS operators directly from `'rxjs'` to optimize tree-shaking and bundle size.
 
-## 7. Angular Component Testing & DOM Interaction Standards
+## 7. Angular Component Testing, Cleanstate & DOM Interaction Standards
+- **Cleanstate Helper vs Mutable `let` State**: Adopt the codebase standard `cleanState`, `setupModule`, and `bootstrap` helpers from `xmanager_cloud/ui/app/testing/test` across Angular Jasmine test suites. Never declare top-level mutable `let fixture`, `let component`, or spy variables at the `describe` closure level; initializing state inside `cleanState(...)` ensures automatic `afterEach` fixture destruction (`fixture.destroy()`) and complete test isolation without memory leaks.
+- **Hermetic DI in Tests**: Always provide test doubles and mock services (e.g. `SnackbarService`, `Clipboard`, `MatDialog`) through `TestBed.configureTestingModule` / `setupModule` providers rather than casting components to `unknown` and monkey-patching private properties.
 - **Mandatory DOM Interaction Coverage**: Every Angular component test suite MUST test all interactive template workflows:
   - Dynamic list additions/deletions (e.g. clicking add/remove buttons and asserting resulting DOM element counts).
   - Form control value updates (`input`, `change` events) and boundary validation (invalid/negative inputs).

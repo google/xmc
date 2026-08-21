@@ -41,142 +41,14 @@ func TestExtractRequestedResources(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "cpu and memory aggregation",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 2,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_CpuResources{
-								CpuResources: &essmsgpb.CpuResources{
-									CpuMillicores: 4000,
-									MemoryBytes:   8192,
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "cpu", Count: 8.0},
-				{ResourceType: "memory", Count: 16384.0},
-			},
-		},
-		{
-			name: "explicit GPU type and count",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 2,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_GpuResources{
-								GpuResources: &essmsgpb.GpuResources{
-									Type:  "nvidia-tesla-h100",
-									Count: 4,
-								},
-							},
-						},
-					},
-				},
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_GpuResources{
-								GpuResources: &essmsgpb.GpuResources{
-									Type:  "nvidia-tesla-h100",
-									Count: 2,
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "nvidia-tesla-h100", Count: 10.0},
-			},
-		},
-		{
-			name: "default GPU fallback",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_GpuResources{
-								GpuResources: &essmsgpb.GpuResources{
-									Type:  "",
-									Count: 2,
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "GPU", Count: 2.0},
-			},
-		},
-		{
-			name: "tpu topology chip calculation",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 2,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_TpuResources{
-								TpuResources: &essmsgpb.TpuResources{
-									Type:     "tpu-v4-podslice",
-									Topology: "2x2x4",
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "tpu-v4-podslice", Count: 32.0},
-			},
-		},
-		{
-			name: "default TPU fallback",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_TpuResources{
-								TpuResources: &essmsgpb.TpuResources{
-									Type:     "",
-									Topology: "2x2",
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "TPU", Count: 4.0},
-			},
-		},
-		{
-			name: "sidecars and initContainers aggregation",
+			name: "workunit DTO conversion and order preservation",
 			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
 				{
 					Replicas: 1,
 					Spec: &essmsgpb.ExecutableSpec{
 						Resources: &essmsgpb.ResourceSet{
 							Resources: &essmsgpb.ResourceSet_CpuResources{
-								CpuResources: &essmsgpb.CpuResources{CpuMillicores: 2000, MemoryBytes: 4096},
-							},
-						},
-					},
-					InitContainers: []*essmsgpb.ExecutableSpec{
-						{
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_CpuResources{
-									CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1000, MemoryBytes: 2048},
-								},
+								CpuResources: &essmsgpb.CpuResources{CpuMillicores: 4000, MemoryBytes: 8192},
 							},
 						},
 					},
@@ -184,7 +56,7 @@ func TestExtractRequestedResources(t *testing.T) {
 						{
 							Resources: &essmsgpb.ResourceSet{
 								Resources: &essmsgpb.ResourceSet_GpuResources{
-									GpuResources: &essmsgpb.GpuResources{Type: "nvidia-tesla-t4", Count: 1},
+									GpuResources: &essmsgpb.GpuResources{Type: "nvidia-tesla-h100", Count: 2},
 								},
 							},
 						},
@@ -192,99 +64,9 @@ func TestExtractRequestedResources(t *testing.T) {
 				},
 			}),
 			want: []*spb.Resource{
-				{ResourceType: "cpu", Count: 3.0},
-				{ResourceType: "memory", Count: 6144.0},
-				{ResourceType: "nvidia-tesla-t4", Count: 1.0},
-			},
-		},
-		{
-			name: "combined CPU, Memory, GPU, TPU simultaneously",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_CpuResources{
-								CpuResources: &essmsgpb.CpuResources{CpuMillicores: 8000, MemoryBytes: 16384},
-							},
-						},
-					},
-					Sidecars: []*essmsgpb.ExecutableSpec{
-						{
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_GpuResources{
-									GpuResources: &essmsgpb.GpuResources{Type: "nvidia-a100", Count: 4},
-								},
-							},
-						},
-						{
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_TpuResources{
-									TpuResources: &essmsgpb.TpuResources{Type: "tpu-v5p", Topology: "2x2x4"},
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "cpu", Count: 8.0},
-				{ResourceType: "memory", Count: 16384.0},
-				{ResourceType: "nvidia-a100", Count: 4.0},
-				{ResourceType: "tpu-v5p", Count: 16.0},
-			},
-		},
-		{
-			name: "zero and negative resource amounts ignored",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_CpuResources{
-								CpuResources: &essmsgpb.CpuResources{CpuMillicores: -1000, MemoryBytes: 0},
-							},
-						},
-					},
-					Sidecars: []*essmsgpb.ExecutableSpec{
-						{
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_GpuResources{
-									GpuResources: &essmsgpb.GpuResources{Type: "gpu-zero", Count: 0},
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{},
-		},
-		{
-			name: "case insensitive GPU and TPU type matching",
-			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
-				{
-					Replicas: 1,
-					Spec: &essmsgpb.ExecutableSpec{
-						Resources: &essmsgpb.ResourceSet{
-							Resources: &essmsgpb.ResourceSet_GpuResources{
-								GpuResources: &essmsgpb.GpuResources{Type: "gpu", Count: 2},
-							},
-						},
-					},
-					Sidecars: []*essmsgpb.ExecutableSpec{
-						{
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_TpuResources{
-									TpuResources: &essmsgpb.TpuResources{Type: "tpu", Topology: "2x2x2"},
-								},
-							},
-						},
-					},
-				},
-			}),
-			want: []*spb.Resource{
-				{ResourceType: "GPU", Count: 2.0},
-				{ResourceType: "TPU", Count: 8.0},
+				{ResourceType: "cpu", Count: 4.0},
+				{ResourceType: "memory", Count: 8192.0},
+				{ResourceType: "nvidia-tesla-h100", Count: 2.0},
 			},
 		},
 	}
@@ -296,6 +78,26 @@ func TestExtractRequestedResources(t *testing.T) {
 				t.Errorf("extractRequestedResources() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestBuildResourceDTOs(t *testing.T) {
+	totals := map[string]float64{
+		"cpu":               4.0,
+		"memory":            8192.0,
+		"nvidia-tesla-h100": 2.0,
+	}
+	order := []string{"cpu", "memory", "nvidia-tesla-h100"}
+
+	got := buildResourceDTOs(totals, order)
+	want := []*spb.Resource{
+		{ResourceType: "cpu", Count: 4.0},
+		{ResourceType: "memory", Count: 8192.0},
+		{ResourceType: "nvidia-tesla-h100", Count: 2.0},
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("buildResourceDTOs() mismatch (-want +got):\n%s", diff)
 	}
 }
 

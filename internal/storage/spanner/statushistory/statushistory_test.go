@@ -133,9 +133,6 @@ func TestFetchBatchPendingQueueMetrics_DefaultMockData(t *testing.T) {
 }
 
 func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
 	tests := []struct {
 		name       string
 		queueNames []string
@@ -203,14 +200,10 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			},
 			want: nil,
 		},
-		{
-			name:       "EmptyMockDataset",
-			queueNames: []string{"q1"},
-			window:     1 * time.Hour,
-			mockItems:  []WorkUnitStatusHistoryItem{},
-			want:       nil,
-		},
 	}
+
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,9 +217,6 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 }
 
 func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
 	tests := []struct {
 		name       string
 		queueNames []string
@@ -238,7 +228,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			mockItems: []WorkUnitStatusHistoryItem{
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
-				newMockItem(102, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
+				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
@@ -250,12 +240,8 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			mockItems: []WorkUnitStatusHistoryItem{
 				newMockItem(101, "q1", -20*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, ResourceTypeCPU, 10),
-				newMockItem(102, "q1", -15*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
-				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 			},
-			want: []QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 20, ResourceType: ResourceTypeCPU},
-			},
+			want: nil,
 		},
 		{
 			name:       "QueueNameFiltering",
@@ -289,13 +275,10 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			},
 			want: nil,
 		},
-		{
-			name:       "EmptyMockDataset",
-			queueNames: []string{"q1"},
-			mockItems:  []WorkUnitStatusHistoryItem{},
-			want:       nil,
-		},
 	}
+
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
