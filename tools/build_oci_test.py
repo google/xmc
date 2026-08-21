@@ -15,18 +15,39 @@
 """Unit tests for build_oci tool."""
 
 import json
+import tempfile
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
 from build_oci import (
     build_oci,
     detect_elf_architecture,
+    get_sha256,
 )
 from tool_utils import HandledError
 
 
 class TestBuildOci(unittest.TestCase):
     """Test cases for build_oci functions."""
+
+    def test_get_sha256_with_file_digest(self):
+        """Test get_sha256 computes correct SHA256 checksum."""
+        with tempfile.NamedTemporaryFile() as tmp:
+            tmp.write(b"hello world")
+            tmp.flush()
+            expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+            digest = get_sha256(tmp.name)
+            self.assertEqual(digest, expected)
+
+    def test_get_sha256_fallback_without_file_digest(self):
+        """Test get_sha256 falls back to chunked reading when file_digest is absent."""
+        with tempfile.NamedTemporaryFile() as tmp:
+            tmp.write(b"hello world")
+            tmp.flush()
+            expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+            with patch("build_oci.hasattr", return_value=False):
+                digest = get_sha256(tmp.name)
+                self.assertEqual(digest, expected)
 
     @patch("os.path.exists")
     def test_build_oci_binary_not_found(self, mock_exists):

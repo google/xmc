@@ -195,7 +195,7 @@ func isRetryableError(err error) bool {
 // extractOIDCToken extracts the Authorization token from the Authorization header.
 func extractOIDCToken(authHeader string) (string, bool) {
 	scheme, token, ok := strings.Cut(authHeader, " ")
-	if !ok || !strings.EqualFold(scheme, "bearer") {
+	if !ok || !strings.EqualFold(scheme, "bearer") || token == "" || strings.Contains(token, " ") {
 		return "", false
 	}
 	return token, true

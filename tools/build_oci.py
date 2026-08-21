@@ -35,7 +35,12 @@ FILE_PERMISSION = 0o644
 def get_sha256(filepath: str) -> str:
     """Computes the SHA256 checksum of a file in binary mode."""
     with open(filepath, "rb") as f:
-        return hashlib.file_digest(f, "sha256").hexdigest()
+        if hasattr(hashlib, "file_digest"):
+            return hashlib.file_digest(f, "sha256").hexdigest()
+        h = hashlib.sha256()
+        while chunk := f.read(65536):
+            h.update(chunk)
+        return h.hexdigest()
 
 
 def detect_elf_architecture(binary_path: str):
