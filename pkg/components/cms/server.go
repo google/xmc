@@ -90,9 +90,9 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
-	if req.GetSpec().GetVersion() != "" {
-		if _, err := store.Parse(req.GetSpec().GetVersion()); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", req.GetSpec().GetVersion(), err)
+	if version := req.GetSpec().GetVersion(); version != "" {
+		if _, err := store.Parse(version); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
@@ -143,9 +143,9 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
-	if req.GetMinimumVersion() != "" {
-		if _, err := store.Parse(req.GetMinimumVersion()); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", req.GetMinimumVersion(), err)
+	if minVersion := req.GetMinimumVersion(); minVersion != "" {
+		if _, err := store.Parse(minVersion); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
