@@ -31,18 +31,8 @@ import (
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
 
-// GetChart retrieves a chart by its unique ID along with its plot specifications and plot layout.
-func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, error) {
-	logging.Info(ctx, "Get chart from storage", "chartId", chartId)
-
-	txn := r.client.ReadOnlyTransaction()
-	defer txn.Close()
-
-	row, err := txn.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, dashboardschema.FetchedChartColumns)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read chart %s: %w", chartId, err)
-	}
-
+// fetchChartPlots retrieves and unmarshals all PlotSpec child records for a chart.
+func (r *Repository) fetchChartPlots(ctx context.Context, txn *spanner.ReadOnlyTransaction, chartId string) ([]*dpb.PlotSpec, error) {
 	filterExp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
 		EnableSimpleQuotedStrings:      true,
@@ -81,6 +71,25 @@ func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, 
 			return nil, fmt.Errorf("failed to unmarshal plot spec: %w", err)
 		}
 		plots = append(plots, &plotSpec)
+	}
+	return plots, nil
+}
+
+// GetChart retrieves a chart by its unique ID along with its plot specifications and plot layout.
+func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, error) {
+	logging.Info(ctx, "Get chart from storage", "chartId", chartId)
+
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+
+	row, err := txn.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, dashboardschema.FetchedChartColumns)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read chart %s: %w", chartId, err)
+	}
+
+	plots, err := r.fetchChartPlots(ctx, txn, chartId)
+	if err != nil {
+		return nil, err
 	}
 
 	return data.ChartRowToProto(row, plots)

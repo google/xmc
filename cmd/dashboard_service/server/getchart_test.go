@@ -21,6 +21,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
@@ -33,14 +34,14 @@ import (
 func TestGetChart(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("successful retrieval under work unit pattern", func(t *testing.T) {
+	t.Run("successful retrieval under root pattern", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				if chartId != "chart-1" {
 					t.Errorf("Expected chartId %q, got %q", "chart-1", chartId)
 				}
 				return &dpb.Chart{
-					Name:  "experiments/100/workUnits/2/charts/chart-1",
+					Name:  "charts/chart-1",
 					Title: "Loss Curve",
 					Xid:   100,
 					Wid:   2,
@@ -61,138 +62,19 @@ func TestGetChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.GetChartRequest{Name: "experiments/100/workUnits/2/charts/chart-1"}
+		req := &spb.GetChartRequest{Name: "charts/chart-1"}
 		resp, err := s.GetChart(ctx, req)
 		if err != nil {
 			t.Fatalf("GetChart failed: %v", err)
 		}
-		if resp.GetName() != "experiments/100/workUnits/2/charts/chart-1" {
-			t.Errorf("Expected name %q, got %q", "experiments/100/workUnits/2/charts/chart-1", resp.GetName())
+		if resp.GetName() != "charts/chart-1" {
+			t.Errorf("Expected name %q, got %q", "charts/chart-1", resp.GetName())
 		}
 		if resp.GetTitle() != "Loss Curve" {
 			t.Errorf("Expected title %q, got %q", "Loss Curve", resp.GetTitle())
 		}
 		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "reader@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_READER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
-		}
-	})
-
-	t.Run("successful retrieval under dashboard pattern", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				if chartId != "chart-2" {
-					t.Errorf("Expected chartId %q, got %q", "chart-2", chartId)
-				}
-				return &dpb.Chart{
-					Name:  "dashboards/dash-10/charts/chart-2",
-					Title: "Accuracy",
-					Xid:   200,
-					Wid:   1,
-				}, nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			authenticateFn: func(ctx context.Context) (string, string, error) {
-				return "reader@example.com", "user-1", nil
-			},
-		}
-		var capturedReq *xidapipb.CheckUserAuthorizationRequest
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				capturedReq = in
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
-
-		req := &spb.GetChartRequest{Name: "dashboards/dash-10/charts/chart-2"}
-		resp, err := s.GetChart(ctx, req)
-		if err != nil {
-			t.Fatalf("GetChart failed: %v", err)
-		}
-		if resp.GetName() != "dashboards/dash-10/charts/chart-2" {
-			t.Errorf("Expected name %q, got %q", "dashboards/dash-10/charts/chart-2", resp.GetName())
-		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/200" || capturedReq.GetUser() != "reader@example.com" {
-			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
-		}
-	})
-
-	t.Run("successful retrieval under root pattern", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				if chartId != "chart-3" {
-					t.Errorf("Expected chartId %q, got %q", "chart-3", chartId)
-				}
-				return &dpb.Chart{
-					Name:  "charts/chart-3",
-					Title: "Throughput",
-					Xid:   300,
-					Wid:   0,
-				}, nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			authenticateFn: func(ctx context.Context) (string, string, error) {
-				return "reader@example.com", "user-1", nil
-			},
-		}
-		var capturedReq *xidapipb.CheckUserAuthorizationRequest
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				capturedReq = in
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
-
-		req := &spb.GetChartRequest{Name: "charts/chart-3"}
-		resp, err := s.GetChart(ctx, req)
-		if err != nil {
-			t.Fatalf("GetChart failed: %v", err)
-		}
-		if resp.GetName() != "charts/chart-3" {
-			t.Errorf("Expected name %q, got %q", "charts/chart-3", resp.GetName())
-		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/300" || capturedReq.GetUser() != "reader@example.com" {
-			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
-		}
-	})
-
-	t.Run("infers xid from work unit chart name when stored chart xid is zero", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
-					Name:  "experiments/500/workUnits/1/charts/chart-fallback",
-					Title: "Loss",
-					Xid:   0,
-				}, nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			authenticateFn: func(ctx context.Context) (string, string, error) {
-				return "reader@example.com", "user-1", nil
-			},
-		}
-		var capturedReq *xidapipb.CheckUserAuthorizationRequest
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				capturedReq = in
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
-
-		req := &spb.GetChartRequest{Name: "experiments/500/workUnits/1/charts/chart-fallback"}
-		resp, err := s.GetChart(ctx, req)
-		if err != nil {
-			t.Fatalf("GetChart failed: %v", err)
-		}
-		if resp.GetTitle() != "Loss" {
-			t.Errorf("Expected title %q, got %q", "Loss", resp.GetTitle())
-		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/500" {
-			t.Errorf("Expected xids/500, got %v", capturedReq)
 		}
 	})
 
@@ -220,9 +102,11 @@ func TestGetChart(t *testing.T) {
 			{name: "nil request", req: nil},
 			{name: "empty name", req: &spb.GetChartRequest{Name: ""}},
 			{name: "invalid name format", req: &spb.GetChartRequest{Name: "invalid-name"}},
-			{name: "invalid experiment id", req: &spb.GetChartRequest{Name: "experiments/abc/workUnits/1/charts/c1"}},
-			{name: "invalid work unit id", req: &spb.GetChartRequest{Name: "experiments/1/workUnits/abc/charts/c1"}},
-			{name: "empty dashboard id", req: &spb.GetChartRequest{Name: "dashboards//charts/c1"}},
+			{name: "work unit hierarchical path rejected", req: &spb.GetChartRequest{Name: "experiments/1/workUnits/2/charts/c1"}},
+			{name: "dashboard hierarchical path rejected", req: &spb.GetChartRequest{Name: "dashboards/dash-1/charts/c1"}},
+			{name: "empty chart id", req: &spb.GetChartRequest{Name: "charts/"}},
+			{name: "whitespace chart id", req: &spb.GetChartRequest{Name: "charts/   "}},
+			{name: "extra path parts", req: &spb.GetChartRequest{Name: "charts/c1/extra"}},
 		}
 
 		for _, tc := range tests {
@@ -274,24 +158,6 @@ func TestGetChart(t *testing.T) {
 		}
 	})
 
-	t.Run("chart missing valid xid returns FailedPrecondition", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
-					Name:  "charts/chart-no-xid",
-					Title: "No XID",
-					Xid:   0,
-				}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
-
-		_, err := s.GetChart(ctx, &spb.GetChartRequest{Name: "charts/chart-no-xid"})
-		if status.Code(err) != codes.FailedPrecondition {
-			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
-		}
-	})
-
 	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
@@ -299,6 +165,7 @@ func TestGetChart(t *testing.T) {
 					Name:  "charts/chart-1",
 					Title: "Secret Chart",
 					Xid:   100,
+					Wid:   1,
 				}, nil
 			},
 		}
@@ -315,26 +182,50 @@ func TestGetChart(t *testing.T) {
 		}
 	})
 
-	t.Run("xid service error returns Internal", func(t *testing.T) {
+	t.Run("metadata propagation forwards auth headers to downstream XID service", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,
+					Wid:   1,
 				}, nil
 			},
 		}
+		var capturedMD metadata.MD
 		xidMock := &mockXidClient{
 			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				return nil, errors.New("xid service unavailable")
+				if md, ok := metadata.FromOutgoingContext(ctx); ok {
+					capturedMD = md
+				}
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
 
-		_, err := s.GetChart(ctx, &spb.GetChartRequest{Name: "charts/chart-1"})
-		if status.Code(err) != codes.Internal {
-			t.Errorf("Expected code Internal, got %v", status.Code(err))
+		inMD := metadata.Pairs(
+			"x-goog-iap-jwt-assertion", "jwt-token-123",
+			"x-goog-user-email", "user@example.com",
+			"authorization", "Bearer token-456",
+		)
+		inCtx := metadata.NewIncomingContext(ctx, inMD)
+
+		_, err := s.GetChart(inCtx, &spb.GetChartRequest{Name: "charts/chart-1"})
+		if err != nil {
+			t.Fatalf("GetChart failed: %v", err)
+		}
+		if capturedMD == nil {
+			t.Fatal("Expected outgoing metadata to be populated, got nil")
+		}
+		if got := capturedMD.Get("x-goog-iap-jwt-assertion"); len(got) == 0 || got[0] != "jwt-token-123" {
+			t.Errorf("Expected jwt assertion %q, got %v", "jwt-token-123", got)
+		}
+		if got := capturedMD.Get("x-goog-user-email"); len(got) == 0 || got[0] != "user@example.com" {
+			t.Errorf("Expected user email %q, got %v", "user@example.com", got)
+		}
+		if got := capturedMD.Get("authorization"); len(got) == 0 || got[0] != "Bearer token-456" {
+			t.Errorf("Expected authorization header %q, got %v", "Bearer token-456", got)
 		}
 	})
 }
