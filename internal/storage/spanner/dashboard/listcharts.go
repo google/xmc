@@ -90,8 +90,12 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart cannot be nil")
 	}
+	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
+	}
 	return map[string]any{
-		"chart_id": chart.GetName(),
+		"chart_id": chartID,
 	}, nil
 }
 

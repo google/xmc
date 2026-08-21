@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/validator/validator"
 )
 
 func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {
@@ -73,12 +74,13 @@ func blankDashboardProto(name string) *dpb.Dashboard {
 	}
 }
 
-func blankChartProto(name string, xid, wid int64) *dpb.Chart {
+func blankChartProto(chartID string, xid, wid int64) *dpb.Chart {
 	return &dpb.Chart{
-		Name:  name,
-		Title: "Test Chart Title",
-		Xid:   xid,
-		Wid:   wid,
+		Name:        validator.ConstructWorkUnitChartName(xid, wid, chartID),
+		Title:       "Test Chart Title",
+		Description: "Test Chart Description",
+		Xid:         xid,
+		Wid:         wid,
 		Plots: []*dpb.PlotSpec{
 			{
 				PlotId: "plot-1",

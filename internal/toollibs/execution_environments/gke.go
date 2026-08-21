@@ -51,6 +51,14 @@ const (
 	nvidiaGPUKey          = "nvidia.com/gpu"
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
 
+	// Host resources a GPU job is given per card. `ResourceSet` holds its
+	// resource kinds in a `oneof`, so a job that names GPUs cannot also name CPU
+	// or memory, and it reaches the cluster asking for neither. These are floors
+	// that stand in until the API can carry the real figures, sized to feed one
+	// card rather than to size a trainer.
+	defaultCPUMillicoresPerGPU = 1000
+	defaultMemoryBytesPerGPU   = 4 << 30
+
 	tpuResourceKey            = "google.com/tpu"
 	tpuTolerationValue        = "present"
 	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
@@ -174,8 +182,38 @@ func applyCPUResources(cpuRes *epb.CpuResources, reqs *corev1.ResourceRequiremen
 	return nil
 }
 
+// applyGPUResources asks for the cards, and for the host resources to feed them.
+//
+// A pod that requests neither CPU nor memory is BestEffort, which the kubelet
+// evicts first under memory pressure, so a job that outgrows its node is killed
+// rather than scheduled somewhere it fits. It also reaches Kueue costing
+// nothing, so quota is reserved against figures that bear no relation to what
+// the pod goes on to use.
+//
+// Only requests are set. A limit would cap a job at a figure it never chose,
+// and the memory one would be enforced by the OOM killer.
 func applyGPUResources(gpuRes *epb.GpuResources, reqs *corev1.ResourceRequirements) {
-	reqs.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", gpuRes.GetCount()))
+	if gpuRes == nil || reqs == nil {
+		return
+	}
+	if reqs.Requests == nil {
+		reqs.Requests = make(corev1.ResourceList)
+	}
+	if reqs.Limits == nil {
+		reqs.Limits = make(corev1.ResourceList)
+	}
+
+	count := gpuRes.GetCount()
+	if count < 1 {
+		// Validation rejects this, so it is reached only by a caller that skipped
+		// it. One card's worth is a safer floor than none, and clamping before the
+		// limit is set keeps the cards asked for and the host resources that feed
+		// them describing the same job.
+		count = 1
+	}
+	reqs.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", count))
+	reqs.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", count*defaultCPUMillicoresPerGPU))
+	reqs.Requests[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", count*defaultMemoryBytesPerGPU))
 }
 
 func applyTPUResources(tpuRes *epb.TpuResources, reqs *corev1.ResourceRequirements) error {

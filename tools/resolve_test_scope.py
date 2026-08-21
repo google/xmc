@@ -49,6 +49,7 @@ NON_CODE_FILES: set[str] = {
     ".tflint.hcl",
     ".golangci.yml",
     "pyproject.toml",
+    "test/__init__.py",
 }
 
 
@@ -159,10 +160,42 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
         raise
 
 
+def _parse_build_file_test_targets(build_path: Path) -> list[str]:
+    """Parses non-manual test target names from a BUILD file using AST."""
+    import ast
+
+    try:
+        content = build_path.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(content, filename=str(build_path))
+    except Exception:
+        return []
+
+    targets: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func_name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+        if not func_name.endswith("_test"):
+            continue
+
+        name: str | None = None
+        is_manual = False
+        for kw in node.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant):
+                name = str(kw.value.value)
+            elif kw.arg == "tags" and isinstance(kw.value, (ast.List, ast.Tuple, ast.Set)):
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant) and elt.value == "manual":
+                        is_manual = True
+
+        if name and not is_manual:
+            targets.append(name)
+    return targets
+
+
 def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
     """Fallback static parser for reverse dependency test targets from BUILD.bazel files."""
     import os
-    import re
 
     base_dir = cwd if cwd else Path.cwd()
     changed_dirs: set[str] = set()
@@ -186,21 +219,15 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
             if "node_modules" in rel_root:
                 continue
             build_path = Path(root) / "BUILD.bazel"
-            try:
-                content = build_path.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                continue
+            target_names = _parse_build_file_test_targets(build_path)
 
-            for match in re.finditer(r'(go_test|py_test)\s*\(\s*name\s*=\s*"([^"]+)"', content):
-                target_name = match.group(2)
+            for target_name in target_names:
                 pkg_path = "" if rel_root == "." else rel_root
                 target_label = f"//{pkg_path}:{target_name}" if pkg_path else f"//:{target_name}"
                 if target_label in EXCLUDED_TEST_TARGETS:
                     continue
                 for cd in changed_dirs:
-                    if (pkg_path == cd) or (
-                        cd and (cd.startswith(pkg_path) or pkg_path.startswith(cd))
-                    ):
+                    if (pkg_path == cd) or (cd and pkg_path.startswith(f"{cd}/")):
                         test_targets.add(target_label)
     return sorted(test_targets)
 
@@ -228,7 +255,10 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
     backend_universe = (
         "//cmd/... + //internal/... + //pkg/... + //sdks/... + //test/... + //tools/..."
     )
-    query_expr = f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
+    query_expr = (
+        f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
+        f"in $t except attr('tags', 'manual', $t)"
+    )
 
     try:
         res = subprocess.run(
