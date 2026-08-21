@@ -36,7 +36,7 @@ spec:
   dependencies:
     - cert-manager
     - name: kueue
-      version: ">=0.8.0"
+      version: ">=0.19.0"
       optional: true
 `
 		var comp linter.ComponentManifest
@@ -49,8 +49,8 @@ spec:
 		if comp.Spec.Dependencies[0].Name != "cert-manager" {
 			t.Errorf("dep[0].Name = %q, want 'cert-manager'", comp.Spec.Dependencies[0].Name)
 		}
-		if comp.Spec.Dependencies[1].Name != "kueue" || comp.Spec.Dependencies[1].Version != ">=0.8.0" || !comp.Spec.Dependencies[1].Optional {
-			t.Errorf("dep[1] = %+v, want name=kueue, version='>=0.8.0', optional=true", comp.Spec.Dependencies[1])
+		if comp.Spec.Dependencies[1].Name != "kueue" || comp.Spec.Dependencies[1].Version != ">=0.19.0" || !comp.Spec.Dependencies[1].Optional {
+			t.Errorf("dep[1] = %+v, want name=kueue, version='>=0.19.0', optional=true", comp.Spec.Dependencies[1])
 		}
 	})
 
@@ -65,7 +65,7 @@ spec:
   dependencies:
     cert-manager: "^1.12.0"
     kueue:
-      version: ">=0.8.0"
+      version: ">=0.19.0"
       optional: true
 `
 		var comp linter.ComponentManifest
@@ -135,6 +135,22 @@ spec:
 		}
 		if !lc.ForceDeletion {
 			t.Errorf("ForceDeletion = false, want true")
+		}
+	})
+
+	t.Run("unmarshal sub-second duration rounds to at least one second", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := `
+spec:
+  lifecycleControl:
+    drainingTimeout: "500ms"
+`
+		var comp linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if comp.Spec.LifecycleControl.DrainTimeoutSeconds != 1 {
+			t.Errorf("DrainTimeoutSeconds = %d, want 1", comp.Spec.LifecycleControl.DrainTimeoutSeconds)
 		}
 	})
 

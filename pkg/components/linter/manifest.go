@@ -150,7 +150,10 @@ func parseDurationSeconds(s string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		seconds = int(d.Seconds())
+		seconds = int(d.Round(time.Second).Seconds())
+		if d > 0 && seconds == 0 {
+			seconds = 1
+		}
 	}
 	if seconds < 0 {
 		return 0, fmt.Errorf("duration cannot be negative: %d", seconds)
@@ -274,8 +277,8 @@ func (m *ComponentManifest) IsEnabled() bool {
 
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
 		}
 	}
 	return ""

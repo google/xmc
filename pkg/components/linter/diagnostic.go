@@ -14,6 +14,8 @@
 
 package linter
 
+import "sync"
+
 // DiagnosticSeverity defines the severity level of a diagnostic result.
 type DiagnosticSeverity string
 
@@ -37,6 +39,7 @@ type Diagnostic struct {
 
 // ValidationResult aggregates diagnostics, errors, and overall validity of linted manifests.
 type ValidationResult struct {
+	mu          sync.RWMutex
 	Valid       bool         `json:"valid" yaml:"valid"`
 	Diagnostics []Diagnostic `json:"diagnostics" yaml:"diagnostics"`
 	Errors      []string     `json:"errors" yaml:"errors"`
@@ -53,8 +56,10 @@ func NewValidationResult() *ValidationResult {
 	}
 }
 
-// AddDiagnostic appends a diagnostic to the result and updates validity status.
+// AddDiagnostic appends a diagnostic to the result and updates validity status in a thread-safe manner.
 func (vr *ValidationResult) AddDiagnostic(d Diagnostic) {
+	vr.mu.Lock()
+	defer vr.mu.Unlock()
 	vr.Diagnostics = append(vr.Diagnostics, d)
 	if d.Severity == SeverityError {
 		vr.Valid = false
@@ -88,7 +93,9 @@ func (vr *ValidationResult) AddWarning(file string, line int, rule string, msg s
 	})
 }
 
-// HasErrors returns true if the validation result contains any errors.
+// HasErrors returns true if the validation result contains any errors in a thread-safe manner.
 func (vr *ValidationResult) HasErrors() bool {
+	vr.mu.RLock()
+	defer vr.mu.RUnlock()
 	return !vr.Valid || len(vr.Errors) > 0
 }

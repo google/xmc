@@ -84,4 +84,31 @@ func TestValidationResult_Diagnostics(t *testing.T) {
 			t.Errorf("expected 1 diagnostic, got %d", len(res.Diagnostics))
 		}
 	})
+
+	t.Run("concurrent diagnostic recording is thread-safe", func(t *testing.T) {
+		t.Parallel()
+		res := linter.NewValidationResult()
+		const n = 100
+		done := make(chan bool, n)
+		for i := 0; i < n; i++ {
+			go func(idx int) {
+				if idx%2 == 0 {
+					res.AddError("file.yaml", idx, "RULE_ERROR", "err")
+				} else {
+					res.AddWarning("file.yaml", idx, "RULE_WARN", "warn")
+				}
+				_ = res.HasErrors()
+				done <- true
+			}(i)
+		}
+		for i := 0; i < n; i++ {
+			<-done
+		}
+		if len(res.Diagnostics) != n {
+			t.Errorf("expected %d diagnostics, got %d", n, len(res.Diagnostics))
+		}
+		if !res.HasErrors() {
+			t.Errorf("expected HasErrors() to return true")
+		}
+	})
 }
