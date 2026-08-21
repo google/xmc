@@ -248,9 +248,9 @@ Workload Identity Federation allows GitHub Actions to authenticate directly to G
 
 | Secret Name | Description |
 | :--- | :--- |
-| `secrets.GCP_PROJECT_ID` | Target GCP project hosting Cloud Spanner (e.g. `xmc-test-project-3`). |
-| `secrets.GCP_SPANNER_INSTANCE` | Cloud Spanner instance used for ephemeral databases (e.g. `xmc-e2e`). |
-| `secrets.GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider resource URI (e.g. `projects/815549340089/...`). |
+| `secrets.GCP_E2E_PROJECT_ID` | Target GCP project hosting Cloud Spanner (e.g. `xmc-test-project-3`). |
+| `secrets.GCP_E2E_SPANNER_INSTANCE` | Cloud Spanner instance used for ephemeral databases (e.g. `xmc-e2e`). |
+| `secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider resource URI (e.g. `projects/815549340089/...`). |
 | `secrets.GCP_E2E_SERVICE_ACCOUNT` | Service account with `roles/spanner.databaseAdmin` (e.g. `xmc-e2e-ci@...`). |
 
 ### Execution on ARC Self-Hosted vs. GitHub-Hosted (`ubuntu-latest`) Runners

@@ -59,13 +59,19 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
     )
     parser.add_argument(
         "--project-id",
-        default=os.environ.get("GCP_PROJECT_ID", "xmc-test-project-3"),
-        help="GCP Project ID hosting Spanner instance (default: $GCP_PROJECT_ID or xmc-test-project-3)",
+        default=os.environ.get(
+            "GCP_E2E_PROJECT_ID",
+            os.environ.get("GCP_PROJECT_ID", "xmc-test-project-3"),
+        ),
+        help="GCP Project ID hosting Spanner instance (default: $GCP_E2E_PROJECT_ID or xmc-test-project-3)",
     )
     parser.add_argument(
         "--spanner-instance",
-        default=os.environ.get("SPANNER_INSTANCE", "xmc-e2e"),
-        help="Spanner instance name (default: $SPANNER_INSTANCE or xmc-e2e)",
+        default=os.environ.get(
+            "GCP_E2E_SPANNER_INSTANCE",
+            os.environ.get("SPANNER_INSTANCE", "xmc-e2e"),
+        ),
+        help="Spanner instance name (default: $GCP_E2E_SPANNER_INSTANCE or xmc-e2e)",
     )
     parser.add_argument(
         "--cluster-name",
