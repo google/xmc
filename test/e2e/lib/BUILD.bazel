@@ -21,9 +21,12 @@ py_library(
         "__init__.py",
         "command.py",
         "config.py",
+        "helm_deployer.py",
         "image_builder.py",
         "kind.py",
+        "orchestrator.py",
         "spanner.py",
+        "test_executor.py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -41,8 +44,8 @@ py_test(
 )
 
 py_test(
-    name = "image_builder_test",
-    srcs = ["image_builder_test.py"],
+    name = "spanner_test",
+    srcs = ["spanner_test.py"],
     deps = [":orchestration_lib"],
 )
 
@@ -53,7 +56,25 @@ py_test(
 )
 
 py_test(
-    name = "spanner_test",
-    srcs = ["spanner_test.py"],
+    name = "image_builder_test",
+    srcs = ["image_builder_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "helm_deployer_test",
+    srcs = ["helm_deployer_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "test_executor_test",
+    srcs = ["test_executor_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "orchestrator_test",
+    srcs = ["orchestrator_test.py"],
     deps = [":orchestration_lib"],
 )
