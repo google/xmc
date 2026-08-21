@@ -306,6 +306,54 @@ class TestResolveTestScope(unittest.TestCase):
             )
             self.assertIn("//internal/storage/spanner/migrations:migrations_test", targets)
 
+    def test_discover_static_rdeps_targets_path_prefix_boundary(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            pkg_spanner = base / "internal" / "storage" / "spanner"
+            pkg_spanner.mkdir(parents=True)
+            (pkg_spanner / "BUILD.bazel").write_text(
+                'go_test(\n    name = "spanner_test",\n)\n',
+                encoding="utf-8",
+            )
+            pkg_spanner_alt = base / "internal" / "storage" / "spanner_alt"
+            pkg_spanner_alt.mkdir(parents=True)
+            (pkg_spanner_alt / "BUILD.bazel").write_text(
+                'go_test(\n    name = "spanner_alt_test",\n)\n',
+                encoding="utf-8",
+            )
+
+            # Modifying spanner should match spanner_test but NOT spanner_alt_test
+            targets = _discover_static_rdeps_targets(
+                ["internal/storage/spanner/client.go"],
+                cwd=base,
+            )
+            self.assertIn("//internal/storage/spanner:spanner_test", targets)
+            self.assertNotIn("//internal/storage/spanner_alt:spanner_alt_test", targets)
+
+    def test_find_enclosing_bazel_package_robustness(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            pkg = base / "pkg" / "auth"
+            pkg.mkdir(parents=True)
+            (pkg / "BUILD.bazel").touch()
+
+            # Relative path with '..'
+            res = find_enclosing_bazel_package("pkg/foo/../auth/handler.go", cwd=base)
+            self.assertEqual(res, "//pkg/auth")
+
+            # Absolute path inside base
+            abs_file = (pkg / "handler.go").resolve()
+            res_abs = find_enclosing_bazel_package(str(abs_file), cwd=base)
+            self.assertEqual(res_abs, "//pkg/auth")
+
+            # Absolute path outside base
+            with tempfile.TemporaryDirectory() as outside_dir:
+                outside_file = Path(outside_dir) / "other.go"
+                res_outside = find_enclosing_bazel_package(str(outside_file), cwd=base)
+                self.assertIsNone(res_outside)
+
     @patch("resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_with_migration_sql(self, mock_run):
         with tempfile.TemporaryDirectory() as tmpdir:

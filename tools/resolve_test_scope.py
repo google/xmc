@@ -207,20 +207,18 @@ def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str
     base_dir = (cwd if cwd else Path.cwd()).resolve()
     target_path = Path(file_path)
 
-    if target_path.is_absolute():
-        try:
-            target_path = target_path.resolve().relative_to(base_dir)
-        except ValueError:
-            return None
+    if not target_path.is_absolute():
+        target_path = base_dir / target_path
+    try:
+        rel_target = target_path.resolve().relative_to(base_dir)
+    except ValueError:
+        return None
 
     # Start searching from the file's directory upwards
-    curr_dir = target_path.parent
+    curr_dir = rel_target.parent
 
     while True:
-        candidate_dir = (base_dir / curr_dir).resolve()
-        # Verify candidate_dir is within base_dir
-        if candidate_dir != base_dir and base_dir not in candidate_dir.parents:
-            break
+        candidate_dir = base_dir / curr_dir
 
         if (candidate_dir / "BUILD.bazel").is_file() or (candidate_dir / "BUILD").is_file():
             rel_pkg = curr_dir.as_posix()
@@ -236,7 +234,7 @@ def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str
         return "//"
 
     # Fallback for synthetic/mock paths or environments where repository tree is not on disk
-    parent_posix = target_path.parent.as_posix()
+    parent_posix = rel_target.parent.as_posix()
     if parent_posix in {".", ""}:
         return "//"
     return f"//{parent_posix}"
@@ -281,8 +279,7 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
                     if (
                         pkg_path == cd
                         or (cd and pkg_path.startswith(f"{cd}/"))
-                        or (cd and pkg_path.startswith(cd))
-                        or (pkg_path and cd.startswith(pkg_path))
+                        or (pkg_path and cd.startswith(f"{pkg_path}/"))
                     ):
                         test_targets.add(target_label)
     return sorted(test_targets)
