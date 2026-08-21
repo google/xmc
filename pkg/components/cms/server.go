@@ -84,7 +84,8 @@ func (s *Server) checkStoreReady() error {
 
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
 	if req.GetSpec() == nil {
@@ -95,6 +96,9 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
+	// TODO(Task 2.5 / Task 2.7): Pass extracted dependencies to store.SetIntent to persist
+	// into the ComponentDependencies relational table and validate against the DAG engine.
+	_ = store.ExtractDependencies(req.GetSpec(), nil, canonicalName)
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
 

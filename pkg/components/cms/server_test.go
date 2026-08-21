@@ -121,6 +121,21 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 			wantCode: codes.Unimplemented,
 		},
 		{
+			name: "SetComponentIntent_WithDependencies",
+			call: func() error {
+				spec := &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Manifests: []string{
+						"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: dep-a",
+					},
+					Description: "@depends-on: dep-b",
+				}
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "comp-1", Spec: spec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
 			name: "SetComponentIntent_InvalidSemVer",
 			call: func() error {
 				spec := &componentspb.ComponentSpec{
