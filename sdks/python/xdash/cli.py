@@ -33,6 +33,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Dashboard Service gRPC endpoint (default: localhost:8080 or XMC_DASHBOARD_ENDPOINT)",
     )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Force a plaintext channel. TLS is used by default for non-local endpoints.",
+    )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     # get subcommand
@@ -93,8 +98,12 @@ def run_cli(
         parser.print_help()
         return 1
 
+    owned_client = None
     if client is None:
-        client = DashboardClient(endpoint=args.endpoint)
+        owned_client = DashboardClient(
+            endpoint=args.endpoint, secure=False if args.insecure else None
+        )
+        client = owned_client
 
     try:
         if args.command == "get":
@@ -104,6 +113,9 @@ def run_cli(
     except (XDashError, ValueError) as err:
         sys.stderr.write(f"Error: {err}\n")
         return 1
+    finally:
+        if owned_client is not None:
+            owned_client.close()
 
     return 0
 

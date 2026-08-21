@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 
+# Hosts assumed to be a local development service, and therefore plaintext. Any other
+# host — notably cloud.xmanager.googleapis.com — requires TLS.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
+
+
+def _is_local_endpoint(endpoint: str) -> bool:
+    """Reports whether a gRPC target addresses a local, plaintext service."""
+    host = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
+    return host.strip("[]").lower() in _LOCAL_HOSTS
+
 
 class XDashError(Exception):
     """Base exception class for all xdash errors."""
@@ -80,6 +90,8 @@ class DashboardClient:
         endpoint: str | None = None,
         channel: Any | None = None,
         stub: Any | None = None,
+        secure: bool | None = None,
+        credentials: Any | None = None,
     ) -> None:
         """Initializes the DashboardClient.
 
@@ -88,6 +100,13 @@ class DashboardClient:
                 XMC_DASHBOARD_ENDPOINT env var or 'localhost:8080'.
             channel: Optional pre-configured grpc.Channel.
             stub: Optional pre-configured or mock stub object for testing.
+            secure: Whether to open a TLS channel. Defaults to True for every endpoint
+                except a local one, since the hosted service requires TLS.
+            credentials: Optional grpc.ChannelCredentials. Implies secure=True and
+                replaces the default grpc.ssl_channel_credentials().
+
+        Raises:
+            ValueError: If credentials are supplied alongside secure=False.
         """
         if stub is not None:
             self._stub = stub
@@ -99,14 +118,24 @@ class DashboardClient:
                 "grpcio is not installed. Please install grpcio (pip install grpcio) to connect."
             )
 
+        if credentials is not None and secure is False:
+            raise ValueError("credentials cannot be combined with secure=False")
+
         if channel is not None:
             self._channel = channel
         else:
             resolved_endpoint = (
                 endpoint or os.environ.get("XMC_DASHBOARD_ENDPOINT") or DEFAULT_DASHBOARD_ENDPOINT
             )
+            if secure is None:
+                secure = credentials is not None or not _is_local_endpoint(resolved_endpoint)
             try:
-                self._channel = grpc.insecure_channel(resolved_endpoint)
+                if secure:
+                    self._channel = grpc.secure_channel(
+                        resolved_endpoint, credentials or grpc.ssl_channel_credentials()
+                    )
+                else:
+                    self._channel = grpc.insecure_channel(resolved_endpoint)
             except Exception as e:
                 raise XDashConnectionError(
                     f"Failed to create gRPC channel to {resolved_endpoint}: {e}"

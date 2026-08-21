@@ -14,10 +14,10 @@
 """Unit tests for xdash DashboardClient using mock gRPC stubs."""
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
-from xdash.client import DashboardClient, XDashRPCError
+from xdash.client import DashboardClient, XDashRPCError, _is_local_endpoint
 
 
 class MockRpcError(Exception):
@@ -87,6 +87,47 @@ class DashboardClientTest(unittest.TestCase):
 
     def test_close_without_channel_is_noop(self) -> None:
         self.client.close()
+
+
+class ChannelSecurityTest(unittest.TestCase):
+    """Tests for how DashboardClient chooses between plaintext and TLS channels."""
+
+    def test_local_endpoints_are_recognised(self) -> None:
+        for endpoint in ("localhost:8080", "127.0.0.1:8080", "[::1]:8080", "0.0.0.0:8080"):
+            self.assertTrue(_is_local_endpoint(endpoint), endpoint)
+        for endpoint in ("cloud.xmanager.googleapis.com:443", "10.0.0.5:8080"):
+            self.assertFalse(_is_local_endpoint(endpoint), endpoint)
+
+    def test_remote_endpoint_defaults_to_tls(self) -> None:
+        with patch("xdash.client.grpc") as mock_grpc:
+            DashboardClient(endpoint="cloud.xmanager.googleapis.com:443")
+        mock_grpc.secure_channel.assert_called_once_with(
+            "cloud.xmanager.googleapis.com:443", mock_grpc.ssl_channel_credentials.return_value
+        )
+        mock_grpc.insecure_channel.assert_not_called()
+
+    def test_local_endpoint_defaults_to_plaintext(self) -> None:
+        with patch("xdash.client.grpc") as mock_grpc:
+            DashboardClient(endpoint="localhost:8080")
+        mock_grpc.insecure_channel.assert_called_once_with("localhost:8080")
+        mock_grpc.secure_channel.assert_not_called()
+
+    def test_secure_false_forces_plaintext_for_remote_endpoint(self) -> None:
+        with patch("xdash.client.grpc") as mock_grpc:
+            DashboardClient(endpoint="dashboards.example.com:443", secure=False)
+        mock_grpc.insecure_channel.assert_called_once_with("dashboards.example.com:443")
+        mock_grpc.secure_channel.assert_not_called()
+
+    def test_explicit_credentials_are_used_and_imply_tls(self) -> None:
+        creds = object()
+        with patch("xdash.client.grpc") as mock_grpc:
+            DashboardClient(endpoint="localhost:8080", credentials=creds)
+        mock_grpc.secure_channel.assert_called_once_with("localhost:8080", creds)
+        mock_grpc.ssl_channel_credentials.assert_not_called()
+
+    def test_credentials_with_secure_false_is_rejected(self) -> None:
+        with patch("xdash.client.grpc"), self.assertRaises(ValueError):
+            DashboardClient(endpoint="localhost:8080", credentials=object(), secure=False)
 
 
 if __name__ == "__main__":
