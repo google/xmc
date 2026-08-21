@@ -495,6 +495,11 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 		t.Errorf("SetComponentIntent(validate_only=true) mismatch (-want +got):\n%s", diff)
 	}
 
+	// Ensure validate_only did not persist to the store
+	if _, err := ms.GetComponent(ctx, "test-validate-only"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
+	}
+
 	// 2. Normal creation test
 	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 		Name: "components/test-comp",
