@@ -21,10 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -499,64 +497,4 @@ func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	if _, err := ms.GetPlatformHealth(ctx, "", 10, ""); status.Code(err) != codes.Unimplemented {
 		t.Errorf("GetPlatformHealth got code %v, want Unimplemented", status.Code(err))
 	}
-}
-
-func TestToProtoComponent(t *testing.T) {
-	if ToProtoComponent(nil) != nil {
-		t.Error("ToProtoComponent(nil) should return nil")
-	}
-
-	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
-	gen := int64(3)
-	rec := &ComponentRecord{
-		ComponentID:        42,
-		Name:               "data-service",
-		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Generation:         3,
-		ObservedGeneration: &gen,
-		Spec: &componentspb.ComponentSpec{
-			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-			Version: "v2.0.0",
-		},
-		Status: &componentspb.ComponentAccessStatus{
-			State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			ObservedGeneration: 3,
-			HealthMessage:      "Healthy",
-			Ready:              true,
-		},
-		Labels: map[string]string{
-			"team": "storage",
-		},
-		CreateTime: now,
-		UpdateTime: now.Add(5 * time.Minute),
-		DeleteTime: &now,
-		Etag:       "abc123etag",
-	}
-
-	protoComp := ToProtoComponent(rec)
-	if protoComp.GetName() != "components/data-service" {
-		t.Errorf("GetName() = %q, want 'components/data-service'", protoComp.GetName())
-	}
-	if protoComp.GetEtag() != "abc123etag" {
-		t.Errorf("GetEtag() = %q, want 'abc123etag'", protoComp.GetEtag())
-	}
-	if protoComp.GetSpec().GetVersion() != "v2.0.0" {
-		t.Errorf("GetSpec().GetVersion() = %q, want 'v2.0.0'", protoComp.GetSpec().GetVersion())
-	}
-	if protoComp.GetStatus().GetState() != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
-		t.Errorf("GetStatus().GetState() = %v, want ENABLED", protoComp.GetStatus().GetState())
-	}
-	if protoComp.GetLabels()["team"] != "storage" {
-		t.Errorf("GetLabels()[team] = %q, want 'storage'", protoComp.GetLabels()["team"])
-	}
-	if protoComp.GetCreateTime().AsTime() != now {
-		t.Errorf("GetCreateTime() = %v, want %v", protoComp.GetCreateTime().AsTime(), now)
-	}
-
-	// Verify deep clone isolation
-	rec.Spec.Version = "MUTATED"
-	if protoComp.GetSpec().GetVersion() == "MUTATED" {
-		t.Error("ToProtoComponent did not isolate Spec")
-	}
-	_ = cmp.Diff(protoComp, protoComp, protocmp.Transform())
 }

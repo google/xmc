@@ -97,7 +97,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
 		existingRec, err := s.store.GetComponent(ctx, canonicalName)
 		if err == nil && existingRec != nil && existingRec.Spec != nil {
-			specToSet = applyUpdateMask(existingRec.Spec, req.GetSpec(), req.GetUpdateMask().GetPaths())
+			specToSet = store.ApplySpecUpdateMask(existingRec.Spec, req.GetSpec(), req.GetUpdateMask().GetPaths())
 		}
 	}
 
@@ -127,44 +127,6 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
-}
-
-// applyUpdateMask merges fields from update into base according to field mask paths.
-func applyUpdateMask(base, update *componentspb.ComponentSpec, paths []string) *componentspb.ComponentSpec {
-	result := proto.Clone(base).(*componentspb.ComponentSpec)
-	for _, p := range paths {
-		switch p {
-		case "type":
-			result.Type = update.GetType()
-		case "version":
-			result.Version = update.GetVersion()
-		case "deletion_policy", "deletionPolicy":
-			result.DeletionPolicy = update.GetDeletionPolicy()
-		case "wrapper_ref", "wrapperRef":
-			if update.GetWrapperRef() != nil {
-				result.WrapperRef = proto.Clone(update.GetWrapperRef()).(*componentspb.WrapperRef)
-			} else {
-				result.WrapperRef = nil
-			}
-		case "lifecycle_control", "lifecycleControl":
-			if update.GetLifecycleControl() != nil {
-				result.LifecycleControl = proto.Clone(update.GetLifecycleControl()).(*componentspb.LifecycleControl)
-			} else {
-				result.LifecycleControl = nil
-			}
-		case "manifests":
-			if update.GetManifests() != nil {
-				result.Manifests = append([]string(nil), update.GetManifests()...)
-			} else {
-				result.Manifests = nil
-			}
-		case "description":
-			result.Description = update.GetDescription()
-		case "generation":
-			result.Generation = update.GetGeneration()
-		}
-	}
-	return result
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.

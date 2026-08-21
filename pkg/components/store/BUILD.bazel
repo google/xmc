@@ -20,6 +20,7 @@ go_library(
     name = "store",
     srcs = [
         "dependency_parser.go",
+        "field_mask.go",
         "memory_store.go",
         "resource_names.go",
         "semver.go",
@@ -41,9 +42,11 @@ go_test(
     name = "store_test",
     srcs = [
         "dependency_parser_test.go",
+        "field_mask_test.go",
         "memory_store_test.go",
         "resource_names_test.go",
         "semver_test.go",
+        "store_test.go",
     ],
     embed = [":store"],
     deps = [
