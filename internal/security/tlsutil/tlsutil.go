@@ -30,6 +30,9 @@ import (
 // It initializes a hot-reloading key reloader if certFile and keyFile are provided,
 // falling back to insecure plaintext credentials if they are empty.
 func NewServerCredentials(ctx context.Context, certFile, keyFile string) (credentials.TransportCredentials, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if (certFile != "") != (keyFile != "") {
 		return nil, fmt.Errorf("both certFile and keyFile must be specified, or both must be empty")
 	}
@@ -51,6 +54,9 @@ func NewServerCredentials(ctx context.Context, certFile, keyFile string) (creden
 // If certFile and keyFile are provided, it returns TLS credentials that skip verification
 // (useful for proxying loopback traffic), falling back to insecure plaintext credentials if empty.
 func NewClientCredentials(ctx context.Context, certFile, keyFile string) (credentials.TransportCredentials, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if (certFile != "") != (keyFile != "") {
 		return nil, fmt.Errorf("both certFile and keyFile must be specified, or both must be empty")
 	}

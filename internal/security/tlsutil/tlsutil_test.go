@@ -15,6 +15,7 @@
 package tlsutil
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -85,6 +86,7 @@ func TestNewServerCredentials(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		ctx       context.Context
 		certFile  string
 		keyFile   string
 		wantErr   bool
@@ -92,6 +94,15 @@ func TestNewServerCredentials(t *testing.T) {
 	}{
 		{
 			name:      "both empty falls back to plaintext insecure credentials",
+			ctx:       t.Context(),
+			certFile:  "",
+			keyFile:   "",
+			wantErr:   false,
+			wantCreds: true,
+		},
+		{
+			name:      "nil context defaults to background context safely without panic",
+			ctx:       nil,
 			certFile:  "",
 			keyFile:   "",
 			wantErr:   false,
@@ -99,6 +110,7 @@ func TestNewServerCredentials(t *testing.T) {
 		},
 		{
 			name:      "only certFile specified returns error",
+			ctx:       t.Context(),
 			certFile:  certPath,
 			keyFile:   "",
 			wantErr:   true,
@@ -106,6 +118,7 @@ func TestNewServerCredentials(t *testing.T) {
 		},
 		{
 			name:      "only keyFile specified returns error",
+			ctx:       t.Context(),
 			certFile:  "",
 			keyFile:   keyPath,
 			wantErr:   true,
@@ -113,6 +126,7 @@ func TestNewServerCredentials(t *testing.T) {
 		},
 		{
 			name:      "valid cert and key files return TLS credentials",
+			ctx:       t.Context(),
 			certFile:  certPath,
 			keyFile:   keyPath,
 			wantErr:   false,
@@ -120,6 +134,7 @@ func TestNewServerCredentials(t *testing.T) {
 		},
 		{
 			name:      "non-existent cert files return error",
+			ctx:       t.Context(),
 			certFile:  filepath.Join(dir, "missing_cert.pem"),
 			keyFile:   filepath.Join(dir, "missing_key.pem"),
 			wantErr:   true,
@@ -129,7 +144,7 @@ func TestNewServerCredentials(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			creds, err := NewServerCredentials(t.Context(), tt.certFile, tt.keyFile)
+			creds, err := NewServerCredentials(tt.ctx, tt.certFile, tt.keyFile)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("NewServerCredentials() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -146,6 +161,7 @@ func TestNewClientCredentials(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		ctx       context.Context
 		certFile  string
 		keyFile   string
 		wantErr   bool
@@ -153,6 +169,15 @@ func TestNewClientCredentials(t *testing.T) {
 	}{
 		{
 			name:      "both empty falls back to plaintext insecure credentials",
+			ctx:       t.Context(),
+			certFile:  "",
+			keyFile:   "",
+			wantErr:   false,
+			wantCreds: true,
+		},
+		{
+			name:      "nil context defaults to background context safely without panic",
+			ctx:       nil,
 			certFile:  "",
 			keyFile:   "",
 			wantErr:   false,
@@ -160,6 +185,7 @@ func TestNewClientCredentials(t *testing.T) {
 		},
 		{
 			name:      "only certFile specified returns error",
+			ctx:       t.Context(),
 			certFile:  certPath,
 			keyFile:   "",
 			wantErr:   true,
@@ -167,6 +193,7 @@ func TestNewClientCredentials(t *testing.T) {
 		},
 		{
 			name:      "only keyFile specified returns error",
+			ctx:       t.Context(),
 			certFile:  "",
 			keyFile:   keyPath,
 			wantErr:   true,
@@ -174,6 +201,7 @@ func TestNewClientCredentials(t *testing.T) {
 		},
 		{
 			name:      "valid cert and key files return TLS credentials",
+			ctx:       t.Context(),
 			certFile:  certPath,
 			keyFile:   keyPath,
 			wantErr:   false,
@@ -183,7 +211,7 @@ func TestNewClientCredentials(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			creds, err := NewClientCredentials(t.Context(), tt.certFile, tt.keyFile)
+			creds, err := NewClientCredentials(tt.ctx, tt.certFile, tt.keyFile)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("NewClientCredentials() error = %v, wantErr %v", err, tt.wantErr)
 			}
