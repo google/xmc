@@ -230,15 +230,11 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 	if parseErr != nil || parsed.XID <= 0 {
 		return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
 	}
-	wid := parsed.WID
-	if wid < 0 {
-		wid = 1
-	}
 	return &dpb.Chart{
 		Name:  name,
 		Title: "Metrics Chart",
 		Xid:   parsed.XID,
-		Wid:   wid,
+		Wid:   parsed.WID,
 		Plots: createDefaultPlotSpecs(),
 	}, nil
 }
