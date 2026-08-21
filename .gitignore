@@ -24,8 +24,11 @@ cmd/ui/playwright-report/
 # Compiled Cluster Toolkit deployments
 /ctk-out
 
-# Python virtual environments
+# Python virtual environments & build artifacts
 **/venv/
+**/.venv/
+*.egg-info/
+**/.angular/
 
 # PR review checklist artifacts
 pr_review_checklist.md
