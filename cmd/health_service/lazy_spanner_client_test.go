@@ -28,6 +28,7 @@ type mockClosableSpannerHealthClient struct {
 	version     int64
 	dirty       bool
 	err         error
+	closeErr    error
 	closeCalled bool
 }
 
@@ -37,7 +38,7 @@ func (m *mockClosableSpannerHealthClient) QuerySchemaVersion(ctx context.Context
 
 func (m *mockClosableSpannerHealthClient) Close() error {
 	m.closeCalled = true
-	return nil
+	return m.closeErr
 }
 
 func TestLazySpannerHealthClient_EmptyDbPath(t *testing.T) {
@@ -177,5 +178,22 @@ func TestLazySpannerHealthClient_ConcurrentAccess(t *testing.T) {
 
 	if err := client.Close(); err != nil {
 		t.Fatalf("unexpected Close error: %v", err)
+	}
+}
+
+func TestLazySpannerHealthClient_CloseError(t *testing.T) {
+	expectedErr := errors.New("close failed")
+	mockCl := &mockClosableSpannerHealthClient{version: 1, closeErr: expectedErr}
+	factory := func(ctx context.Context, database string) (health.SpannerHealthClient, error) {
+		return mockCl, nil
+	}
+
+	client := NewLazySpannerHealthClient("projects/p/instances/i/databases/d", factory)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("unexpected Initialize error: %v", err)
+	}
+
+	if err := client.Close(); !errors.Is(err, expectedErr) {
+		t.Fatalf("expected close error %v, got %v", expectedErr, err)
 	}
 }

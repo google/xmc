@@ -87,11 +87,14 @@ func (c *LazySpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 	if err != nil {
 		// Reset client on error to ensure clean reconnection on next attempt.
 		c.mu.Lock()
-		if closer, ok := c.healthCl.(io.Closer); ok {
+		if c.healthCl == healthCl {
+			c.healthCl = nil
+		}
+		c.mu.Unlock()
+
+		if closer, ok := healthCl.(io.Closer); ok {
 			_ = closer.Close()
 		}
-		c.healthCl = nil
-		c.mu.Unlock()
 		return 0, false, err
 	}
 
@@ -102,11 +105,12 @@ func (c *LazySpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 func (c *LazySpannerHealthClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	var err error
 	if closer, ok := c.healthCl.(io.Closer); ok {
-		_ = closer.Close()
+		err = closer.Close()
 	}
 	c.healthCl = nil
-	return nil
+	return err
 }
 
 func (c *LazySpannerHealthClient) ensureClientLocked(ctx context.Context) error {

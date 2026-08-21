@@ -69,7 +69,6 @@ func (c *realSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (versi
 func (c *realSpannerHealthClient) Close() error {
 	if c.client != nil {
 		c.client.Close()
-		c.client = nil
 	}
 	return nil
 }
