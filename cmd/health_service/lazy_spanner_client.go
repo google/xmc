@@ -30,7 +30,7 @@ type SpannerHealthClientFactory func(ctx context.Context, database string) (heal
 
 // DefaultSpannerHealthClientFactory creates a real SpannerHealthClient using spanner.NewClient.
 func DefaultSpannerHealthClientFactory(ctx context.Context, database string) (health.SpannerHealthClient, error) {
-	client, err := spanner.NewClient(ctx, database)
+	client, err := spanner.NewClient(context.Background(), database)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (c *LazySpannerHealthClient) Initialize(ctx context.Context) error {
 	return c.ensureClientLocked(ctx)
 }
 
-// QuerySchemaVersion queries the SchemaMigrations table, reconnecting lazily if necessary.
+// QuerySchemaVersion queries the SchemaMigrations table, initializing lazily if necessary.
 func (c *LazySpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
 	if c.dbPath == "" {
 		return 0, false, fmt.Errorf("spanner database path is not configured")
@@ -83,22 +83,7 @@ func (c *LazySpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 		return 0, false, fmt.Errorf("spanner client not available: %w", err)
 	}
 
-	version, dirty, err := healthCl.QuerySchemaVersion(ctx)
-	if err != nil {
-		// Reset client on error to ensure clean reconnection on next attempt.
-		c.mu.Lock()
-		if c.healthCl == healthCl {
-			c.healthCl = nil
-		}
-		c.mu.Unlock()
-
-		if closer, ok := healthCl.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		return 0, false, err
-	}
-
-	return version, dirty, nil
+	return healthCl.QuerySchemaVersion(ctx)
 }
 
 // Close closes the underlying Spanner client connection.

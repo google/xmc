@@ -123,35 +123,19 @@ func TestLazySpannerHealthClient_InitialFailureThenLazyRecovery(t *testing.T) {
 	}
 }
 
-func TestLazySpannerHealthClient_QueryErrorResetsClient(t *testing.T) {
-	var callCount atomic.Int32
-	mockFailing := &mockClosableSpannerHealthClient{err: errors.New("session closed")}
-	mockRecovered := &mockClosableSpannerHealthClient{version: 100, dirty: false}
+func TestLazySpannerHealthClient_QueryErrorPropagates(t *testing.T) {
+	expectedErr := errors.New("spanner query timeout")
+	mockCl := &mockClosableSpannerHealthClient{err: expectedErr}
 
 	factory := func(ctx context.Context, database string) (health.SpannerHealthClient, error) {
-		count := callCount.Add(1)
-		if count == 1 {
-			return mockFailing, nil
-		}
-		return mockRecovered, nil
+		return mockCl, nil
 	}
 
 	client := NewLazySpannerHealthClient("projects/p/instances/i/databases/d", factory)
 
 	_, _, err := client.QuerySchemaVersion(context.Background())
-	if err == nil {
-		t.Fatal("expected error from failing query, got nil")
-	}
-
-	version, dirty, err := client.QuerySchemaVersion(context.Background())
-	if err != nil {
-		t.Fatalf("expected successful recovery after query failure, got %v", err)
-	}
-	if version != 100 || dirty {
-		t.Fatalf("expected version 100, got %d (dirty: %v)", version, dirty)
-	}
-	if callCount.Load() != 2 {
-		t.Fatalf("expected factory called 2 times, got %d", callCount.Load())
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected query error %v, got %v", expectedErr, err)
 	}
 }
 
