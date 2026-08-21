@@ -1,0 +1,70 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "xdash",
+    srcs = [
+        "__init__.py",
+        "_protos.py",
+        "builders.py",
+        "cli.py",
+        "client.py",
+        "presets.py",
+    ],
+    data = [
+        "README.md",
+        "py.typed",
+        "pyproject.toml",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/dashboard:dashboard_messages_py_proto",
+        "//api/protos/dashboard:dashboard_service_py_proto",
+    ],
+)
+
+py_binary(
+    name = "xdash_bin",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//visibility:public"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "builders_test",
+    srcs = ["builders_test.py"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "presets_test",
+    srcs = ["presets_test.py"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "client_test",
+    srcs = ["client_test.py"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "cli_test",
+    srcs = ["cli_test.py"],
+    deps = [":xdash"],
+)

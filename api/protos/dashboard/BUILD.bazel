@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
@@ -113,4 +114,14 @@ alias(
 alias(
     name = "api_go_grpc_gateway_proto",
     actual = ":service_go_proto",
+)
+
+py_proto_library(
+    name = "dashboard_messages_py_proto",
+    deps = [":dashboard_messages_proto"],
+)
+
+py_proto_library(
+    name = "dashboard_service_py_proto",
+    deps = [":dashboard_service_proto"],
 )
