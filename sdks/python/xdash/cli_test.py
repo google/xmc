@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 from xdash._protos import messages_pb2
 from xdash.cli import run_cli
+from xdash.presets import create_vcc_comparison_dashboard
 
 
 class CliTest(unittest.TestCase):
@@ -29,6 +30,41 @@ class CliTest(unittest.TestCase):
     def test_no_command_returns_help_error(self) -> None:
         ret = run_cli([], client=self.mock_client)
         self.assertEqual(ret, 1)
+
+    def test_create_preset(self) -> None:
+        dash = create_vcc_comparison_dashboard()
+        self.mock_client.create_dashboard.return_value = dash
+
+        ret = run_cli(
+            ["create-preset", "--dashboard-id", "test_dash", "--title", "Test Title"],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        self.assertEqual(built.name, "dashboards/test_dash")
+        self.assertEqual(len(built.charts), 3)
+
+    def test_create_dashboard_with_xids(self) -> None:
+        dash = messages_pb2.Dashboard(name="dashboards/d1", title="Dash 1")
+        self.mock_client.create_dashboard.return_value = dash
+
+        ret = run_cli(
+            [
+                "create-dashboard",
+                "--title",
+                "Dash 1",
+                "--dashboard-id",
+                "d1",
+                "--xids",
+                "234911122, 234911123, ",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        self.assertEqual([chart.xid for chart in built.charts], [234911122, 234911123])
 
     def test_create_dashboard(self) -> None:
         dash = messages_pb2.Dashboard(name="dashboards/d1", title="Dash 1")

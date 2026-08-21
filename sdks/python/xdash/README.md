@@ -1,6 +1,6 @@
 # `xdash`: Python SDK & CLI for XMC Metrics Dashboards
 
-`xdash` is a Python SDK and command-line interface (CLI) for creating, retrieving, and inspecting XMC Metrics Dashboards and Charts. It provides fluent builder models and a gRPC client to communicate with the XMC Dashboard Service.
+`xdash` is a Python SDK and command-line interface (CLI) for creating, retrieving, and inspecting XMC Metrics Dashboards and Charts. It provides fluent builder models, pre-configured test data presets, and a gRPC client to communicate with the XMC Dashboard Service.
 
 ## Installation / Usage in Bazel
 
@@ -74,15 +74,39 @@ with DashboardClient() as client:
 `create_chart` attaches a chart to a **WorkUnit** parent — `experiments/{xid}/workUnits/{wid}` —
 which is the only parent the `CreateChart` RPC accepts.
 
+### Creating a Dashboard from Presets
+
+Use the built-in VCC comparison dashboard preset (featuring experiments `234911122`, `234911123`,
+`234911124`):
+
+```python
+from xdash import DashboardClient, create_vcc_comparison_dashboard
+
+dashboard = create_vcc_comparison_dashboard(
+    dashboard_id="my_vcc_comparison", title="VCC Baseline vs Tuned Runs"
+)
+
+with DashboardClient(endpoint="localhost:8080") as client:
+    created_dashboard = client.create_dashboard(dashboard)
+    print(f"Created: {created_dashboard.name}")
+```
+
+A runnable end-to-end version of this, including a virtualenv installer, lives in
+[`examples/xdash_dashboard/`](../../../examples/xdash_dashboard/).
+
 ## CLI Usage (`xdash`)
 
 You can run `xdash` directly via Bazel or as a Python module:
 
 ```bash
-# Create an empty dashboard
+# Create the standard VCC comparison dashboard preset
+bazel run //sdks/python/xdash:xdash_bin -- create-preset --dashboard-id vcc_comparison
+
+# Create a dashboard with standard comparison charts for specific experiment IDs
 bazel run //sdks/python/xdash:xdash_bin -- create-dashboard \
     --title "Hyperparameter Sweep" \
-    --dashboard-id "hp_sweep"
+    --dashboard-id "hp_sweep" \
+    --xids "234911122,234911123,234911124"
 
 # Create a chart under an experiment work unit
 bazel run //sdks/python/xdash:xdash_bin -- create-chart \

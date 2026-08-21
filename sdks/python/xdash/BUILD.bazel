@@ -22,6 +22,7 @@ py_library(
         "builders.py",
         "cli.py",
         "client.py",
+        "presets.py",
     ],
     data = [
         "README.md",
@@ -47,6 +48,12 @@ py_binary(
 py_test(
     name = "builders_test",
     srcs = ["builders_test.py"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "presets_test",
+    srcs = ["presets_test.py"],
     deps = [":xdash"],
 )
 
