@@ -90,6 +90,11 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
+	if version := req.GetSpec().GetVersion(); version != "" {
+		if _, err := store.Parse(version); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
+		}
+	}
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
 
@@ -137,6 +142,11 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
+	}
+	if minVersion := req.GetMinimumVersion(); minVersion != "" {
+		if _, err := store.Parse(minVersion); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
+		}
 	}
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
 }
