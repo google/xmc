@@ -54,7 +54,7 @@ class CliTest(unittest.TestCase):
                 "--dashboard-id",
                 "d1",
                 "--xids",
-                "234911122,234911123",
+                "234911122, 234911123, ",
             ],
             client=self.mock_client,
         )
@@ -62,14 +62,14 @@ class CliTest(unittest.TestCase):
         self.mock_client.create_dashboard.assert_called_once()
 
     def test_create_chart(self) -> None:
-        chart = messages_pb2.Chart(name="dashboards/d1/charts/c1", title="Chart 1")
+        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/c1", title="Chart 1")
         self.mock_client.create_chart.return_value = chart
 
         ret = run_cli(
             [
                 "create-chart",
                 "--parent",
-                "dashboards/d1",
+                "experiments/1001/workUnits/1",
                 "--xid",
                 "1001",
                 "--wid",

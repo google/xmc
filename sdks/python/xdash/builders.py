@@ -182,9 +182,7 @@ class ChartBuilder:
         if self._name:
             return self._name
         slug = _slugify(self._title or "chart")
-        if self._wid > 0:
-            return f"experiments/{self._xid}/workUnits/{self._wid}/charts/{slug}"
-        return f"experiments/{self._xid}/charts/{slug}"
+        return f"experiments/{self._xid}/workUnits/{self._wid}/charts/{slug}"
 
     def build(self) -> messages_pb2.Chart:
         """Validates configuration and builds the Chart protobuf message.

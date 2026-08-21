@@ -186,7 +186,7 @@ class DashboardClient:
         chart: messages_pb2.Chart,
         chart_id: str | None = None,
     ) -> messages_pb2.Chart:
-        """Creates a new chart attached to a dashboard or experiment parent."""
+        """Creates a new chart attached to an experiment work unit parent."""
         if not parent:
             raise ValueError("parent resource name is required")
         if not chart:

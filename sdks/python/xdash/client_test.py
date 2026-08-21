@@ -69,10 +69,17 @@ class DashboardClientTest(unittest.TestCase):
         self.assertEqual(results[0].title, "D1")
 
     def test_create_chart(self) -> None:
-        chart = messages_pb2.Chart(name="dashboards/1/charts/c1", title="C1", xid=1001, wid=1)
+        chart = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/c1",
+            title="C1",
+            xid=1001,
+            wid=1,
+        )
         self.mock_stub.CreateChart.return_value = chart
 
-        result = self.client.create_chart(parent="dashboards/1", chart=chart, chart_id="c1")
+        result = self.client.create_chart(
+            parent="experiments/1001/workUnits/1", chart=chart, chart_id="c1"
+        )
         self.assertEqual(result.name, chart.name)
         self.mock_stub.CreateChart.assert_called_once()
 

@@ -81,7 +81,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Create a new chart for an experiment work unit",
     )
     create_chart_parser.add_argument(
-        "--parent", required=True, help="Parent dashboard resource name (e.g. dashboards/123)"
+        "--parent",
+        required=True,
+        help="Parent work unit resource name (e.g. experiments/123/workUnits/1)",
     )
     create_chart_parser.add_argument("--xid", type=int, required=True, help="Experiment ID")
     create_chart_parser.add_argument("--wid", type=int, default=1, help="Work unit ID (default: 1)")
@@ -138,7 +140,10 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
 
     if args.xids:
         for xid_str in args.xids.split(","):
-            xid_val = int(xid_str.strip())
+            xid_str = xid_str.strip()
+            if not xid_str:
+                continue
+            xid_val = int(xid_str)
             if xid_val > 0:
                 chart = create_standard_experiment_chart(
                     xid=xid_val, wid=1, chart_id=f"exp_{xid_val}"
