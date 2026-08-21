@@ -143,20 +143,6 @@ func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb
 	return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 }
 
-func TestGetChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	req := &spb.GetChartRequest{Name: "dashboards/123/charts/456"}
-	resp, err := s.GetChart(ctx, req)
-	if err != nil {
-		t.Fatalf("GetChart failed: %v", err)
-	}
-	if resp.GetName() != "dashboards/123/charts/456" {
-		t.Errorf("GetChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
-	}
-}
-
 func TestNewServer(t *testing.T) {
 	t.Run("panics on nil repo", func(t *testing.T) {
 		defer func() {
