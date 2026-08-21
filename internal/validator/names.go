@@ -315,17 +315,6 @@ func parse4PartChartName(parts []string) (ParsedChartName, bool, error) {
 			Parent:      fmt.Sprintf("dashboards/%s", parts[1]),
 		}, true, nil
 	}
-	if parts[0] == "experiments" && parts[2] == "charts" && parts[1] != "" && parts[3] != "" {
-		xid, err := validateStringID(parts[1])
-		if err != nil {
-			return ParsedChartName{}, true, fmt.Errorf("invalid experiment ID in chart name: %w", err)
-		}
-		return ParsedChartName{
-			XID:     xid,
-			ChartID: parts[3],
-			Parent:  fmt.Sprintf("experiments/%d", xid),
-		}, true, nil
-	}
 	return ParsedChartName{}, false, nil
 }
 
@@ -350,10 +339,9 @@ func parse6PartChartName(parts []string) (ParsedChartName, bool, error) {
 }
 
 // ParseChartName parses and validates any supported chart resource name:
-// 1. "experiments/{xid}/charts/{chart_id}"
-// 2. "experiments/{xid}/workUnits/{wid}/charts/{chart_id}"
-// 3. "charts/{chart_id}"
-// 4. "dashboards/{dashboard_id}/charts/{chart_id}"
+// 1. "experiments/{xid}/workUnits/{wid}/charts/{chart_id}"
+// 2. "charts/{chart_id}"
+// 3. "dashboards/{dashboard_id}/charts/{chart_id}"
 func ParseChartName(name string) (ParsedChartName, error) {
 	parts := strings.Split(name, "/")
 	switch len(parts) {
@@ -370,7 +358,7 @@ func ParseChartName(name string) (ParsedChartName, error) {
 			return res, err
 		}
 	}
-	return ParsedChartName{}, fmt.Errorf("chart name must be in the format 'experiments/{xid}/charts/{chart_id}', 'experiments/{xid}/workUnits/{wid}/charts/{chart_id}', 'charts/{chart_id}', or 'dashboards/{dashboard_id}/charts/{chart_id}': %w", status.ErrInvalidArgument)
+	return ParsedChartName{}, fmt.Errorf("chart name must be in the format 'experiments/{xid}/workUnits/{wid}/charts/{chart_id}', 'charts/{chart_id}', or 'dashboards/{dashboard_id}/charts/{chart_id}': %w", status.ErrInvalidArgument)
 }
 
 // ValidateChartName checks if a given chart name is valid.

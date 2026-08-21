@@ -156,7 +156,7 @@ func isAlreadyExistsError(err error) bool {
 	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
 }
 
-// createDefaultPlotSpecs returns standard default plots for on-the-fly experiment charts.
+// createDefaultPlotSpecs returns standard default plots for on-the-fly work unit charts.
 func createDefaultPlotSpecs() []*dpb.PlotSpec {
 	return []*dpb.PlotSpec{
 		{
@@ -186,7 +186,7 @@ func createDefaultPlotSpecs() []*dpb.PlotSpec {
 	}
 }
 
-// GetChart retrieves a chart by name from storage, or synthesizes default plots for unpersisted experiment charts.
+// GetChart retrieves a chart by name from storage, or synthesizes default plots for unpersisted work unit charts.
 func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.Chart, error) {
 	if err := validator.ValidateGetChartRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart request: %v", err)

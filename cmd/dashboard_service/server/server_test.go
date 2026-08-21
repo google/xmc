@@ -196,31 +196,14 @@ func TestGetChart(t *testing.T) {
 		}
 	})
 
-	t.Run("synthesizes default chart when experiment chart is not in repository", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return nil, status.Error(codes.NotFound, "not found")
-			},
-		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+	t.Run("returns InvalidArgument when experiment chart without work unit is requested", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 		ctx := context.Background()
 
 		req := &spb.GetChartRequest{Name: "experiments/1001/charts/baseline"}
-		resp, err := s.GetChart(ctx, req)
-		if err != nil {
-			t.Fatalf("GetChart failed: %v", err)
-		}
-		if resp.GetName() != "experiments/1001/charts/baseline" {
-			t.Errorf("GetChart().Name = %q, want %q", resp.GetName(), "experiments/1001/charts/baseline")
-		}
-		if resp.GetXid() != 1001 {
-			t.Errorf("GetChart().Xid = %d, want 1001", resp.GetXid())
-		}
-		if resp.GetWid() != 0 {
-			t.Errorf("GetChart().Wid = %d, want 0", resp.GetWid())
-		}
-		if len(resp.GetPlots()) == 0 {
-			t.Errorf("GetChart() expected default plots, got empty")
+		_, err := s.GetChart(ctx, req)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChart(experiment chart without work unit) code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
 	})
 
@@ -620,35 +603,11 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("synthesizes fallback chart and returns data when experiment chart is not in repository", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return nil, status.Error(codes.NotFound, "not found")
-			},
-		}
-		authMock := &mockAuthorizer{
-			authenticateFn: func(ctx context.Context) (string, string, error) {
-				return "user@example.com", "uid-1", nil
-			},
-		}
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
-		if err != nil {
-			t.Fatalf("GetChartData() unexpected error: %v", err)
-		}
-		if resp.GetName() != "experiments/234911122/charts/baseline" {
-			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/234911122/charts/baseline")
-		}
-		if resp.GetXid() != 234911122 {
-			t.Errorf("GetChartData().Xid = %d, want 234911122", resp.GetXid())
-		}
-		if resp.GetWid() != 0 {
-			t.Errorf("GetChartData().Wid = %d, want 0", resp.GetWid())
+	t.Run("returns InvalidArgument when experiment chart without work unit is requested", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
 	})
 
@@ -684,7 +643,7 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("returns NotFound when repository returns NotFound and name is not a valid experiment chart", func(t *testing.T) {
+	t.Run("returns NotFound when repository returns NotFound and name is not a work unit chart", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return nil, status.Error(codes.NotFound, "not found")
