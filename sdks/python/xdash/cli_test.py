@@ -14,7 +14,7 @@
 """Unit tests for xdash command-line interface."""
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from xdash._protos import messages_pb2
 from xdash.cli import run_cli
@@ -143,6 +143,37 @@ class CliTest(unittest.TestCase):
         ret = run_cli(["list"], client=self.mock_client)
         self.assertEqual(ret, 0)
         self.mock_client.list_dashboards.assert_called_once()
+
+
+class CliClientLifecycleTest(unittest.TestCase):
+    """Tests that run_cli owns and releases the client it creates itself."""
+
+    def test_created_client_is_closed_on_success(self) -> None:
+        with patch("xdash.cli.DashboardClient") as mock_cls:
+            mock_cls.return_value.list_dashboards.return_value = []
+            ret = run_cli(["list"])
+        self.assertEqual(ret, 0)
+        mock_cls.assert_called_once_with(endpoint=None, secure=None)
+        mock_cls.return_value.close.assert_called_once()
+
+    def test_created_client_is_closed_on_failure(self) -> None:
+        with patch("xdash.cli.DashboardClient") as mock_cls:
+            mock_cls.return_value.get_dashboard.side_effect = ValueError("boom")
+            ret = run_cli(["get", "dashboards/d1"])
+        self.assertEqual(ret, 1)
+        mock_cls.return_value.close.assert_called_once()
+
+    def test_injected_client_is_not_closed(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_dashboards.return_value = []
+        run_cli(["list"], client=mock_client)
+        mock_client.close.assert_not_called()
+
+    def test_insecure_flag_forces_plaintext_channel(self) -> None:
+        with patch("xdash.cli.DashboardClient") as mock_cls:
+            mock_cls.return_value.list_dashboards.return_value = []
+            run_cli(["--insecure", "--endpoint", "dashboards.example.com:443", "list"])
+        mock_cls.assert_called_once_with(endpoint="dashboards.example.com:443", secure=False)
 
 
 if __name__ == "__main__":
