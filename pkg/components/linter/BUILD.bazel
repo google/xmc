@@ -18,6 +18,7 @@ go_library(
     name = "linter",
     srcs = [
         "diagnostic.go",
+        "linter.go",
         "manifest.go",
     ],
     importpath = "xmanager_cloud/pkg/components/linter",
@@ -31,7 +32,9 @@ go_test(
     name = "linter_test",
     srcs = [
         "diagnostic_test.go",
+        "linter_test.go",
         "manifest_test.go",
+        "test_helpers_test.go",
     ],
     embed = [":linter"],
     deps = [
