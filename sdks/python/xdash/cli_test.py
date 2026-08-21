@@ -75,6 +75,62 @@ class CliTest(unittest.TestCase):
         self.assertEqual(ret, 0)
         self.mock_client.create_chart.assert_called_once()
 
+    def test_create_chart_derives_ids_from_parent(self) -> None:
+        chart = messages_pb2.Chart(name="experiments/1001/workUnits/3/charts/c1", title="Chart 1")
+        self.mock_client.create_chart.return_value = chart
+
+        ret = run_cli(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/3",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 0)
+        built = self.mock_client.create_chart.call_args[1]["chart"]
+        self.assertEqual((built.xid, built.wid), (1001, 3))
+
+    def test_create_chart_rejects_ids_conflicting_with_parent(self) -> None:
+        for flag, value in (("--xid", "2002"), ("--wid", "7")):
+            with self.subTest(flag=flag):
+                ret = run_cli(
+                    [
+                        "create-chart",
+                        "--parent",
+                        "experiments/1001/workUnits/1",
+                        flag,
+                        value,
+                        "--title",
+                        "Chart 1",
+                        "--metrics",
+                        "val/loss",
+                    ],
+                    client=self.mock_client,
+                )
+                self.assertEqual(ret, 1)
+        self.mock_client.create_chart.assert_not_called()
+
+    def test_create_chart_rejects_non_work_unit_parent(self) -> None:
+        ret = run_cli(
+            [
+                "create-chart",
+                "--parent",
+                "dashboards/d1",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ],
+            client=self.mock_client,
+        )
+        self.assertEqual(ret, 1)
+        self.mock_client.create_chart.assert_not_called()
+
     def test_create_chart_rejects_empty_metrics(self) -> None:
         ret = run_cli(
             [

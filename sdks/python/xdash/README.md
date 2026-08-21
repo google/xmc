@@ -97,10 +97,10 @@ bazel run //sdks/python/xdash:xdash_bin -- create-dashboard \
     --title "Hyperparameter Sweep" \
     --dashboard-id "hp_sweep"
 
-# Create a chart under an experiment work unit
+# Create a chart under an experiment work unit. --xid and --wid default to the
+# IDs in --parent, and are rejected if given and disagreeing with it.
 bazel run //sdks/python/xdash:xdash_bin -- create-chart \
     --parent "experiments/234911122/workUnits/1" \
-    --xid 234911122 \
     --title "Validation Overview" \
     --metrics "val/loss,train/accuracy"
 
