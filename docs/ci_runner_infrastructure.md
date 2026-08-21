@@ -240,16 +240,18 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 3. **Automated Stale Database Garbage Collection**:
    - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 2 hours and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
 
-### GitHub Repository Variables & Workload Identity Federation (WIF)
+### GitHub Repository Secrets & Environment Protection
 
-Workload Identity Federation allows GitHub Actions to authenticate directly to GCP without long-lived service account keys:
+The E2E pipeline runs under the protected environment `environment: e2e-test`. For external/fork PRs, maintainer approval is required before the runner pod is dispatched or cloud tokens are minted.
 
-| Variable Name | Default Value | Description |
-| :--- | :--- | :--- |
-| `vars.GCP_PROJECT_ID` | `xmc-test-project-3` | Target GCP project hosting Cloud Spanner. |
-| `vars.GCP_SPANNER_INSTANCE` | `xmc-e2e` | Cloud Spanner instance used for ephemeral databases. |
-| `vars.GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/815549340089/...` | Workload Identity Pool provider resource URI. |
-| `vars.GCP_E2E_SERVICE_ACCOUNT` | `xmc-e2e-ci@xmc-test-project-3...` | Service account with `roles/spanner.databaseAdmin`. |
+Workload Identity Federation allows GitHub Actions to authenticate directly to GCP using encrypted GitHub Actions Secrets without hardcoded credentials:
+
+| Secret Name | Description |
+| :--- | :--- |
+| `secrets.GCP_PROJECT_ID` | Target GCP project hosting Cloud Spanner (e.g. `xmc-test-project-3`). |
+| `secrets.GCP_SPANNER_INSTANCE` | Cloud Spanner instance used for ephemeral databases (e.g. `xmc-e2e`). |
+| `secrets.GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider resource URI (e.g. `projects/815549340089/...`). |
+| `secrets.GCP_E2E_SERVICE_ACCOUNT` | Service account with `roles/spanner.databaseAdmin` (e.g. `xmc-e2e-ci@...`). |
 
 ### Execution on ARC Self-Hosted vs. GitHub-Hosted (`ubuntu-latest`) Runners
 
