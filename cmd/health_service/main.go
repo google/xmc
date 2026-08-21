@@ -17,6 +17,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -40,27 +41,25 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	"cloud.google.com/go/spanner"
-
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 type grpcServerDeps struct {
-	grpcServer  *grpc.Server
-	listener    net.Listener
-	srv         *server
-	essClient   *spanner.Client
-	xidClient   *spanner.Client
-	redisClient *redisclient.PublisherClient
+	grpcServer       *grpc.Server
+	listener         net.Listener
+	srv              *server
+	essSpannerClient health.SpannerHealthClient
+	xidSpannerClient health.SpannerHealthClient
+	redisClient      *redisclient.PublisherClient
 }
 
 func (d *grpcServerDeps) Close(ctx context.Context) {
-	if d.essClient != nil {
-		d.essClient.Close()
+	if closer, ok := d.essSpannerClient.(io.Closer); ok {
+		_ = closer.Close()
 	}
-	if d.xidClient != nil {
-		d.xidClient.Close()
+	if closer, ok := d.xidSpannerClient.(io.Closer); ok {
+		_ = closer.Close()
 	}
 	if d.redisClient != nil {
 		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -135,16 +134,15 @@ func main() {
 	logging.Info(ctx, "Health service stopped")
 }
 
-func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*spanner.Client, health.SpannerHealthClient) {
+func initSpannerHealthClient(ctx context.Context, dbPath string, name string) health.SpannerHealthClient {
 	if dbPath == "" {
-		return nil, nil
+		return nil
 	}
-	client, err := spanner.NewClient(ctx, dbPath)
-	if err != nil {
-		logging.Warn(ctx, fmt.Sprintf("Failed to initialize %s Spanner client", name), "database", dbPath, "error", err)
-		return nil, nil
+	lazyClient := NewLazySpannerHealthClient(dbPath, nil)
+	if err := lazyClient.Initialize(ctx); err != nil {
+		logging.Warn(ctx, fmt.Sprintf("Failed to eagerly initialize %s Spanner client; will retry lazily on request", name), "database", dbPath, "error", err)
 	}
-	return client, health.NewSpannerHealthClient(client)
+	return lazyClient
 }
 
 func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, authenticator *oauth2.Authenticator) *grpcServerDeps {
@@ -160,8 +158,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
 
-	essClient, essHealth := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
-	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
+	essSpannerClient := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
+	xidSpannerClient := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
 	var redisPingClient RedisPingClient
 	var publisher *redisclient.PublisherClient
@@ -178,8 +176,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config:          cfg,
-		EssHealthClient: essHealth,
-		XidHealthClient: xidHealth,
+		EssHealthClient: essSpannerClient,
+		XidHealthClient: xidSpannerClient,
 		RedisClient:     redisPingClient,
 		CloudRunService: cloudRunService,
 	})
@@ -197,12 +195,12 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	reflection.Register(grpcServer)
 
 	return &grpcServerDeps{
-		grpcServer:  grpcServer,
-		listener:    lis,
-		srv:         srv,
-		essClient:   essClient,
-		xidClient:   xidClient,
-		redisClient: publisher,
+		grpcServer:       grpcServer,
+		listener:         lis,
+		srv:              srv,
+		essSpannerClient: essSpannerClient,
+		xidSpannerClient: xidSpannerClient,
+		redisClient:      publisher,
 	}
 }
 
