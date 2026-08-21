@@ -25,8 +25,6 @@ xmcUrl: ""
 taskSignatureTtlSeconds: 86400
 isDevEnvironment: false
 imageTag: latest
-# Hash of the Helm chart directory contents to detect modifications and trigger updates.
-chartContentHash: ""
 xid_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xid-service-dev:latest"
 actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:latest"
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
@@ -59,7 +57,7 @@ ingestionGatewayDeployment:
   redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
   topicName: "xmc-metrics"
   minPartitions: 128
-  minReplicas: 1
+  minReplicas: 3
   sasl:
     enabled: false
     mechanism: "SCRAM-SHA-256"
