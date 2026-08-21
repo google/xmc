@@ -80,7 +80,7 @@ func main() {
 	defer prodServer.Close()
 
 	// 3. Initialize TLS credentials.
-	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
 	}
@@ -117,7 +117,7 @@ func main() {
 	}()
 
 	// 5. Initialize the gRPC gateway mux.
-	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
 	}
