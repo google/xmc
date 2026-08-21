@@ -75,13 +75,7 @@ service DashboardService {
 
   rpc GetChart(GetChartRequest) returns (Chart) {
     option (google.api.http) = {
-      get: "/v1/{name=experiments/*/workUnits/*/charts/*}"
-      additional_bindings {
-        get: "/v1/{name=charts/*}"
-      }
-      additional_bindings {
-        get: "/v1/{name=dashboards/*/charts/*}"
-      }
+      get: "/v1/{name=charts/*}"
     };
     option (google.api.method_signature) = "name";
   }

@@ -152,14 +152,6 @@ func isAlreadyExistsError(err error) bool {
 	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
 }
 
-// GetChart retrieves a chart stub.
-func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.Chart, error) {
-	return &dpb.Chart{
-		Name:  req.GetName(),
-		Title: "Sample Chart",
-	}, nil
-}
-
 // validateDataEngineDependencies ensures required service dependencies are configured.
 func (s *Server) validateDataEngineDependencies() error {
 	if s.dataEngine == nil {
