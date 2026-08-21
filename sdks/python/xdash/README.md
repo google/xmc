@@ -12,6 +12,12 @@ deps = [
 ]
 ```
 
+Bazel is currently the only supported way to consume `xdash`. The package imports its generated
+protobuf modules through `xdash/_protos.py`, and those modules are produced by the
+`//api/protos/dashboard` `py_proto_library` targets at build time rather than checked in — so a
+plain `pip install` of this directory would import but fail at first use. Outside Bazel, build
+those targets and put their output on `PYTHONPATH` yourself.
+
 ## Python SDK Examples
 
 ### Reading Dashboards and Charts
@@ -47,6 +53,7 @@ DashboardClient(endpoint="mtls.example.com:443", credentials=my_creds)  # custom
 ```
 
 The CLI exposes the same override as `--insecure`.
+
 ### Building Custom Charts and Plots
 
 Use the fluent `ChartBuilder`, `DashboardBuilder`, and plot helper functions (`summary_kpi_plot`,
@@ -89,7 +96,7 @@ which is the only parent the `CreateChart` RPC accepts.
 
 ## CLI Usage (`xdash`)
 
-You can run `xdash` directly via Bazel or as a Python module:
+You can run `xdash` directly via Bazel:
 
 ```bash
 # Create an empty dashboard
@@ -115,4 +122,14 @@ bazel run //sdks/python/xdash:xdash_bin -- get experiments/234911122/workUnits/1
 
 # Fetch evaluated ChartData for a specific chart
 bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline
+```
+
+Or as a Python module, once the generated protos are on `PYTHONPATH` (see
+[Installation / Usage in Bazel](#installation--usage-in-bazel) above):
+
+```bash
+python3 -m xdash list
+python3 -m xdash get dashboards/vcc_comparison
+python3 -m xdash --endpoint cloud.xmanager.googleapis.com:443 list
+python3 -m xdash --insecure --endpoint dev-box.corp:8080 list
 ```

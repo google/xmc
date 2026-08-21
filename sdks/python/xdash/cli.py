@@ -166,8 +166,20 @@ def _handle_create_chart(client: DashboardClient, args: argparse.Namespace) -> i
 
 
 def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
-    """Handles the get subcommand."""
-    name = args.name
+    """Handles the get subcommand.
+
+    Raises:
+        ValueError: If the resource name is blank or is not a dashboard or chart name.
+    """
+    name = args.name.strip()
+    if not name:
+        raise ValueError("Resource name cannot be blank")
+    if not name.startswith(("dashboards/", "experiments/")):
+        raise ValueError(
+            f"Unrecognised resource name '{name}'. Expected it to start with "
+            "'dashboards/' or 'experiments/'."
+        )
+
     if name.startswith("dashboards/") and "/charts/" not in name:
         dash = client.get_dashboard(name)
         sys.stdout.write(
@@ -176,14 +188,15 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
             f"Description: {dash.description}\n"
             f"Charts:      {len(dash.charts)}\n"
         )
-    else:
-        chart = client.get_chart(name)
-        sys.stdout.write(
-            f"Chart:       {chart.name}\n"
-            f"Title:       {chart.title}\n"
-            f"Experiment:  {chart.xid} (wid: {chart.wid})\n"
-            f"Plots:       {len(chart.plots)}\n"
-        )
+        return 0
+
+    chart = client.get_chart(name)
+    sys.stdout.write(
+        f"Chart:       {chart.name}\n"
+        f"Title:       {chart.title}\n"
+        f"Experiment:  {chart.xid} (wid: {chart.wid})\n"
+        f"Plots:       {len(chart.plots)}\n"
+    )
     return 0
 
 
@@ -196,15 +209,16 @@ def _handle_get_data(client: DashboardClient, args: argparse.Namespace) -> int:
     )
     for pdata in data.plots_data:
         sys.stdout.write(f"  - Plot [{pdata.plot_id}]: ")
-        if pdata.HasField("summary_data"):
-            val = pdata.summary_data.latest_value
-            sys.stdout.write(f"Summary value = {val:.4f}\n")
-        elif pdata.HasField("scatter_series"):
-            pts = len(pdata.scatter_series.points)
-            sys.stdout.write(f"Scatter series = {pts} points\n")
-        elif pdata.HasField("bar_data"):
-            buckets = len(pdata.bar_data.buckets)
-            sys.stdout.write(f"Bar buckets = {buckets}\n")
+        # One WhichOneof over the 'content' oneof, rather than a HasField per member:
+        # a new content type then falls through to "Empty content" instead of being
+        # silently skipped by a chain nobody remembered to extend.
+        content = pdata.WhichOneof("content")
+        if content == "summary_data":
+            sys.stdout.write(f"Summary value = {pdata.summary_data.latest_value:.4f}\n")
+        elif content == "scatter_series":
+            sys.stdout.write(f"Scatter series = {len(pdata.scatter_series.points)} points\n")
+        elif content == "bar_data":
+            sys.stdout.write(f"Bar buckets = {len(pdata.bar_data.buckets)}\n")
         else:
             sys.stdout.write("Empty content\n")
     return 0
@@ -231,13 +245,15 @@ def run_cli(
         return 1
 
     owned_client = None
-    if client is None:
-        owned_client = DashboardClient(
-            endpoint=args.endpoint, secure=False if args.insecure else None
-        )
-        client = owned_client
-
     try:
+        # Inside the try: opening the channel can raise XDashConnectionError, and the
+        # user deserves the same "Error: ..." line for that as for a failed RPC.
+        if client is None:
+            owned_client = DashboardClient(
+                endpoint=args.endpoint, secure=False if args.insecure else None
+            )
+            client = owned_client
+
         if args.command == "create-dashboard":
             return _handle_create_dashboard(client, args)
         if args.command == "create-chart":
