@@ -456,3 +456,139 @@ func TestCMSServer_UninitializedStore(t *testing.T) {
 		})
 	}
 }
+
+func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "A test component",
+	}
+
+	// 1. ValidateOnly test
+	valResp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name:         "components/test-validate-only",
+		Spec:         spec,
+		ValidateOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(validate_only=true) unexpected error: %v", err)
+	}
+	if valResp.GetStatusMessage() != "Validation successful (validate_only)" {
+		t.Errorf("StatusMessage = %q, want 'Validation successful (validate_only)'", valResp.GetStatusMessage())
+	}
+	if valResp.GetComponent().GetName() != "components/test-validate-only" {
+		t.Errorf("GetComponent().GetName() = %q, want 'components/test-validate-only'", valResp.GetComponent().GetName())
+	}
+
+	// Ensure validate_only did not persist to the store
+	if _, err := ms.GetComponent(ctx, "test-validate-only"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
+	}
+
+	// 2. Normal creation test
+	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/test-comp",
+		Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
+	}
+	if resp.GetComponent().GetName() != "components/test-comp" {
+		t.Errorf("GetName() = %q, want 'components/test-comp'", resp.GetComponent().GetName())
+	}
+	if resp.GetComponent().GetSpec().GetGeneration() != 1 {
+		t.Errorf("GetSpec().GetGeneration() = %d, want 1", resp.GetComponent().GetSpec().GetGeneration())
+	}
+	if resp.GetComponent().GetStatus().GetState() != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("GetStatus().GetState() = %v, want PENDING_RECONCILIATION", resp.GetComponent().GetStatus().GetState())
+	}
+
+	// 3. Update existing component test
+	updatedSpec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.1.0",
+		Description: "Updated description",
+	}
+	resp2, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "test-comp",
+		Spec: updatedSpec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(update) unexpected error: %v", err)
+	}
+	if resp2.GetComponent().GetSpec().GetGeneration() != 2 {
+		t.Errorf("GetSpec().GetGeneration() = %d, want 2", resp2.GetComponent().GetSpec().GetGeneration())
+	}
+	if resp2.GetComponent().GetSpec().GetDescription() != "Updated description" {
+		t.Errorf("GetSpec().GetDescription() = %q, want 'Updated description'", resp2.GetComponent().GetSpec().GetDescription())
+	}
+}
+
+func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "A component to observe",
+	}
+
+	// Create component first
+	_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "comp-observe",
+		Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
+	}
+
+	// Update observed generation
+	resp, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+		Name:               "components/comp-observe",
+		ObservedGeneration: 1,
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		StatusMessage:      "Controller reconciliation succeeded",
+	})
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration() unexpected error: %v", err)
+	}
+
+	comp := resp.GetComponent()
+	if comp.GetName() != "components/comp-observe" {
+		t.Errorf("GetName() = %q, want 'components/comp-observe'", comp.GetName())
+	}
+	if comp.GetStatus().GetObservedGeneration() != 1 {
+		t.Errorf("GetStatus().GetObservedGeneration() = %d, want 1", comp.GetStatus().GetObservedGeneration())
+	}
+	if comp.GetStatus().GetState() != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("GetStatus().GetState() = %v, want ENABLED", comp.GetStatus().GetState())
+	}
+	if comp.GetStatus().GetHealthMessage() != "Controller reconciliation succeeded" {
+		t.Errorf("GetStatus().GetHealthMessage() = %q, want 'Controller reconciliation succeeded'", comp.GetStatus().GetHealthMessage())
+	}
+
+	// Nonexistent component
+	_, err = server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+		Name:               "components/comp-not-found",
+		ObservedGeneration: 1,
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("UpdateObservedGeneration(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Negative observed generation
+	_, err = server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+		Name:               "comp-observe",
+		ObservedGeneration: -1,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("UpdateObservedGeneration(negative) got code %v, want InvalidArgument", status.Code(err))
+	}
+}

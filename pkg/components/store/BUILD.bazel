@@ -20,6 +20,7 @@ go_library(
     name = "store",
     srcs = [
         "dependency_parser.go",
+        "memory_store.go",
         "resource_names.go",
         "semver.go",
         "store.go",
@@ -30,6 +31,8 @@ go_library(
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_mod//semver",
     ],
 )
@@ -38,12 +41,17 @@ go_test(
     name = "store_test",
     srcs = [
         "dependency_parser_test.go",
+        "memory_store_test.go",
         "resource_names_test.go",
         "semver_test.go",
     ],
+    embed = [":store"],
     deps = [
-        ":store",
         "//api/protos/components/v1alpha1",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

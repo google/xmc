@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -96,10 +97,27 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
-	// TODO(Task 2.5 / Task 2.7): Pass extracted dependencies to store.SetIntent to persist
-	// into the ComponentDependencies relational table and validate against the DAG engine.
-	_ = store.ExtractDependencies(req.GetSpec(), nil, canonicalName)
-	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
+	if req.GetValidateOnly() {
+		protoComp := &componentspb.Component{
+			Name: store.FullComponentName(canonicalName),
+			Spec: proto.Clone(req.GetSpec()).(*componentspb.ComponentSpec),
+			Status: &componentspb.ComponentAccessStatus{
+				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			},
+		}
+		return &componentspb.SetComponentIntentResponse{
+			Component:     protoComp,
+			StatusMessage: "Validation successful (validate_only)",
+		}, nil
+	}
+
+	rec, err := s.store.SetComponentIntent(ctx, canonicalName, req.GetSpec(), nil, req.GetSpec().GetGeneration())
+	if err != nil {
+		return nil, err
+	}
+	return &componentspb.SetComponentIntentResponse{
+		Component: store.ToProtoComponent(rec),
+	}, nil
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
@@ -120,10 +138,23 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
+	if req.GetObservedGeneration() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "observed generation cannot be negative")
+	}
+	if err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage()); err != nil {
+		return nil, err
+	}
+	rec, err := s.store.GetComponent(ctx, canonicalName)
+	if err != nil {
+		return nil, err
+	}
+	return &componentspb.UpdateObservedGenerationResponse{
+		Component: store.ToProtoComponent(rec),
+	}, nil
 }
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
