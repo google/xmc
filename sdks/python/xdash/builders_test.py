@@ -75,24 +75,56 @@ class BuildersTest(unittest.TestCase):
         self.assertEqual(len(chart.plots), 1)
         self.assertTrue(chart.name.startswith("experiments/1001/workUnits/1/charts/"))
 
-    def test_chart_builder_validation(self) -> None:
-        builder = ChartBuilder().set_title("No XID Chart")
-        with self.assertRaises(ValueError):
-            builder.build()
+    def test_chart_builder_requires_an_experiment(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            ChartBuilder().set_title("No XID Chart").add_plot(
+                summary_kpi_plot("p1", "KPI", ["val/loss"])
+            ).build()
+        self.assertIn("xid", str(cm.exception))
 
-        builder2 = ChartBuilder().for_experiment(xid=1001)
-        with self.assertRaises(ValueError):
-            builder2.build()  # missing title and plots
+    def test_chart_builder_requires_a_title(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            ChartBuilder().for_experiment(xid=1001).add_plot(
+                summary_kpi_plot("p1", "KPI", ["val/loss"])
+            ).build()
+        self.assertIn("title", str(cm.exception))
+
+    def test_chart_builder_requires_at_least_one_plot(self) -> None:
+        # xid and title are both set, so the empty-plots branch is the one that fires;
+        # leaving either out would have this pass on the earlier check instead.
+        with self.assertRaises(ValueError) as cm:
+            ChartBuilder().for_experiment(xid=1001).set_title("Has Title").build()
+        self.assertIn("PlotSpec", str(cm.exception))
 
     def test_builder_boundary_values(self) -> None:
         with self.assertRaises(ValueError):
             ChartBuilder().for_experiment(xid=-1)
         with self.assertRaises(ValueError):
-            ChartBuilder().for_experiment(xid=1, wid=-1)
+            ChartBuilder().for_experiment(xid=0)
+        for bad_wid in (-1, 0):
+            # workUnits/0 is rejected by CreateChart's parent validation, so the
+            # builder will not produce a chart the server is certain to refuse.
+            with self.assertRaises(ValueError):
+                ChartBuilder().for_experiment(xid=1, wid=bad_wid)
         with self.assertRaises(ValueError):
             ChartBuilder().set_grid_layout(columns=0)
         with self.assertRaises(ValueError):
             DashboardBuilder().set_grid_layout(columns=0)
+
+    def test_chart_builder_rejects_a_missing_work_unit_at_build(self) -> None:
+        # for_experiment() is the only way to set wid, but a builder that never called
+        # it must not silently emit wid=0.
+        builder = ChartBuilder().set_title("C").add_plot(summary_kpi_plot("p1", "K", ["m"]))
+        builder._xid = 1001
+        with self.assertRaises(ValueError) as cm:
+            builder.build()
+        self.assertIn("wid", str(cm.exception))
+
+    def test_none_children_are_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            ChartBuilder().add_plot(None)  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            DashboardBuilder().add_chart(None)  # type: ignore[arg-type]
 
     def test_blank_titles_are_rejected(self) -> None:
         plot = summary_kpi_plot("p1", "KPI", ["val/loss"])

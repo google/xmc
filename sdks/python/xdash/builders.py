@@ -162,8 +162,10 @@ class ChartBuilder:
         """Associates the chart with a specific experiment ID and work unit ID."""
         if xid <= 0:
             raise ValueError("Experiment ID (xid) must be a positive integer.")
-        if wid < 0:
-            raise ValueError("Work unit ID (wid) cannot be negative.")
+        # Positive, not merely non-negative: CreateChart validates its parent with
+        # ValidateWorkUnitName, which rejects experiments/{xid}/workUnits/0.
+        if wid <= 0:
+            raise ValueError("Work unit ID (wid) must be a positive integer.")
         self._xid = xid
         self._wid = wid
         return self
@@ -191,7 +193,14 @@ class ChartBuilder:
         return self
 
     def add_plot(self, plot: messages_pb2.PlotSpec) -> ChartBuilder:
-        """Appends a PlotSpec to the chart."""
+        """Appends a PlotSpec to the chart.
+
+        Raises:
+            ValueError: If plot is None — a helper that returned nothing would
+                otherwise surface as an opaque failure at build() or at the server.
+        """
+        if plot is None:
+            raise ValueError("plot is required and cannot be None")
         self._plots.append(plot)
         return self
 
@@ -209,10 +218,12 @@ class ChartBuilder:
             A populated messages_pb2.Chart instance.
 
         Raises:
-            ValueError: If required fields (xid, title, plots) are missing.
+            ValueError: If required fields (xid, wid, title, plots) are missing.
         """
         if self._xid <= 0:
             raise ValueError("Experiment ID (xid) must be set via for_experiment().")
+        if self._wid <= 0:
+            raise ValueError("Work unit ID (wid) must be set via for_experiment().")
         if not self._title or not self._title.strip():
             raise ValueError("Chart title is required and cannot be blank.")
         if not self._plots:
@@ -278,7 +289,13 @@ class DashboardBuilder:
         return self
 
     def add_chart(self, chart: messages_pb2.Chart) -> DashboardBuilder:
-        """Appends a Chart message to the dashboard."""
+        """Appends a Chart message to the dashboard.
+
+        Raises:
+            ValueError: If chart is None. See ChartBuilder.add_plot.
+        """
+        if chart is None:
+            raise ValueError("chart is required and cannot be None")
         self._charts.append(chart)
         return self
 
