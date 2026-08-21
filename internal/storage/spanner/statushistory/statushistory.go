@@ -16,9 +16,8 @@ package statushistory
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"math/big"
+	mrand "math/rand"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -26,7 +25,6 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
@@ -83,23 +81,14 @@ func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid
 			continue
 		}
 
-		historyID, err := generateHistoryID()
-		if err != nil {
-			logging.Error(ctx, "Failed to generate HistoryId for work unit status history", "error", err)
-			continue
-		}
-
+		historyID := generateHistoryID()
 		mutation := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, currentState, newState, resType, units, now)
 		tx.BufferWrite([]*spanner.Mutation{mutation})
 	}
 }
 
-func generateHistoryID() (int64, error) {
-	nBig, err := rand.Int(rand.Reader, big.NewInt(1<<63-1))
-	if err != nil {
-		return 0, fmt.Errorf("failed to generate random history ID: %w", err)
-	}
-	return nBig.Int64(), nil
+func generateHistoryID() int64 {
+	return mrand.Int63()
 }
 
 // Repository handles Spanner operations for status history and velocity metrics.

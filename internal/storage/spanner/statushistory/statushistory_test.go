@@ -41,8 +41,9 @@ func TestQueueMetricRow(t *testing.T) {
 }
 
 func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
+	ctx := context.Background()
 	repo := NewRepository(nil)
-	batchVel, err := repo.FetchBatchQueueVelocity(nil, []string{"cq-gpu"}, 1*time.Hour)
+	batchVel, err := repo.FetchBatchQueueVelocity(ctx, []string{"cq-gpu"}, 1*time.Hour)
 	if err != nil {
 		t.Fatalf("expected no error for nil client batch velocity, got %v", err)
 	}
@@ -50,7 +51,7 @@ func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
 		t.Errorf("expected empty batch map for nil client, got %+v", batchVel)
 	}
 
-	batchPending, err := repo.FetchBatchPendingQueueMetrics(nil, []string{"cq-gpu"})
+	batchPending, err := repo.FetchBatchPendingQueueMetrics(ctx, []string{"cq-gpu"})
 	if err != nil {
 		t.Fatalf("expected no error for nil client batch pending, got %v", err)
 	}
