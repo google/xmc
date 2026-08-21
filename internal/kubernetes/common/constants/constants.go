@@ -140,4 +140,16 @@ const (
 
 	// DefaultOnFailureRetryLimit is the default backoff limit for jobs with RestartPolicy OnFailure.
 	DefaultOnFailureRetryLimit = int32(100)
+
+	// ResourceTypeCPU represents the standard CPU resource identifier.
+	ResourceTypeCPU = "cpu"
+
+	// ResourceTypeMemory represents the standard Memory resource identifier.
+	ResourceTypeMemory = "memory"
+
+	// ResourceTypeGPU represents the standard GPU resource identifier.
+	ResourceTypeGPU = "gpu"
+
+	// ResourceTypeTPU represents the standard TPU resource identifier.
+	ResourceTypeTPU = "tpu"
 )
