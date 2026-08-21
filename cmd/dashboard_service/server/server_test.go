@@ -164,6 +164,8 @@ func TestGetChart(t *testing.T) {
 				return &dpb.Chart{
 					Name:  "dashboards/123/charts/456",
 					Title: "Sample Chart",
+					Xid:   100,
+					Wid:   1,
 				}, nil
 			},
 		}
@@ -232,6 +234,86 @@ func TestGetChart(t *testing.T) {
 		}
 		if len(resp.GetPlots()) == 0 {
 			t.Errorf("GetChart() expected default plots, got empty")
+		}
+	})
+
+	t.Run("unauthenticated user returns Unauthenticated", func(t *testing.T) {
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "", "", status.Error(codes.Unauthenticated, "unauthenticated")
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
+		_, err := s.GetChart(context.Background(), &spb.GetChartRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("GetChart() code = %v, want %v", status.Code(err), codes.Unauthenticated)
+		}
+	})
+
+	t.Run("chart missing valid xid returns FailedPrecondition", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 0, Wid: 1}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+		_, err := s.GetChart(context.Background(), &spb.GetChartRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("GetChart() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
+		}
+	})
+
+	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 100, Wid: 1}, nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+		_, err := s.GetChart(context.Background(), &spb.GetChartRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("GetChart() code = %v, want %v", status.Code(err), codes.PermissionDenied)
+		}
+	})
+
+	t.Run("authorized user successfully gets chart and verifies permissions", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name:  "dashboards/123/charts/456",
+					Title: "Sample Chart",
+					Xid:   100,
+					Wid:   1,
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+		}
+		var capturedReq *xidapipb.CheckUserAuthorizationRequest
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				capturedReq = in
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
+		resp, err := s.GetChart(context.Background(), &spb.GetChartRequest{Name: "dashboards/123/charts/456"})
+		if err != nil {
+			t.Fatalf("GetChart() unexpected error: %v", err)
+		}
+		if resp.GetName() != "dashboards/123/charts/456" {
+			t.Errorf("GetChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
+		}
+		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "user@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_READER {
+			t.Errorf("unexpected authorization check request: %+v", capturedReq)
 		}
 	})
 }

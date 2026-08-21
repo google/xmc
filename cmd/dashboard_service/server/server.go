@@ -191,10 +191,21 @@ func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.C
 	if err := validator.ValidateGetChartRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart request: %v", err)
 	}
-	if s.repo == nil {
-		return nil, status.Error(codes.FailedPrecondition, "chart repository is not configured")
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
-	return s.resolveChart(ctx, req.GetName())
+	if err := s.validateChartDependencies(); err != nil {
+		return nil, err
+	}
+	chart, err := s.resolveChart(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
+		return nil, err
+	}
+	return chart, nil
 }
 
 func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
@@ -242,11 +253,8 @@ func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
 	return xid
 }
 
-// validateDataEngineDependencies ensures required service dependencies are configured.
-func (s *Server) validateDataEngineDependencies() error {
-	if s.dataEngine == nil {
-		return status.Error(codes.FailedPrecondition, "data engine is not configured")
-	}
+// validateChartDependencies ensures required service dependencies for chart operations are configured.
+func (s *Server) validateChartDependencies() error {
 	if s.repo == nil {
 		return status.Error(codes.FailedPrecondition, "chart repository is not configured")
 	}
@@ -256,17 +264,24 @@ func (s *Server) validateDataEngineDependencies() error {
 	return nil
 }
 
-// getChartForData retrieves the chart from repository or fallback synthesis, and resolves its associated XID.
-func (s *Server) getChartForData(ctx context.Context, chartName string) (*dpb.Chart, int64, error) {
-	chart, err := s.resolveChart(ctx, chartName)
-	if err != nil {
-		return nil, 0, err
+// validateDataEngineDependencies ensures required service dependencies are configured.
+func (s *Server) validateDataEngineDependencies() error {
+	if s.dataEngine == nil {
+		return status.Error(codes.FailedPrecondition, "data engine is not configured")
+	}
+	return s.validateChartDependencies()
+}
+
+// authorizeChartAccess verifies that a chart has a valid experiment XID and that the user is authorized to read it.
+func (s *Server) authorizeChartAccess(ctx context.Context, user string, chart *dpb.Chart) error {
+	if chart == nil {
+		return status.Error(codes.Internal, "chart is nil")
 	}
 	xid := chart.GetXid()
 	if xid <= 0 {
-		return nil, 0, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, chart.GetXid())
+		return status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chart.GetName(), xid)
 	}
-	return chart, xid, nil
+	return s.authorizeExperimentRead(ctx, user, xid)
 }
 
 // authorizeExperimentRead checks user read authorization against the XID service.
@@ -313,11 +328,11 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 	if err := s.validateDataEngineDependencies(); err != nil {
 		return nil, err
 	}
-	chart, xid, err := s.getChartForData(ctx, req.GetName())
+	chart, err := s.resolveChart(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeExperimentRead(ctx, user, xid); err != nil {
+	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
 		return nil, err
 	}
 
