@@ -92,7 +92,16 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
-	if version := req.GetSpec().GetVersion(); version != "" {
+
+	specToSet := req.GetSpec()
+	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
+		existingRec, err := s.store.GetComponent(ctx, canonicalName)
+		if err == nil && existingRec != nil && existingRec.Spec != nil {
+			specToSet = applyUpdateMask(existingRec.Spec, req.GetSpec(), req.GetUpdateMask().GetPaths())
+		}
+	}
+
+	if version := specToSet.GetVersion(); version != "" {
 		if _, err := store.Parse(version); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
@@ -100,7 +109,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetValidateOnly() {
 		protoComp := &componentspb.Component{
 			Name: store.FullComponentName(canonicalName),
-			Spec: proto.Clone(req.GetSpec()).(*componentspb.ComponentSpec),
+			Spec: proto.Clone(specToSet).(*componentspb.ComponentSpec),
 			Status: &componentspb.ComponentAccessStatus{
 				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			},
@@ -111,13 +120,51 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 		}, nil
 	}
 
-	rec, err := s.store.SetComponentIntent(ctx, canonicalName, req.GetSpec(), nil, req.GetSpec().GetGeneration())
+	rec, err := s.store.SetComponentIntent(ctx, canonicalName, specToSet, nil, specToSet.GetGeneration())
 	if err != nil {
 		return nil, err
 	}
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
+}
+
+// applyUpdateMask merges fields from update into base according to field mask paths.
+func applyUpdateMask(base, update *componentspb.ComponentSpec, paths []string) *componentspb.ComponentSpec {
+	result := proto.Clone(base).(*componentspb.ComponentSpec)
+	for _, p := range paths {
+		switch p {
+		case "type":
+			result.Type = update.GetType()
+		case "version":
+			result.Version = update.GetVersion()
+		case "deletion_policy", "deletionPolicy":
+			result.DeletionPolicy = update.GetDeletionPolicy()
+		case "wrapper_ref", "wrapperRef":
+			if update.GetWrapperRef() != nil {
+				result.WrapperRef = proto.Clone(update.GetWrapperRef()).(*componentspb.WrapperRef)
+			} else {
+				result.WrapperRef = nil
+			}
+		case "lifecycle_control", "lifecycleControl":
+			if update.GetLifecycleControl() != nil {
+				result.LifecycleControl = proto.Clone(update.GetLifecycleControl()).(*componentspb.LifecycleControl)
+			} else {
+				result.LifecycleControl = nil
+			}
+		case "manifests":
+			if update.GetManifests() != nil {
+				result.Manifests = append([]string(nil), update.GetManifests()...)
+			} else {
+				result.Manifests = nil
+			}
+		case "description":
+			result.Description = update.GetDescription()
+		case "generation":
+			result.Generation = update.GetGeneration()
+		}
+	}
+	return result
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
@@ -144,6 +191,9 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 	}
 	if req.GetObservedGeneration() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "observed generation cannot be negative")
+	}
+	if req.GetState() < componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED || req.GetState() > componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid component state %d", req.GetState())
 	}
 	if err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage()); err != nil {
 		return nil, err

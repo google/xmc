@@ -77,6 +77,7 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 			newGen = desiredGen
 		}
 		rec.Generation = newGen
+		rec.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		rec.Spec = proto.Clone(spec).(*componentspb.ComponentSpec)
 		rec.Spec.Generation = newGen
 		rec.Dependencies = deps
@@ -84,10 +85,9 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 		rec.UpdateTime = now
 		rec.Etag = generateEtag(rec)
 		if rec.Status == nil {
-			rec.Status = &componentspb.ComponentAccessStatus{
-				State: rec.State,
-			}
+			rec.Status = &componentspb.ComponentAccessStatus{}
 		}
+		rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		return cloneRecord(rec), nil
 	}
 

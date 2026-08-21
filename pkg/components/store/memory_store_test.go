@@ -93,6 +93,11 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 
 	time.Sleep(1 * time.Millisecond) // Ensure timestamp advances
 
+	// Transition component to ENABLED
+	if err := ms.UpdateObservedGeneration(ctx, "my-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); err != nil {
+		t.Fatalf("UpdateObservedGeneration() failed: %v", err)
+	}
+
 	spec2 := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version:     "v1.1.0",
@@ -108,6 +113,9 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 	}
 	if rec2.Generation != 2 {
 		t.Errorf("Generation = %d, want 2", rec2.Generation)
+	}
+	if rec2.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("State = %v, want PENDING_RECONCILIATION after updating intent", rec2.State)
 	}
 	if rec2.Spec.GetDescription() != "Updated version" {
 		t.Errorf("Spec.Description = %q, want 'Updated version'", rec2.Spec.GetDescription())
