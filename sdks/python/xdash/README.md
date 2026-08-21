@@ -21,8 +21,7 @@ from xdash import DashboardClient, create_vcc_comparison_dashboard
 
 client = DashboardClient(endpoint="localhost:8080")
 dashboard = create_vcc_comparison_dashboard(
-    dashboard_id="my_vcc_comparison",
-    title="VCC Baseline vs Tuned Runs"
+    dashboard_id="my_vcc_comparison", title="VCC Baseline vs Tuned Runs"
 )
 
 created_dashboard = client.create_dashboard(dashboard)
