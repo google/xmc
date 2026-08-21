@@ -101,6 +101,22 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 			wantCode: codes.Unimplemented,
 		},
 		{
+			name: "SetComponentIntent_AIP122Name",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "components/comp-1", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "SetComponentIntent_InvalidName",
+			call: func() error {
+				_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "-invalid-name-", Spec: validSpec})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
 			name: "SetComponentIntent_NilRequest",
 			call: func() error {
 				_, err := server.SetComponentIntent(ctx, nil)
@@ -133,6 +149,14 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 				return err
 			},
 			wantCode: codes.Unimplemented,
+		},
+		{
+			name: "PrepareDeactivation_InvalidName",
+			call: func() error {
+				_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "INVALID NAME"})
+				return err
+			},
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "PrepareDeactivation_NilRequest",

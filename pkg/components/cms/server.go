@@ -43,87 +43,111 @@ func (s *Server) Store() store.Store {
 	return s.store
 }
 
+// validateComponentName validates and returns the canonical component name.
+func validateComponentName(name string) (string, error) {
+	canonical := store.CanonicalComponentName(name)
+	if canonical == "" {
+		return "", status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !store.IsValidComponentName(canonical) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	return canonical, nil
+}
+
+// namedRequest defines a constraint for protobuf requests containing a resource name.
+type namedRequest interface {
+	comparable
+	GetName() string
+}
+
+// validateNamedRequest checks that the request is non-nil, the store is initialized,
+// and the component name is valid, returning the canonical component name.
+func validateNamedRequest[T namedRequest](s *Server, req T) (string, error) {
+	var zero T
+	if req == zero {
+		return "", status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if err := s.checkStoreReady(); err != nil {
+		return "", err
+	}
+	return validateComponentName(req.GetName())
+}
+
+// checkStoreReady verifies that the component store is initialized.
+func (s *Server) checkStoreReady() error {
+	if s.store == nil {
+		return status.Error(codes.Unavailable, "component store is uninitialized")
+	}
+	return nil
+}
+
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	if req == nil || req.GetName() == "" || req.GetSpec() == nil {
-		return nil, status.Error(codes.InvalidArgument, "component name and spec are required")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if req.GetSpec() == nil {
+		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
 	return nil, status.Error(codes.Unimplemented, "method SetComponentIntent not implemented")
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented")
 }
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented")
 }
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
 }
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented")
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented")
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if req == nil || req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if _, err := validateNamedRequest(s, req); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
-	if s.store == nil {
-		return nil, status.Error(codes.Unavailable, "component store is uninitialized")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if err := s.checkStoreReady(); err != nil {
+		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented")
 }

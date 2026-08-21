@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "store",
     srcs = [
+        "resource_names.go",
         "store.go",
     ],
     importpath = "xmanager_cloud/pkg/components/store",
@@ -26,5 +27,15 @@ go_library(
         "//api/protos/components/v1alpha1",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "store_test",
+    srcs = [
+        "resource_names_test.go",
+    ],
+    deps = [
+        ":store",
     ],
 )
