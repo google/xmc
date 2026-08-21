@@ -480,11 +480,12 @@ def compute_helm_chart_hash(chart_dir: Path | str = "deploy/helm") -> str:
 
     chunk_size = 64 * 1024
     for rel_posix_path, file_path in file_entries:
-        hasher.update(rel_posix_path.encode("utf-8"))
-        hasher.update(b"\x00")
+        file_hasher = hashlib.sha256()
+        file_hasher.update(rel_posix_path.encode("utf-8"))
+        file_hasher.update(b"\x00")
         with file_path.open("rb") as f:
             while chunk := f.read(chunk_size):
-                hasher.update(chunk)
-        hasher.update(b"\x00")
+                file_hasher.update(chunk)
+        hasher.update(file_hasher.digest())
 
     return hasher.hexdigest()

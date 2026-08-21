@@ -573,11 +573,12 @@ class TestComputeHelmChartHash(unittest.TestCase):
             hash1 = compute_helm_chart_hash(base)
             self.assertEqual(len(hash1), 64)
 
+            file_hasher = hashlib.sha256()
+            file_hasher.update(b"large_file.bin")
+            file_hasher.update(b"\x00")
+            file_hasher.update(large_content)
             hasher = hashlib.sha256()
-            hasher.update(b"large_file.bin")
-            hasher.update(b"\x00")
-            hasher.update(large_content)
-            hasher.update(b"\x00")
+            hasher.update(file_hasher.digest())
             self.assertEqual(hash1, hasher.hexdigest())
 
 
