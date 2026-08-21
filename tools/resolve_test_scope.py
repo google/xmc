@@ -31,8 +31,11 @@ CORE_INFRA_FILES: set[str] = {
     "go.mod",
     "go.sum",
     "WORKSPACE",
+    "WORKSPACE.bazel",
     "MODULE.bazel",
+    "MODULE.bazel.lock",
     "BUILD.bazel",
+    "compat.bzl",
 }
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
@@ -62,6 +65,7 @@ CODE_EXTENSIONS: tuple[str, ...] = (
     ".py",
     ".proto",
     ".bzl",
+    ".sql",
 )
 
 BUILD_FILE_NAMES: set[str] = {
@@ -193,21 +197,68 @@ def _parse_build_file_test_targets(build_path: Path) -> list[str]:
     return targets
 
 
+def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str | None:
+    """Finds the nearest enclosing Bazel package directory containing a BUILD or BUILD.bazel file.
+
+    Returns the package label relative to workspace root (e.g. '//internal/storage/spanner/migrations'
+    or '//' for the root package). If no BUILD file is found on disk (e.g. synthetic or mocked paths),
+    falls back to the file's parent directory label.
+    """
+    base_dir = (cwd if cwd else Path.cwd()).resolve()
+    target_path = Path(file_path)
+
+    if target_path.is_absolute():
+        try:
+            target_path = target_path.resolve().relative_to(base_dir)
+        except ValueError:
+            return None
+
+    # Start searching from the file's directory upwards
+    curr_dir = target_path.parent
+
+    while True:
+        candidate_dir = (base_dir / curr_dir).resolve()
+        # Verify candidate_dir is within base_dir
+        if candidate_dir != base_dir and base_dir not in candidate_dir.parents:
+            break
+
+        if (candidate_dir / "BUILD.bazel").is_file() or (candidate_dir / "BUILD").is_file():
+            rel_pkg = curr_dir.as_posix()
+            if rel_pkg in {".", ""}:
+                return "//"
+            return f"//{rel_pkg}"
+
+        if curr_dir in {Path("."), Path("")}:
+            break
+        curr_dir = curr_dir.parent
+
+    if (base_dir / "BUILD.bazel").is_file() or (base_dir / "BUILD").is_file():
+        return "//"
+
+    # Fallback for synthetic/mock paths or environments where repository tree is not on disk
+    parent_posix = target_path.parent.as_posix()
+    if parent_posix in {".", ""}:
+        return "//"
+    return f"//{parent_posix}"
+
+
 def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
     """Fallback static parser for reverse dependency test targets from BUILD.bazel files."""
     import os
 
-    base_dir = cwd if cwd else Path.cwd()
+    base_dir = (cwd if cwd else Path.cwd()).resolve()
     changed_dirs: set[str] = set()
     for f in files:
-        if is_non_code_file(f):
+        clean_f = f.strip()
+        if not clean_f or is_non_code_file(clean_f):
             continue
-        if f.endswith(CODE_EXTENSIONS) or Path(f).name in BUILD_FILE_NAMES:
-            p_dir = Path(f).parent.as_posix()
-            if p_dir and p_dir != ".":
-                changed_dirs.add(p_dir)
-            else:
-                changed_dirs.add("")
+        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+            continue
+
+        pkg = find_enclosing_bazel_package(clean_f, cwd=base_dir)
+        if pkg:
+            pkg_dir = pkg.lstrip("/").strip("/")
+            changed_dirs.add(pkg_dir)
 
     if not changed_dirs:
         return []
@@ -227,7 +278,12 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
                 if target_label in EXCLUDED_TEST_TARGETS:
                     continue
                 for cd in changed_dirs:
-                    if (pkg_path == cd) or (cd and pkg_path.startswith(f"{cd}/")):
+                    if (
+                        pkg_path == cd
+                        or (cd and pkg_path.startswith(f"{cd}/"))
+                        or (cd and pkg_path.startswith(cd))
+                        or (pkg_path and cd.startswith(pkg_path))
+                    ):
                         test_targets.add(target_label)
     return sorted(test_targets)
 
@@ -239,14 +295,16 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
     """
     changed_pkgs: set[str] = set()
     for f in files:
-        if is_non_code_file(f):
+        clean_f = f.strip()
+        if not clean_f or is_non_code_file(clean_f):
             continue
-        if f.endswith(CODE_EXTENSIONS) or Path(f).name in BUILD_FILE_NAMES:
-            pkg_dir = Path(f).parent.as_posix()
-            if pkg_dir and pkg_dir != ".":
-                changed_pkgs.add(f"//{pkg_dir}:all")
-            else:
-                changed_pkgs.add("//:all")
+        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+            continue
+
+        pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
+        if pkg:
+            pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
+            changed_pkgs.add(pkg_target)
 
     if not changed_pkgs:
         return []

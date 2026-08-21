@@ -22,9 +22,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from resolve_test_scope import (
+    _discover_static_rdeps_targets,
     _parse_build_file_test_targets,
     classify_modified_files,
     discover_bazel_rdeps_targets,
+    find_enclosing_bazel_package,
     get_git_modified_files,
     is_non_code_file,
     resolve_test_scope,
@@ -255,6 +257,116 @@ class TestResolveTestScope(unittest.TestCase):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def test_find_enclosing_bazel_package(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            pkg_a = base / "internal" / "storage" / "spanner" / "migrations"
+            pkg_a.mkdir(parents=True)
+            (pkg_a / "BUILD.bazel").touch()
+            nested_sql_dir = pkg_a / "ess"
+            nested_sql_dir.mkdir()
+            sql_file = nested_sql_dir / "001_baseline.up.sql"
+            sql_file.touch()
+
+            # Nested SQL file in subdirectory without BUILD should resolve to parent package
+            pkg = find_enclosing_bazel_package(
+                "internal/storage/spanner/migrations/ess/001_baseline.up.sql", cwd=base
+            )
+            self.assertEqual(pkg, "//internal/storage/spanner/migrations")
+
+            # File directly in package
+            pkg_direct = find_enclosing_bazel_package(
+                "internal/storage/spanner/migrations/runner.go", cwd=base
+            )
+            self.assertEqual(pkg_direct, "//internal/storage/spanner/migrations")
+
+            # File at root
+            pkg_root = find_enclosing_bazel_package("compat.bzl", cwd=base)
+            self.assertEqual(pkg_root, "//")
+
+    def test_discover_static_rdeps_targets_with_migration_sql(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            mig_dir = base / "internal" / "storage" / "spanner" / "migrations"
+            mig_dir.mkdir(parents=True)
+            (mig_dir / "BUILD.bazel").write_text(
+                'compat_go_test(\n    name = "migrations_test",\n)\n',
+                encoding="utf-8",
+            )
+            nested_sql_dir = mig_dir / "ess"
+            nested_sql_dir.mkdir()
+            (nested_sql_dir / "001_baseline.up.sql").touch()
+
+            targets = _discover_static_rdeps_targets(
+                ["internal/storage/spanner/migrations/ess/001_baseline.up.sql"],
+                cwd=base,
+            )
+            self.assertIn("//internal/storage/spanner/migrations:migrations_test", targets)
+
+    @patch("resolve_test_scope.subprocess.run")
+    def test_discover_bazel_rdeps_targets_with_migration_sql(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            mig_dir = base / "internal" / "storage" / "spanner" / "migrations"
+            mig_dir.mkdir(parents=True)
+            (mig_dir / "BUILD.bazel").touch()
+            nested_sql_dir = mig_dir / "ess"
+            nested_sql_dir.mkdir()
+            (nested_sql_dir / "001_baseline.up.sql").touch()
+
+            mock_run.return_value = unittest.mock.Mock(
+                returncode=0,
+                stdout="//internal/storage/spanner/migrations:migrations_test\n//cmd/xid_service/server:server_test\n",
+            )
+            targets = discover_bazel_rdeps_targets(
+                ["internal/storage/spanner/migrations/ess/001_baseline.up.sql"],
+                cwd=base,
+            )
+            self.assertIn("//internal/storage/spanner/migrations:migrations_test", targets)
+            self.assertIn("//cmd/xid_service/server:server_test", targets)
+            # Verify the query argument used the enclosing package
+            call_args = mock_run.call_args[0][0]
+            query_str = call_args[-1]
+            self.assertIn("//internal/storage/spanner/migrations:all", query_str)
+
+    @patch("resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_migration_sql(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            mig_dir = base / "internal" / "storage" / "spanner" / "migrations"
+            mig_dir.mkdir(parents=True)
+            (mig_dir / "BUILD.bazel").touch()
+            nested_sql_dir = mig_dir / "ess"
+            nested_sql_dir.mkdir()
+            (nested_sql_dir / "001_baseline.up.sql").touch()
+
+            mock_run.return_value = unittest.mock.Mock(
+                returncode=0,
+                stdout="//internal/storage/spanner/migrations:migrations_test\n",
+            )
+            scope = resolve_test_scope(
+                ["internal/storage/spanner/migrations/ess/001_baseline.up.sql"],
+                use_rdeps=True,
+                cwd=base,
+            )
+            self.assertTrue(scope["run_backend"])
+            self.assertFalse(scope["run_ui"])
+            self.assertEqual(scope["backend_mode"], "rdeps")
+            self.assertIn(
+                "//internal/storage/spanner/migrations:migrations_test",
+                scope["bazel_targets"],
+            )
+
+    def test_resolve_test_scope_core_infra_compat_bzl(self):
+        scope = resolve_test_scope(["compat.bzl"], use_rdeps=False)
+        self.assertTrue(scope["run_backend"])
+        self.assertTrue(scope["run_ui"])
+        self.assertEqual(scope["backend_mode"], "all")
 
 
 if __name__ == "__main__":
