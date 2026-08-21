@@ -55,16 +55,23 @@ func validateComponentName(name string) (string, error) {
 	return canonical, nil
 }
 
-// validateComponentRequest validates the component name format and verifies store initialization.
-func (s *Server) validateComponentRequest(name string) (string, error) {
-	if s.store == nil {
-		return "", status.Error(codes.Unavailable, "component store is uninitialized")
+// namedRequest defines a constraint for protobuf requests containing a resource name.
+type namedRequest interface {
+	comparable
+	GetName() string
+}
+
+// validateNamedRequest checks that the request is non-nil, the store is initialized,
+// and the component name is valid, returning the canonical component name.
+func validateNamedRequest[T namedRequest](s *Server, req T) (string, error) {
+	var zero T
+	if req == zero {
+		return "", status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	canonical, err := validateComponentName(name)
-	if err != nil {
+	if err := s.checkStoreReady(); err != nil {
 		return "", err
 	}
-	return canonical, nil
+	return validateComponentName(req.GetName())
 }
 
 // checkStoreReady verifies that the component store is initialized.
@@ -77,10 +84,7 @@ func (s *Server) checkStoreReady() error {
 
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	if req.GetSpec() == nil {
@@ -91,10 +95,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented")
@@ -102,10 +103,7 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented")
@@ -113,10 +111,7 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
@@ -124,10 +119,7 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented")
@@ -135,10 +127,7 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented")
@@ -146,10 +135,7 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
-	if _, err := s.validateComponentRequest(req.GetName()); err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
