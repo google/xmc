@@ -35,12 +35,19 @@ echo "--> [3/4] Upgrading pip and installing grpcio, protobuf & googleapis-commo
 "${PIP_BIN}" install --upgrade pip
 "${PIP_BIN}" install grpcio protobuf googleapis-common-protos
 
-SITE_PACKAGES="$("${PYTHON_BIN}" -c "import site; print(site.getsitepackages()[0])")"
+# sysconfig.get_path('purelib') resolves against the running interpreter, which is the
+# venv's; site.getsitepackages() can report the base prefix instead.
+SITE_PACKAGES="$("${PYTHON_BIN}" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
 echo "--> Copying generated protobuf modules to virtual environment site-packages: ${SITE_PACKAGES}..."
+VIRTUAL_IMPORTS="${REPO_ROOT}/bazel-bin/api/protos/dashboard/_virtual_imports"
 rm -rf "${SITE_PACKAGES}/third_party"
-cp -r "${REPO_ROOT}/bazel-bin/api/protos/dashboard/_virtual_imports/dashboard_messages_proto/third_party" "${SITE_PACKAGES}/"
-cp -r "${REPO_ROOT}/bazel-bin/api/protos/dashboard/_virtual_imports/dashboard_service_proto/third_party" "${SITE_PACKAGES}/"
-chmod -R u+w "${SITE_PACKAGES}/third_party"
+mkdir -p "${SITE_PACKAGES}/third_party"
+# chmod after *each* copy, not once at the end: Bazel leaves its outputs read-only, so
+# the second copy would otherwise fail to write into the tree the first one laid down.
+for proto_target in dashboard_messages_proto dashboard_service_proto; do
+  cp -R "${VIRTUAL_IMPORTS}/${proto_target}/third_party/." "${SITE_PACKAGES}/third_party/"
+  chmod -R u+w "${SITE_PACKAGES}/third_party"
+done
 
 echo "--> [4/4] Installing xdash SDK in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"

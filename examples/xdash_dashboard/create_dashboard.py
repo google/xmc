@@ -24,6 +24,9 @@ import sys
 from collections.abc import Sequence
 
 from xdash import (
+    VCC_BASELINE_XID,
+    VCC_TUNED_V1_XID,
+    VCC_TUNED_V2_XID,
     ChartBuilder,
     DashboardBuilder,
     DashboardClient,
@@ -35,9 +38,9 @@ from xdash._protos import messages_pb2
 
 # Standard test experiment IDs available in UI and DataEngine golden test datasets.
 EXPERIMENT_RUNS = [
-    (234911122, "baseline", "VCC Baseline Run"),
-    (234911123, "tuned_v1", "VCC Tuned Run (lr=0.01)"),
-    (234911124, "tuned_v2", "VCC Tuned Run (lr=0.005)"),
+    (VCC_BASELINE_XID, "baseline", "VCC Baseline Run"),
+    (VCC_TUNED_V1_XID, "tuned_v1", "VCC Tuned Run (lr=0.01)"),
+    (VCC_TUNED_V2_XID, "tuned_v2", "VCC Tuned Run (lr=0.005)"),
 ]
 
 

@@ -153,12 +153,14 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
             xid_str = xid_str.strip()
             if not xid_str:
                 continue
-            xid_val = int(xid_str)
-            if xid_val > 0:
-                chart = create_standard_experiment_chart(
-                    xid=xid_val, wid=1, chart_id=f"exp_{xid_val}"
-                )
-                builder.add_chart(chart)
+            try:
+                xid_val = int(xid_str)
+            except ValueError:
+                raise ValueError(f"--xids must be a comma-separated list of integers: {xid_str}")
+            # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
+            # with a clear message, rather than the dashboard silently losing a chart.
+            chart = create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
+            builder.add_chart(chart)
 
     created = client.create_dashboard(builder.build(), dashboard_id=dash_id or None)
     sys.stdout.write(f"Created dashboard: {created.name} (title: {created.title})\n")

@@ -66,6 +66,16 @@ class CliTest(unittest.TestCase):
         built = self.mock_client.create_dashboard.call_args[0][0]
         self.assertEqual([chart.xid for chart in built.charts], [234911122, 234911123])
 
+    def test_create_dashboard_rejects_invalid_xids(self) -> None:
+        for bad in ("0", "-5", "not-a-number"):
+            with self.subTest(xids=bad):
+                ret = run_cli(
+                    ["create-dashboard", "--title", "Dash 1", "--xids", bad],
+                    client=self.mock_client,
+                )
+                self.assertEqual(ret, 1)
+        self.mock_client.create_dashboard.assert_not_called()
+
     def test_create_dashboard(self) -> None:
         dash = messages_pb2.Dashboard(name="dashboards/d1", title="Dash 1")
         self.mock_client.create_dashboard.return_value = dash
