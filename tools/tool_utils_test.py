@@ -575,7 +575,9 @@ class TestComputeHelmChartHash(unittest.TestCase):
 
             hasher = hashlib.sha256()
             hasher.update(b"large_file.bin")
+            hasher.update(b"\x00")
             hasher.update(large_content)
+            hasher.update(b"\x00")
             self.assertEqual(hash1, hasher.hexdigest())
 
 
