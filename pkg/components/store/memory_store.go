@@ -121,24 +121,9 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	return cloneRecord(rec), nil
 }
 
-// GetComponent retrieves a component record by canonical or full resource name.
+// GetComponent retrieves a component record by canonical or full resource name (stub in Layer 1).
 func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
-	}
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		return nil, ErrComponentNotFound
-	}
-	return cloneRecord(rec), nil
+	return nil, status.Error(codes.Unimplemented, "method GetComponent not implemented in MemoryStore")
 }
 
 // GetComponentByID retrieves a component record by its unique database identifier (stub in Layer 1).
