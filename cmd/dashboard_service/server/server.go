@@ -186,28 +186,8 @@ func createDefaultPlotSpecs() []*dpb.PlotSpec {
 	}
 }
 
-// GetChart retrieves a chart by name from storage, or synthesizes default plots for unpersisted work unit charts.
-func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.Chart, error) {
-	if err := validator.ValidateGetChartRequest(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart request: %v", err)
-	}
-	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
-	}
-	if err := s.validateChartDependencies(); err != nil {
-		return nil, err
-	}
-	chart, err := s.resolveChart(ctx, req.GetName())
-	if err != nil {
-		return nil, err
-	}
-	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
-		return nil, err
-	}
-	return chart, nil
-}
-
+// resolveChart loads a chart from storage, falling back to a synthesized default
+// specification for work unit charts that have never been persisted.
 func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
 	_, _, chartID, err := validator.ValidateChartName(name)
 	if err != nil {
@@ -239,6 +219,8 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 	}, nil
 }
 
+// resolveChartXID returns the chart's persisted experiment XID, falling back to the
+// XID encoded in the chart resource name when the stored record does not carry one.
 func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
 	xid := chart.GetXid()
 	if xid <= 0 {
@@ -249,8 +231,11 @@ func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
 	return xid
 }
 
-// validateChartDependencies ensures required service dependencies for chart operations are configured.
-func (s *Server) validateChartDependencies() error {
+// validateDataEngineDependencies ensures required service dependencies are configured.
+func (s *Server) validateDataEngineDependencies() error {
+	if s.dataEngine == nil {
+		return status.Error(codes.FailedPrecondition, "data engine is not configured")
+	}
 	if s.repo == nil {
 		return status.Error(codes.FailedPrecondition, "chart repository is not configured")
 	}
@@ -258,14 +243,6 @@ func (s *Server) validateChartDependencies() error {
 		return status.Error(codes.FailedPrecondition, "xid client is not configured")
 	}
 	return nil
-}
-
-// validateDataEngineDependencies ensures required service dependencies are configured.
-func (s *Server) validateDataEngineDependencies() error {
-	if s.dataEngine == nil {
-		return status.Error(codes.FailedPrecondition, "data engine is not configured")
-	}
-	return s.validateChartDependencies()
 }
 
 // authorizeChartAccess verifies that a chart has a valid experiment XID and that the user is authorized to read it.

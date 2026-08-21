@@ -12,19 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "store",
     srcs = [
+        "dependency_parser.go",
+        "resource_names.go",
+        "semver.go",
         "store.go",
     ],
     importpath = "xmanager_cloud/pkg/components/store",
     deps = [
         "//api/protos/components/v1alpha1",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_mod//semver",
+    ],
+)
+
+go_test(
+    name = "store_test",
+    srcs = [
+        "dependency_parser_test.go",
+        "resource_names_test.go",
+        "semver_test.go",
+    ],
+    deps = [
+        ":store",
+        "//api/protos/components/v1alpha1",
+        "@com_github_google_go_cmp//cmp",
     ],
 )

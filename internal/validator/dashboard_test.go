@@ -496,9 +496,16 @@ func TestValidateGetChartRequest(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "valid_request",
+			name: "valid_root_chart",
 			req: &spb.GetChartRequest{
-				Name: "dashboards/dash-1/charts/chart-1",
+				Name: "charts/chart-1",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_root_chart_custom_id",
+			req: &spb.GetChartRequest{
+				Name: "charts/custom-chart-123",
 			},
 			wantErr: nil,
 		},
@@ -522,9 +529,44 @@ func TestValidateGetChartRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "invalid_name",
+			name: "invalid_dashboard_chart_name",
+			req: &spb.GetChartRequest{
+				Name: "dashboards/dash-1/charts/chart-1",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_work_unit_chart_name",
+			req: &spb.GetChartRequest{
+				Name: "experiments/1001/workUnits/123/charts/chart-1",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_name_dashboard_prefix_only",
 			req: &spb.GetChartRequest{
 				Name: "dashboards/dash-1",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_whitespace_name",
+			req: &spb.GetChartRequest{
+				Name: "charts/   ",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_empty_chart_id",
+			req: &spb.GetChartRequest{
+				Name: "charts/",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_extra_parts",
+			req: &spb.GetChartRequest{
+				Name: "charts/chart-1/extra",
 			},
 			wantErr: status.ErrInvalidArgument,
 		},

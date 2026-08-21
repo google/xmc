@@ -298,8 +298,18 @@ type ParsedChartName struct {
 	Parent      string
 }
 
+// ValidateRootChartName checks if a given chart name is valid in the root format "charts/{chart_id}".
+// It returns the chart ID string if valid.
+func ValidateRootChartName(name string) (string, error) {
+	parts := strings.Split(name, "/")
+	if len(parts) != 2 || parts[0] != "charts" || strings.TrimSpace(parts[1]) == "" {
+		return "", fmt.Errorf("chart name must be in the format 'charts/{chart_id}': %w", status.ErrInvalidArgument)
+	}
+	return parts[1], nil
+}
+
 func parse2PartChartName(parts []string) (ParsedChartName, bool) {
-	if parts[0] == "charts" && parts[1] != "" {
+	if parts[0] == "charts" && strings.TrimSpace(parts[1]) != "" {
 		return ParsedChartName{
 			ChartID: parts[1],
 		}, true
@@ -308,7 +318,7 @@ func parse2PartChartName(parts []string) (ParsedChartName, bool) {
 }
 
 func parse4PartChartName(parts []string) (ParsedChartName, bool, error) {
-	if parts[0] == "dashboards" && parts[2] == "charts" && parts[1] != "" && parts[3] != "" {
+	if parts[0] == "dashboards" && parts[2] == "charts" && strings.TrimSpace(parts[1]) != "" && strings.TrimSpace(parts[3]) != "" {
 		return ParsedChartName{
 			DashboardID: parts[1],
 			ChartID:     parts[3],
@@ -319,12 +329,12 @@ func parse4PartChartName(parts []string) (ParsedChartName, bool, error) {
 }
 
 func parse6PartChartName(parts []string) (ParsedChartName, bool, error) {
-	if parts[0] == "experiments" && parts[2] == "workUnits" && parts[4] == "charts" && parts[5] != "" {
+	if parts[0] == "experiments" && parts[2] == "workUnits" && parts[4] == "charts" && strings.TrimSpace(parts[5]) != "" {
 		xid, err := validateStringID(parts[1])
 		if err != nil {
 			return ParsedChartName{}, true, fmt.Errorf("invalid experiment ID in chart name: %w", err)
 		}
-		wid, err := validateStringIDAllowZero(parts[3])
+		wid, err := validateStringID(parts[3])
 		if err != nil {
 			return ParsedChartName{}, true, fmt.Errorf("invalid work unit ID in chart name: %w", err)
 		}
