@@ -32,6 +32,7 @@ from tool_utils import (
     RED,
     DeploymentConfig,
     build_and_push_images,
+    compute_helm_chart_hash,
     configure_docker_auth,
     ensure_venv,
     load_and_validate_config as tool_load_config,
@@ -46,7 +47,7 @@ DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
 
 @dataclass(kw_only=True)
-class UpgradeConfig(DeploymentConfig):
+class UpgradeConfig(DeploymentConfig):  # type: ignore[misc]
     """Holds deployment configuration values for XMC upgrade."""
 
     config_path: str
@@ -328,21 +329,23 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    run_command(
-        [
-            "./cluster-toolkit/gcluster",
-            "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
-            "-d",
-            config.config_path,
-            "-o",
-            "ctk-out",
-            "-l",
-            "WARNING",
-            "-w",
-            "--force",
-        ]
-    )
+    cmd = [
+        "./cluster-toolkit/gcluster",
+        "create",
+        "deploy/ctk_v2/xmanager-cloud.yaml",
+        "-d",
+        config.config_path,
+        "-o",
+        "ctk-out",
+        "-l",
+        "WARNING",
+        "-w",
+        "--force",
+    ]
+    chart_hash = compute_helm_chart_hash("deploy/helm")
+    if chart_hash:
+        cmd.extend(["--vars", f"chart_content_hash={chart_hash}"])
+    run_command(cmd)
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():

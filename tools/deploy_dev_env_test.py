@@ -675,14 +675,44 @@ image_tag: latest
 
     # --- Individual Step Tests ---
 
+    @patch("deploy_dev_env.compute_helm_chart_hash", return_value="mock_chart_hash")
     @patch("deploy_dev_env.run_command")
-    def test_step_compile(self, mock_run):
+    def test_step_compile(self, mock_run, mock_hash):
         deploy_dev_env.step_compile(
             self.valid_config,
             self.dns_project,
             self.dns_zone,
             "my-config.yaml",
         )
+        mock_hash.assert_called_once_with("deploy/helm")
+        mock_run.assert_called_once_with(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "my-config.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
+                "--vars",
+                "chart_content_hash=mock_chart_hash",
+            ]
+        )
+
+    @patch("deploy_dev_env.compute_helm_chart_hash", return_value="")
+    @patch("deploy_dev_env.run_command")
+    def test_step_compile_no_hash(self, mock_run, mock_hash):
+        deploy_dev_env.step_compile(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+            "my-config.yaml",
+        )
+        mock_hash.assert_called_once_with("deploy/helm")
         mock_run.assert_called_once_with(
             [
                 "./cluster-toolkit/gcluster",

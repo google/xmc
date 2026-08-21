@@ -273,13 +273,15 @@ class TestStepSubprocesses(unittest.TestCase):
         # Should push 10 targets when rod is enabled (9 base + rod_data_provider)
         self.assertEqual(mock_run.call_count, 10)
 
+    @mock.patch("tools.upgrade_dev_env.compute_helm_chart_hash", return_value="mock_chart_hash")
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_command")
-    def test_step_app(self, mock_run, _mock_dir):
+    def test_step_app(self, mock_run, _mock_dir, mock_hash):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
+        mock_hash.assert_called_once_with("deploy/helm")
         # Verify gcluster create, export-outputs, import-inputs, and deploy calls are present
         calls = [call_args[0][0] for call_args in mock_run.call_args_list]
         self.assertIn(
@@ -295,6 +297,8 @@ class TestStepSubprocesses(unittest.TestCase):
                 "WARNING",
                 "-w",
                 "--force",
+                "--vars",
+                "chart_content_hash=mock_chart_hash",
             ],
             calls,
         )
@@ -327,6 +331,33 @@ class TestStepSubprocesses(unittest.TestCase):
                 "--only",
                 "xmc_app",
                 "--auto-approve",
+            ],
+            calls,
+        )
+
+    @mock.patch("tools.upgrade_dev_env.compute_helm_chart_hash", return_value="")
+    @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.upgrade_dev_env.run_command")
+    def test_step_app_no_hash(self, mock_run, _mock_dir, mock_hash):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        upgrade_dev_env.step_app(self.config)
+        mock_hash.assert_called_once_with("deploy/helm")
+        calls = [call_args[0][0] for call_args in mock_run.call_args_list]
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
             ],
             calls,
         )

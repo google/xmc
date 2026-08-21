@@ -15,6 +15,7 @@
 """Utility module for formatting tool execution output and exceptions."""
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -429,3 +430,59 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         run_command(["bazel", "run", target], env=env)
 
     log_success("All XMC service container images compiled and pushed from current branch state.")
+
+
+def _should_ignore_chart_path(rel_path: Path) -> bool:
+    """Checks whether a relative path or any of its parents should be ignored."""
+    for part in rel_path.parts:
+        if part.startswith("."):
+            return True
+        if part == "__pycache__":
+            return True
+        if part.endswith(".pyc"):
+            return True
+        if part.endswith("~"):
+            return True
+        if part.startswith("#") and part.endswith("#"):
+            return True
+    return False
+
+
+def compute_helm_chart_hash(chart_dir: Path | str = "deploy/helm") -> str:
+    """Computes a deterministic SHA-256 hash of a Helm chart directory's contents.
+
+    Walks the directory, filters out ignored files (hidden files, backups,
+    bytecode), sorts files by their relative POSIX path, and hashes both
+    the relative paths and file contents in 64KB chunks.
+
+    Args:
+        chart_dir: Path to the Helm chart directory (defaults to "deploy/helm").
+
+    Returns:
+        Hexadecimal SHA-256 digest string, or empty string if chart_dir is not a directory.
+    """
+    chart_path = Path(chart_dir)
+    if not chart_path.is_dir():
+        return ""
+
+    hasher = hashlib.sha256()
+    file_entries: list[tuple[str, Path]] = []
+
+    for item in chart_path.rglob("*"):
+        if not item.is_file():
+            continue
+        rel_path = item.relative_to(chart_path)
+        if _should_ignore_chart_path(rel_path):
+            continue
+        file_entries.append((rel_path.as_posix(), item))
+
+    file_entries.sort(key=lambda x: x[0])
+
+    chunk_size = 64 * 1024
+    for rel_posix_path, file_path in file_entries:
+        hasher.update(rel_posix_path.encode("utf-8"))
+        with file_path.open("rb") as f:
+            while chunk := f.read(chunk_size):
+                hasher.update(chunk)
+
+    return hasher.hexdigest()

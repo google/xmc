@@ -32,6 +32,7 @@ from tool_utils import (
     RED,
     DeploymentConfig,
     build_and_push_images,
+    compute_helm_chart_hash,
     configure_docker_auth,
     ensure_venv,
     load_and_validate_config as tool_load_config,
@@ -457,21 +458,23 @@ def step_compile(
         config_path: Path to the configuration file.
     """
     log_info("Compiling XMC blueprint using gcluster...")
-    run_command(
-        [
-            "./cluster-toolkit/gcluster",
-            "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
-            "-d",
-            config_path,
-            "-o",
-            "ctk-out",
-            "-l",
-            "WARNING",
-            "-w",
-            "--force",
-        ]
-    )
+    cmd = [
+        "./cluster-toolkit/gcluster",
+        "create",
+        "deploy/ctk_v2/xmanager-cloud.yaml",
+        "-d",
+        config_path,
+        "-o",
+        "ctk-out",
+        "-l",
+        "WARNING",
+        "-w",
+        "--force",
+    ]
+    chart_hash = compute_helm_chart_hash("deploy/helm")
+    if chart_hash:
+        cmd.extend(["--vars", f"chart_content_hash={chart_hash}"])
+    run_command(cmd)
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 

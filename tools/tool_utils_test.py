@@ -14,6 +14,7 @@
 
 """Unit tests for tool_utils module."""
 
+import hashlib
 import io
 import json
 import os
@@ -29,6 +30,7 @@ from tool_utils import (
     HandledError,
     _bootstrap_venv,
     build_and_push_images,
+    compute_helm_chart_hash,
     configure_docker_auth,
     ensure_venv,
     load_and_validate_config,
@@ -453,6 +455,128 @@ class TestBuildAndPushImages(unittest.TestCase):
         config = replace(self.valid_config, image_registry="")
         with self.assertRaises(ValueError):
             build_and_push_images(config)
+
+
+class TestComputeHelmChartHash(unittest.TestCase):
+    """Tests for compute_helm_chart_hash in tool_utils."""
+
+    def test_non_existent_directory_returns_empty_string(self):
+        self.assertEqual(compute_helm_chart_hash("/path/that/does/not/exist"), "")
+
+    def test_file_path_returns_empty_string(self):
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            self.assertEqual(compute_helm_chart_hash(tmp_file.name), "")
+
+    def test_empty_directory_returns_valid_sha256_digest(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            h = compute_helm_chart_hash(tmp_dir)
+            self.assertEqual(len(h), 64)
+            self.assertEqual(h, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+    def test_deterministic_hashing_and_sorting(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / "templates").mkdir()
+            (base / "values.yaml").write_text("key: value\n", encoding="utf-8")
+            (base / "templates" / "deployment.yaml").write_text(
+                "kind: Deployment\n", encoding="utf-8"
+            )
+            (base / "Chart.yaml").write_text("name: test\n", encoding="utf-8")
+
+            hash1 = compute_helm_chart_hash(base)
+            hash2 = compute_helm_chart_hash(str(base))
+            self.assertEqual(hash1, hash2)
+            self.assertEqual(len(hash1), 64)
+
+    def test_content_change_changes_hash(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            val_file = base / "values.yaml"
+            val_file.write_text("version: 1\n", encoding="utf-8")
+            hash1 = compute_helm_chart_hash(base)
+
+            val_file.write_text("version: 2\n", encoding="utf-8")
+            hash2 = compute_helm_chart_hash(base)
+            self.assertNotEqual(hash1, hash2)
+
+    def test_filename_change_changes_hash(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            f1 = base / "file1.txt"
+            f1.write_text("content", encoding="utf-8")
+            hash1 = compute_helm_chart_hash(base)
+
+            f1.unlink()
+            f2 = base / "file2.txt"
+            f2.write_text("content", encoding="utf-8")
+            hash2 = compute_helm_chart_hash(base)
+            self.assertNotEqual(hash1, hash2)
+
+    def test_ignores_hidden_files_and_directories(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / "values.yaml").write_text("test: 123\n", encoding="utf-8")
+            hash_clean = compute_helm_chart_hash(base)
+
+            # Add hidden files and hidden directories
+            (base / ".DS_Store").write_text("ignored", encoding="utf-8")
+            hidden_dir = base / ".git"
+            hidden_dir.mkdir()
+            (hidden_dir / "config").write_text("ignored", encoding="utf-8")
+            nested_hidden = base / "templates" / ".secret"
+            nested_hidden.mkdir(parents=True)
+            (nested_hidden / "hidden.yaml").write_text("ignored", encoding="utf-8")
+
+            hash_with_hidden = compute_helm_chart_hash(base)
+            self.assertEqual(hash_clean, hash_with_hidden)
+
+    def test_ignores_editor_backups(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / "values.yaml").write_text("test: 123\n", encoding="utf-8")
+            hash_clean = compute_helm_chart_hash(base)
+
+            # Add editor backups (*~ and #*#)
+            (base / "values.yaml~").write_text("backup content", encoding="utf-8")
+            (base / "#values.yaml#").write_text("emacs backup", encoding="utf-8")
+            (base / "templates").mkdir()
+            (base / "templates" / "service.yaml~").write_text("backup", encoding="utf-8")
+            (base / "templates" / "#service.yaml#").write_text("backup", encoding="utf-8")
+
+            hash_with_backups = compute_helm_chart_hash(base)
+            self.assertEqual(hash_clean, hash_with_backups)
+
+    def test_ignores_bytecode_and_pycache(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / "values.yaml").write_text("test: 123\n", encoding="utf-8")
+            hash_clean = compute_helm_chart_hash(base)
+
+            # Add bytecode and pycache
+            (base / "test.pyc").write_bytes(b"\x00\x01\x02")
+            pycache = base / "__pycache__"
+            pycache.mkdir()
+            (pycache / "compiled.cpython-310.pyc").write_bytes(b"\x03\x04\x05")
+            nested_pycache = base / "templates" / "__pycache__"
+            nested_pycache.mkdir(parents=True)
+            (nested_pycache / "foo.pyc").write_bytes(b"\x06\x07")
+
+            hash_with_bytecode = compute_helm_chart_hash(base)
+            self.assertEqual(hash_clean, hash_with_bytecode)
+
+    def test_chunked_hashing_large_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            large_content = b"A" * (150 * 1024)
+            (base / "large_file.bin").write_bytes(large_content)
+
+            hash1 = compute_helm_chart_hash(base)
+            self.assertEqual(len(hash1), 64)
+
+            hasher = hashlib.sha256()
+            hasher.update(b"large_file.bin")
+            hasher.update(large_content)
+            self.assertEqual(hash1, hasher.hexdigest())
 
 
 if __name__ == "__main__":

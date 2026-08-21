@@ -64,6 +64,7 @@ vars:
   health_status_cache_ttl: 15s
   health_status_force_refresh_max_requests: 5
   health_status_force_refresh_window: 5s
+  chart_content_hash: ""
 
 deployment_groups:
 - group: apis
@@ -454,6 +455,8 @@ deployment_groups:
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)
         type: auto
+      - name: chartContentHash
+        value: $(vars.chart_content_hash)
 
   - id: xmc_sa_annotations
     source: modules/management/kubectl-apply
