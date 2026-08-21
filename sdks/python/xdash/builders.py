@@ -27,6 +27,24 @@ def _slugify(text: str) -> str:
     return slug.strip("_") or "default"
 
 
+def _validate_plot_args(plot_id: str, metrics: Sequence[str]) -> None:
+    """Validates the identifier and metric list shared by every plot helper.
+
+    Args:
+        plot_id: Unique string identifier for the plot within a chart.
+        metrics: List of metric names the plot renders.
+
+    Raises:
+        ValueError: If plot_id is blank, or metrics is empty or holds a blank name.
+    """
+    if not plot_id or not plot_id.strip():
+        raise ValueError("plot_id is required and cannot be blank")
+    if not metrics:
+        raise ValueError("At least one metric must be provided for a plot")
+    if any(not metric or not metric.strip() for metric in metrics):
+        raise ValueError("Metric names cannot be blank")
+
+
 def summary_kpi_plot(
     plot_id: str,
     title: str,
@@ -41,11 +59,11 @@ def summary_kpi_plot(
 
     Returns:
         A validated PlotSpec protobuf message.
+
+    Raises:
+        ValueError: If plot_id is blank, or metrics is empty or holds a blank name.
     """
-    if not plot_id:
-        raise ValueError("plot_id is required")
-    if not metrics:
-        raise ValueError("At least one metric must be provided for a plot")
+    _validate_plot_args(plot_id, metrics)
     return messages_pb2.PlotSpec(
         plot_id=plot_id,
         title=title,
@@ -72,11 +90,11 @@ def scatter_plot(
 
     Returns:
         A validated PlotSpec protobuf message.
+
+    Raises:
+        ValueError: If plot_id is blank, or metrics is empty or holds a blank name.
     """
-    if not plot_id:
-        raise ValueError("plot_id is required")
-    if not metrics:
-        raise ValueError("At least one metric must be provided for a plot")
+    _validate_plot_args(plot_id, metrics)
     mapping = messages_pb2.MappingSpec(x=x_metric)
     if y_metric:
         mapping.y = y_metric
@@ -103,11 +121,11 @@ def bar_plot(
 
     Returns:
         A validated PlotSpec protobuf message.
+
+    Raises:
+        ValueError: If plot_id is blank, or metrics is empty or holds a blank name.
     """
-    if not plot_id:
-        raise ValueError("plot_id is required")
-    if not metrics:
-        raise ValueError("At least one metric must be provided for a plot")
+    _validate_plot_args(plot_id, metrics)
     return messages_pb2.PlotSpec(
         plot_id=plot_id,
         title=title,
@@ -195,8 +213,8 @@ class ChartBuilder:
         """
         if self._xid <= 0:
             raise ValueError("Experiment ID (xid) must be set via for_experiment().")
-        if not self._title:
-            raise ValueError("Chart title is required.")
+        if not self._title or not self._title.strip():
+            raise ValueError("Chart title is required and cannot be blank.")
         if not self._plots:
             raise ValueError("At least one PlotSpec must be added to the chart.")
 
@@ -280,8 +298,8 @@ class DashboardBuilder:
         Raises:
             ValueError: If the dashboard title is missing.
         """
-        if not self._title:
-            raise ValueError("Dashboard title is required.")
+        if not self._title or not self._title.strip():
+            raise ValueError("Dashboard title is required and cannot be blank.")
 
         layout = messages_pb2.LayoutSpec(
             type=messages_pb2.LayoutSpec.GRID,

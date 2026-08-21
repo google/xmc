@@ -94,6 +94,23 @@ class BuildersTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             DashboardBuilder().set_grid_layout(columns=0)
 
+    def test_blank_titles_are_rejected(self) -> None:
+        plot = summary_kpi_plot("p1", "KPI", ["val/loss"])
+        for blank in ("", "   ", "\t\n"):
+            with self.assertRaises(ValueError):
+                ChartBuilder().for_experiment(xid=1001).set_title(blank).add_plot(plot).build()
+            with self.assertRaises(ValueError):
+                DashboardBuilder().set_title(blank).build()
+
+    def test_blank_plot_arguments_are_rejected(self) -> None:
+        for helper in (summary_kpi_plot, scatter_plot, bar_plot):
+            with self.assertRaises(ValueError):
+                helper("   ", "Title", ["val/loss"])
+            with self.assertRaises(ValueError):
+                helper("p1", "Title", [])
+            with self.assertRaises(ValueError):
+                helper("p1", "Title", ["val/loss", "  "])
+
     def test_dashboard_builder_success(self) -> None:
         plot = summary_kpi_plot("p1", "KPI", ["val/loss"])
         chart = (

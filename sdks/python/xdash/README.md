@@ -34,6 +34,19 @@ with DashboardClient(endpoint="localhost:8080") as client:
 The endpoint defaults to the `XMC_DASHBOARD_ENDPOINT` environment variable, falling back to
 `localhost:8080`.
 
+### Transport Security
+
+The channel is TLS by default for every endpoint except a local one (`localhost`, `127.0.0.1`,
+`::1`, `0.0.0.0`), because the hosted service rejects plaintext. Pass `secure=` to override that
+default, or `credentials=` to supply your own `grpc.ChannelCredentials`:
+
+```python
+DashboardClient(endpoint="cloud.xmanager.googleapis.com:443")  # TLS
+DashboardClient(endpoint="dev-box.corp:8080", secure=False)  # plaintext
+DashboardClient(endpoint="mtls.example.com:443", credentials=my_creds)  # custom credentials
+```
+
+The CLI exposes the same override as `--insecure`.
 ### Building Custom Charts and Plots
 
 Use the fluent `ChartBuilder`, `DashboardBuilder`, and plot helper functions (`summary_kpi_plot`,
@@ -108,10 +121,10 @@ bazel run //sdks/python/xdash:xdash_bin -- create-dashboard \
     --dashboard-id "hp_sweep" \
     --xids "234911122,234911123,234911124"
 
-# Create a chart under an experiment work unit
+# Create a chart under an experiment work unit. --xid and --wid default to the
+# IDs in --parent, and are rejected if given and disagreeing with it.
 bazel run //sdks/python/xdash:xdash_bin -- create-chart \
     --parent "experiments/234911122/workUnits/1" \
-    --xid 234911122 \
     --title "Validation Overview" \
     --metrics "val/loss,train/accuracy"
 

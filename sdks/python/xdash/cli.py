@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
 
@@ -42,6 +43,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--endpoint",
         default=None,
         help="Dashboard Service gRPC endpoint (default: localhost:8080 or XMC_DASHBOARD_ENDPOINT)",
+    )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Force a plaintext channel. TLS is used by default for non-local endpoints.",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
@@ -85,8 +91,12 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Parent work unit resource name (e.g. experiments/123/workUnits/1)",
     )
-    create_chart_parser.add_argument("--xid", type=int, required=True, help="Experiment ID")
-    create_chart_parser.add_argument("--wid", type=int, default=1, help="Work unit ID (default: 1)")
+    create_chart_parser.add_argument(
+        "--xid", type=int, default=None, help="Experiment ID (default: taken from --parent)"
+    )
+    create_chart_parser.add_argument(
+        "--wid", type=int, default=None, help="Work unit ID (default: taken from --parent)"
+    )
     create_chart_parser.add_argument("--title", required=True, help="Chart title")
     create_chart_parser.add_argument(
         "--metrics",
@@ -155,13 +165,46 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
     return 0
 
 
+_WORK_UNIT_PARENT = re.compile(r"^experiments/(\d+)/workUnits/(\d+)$")
+
+
+def _resolve_work_unit(parent: str, xid: int | None, wid: int | None) -> tuple[int, int]:
+    """Derives the experiment and work unit IDs for create-chart from --parent.
+
+    Args:
+        parent: Work unit resource name, e.g. 'experiments/123/workUnits/1'.
+        xid: Experiment ID given on the command line, or None to take it from parent.
+        wid: Work unit ID given on the command line, or None to take it from parent.
+
+    Returns:
+        The (xid, wid) pair to stamp on the chart.
+
+    Raises:
+        ValueError: If parent is not a work unit resource name, or an explicit
+            --xid/--wid disagrees with the IDs embedded in it.
+    """
+    match = _WORK_UNIT_PARENT.match(parent)
+    if not match:
+        raise ValueError(
+            "--parent must be a work unit resource name "
+            f"('experiments/{{xid}}/workUnits/{{wid}}'), got: {parent}"
+        )
+    parent_xid, parent_wid = int(match.group(1)), int(match.group(2))
+    if xid is not None and xid != parent_xid:
+        raise ValueError(f"--xid ({xid}) does not match the experiment in --parent ({parent_xid})")
+    if wid is not None and wid != parent_wid:
+        raise ValueError(f"--wid ({wid}) does not match the work unit in --parent ({parent_wid})")
+    return parent_xid, parent_wid
+
+
 def _handle_create_chart(client: DashboardClient, args: argparse.Namespace) -> int:
     """Handles the create-chart subcommand."""
+    xid, wid = _resolve_work_unit(args.parent, args.xid, args.wid)
     metrics = [m.strip() for m in args.metrics.split(",") if m.strip()]
     if not metrics:
         raise ValueError("At least one metric must be provided in --metrics")
 
-    builder = ChartBuilder().for_experiment(xid=args.xid, wid=args.wid).set_title(args.title)
+    builder = ChartBuilder().for_experiment(xid=xid, wid=wid).set_title(args.title)
     for idx, metric in enumerate(metrics):
         builder.add_plot(summary_kpi_plot(f"kpi_{idx}", f"KPI {metric}", [metric]))
         builder.add_plot(scatter_plot(f"scatter_{idx}", f"{metric} vs steps", [metric]))
@@ -237,8 +280,12 @@ def run_cli(
         parser.print_help()
         return 1
 
+    owned_client = None
     if client is None:
-        client = DashboardClient(endpoint=args.endpoint)
+        owned_client = DashboardClient(
+            endpoint=args.endpoint, secure=False if args.insecure else None
+        )
+        client = owned_client
 
     try:
         if args.command == "create-preset":
@@ -256,6 +303,9 @@ def run_cli(
     except (XDashError, ValueError) as err:
         sys.stderr.write(f"Error: {err}\n")
         return 1
+    finally:
+        if owned_client is not None:
+            owned_client.close()
 
     return 0
 
