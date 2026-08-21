@@ -374,16 +374,15 @@ func ParseChartName(name string) (ParsedChartName, error) {
 }
 
 // ValidateChartName checks if a given chart name is valid.
-// It supports all standard chart resource name patterns and returns the parent identifier/path and chart ID.
-func ValidateChartName(name string) (parent string, chartID string, err error) {
+// It parses the chart resource name and returns the experiment XID, work unit WID, and chart ID.
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, chartID, err) without introducing artificial tuple structs.
+func ValidateChartName(name string) (xid int64, wid int64, chartID string, err error) {
 	parsed, err := ParseChartName(name)
 	if err != nil {
-		return "", "", err
+		return 0, 0, "", err
 	}
-	if parsed.DashboardID != "" {
-		return parsed.DashboardID, parsed.ChartID, nil
-	}
-	return parsed.Parent, parsed.ChartID, nil
+	return parsed.XID, parsed.WID, parsed.ChartID, nil
 }
 
 // ConstructWorkUnitChartName constructs a chart name in the format "experiments/{xid}/workUnits/{wid}/charts/{chart_id}".
@@ -426,7 +425,7 @@ func GetResourceType(name string) ResourceType {
 	if _, _, _, err := ValidateOperationName(name); err == nil {
 		return OperationResource
 	}
-	if _, _, err := ValidateChartName(name); err == nil {
+	if _, _, _, err := ValidateChartName(name); err == nil {
 		return ChartResource
 	}
 	if _, err := ValidateDashboardName(name); err == nil {

@@ -35,6 +35,7 @@ const (
 	OwnerTableField            = querytools.TableField("owner")
 	ChartIDTableField          = querytools.TableField("chart_id")
 	XidTableField              = querytools.TableField("xid")
+	WidTableField              = querytools.TableField("wid")
 	PlotIDTableField           = querytools.TableField("plot_id")
 	PlotSpecTableField         = querytools.TableField("plot_spec")
 	ChartLayoutTableField      = querytools.TableField("chart_layout")
@@ -61,7 +62,9 @@ var (
 	FetchedChartColumns = []string{
 		"ChartId",
 		"Title",
+		"Description",
 		"Xid",
+		"Wid",
 		"PlotLayout",
 		"Owner",
 		"CreatedAt",
@@ -146,9 +149,23 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			DescriptionTableField: {
+				Name:         DescriptionTableField,
+				QueryLiteral: safesql.New("c.Description"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
 			XidTableField: {
 				Name:         XidTableField,
 				QueryLiteral: safesql.New("c.Xid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			WidTableField: {
+				Name:         WidTableField,
+				QueryLiteral: safesql.New("c.Wid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
@@ -308,6 +325,13 @@ var (
 				Selectable:   true,
 				Indexed:      true,
 			},
+			DashboardChartIDTableField: {
+				Name:         DashboardChartIDTableField,
+				QueryLiteral: safesql.New("dc.DashboardChartId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
 			ChartIDTableField: {
 				Name:         ChartIDTableField,
 				QueryLiteral: safesql.New("c.ChartId"),
@@ -322,9 +346,23 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			DescriptionTableField: {
+				Name:         DescriptionTableField,
+				QueryLiteral: safesql.New("c.Description"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
 			XidTableField: {
 				Name:         XidTableField,
 				QueryLiteral: safesql.New("c.Xid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			WidTableField: {
+				Name:         WidTableField,
+				QueryLiteral: safesql.New("c.Wid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
@@ -359,6 +397,7 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
 			{TableField: ChartIDTableField, SortOrder: querytools.Asc},
 		},
 	}
@@ -390,7 +429,7 @@ var (
 	ChartTables = []querytools.TableView{chartsTableView, dashboardChartsJoinedTableView}
 
 	// DashboardChartsTables is the list of TableViews for DashboardCharts queries.
-	DashboardChartsTables = []querytools.TableView{dashboardChartsTableView}
+	DashboardChartsTables = []querytools.TableView{dashboardChartsJoinedTableView}
 
 	// ChartPlotsTables is the list of TableViews for ChartPlots queries.
 	ChartPlotsTables = []querytools.TableView{chartPlotsTableView}
@@ -402,7 +441,9 @@ var (
 	ChartsSelectFields = []querytools.TableField{
 		ChartIDTableField,
 		TitleTableField,
+		DescriptionTableField,
 		XidTableField,
+		WidTableField,
 		PlotLayoutTableField,
 		OwnerTableField,
 		CreatedTableField,
@@ -416,5 +457,7 @@ var (
 		{TableField: ChartIDTableField},
 		{TableField: TitleTableField},
 		{TableField: XidTableField},
+		{TableField: WidTableField},
+		{TableField: OwnerTableField},
 	}
 )

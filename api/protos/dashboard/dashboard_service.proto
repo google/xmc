@@ -67,7 +67,7 @@ service DashboardService {
 
   rpc CreateChart(CreateChartRequest) returns (Chart) {
     option (google.api.http) = {
-      post: "/v1/{parent=dashboards/*}/charts"
+      post: "/v1/{parent=experiments/*/workUnits/*}/charts"
       body: "chart"
     };
     option (google.api.method_signature) = "parent,chart,chart_id";
@@ -185,7 +185,7 @@ message CreateChartRequest {
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloud.xmanager.googleapis.com/Dashboard"
+      type: "cloud.xmanager.googleapis.com/WorkUnit"
     }
   ];
   Chart chart = 2 [(google.api.field_behavior) = REQUIRED];

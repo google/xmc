@@ -42,6 +42,7 @@ type DashboardRepository interface {
 	ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
 	DeleteDashboard(ctx context.Context, dashboardId string) error
+	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
 }
 
@@ -155,11 +156,6 @@ func isAlreadyExistsError(err error) bool {
 	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
 }
 
-// CreateChart creates a chart stub.
-func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
-}
-
 // createDefaultPlotSpecs returns standard default plots for on-the-fly experiment charts.
 func createDefaultPlotSpecs() []*dpb.PlotSpec {
 	return []*dpb.PlotSpec{
@@ -201,33 +197,12 @@ func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.C
 	return s.resolveChart(ctx, req.GetName())
 }
 
-// GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
-func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
-	if err := validator.ValidateGetChartDataRequest(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart data request: %v", err)
-	}
-	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
-	}
-	if s.dataEngine == nil || s.repo == nil || s.xidClient == nil {
-		return nil, status.Error(codes.FailedPrecondition, "server dependencies are not fully configured")
-	}
-
-	chart, err := s.resolveChart(ctx, req.GetName())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.authorizeChartAccess(ctx, chart.GetXid(), user); err != nil {
-		return nil, err
-	}
-
-	return s.dataEngine.FetchChartData(ctx, chart, req)
-}
-
 func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
-	chart, err := s.repo.GetChart(ctx, name)
+	_, _, chartID, err := validator.ValidateChartName(name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name %q: %v", name, err)
+	}
+	chart, err := s.repo.GetChart(ctx, chartID)
 	if err == nil {
 		if chart == nil {
 			return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", name)
@@ -267,25 +242,86 @@ func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
 	return xid
 }
 
-func (s *Server) authorizeChartAccess(ctx context.Context, xid int64, user string) error {
-	if xid <= 0 {
-		return status.Errorf(codes.FailedPrecondition, "chart is missing a valid experiment XID (%d)", xid)
+// validateDataEngineDependencies ensures required service dependencies are configured.
+func (s *Server) validateDataEngineDependencies() error {
+	if s.dataEngine == nil {
+		return status.Error(codes.FailedPrecondition, "data engine is not configured")
 	}
+	if s.repo == nil {
+		return status.Error(codes.FailedPrecondition, "chart repository is not configured")
+	}
+	if s.xidClient == nil {
+		return status.Error(codes.FailedPrecondition, "xid client is not configured")
+	}
+	return nil
+}
+
+// getChartForData retrieves the chart from repository or fallback synthesis, and resolves its associated XID.
+func (s *Server) getChartForData(ctx context.Context, chartName string) (*dpb.Chart, int64, error) {
+	chart, err := s.resolveChart(ctx, chartName)
+	if err != nil {
+		return nil, 0, err
+	}
+	xid := chart.GetXid()
+	if xid <= 0 {
+		return nil, 0, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, chart.GetXid())
+	}
+	return chart, xid, nil
+}
+
+// authorizeExperimentRead checks user read authorization against the XID service.
+func (s *Server) authorizeExperimentRead(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_READER)
+}
+
+// authorizeExperimentWrite checks user write authorization against the XID service.
+func (s *Server) authorizeExperimentWrite(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_WRITER)
+}
+
+// authorizeExperiment checks user authorization for a specific role against the XID service.
+func (s *Server) authorizeExperiment(ctx context.Context, user string, xid int64, roleType xpb.XidAcls_RoleType) error {
 	xidName := validator.ConstructXIDName(xid)
-	roleType := xpb.XidAcls_READER
 	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &xidName,
 		User:     &user,
 		RoleType: &roleType,
 	})
 	if err != nil {
-		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "error", err)
+		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "role", roleType.String(), "error", err)
 		return status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", xid)
 	}
 	if xidResp == nil || !xidResp.GetAuthorized() {
-		return status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, xid)
+		action := "read"
+		if roleType == xpb.XidAcls_WRITER {
+			action = "modify"
+		}
+		return status.Errorf(codes.PermissionDenied, "user %q is not authorized to %s experiment %d", user, action, xid)
 	}
 	return nil
+}
+
+// GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
+func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+	if err := validator.ValidateGetChartDataRequest(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart data request: %v", err)
+	}
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
+	}
+	if err := s.validateDataEngineDependencies(); err != nil {
+		return nil, err
+	}
+	chart, xid, err := s.getChartForData(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeExperimentRead(ctx, user, xid); err != nil {
+		return nil, err
+	}
+
+	return s.dataEngine.FetchChartData(ctx, chart, req)
 }
 
 // ListCharts retrieves a list of charts stub.

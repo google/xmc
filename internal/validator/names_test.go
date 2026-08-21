@@ -847,91 +847,104 @@ func TestValidateChartName(t *testing.T) {
 	tests := []struct {
 		name        string
 		chartName   string
-		wantParent  string
+		wantXID     int64
+		wantWID     int64
 		wantChartID string
 		wantErr     error
 	}{
 		{
 			name:        "valid_dashboard_chart_name",
 			chartName:   "dashboards/dash-123/charts/chart-456",
-			wantParent:  "dash-123",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "chart-456",
 			wantErr:     nil,
 		},
 		{
 			name:        "valid_dashboard_chart_name_uuid",
 			chartName:   "dashboards/550e8400-e29b-41d4-a716-446655440000/charts/chart-uuid-1",
-			wantParent:  "550e8400-e29b-41d4-a716-446655440000",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "chart-uuid-1",
 			wantErr:     nil,
 		},
 		{
 			name:        "valid_work_unit_chart_name",
 			chartName:   "experiments/1001/workUnits/123/charts/chart-loss",
-			wantParent:  "experiments/1001/workUnits/123",
+			wantXID:     1001,
+			wantWID:     123,
 			wantChartID: "chart-loss",
 			wantErr:     nil,
 		},
 		{
 			name:        "valid_work_unit_chart_name_zero_wid",
 			chartName:   "experiments/1001/workUnits/0/charts/chart-loss",
-			wantParent:  "experiments/1001/workUnits/0",
+			wantXID:     1001,
+			wantWID:     0,
 			wantChartID: "chart-loss",
 			wantErr:     nil,
 		},
 		{
 			name:        "valid_root_chart_name",
 			chartName:   "charts/chart-loss",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "chart-loss",
 			wantErr:     nil,
 		},
 		{
 			name:        "invalid_chart_name_format",
 			chartName:   "invalid/123/charts/456",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_chart_name_missing_charts_literal",
 			chartName:   "dashboards/123/panels/456",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_chart_name_empty_dashboard_id",
 			chartName:   "dashboards//charts/456",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_chart_name_empty_chart_id",
 			chartName:   "dashboards/123/charts/",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_chart_name_extra_parts",
 			chartName:   "dashboards/123/charts/456/extra",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_chart_name_empty_string",
 			chartName:   "",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
 			name:        "invalid_work_unit_chart_name_negative_wid",
 			chartName:   "experiments/1001/workUnits/-1/charts/chart-1",
-			wantParent:  "",
+			wantXID:     0,
+			wantWID:     0,
 			wantChartID: "",
 			wantErr:     status.ErrInvalidArgument,
 		},
@@ -939,12 +952,12 @@ func TestValidateChartName(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotParent, gotChartID, err := ValidateChartName(tc.chartName)
+			gotXID, gotWID, gotChartID, err := ValidateChartName(tc.chartName)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateChartName(%q) returned unexpected error: %v, want %v", tc.chartName, err, tc.wantErr)
 			}
-			if gotParent != tc.wantParent || gotChartID != tc.wantChartID {
-				t.Errorf("ValidateChartName(%q) = (%q, %q), want (%q, %q)", tc.chartName, gotParent, gotChartID, tc.wantParent, tc.wantChartID)
+			if gotXID != tc.wantXID || gotWID != tc.wantWID || gotChartID != tc.wantChartID {
+				t.Errorf("ValidateChartName(%q) = (%d, %d, %q), want (%d, %d, %q)", tc.chartName, gotXID, gotWID, gotChartID, tc.wantXID, tc.wantWID, tc.wantChartID)
 			}
 		})
 	}

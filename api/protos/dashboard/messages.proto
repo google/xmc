@@ -52,7 +52,7 @@ message Chart {
     plural: "charts"
   };
 
-  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
   string title = 2 [(google.api.field_behavior) = REQUIRED];
   string description = 3 [(google.api.field_behavior) = OPTIONAL];
   int64 xid = 4 [(google.api.field_behavior) = REQUIRED];
