@@ -147,6 +147,22 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
             str(ctx.exception.instruction),
         )
 
+    def test_parse_checklist_approved_items_dynamic_columns(self):
+        content = """
+| Item | Scope | Status | Target File | Line | Priority | Rule Reference | Proposed Inline Comment |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| #1 | [Group A] | Approved | `cmd/ui/app/page.ts` | 42 | Blocker | `core_engineering.md#1` | Remove mock data |
+| #2 | [Group A] | Confirmed | `cmd/ui/app/page.ts` | 55 | Actionable | `core_engineering.md#2` | Add guard return |
+| #3 | [Group A] | Draft | `cmd/ui/app/page.ts` | 80 | Nit | `core_engineering.md#3` | Optional styling |
+"""
+        items = parse_checklist_approved_items(content)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["item_id"], "#1")
+        self.assertEqual(items[0]["file_path"], "cmd/ui/app/page.ts")
+        self.assertEqual(items[0]["line"], 42)
+        self.assertEqual(items[1]["item_id"], "#2")
+        self.assertEqual(items[1]["line"], 55)
+
 
 if __name__ == "__main__":
     unittest.main()

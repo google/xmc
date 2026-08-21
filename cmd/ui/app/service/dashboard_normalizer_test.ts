@@ -190,13 +190,13 @@ describe('dashboard_normalizer', () => {
 
     it('should normalize chart plotsData and numeric xid/wid', () => {
       const cd = normalizeChartData({
-        name: 'experiments/123/charts/main',
+        name: 'experiments/123/workUnits/1/charts/main',
         xid: '123',
         wid: '1',
         plots_data: [{ plot_id: 'plot_1', type: PlotType.SCATTER }],
       });
 
-      expect(cd?.name).toBe('experiments/123/charts/main');
+      expect(cd?.name).toBe('experiments/123/workUnits/1/charts/main');
       expect(cd?.xid).toBe(123);
       expect(cd?.wid).toBe(1);
       expect(cd?.plotsData?.length).toBe(1);

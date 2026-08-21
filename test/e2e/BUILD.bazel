@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 
 py_library(
@@ -19,6 +20,17 @@ py_library(
     srcs = ["__init__.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//test/e2e/lib:orchestration_lib",
+    ],
+)
+
+py_binary(
+    name = "runner",
+    srcs = ["runner.py"],
+    main = "runner.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":e2e_pkg",
         "//test/e2e/lib:orchestration_lib",
     ],
 )
