@@ -19,7 +19,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -142,101 +141,19 @@ func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*Component
 	return cloneRecord(rec), nil
 }
 
-// GetComponentByID retrieves a component record by its unique database identifier.
+// GetComponentByID retrieves a component record by its unique database identifier (stub in Layer 1).
 func (m *MemoryStore) GetComponentByID(ctx context.Context, componentID int64) (*ComponentRecord, error) {
-	if componentID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
-	}
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	rec, exists := m.componentsByID[componentID]
-	if !exists || rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		return nil, ErrComponentNotFound
-	}
-	return cloneRecord(rec), nil
+	return nil, status.Error(codes.Unimplemented, "method GetComponentByID not implemented in MemoryStore")
 }
 
-// ListComponents returns all non-deleted components in the catalog sorted by name.
+// ListComponents returns all non-deleted components in the catalog (stub in Layer 1).
 func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var results []*ComponentRecord
-	for _, rec := range m.componentsByName {
-		if rec.DeleteTime == nil && rec.State != componentspb.ComponentState_COMPONENT_STATE_DELETED {
-			results = append(results, cloneRecord(rec))
-		}
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Name < results[j].Name
-	})
-	return results, nil
+	return nil, status.Error(codes.Unimplemented, "method ListComponents not implemented in MemoryStore")
 }
 
-// UpdateObservedGeneration synchronizes actual component access, generation, and state.
+// UpdateObservedGeneration synchronizes actual component access, generation, and state (stub in Layer 1).
 func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
-	if err != nil {
-		return err
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || isDeletedRecord(rec) {
-		return ErrComponentNotFound
-	}
-
-	gen := observedGen
-	rec.ObservedGeneration = &gen
-	if access != nil {
-		rec.Status = proto.Clone(access).(*componentspb.ComponentAccessStatus)
-	}
-	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
-		rec.State = state
-	}
-	applyStatusUpdates(rec, observedGen, state, statusMsg)
-
-	rec.UpdateTime = time.Now().UTC()
-	rec.Etag = generateEtag(rec)
-	return nil
-}
-
-func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return "", status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
-	}
-	if observedGen < 0 {
-		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
-	}
-	return canonicalName, nil
-}
-
-func isDeletedRecord(rec *ComponentRecord) bool {
-	return rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED
-}
-
-func applyStatusUpdates(rec *ComponentRecord, observedGen int64, state componentspb.ComponentState, statusMsg string) {
-	if rec.Status == nil && (observedGen > 0 || statusMsg != "" || state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED) {
-		rec.Status = &componentspb.ComponentAccessStatus{}
-	}
-	if rec.Status == nil {
-		return
-	}
-	rec.Status.ObservedGeneration = observedGen
-	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
-		rec.Status.State = state
-	}
-	if statusMsg != "" {
-		rec.Status.HealthMessage = statusMsg
-	}
+	return status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore")
 }
 
 // PrepareDeactivation checks deactivation safety and cascading requirements (stub).

@@ -147,26 +147,10 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
-	if err != nil {
+	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
-	if req.GetObservedGeneration() < 0 {
-		return nil, status.Error(codes.InvalidArgument, "observed generation cannot be negative")
-	}
-	if req.GetState() < componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED || req.GetState() > componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid component state %d", req.GetState())
-	}
-	if err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage()); err != nil {
-		return nil, err
-	}
-	rec, err := s.store.GetComponent(ctx, canonicalName)
-	if err != nil {
-		return nil, err
-	}
-	return &componentspb.UpdateObservedGenerationResponse{
-		Component: store.ToProtoComponent(rec),
-	}, nil
+	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
 }
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
