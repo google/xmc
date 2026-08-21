@@ -35,7 +35,6 @@ import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from '
 
 import {
   Chart,
-  ChartData,
   PlotData,
   PlotSpec,
   PlotType,
