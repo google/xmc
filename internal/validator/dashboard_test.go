@@ -533,6 +533,81 @@ func TestValidateGetChartRequest(t *testing.T) {
 	}
 }
 
+func TestValidateCreateChartParent(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.CreateChartRequest
+		wantXid int64
+		wantWid int64
+		wantErr error
+	}{
+		{
+			name: "valid_parent_workunit",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/2",
+			},
+			wantXid: 100,
+			wantWid: 2,
+			wantErr: nil,
+		},
+		{
+			name: "invalid_parent_zero_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/0",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_parent",
+			req: &spb.CreateChartRequest{
+				Parent: "",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_dashboard",
+			req: &spb.CreateChartRequest{
+				Parent: "dashboards/my-dashboard",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_non_numeric_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/abc",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_format",
+			req: &spb.CreateChartRequest{
+				Parent: "invalid-parent",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			xid, wid, err := ValidateCreateChartParent(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateCreateChartParent() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil {
+				if xid != tc.wantXid || wid != tc.wantWid {
+					t.Errorf("ValidateCreateChartParent() got (xid=%d, wid=%d), want (xid=%d, wid=%d)",
+						xid, wid, tc.wantXid, tc.wantWid)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateCreateChartRequest(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -540,12 +615,70 @@ func TestValidateCreateChartRequest(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "valid_request",
+			name: "valid_request_workunit_parent",
 			req: &spb.CreateChartRequest{
-				Parent: "dashboards/dash-1",
-				Chart:  &dpb.Chart{Title: "My Chart"},
+				Parent:  "experiments/1/workUnits/2",
+				Chart:   &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				ChartId: "custom-chart-id",
 			},
 			wantErr: nil,
+		},
+		{
+			name: "valid_request_with_chart_name_ignored",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Name: "experiments/1/workUnits/2/charts/c1", Title: "My Chart", Xid: 1, Wid: 2},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "zero_chart_xid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 0, Wid: 2},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "zero_chart_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 0},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "mismatched_chart_xid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 999, Wid: 2},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "mismatched_chart_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 999},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_chart_id_with_slash",
+			req: &spb.CreateChartRequest{
+				Parent:  "experiments/1/workUnits/2",
+				Chart:   &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				ChartId: "invalid/id",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_chart_title",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &dpb.Chart{Title: "   ", Xid: 1, Wid: 2},
+			},
+			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
@@ -556,7 +689,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "empty_parent",
 			req: &spb.CreateChartRequest{
 				Parent: "",
-				Chart:  &dpb.Chart{Title: "My Chart"},
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: status.ErrInvalidArgument,
 		},
@@ -564,14 +697,22 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "invalid_parent",
 			req: &spb.CreateChartRequest{
 				Parent: "invalid-parent",
-				Chart:  &dpb.Chart{Title: "My Chart"},
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "dashboard_parent_rejected",
+			req: &spb.CreateChartRequest{
+				Parent: "dashboards/dash-1",
+				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_chart",
 			req: &spb.CreateChartRequest{
-				Parent: "dashboards/dash-1",
+				Parent: "experiments/1/workUnits/2",
 				Chart:  nil,
 			},
 			wantErr: status.ErrInvalidArgument,

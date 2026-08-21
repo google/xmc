@@ -328,7 +328,12 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 														Limits: corev1.ResourceList{
 															nvidiaGPUKey: resource.MustParse("2"),
 														},
-														Requests: corev1.ResourceList{},
+														// Two cards' worth of host resources, in the units the
+														// converter builds them with. See TestApplyGPUResources.
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
+															corev1.ResourceMemory: resource.MustParse("8589934592"),
+														},
 													},
 												},
 											},
@@ -953,7 +958,12 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 														Limits: corev1.ResourceList{
 															nvidiaGPUKey: resource.MustParse("2"),
 														},
-														Requests: corev1.ResourceList{},
+														// Two cards' worth of host resources, in the units the
+														// converter builds them with. See TestApplyGPUResources.
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
+															corev1.ResourceMemory: resource.MustParse("8589934592"),
+														},
 													},
 												},
 											},
@@ -1193,7 +1203,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 														Limits: corev1.ResourceList{
 															nvidiaGPUKey: resource.MustParse("1"),
 														},
-														Requests: corev1.ResourceList{},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("1000m"),
+															corev1.ResourceMemory: resource.MustParse("4294967296"),
+														},
 													},
 												},
 											},
@@ -2099,6 +2112,81 @@ func TestApplyCPUResources(t *testing.T) {
 			}
 			checkQuantityMatch(t, tc.reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
 			checkQuantityMatch(t, tc.reqs.Limits, corev1.ResourceCPU, tc.wantLimitCPU)
+		})
+	}
+}
+
+func TestApplyGPUResources(t *testing.T) {
+	tests := []struct {
+		name            string
+		gpuRes          *epb.GpuResources
+		reqs            *corev1.ResourceRequirements
+		wantGPU         string
+		wantCPU         string
+		wantMemoryBytes int64
+	}{
+		{
+			name:   "nil inputs",
+			gpuRes: nil,
+			reqs:   nil,
+		},
+		{
+			name:            "one card",
+			gpuRes:          &epb.GpuResources{Type: "T4", Count: 1},
+			reqs:            &corev1.ResourceRequirements{},
+			wantGPU:         "1",
+			wantCPU:         "1",
+			wantMemoryBytes: 4 << 30,
+		},
+		{
+			name:            "host resources scale with the card count",
+			gpuRes:          &epb.GpuResources{Type: "T4", Count: 4},
+			reqs:            &corev1.ResourceRequirements{},
+			wantGPU:         "4",
+			wantCPU:         "4",
+			wantMemoryBytes: 16 << 30,
+		},
+		{
+			name: "a count validation would have rejected still gets a floor",
+			// Validation requires a count of at least one. A pod with no request
+			// at all is BestEffort and evicted first, so an unvalidated caller
+			// gets one card's worth rather than nothing. The clamp happens before
+			// the limit is set, so the cards asked for and the host resources that
+			// feed them describe the same job.
+			gpuRes:          &epb.GpuResources{Type: "T4"},
+			reqs:            &corev1.ResourceRequirements{},
+			wantGPU:         "1",
+			wantCPU:         "1",
+			wantMemoryBytes: 4 << 30,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			applyGPUResources(tc.gpuRes, tc.reqs)
+			if tc.reqs == nil {
+				return
+			}
+
+			checkQuantityMatch(t, tc.reqs.Limits, nvidiaGPUKey, tc.wantGPU)
+			checkQuantityMatch(t, tc.reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
+
+			mem, ok := tc.reqs.Requests[corev1.ResourceMemory]
+			if !ok {
+				t.Fatalf("memory request missing, want %d bytes", tc.wantMemoryBytes)
+			}
+			if got := mem.Value(); got != tc.wantMemoryBytes {
+				t.Errorf("memory request = %d bytes, want %d", got, tc.wantMemoryBytes)
+			}
+
+			// A limit on either would cap a job at a figure it never chose, and
+			// the memory one would be enforced by the OOM killer.
+			if _, ok := tc.reqs.Limits[corev1.ResourceCPU]; ok {
+				t.Errorf("CPU limit was set, want none")
+			}
+			if _, ok := tc.reqs.Limits[corev1.ResourceMemory]; ok {
+				t.Errorf("memory limit was set, want none")
+			}
 		})
 	}
 }

@@ -13,6 +13,6 @@
       "@angular/cdk/testing/catalyst/async": ["./app/testing/catalyst_async.ts"]
     }
   },
-  "include": ["**/*.spec.ts", "**/*.d.ts", "app/**/*_test.ts", "app/testing/test.ts"],
+  "include": ["**/*.spec.ts", "**/*.d.ts", "app/**/*_test.ts", "app/testing/**/*.ts"],
   "exclude": ["screenshot_tests/**/*"]
 }

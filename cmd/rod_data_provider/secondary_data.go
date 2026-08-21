@@ -18,49 +18,22 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/logging/logging"
 )
 
-// ResourceTypeCPU represents the standard CPU resource identifier string.
-const ResourceTypeCPU = "CPU"
-
-// QueueMetricRow represents a single raw row returned by velocity or pending metrics fetching.
-type QueueMetricRow struct {
-	QueueName    string
-	Count        int64
-	TotalUnits   int64
-	ResourceType string
-}
-
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.
+var _ QueueVelocityFetcher = (*statushistory.Repository)(nil)
+
 type QueueVelocityFetcher interface {
-	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error)
-	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error)
-}
-
-// MockQueueVelocityFetcher provides hardcoded in-memory mock data for secondary metrics.
-type MockQueueVelocityFetcher struct{}
-
-var _ QueueVelocityFetcher = (*MockQueueVelocityFetcher)(nil)
-
-// TODO: remove this with real data
-func (m *MockQueueVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
-	return []QueueMetricRow{
-		{QueueName: "cpu-queue", Count: 10, TotalUnits: 25000, ResourceType: ResourceTypeCPU},
-		{QueueName: "tpu-queue", Count: 5, TotalUnits: 20, ResourceType: "TPU v5p"},
-	}, nil
-}
-
-func (m *MockQueueVelocityFetcher) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error) {
-	return []QueueMetricRow{
-		{QueueName: "cpu-queue", Count: 3, TotalUnits: 6000, ResourceType: ResourceTypeCPU},
-		{QueueName: "tpu-queue", Count: 1, TotalUnits: 4, ResourceType: "TPU v5p"},
-	}, nil
+	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]statushistory.QueueMetricRow, error)
+	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]statushistory.QueueMetricRow, error)
 }
 
 // BatchGetQueueSecondaryData handles calculation and retrieval of queue velocity metrics.
@@ -79,8 +52,8 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 		windowHours = 1.0
 	}
 
-	var rawVelocity []QueueMetricRow
-	var rawPending []QueueMetricRow
+	var rawVelocity []statushistory.QueueMetricRow
+	var rawPending []statushistory.QueueMetricRow
 	var queueMapping map[string][]string
 
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
@@ -122,11 +95,7 @@ type aggregatedQueueMetric struct {
 	resourceUnitsMap map[string]int64
 }
 
-// aggregateQueueMetricRows groups raw metric rows by queue name.
-// Note: Spanner status history queries return TotalAdmittedJobs / TotalPendingJobs computed via
-// COUNT(DISTINCT WorkUnitId) for the queue. Because this total job count is repeated across per-resource-type
-// breakdown rows, tracking max r.Count per queue accurately captures the total unique job count.
-func aggregateQueueMetricRows(rows []QueueMetricRow) map[string]aggregatedQueueMetric {
+func aggregateQueueMetricRows(rows []statushistory.QueueMetricRow) map[string]aggregatedQueueMetric {
 	aggregated := make(map[string]aggregatedQueueMetric)
 	for _, r := range rows {
 		curr, ok := aggregated[r.QueueName]
@@ -202,13 +171,13 @@ func buildQueuePredictabilities(preset spb.RangePreset, windowHours float64, res
 	for _, rType := range sortedTypes {
 		units := res.resourceUnitsMap[rType]
 		velVal := float64(units)
-		if rType == ResourceTypeCPU {
+		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
 			velVal /= 1000.0
 		}
 
 		pUnits := pendingRes.resourceUnitsMap[rType]
 		pVal := float64(pUnits)
-		if rType == ResourceTypeCPU {
+		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
 			pVal /= 1000.0
 		}
 
@@ -230,7 +199,7 @@ func buildQueuePredictabilities(preset spb.RangePreset, windowHours float64, res
 	return predictabilities
 }
 
-func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) ([]QueueMetricRow, error) {
+func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) ([]statushistory.QueueMetricRow, error) {
 	batchResults, err := store.FetchBatchQueueVelocity(ctx, queueNames, windowDuration)
 	if err == nil {
 		return batchResults, nil
@@ -252,7 +221,7 @@ func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNa
 	return nil, status.Errorf(codes.Internal, "failed to fetch batch queue velocity: %v", err)
 }
 
-func fetchBatchPendingMetrics(ctx context.Context, store QueueVelocityFetcher, queueNames []string) ([]QueueMetricRow, error) {
+func fetchBatchPendingMetrics(ctx context.Context, store QueueVelocityFetcher, queueNames []string) ([]statushistory.QueueMetricRow, error) {
 	batchResults, err := store.FetchBatchPendingQueueMetrics(ctx, queueNames)
 	if err == nil {
 		return batchResults, nil

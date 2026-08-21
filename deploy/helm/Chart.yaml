@@ -15,4 +15,4 @@ apiVersion: v2
 name: xmanager-cloud
 description: A Helm chart for deploying XManager Cloud environments
 type: application
-version: 0.1.0
+version: 0.1.1

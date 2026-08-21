@@ -370,6 +370,15 @@ class SPAHandlerLocalTest(unittest.TestCase):
                     ' "performanceDashboardEnabled": true, "isNonProdAuth": false};'
                 ),
             },
+            {
+                "testcase_name": "is_non_prod_auth_true",
+                "environ": {"XMC_NON_PROD_AUTH": "true"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
+                ),
+            },
         ]
         for case in cases:
             with self.subTest(case["testcase_name"]):

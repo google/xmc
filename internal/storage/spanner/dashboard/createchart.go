@@ -22,7 +22,7 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// CreateChart writes a new chart, its plot specifications, and artifact chart associations to Spanner.
+// CreateChart writes a new chart and its plot specifications to Spanner.
 func (r *Repository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
 	logging.Info(ctx, "Create chart in storage", "name", chart.GetName())
 

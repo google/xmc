@@ -43,6 +43,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -142,8 +143,8 @@ func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVeloci
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
 	}
-	velStore := &MockQueueVelocityFetcher{}
-	return wuStore, velStore, nil
+	statusHistoryRepo := statushistory.NewRepository(spannerClient)
+	return wuStore, statusHistoryRepo, nil
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.

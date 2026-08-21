@@ -46,7 +46,7 @@ DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
 
 @dataclass(kw_only=True)
-class UpgradeConfig(DeploymentConfig):
+class UpgradeConfig(DeploymentConfig):  # type: ignore[misc]
     """Holds deployment configuration values for XMC upgrade."""
 
     config_path: str
