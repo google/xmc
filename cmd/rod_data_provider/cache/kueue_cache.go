@@ -67,9 +67,6 @@ func (c *KueueCache) GetLocalQueuesForClusterQueues(clusterQueueNames []string) 
 		if c != nil {
 			targets = c.GetLocalQueuesForClusterQueue(cq)
 		}
-		if len(targets) == 0 {
-			targets = []string{cq}
-		}
 		queueMapping[cq] = targets
 		for _, t := range targets {
 			seenTargets[t] = true
