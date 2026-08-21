@@ -206,6 +206,112 @@ class TestGithubUtils(unittest.TestCase):
             str(ctx.exception),
         )
 
+    @patch("github_utils.call_github_api")
+    def test_resolve_review_thread_with_node_id_success(self, mock_api):
+        """Test resolving review thread with direct GraphQL node ID."""
+        mock_api.return_value = {
+            "data": {"resolveReviewThread": {"thread": {"id": "PRRT_12345", "isResolved": True}}}
+        }
+        from github_utils import resolve_review_thread
+
+        res = resolve_review_thread("google", "xmc", 10, "PRRT_12345")
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["thread_id"], "PRRT_12345")
+        self.assertTrue(res["is_resolved"])
+
+    @patch("github_utils.call_github_api")
+    def test_resolve_review_thread_with_comment_id_success(self, mock_api):
+        """Test resolving review thread by numeric comment ID."""
+        mock_api.side_effect = [
+            # 1. Query threads
+            {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "nodes": [
+                                    {
+                                        "id": "PRRT_node_999",
+                                        "isResolved": False,
+                                        "comments": {"nodes": [{"databaseId": 3820938617}]},
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            # 2. Mutation
+            {
+                "data": {
+                    "resolveReviewThread": {"thread": {"id": "PRRT_node_999", "isResolved": True}}
+                }
+            },
+        ]
+        from github_utils import resolve_review_thread
+
+        res = resolve_review_thread("google", "xmc", 490, 3820938617)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["thread_id"], "PRRT_node_999")
+        self.assertTrue(res["is_resolved"])
+
+    @patch("github_utils.call_github_api")
+    def test_resolve_review_thread_comment_id_not_found_raises(self, mock_api):
+        """Test error raised when numeric comment ID is not in review threads."""
+        mock_api.return_value = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": [
+                                {
+                                    "id": "PRRT_node_999",
+                                    "isResolved": False,
+                                    "comments": {"nodes": [{"databaseId": 11111}]},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        from github_utils import resolve_review_thread
+
+        with self.assertRaises(GithubAPIError):
+            resolve_review_thread("google", "xmc", 490, 99999)
+
+    def test_resolve_review_thread_invalid_target_format_raises(self):
+        """Test error raised when target string is not a valid node ID or integer."""
+        from github_utils import resolve_review_thread
+
+        with self.assertRaises(GithubAPIError) as ctx:
+            resolve_review_thread("google", "xmc", 490, "not-a-valid-id")
+        self.assertIn("Invalid thread or comment ID format", str(ctx.exception))
+
+    @patch("github_utils.call_github_api")
+    def test_resolve_review_thread_query_error_raises(self, mock_api):
+        """Test error raised when GraphQL query returns errors."""
+        mock_api.return_value = {"errors": [{"message": "Could not resolve to a Repository"}]}
+        from github_utils import resolve_review_thread
+
+        with self.assertRaises(GithubAPIError) as ctx:
+            resolve_review_thread("google", "xmc", 490, 3820938617)
+        self.assertIn("GraphQL query failed", str(ctx.exception))
+
+    @patch("github_utils.call_github_api")
+    def test_resolve_review_thread_mutation_error_raises(self, mock_api):
+        """Test error raised when GraphQL mutation returns errors."""
+        mock_api.return_value = {
+            "errors": [
+                {"message": "Could not resolve to a node with the global id of 'PRRT_node_999'"}
+            ]
+        }
+        from github_utils import resolve_review_thread
+
+        with self.assertRaises(GithubAPIError) as ctx:
+            resolve_review_thread("google", "xmc", 490, "PRRT_node_999")
+        self.assertIn("GraphQL mutation failed", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
