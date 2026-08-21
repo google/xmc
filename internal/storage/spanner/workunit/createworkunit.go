@@ -25,6 +25,7 @@ import (
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	experimentdomain "xmanager_cloud/internal/domain/experiment"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
@@ -100,6 +101,14 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
+
+		resMap := statushistory.ExtractAllResourcesFromExecutable(localWU.GetExecutable())
+		qName := localWU.GetExecutable().GetSchedulingConstraints().GetQueueName()
+		var newState *essmsgpb.WorkUnitStatus_WorkUnitState
+		if status := localWU.GetCurrentWorkUnitExecution().GetStatus(); status != nil {
+			newState = status.GetState().Enum()
+		}
+		statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &initialEID, qName, nil, newState, resMap, tx)
 
 		creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
 		if err != nil {

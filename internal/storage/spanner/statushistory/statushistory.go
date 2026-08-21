@@ -16,12 +16,18 @@ package statushistory
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"time"
 
-	"cloud.google.com/go/spanner"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/logging/logging"
+	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
 // WorkUnitStatusHistoryItem represents a single WorkUnitStatusHistory record for Spanner queries and UNNEST mocks.
@@ -38,55 +44,7 @@ type WorkUnitStatusHistoryItem struct {
 }
 
 // ResourceTypeCPU represents the standard CPU resource identifier string.
-const ResourceTypeCPU = "CPU"
-
-// DefaultMockStatusHistoryItems provides initial unnest mock records.
-var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
-	{
-		BitReversedXid: 103,
-		WorkUnitId:     3,
-		HistoryId:      3,
-		QueueName:      "cpu-queue",
-		TransitionTime: time.Now().Add(-20 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-		ResourceType:   ResourceTypeCPU,
-		ResourceUnits:  16000,
-	},
-	{
-		BitReversedXid: 104,
-		WorkUnitId:     4,
-		HistoryId:      4,
-		QueueName:      "cpu-queue",
-		TransitionTime: time.Now().Add(-5 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		ResourceType:   ResourceTypeCPU,
-		ResourceUnits:  8000,
-	},
-	{
-		BitReversedXid: 105,
-		WorkUnitId:     5,
-		HistoryId:      5,
-		QueueName:      "tpu-queue",
-		TransitionTime: time.Now().Add(-15 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-		ResourceType:   "v5p",
-		ResourceUnits:  16,
-	},
-	{
-		BitReversedXid: 106,
-		WorkUnitId:     6,
-		HistoryId:      6,
-		QueueName:      "tpu-queue",
-		TransitionTime: time.Now().Add(-8 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_RUNNING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_STARTING),
-		ResourceType:   "v5p",
-		ResourceUnits:  32,
-	},
-}
+const ResourceTypeCPU = constants.ResourceTypeCPU
 
 // QueueMetricRow represents a single raw row returned by the Spanner velocity or pending metrics query.
 type QueueMetricRow struct {
@@ -94,6 +52,54 @@ type QueueMetricRow struct {
 	Count        int64
 	TotalUnits   int64
 	ResourceType string
+}
+
+// ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
+func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {
+	acc := resourceaccumulator.New()
+	acc.AccumulateExecutable(exec)
+	return acc.IntTotals()
+}
+
+// SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
+func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, tx *spanner.ReadWriteTransaction) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+	if newState == nil {
+		return
+	}
+	if currentState != nil && *currentState == *newState {
+		return
+	}
+
+	if len(resourceMap) == 0 {
+		return
+	}
+
+	now := time.Now()
+	for resType, units := range resourceMap {
+		if resType == "" || units <= 0 {
+			continue
+		}
+
+		historyID, err := generateHistoryID()
+		if err != nil {
+			logging.Error(ctx, "Failed to generate HistoryId for work unit status history", "error", err)
+			continue
+		}
+
+		mutation := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, currentState, newState, resType, units, now)
+		tx.BufferWrite([]*spanner.Mutation{mutation})
+	}
+}
+
+func generateHistoryID() (int64, error) {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(1<<63-1))
+	if err != nil {
+		return 0, fmt.Errorf("failed to generate random history ID: %w", err)
+	}
+	return nBig.Int64(), nil
 }
 
 // Repository handles Spanner operations for status history and velocity metrics.
@@ -156,23 +162,20 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 	return rows, nil
 }
 
-// FetchBatchQueueVelocityWithMockItems queries the WorkUnitStatusHistory table mock for multiple queues with custom mock items.
-func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
+// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
+func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
 
 	cutoff := time.Now().Add(-window)
 	stmt := spanner.Statement{
-		SQL: `WITH WorkUnitStatusHistoryMock AS (
-		        SELECT * FROM UNNEST(@mockStatusHistory)
-		      ),
-		      Admitted AS (
+		SQL: `WITH Admitted AS (
 		        SELECT QueueName, BitReversedXid, WorkUnitId, ResourceType, ResourceUnits
-		        FROM WorkUnitStatusHistoryMock
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		          AND TransitionTime >= @cutoffTime
-		          AND NewState IN UNNEST(@admittedStates)
+		          AND CAST(NewState AS INT64) IN UNNEST(@admittedStates)
 		      ),
 		      QueueTotals AS (
 		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalAdmittedJobs
@@ -187,9 +190,8 @@ func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.C
 		      JOIN QueueTotals qt ON a.QueueName = qt.QueueName
 		      GROUP BY a.QueueName, qt.TotalAdmittedJobs, a.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": mockItems,
-			"queueNames":        queueNames,
-			"cutoffTime":        cutoff,
+			"queueNames": queueNames,
+			"cutoffTime": cutoff,
 			"admittedStates": []int64{
 				int64(essmsgpb.WorkUnitStatus_STARTING),
 				int64(essmsgpb.WorkUnitStatus_RUNNING),
@@ -200,30 +202,27 @@ func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.C
 	return runQueueMetricQuery(ctx, client, stmt, "AdmittedCount")
 }
 
-// FetchBatchPendingQueueMetricsWithMockItems queries the WorkUnitStatusHistory table mock for pending work units with custom mock items.
-func FetchBatchPendingQueueMetricsWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
+func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
 
 	stmt := spanner.Statement{
-		SQL: `WITH WorkUnitStatusHistoryMock AS (
-		        SELECT * FROM UNNEST(@mockStatusHistory)
-		      ),
-		      MaxHistory AS (
+		SQL: `WITH MaxHistory AS (
 		        SELECT BitReversedXid, WorkUnitId, MAX(TransitionTime) AS MaxTransitionTime
-		        FROM WorkUnitStatusHistoryMock
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		        GROUP BY BitReversedXid, WorkUnitId
 		      ),
 		      LatestPending AS (
 		        SELECT h.QueueName, h.BitReversedXid, h.WorkUnitId, h.ResourceType, h.ResourceUnits
-		        FROM WorkUnitStatusHistoryMock h
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime} h
 		        JOIN MaxHistory m
 		          ON h.BitReversedXid = m.BitReversedXid
 		         AND h.WorkUnitId = m.WorkUnitId
 		         AND h.TransitionTime = m.MaxTransitionTime
-		        WHERE h.NewState = @pendingState
+		        WHERE CAST(h.NewState AS INT64) = @pendingState
 		      ),
 		      QueueTotals AS (
 		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalPendingJobs
@@ -238,21 +237,10 @@ func FetchBatchPendingQueueMetricsWithMockItems(ctx context.Context, client *spa
 		      JOIN QueueTotals qt ON lp.QueueName = qt.QueueName
 		      GROUP BY lp.QueueName, qt.TotalPendingJobs, lp.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": mockItems,
-			"queueNames":        queueNames,
-			"pendingState":      int64(essmsgpb.WorkUnitStatus_SCHEDULING),
+			"queueNames":   queueNames,
+			"pendingState": int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		},
 	}
 
 	return runQueueMetricQuery(ctx, client, stmt, "PendingJobs")
-}
-
-// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table mock for multiple queues in a single Spanner query.
-func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
-	return FetchBatchQueueVelocityWithMockItems(ctx, client, queueNames, window, DefaultMockStatusHistoryItems)
-}
-
-// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
-func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
-	return FetchBatchPendingQueueMetricsWithMockItems(ctx, client, queueNames, DefaultMockStatusHistoryItems)
 }

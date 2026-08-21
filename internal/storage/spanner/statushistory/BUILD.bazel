@@ -21,8 +21,10 @@ compat_go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/common/resourceaccumulator",
         "//internal/common/tputopology",
         "//internal/kubernetes/common/constants",
+        "//internal/logging",
         "//internal/storage/spanner/data:spannerdata",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
