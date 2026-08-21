@@ -58,6 +58,9 @@ export class App {
   protected readonly isResourceDashboardEnabled =
     this.featureFlagService.isResourceDashboardEnabled;
 
+  protected readonly isPerformanceDashboardEnabled =
+    this.featureFlagService.isPerformanceDashboardEnabled;
+
   protected readonly isAdminPanelEnabled = toSignal(this.healthService.isAdminPanelAccessible(), {
     initialValue: false,
   });

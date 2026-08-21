@@ -110,8 +110,8 @@ func TestGetLocalQueuesForClusterQueues(t *testing.T) {
 	})
 
 	t.Run("returns target queues and mappings for cluster queues", func(t *testing.T) {
-		targetQueues, mapping := c.GetLocalQueuesForClusterQueues([]string{"cq-gpu", "cq-cpu"})
-		wantTargets := []string{"lq-1", "cq-cpu"}
+		targetQueues, mapping := c.GetLocalQueuesForClusterQueues([]string{"cq-gpu", "cq-cpu", "cq-gpu"})
+		wantTargets := []string{"cq-cpu", "lq-1"}
 		wantMapping := map[string][]string{
 			"cq-gpu": {"lq-1"},
 			"cq-cpu": {"cq-cpu"},

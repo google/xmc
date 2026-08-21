@@ -15,11 +15,11 @@
 package main
 
 import (
-	"strconv"
 	"strings"
 
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/common/tputopology"
 	"xmanager_cloud/internal/domain/workunit"
 )
 
@@ -36,13 +36,20 @@ type resourceAccumulator struct {
 }
 
 func (a *resourceAccumulator) add(resType string, count float64) {
-	if count <= 0 {
+	if count <= 0 || resType == "" {
 		return
 	}
-	if _, exists := a.totals[resType]; !exists {
-		a.order = append(a.order, resType)
+	matchedKey := resType
+	for existingKey := range a.totals {
+		if strings.EqualFold(existingKey, resType) {
+			matchedKey = existingKey
+			break
+		}
 	}
-	a.totals[resType] += count
+	if _, exists := a.totals[matchedKey]; !exists {
+		a.order = append(a.order, matchedKey)
+	}
+	a.totals[matchedKey] += count
 }
 
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources
@@ -99,7 +106,7 @@ func accumulateCpuResource(cpu *essmsgpb.CpuResources, acc *resourceAccumulator)
 
 func accumulateGpuResource(gpu *essmsgpb.GpuResources, acc *resourceAccumulator) {
 	resType := gpu.GetType()
-	if resType == "" {
+	if resType == "" || strings.EqualFold(resType, resourceTypeGPU) {
 		resType = resourceTypeGPU
 	}
 	acc.add(resType, float64(gpu.GetCount()))
@@ -107,26 +114,13 @@ func accumulateGpuResource(gpu *essmsgpb.GpuResources, acc *resourceAccumulator)
 
 func accumulateTpuResource(tpu *essmsgpb.TpuResources, acc *resourceAccumulator) {
 	resType := tpu.GetType()
-	if resType == "" {
+	if resType == "" || strings.EqualFold(resType, resourceTypeTPU) {
 		resType = resourceTypeTPU
 	}
-	chips := parseTotalChips(tpu.GetTopology())
+	topo := tpu.GetTopology()
+	if topo == "" {
+		topo = tpu.GetType()
+	}
+	chips := tputopology.ParseTotalChips(topo)
 	acc.add(resType, float64(chips))
-}
-
-func parseTotalChips(topology string) int64 {
-	if topology == "" {
-		return 1
-	}
-	cleaned := strings.TrimSpace(strings.ToLower(topology))
-	dims := strings.Split(cleaned, "x")
-	totalChips := int64(1)
-	for _, d := range dims {
-		v, err := strconv.ParseInt(d, 10, 64)
-		if err != nil || v <= 0 {
-			return 1
-		}
-		totalChips *= v
-	}
-	return totalChips
 }

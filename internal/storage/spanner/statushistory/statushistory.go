@@ -21,7 +21,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
-
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -38,11 +37,8 @@ type WorkUnitStatusHistoryItem struct {
 	ResourceUnits  int64     `spanner:"ResourceUnits"`
 }
 
-// ResourceTypeCPU represents the standard uppercase CPU resource identifier string.
+// ResourceTypeCPU represents the standard CPU resource identifier string.
 const ResourceTypeCPU = "CPU"
-
-// ResourceTypeCPULower represents the standard lowercase cpu resource identifier string.
-const ResourceTypeCPULower = "cpu"
 
 // DefaultMockStatusHistoryItems provides initial unnest mock records.
 var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
@@ -52,8 +48,8 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		HistoryId:      3,
 		QueueName:      "cpu-queue",
 		TransitionTime: time.Now().Add(-20 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
+		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		ResourceType:   ResourceTypeCPU,
 		ResourceUnits:  16000,
 	},
@@ -64,7 +60,7 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		QueueName:      "cpu-queue",
 		TransitionTime: time.Now().Add(-5 * time.Minute),
 		NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_INITIALIZING),
 		ResourceType:   ResourceTypeCPU,
 		ResourceUnits:  8000,
 	},
@@ -74,10 +70,21 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		HistoryId:      5,
 		QueueName:      "tpu-queue",
 		TransitionTime: time.Now().Add(-15 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
-		ResourceType:   ResourceTypeCPU,
-		ResourceUnits:  4000,
+		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
+		ResourceType:   "v5p",
+		ResourceUnits:  16,
+	},
+	{
+		BitReversedXid: 106,
+		WorkUnitId:     6,
+		HistoryId:      6,
+		QueueName:      "tpu-queue",
+		TransitionTime: time.Now().Add(-8 * time.Minute),
+		NewState:       int64(essmsgpb.WorkUnitStatus_RUNNING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_STARTING),
+		ResourceType:   "v5p",
+		ResourceUnits:  32,
 	},
 }
 
@@ -149,14 +156,13 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 	return rows, nil
 }
 
-// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
-func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
-	if len(queueNames) == 0 {
+// FetchBatchQueueVelocityWithMockItems queries the WorkUnitStatusHistory table mock for multiple queues with custom mock items.
+func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
+	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
 
 	cutoff := time.Now().Add(-window)
-	// TODO: replace the mockStatusHistory with a real table once the data is populated
 	stmt := spanner.Statement{
 		SQL: `WITH WorkUnitStatusHistoryMock AS (
 		        SELECT * FROM UNNEST(@mockStatusHistory)
@@ -166,7 +172,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 		        FROM WorkUnitStatusHistoryMock
 		        WHERE QueueName IN UNNEST(@queueNames)
 		          AND TransitionTime >= @cutoffTime
-		          AND NewState = @admittedState
+		          AND NewState IN UNNEST(@admittedStates)
 		      ),
 		      QueueTotals AS (
 		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalAdmittedJobs
@@ -181,23 +187,25 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 		      JOIN QueueTotals qt ON a.QueueName = qt.QueueName
 		      GROUP BY a.QueueName, qt.TotalAdmittedJobs, a.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"mockStatusHistory": mockItems,
 			"queueNames":        queueNames,
 			"cutoffTime":        cutoff,
-			"admittedState":     int64(essmsgpb.WorkUnitStatus_INITIALIZING),
+			"admittedStates": []int64{
+				int64(essmsgpb.WorkUnitStatus_STARTING),
+				int64(essmsgpb.WorkUnitStatus_RUNNING),
+			},
 		},
 	}
 
 	return runQueueMetricQuery(ctx, client, stmt, "AdmittedCount")
 }
 
-// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
-func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
+// FetchBatchPendingQueueMetricsWithMockItems queries the WorkUnitStatusHistory table mock for pending work units with custom mock items.
+func FetchBatchPendingQueueMetricsWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
 
-	// TODO: replace the mockStatusHistory with a real table once the data is populated
 	stmt := spanner.Statement{
 		SQL: `WITH WorkUnitStatusHistoryMock AS (
 		        SELECT * FROM UNNEST(@mockStatusHistory)
@@ -230,11 +238,21 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		      JOIN QueueTotals qt ON lp.QueueName = qt.QueueName
 		      GROUP BY lp.QueueName, qt.TotalPendingJobs, lp.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"mockStatusHistory": mockItems,
 			"queueNames":        queueNames,
 			"pendingState":      int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		},
 	}
 
 	return runQueueMetricQuery(ctx, client, stmt, "PendingJobs")
+}
+
+// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table mock for multiple queues in a single Spanner query.
+func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+	return FetchBatchQueueVelocityWithMockItems(ctx, client, queueNames, window, DefaultMockStatusHistoryItems)
+}
+
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
+func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
+	return FetchBatchPendingQueueMetricsWithMockItems(ctx, client, queueNames, DefaultMockStatusHistoryItems)
 }

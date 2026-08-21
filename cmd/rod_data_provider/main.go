@@ -143,8 +143,8 @@ func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVeloci
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
 	}
-	velStore := statushistory.NewRepository(spannerClient)
-	return wuStore, velStore, nil
+	statusHistoryRepo := statushistory.NewRepository(spannerClient)
+	return wuStore, statusHistoryRepo, nil
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.

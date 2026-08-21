@@ -31,8 +31,11 @@ CORE_INFRA_FILES: set[str] = {
     "go.mod",
     "go.sum",
     "WORKSPACE",
+    "WORKSPACE.bazel",
     "MODULE.bazel",
+    "MODULE.bazel.lock",
     "BUILD.bazel",
+    "compat.bzl",
 }
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
@@ -49,6 +52,25 @@ NON_CODE_FILES: set[str] = {
     ".tflint.hcl",
     ".golangci.yml",
     "pyproject.toml",
+    "test/__init__.py",
+}
+
+
+EXCLUDED_TEST_TARGETS: set[str] = {
+    "//cmd/ui:ui_unit_tests",
+}
+
+CODE_EXTENSIONS: tuple[str, ...] = (
+    ".go",
+    ".py",
+    ".proto",
+    ".bzl",
+    ".sql",
+)
+
+BUILD_FILE_NAMES: set[str] = {
+    "BUILD.bazel",
+    "BUILD",
 }
 
 
@@ -65,7 +87,8 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
 
     Enforces Inverted Default Safety: Any code file that is not explicitly inside
     cmd/ui/ is treated as a backend file. Unknown newly created backend directories
-    automatically trigger backend tests.
+    automatically trigger backend tests. Non-frontend code files inside cmd/ui/
+    (e.g., Python server, shell scripts, Bazel builds) trigger both UI and backend tests.
     """
     has_core_infra = False
     has_ui = False
@@ -84,6 +107,13 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
 
         if clean_f.startswith("cmd/ui/"):
             has_ui = True
+            # Non-frontend code files in cmd/ui/ (Python server, shell, Bazel) require backend tests
+            if (
+                clean_f.endswith(CODE_EXTENSIONS)
+                or clean_f.endswith(".sh")
+                or Path(clean_f).name in BUILD_FILE_NAMES
+            ):
+                has_backend = True
         else:
             # Inverted Default Safety: Anything else is backend code!
             has_backend = True
@@ -134,18 +164,99 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
         raise
 
 
+def _parse_build_file_test_targets(build_path: Path) -> list[str]:
+    """Parses non-manual test target names from a BUILD file using AST."""
+    import ast
+
+    try:
+        content = build_path.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(content, filename=str(build_path))
+    except Exception:
+        return []
+
+    targets: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func_name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+        if not func_name.endswith("_test"):
+            continue
+
+        name: str | None = None
+        is_manual = False
+        for kw in node.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant):
+                name = str(kw.value.value)
+            elif kw.arg == "tags" and isinstance(kw.value, (ast.List, ast.Tuple, ast.Set)):
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant) and elt.value == "manual":
+                        is_manual = True
+
+        if name and not is_manual:
+            targets.append(name)
+    return targets
+
+
+def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str | None:
+    """Finds the nearest enclosing Bazel package directory containing a BUILD or BUILD.bazel file.
+
+    Returns the package label relative to workspace root (e.g. '//internal/storage/spanner/migrations'
+    or '//' for the root package). If no BUILD file is found on disk (e.g. synthetic or mocked paths),
+    falls back to the file's parent directory label.
+    """
+    base_dir = (cwd if cwd else Path.cwd()).resolve()
+    target_path = Path(file_path)
+
+    if not target_path.is_absolute():
+        target_path = base_dir / target_path
+    try:
+        rel_target = target_path.resolve().relative_to(base_dir)
+    except ValueError:
+        return None
+
+    # Start searching from the file's directory upwards
+    curr_dir = rel_target.parent
+
+    while True:
+        candidate_dir = base_dir / curr_dir
+
+        if (candidate_dir / "BUILD.bazel").is_file() or (candidate_dir / "BUILD").is_file():
+            rel_pkg = curr_dir.as_posix()
+            if rel_pkg in {".", ""}:
+                return "//"
+            return f"//{rel_pkg}"
+
+        if curr_dir in {Path("."), Path("")}:
+            break
+        curr_dir = curr_dir.parent
+
+    if (base_dir / "BUILD.bazel").is_file() or (base_dir / "BUILD").is_file():
+        return "//"
+
+    # Fallback for synthetic/mock paths or environments where repository tree is not on disk
+    parent_posix = rel_target.parent.as_posix()
+    if parent_posix in {".", ""}:
+        return "//"
+    return f"//{parent_posix}"
+
+
 def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
     """Fallback static parser for reverse dependency test targets from BUILD.bazel files."""
     import os
-    import re
 
-    base_dir = cwd if cwd else Path.cwd()
+    base_dir = (cwd if cwd else Path.cwd()).resolve()
     changed_dirs: set[str] = set()
     for f in files:
-        if (f.endswith(".go") or f.endswith(".py")) and not f.startswith("cmd/ui/"):
-            p_dir = Path(f).parent.as_posix()
-            if p_dir and p_dir != ".":
-                changed_dirs.add(p_dir)
+        clean_f = f.strip()
+        if not clean_f or is_non_code_file(clean_f):
+            continue
+        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+            continue
+
+        pkg = find_enclosing_bazel_package(clean_f, cwd=base_dir)
+        if pkg:
+            pkg_dir = pkg.lstrip("/").strip("/")
+            changed_dirs.add(pkg_dir)
 
     if not changed_dirs:
         return []
@@ -154,42 +265,55 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
     for root, _, filenames in os.walk(base_dir):
         if "BUILD.bazel" in filenames:
             rel_root = Path(root).relative_to(base_dir).as_posix()
-            if rel_root.startswith("cmd/ui") or "node_modules" in rel_root:
+            if "node_modules" in rel_root:
                 continue
             build_path = Path(root) / "BUILD.bazel"
-            try:
-                content = build_path.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                continue
+            target_names = _parse_build_file_test_targets(build_path)
 
-            for match in re.finditer(r'(go_test|py_test)\s*\(\s*name\s*=\s*"([^"]+)"', content):
-                target_name = match.group(2)
+            for target_name in target_names:
                 pkg_path = "" if rel_root == "." else rel_root
                 target_label = f"//{pkg_path}:{target_name}" if pkg_path else f"//:{target_name}"
+                if target_label in EXCLUDED_TEST_TARGETS:
+                    continue
                 for cd in changed_dirs:
-                    if pkg_path == cd or cd.startswith(pkg_path) or pkg_path.startswith(cd):
+                    if (
+                        pkg_path == cd
+                        or (cd and pkg_path.startswith(f"{cd}/"))
+                        or (pkg_path and cd.startswith(f"{pkg_path}/"))
+                    ):
                         test_targets.add(target_label)
     return sorted(test_targets)
 
 
 def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
-    """Runs Bazel query to discover unit test targets that transitively depend on changed Go packages.
+    """Runs Bazel query to discover unit test targets that transitively depend on changed packages.
 
     Returns empty list if Bazel is unavailable or query fails.
     """
     changed_pkgs: set[str] = set()
     for f in files:
-        if f.endswith(".go") and not f.startswith("cmd/ui/"):
-            pkg_dir = Path(f).parent.as_posix()
-            if pkg_dir and pkg_dir != ".":
-                changed_pkgs.add(f"//{pkg_dir}:all")
+        clean_f = f.strip()
+        if not clean_f or is_non_code_file(clean_f):
+            continue
+        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+            continue
+
+        pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
+        if pkg:
+            pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
+            changed_pkgs.add(pkg_target)
 
     if not changed_pkgs:
         return []
 
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    backend_universe = "//cmd/... + //internal/... + //sdks/... + //test/... + //tools/..."
-    query_expr = f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
+    backend_universe = (
+        "//cmd/... + //internal/... + //pkg/... + //sdks/... + //test/... + //tools/..."
+    )
+    query_expr = (
+        f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
+        f"in $t except attr('tags', 'manual', $t)"
+    )
 
     try:
         res = subprocess.run(
@@ -210,8 +334,7 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         )
         if res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
-            # Filter out any accidental ui targets if present
-            return [t for t in targets if not t.startswith("//cmd/ui")]
+            return [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
     except Exception:
         pass
 

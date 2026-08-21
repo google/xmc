@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -56,40 +57,104 @@ type Config struct {
 	TrustXForwardedProto  bool
 	CookieDomain          string
 	AllowedHosts          []string
+	OIDCIssuerURL         string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
 func LoadConfig() (*Config, error) {
-	port := getEnv("PORT", "8080")
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
 
-	allowedDomains := parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", ""))
-	allowedEmails := parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", ""))
-	allowedOrigins := parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", ""))
+	if mockAuth || disableAuth {
+		log.Printf("WARNING: Non-production auth mode enabled (MOCK_AUTH=%t, DISABLE_AUTHENTICATION=%t)", mockAuth, disableAuth)
+	}
 
-	clientSecret, err := getEnvOrFile("CLIENT_SECRET", "")
+	clientSecret, err := loadClientSecret()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
+		return nil, err
 	}
-	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
+
+	jwtSecret, err := loadJWTSecret(mockAuth, disableAuth)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
-	}
-	if jwtSecret == "" {
-		if mockAuth || disableAuth {
-			// Local/dev only: no real secret configured, but auth is off anyway.
-			jwtSecret = devOnlyJWTSecret
-		} else {
-			return nil, fmt.Errorf("JWT_SECRET must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
-		}
-	} else if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
-		return nil, fmt.Errorf("JWT_SECRET must be at least %d bytes when authentication is enabled", minJWTSecretLen)
+		return nil, err
 	}
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
 	redirectURL := getEnv("REDIRECT_URL", "http://localhost:8080/api/callback")
+	cookieDomain, allowedHosts := loadHostSettings(frontendURL, redirectURL)
 
+	oidcIssuerURL := getEnv("OIDC_ISSUER_URL", "")
+	defaultAuthURL, defaultTokenURL, defaultAPIURL := loadDefaultOIDCURLs(oidcIssuerURL)
+
+	clientID := getEnv("CLIENT_ID", "")
+	if clientID == "" {
+		clientID = getEnv("OIDC_CLIENT_ID", "")
+	}
+
+	return &Config{
+		Port:                  getEnv("PORT", "8080"),
+		MockAuth:              mockAuth,
+		DisableAuthentication: disableAuth,
+		AllowedDomains:        parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", "")),
+		AllowedEmails:         parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", "")),
+		AllowedOrigins:        parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", "")),
+		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
+		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
+		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
+		ClientID:              clientID,
+		ClientSecret:          clientSecret,
+		JWTSecret:             jwtSecret,
+		RedirectURL:           redirectURL,
+		AuthURL:               getEnv("AUTH_URL", defaultAuthURL),
+		TokenURL:              getEnv("TOKEN_URL", defaultTokenURL),
+		APIURL:                getEnv("API_URL", defaultAPIURL),
+		UsePKCE:               getEnvBool("USE_PKCE", true),
+		FrontendURL:           frontendURL,
+		SecureCookie:          getEnvBool("SECURE_COOKIE", !mockAuth),
+		TrustXForwardedProto:  getEnvBool("TRUST_X_FORWARDED_PROTO", false),
+		CookieDomain:          cookieDomain,
+		AllowedHosts:          allowedHosts,
+		OIDCIssuerURL:         oidcIssuerURL,
+	}, nil
+}
+
+func loadClientSecret() (string, error) {
+	clientSecret, err := getEnvOrFile("CLIENT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
+	}
+	if clientSecret != "" {
+		return clientSecret, nil
+	}
+	clientSecret, err = getEnvOrFile("OIDC_CLIENT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
+	}
+	if clientSecret == "" {
+		log.Println("WARNING: Neither CLIENT_SECRET nor OIDC_CLIENT_SECRET is set; OAuth2 code exchange may fail if required by IdP")
+	}
+	return clientSecret, nil
+}
+
+func loadJWTSecret(mockAuth, disableAuth bool) (string, error) {
+	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load JWT_SECRET: %w", err)
+	}
+	if jwtSecret == "" {
+		if mockAuth || disableAuth {
+			log.Printf("WARNING: Non-production auth active (mockAuth=%t, disableAuth=%t): using ephemeral dev-only JWT secret", mockAuth, disableAuth)
+			return devOnlyJWTSecret, nil
+		}
+		return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
+	}
+	if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
+		return "", fmt.Errorf("jwt_secret must be at least %d bytes when authentication is enabled", minJWTSecretLen)
+	}
+	return jwtSecret, nil
+}
+
+func loadHostSettings(frontendURL, redirectURL string) (string, []string) {
 	var cookieDomain string
 	var allowedHosts []string
 
@@ -103,31 +168,37 @@ func LoadConfig() (*Config, error) {
 	if u, err := url.Parse(redirectURL); err == nil {
 		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
 	}
+	return cookieDomain, allowedHosts
+}
 
-	return &Config{
-		Port:                  port,
-		MockAuth:              mockAuth,
-		DisableAuthentication: disableAuth,
-		AllowedDomains:        allowedDomains,
-		AllowedEmails:         allowedEmails,
-		AllowedOrigins:        allowedOrigins,
-		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
-		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
-		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
-		ClientID:              getEnv("CLIENT_ID", ""),
-		ClientSecret:          clientSecret,
-		JWTSecret:             jwtSecret,
-		RedirectURL:           redirectURL,
-		AuthURL:               getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
-		TokenURL:              getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
-		APIURL:                getEnv("API_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
-		UsePKCE:               getEnvBool("USE_PKCE", true),
-		FrontendURL:           frontendURL,
-		SecureCookie:          getEnvBool("SECURE_COOKIE", !mockAuth),
-		TrustXForwardedProto:  getEnvBool("TRUST_X_FORWARDED_PROTO", false),
-		CookieDomain:          cookieDomain,
-		AllowedHosts:          allowedHosts,
-	}, nil
+func loadDefaultOIDCURLs(oidcIssuerURL string) (string, string, string) {
+	if oidcIssuerURL == "" {
+		return "https://accounts.google.com/o/oauth2/v2/auth",
+			"https://oauth2.googleapis.com/token",
+			"https://openidconnect.googleapis.com/v1/userinfo"
+	}
+	issuer := strings.TrimRight(oidcIssuerURL, "/")
+	return fmt.Sprintf("%s/auth", issuer),
+		fmt.Sprintf("%s/token", issuer),
+		fmt.Sprintf("%s/userinfo", issuer)
+}
+
+// IsNonProdAuth identifies whether non-production or local IdP (e.g., Dex, localhost, mock auth) is active.
+func (c *Config) IsNonProdAuth() bool {
+	if c.MockAuth || c.DisableAuthentication {
+		return true
+	}
+	if c.OIDCIssuerURL != "" {
+		if u, err := url.Parse(c.OIDCIssuerURL); err != nil || u.Hostname() != "accounts.google.com" {
+			return true
+		}
+	}
+	if c.AuthURL != "" {
+		if u, err := url.Parse(c.AuthURL); err != nil || u.Hostname() != "accounts.google.com" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCommaSpaceSeparated(val string) []string {

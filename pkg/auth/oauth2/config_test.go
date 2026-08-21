@@ -34,8 +34,7 @@ func TestGetEnvOrFile(t *testing.T) {
 	})
 
 	t.Run("Literal environment value", func(t *testing.T) {
-		os.Setenv("TEST_LITERAL_KEY", "literal-secret-123")
-		defer os.Unsetenv("TEST_LITERAL_KEY")
+		t.Setenv("TEST_LITERAL_KEY", "literal-secret-123")
 
 		val, err := getEnvOrFile("TEST_LITERAL_KEY", "def")
 		if err != nil {
@@ -53,8 +52,7 @@ func TestGetEnvOrFile(t *testing.T) {
 			t.Fatalf("Failed to write temporary secret file: %v", err)
 		}
 
-		os.Setenv("TEST_SUFFIX_KEY_FILE", secretPath)
-		defer os.Unsetenv("TEST_SUFFIX_KEY_FILE")
+		t.Setenv("TEST_SUFFIX_KEY_FILE", secretPath)
 
 		val, err := getEnvOrFile("TEST_SUFFIX_KEY", "def")
 		if err != nil {
@@ -72,8 +70,7 @@ func TestGetEnvOrFile(t *testing.T) {
 			t.Fatalf("Failed to write temporary secret file: %v", err)
 		}
 
-		os.Setenv("TEST_LITERAL_PATH_KEY", secretPath)
-		defer os.Unsetenv("TEST_LITERAL_PATH_KEY")
+		t.Setenv("TEST_LITERAL_PATH_KEY", secretPath)
 
 		val, err := getEnvOrFile("TEST_LITERAL_PATH_KEY", "def")
 		if err != nil {
@@ -85,8 +82,7 @@ func TestGetEnvOrFile(t *testing.T) {
 	})
 
 	t.Run("File suffix env value read failure", func(t *testing.T) {
-		os.Setenv("TEST_SUFFIX_KEY_FILE", "/nonexistent/path/to/secret")
-		defer os.Unsetenv("TEST_SUFFIX_KEY_FILE")
+		t.Setenv("TEST_SUFFIX_KEY_FILE", "/nonexistent/path/to/secret")
 
 		_, err := getEnvOrFile("TEST_SUFFIX_KEY", "def")
 		if err == nil {
@@ -102,8 +98,7 @@ func TestGetEnvOrFile(t *testing.T) {
 			t.Fatalf("Failed to create temporary directory: %v", err)
 		}
 
-		os.Setenv("TEST_LITERAL_DIR_KEY", dirPath)
-		defer os.Unsetenv("TEST_LITERAL_DIR_KEY")
+		t.Setenv("TEST_LITERAL_DIR_KEY", dirPath)
 
 		_, err = getEnvOrFile("TEST_LITERAL_DIR_KEY", "def")
 		if err == nil {
@@ -237,6 +232,244 @@ func TestParseCommaSpaceSeparated(t *testing.T) {
 				if got[i] != tc.expected[i] {
 					t.Errorf("At index %d: expected %q, got %q", i, tc.expected[i], got[i])
 				}
+			}
+		})
+	}
+}
+
+func TestLoadConfig_OIDCIssuer(t *testing.T) {
+	const validJWT = "this-is-a-valid-length-jwt-secret-key-32bytes"
+
+	tests := []struct {
+		name              string
+		env               map[string]string
+		wantAuthURL       string
+		wantTokenURL      string
+		wantAPIURL        string
+		wantClientID      string
+		wantClientSecret  string
+		wantOIDCIssuerURL string
+	}{
+		{
+			name: "default Google endpoints when OIDC_ISSUER_URL unset",
+			env: map[string]string{
+				"JWT_SECRET":    validJWT,
+				"CLIENT_SECRET": "test-secret",
+				"CLIENT_ID":     "test-client",
+			},
+			wantAuthURL:       "https://accounts.google.com/o/oauth2/v2/auth",
+			wantTokenURL:      "https://oauth2.googleapis.com/token",
+			wantAPIURL:        "https://openidconnect.googleapis.com/v1/userinfo",
+			wantClientID:      "test-client",
+			wantClientSecret:  "test-secret",
+			wantOIDCIssuerURL: "",
+		},
+		{
+			name: "derive endpoints from OIDC_ISSUER_URL without trailing slash",
+			env: map[string]string{
+				"JWT_SECRET":      validJWT,
+				"CLIENT_SECRET":   "test-secret",
+				"OIDC_ISSUER_URL": "http://dex.example.com:5556/dex",
+			},
+			wantAuthURL:       "http://dex.example.com:5556/dex/auth",
+			wantTokenURL:      "http://dex.example.com:5556/dex/token",
+			wantAPIURL:        "http://dex.example.com:5556/dex/userinfo",
+			wantOIDCIssuerURL: "http://dex.example.com:5556/dex",
+		},
+		{
+			name: "derive endpoints from OIDC_ISSUER_URL with trailing slash",
+			env: map[string]string{
+				"JWT_SECRET":      validJWT,
+				"CLIENT_SECRET":   "test-secret",
+				"OIDC_ISSUER_URL": "http://dex.example.com:5556/dex/",
+			},
+			wantAuthURL:       "http://dex.example.com:5556/dex/auth",
+			wantTokenURL:      "http://dex.example.com:5556/dex/token",
+			wantAPIURL:        "http://dex.example.com:5556/dex/userinfo",
+			wantOIDCIssuerURL: "http://dex.example.com:5556/dex/",
+		},
+		{
+			name: "explicit AUTH_URL and TOKEN_URL override derived OIDC URLs",
+			env: map[string]string{
+				"JWT_SECRET":      validJWT,
+				"CLIENT_SECRET":   "test-secret",
+				"OIDC_ISSUER_URL": "http://dex.example.com:5556/dex",
+				"AUTH_URL":        "http://custom.auth/authorize",
+				"TOKEN_URL":       "http://custom.token/token",
+				"API_URL":         "http://custom.userinfo/userinfo",
+			},
+			wantAuthURL:       "http://custom.auth/authorize",
+			wantTokenURL:      "http://custom.token/token",
+			wantAPIURL:        "http://custom.userinfo/userinfo",
+			wantOIDCIssuerURL: "http://dex.example.com:5556/dex",
+		},
+		{
+			name: "OIDC_CLIENT_ID fallback when CLIENT_ID is unset",
+			env: map[string]string{
+				"JWT_SECRET":     validJWT,
+				"CLIENT_SECRET":  "test-secret",
+				"OIDC_CLIENT_ID": "dex-client-id",
+			},
+			wantClientID:     "dex-client-id",
+			wantClientSecret: "test-secret",
+			wantAuthURL:      "https://accounts.google.com/o/oauth2/v2/auth",
+			wantTokenURL:     "https://oauth2.googleapis.com/token",
+			wantAPIURL:       "https://openidconnect.googleapis.com/v1/userinfo",
+		},
+		{
+			name: "CLIENT_ID takes precedence over OIDC_CLIENT_ID",
+			env: map[string]string{
+				"JWT_SECRET":     validJWT,
+				"CLIENT_SECRET":  "test-secret",
+				"CLIENT_ID":      "primary-client-id",
+				"OIDC_CLIENT_ID": "dex-client-id",
+			},
+			wantClientID:     "primary-client-id",
+			wantClientSecret: "test-secret",
+			wantAuthURL:      "https://accounts.google.com/o/oauth2/v2/auth",
+			wantTokenURL:     "https://oauth2.googleapis.com/token",
+			wantAPIURL:       "https://openidconnect.googleapis.com/v1/userinfo",
+		},
+		{
+			name: "OIDC_CLIENT_SECRET fallback when CLIENT_SECRET is unset",
+			env: map[string]string{
+				"JWT_SECRET":         validJWT,
+				"OIDC_CLIENT_SECRET": "dex-secret-fallback",
+			},
+			wantClientSecret: "dex-secret-fallback",
+			wantAuthURL:      "https://accounts.google.com/o/oauth2/v2/auth",
+			wantTokenURL:     "https://oauth2.googleapis.com/token",
+			wantAPIURL:       "https://openidconnect.googleapis.com/v1/userinfo",
+		},
+		{
+			name: "CLIENT_SECRET takes precedence over OIDC_CLIENT_SECRET",
+			env: map[string]string{
+				"JWT_SECRET":         validJWT,
+				"CLIENT_SECRET":      "primary-secret",
+				"OIDC_CLIENT_SECRET": "dex-secret-fallback",
+			},
+			wantClientSecret: "primary-secret",
+			wantAuthURL:      "https://accounts.google.com/o/oauth2/v2/auth",
+			wantTokenURL:     "https://oauth2.googleapis.com/token",
+			wantAPIURL:       "https://openidconnect.googleapis.com/v1/userinfo",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig() failed unexpectedly: %v", err)
+			}
+			if cfg.AuthURL != tc.wantAuthURL {
+				t.Errorf("AuthURL = %q, want %q", cfg.AuthURL, tc.wantAuthURL)
+			}
+			if cfg.TokenURL != tc.wantTokenURL {
+				t.Errorf("TokenURL = %q, want %q", cfg.TokenURL, tc.wantTokenURL)
+			}
+			if cfg.APIURL != tc.wantAPIURL {
+				t.Errorf("APIURL = %q, want %q", cfg.APIURL, tc.wantAPIURL)
+			}
+			if tc.wantClientID != "" && cfg.ClientID != tc.wantClientID {
+				t.Errorf("ClientID = %q, want %q", cfg.ClientID, tc.wantClientID)
+			}
+			if tc.wantClientSecret != "" && cfg.ClientSecret != tc.wantClientSecret {
+				t.Errorf("ClientSecret = %q, want %q", cfg.ClientSecret, tc.wantClientSecret)
+			}
+			if cfg.OIDCIssuerURL != tc.wantOIDCIssuerURL {
+				t.Errorf("OIDCIssuerURL = %q, want %q", cfg.OIDCIssuerURL, tc.wantOIDCIssuerURL)
+			}
+		})
+	}
+}
+
+func TestIsNonProdAuth(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   Config
+		expected bool
+	}{
+		{
+			name: "Production Google authentication",
+			config: Config{
+				MockAuth:              false,
+				DisableAuthentication: false,
+				AuthURL:               "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL:              "https://oauth2.googleapis.com/token",
+				APIURL:                "https://openidconnect.googleapis.com/v1/userinfo",
+			},
+			expected: false,
+		},
+		{
+			name: "MockAuth active",
+			config: Config{
+				MockAuth: true,
+				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "DisableAuthentication active",
+			config: Config{
+				DisableAuthentication: true,
+				AuthURL:               "https://accounts.google.com/o/oauth2/v2/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "Custom OIDC Issuer (Dex)",
+			config: Config{
+				OIDCIssuerURL: "http://dex:5556/dex",
+				AuthURL:       "http://dex:5556/dex/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "Google accounts OIDC Issuer",
+			config: Config{
+				OIDCIssuerURL: "https://accounts.google.com",
+				AuthURL:       "https://accounts.google.com/o/oauth2/v2/auth",
+			},
+			expected: false,
+		},
+		{
+			name: "Localhost AuthURL",
+			config: Config{
+				AuthURL: "http://localhost:8080/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "127.0.0.1 AuthURL",
+			config: Config{
+				AuthURL: "http://127.0.0.1:5556/dex/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "Dex in AuthURL",
+			config: Config{
+				AuthURL: "http://dex.auth.svc.cluster.local:5556/dex/auth",
+			},
+			expected: true,
+		},
+		{
+			name: "Custom external IdP AuthURL",
+			config: Config{
+				AuthURL: "https://login.company.internal/oauth/authorize",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.config.IsNonProdAuth()
+			if got != tc.expected {
+				t.Errorf("IsNonProdAuth() = %v, want %v", got, tc.expected)
 			}
 		})
 	}

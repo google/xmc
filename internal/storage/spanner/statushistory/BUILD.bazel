@@ -21,8 +21,9 @@ compat_go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/logging",
+        "//internal/kubernetes/common/constants",
         "//internal/storage/spanner/data:spannerdata",
+        "//internal/common/tputopology",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
     ],
@@ -34,5 +35,8 @@ compat_go_test(
     embed = [":statushistory"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/data:spannerdata",
+        "@com_google_cloud_go_spanner//:spanner",
     ],
 )

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -170,13 +171,13 @@ func buildQueuePredictabilities(preset spb.RangePreset, windowHours float64, res
 	for _, rType := range sortedTypes {
 		units := res.resourceUnitsMap[rType]
 		velVal := float64(units)
-		if rType == statushistory.ResourceTypeCPU || rType == statushistory.ResourceTypeCPULower {
+		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
 			velVal /= 1000.0
 		}
 
 		pUnits := pendingRes.resourceUnitsMap[rType]
 		pVal := float64(pUnits)
-		if rType == statushistory.ResourceTypeCPU || rType == statushistory.ResourceTypeCPULower {
+		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
 			pVal /= 1000.0
 		}
 

@@ -35,13 +35,13 @@ func TestCreateDashboard_WithCharts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("charts/test-chart-create-1", 100, 1)
+	chart := blankChartProto("test-chart-create-1", 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-create-with-charts")
-	dash.Charts = []*dpb.Chart{{Name: "charts/test-chart-create-1"}}
+	dash.Charts = []*dpb.Chart{chart}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard with charts failed: %v", err)
 	}

@@ -25,9 +25,11 @@ import { bootstrap, hasEl, setupModule } from './testing/test';
 
 describe('App Component', () => {
   let isResourceDashboardEnabled = true;
+  let isPerformanceDashboardEnabled = true;
 
   beforeEach(() => {
     isResourceDashboardEnabled = true;
+    isPerformanceDashboardEnabled = true;
 
     const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
     authServiceMock.getUser.and.returnValue(
@@ -48,6 +50,9 @@ describe('App Component', () => {
     const featureFlagServiceMock = {
       get isResourceDashboardEnabled() {
         return isResourceDashboardEnabled;
+      },
+      get isPerformanceDashboardEnabled() {
+        return isPerformanceDashboardEnabled;
       },
       get isAdminPanelEnabled() {
         return false;
@@ -83,5 +88,16 @@ describe('App Component', () => {
     isResourceDashboardEnabled = false;
     bootstrap(App);
     expect(hasEl('a[routerLink="/resources"]')).toBeFalse();
+  });
+
+  it('should display Dashboards menu item when isPerformanceDashboardEnabled is true', () => {
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeTrue();
+  });
+
+  it('should hide Dashboards menu item when isPerformanceDashboardEnabled is false', () => {
+    isPerformanceDashboardEnabled = false;
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeFalse();
   });
 });
