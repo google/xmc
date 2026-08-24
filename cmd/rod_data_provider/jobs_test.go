@@ -99,14 +99,12 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits:      []*essmsgpb.WorkUnit{},
-			TotalQueueSize: 0,
+			WorkUnits: []*essmsgpb.WorkUnit{},
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
-		WorkUnits:      m.workUnits,
-		NextPageToken:  m.nextPageToken,
-		TotalQueueSize: m.totalQueueSize,
+		WorkUnits:     m.workUnits,
+		NextPageToken: m.nextPageToken,
 	}, nil
 }
 
@@ -210,7 +208,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCount:          1,
 			wantPageSize:       10,
 			wantPageToken:      "",
-			wantTotalQueueSize: 10,
+			wantTotalQueueSize: 1,
 		},
 		{
 			name: "Success With PageSize 200 Clamped to 100",
@@ -239,7 +237,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCount:          1,
 			wantPageSize:       100,
 			wantPageToken:      "",
-			wantTotalQueueSize: 150,
+			wantTotalQueueSize: 1,
 		},
 		{
 			name: "Invalid PageToken Error",

@@ -104,15 +104,14 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	}
 
 	type pageExpectation struct {
-		wantCount     int
-		wantHasNext   bool
-		wantTotalSize int64
+		wantCount   int
+		wantHasNext bool
 	}
 
 	pages := []pageExpectation{
-		{wantCount: 2, wantHasNext: true, wantTotalSize: 0},
-		{wantCount: 2, wantHasNext: true, wantTotalSize: 0},
-		{wantCount: 1, wantHasNext: false, wantTotalSize: 0},
+		{wantCount: 2, wantHasNext: true},
+		{wantCount: 2, wantHasNext: true},
+		{wantCount: 1, wantHasNext: false},
 	}
 
 	token := ""
@@ -126,9 +125,6 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 		}
 		if (res.NextPageToken != "") != page.wantHasNext {
 			t.Errorf("Page %d NextPageToken = %q, wantHasNext = %t", i+1, res.NextPageToken, page.wantHasNext)
-		}
-		if res.TotalQueueSize != page.wantTotalSize {
-			t.Errorf("Page %d TotalQueueSize = %d, want %d", i+1, res.TotalQueueSize, page.wantTotalSize)
 		}
 		token = res.NextPageToken
 	}

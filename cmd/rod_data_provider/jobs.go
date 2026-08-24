@@ -54,13 +54,13 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
 	}
 
-	workUnits, nextPageToken, totalQueueSize := extractWorkUnitsResult(result)
+	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
-		TotalQueueSize: totalQueueSize,
+		TotalQueueSize: int64(len(workUnits)),
 	}, nil
 }
 
@@ -80,11 +80,11 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string, totalQueueSize int64) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string) {
 	if result == nil {
-		return nil, "", 0
+		return nil, ""
 	}
-	return result.WorkUnits, result.NextPageToken, result.TotalQueueSize
+	return result.WorkUnits, result.NextPageToken
 }
 
 func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []*essmsgpb.WorkUnit, now time.Time) []*spb.DashboardJob {

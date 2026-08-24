@@ -53,9 +53,8 @@ var fetchActiveWorkUnitPKsSQL = safesql.New(
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits      []*essmsgpb.WorkUnit
-	NextPageToken  string
-	TotalQueueSize int64
+	WorkUnits     []*essmsgpb.WorkUnit
+	NextPageToken string
 }
 
 type workUnitPK struct {
@@ -179,9 +178,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:      []*essmsgpb.WorkUnit{},
-			NextPageToken:  "",
-			TotalQueueSize: 0,
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
 		}, nil
 	}
 
@@ -200,9 +198,6 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	// TODO(janzak): Calculate unpaginated total queue size in separate PR.
-	totalQueueSize := int64(0)
-
 	// Fetch pageSize + 1 items to determine if nextPageToken is needed
 	limit := int64(pageSizeVal) + 1
 	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
@@ -213,9 +208,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:      []*essmsgpb.WorkUnit{},
-			NextPageToken:  "",
-			TotalQueueSize: totalQueueSize,
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
 		}, nil
 	}
 
@@ -238,8 +232,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}
 
 	return &ActiveWorkUnitsResult{
-		WorkUnits:      workUnits,
-		NextPageToken:  nextPageToken,
-		TotalQueueSize: totalQueueSize,
+		WorkUnits:     workUnits,
+		NextPageToken: nextPageToken,
 	}, nil
 }
