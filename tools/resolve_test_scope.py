@@ -38,6 +38,10 @@ CORE_INFRA_FILES: set[str] = {
     "compat.bzl",
 }
 
+WORKFLOW_FILES: set[str] = {
+    ".github/workflows/unit-tests.yml",
+}
+
 NON_CODE_PREFIXES: tuple[str, ...] = (
     "docs/",
     "deploy/",
@@ -91,6 +95,7 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
     (e.g., Python server, shell scripts, Bazel builds) trigger both UI and backend tests.
     """
     has_core_infra = False
+    has_workflow = False
     has_ui = False
     has_backend = False
 
@@ -98,6 +103,9 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         clean_f = f.strip()
         if not clean_f:
             continue
+
+        if clean_f in WORKFLOW_FILES:
+            has_workflow = True
 
         if clean_f in CORE_INFRA_FILES:
             has_core_infra = True
@@ -118,13 +126,14 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
             # Inverted Default Safety: Anything else is backend code!
             has_backend = True
 
-    # Core infrastructure modifications trigger both backend and UI verification
-    if has_core_infra:
+    # Core infrastructure or workflow modifications trigger both backend and UI verification
+    if has_core_infra or has_workflow:
         has_ui = True
         has_backend = True
 
     return {
         "has_core_infra": has_core_infra,
+        "has_workflow": has_workflow,
         "has_ui": has_ui,
         "has_backend": has_backend,
     }
@@ -361,8 +370,18 @@ def resolve_test_scope(
 
     classification = classify_modified_files(files)
     has_core_infra = classification["has_core_infra"]
+    has_workflow = classification.get("has_workflow", False)
     has_ui = classification["has_ui"]
     has_backend = classification["has_backend"]
+
+    if has_workflow:
+        return {
+            "run_backend": True,
+            "run_ui": True,
+            "backend_mode": "all",
+            "bazel_targets": "//... -//cmd/ui/...",
+            "reason": "workflow file modified",
+        }
 
     if not has_ui and not has_backend:
         return {
