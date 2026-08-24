@@ -208,20 +208,9 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	defer txn.Close()
 
 	// Query 1: Count total active work units across matching queues
-	countStmt := spanner.Statement{
-		SQL: countActiveWorkUnitsSQL.String(),
-		Params: map[string]interface{}{
-			"queueNames": queueNames,
-		},
-	}
-	var totalQueueSize int64
-	iterCount := txn.Query(ctx, countStmt)
-	defer iterCount.Stop()
-	if err := iterCount.Do(func(row *spanner.Row) error {
-		return row.Column(0, &totalQueueSize)
-	}); err != nil {
-		logging.Error(ctx, "failed to count active work units", "error", err)
-		return nil, fmt.Errorf("failed to count active work units: %w", err)
+	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
+	if err != nil {
+		return nil, err
 	}
 
 	// Query 2: Fetch pageSize + 1 items to determine if nextPageToken is needed
@@ -263,4 +252,23 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		NextPageToken:  nextPageToken,
 		TotalQueueSize: totalQueueSize,
 	}, nil
+}
+
+func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) (int64, error) {
+	countStmt := spanner.Statement{
+		SQL: countActiveWorkUnitsSQL.String(),
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+		},
+	}
+	var totalQueueSize int64
+	iterCount := txn.Query(ctx, countStmt)
+	defer iterCount.Stop()
+	if err := iterCount.Do(func(row *spanner.Row) error {
+		return row.Column(0, &totalQueueSize)
+	}); err != nil {
+		logging.Error(ctx, "failed to count active work units", "error", err)
+		return 0, fmt.Errorf("failed to count active work units: %w", err)
+	}
+	return totalQueueSize, nil
 }
