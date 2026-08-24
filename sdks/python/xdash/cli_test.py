@@ -41,6 +41,173 @@ class CliTest(unittest.TestCase):
         self.assertEqual(ret, 1)
         self.assertIn("usage: xdash", out)
 
+    def test_create_dashboard(self) -> None:
+        self.mock_client.create_dashboard.return_value = messages_pb2.Dashboard(
+            name="dashboards/d1", title="Dash 1"
+        )
+
+        ret, out, _ = self._run(
+            [
+                "create-dashboard",
+                "--title",
+                "Dash 1",
+                "--dashboard-id",
+                "d1",
+                "--description",
+                "First dashboard",
+            ]
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        self.assertEqual(built.name, "dashboards/d1")
+        self.assertEqual(built.title, "Dash 1")
+        self.assertEqual(built.description, "First dashboard")
+        self.assertIn("dashboards/d1", out)
+
+    def test_create_dashboard_without_an_id_slugifies_the_title(self) -> None:
+        self.mock_client.create_dashboard.return_value = messages_pb2.Dashboard(
+            name="dashboards/dash_1", title="Dash 1"
+        )
+
+        ret, _, _ = self._run(["create-dashboard", "--title", "Dash 1"])
+        self.assertEqual(ret, 0)
+        args, kwargs = self.mock_client.create_dashboard.call_args
+        # No --dashboard-id, so the builder derives the resource name from the title and
+        # the explicit id is left to the client to pull back out of it.
+        self.assertEqual(args[0].name, "dashboards/dash_1")
+        self.assertIsNone(kwargs["dashboard_id"])
+
+    def test_create_chart(self) -> None:
+        self.mock_client.create_chart.return_value = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/c1", title="Chart 1"
+        )
+
+        ret, out, _ = self._run(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/1",
+                "--xid",
+                "1001",
+                "--wid",
+                "1",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ]
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_chart.assert_called_once()
+        kwargs = self.mock_client.create_chart.call_args[1]
+        self.assertEqual(kwargs["parent"], "experiments/1001/workUnits/1")
+        built = kwargs["chart"]
+        self.assertEqual(built.title, "Chart 1")
+        self.assertEqual((built.xid, built.wid), (1001, 1))
+        self.assertIn("experiments/1001/workUnits/1/charts/c1", out)
+
+    def test_create_chart_with_multiple_metrics(self) -> None:
+        self.mock_client.create_chart.return_value = messages_pb2.Chart(name="c")
+
+        ret, _, _ = self._run(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/1",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                " val/loss , train/accuracy ,",
+            ]
+        )
+        self.assertEqual(ret, 0)
+        built = self.mock_client.create_chart.call_args[1]["chart"]
+        # A KPI and a scatter plot per metric; names trimmed, trailing empty element dropped.
+        self.assertEqual(len(built.plots), 4)
+        self.assertEqual(
+            [p.plot_id for p in built.plots],
+            ["kpi_0", "scatter_0", "kpi_1", "scatter_1"],
+        )
+        self.assertEqual(
+            [list(p.data.metrics) for p in built.plots],
+            [["val/loss"], ["val/loss"], ["train/accuracy"], ["train/accuracy"]],
+        )
+
+    def test_create_chart_derives_ids_from_parent(self) -> None:
+        self.mock_client.create_chart.return_value = messages_pb2.Chart(
+            name="experiments/1001/workUnits/3/charts/c1", title="Chart 1"
+        )
+
+        ret, _, _ = self._run(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/3",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ]
+        )
+        self.assertEqual(ret, 0)
+        built = self.mock_client.create_chart.call_args[1]["chart"]
+        self.assertEqual((built.xid, built.wid), (1001, 3))
+
+    def test_create_chart_rejects_ids_conflicting_with_parent(self) -> None:
+        for flag, value in (("--xid", "2002"), ("--wid", "7")):
+            with self.subTest(flag=flag):
+                ret, _, err = self._run(
+                    [
+                        "create-chart",
+                        "--parent",
+                        "experiments/1001/workUnits/1",
+                        flag,
+                        value,
+                        "--title",
+                        "Chart 1",
+                        "--metrics",
+                        "val/loss",
+                    ]
+                )
+                self.assertEqual(ret, 1)
+                self.assertIn("Error:", err)
+        self.mock_client.create_chart.assert_not_called()
+
+    def test_create_chart_rejects_non_work_unit_parent(self) -> None:
+        ret, _, err = self._run(
+            [
+                "create-chart",
+                "--parent",
+                "dashboards/d1",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                "val/loss",
+            ]
+        )
+        self.assertEqual(ret, 1)
+        self.assertIn("experiments/{xid}/workUnits/{wid}", err)
+        self.mock_client.create_chart.assert_not_called()
+
+    def test_create_chart_rejects_empty_metrics(self) -> None:
+        ret, _, err = self._run(
+            [
+                "create-chart",
+                "--parent",
+                "experiments/1001/workUnits/1",
+                "--xid",
+                "1001",
+                "--title",
+                "Chart 1",
+                "--metrics",
+                " , ",
+            ]
+        )
+        self.assertEqual(ret, 1)
+        self.assertIn("Error:", err)
+        self.mock_client.create_chart.assert_not_called()
+
     def test_get_dashboard(self) -> None:
         self.mock_client.get_dashboard.return_value = messages_pb2.Dashboard(
             name="dashboards/d1",
@@ -109,6 +276,56 @@ class CliTest(unittest.TestCase):
         ret, _, err = self._run(["get", "dashboards/d1"])
         self.assertEqual(ret, 1)
         self.assertIn("Error: GetDashboard failed: Resource not found", err)
+
+    def test_get_data_renders_every_content_kind(self) -> None:
+        plot_data = messages_pb2.ChartData.PlotData
+        self.mock_client.get_chart_data.return_value = messages_pb2.ChartData(
+            name="experiments/1001/charts/c1",
+            xid=1001,
+            wid=1,
+            plots_data=[
+                plot_data(
+                    plot_id="kpi",
+                    summary_data=messages_pb2.ChartData.SummaryBoxValue(latest_value=0.1234),
+                ),
+                plot_data(
+                    plot_id="curve",
+                    scatter_series=messages_pb2.ChartData.SeriesData(
+                        points=[
+                            messages_pb2.ChartData.SeriesPoint(),
+                            messages_pb2.ChartData.SeriesPoint(),
+                            messages_pb2.ChartData.SeriesPoint(),
+                        ]
+                    ),
+                ),
+                plot_data(
+                    plot_id="hist",
+                    bar_data=messages_pb2.ChartData.BarData(
+                        buckets=[messages_pb2.ChartData.BarBucket(category_or_bin="a")]
+                    ),
+                ),
+                # No content member set: the oneof dispatch has to fall through.
+                plot_data(plot_id="blank"),
+            ],
+        )
+
+        ret, out, _ = self._run(["get-data", "experiments/1001/charts/c1"])
+        self.assertEqual(ret, 0)
+        self.mock_client.get_chart_data.assert_called_once_with("experiments/1001/charts/c1")
+        self.assertIn("ChartData for experiments/1001/charts/c1 (xid=1001, wid=1):", out)
+        self.assertIn("Total plots data returned: 4", out)
+        self.assertIn("  - Plot [kpi]: Summary value = 0.1234", out)
+        self.assertIn("  - Plot [curve]: Scatter series = 3 points", out)
+        self.assertIn("  - Plot [hist]: Bar buckets = 1", out)
+        self.assertIn("  - Plot [blank]: Empty content", out)
+
+    def test_get_data_with_no_plots(self) -> None:
+        self.mock_client.get_chart_data.return_value = messages_pb2.ChartData(
+            name="experiments/1001/charts/c1"
+        )
+        ret, out, _ = self._run(["get-data", "experiments/1001/charts/c1"])
+        self.assertEqual(ret, 0)
+        self.assertIn("Total plots data returned: 0", out)
 
     def test_list(self) -> None:
         self.mock_client.list_dashboards.return_value = [

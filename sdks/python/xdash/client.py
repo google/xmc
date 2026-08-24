@@ -62,6 +62,11 @@ class DashboardServiceStub:
             raise XDashConnectionError(
                 "grpcio is not installed. Please install grpcio to connect to DashboardService."
             )
+        self.CreateDashboard = channel.unary_unary(
+            "/cloud.xmanager.v1.DashboardService/CreateDashboard",
+            request_serializer=dashboard_service_pb2.CreateDashboardRequest.SerializeToString,
+            response_deserializer=messages_pb2.Dashboard.FromString,
+        )
         self.GetDashboard = channel.unary_unary(
             "/cloud.xmanager.v1.DashboardService/GetDashboard",
             request_serializer=dashboard_service_pb2.GetDashboardRequest.SerializeToString,
@@ -72,15 +77,25 @@ class DashboardServiceStub:
             request_serializer=dashboard_service_pb2.ListDashboardsRequest.SerializeToString,
             response_deserializer=dashboard_service_pb2.ListDashboardsResponse.FromString,
         )
+        self.CreateChart = channel.unary_unary(
+            "/cloud.xmanager.v1.DashboardService/CreateChart",
+            request_serializer=dashboard_service_pb2.CreateChartRequest.SerializeToString,
+            response_deserializer=messages_pb2.Chart.FromString,
+        )
         self.GetChart = channel.unary_unary(
             "/cloud.xmanager.v1.DashboardService/GetChart",
             request_serializer=dashboard_service_pb2.GetChartRequest.SerializeToString,
             response_deserializer=messages_pb2.Chart.FromString,
         )
+        self.GetChartData = channel.unary_unary(
+            "/cloud.xmanager.v1.DashboardService/GetChartData",
+            request_serializer=dashboard_service_pb2.GetChartDataRequest.SerializeToString,
+            response_deserializer=messages_pb2.ChartData.FromString,
+        )
 
 
 class DashboardClient:
-    """Client for retrieving and inspecting XMC Dashboards and Charts."""
+    """Client for creating, retrieving, and inspecting XMC Dashboards and Charts."""
 
     def __init__(
         self,
@@ -179,6 +194,32 @@ class DashboardClient:
                 raise XDashRPCError(f"{rpc_name} failed: {details or err}", code=code) from err
             raise XDashError(f"Unexpected error in {rpc_name}: {err}") from err
 
+    def create_dashboard(
+        self,
+        dashboard: messages_pb2.Dashboard,
+        dashboard_id: str | None = None,
+    ) -> messages_pb2.Dashboard:
+        """Creates a new dashboard via the Dashboard Service.
+
+        Args:
+            dashboard: The Dashboard protobuf message to create.
+            dashboard_id: Optional ID override (extracted from name if not provided).
+
+        Returns:
+            The created messages_pb2.Dashboard message.
+        """
+        if not dashboard:
+            raise ValueError("dashboard message is required")
+        if not dashboard_id and dashboard.name:
+            # rstrip first: "dashboards/d1/" would otherwise derive an empty id, which the
+            # server rejects with a message that points nowhere near the trailing slash.
+            dashboard_id = dashboard.name.rstrip("/").split("/")[-1]
+        req = dashboard_service_pb2.CreateDashboardRequest(
+            dashboard=dashboard,
+            dashboard_id=dashboard_id or "",
+        )
+        return self._execute_rpc(self._stub.CreateDashboard, req, "CreateDashboard")
+
     def get_dashboard(self, name: str) -> messages_pb2.Dashboard:
         """Retrieves a dashboard by its full resource name."""
         if not name or not name.strip():
@@ -192,9 +233,37 @@ class DashboardClient:
         resp = self._execute_rpc(self._stub.ListDashboards, req, "ListDashboards")
         return list(resp.dashboards)
 
+    def create_chart(
+        self,
+        parent: str,
+        chart: messages_pb2.Chart,
+        chart_id: str | None = None,
+    ) -> messages_pb2.Chart:
+        """Creates a new chart attached to an experiment work unit parent."""
+        if not parent or not parent.strip():
+            raise ValueError("parent resource name is required")
+        if not chart:
+            raise ValueError("chart message is required")
+        if not chart_id and chart.name:
+            # See create_dashboard: a trailing slash would otherwise derive an empty id.
+            chart_id = chart.name.rstrip("/").split("/")[-1]
+        req = dashboard_service_pb2.CreateChartRequest(
+            parent=parent,
+            chart=chart,
+            chart_id=chart_id or "",
+        )
+        return self._execute_rpc(self._stub.CreateChart, req, "CreateChart")
+
     def get_chart(self, name: str) -> messages_pb2.Chart:
         """Retrieves a chart by its full resource name."""
         if not name or not name.strip():
             raise ValueError("Chart resource name is required")
         req = dashboard_service_pb2.GetChartRequest(name=name)
         return self._execute_rpc(self._stub.GetChart, req, "GetChart")
+
+    def get_chart_data(self, name: str) -> messages_pb2.ChartData:
+        """Fetches evaluated metrics data for a chart."""
+        if not name or not name.strip():
+            raise ValueError("Chart resource name is required")
+        req = dashboard_service_pb2.GetChartDataRequest(name=name)
+        return self._execute_rpc(self._stub.GetChartData, req, "GetChartData")

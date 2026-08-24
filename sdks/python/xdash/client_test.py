@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.builders import DashboardBuilder
 from xdash.client import DashboardClient, XDashError, XDashRPCError, _is_local_endpoint
 
 
@@ -43,11 +44,30 @@ class DetaillessRpcError(FakeRpcError):
 
 
 class DashboardClientTest(unittest.TestCase):
-    """Tests for DashboardClient read RPC method calls."""
+    """Tests for DashboardClient RPC method calls."""
 
     def setUp(self) -> None:
         self.mock_stub = MagicMock()
         self.client = DashboardClient(stub=self.mock_stub)
+
+    def test_create_dashboard(self) -> None:
+        dash = DashboardBuilder(name="dashboards/vcc_comparison").set_title("VCC").build()
+        self.mock_stub.CreateDashboard.return_value = dash
+
+        result = self.client.create_dashboard(dash, dashboard_id="vcc_comparison")
+        self.assertEqual(result.name, dash.name)
+        self.mock_stub.CreateDashboard.assert_called_once()
+        req = self.mock_stub.CreateDashboard.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.CreateDashboardRequest)
+        self.assertEqual(req.dashboard_id, "vcc_comparison")
+
+    def test_create_dashboard_derives_id_from_name(self) -> None:
+        dash = DashboardBuilder(name="dashboards/derived").set_title("Derived").build()
+        self.mock_stub.CreateDashboard.return_value = dash
+
+        self.client.create_dashboard(dash)
+        req = self.mock_stub.CreateDashboard.call_args[0][0]
+        self.assertEqual(req.dashboard_id, "derived")
 
     def test_get_dashboard(self) -> None:
         expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
@@ -76,6 +96,60 @@ class DashboardClientTest(unittest.TestCase):
         self.mock_stub.ListDashboards.return_value = dashboard_service_pb2.ListDashboardsResponse()
         self.assertEqual(self.client.list_dashboards(), [])
 
+    def test_create_dashboard_derives_the_id_from_the_resource_name(self) -> None:
+        dashboard = messages_pb2.Dashboard(name="dashboards/d1", title="D1")
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(dashboard)
+        req = self.mock_stub.CreateDashboard.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.CreateDashboardRequest)
+        self.assertEqual(req.dashboard_id, "d1")
+        self.assertEqual(req.dashboard.title, "D1")
+
+    def test_create_dashboard_prefers_an_explicit_id(self) -> None:
+        dashboard = messages_pb2.Dashboard(name="dashboards/d1", title="D1")
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(dashboard, dashboard_id="override")
+        self.assertEqual(self.mock_stub.CreateDashboard.call_args[0][0].dashboard_id, "override")
+
+    def test_create_chart_sends_the_parent_chart_and_id(self) -> None:
+        chart = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/c1",
+            title="C1",
+            xid=1001,
+            wid=1,
+        )
+        # A distinct return value: asserting the result equals the input would hold even
+        # if create_chart never called the stub at all.
+        self.mock_stub.CreateChart.return_value = messages_pb2.Chart(name=chart.name, title="C1")
+
+        result = self.client.create_chart(
+            parent="experiments/1001/workUnits/1", chart=chart, chart_id="c1"
+        )
+        self.assertEqual(result.name, "experiments/1001/workUnits/1/charts/c1")
+        self.mock_stub.CreateChart.assert_called_once()
+        req = self.mock_stub.CreateChart.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.CreateChartRequest)
+        self.assertEqual(req.parent, "experiments/1001/workUnits/1")
+        self.assertEqual(req.chart_id, "c1")
+        self.assertEqual((req.chart.xid, req.chart.wid), (1001, 1))
+
+    def test_create_chart_derives_the_id_from_the_resource_name(self) -> None:
+        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/derived", xid=1001)
+        self.mock_stub.CreateChart.return_value = chart
+
+        self.client.create_chart(parent="experiments/1001/workUnits/1", chart=chart)
+        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "derived")
+
+    def test_create_chart_ignores_a_trailing_slash_when_deriving_the_id(self) -> None:
+        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/derived/", xid=1001)
+        self.mock_stub.CreateChart.return_value = chart
+
+        self.client.create_chart(parent="experiments/1001/workUnits/1", chart=chart)
+        # A trailing slash used to derive "", which the server rejects with an opaque error.
+        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "derived")
+
     def test_get_chart(self) -> None:
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
         self.mock_stub.GetChart.return_value = chart
@@ -87,14 +161,41 @@ class DashboardClientTest(unittest.TestCase):
         self.assertIsInstance(req, dashboard_service_pb2.GetChartRequest)
         self.assertEqual(req.name, "experiments/1001/charts/c1")
 
+    def test_get_chart_data(self) -> None:
+        self.mock_stub.GetChartData.return_value = messages_pb2.ChartData(
+            name="experiments/1001/charts/c1", xid=1001
+        )
+
+        result = self.client.get_chart_data("experiments/1001/charts/c1")
+        self.assertEqual(result.xid, 1001)
+        self.mock_stub.GetChartData.assert_called_once()
+        req = self.mock_stub.GetChartData.call_args[0][0]
+        self.assertIsInstance(req, dashboard_service_pb2.GetChartDataRequest)
+        self.assertEqual(req.name, "experiments/1001/charts/c1")
+        self.mock_stub.GetChart.assert_not_called()
+
     def test_validation_errors(self) -> None:
+        with self.assertRaises(ValueError):
+            self.client.create_dashboard(None)  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            self.client.create_chart(parent="experiments/1/workUnits/1", chart=None)  # type: ignore[arg-type]
         for blank in ("", "   ", "\t\n"):
             with self.assertRaises(ValueError):
                 self.client.get_dashboard(blank)
             with self.assertRaises(ValueError):
                 self.client.get_chart(blank)
-        self.mock_stub.GetDashboard.assert_not_called()
-        self.mock_stub.GetChart.assert_not_called()
+            with self.assertRaises(ValueError):
+                self.client.get_chart_data(blank)
+            with self.assertRaises(ValueError):
+                self.client.create_chart(parent=blank, chart=messages_pb2.Chart())
+        for stub_method in (
+            self.mock_stub.CreateDashboard,
+            self.mock_stub.GetDashboard,
+            self.mock_stub.CreateChart,
+            self.mock_stub.GetChart,
+            self.mock_stub.GetChartData,
+        ):
+            stub_method.assert_not_called()
 
     def test_rpc_error_handling(self) -> None:
         self.mock_stub.GetDashboard.side_effect = FakeRpcError()

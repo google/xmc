@@ -19,6 +19,7 @@ py_library(
     srcs = [
         "__init__.py",
         "_protos.py",
+        "builders.py",
         "cli.py",
         "client.py",
     ],
@@ -40,6 +41,12 @@ py_binary(
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//visibility:public"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "builders_test",
+    srcs = ["builders_test.py"],
     deps = [":xdash"],
 )
 

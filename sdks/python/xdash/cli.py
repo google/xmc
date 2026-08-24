@@ -16,9 +16,16 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
 
+from xdash.builders import (
+    ChartBuilder,
+    DashboardBuilder,
+    scatter_plot,
+    summary_kpi_plot,
+)
 from xdash.client import DashboardClient, XDashError
 
 
@@ -40,6 +47,38 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
+    # create-dashboard subcommand
+    create_dash_parser = subparsers.add_parser(
+        "create-dashboard",
+        help="Create a new dashboard",
+    )
+    create_dash_parser.add_argument("--title", required=True, help="Dashboard title")
+    create_dash_parser.add_argument("--dashboard-id", default="", help="Custom dashboard ID slug")
+    create_dash_parser.add_argument("--description", default="", help="Dashboard description")
+
+    # create-chart subcommand
+    create_chart_parser = subparsers.add_parser(
+        "create-chart",
+        help="Create a new chart for an experiment work unit",
+    )
+    create_chart_parser.add_argument(
+        "--parent",
+        required=True,
+        help="Parent work unit resource name (e.g. experiments/123/workUnits/1)",
+    )
+    create_chart_parser.add_argument(
+        "--xid", type=int, default=None, help="Experiment ID (default: taken from --parent)"
+    )
+    create_chart_parser.add_argument(
+        "--wid", type=int, default=None, help="Work unit ID (default: taken from --parent)"
+    )
+    create_chart_parser.add_argument("--title", required=True, help="Chart title")
+    create_chart_parser.add_argument(
+        "--metrics",
+        default="val/loss,train/accuracy",
+        help="Comma-separated list of metrics to plot",
+    )
+
     # get subcommand
     get_parser = subparsers.add_parser(
         "get",
@@ -50,10 +89,80 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Resource name (e.g. dashboards/vcc_comparison or experiments/234911122/charts/baseline)",
     )
 
+    # get-data subcommand
+    get_data_parser = subparsers.add_parser(
+        "get-data",
+        help="Fetch evaluated metrics data for a chart",
+    )
+    get_data_parser.add_argument("name", help="Chart resource name")
+
     # list subcommand
     subparsers.add_parser("list", help="List all dashboards")
 
     return parser
+
+
+def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) -> int:
+    """Handles the create-dashboard subcommand."""
+    dash_id = args.dashboard_id
+    dash_name = f"dashboards/{dash_id}" if dash_id else None
+    builder = DashboardBuilder(name=dash_name).set_title(args.title)
+    if args.description:
+        builder.set_description(args.description)
+
+    created = client.create_dashboard(builder.build(), dashboard_id=dash_id or None)
+    sys.stdout.write(f"Created dashboard: {created.name} (title: {created.title})\n")
+    return 0
+
+
+_WORK_UNIT_PARENT = re.compile(r"^experiments/(\d+)/workUnits/(\d+)$")
+
+
+def _resolve_work_unit(parent: str, xid: int | None, wid: int | None) -> tuple[int, int]:
+    """Derives the experiment and work unit IDs for create-chart from --parent.
+
+    Args:
+        parent: Work unit resource name, e.g. 'experiments/123/workUnits/1'.
+        xid: Experiment ID given on the command line, or None to take it from parent.
+        wid: Work unit ID given on the command line, or None to take it from parent.
+
+    Returns:
+        The (xid, wid) pair to stamp on the chart.
+
+    Raises:
+        ValueError: If parent is not a work unit resource name, or an explicit
+            --xid/--wid disagrees with the IDs embedded in it.
+    """
+    match = _WORK_UNIT_PARENT.match(parent)
+    if not match:
+        raise ValueError(
+            "--parent must be a work unit resource name "
+            f"('experiments/{{xid}}/workUnits/{{wid}}'), got: {parent}"
+        )
+    parent_xid, parent_wid = int(match.group(1)), int(match.group(2))
+    if xid is not None and xid != parent_xid:
+        raise ValueError(f"--xid ({xid}) does not match the experiment in --parent ({parent_xid})")
+    if wid is not None and wid != parent_wid:
+        raise ValueError(f"--wid ({wid}) does not match the work unit in --parent ({parent_wid})")
+    return parent_xid, parent_wid
+
+
+def _handle_create_chart(client: DashboardClient, args: argparse.Namespace) -> int:
+    """Handles the create-chart subcommand."""
+    xid, wid = _resolve_work_unit(args.parent, args.xid, args.wid)
+    metrics = [m.strip() for m in args.metrics.split(",") if m.strip()]
+    if not metrics:
+        raise ValueError("At least one metric must be provided in --metrics")
+
+    builder = ChartBuilder().for_experiment(xid=xid, wid=wid).set_title(args.title)
+    for idx, metric in enumerate(metrics):
+        builder.add_plot(summary_kpi_plot(f"kpi_{idx}", f"KPI {metric}", [metric]))
+        builder.add_plot(scatter_plot(f"scatter_{idx}", f"{metric} vs steps", [metric]))
+
+    chart = builder.build()
+    created = client.create_chart(parent=args.parent, chart=chart)
+    sys.stdout.write(f"Created chart: {created.name} (title: {created.title})\n")
+    return 0
 
 
 def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
@@ -91,6 +200,30 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_get_data(client: DashboardClient, args: argparse.Namespace) -> int:
+    """Handles the get-data subcommand."""
+    data = client.get_chart_data(args.name)
+    sys.stdout.write(
+        f"ChartData for {data.name} (xid={data.xid}, wid={data.wid}):\n"
+        f"Total plots data returned: {len(data.plots_data)}\n"
+    )
+    for pdata in data.plots_data:
+        sys.stdout.write(f"  - Plot [{pdata.plot_id}]: ")
+        # One WhichOneof over the 'content' oneof, rather than a HasField per member:
+        # a new content type then falls through to "Empty content" instead of being
+        # silently skipped by a chain nobody remembered to extend.
+        content = pdata.WhichOneof("content")
+        if content == "summary_data":
+            sys.stdout.write(f"Summary value = {pdata.summary_data.latest_value:.4f}\n")
+        elif content == "scatter_series":
+            sys.stdout.write(f"Scatter series = {len(pdata.scatter_series.points)} points\n")
+        elif content == "bar_data":
+            sys.stdout.write(f"Bar buckets = {len(pdata.bar_data.buckets)}\n")
+        else:
+            sys.stdout.write("Empty content\n")
+    return 0
+
+
 def _handle_list(client: DashboardClient) -> int:
     """Handles the list subcommand."""
     dashboards = client.list_dashboards()
@@ -121,8 +254,14 @@ def run_cli(
             )
             client = owned_client
 
+        if args.command == "create-dashboard":
+            return _handle_create_dashboard(client, args)
+        if args.command == "create-chart":
+            return _handle_create_chart(client, args)
         if args.command == "get":
             return _handle_get(client, args)
+        if args.command == "get-data":
+            return _handle_get_data(client, args)
         if args.command == "list":
             return _handle_list(client)
     except (XDashError, ValueError) as err:
