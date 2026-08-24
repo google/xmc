@@ -21,12 +21,11 @@ import {
   input,
   signal,
   untracked,
-  viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatPaginator, MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
@@ -126,9 +125,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
 
   protected readonly dataSource = new MatTableDataSource<DashboardJob>();
-  readonly matPaginator = viewChild(MatPaginator);
 
-  protected readonly pageSizeOptions = [5, 10, 20, 50];
+  protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
 
   protected displayedColumns: string[] = [
     'position',
