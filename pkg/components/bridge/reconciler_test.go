@@ -139,6 +139,16 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name: "active 3P with finalizer removal when deletion protection disabled",
+			cms:  &mockCMS{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				HasFinalizer: true, DeletionProtection: false, Enabled: true,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantRemoveFin: true,
+		},
+		{
 			name: "deletion blocked by protection",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
@@ -148,7 +158,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
-			name: "deletion successful",
+			name: "deletion successful for 1P",
 			cms:  &mockCMS{},
 			wm:   &mockWM{active: true},
 			in: ReconcileComponentInput{
@@ -157,6 +167,31 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
+		},
+		{
+			name: "deletion with orphan policy preserves 1P child workload",
+			cms:  &mockCMS{},
+			wm:   &mockWM{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2,
+				Spec: &componentspb.ComponentSpec{
+					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+				},
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
+			name: "deletion 1P workload delete failure",
+			cms:  &mockCMS{},
+			wm:   &mockWM{deleteErr: errors.New("delete error")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantErr: true,
 		},
 		{
 			name: "deletion CMS failure",

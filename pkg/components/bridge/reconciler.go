@@ -139,6 +139,9 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		res.AddFinalizer = true
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
+	if in.HasFinalizer && !in.DeletionProtection {
+		res.RemoveFinalizer = true
+	}
 	if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
 		return res, nil
 	}
@@ -158,13 +161,13 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && in.Spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN && r.workloadManager != nil {
 		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
-			return nil, fmt.Errorf("failed to delete 1P workload: %w", err)
+			return res, fmt.Errorf("failed to delete 1P workload: %w", err)
 		}
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		return nil, fmt.Errorf("failed to execute deletion in CMS: %w", err)
+		return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
 	}
 	logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
 	res.RemoveFinalizer = true
