@@ -18,7 +18,6 @@
 import argparse
 import re
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from tool_utils import HandledError, run_tool
@@ -60,7 +59,7 @@ def classify_file(file_path: str) -> str:
 
 
 def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
-    """Extracts added line counts and filepaths from git diff and untracked files."""
+    """Extracts added line counts and filepaths from git diff."""
     cmd = ["git", "diff", "--numstat"]
     if diff_spec:
         cmd.append(diff_spec)
@@ -74,30 +73,11 @@ def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
         ) from e
 
     entries: list[tuple[int, str]] = []
-    seen_files: set[str] = set()
-
     for line in res.stdout.splitlines():
         parts = line.strip().split("\t")
         if len(parts) >= 3 and parts[0].isdigit():
             added, path = int(parts[0]), parts[2]
             entries.append((added, path))
-            seen_files.add(path)
-
-    # Append untracked new files
-    try:
-        untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        for path in untracked.stdout.splitlines():
-            path = path.strip()
-            if path and path not in seen_files and Path(path).is_file():
-                line_count = len(Path(path).read_text(errors="replace").splitlines())
-                entries.append((line_count, path))
-    except (subprocess.CalledProcessError, OSError):
-        pass
 
     return entries
 

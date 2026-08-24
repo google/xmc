@@ -57,12 +57,10 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
 
     @mock.patch("subprocess.run")
     def test_get_diff_entries_success(self, mock_run):
-        mock_numstat = mock.Mock(
+        mock_run.return_value = mock.Mock(
             stdout="100\t20\tpkg/reconciler/handler.go\n50\t10\tpkg/reconciler/handler_test.go\n-\t-\timage.png\n",
             returncode=0,
         )
-        mock_untracked = mock.Mock(stdout="", returncode=0)
-        mock_run.side_effect = [mock_numstat, mock_untracked]
 
         entries = analyze_diff_size.get_diff_entries("origin/main...")
         self.assertEqual(len(entries), 2)
