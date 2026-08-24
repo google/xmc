@@ -56,43 +56,37 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(analyze_diff_size.classify_file("tools/BUILD.bazel"), "prod")
 
     @mock.patch("subprocess.run")
-    def test_get_git_numstat_success(self, mock_run):
-        mock_run.return_value = mock.Mock(
+    def test_get_diff_entries_success(self, mock_run):
+        mock_numstat = mock.Mock(
             stdout="100\t20\tpkg/reconciler/handler.go\n50\t10\tpkg/reconciler/handler_test.go\n-\t-\timage.png\n",
             returncode=0,
         )
-        entries = analyze_diff_size.get_git_numstat()
-        self.assertEqual(len(entries), 3)
-        self.assertEqual(entries[0], (100, 20, "pkg/reconciler/handler.go"))
-        self.assertEqual(entries[1], (50, 10, "pkg/reconciler/handler_test.go"))
-        self.assertEqual(entries[2], (0, 0, "image.png"))
+        mock_untracked = mock.Mock(stdout="", returncode=0)
+        mock_run.side_effect = [mock_numstat, mock_untracked]
+
+        entries = analyze_diff_size.get_diff_entries("origin/main...")
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0], (100, "pkg/reconciler/handler.go"))
+        self.assertEqual(entries[1], (50, "pkg/reconciler/handler_test.go"))
 
     @mock.patch("subprocess.run")
-    def test_get_git_numstat_handled_error(self, mock_run):
+    def test_get_diff_entries_handled_error(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(
             1, ["git", "diff"], stderr="fatal: not a git repo"
         )
         with self.assertRaises(HandledError):
-            analyze_diff_size.get_git_numstat("invalid-branch")
+            analyze_diff_size.get_diff_entries("invalid-branch")
 
-    @mock.patch("analyze_diff_size.get_untracked_files")
-    @mock.patch("analyze_diff_size.get_git_numstat")
-    def test_analyze_diff_size_within_thresholds(self, mock_numstat, mock_untracked):
-        mock_numstat.return_value = [
-            (100, 50, "pkg/reconciler/handler.go"),  # prod: 100
-            (200, 50, "pkg/reconciler/handler_test.go"),  # test: 200
-            (50, 10, "README.md"),  # doc: 50
-            (1000, 0, "pkg/api/v1/api.pb.go"),  # generated: 1000 (ignored)
+    @mock.patch("analyze_diff_size.get_diff_entries")
+    def test_analyze_diff_size_within_thresholds(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (100, "pkg/reconciler/handler.go"),  # prod: 100
+            (200, "pkg/reconciler/handler_test.go"),  # test: 200
+            (50, "README.md"),  # doc: 50
+            (1000, "pkg/api/v1/api.pb.go"),  # generated: 1000 (ignored)
         ]
-        mock_untracked.return_value = []
 
-        args = argparse.Namespace(
-            base_ref=None,
-            prod_threshold=400,
-            total_code_threshold=1000,
-            doc_threshold=1000,
-            include_untracked=True,
-        )
+        args = argparse.Namespace(base_ref="origin/main...")
         res = analyze_diff_size.analyze_diff_size(args)
 
         self.assertFalse(res["threshold_exceeded"])
@@ -103,72 +97,48 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(res["metrics"]["doc_lines"], 50)
         self.assertEqual(res["metrics"]["generated_lines"], 1000)
 
-    @mock.patch("analyze_diff_size.get_untracked_files")
-    @mock.patch("analyze_diff_size.get_git_numstat")
-    def test_analyze_diff_size_exceeds_prod_threshold(self, mock_numstat, mock_untracked):
-        mock_numstat.return_value = [
-            (410, 10, "pkg/reconciler/handler.go"),  # prod: 410 (>= 400)
-            (50, 10, "pkg/reconciler/handler_test.go"),  # test: 50
+    @mock.patch("analyze_diff_size.get_diff_entries")
+    def test_analyze_diff_size_exceeds_prod_threshold(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (410, "pkg/reconciler/handler.go"),  # prod: 410 (>= 400)
+            (50, "pkg/reconciler/handler_test.go"),  # test: 50
         ]
-        mock_untracked.return_value = []
 
-        args = argparse.Namespace(
-            base_ref="origin/main...",
-            prod_threshold=400,
-            total_code_threshold=1000,
-            doc_threshold=1000,
-            include_untracked=True,
-        )
+        args = argparse.Namespace(base_ref="origin/main...")
         res = analyze_diff_size.analyze_diff_size(args)
 
         self.assertTrue(res["threshold_exceeded"])
         self.assertTrue(res["should_trigger_split_verifier"])
-        self.assertTrue(any("Production code diff" in r for r in res["exceeded_reasons"]))
+        self.assertTrue(any("Production code" in r for r in res["exceeded_reasons"]))
 
-    @mock.patch("analyze_diff_size.get_untracked_files")
-    @mock.patch("analyze_diff_size.get_git_numstat")
-    def test_analyze_diff_size_exceeds_total_code_threshold(self, mock_numstat, mock_untracked):
-        mock_numstat.return_value = [
-            (350, 50, "pkg/reconciler/handler.go"),  # prod: 350 (< 400)
-            (700, 100, "pkg/reconciler/handler_test.go"),  # test: 700
+    @mock.patch("analyze_diff_size.get_diff_entries")
+    def test_analyze_diff_size_exceeds_total_code_threshold(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (350, "pkg/reconciler/handler.go"),  # prod: 350 (< 400)
+            (700, "pkg/reconciler/handler_test.go"),  # test: 700
             # total code: 1050 (>= 1000)
         ]
-        mock_untracked.return_value = []
 
-        args = argparse.Namespace(
-            base_ref=None,
-            prod_threshold=400,
-            total_code_threshold=1000,
-            doc_threshold=1000,
-            include_untracked=True,
-        )
+        args = argparse.Namespace(base_ref="origin/main...")
         res = analyze_diff_size.analyze_diff_size(args)
 
         self.assertTrue(res["threshold_exceeded"])
         self.assertTrue(res["should_trigger_split_verifier"])
-        self.assertTrue(any("Total code diff" in r for r in res["exceeded_reasons"]))
+        self.assertTrue(any("Total code" in r for r in res["exceeded_reasons"]))
 
-    @mock.patch("analyze_diff_size.get_untracked_files")
-    @mock.patch("analyze_diff_size.get_git_numstat")
-    def test_analyze_diff_size_exceeds_doc_threshold(self, mock_numstat, mock_untracked):
-        mock_numstat.return_value = [
-            (100, 10, "pkg/reconciler/handler.go"),  # prod: 100
-            (1010, 60, "docs/large_spec.md"),  # doc: 1010 (>= 1000)
+    @mock.patch("analyze_diff_size.get_diff_entries")
+    def test_analyze_diff_size_exceeds_doc_threshold(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (100, "pkg/reconciler/handler.go"),  # prod: 100
+            (1010, "docs/large_spec.md"),  # doc: 1010 (>= 1000)
         ]
-        mock_untracked.return_value = []
 
-        args = argparse.Namespace(
-            base_ref=None,
-            prod_threshold=400,
-            total_code_threshold=1000,
-            doc_threshold=1000,
-            include_untracked=True,
-        )
+        args = argparse.Namespace(base_ref="origin/main...")
         res = analyze_diff_size.analyze_diff_size(args)
 
         self.assertTrue(res["threshold_exceeded"])
         self.assertTrue(res["should_trigger_split_verifier"])
-        self.assertTrue(any("Documentation/markdown diff" in r for r in res["exceeded_reasons"]))
+        self.assertTrue(any("Documentation diff" in r for r in res["exceeded_reasons"]))
 
 
 if __name__ == "__main__":
