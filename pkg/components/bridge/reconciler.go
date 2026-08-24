@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc"
@@ -144,13 +145,13 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
 	if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
-		return res, nil
+		return res, err
 	}
 	if !in.Enabled {
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
 	if err := r.ensureWorkload(ctx, in, res); err != nil {
-		return res, nil
+		return res, err
 	}
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
@@ -200,14 +201,14 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
-			return res, nil
+			return res, err
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
-		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
@@ -244,7 +245,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, degradedReason, healthMsg)
 
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
-		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "healthy", isHealthy, "state", res.State.String(), "statusMsg", healthMsg)
 	return res, nil
@@ -320,11 +321,29 @@ func extractStr(m map[string]any, k string) string {
 	return ""
 }
 func extractInt(m map[string]any, k string) int64 {
-	if v, ok := m[k].(int64); ok {
-		return v
+	v, ok := m[k]
+	if !ok {
+		return 0
 	}
-	if v, ok := m[k].(float64); ok {
-		return int64(v)
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case string:
+		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+			return i
+		}
+	}
+	if s, ok := v.(interface{ String() string }); ok {
+		if i, err := strconv.ParseInt(s.String(), 10, 64); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(s.String(), 64); err == nil {
+			return int64(f)
+		}
 	}
 	return 0
 }

@@ -177,9 +177,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
 		{
-			name: "intent application CMS error",
-			cms:  &mockCMS{setErr: status.Error(codes.InvalidArgument, "bad spec")},
-			wm:   &mockWM{active: true},
+			name:    "intent application CMS error",
+			cms:     &mockCMS{setErr: status.Error(codes.InvalidArgument, "bad spec")},
+			wm:      &mockWM{active: true},
+			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
@@ -187,9 +188,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
-			name: "1P workload provisioning error",
-			cms:  &mockCMS{},
-			wm:   &mockWM{ensureErr: errors.New("quota exceeded")},
+			name:    "1P workload provisioning error",
+			cms:     &mockCMS{},
+			wm:      &mockWM{ensureErr: errors.New("quota exceeded")},
+			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
