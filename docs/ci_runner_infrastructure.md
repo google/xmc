@@ -132,12 +132,12 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
 #### Option B: Google Cloud Storage (GCS) Remote Cache — High Performance & Shared Across GitHub Runners
 
-1. Create a regional GCS bucket (e.g. `gs://xmc-bazel-cache-us-central1`).
+1. Create a regional GCS bucket (e.g. `gs://YOUR_BAZEL_CACHE_BUCKET`).
 2. Grant `roles/storage.objectAdmin` to the GitHub Actions Workload Identity provider service account.
 3. Authenticate in the workflow using `google-github-actions/auth`.
 4. Point `.bazelrc` to GCS:
 ```ini
-build:ci --remote_cache=https://storage.googleapis.com/xmc-bazel-cache-us-central1
+build:ci --remote_cache=https://storage.googleapis.com/YOUR_BAZEL_CACHE_BUCKET
 build:ci --google_default_credentials=true
 build:ci --remote_upload_local_results=true
 ```
@@ -214,7 +214,7 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 |  +-------------------------------------+      +--------------------------------------+  |
 |  | Isolated Docker Engine (DinD)       |      | Python E2E Orchestrator              |  |
 |  |                                     |      |                                      |  |
-|  |  - KinD Cluster: xmc-e2e            |      |  1. Provision Spanner DBs & KinD     |  |
+|  |  - KinD Cluster (Local)             |      |  1. Provision Spanner DBs & KinD     |  |
 |  |    - Core Services (ESS, UI, XID)   |<-----+  2. Build 5 OCI Image Tarballs       |  |
 |  |    - Ephemeral Redis & Dex OIDC IdP |      |  3. Load Images into KinD & Helm     |  |
 |  |    - Gateway Reverse Proxy (:8080)  |      |  4. Execute Playwright Tests         |  |
@@ -223,7 +223,7 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 |                                                                  |                      |
 |                                                                  v (WIF Authenticated)  |
 |  +-----------------------------------------------------------------------------------+  |
-|  | GCP Cloud Spanner (Instance: xmc-e2e in project xmc-test-project-3)               |  |
+|  | GCP Cloud Spanner (Configured GCP Project & Spanner Instance)                     |  |
 |  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Automated Schema Migrations)              |  |
 |  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Automated Schema Migrations)              |  |
 |  +-----------------------------------------------------------------------------------+  |
@@ -233,7 +233,7 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 ### Multi-Run Concurrency & Collision Prevention
 
 1. **KinD Cluster Isolation**:
-   - Each runner pod contains its own isolated Docker daemon. Multiple concurrent PR test runs execute in independent runner pods, meaning local KinD clusters named `xmc-e2e` never collide across jobs.
+   - Each runner pod contains its own isolated Docker daemon. Multiple concurrent PR test runs execute in independent runner pods, meaning local KinD clusters never collide across jobs.
 2. **Ephemeral Spanner Database Names**:
    - Each test run generates unique database names using the pattern `e2e-ess-<epoch>-<hex>` and `e2e-xid-<epoch>-<hex>`.
    - Databases are dynamically created via `gcloud`, migrated via `bazel run //internal/storage/spanner/migrations:migrations`, and dropped during orchestrator teardown.
@@ -248,10 +248,10 @@ Workload Identity Federation allows GitHub Actions to authenticate directly to G
 
 | Secret Name | Description |
 | :--- | :--- |
-| `secrets.GCP_E2E_PROJECT_ID` | Target GCP project hosting Cloud Spanner (e.g. `xmc-test-project-3`). |
-| `secrets.GCP_E2E_SPANNER_INSTANCE` | Cloud Spanner instance used for ephemeral databases (e.g. `xmc-e2e`). |
-| `secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider resource URI (e.g. `projects/815549340089/...`). |
-| `secrets.GCP_E2E_SERVICE_ACCOUNT` | Service account with `roles/spanner.databaseAdmin` (e.g. `xmc-e2e-ci@...`). |
+| `secrets.GCP_E2E_PROJECT_ID` | Target GCP project hosting Cloud Spanner (e.g. `YOUR_GCP_PROJECT_ID`). |
+| `secrets.GCP_E2E_SPANNER_INSTANCE` | Cloud Spanner instance used for ephemeral databases (e.g. `YOUR_SPANNER_INSTANCE`). |
+| `secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider resource URI (e.g. `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`). |
+| `secrets.GCP_E2E_SERVICE_ACCOUNT` | Service account with `roles/spanner.databaseAdmin` (e.g. `sa-name@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com`). |
 
 ### Execution on ARC Self-Hosted vs. GitHub-Hosted (`ubuntu-latest`) Runners
 
