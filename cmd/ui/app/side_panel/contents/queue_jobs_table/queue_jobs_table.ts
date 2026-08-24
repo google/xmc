@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -84,22 +93,11 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     nextPageToken: signal<string>(''),
   };
 
-  private currentQueue = '';
-
-  protected readonly requestParams = computed(() => {
-    const queueName = this.activeQueueName();
-    let pageToken = this.tableControls.pageToken();
-
-    if (this.currentQueue && queueName !== this.currentQueue) {
-      pageToken = '';
-    }
-
-    return {
-      queueName,
-      pageSize: this.tableControls.pageSize(),
-      pageToken,
-    };
-  });
+  protected readonly requestParams = computed(() => ({
+    queueName: this.activeQueueName(),
+    pageSize: this.tableControls.pageSize(),
+    pageToken: this.tableControls.pageToken(),
+  }));
 
   protected readonly jobsResponse = toSignal(
     toObservable(this.requestParams).pipe(
@@ -109,15 +107,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
           prev.pageSize === curr.pageSize &&
           prev.pageToken === curr.pageToken,
       ),
-      tap(({ queueName }) => {
-        this.isLoading.set(true);
-        if (this.currentQueue && queueName !== this.currentQueue) {
-          this.tableControls.pageIndex.set(0);
-          this.tableControls.pageToken.set('');
-          this.tableControls.pageTokens.set(['']);
-        }
-        this.currentQueue = queueName;
-      }),
+      tap(() => this.isLoading.set(true)),
       switchMap(({ queueName, pageSize, pageToken }) =>
         this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
           tap((resp) => {
@@ -150,6 +140,17 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'workUnitId',
     'user',
   ];
+
+  constructor() {
+    effect(() => {
+      this.activeQueueName();
+      untracked(() => {
+        this.tableControls.pageIndex.set(0);
+        this.tableControls.pageToken.set('');
+        this.tableControls.pageTokens.set(['']);
+      });
+    });
+  }
 
   protected onPageChange(event: PageEvent): void {
     if (event.pageSize !== this.tableControls.pageSize()) {
