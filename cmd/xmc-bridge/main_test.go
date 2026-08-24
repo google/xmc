@@ -69,7 +69,13 @@ func TestBuildKubeConfig(t *testing.T) {
 	if _, err := BuildKubeConfig("/invalid/path"); err == nil {
 		t.Error("expected error for invalid kubeconfig path")
 	}
-	_, _ = BuildKubeConfig("")
+	tmp := t.TempDir()
+	kPath := filepath.Join(tmp, "kc")
+	_ = os.WriteFile(kPath, []byte("apiVersion: v1\nclusters:\n- cluster:\n    server: http://127.0.0.1:6443\n  name: c\ncontexts:\n- context:\n    cluster: c\n    user: u\n  name: x\ncurrent-context: x\nkind: Config\nusers:\n- name: u\n  user:\n    token: t\n"), 0600)
+	t.Setenv("KUBECONFIG", kPath)
+	if _, err := BuildKubeConfig(""); err != nil {
+		t.Errorf("BuildKubeConfig with KUBECONFIG env failed: %v", err)
+	}
 }
 
 func TestBuildStatusMap(t *testing.T) {
@@ -106,7 +112,7 @@ func TestController_RunReconcilePass(t *testing.T) {
 
 	fakeDyn := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{componentGVR: "ComponentList"}, active, deleting)
 	r, _ := bridge.NewReconciler(&testCMSClient{}, nil, nil)
-	ctrl := NewController(fakeDyn, r, "xmc", 20*time.Millisecond)
+	ctrl := NewController(fakeDyn, r, "xmc", 20*time.Millisecond, 10*time.Millisecond)
 
 	if err := ctrl.RunReconcilePass(context.Background()); err != nil {
 		t.Fatalf("RunReconcilePass failed: %v", err)
@@ -126,7 +132,7 @@ func TestController_RunReconcilePass(t *testing.T) {
 func TestController_Run_Shutdown(t *testing.T) {
 	fakeDyn := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{componentGVR: "ComponentList"})
 	r, _ := bridge.NewReconciler(&testCMSClient{}, nil, nil)
-	ctrl := NewController(fakeDyn, r, "xmc", 20*time.Millisecond)
+	ctrl := NewController(fakeDyn, r, "xmc", 20*time.Millisecond, 10*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	if err := ctrl.Run(ctx); err == nil || err != context.DeadlineExceeded {
