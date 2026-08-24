@@ -158,7 +158,7 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && in.Spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN && r.workloadManager != nil {
 		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
 			return nil, fmt.Errorf("failed to delete 1P workload: %w", err)
 		}
@@ -191,7 +191,7 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 }
 
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && in.Spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN && r.workloadManager != nil {
 		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())

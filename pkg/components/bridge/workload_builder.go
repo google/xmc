@@ -157,10 +157,10 @@ func resolveTag(opts WorkloadOptions) string {
 		return opts.ImageTag
 	}
 	if opts.Parameters != nil {
-		if t, ok := opts.Parameters["global.imageTag"]; ok && t != "" {
+		if t, ok := opts.Parameters["imageTag"]; ok && t != "" {
 			return t
 		}
-		if t, ok := opts.Parameters["imageTag"]; ok && t != "" {
+		if t, ok := opts.Parameters["global.imageTag"]; ok && t != "" {
 			return t
 		}
 	}
@@ -219,10 +219,13 @@ func resolveReplicas(params map[string]string) (int32, error) {
 }
 
 func resolveTerminationGracePeriodSeconds(opts WorkloadOptions) int64 {
-	if opts.DrainTimeoutSeconds > minDrainOverrideSec {
-		return int64(opts.DrainTimeoutSeconds)
+	if opts.DrainTimeoutSeconds <= 0 {
+		return defaultDrainSeconds
 	}
-	return defaultDrainSeconds
+	if opts.DrainTimeoutSeconds < minDrainOverrideSec {
+		return int64(minDrainOverrideSec)
+	}
+	return int64(opts.DrainTimeoutSeconds)
 }
 
 func toSnakeCase(s string) string {

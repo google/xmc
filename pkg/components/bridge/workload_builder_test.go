@@ -24,53 +24,185 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func TestResolveImageAndParameters(t *testing.T) {
-	t.Run("explicit full image override", func(t *testing.T) {
-		opts := WorkloadOptions{
-			Parameters: map[string]string{
-				"image": "custom.registry.io/org/custom-img:tag-abc",
+func TestResolveImage_FourTierPrecedence(t *testing.T) {
+	tests := []struct {
+		name          string
+		componentName string
+		opts          WorkloadOptions
+		want          string
+	}{
+		{
+			name:          "Tier 1: Explicit full image override takes top precedence",
+			componentName: "ingestion-gateway",
+			opts: WorkloadOptions{
+				ImageTag: "ignored-tag",
+				Parameters: map[string]string{
+					"image":           "docker.io/my-org/custom-full-image:v1.9.9",
+					"imageRepository": "gcr.io/ignored-repo",
+					"imageTag":        "ignored-param-tag",
+					"global.imageTag": "ignored-global-tag",
+				},
 			},
-		}
-		img := resolveImage("test-comp", opts)
-		if img != "custom.registry.io/org/custom-img:tag-abc" {
-			t.Errorf("expected custom image, got %q", img)
-		}
-	})
-
-	t.Run("imageRepository override with global.imageTag", func(t *testing.T) {
-		opts := WorkloadOptions{
-			Parameters: map[string]string{
-				"imageRepository": "gcr.io/my-proj/ingestion",
-				"global.imageTag": "v2.0.0",
+			want: "docker.io/my-org/custom-full-image:v1.9.9",
+		},
+		{
+			name:          "Tier 2: Custom imageRepository with opts.ImageTag",
+			componentName: "ingestion-gateway",
+			opts: WorkloadOptions{
+				ImageTag: "v2.5.0",
+				Parameters: map[string]string{
+					"imageRepository": "asia-docker.pkg.dev/my-proj/xmc-custom",
+					"imageTag":        "fallback-tag",
+					"global.imageTag": "global-tag",
+				},
 			},
-		}
-		img := resolveImage("test-comp", opts)
-		if img != "gcr.io/my-proj/ingestion:v2.0.0" {
-			t.Errorf("expected repo+tag, got %q", img)
-		}
-	})
-
-	t.Run("imageTag override in parameters", func(t *testing.T) {
-		opts := WorkloadOptions{
-			Parameters: map[string]string{
-				"imageTag": "param-tag",
+			want: "asia-docker.pkg.dev/my-proj/xmc-custom:v2.5.0",
+		},
+		{
+			name:          "Tier 2: Custom imageRepository with parameters.imageTag override",
+			componentName: "query-engine",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"imageRepository": "gcr.io/custom-repo/query",
+					"imageTag":        "feat-fast-query",
+					"global.imageTag": "global-tag",
+				},
 			},
-		}
-		img := resolveImage("my-comp", opts)
-		expected := fmt.Sprintf("%s/my-comp:param-tag", defaultImageRepoPrefix)
-		if img != expected {
-			t.Errorf("expected %q, got %q", expected, img)
-		}
-	})
+			want: "gcr.io/custom-repo/query:feat-fast-query",
+		},
+		{
+			name:          "Tier 2: Custom imageRepository with global.imageTag override",
+			componentName: "query-engine",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"imageRepository": "gcr.io/custom-repo/query",
+					"global.imageTag": "global-v3.0.0",
+				},
+			},
+			want: "gcr.io/custom-repo/query:global-v3.0.0",
+		},
+		{
+			name:          "Tier 2: Custom imageRepository fallback to latest tag",
+			componentName: "query-engine",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"imageRepository": "gcr.io/custom-repo/query",
+				},
+			},
+			want: "gcr.io/custom-repo/query:latest",
+		},
+		{
+			name:          "Tier 3: Default repository with opts.ImageTag override",
+			componentName: "metadata-syncer",
+			opts: WorkloadOptions{
+				ImageTag: "v4.1.2",
+			},
+			want: fmt.Sprintf("%s/metadata-syncer:v4.1.2", defaultImageRepoPrefix),
+		},
+		{
+			name:          "Tier 3: Default repository with parameters.imageTag override",
+			componentName: "metadata-syncer",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"imageTag": "tag-from-params",
+				},
+			},
+			want: fmt.Sprintf("%s/metadata-syncer:tag-from-params", defaultImageRepoPrefix),
+		},
+		{
+			name:          "Tier 3: Default repository with global.imageTag override",
+			componentName: "metadata-syncer",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"global.imageTag": "tag-from-global",
+				},
+			},
+			want: fmt.Sprintf("%s/metadata-syncer:tag-from-global", defaultImageRepoPrefix),
+		},
+		{
+			name:          "Tier 4: Default fallback with no tag or repo overrides",
+			componentName: "metadata-syncer",
+			opts:          WorkloadOptions{},
+			want:          fmt.Sprintf("%s/metadata-syncer:latest", defaultImageRepoPrefix),
+		},
+		{
+			name:          "Tier 4: Default fallback with empty parameters",
+			componentName: "metadata-syncer",
+			opts: WorkloadOptions{
+				Parameters: map[string]string{
+					"port": "8080",
+				},
+			},
+			want: fmt.Sprintf("%s/metadata-syncer:latest", defaultImageRepoPrefix),
+		},
+	}
 
-	t.Run("default image fallback", func(t *testing.T) {
-		opts := WorkloadOptions{}
-		img := resolveImage("my-comp", opts)
-		expected := fmt.Sprintf("%s/my-comp:latest", defaultImageRepoPrefix)
-		if img != expected {
-			t.Errorf("expected %q, got %q", expected, img)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveImage(tt.componentName, tt.opts)
+			if got != tt.want {
+				t.Errorf("resolveImage(%q, %+v) = %q, want %q", tt.componentName, tt.opts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveTerminationGracePeriodSeconds(t *testing.T) {
+	tests := []struct {
+		name string
+		opts WorkloadOptions
+		want int64
+	}{
+		{
+			name: "zero value falls back to default 300s",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 0},
+			want: 300,
+		},
+		{
+			name: "negative value falls back to default 300s",
+			opts: WorkloadOptions{DrainTimeoutSeconds: -15},
+			want: 300,
+		},
+		{
+			name: "below minimum clamped to 5s for preStop execution",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 2},
+			want: 5,
+		},
+		{
+			name: "1 second clamped to 5s",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 1},
+			want: 5,
+		},
+		{
+			name: "exact minimum 5s preserved",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 5},
+			want: 5,
+		},
+		{
+			name: "custom timeout 60s preserved",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 60},
+			want: 60,
+		},
+		{
+			name: "custom timeout 120s preserved",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 120},
+			want: 120,
+		},
+		{
+			name: "custom timeout 600s preserved",
+			opts: WorkloadOptions{DrainTimeoutSeconds: 600},
+			want: 600,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveTerminationGracePeriodSeconds(tt.opts)
+			if got != tt.want {
+				t.Errorf("resolveTerminationGracePeriodSeconds(%+v) = %d, want %d", tt.opts, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestBuildDeploymentAndService(t *testing.T) {
