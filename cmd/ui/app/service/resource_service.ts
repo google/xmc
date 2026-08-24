@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { catchError, Observable, of, throwError } from 'rxjs';
 
@@ -55,11 +55,22 @@ export class ResourceService {
   /**
    * Fetches the list of pending and running jobs for a given queue.
    */
-  getQueueJobs(queueName: string): Observable<GetRunningAndPendingJobsResponse> {
+  getQueueJobs(
+    queueName: string,
+    pageSize?: number,
+    pageToken?: string,
+  ): Observable<GetRunningAndPendingJobsResponse> {
+    let params = new HttpParams();
+    if (pageSize !== undefined && pageSize > 0) {
+      params = params.set('page_size', pageSize.toString());
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
     return this.http
       .get<GetRunningAndPendingJobsResponse>(
         `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/jobs`,
-        { withCredentials: true },
+        { params, withCredentials: true },
       )
       .pipe(
         catchError((error) => {

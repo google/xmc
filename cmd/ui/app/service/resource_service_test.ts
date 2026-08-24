@@ -131,5 +131,30 @@ describe('ResourceService', () => {
       expect(response.totalQueueSize).toBe(0);
       await flush();
     });
+
+    it('should pass page_size and page_token query parameters when requested', async () => {
+      const mockResponse: GetRunningAndPendingJobsResponse = {
+        jobs: [],
+        totalQueueSize: 100,
+        nextPageToken: 'next-token',
+      };
+
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
+        state.service.getQueueJobs('custom-queue', 10, 'token-123'),
+      );
+
+      const req = state.httpMock.expectOne(
+        (r) =>
+          r.url === `${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs` &&
+          r.params.get('page_size') === '10' &&
+          r.params.get('page_token') === 'token-123',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.nextPageToken).toBe('next-token');
+      await flush();
+    });
   });
 });

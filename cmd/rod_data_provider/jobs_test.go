@@ -85,10 +85,14 @@ type mockWorkUnitFetcher struct {
 	nextPageToken  string
 	err            error
 	lastQueueNames []string
+	lastPageSize   int32
+	lastPageToken  string
 }
 
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
 	m.lastQueueNames = queueNames
+	m.lastPageSize = pageSize
+	m.lastPageToken = pageToken
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -134,6 +138,33 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 					}),
 				},
+			},
+			wantCode:  codes.OK,
+			wantCount: 1,
+		},
+		{
+			name: "Success With PageSize and PageToken",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+				PageSize:  10,
+				PageToken: "token-abc",
+			},
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
+			fetcher: &mockWorkUnitFetcher{
+				workUnits: []*essmsgpb.WorkUnit{
+					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+					}),
+				},
+				nextPageToken: "token-xyz",
 			},
 			wantCode:  codes.OK,
 			wantCount: 1,
@@ -198,6 +229,17 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			}
 			if len(resp.Jobs) != tt.wantCount {
 				t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
+			}
+			if fetcherImpl, ok := tt.fetcher.(*mockWorkUnitFetcher); ok && tt.req.PageSize > 0 {
+				if fetcherImpl.lastPageSize != tt.req.PageSize {
+					t.Errorf("PageSize = %d, want %d", fetcherImpl.lastPageSize, tt.req.PageSize)
+				}
+				if fetcherImpl.lastPageToken != tt.req.PageToken {
+					t.Errorf("PageToken = %q, want %q", fetcherImpl.lastPageToken, tt.req.PageToken)
+				}
+				if resp.NextPageToken != fetcherImpl.nextPageToken {
+					t.Errorf("NextPageToken = %q, want %q", resp.NextPageToken, fetcherImpl.nextPageToken)
+				}
 			}
 			if tt.wantCount == 0 {
 				return
