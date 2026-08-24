@@ -22,6 +22,8 @@ import type {
   CreateChartRequest,
   CreateDashboardRequest,
   GetChartDataRequest,
+  ListChartsRequest,
+  ListChartsResponse,
   ListDashboardsRequest,
   ListDashboardsResponse,
   UpdateDashboardRequest,
@@ -414,6 +416,93 @@ describe('DashboardService', () => {
         expect((err as HttpErrorResponse).status).toBe(404);
         expect(consoleSpy).toHaveBeenCalledWith(
           'Failed to fetch chart dashboards/dash-1/charts/chart-1:',
+          jasmine.any(Object),
+        );
+      }
+    });
+  });
+
+  describe('listCharts', () => {
+    const mockResponse: ListChartsResponse = {
+      charts: [
+        {
+          name: 'charts/chart-1',
+          title: 'Loss Chart',
+        },
+      ],
+      nextPageToken: 'token_2',
+    };
+
+    it('should list charts under a dashboard parent with query params', async () => {
+      const request: ListChartsRequest = {
+        parent: 'dashboards/dash-1',
+        pageSize: 10,
+        pageToken: 'token_1',
+      };
+      const responsePromise = firstValueFrom(state.service.listCharts(request));
+
+      const req = state.httpMock.expectOne(
+        `${XMC_API_DOMAIN}/dashboards/dash-1/charts?pageSize=10&pageToken=token_1`,
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should list charts under a work unit parent', async () => {
+      const responsePromise = firstValueFrom(
+        state.service.listCharts({ parent: 'experiments/42/workUnits/7' }),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/42/workUnits/7/charts`);
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should return error when parent is missing', async () => {
+      try {
+        await firstValueFrom(state.service.listCharts({} as ListChartsRequest));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Parent resource name is required');
+      }
+    });
+
+    it('should handle null/empty response gracefully without crashing', async () => {
+      const responsePromise = firstValueFrom(
+        state.service.listCharts({ parent: 'dashboards/dash-1' }),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1/charts`);
+      expect(req.request.method).toBe('GET');
+      req.flush(null);
+
+      const response = (await responsePromise) as ListChartsResponse;
+      expect(response.charts).toEqual([]);
+      expect(response.nextPageToken).toBeUndefined();
+    });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const responsePromise = firstValueFrom(
+        state.service.listCharts({ parent: 'dashboards/dash-1' }),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1/charts`);
+      req.flush('Internal Server Error', { status: 500, statusText: 'Internal Server Error' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(500);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to list charts under parent dashboards/dash-1:',
           jasmine.any(Object),
         );
       }

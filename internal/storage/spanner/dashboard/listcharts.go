@@ -119,6 +119,9 @@ func (r *Repository) buildParentFilter(parent string) (string, error) {
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", trimmed, withPrefix), nil
 	}
 	if strings.HasPrefix(parent, "experiments/") {
+		if xid, wid, err := validator.ValidateWorkUnitName(parent); err == nil {
+			return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
+		}
 		xid, err := validator.ValidateExperimentName(parent)
 		if err != nil {
 			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)

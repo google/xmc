@@ -234,13 +234,24 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	if in.GetParent() == "" {
 		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
-		return fmt.Errorf("invalid parent dashboard name: %w", err)
+	if err := ValidateChartParentName(in.GetParent()); err != nil {
+		return err
 	}
 	if in.GetPageSize() < 0 {
 		return fmt.Errorf("page_size cannot be negative: %w", status.ErrInvalidArgument)
 	}
 	return nil
+}
+
+// ValidateChartParentName validates a chart collection parent, which may be a dashboard or a work unit.
+func ValidateChartParentName(parent string) error {
+	if _, err := ValidateDashboardName(parent); err == nil {
+		return nil
+	}
+	if _, _, err := ValidateWorkUnitName(parent); err == nil {
+		return nil
+	}
+	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}' or 'experiments/{xid}/workUnits/{wid}': %w", status.ErrInvalidArgument)
 }
 
 // ValidateUpdateChartRequest validates the given UpdateChartRequest.

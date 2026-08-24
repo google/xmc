@@ -177,6 +177,28 @@ func TestListCharts_ParentExperiment(t *testing.T) {
 	}
 }
 
+func TestListCharts_ParentWorkUnit(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	target := blankChartProto("wu-parent-match", 200, 3)
+	otherWid := blankChartProto("wu-parent-other-wid", 200, 4)
+	otherXid := blankChartProto("wu-parent-other-xid", 201, 3)
+	for _, c := range []*dpb.Chart{target, otherWid, otherXid} {
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
+		}
+	}
+
+	charts, _, err := repo.ListCharts(ctx, "experiments/200/workUnits/3", 10, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListCharts with work unit parent failed: %v", err)
+	}
+	if len(charts) != 1 || charts[0].GetName() != target.GetName() {
+		t.Errorf("ListCharts work unit parent mismatch: got %+v, want only %q", charts, target.GetName())
+	}
+}
+
 func TestListCharts_InvalidPageSize(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)

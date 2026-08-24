@@ -42,6 +42,7 @@ type (
 	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
+	listChartsFunc      = func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
 )
 
 type mockRepository struct {
@@ -52,6 +53,7 @@ type mockRepository struct {
 	deleteDashboardFn deleteDashboardFunc
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
+	listChartsFn      listChartsFunc
 }
 
 func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
@@ -101,6 +103,13 @@ func (m *mockRepository) GetChart(ctx context.Context, chartId string) (*dpb.Cha
 		return m.getChartFn(ctx, chartId)
 	}
 	return nil, status.Error(codes.NotFound, "not found")
+}
+
+func (m *mockRepository) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+	if m.listChartsFn != nil {
+		return m.listChartsFn(ctx, parent, pageSize, pageToken, filter, orderBy, staleness)
+	}
+	return nil, "", nil
 }
 
 type mockAuthorizer struct {

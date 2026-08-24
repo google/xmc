@@ -99,9 +99,15 @@ export class DashboardsPage implements OnInit {
   }
 
   onRefresh(): void {
-    // Re-trigger by updating the array reference
-    this.charts.update((current) => [...current]);
-    this.snackbar?.open?.('Dashboard refreshed');
+    if (!this.currentDashboardName) return;
+
+    this.dashboardService.listCharts({ parent: this.currentDashboardName }).subscribe({
+      next: (response) => {
+        this.charts.set(response.charts ?? []);
+        this.snackbar?.open?.('Dashboard refreshed');
+      },
+      error: () => this.snackbar?.open?.('Failed to refresh dashboard'),
+    });
   }
 
   onOpenAddExperiment(): void {
