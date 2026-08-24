@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ephemeral Cloud Spanner database provisioning, migrations, and cleanup."""
+"""Ephemeral Cloud Spanner database provisioning, schema initialization, and cleanup."""
 
 from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import time
 
 from test.e2e.lib.command import run_cmd
@@ -27,7 +28,7 @@ logger = logging.getLogger("xmc_e2e_runner")
 
 
 class SpannerManager:
-    """Manages ephemeral Cloud Spanner databases and migrations."""
+    """Manages ephemeral Cloud Spanner databases and schema provisioning."""
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
@@ -85,9 +86,29 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
-    def _create_database(self, db_name: str) -> None:
-        """Creates a single Spanner database."""
-        logger.info("Creating Spanner database %s...", db_name)
+    def _build_proto_descriptors(self) -> None:
+        """Builds protobuf descriptor sets required for Spanner PROTO BUNDLE."""
+        logger.info("Building protobuf descriptor sets with Bazel...")
+        run_cmd(
+            [
+                "bazel",
+                "build",
+                "//api/protos/experiment:experiment_messages_descriptor",
+                "//api/protos/xid:xid_messages_descriptor",
+            ],
+            cwd=self.cfg.workspace_root,
+        )
+
+    def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
+        """Creates a single Spanner database and applies its schema via DDL file and descriptors."""
+        ddl_path = os.path.join(self.cfg.workspace_root, ddl_file)
+        proto_desc_path = os.path.join(self.cfg.workspace_root, proto_desc_file)
+        logger.info(
+            "Creating Spanner database %s with schema from %s and descriptors from %s...",
+            db_name,
+            ddl_file,
+            proto_desc_file,
+        )
         run_cmd(
             [
                 "gcloud",
@@ -97,56 +118,60 @@ class SpannerManager:
                 db_name,
                 f"--instance={self.cfg.spanner_instance}",
                 f"--project={self.cfg.project_id}",
+                f"--ddl-file={ddl_path}",
+                f"--proto-descriptors-file={proto_desc_path}",
             ]
         )
 
-    def _apply_migrations(self, db_name: str, mig_dir: str) -> None:
-        """Applies schema migrations for a database."""
-        logger.info("Applying migrations for %s (%s)...", db_name, mig_dir)
-        for attempt in range(1, 4):
-            try:
-                run_cmd(
-                    [
-                        "bazel",
-                        "run",
-                        "//internal/storage/spanner/migrations:migrations",
-                        "--",
-                        f"-project={self.cfg.project_id}",
-                        f"-instance={self.cfg.spanner_instance}",
-                        f"-database={db_name}",
-                        f"-migrations_dir={mig_dir}",
-                        "-command=up",
-                    ],
-                    cwd=self.cfg.workspace_root,
-                )
-                break
-            except Exception as e:
-                if attempt == 3:
-                    raise
-                logger.warning(
-                    "Migration attempt %d failed: %s. Retrying in 5s...",
-                    attempt,
-                    e,
-                )
-                time.sleep(5)
+    def _init_migration_version(self, db_name: str, mig_dir: str) -> None:
+        """Initializes SchemaMigrations version tracking table without re-running DDLs."""
+        logger.info("Initializing migration version for %s (%s)...", db_name, mig_dir)
+        run_cmd(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                f"-project={self.cfg.project_id}",
+                f"-instance={self.cfg.spanner_instance}",
+                f"-database={db_name}",
+                f"-migrations_dir={mig_dir}",
+                "-command=init",
+            ],
+            cwd=self.cfg.workspace_root,
+        )
 
     def setup(self) -> None:
-        """Creates ephemeral databases and applies migrations."""
+        """Creates ephemeral databases and initializes schemas concurrently."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
+        self._build_proto_descriptors()
         targets = [
-            (self.cfg.ess_db, "ess"),
-            (self.cfg.xid_db, "xid"),
+            (
+                self.cfg.ess_db,
+                "internal/storage/spanner/schema/ess-schema.sql",
+                "bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
+                "ess",
+            ),
+            (
+                self.cfg.xid_db,
+                "internal/storage/spanner/schema/xid-schema.sql",
+                "bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
+                "xid",
+            ),
         ]
-        # Provision both databases concurrently via gcloud
+        # Provision both databases concurrently with full schema DDL in a single batch
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
-            futures = [executor.submit(self._create_database, db_name) for db_name, _ in targets]
+            futures = [
+                executor.submit(self._create_database, db_name, ddl_file, proto_file)
+                for db_name, ddl_file, proto_file, _ in targets
+            ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
 
-        # Apply migrations sequentially to prevent Bazel server output base lock contention
-        for db_name, mig_dir in targets:
-            self._apply_migrations(db_name, mig_dir)
+        # Initialize SchemaMigrations version tracking table (matches Cluster Toolkit behavior)
+        for db_name, _, _, mig_dir in targets:
+            self._init_migration_version(db_name, mig_dir)
 
     def _drop_database(self, db_name: str) -> None:
         """Drops a single Spanner database safely."""

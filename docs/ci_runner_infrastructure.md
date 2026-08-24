@@ -224,8 +224,8 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 |                                                                  v (WIF Authenticated)  |
 |  +-----------------------------------------------------------------------------------+  |
 |  | GCP Cloud Spanner (Configured GCP Project & Spanner Instance)                     |  |
-|  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Automated Schema Migrations)              |  |
-|  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Automated Schema Migrations)              |  |
+|  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Schema from ess-schema.sql)               |  |
+|  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Schema from xid-schema.sql)               |  |
 |  +-----------------------------------------------------------------------------------+  |
 +-----------------------------------------------------------------------------------------+
 ```
@@ -234,9 +234,9 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 
 1. **KinD Cluster Isolation**:
    - Each runner pod contains its own isolated Docker daemon. Multiple concurrent PR test runs execute in independent runner pods, meaning local KinD clusters never collide across jobs.
-2. **Ephemeral Spanner Database Names**:
+2. **Ephemeral Spanner Database Names & Fast Single-Batch DDL Provisioning**:
    - Each test run generates unique database names using the pattern `e2e-ess-<epoch>-<hex>` and `e2e-xid-<epoch>-<hex>`.
-   - Databases are dynamically created via `gcloud`, migrated via `bazel run //internal/storage/spanner/migrations:migrations`, and dropped during orchestrator teardown.
+   - Databases are dynamically created in parallel via `gcloud spanner databases create --ddl-file=...` using the source-of-truth schema files (`internal/storage/spanner/schema/ess-schema.sql` and `internal/storage/spanner/schema/xid-schema.sql`), ensuring rapid single-batch DDL compilation and exact parity with Cluster Toolkit deployments, and are cleanly dropped during orchestrator teardown.
 3. **Automated Stale Database Garbage Collection**:
    - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 2 hours and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
 
