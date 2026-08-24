@@ -54,7 +54,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 ### GitHub & PR Workflows
 - 🔍 [XMC Review PR Skill](skills/xmc_review_pr/SKILL.md): Interactive multi-agent PR review workflow enforcing code rules, open direction discussions, explicit confirmation gates, inline comment deduplication, and follow-up re-review verification.
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR title & body formatting rules, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
-- 📦 [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md): Playbook for checking branch format, running pre-commit hooks, formatting PR body templates, updating PR descriptions via helper script, and managing CI wait buffers.
+- 📦 [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md): Playbook for checking branch format, running pre-commit hooks, formatting PR body templates, updating PR descriptions via helper script, managing CI wait buffers, and enforcing strict user confirmation gates for Draft PR creation and Open conversion.
 - ⚡ [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md): Playbook for requirements scoping, clean code design, running affected test matrices, measuring Bazel coverage, and pre-commit verification.
 - 📋 [Code Review & Comment Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review feedback standards, mandatory PR comment resolution rules, and post-PR reflection triggers.
 
