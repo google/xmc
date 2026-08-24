@@ -147,4 +147,44 @@ describe('QueueJobsTable Component', () => {
     expect(secondRowLinks.jobLink).toBe('/experiments/53308');
     expect(secondRowLinks.workUnitLink).toBe('/experiments/53308/workUnits/2');
   });
+
+  it('should render mat-paginator when jobs exist', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    expect(paginator).not.toBeNull();
+    if (paginator) {
+      expect(await paginator.getPageSize()).toBe(10);
+    }
+  });
+
+  it('should paginate table rows when jobs exceed page size', async () => {
+    const manyJobs = Array.from({ length: 12 }, (_, i) => ({
+      positionInQueue: i + 1,
+      xid: 10000 + i,
+      workUnitId: i + 1,
+      user: `user${i}@example.com`,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 100,
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    }));
+    state.resourceService.getQueueJobs.and.returnValue(of({ jobs: manyJobs, totalQueueSize: 12 }));
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getRowCount()).toBe(10);
+
+    const paginator = await harness.getPaginator();
+    expect(paginator).not.toBeNull();
+    if (paginator) {
+      await paginator.goToNextPage();
+      await flush();
+      expect(await harness.getRowCount()).toBe(2);
+    }
+  });
 });

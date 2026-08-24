@@ -45,7 +45,7 @@
         mat-table
         aria-labelledby="queue-jobs-title"
         class="jobs-mat-table"
-        [dataSource]="jobs()"
+        [dataSource]="dataSource"
       >
         <!-- Position Column -->
         <ng-container matColumnDef="position">
@@ -125,7 +125,12 @@
         <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
       </table>
 
-      <!-- TODO(#186): Implement table pagination when job list volumes increase. -->
+      <mat-paginator
+        showFirstLastButtons
+        aria-label="Select page of queue jobs"
+        [pageSizeOptions]="[5, 10, 20, 50]"
+        [pageSize]="10"
+      />
     </div>
   }
 </div>
