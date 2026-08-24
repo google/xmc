@@ -27,17 +27,7 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 
 	t.Run("unmarshal flexible dependencies list of strings and objects", func(t *testing.T) {
 		t.Parallel()
-		rawYAML := `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata: { name: demo-comp }
-spec:
-  dependencies:
-    - cert-manager
-    - name: kueue
-      version: ">=0.19.0"
-      optional: true
-`
+		rawYAML := "spec:\n  dependencies:\n    - cert-manager\n    - name: kueue\n      version: \">=0.19.0\"\n      optional: true\n"
 		var comp linter.ComponentManifest
 		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)

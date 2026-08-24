@@ -31,15 +31,11 @@ func TestValidationResult_Diagnostics(t *testing.T) {
 		}
 
 		res.AddWarning("warn.yaml", 10, "WARN_RULE", "warning msg")
-		if !res.Valid || res.HasErrors() || len(res.Warnings) != 1 {
-			t.Errorf("expected valid=true with 1 warning, got valid=%v, warnings=%v", res.Valid, res.Warnings)
-		}
-
 		res.AddDiagnostic(linter.Diagnostic{
 			File: "info.yaml", Line: 1, Severity: linter.SeverityInfo, Rule: "INFO_RULE", Message: "info msg",
 		})
-		if !res.Valid || res.HasErrors() {
-			t.Errorf("info diagnostic should not invalidate result")
+		if !res.Valid || res.HasErrors() || len(res.Warnings) != 1 {
+			t.Errorf("expected valid=true with 1 warning, got valid=%v, warnings=%v", res.Valid, res.Warnings)
 		}
 
 		res.AddError("err.yaml", 20, "ERR_RULE", "error msg")
@@ -68,7 +64,7 @@ func TestValidationResult_Diagnostics(t *testing.T) {
 			<-done
 		}
 		if len(res.Diagnostics) != n || !res.HasErrors() {
-			t.Errorf("expected %d diagnostics and HasErrors()=true, got count=%d, hasErrors=%v", n, len(res.Diagnostics), res.HasErrors())
+			t.Errorf("expected %d diagnostics and HasErrors()=true", n)
 		}
 	})
 }

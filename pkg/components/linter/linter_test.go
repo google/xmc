@@ -28,14 +28,8 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 	t.Run("valid directory with multiple component manifests", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		manifestA := "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata:\n  name: cert-manager\nspec:\n  version: \"1.12.4\"\n"
-		manifestB := "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata:\n  name: jobset\nspec:\n  version: \"0.2.0\"\n"
-		if err := os.WriteFile(filepath.Join(dir, "cert-manager.yaml"), []byte(manifestA), 0644); err != nil {
-			t.Fatalf("failed to write cert-manager.yaml: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "jobset.yaml"), []byte(manifestB), 0644); err != nil {
-			t.Fatalf("failed to write jobset.yaml: %v", err)
-		}
+		writeTestManifest(t, dir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 2.0.0 }\n")
 
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
@@ -47,9 +41,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 	t.Run("directory with syntax error in yaml file", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte(":::invalid: yaml:"), 0644); err != nil {
-			t.Fatalf("failed to write broken file: %v", err)
-		}
+		writeTestManifest(t, dir, "broken.yaml", ":::invalid: yaml:")
 
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
@@ -80,26 +72,8 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 	t.Run("multi-document stream in single yaml file", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		content := `apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: comp-1
-spec:
-  version: "1.0.0"
----
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: comp-2
-spec:
-  version: "1.2.0"
----
-# Empty document with comment only
----
-`
-		if err := os.WriteFile(filepath.Join(dir, "components.yaml"), []byte(content), 0644); err != nil {
-			t.Fatalf("failed to write multi-doc file: %v", err)
-		}
+		content := "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-1 }\nspec: { version: 1.0.0 }\n---\napiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-2 }\nspec: { version: 1.2.0 }\n---\n# Comment only\n"
+		writeTestManifest(t, dir, "components.yaml", content)
 
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
@@ -111,9 +85,7 @@ spec:
 	t.Run("non-mapping root yaml document is skipped without schema error", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "list.yaml"), []byte("- item1\n- item2\n"), 0644); err != nil {
-			t.Fatalf("failed to write list file: %v", err)
-		}
+		writeTestManifest(t, dir, "list.yaml", "- item1\n- item2\n")
 
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
@@ -125,16 +97,7 @@ spec:
 	t.Run("third-party Component kind without xmc apiVersion is skipped from compManifests", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		content := `apiVersion: dapr.io/v1alpha1
-kind: Component
-metadata:
-  name: statestore
-spec:
-  type: state.redis
-`
-		if err := os.WriteFile(filepath.Join(dir, "dapr-comp.yaml"), []byte(content), 0644); err != nil {
-			t.Fatalf("failed to write dapr file: %v", err)
-		}
+		writeTestManifest(t, dir, "dapr-comp.yaml", "apiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata: { name: statestore }\nspec: { type: state.redis }\n")
 
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
@@ -142,6 +105,13 @@ spec:
 			t.Fatalf("expected 3P Component to be safely decoded as RawManifest only, got err=%v, errors=%v", err, res.Errors)
 		}
 	})
+}
+
+func writeTestManifest(t *testing.T, dir, filename, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", filename, err)
+	}
 }
 
 func assertDiagnosticRule(t *testing.T, res *linter.ValidationResult, wantRule string) {

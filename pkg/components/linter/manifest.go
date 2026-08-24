@@ -80,16 +80,8 @@ type ComponentWrapperRef struct {
 // UnmarshalYAML decodes ComponentWrapperRef with fallback aliases.
 func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
 	type rawWrapper struct {
-		CrdGroup        string `yaml:"crdGroup"`
-		CrdVersion      string `yaml:"crdVersion"`
-		CrdKind         string `yaml:"crdKind"`
-		TargetNamespace string `yaml:"targetNamespace"`
-		TargetName      string `yaml:"targetName"`
-		Group           string `yaml:"group"`
-		Version         string `yaml:"version"`
-		Kind            string `yaml:"kind"`
-		Namespace       string `yaml:"namespace"`
-		Name            string `yaml:"name"`
+		CrdGroup, CrdVersion, CrdKind, TargetNamespace, TargetName string
+		Group, Version, Kind, Namespace, Name                      string
 	}
 	var raw rawWrapper
 	if err := node.Decode(&raw); err != nil {
