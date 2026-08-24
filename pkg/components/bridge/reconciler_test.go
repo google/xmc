@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -71,7 +72,7 @@ type mockWM struct {
 	active               bool
 }
 
-func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, spec *componentspb.ComponentSpec) error {
+func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, opts WorkloadOptions) error {
 	if m == nil {
 		return nil
 	}
@@ -339,5 +340,26 @@ func TestParseHelpers(t *testing.T) {
 	})
 	if len(conds) != 1 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" {
 		t.Errorf("unexpected conditions: %+v", conds)
+	}
+
+	opts := ParseWorkloadOptions("uid-1", map[string]any{
+		"imageTag": "v1.2",
+		"parameters": map[string]any{
+			"port":     float64(8080),
+			"replicas": "3",
+		},
+	}, &componentspb.ComponentSpec{
+		Version: "v1.0",
+		LifecycleControl: &componentspb.LifecycleControl{
+			DrainingTimeout: &durationpb.Duration{Seconds: 60},
+		},
+	})
+	if opts.OwnerUID != "uid-1" || opts.ImageTag != "v1.2" || opts.DrainTimeoutSeconds != 60 || opts.Parameters["port"] != "8080" || opts.Parameters["replicas"] != "3" {
+		t.Errorf("unexpected parsed workload options: %+v", opts)
+	}
+
+	emptyOpts := ParseWorkloadOptions("", nil, nil)
+	if emptyOpts.OwnerUID != "" || emptyOpts.ImageTag != "" {
+		t.Errorf("unexpected empty workload options: %+v", emptyOpts)
 	}
 }

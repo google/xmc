@@ -21,26 +21,45 @@ go_library(
     srcs = [
         "doc.go",
         "reconciler.go",
+        "workload_manager.go",
     ],
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
         "//pkg/components/store",
+        "@io_k8s_api//apps/v1:apps",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/util/intstr",
+        "@io_k8s_client_go//kubernetes",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )
 
 go_test(
     name = "bridge_test",
-    srcs = ["reconciler_test.go"],
+    srcs = [
+        "reconciler_test.go",
+        "workload_manager_test.go",
+    ],
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",
+        "@io_k8s_api//apps/v1:apps",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//kubernetes/fake",
+        "@io_k8s_client_go//testing",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
