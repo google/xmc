@@ -123,6 +123,24 @@ class SpannerManager:
             ]
         )
 
+    def _init_migration_version(self, db_name: str, mig_dir: str) -> None:
+        """Initializes SchemaMigrations version tracking table without re-running DDLs."""
+        logger.info("Initializing migration version for %s (%s)...", db_name, mig_dir)
+        run_cmd(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                f"-project={self.cfg.project_id}",
+                f"-instance={self.cfg.spanner_instance}",
+                f"-database={db_name}",
+                f"-migrations_dir={mig_dir}",
+                "-command=init",
+            ],
+            cwd=self.cfg.workspace_root,
+        )
+
     def setup(self) -> None:
         """Creates ephemeral databases and initializes schemas concurrently."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
@@ -133,21 +151,27 @@ class SpannerManager:
                 self.cfg.ess_db,
                 "internal/storage/spanner/schema/ess-schema.sql",
                 "bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
+                "ess",
             ),
             (
                 self.cfg.xid_db,
                 "internal/storage/spanner/schema/xid-schema.sql",
                 "bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
+                "xid",
             ),
         ]
         # Provision both databases concurrently with full schema DDL in a single batch
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             futures = [
                 executor.submit(self._create_database, db_name, ddl_file, proto_file)
-                for db_name, ddl_file, proto_file in targets
+                for db_name, ddl_file, proto_file, _ in targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
+
+        # Initialize SchemaMigrations version tracking table (matches Cluster Toolkit behavior)
+        for db_name, _, _, mig_dir in targets:
+            self._init_migration_version(db_name, mig_dir)
 
     def _drop_database(self, db_name: str) -> None:
         """Drops a single Spanner database safely."""

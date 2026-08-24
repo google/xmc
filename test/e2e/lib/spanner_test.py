@@ -136,6 +136,36 @@ class TestSpannerManager(unittest.TestCase):
             ]
         )
 
+        # Check migration version initialization calls (-command=init)
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                "-project=test-proj",
+                "-instance=test-inst",
+                "-database=e2e-ess-1000-abcdef",
+                "-migrations_dir=ess",
+                "-command=init",
+            ],
+            cwd="/workspace",
+        )
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                "-project=test-proj",
+                "-instance=test-inst",
+                "-database=e2e-xid-1000-abcdef",
+                "-migrations_dir=xid",
+                "-command=init",
+            ],
+            cwd="/workspace",
+        )
+
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):
         self.mgr.teardown()
