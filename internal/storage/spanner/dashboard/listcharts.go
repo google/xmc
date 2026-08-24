@@ -120,6 +120,9 @@ func combineFilters(parentFilter, filter string) string {
 	return fmt.Sprintf("(%s) AND (%s)", parentFilter, filter)
 }
 
+// buildParentFilter translates a chart collection parent into a filter expression. The only two
+// parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}",
+// so an experiment name on its own is rejected rather than widened to every work unit under it.
 func (r *Repository) buildParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
@@ -130,14 +133,11 @@ func (r *Repository) buildParentFilter(parent string) (string, error) {
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", trimmed, withPrefix), nil
 	}
 	if strings.HasPrefix(parent, "experiments/") {
-		if xid, wid, err := validator.ValidateWorkUnitName(parent); err == nil {
-			return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
-		}
-		xid, err := validator.ValidateExperimentName(parent)
+		xid, wid, err := validator.ValidateWorkUnitName(parent)
 		if err != nil {
-			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
+			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
 		}
-		return fmt.Sprintf("xid = %d", xid), nil
+		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
 	}
 	return "", fmt.Errorf("unsupported parent format: %q", parent)
 }

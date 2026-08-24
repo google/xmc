@@ -16,6 +16,8 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
@@ -88,6 +90,50 @@ func TestHydrateChartPlots_InvalidChartName(t *testing.T) {
 	charts := []*dpb.Chart{{Name: "not-a-chart-resource-name"}}
 	if err := repo.hydrateChartPlots(ctx, txn, charts); err == nil {
 		t.Errorf("hydrateChartPlots with invalid chart name succeeded, want error")
+	}
+}
+
+// TestBuildChartPlotsStatement_BatchesIntoUnnest pins that the per-chart chart_id disjunction is
+// collapsed into a single IN UNNEST clause bound to one array parameter, rather than expanding to
+// one OR term per chart in the page.
+func TestBuildChartPlotsStatement_BatchesIntoUnnest(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chartIDs := []string{"unnest-chart-a", "unnest-chart-b", "unnest-chart-c"}
+	stmt, err := repo.buildChartPlotsStatement(chartIDs)
+	if err != nil {
+		t.Fatalf("buildChartPlotsStatement failed: %v", err)
+	}
+	if !strings.Contains(stmt.SQL, "IN UNNEST") {
+		t.Errorf("buildChartPlotsStatement SQL = %q, want an IN UNNEST clause", stmt.SQL)
+	}
+	if strings.Contains(stmt.SQL, " OR ") {
+		t.Errorf("buildChartPlotsStatement SQL = %q, want the disjunction collapsed with no OR terms", stmt.SQL)
+	}
+	params := fmt.Sprint(stmt.Params)
+	for _, chartID := range chartIDs {
+		if strings.Contains(stmt.SQL, chartID) {
+			t.Errorf("buildChartPlotsStatement inlined chart ID %q into SQL %q, want it bound as a parameter", chartID, stmt.SQL)
+		}
+		if !strings.Contains(params, chartID) {
+			t.Errorf("buildChartPlotsStatement params %s missing chart ID %q", params, chartID)
+		}
+	}
+}
+
+// TestBuildChartPlotsStatement_SingleChartID covers the GetChart path, which reaches the batched
+// builder through fetchChartPlots with exactly one ID.
+func TestBuildChartPlotsStatement_SingleChartID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	stmt, err := repo.buildChartPlotsStatement([]string{"unnest-single-chart"})
+	if err != nil {
+		t.Fatalf("buildChartPlotsStatement failed: %v", err)
+	}
+	if !strings.Contains(fmt.Sprint(stmt.Params), "unnest-single-chart") {
+		t.Errorf("buildChartPlotsStatement params %v missing the chart ID", stmt.Params)
 	}
 }
 

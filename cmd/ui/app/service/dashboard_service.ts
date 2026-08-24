@@ -80,12 +80,11 @@ export class DashboardService {
       .get<{
         dashboards?: RawDashboard[];
         nextPageToken?: string;
-        next_page_token?: string;
       }>(`${XMC_API_DOMAIN}/dashboards`, { params, withCredentials: true })
       .pipe(
         map((res) => ({
           dashboards: (res?.dashboards ?? []).map(normalizeDashboard),
-          nextPageToken: res?.nextPageToken ?? res?.next_page_token,
+          nextPageToken: res?.nextPageToken,
         })),
         catchError((error) => {
           console.error('Failed to list dashboards:', error);
@@ -230,12 +229,11 @@ export class DashboardService {
       .get<{
         charts?: RawChart[];
         nextPageToken?: string;
-        next_page_token?: string;
       }>(`${XMC_API_DOMAIN}/${request.parent}/charts`, { params, withCredentials: true })
       .pipe(
         map((res) => ({
           charts: (res?.charts ?? []).map(normalizeChart),
-          nextPageToken: res?.nextPageToken ?? res?.next_page_token,
+          nextPageToken: res?.nextPageToken,
         })),
         catchError((error) => {
           console.error(`Failed to list charts under parent ${request.parent}:`, error);

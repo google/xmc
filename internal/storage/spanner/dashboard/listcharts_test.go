@@ -16,6 +16,7 @@ package dashboard
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,7 +163,10 @@ func TestListCharts_ParentDashboard_Empty(t *testing.T) {
 	}
 }
 
-func TestListCharts_ParentExperiment(t *testing.T) {
+// TestListCharts_ParentExperimentRejected pins that an experiment name without a work unit is not a
+// chart collection parent. Charts are keyed by xid and wid, and ListCharts serves only
+// "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
+func TestListCharts_ParentExperimentRejected(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
@@ -171,12 +175,12 @@ func TestListCharts_ParentExperiment(t *testing.T) {
 		t.Fatalf("CreateChart c1 failed: %v", err)
 	}
 
-	charts, _, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", time.Duration(0))
-	if err != nil {
-		t.Fatalf("ListCharts with experiment parent failed: %v", err)
+	charts, token, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", time.Duration(0))
+	if err == nil {
+		t.Fatalf("ListCharts with experiment-only parent succeeded, want error: got %d charts, token %q", len(charts), token)
 	}
-	if len(charts) == 0 {
-		t.Errorf("ListCharts experiment parent returned 0 charts")
+	if !strings.Contains(err.Error(), "work unit parent name") {
+		t.Errorf("ListCharts experiment-only parent error = %v, want it to mention the work unit parent", err)
 	}
 }
 
