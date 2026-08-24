@@ -16,7 +16,10 @@ package workunit
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"cloud.google.com/go/spanner"
 	"googlesql/safesql/go/safesql"
@@ -32,6 +35,11 @@ import (
 const (
 	defaultPageSize = int32(100)
 	maxPageSize     = int32(1000)
+)
+
+var (
+	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
+	ErrInvalidPageToken = errors.New("invalid page_token")
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
@@ -66,18 +74,28 @@ func decodePageToken(token string) (int64, error) {
 	if token == "" {
 		return 0, nil
 	}
-	var offset int64
-	if _, err := fmt.Sscanf(token, "%d", &offset); err != nil {
-		return 0, fmt.Errorf("invalid page_token format: %w", err)
+	bytes, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		bytes, err = base64.RawURLEncoding.DecodeString(token)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+		}
+	}
+	offset, err := strconv.ParseInt(string(bytes), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("%w: offset cannot be negative", ErrInvalidPageToken)
 	}
 	return offset, nil
 }
 
 func encodePageToken(offset int64) string {
-	return fmt.Sprintf("%d", offset)
+	return base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(offset, 10)))
 }
 
-func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, []spanner.KeySet, error) {
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
 	stmt := spanner.Statement{
 		SQL: fetchActiveWorkUnitPKsSQL.String(),
 		Params: map[string]interface{}{
@@ -91,7 +109,6 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	defer iter.Stop()
 
 	var orderedPKs []workUnitPK
-	var keys []spanner.Key
 	if err := iter.Do(func(row *spanner.Row) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -108,22 +125,12 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			WorkUnitId:     workUnitId,
 		}
 		orderedPKs = append(orderedPKs, pk)
-		keys = append(keys, spanner.Key{bitReversedXid, workUnitId})
 		return nil
 	}); err != nil {
-		return nil, nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
+		return nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
 	}
 
-	if len(orderedPKs) == 0 {
-		return nil, nil, nil
-	}
-
-	keySets := make([]spanner.KeySet, len(keys))
-	for i, k := range keys {
-		keySets[i] = k
-	}
-	keySetList := []spanner.KeySet{spanner.KeySets(keySets...)}
-	return orderedPKs, keySetList, nil
+	return orderedPKs, nil
 }
 
 func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
@@ -219,7 +226,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	// Query 2: Fetch pageSize + 1 items to determine if nextPageToken is needed
 	limit := int64(pageSizeVal) + 1
-	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
+	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
@@ -238,6 +245,12 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		orderedPKs = orderedPKs[:pageSizeVal]
 		nextPageToken = encodePageToken(offset + int64(pageSizeVal))
 	}
+
+	keys := make([]spanner.KeySet, len(orderedPKs))
+	for i, pk := range orderedPKs {
+		keys[i] = spanner.Key{pk.BitReversedXid, pk.WorkUnitId}
+	}
+	keySetList := []spanner.KeySet{spanner.KeySets(keys...)}
 
 	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
 	if err != nil {

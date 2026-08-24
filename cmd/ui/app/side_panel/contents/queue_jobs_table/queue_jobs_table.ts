@@ -20,7 +20,6 @@ import {
   inject,
   input,
   signal,
-  untracked,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
@@ -29,7 +28,7 @@ import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
-import { catchError, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
@@ -78,6 +77,7 @@ export class QueueJobsTableData implements BaseSidePanelData {
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
   private readonly resourceService = inject(ResourceService);
+  private currentQueue = '';
 
   readonly data = input<QueueJobsTableData>();
   readonly queueName = input<string>('gpu-cluster-queue');
@@ -96,15 +96,38 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     nextPageToken: signal<string>(''),
   };
 
-  protected readonly requestParams = computed(() => ({
-    queueName: this.activeQueueName(),
-    pageSize: this.tableControls.pageSize(),
-    pageToken: this.tableControls.pageToken(),
-  }));
+  protected readonly requestParams = computed(() => {
+    const queueName = this.activeQueueName();
+    let pageToken = this.tableControls.pageToken();
+
+    if (this.currentQueue && queueName !== this.currentQueue) {
+      pageToken = '';
+    }
+
+    return {
+      queueName,
+      pageSize: this.tableControls.pageSize(),
+      pageToken,
+    };
+  });
 
   protected readonly jobsResponse = toSignal(
     toObservable(this.requestParams).pipe(
-      tap(() => this.isLoading.set(true)),
+      distinctUntilChanged(
+        (prev, curr) =>
+          prev.queueName === curr.queueName &&
+          prev.pageSize === curr.pageSize &&
+          prev.pageToken === curr.pageToken,
+      ),
+      tap(({ queueName }) => {
+        this.isLoading.set(true);
+        if (this.currentQueue && queueName !== this.currentQueue) {
+          this.tableControls.pageIndex.set(0);
+          this.tableControls.pageToken.set('');
+          this.tableControls.pageTokens.set(['']);
+        }
+        this.currentQueue = queueName;
+      }),
       switchMap(({ queueName, pageSize, pageToken }) =>
         this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
           tap((resp) => {
@@ -141,15 +164,6 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   ];
 
   constructor() {
-    effect(() => {
-      this.activeQueueName();
-      untracked(() => {
-        this.tableControls.pageIndex.set(0);
-        this.tableControls.pageToken.set('');
-        this.tableControls.pageTokens.set(['']);
-      });
-    });
-
     effect(() => {
       this.dataSource.data = this.jobs();
     });

@@ -83,6 +83,7 @@ var (
 type mockWorkUnitFetcher struct {
 	workUnits      []*essmsgpb.WorkUnit
 	nextPageToken  string
+	totalQueueSize int64
 	err            error
 	lastQueueNames []string
 	lastPageSize   int32
@@ -98,12 +99,14 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []*essmsgpb.WorkUnit{},
+			WorkUnits:      []*essmsgpb.WorkUnit{},
+			TotalQueueSize: 0,
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
-		WorkUnits:     m.workUnits,
-		NextPageToken: m.nextPageToken,
+		WorkUnits:      m.workUnits,
+		NextPageToken:  m.nextPageToken,
+		TotalQueueSize: m.totalQueueSize,
 	}, nil
 }
 
@@ -112,13 +115,16 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name       string
-		ctx        context.Context
-		req        *spb.GetRunningAndPendingJobsRequest
-		setupCache func() *cache.KueueCache
-		fetcher    WorkUnitFetcher
-		wantCode   codes.Code
-		wantCount  int
+		name               string
+		ctx                context.Context
+		req                *spb.GetRunningAndPendingJobsRequest
+		setupCache         func() *cache.KueueCache
+		fetcher            WorkUnitFetcher
+		wantCode           codes.Code
+		wantCount          int
+		wantPageSize       int32
+		wantPageToken      string
+		wantTotalQueueSize int64
 	}{
 		{
 			name: "Success With Fetcher",
@@ -138,9 +144,13 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 					}),
 				},
+				totalQueueSize: 1,
 			},
-			wantCode:  codes.OK,
-			wantCount: 1,
+			wantCode:           codes.OK,
+			wantCount:          1,
+			wantPageSize:       10,
+			wantPageToken:      "",
+			wantTotalQueueSize: 1,
 		},
 		{
 			name: "Success With PageSize and PageToken",
@@ -164,10 +174,91 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 					}),
 				},
-				nextPageToken: "token-xyz",
+				nextPageToken:  "token-xyz",
+				totalQueueSize: 1,
 			},
-			wantCode:  codes.OK,
-			wantCount: 1,
+			wantCode:           codes.OK,
+			wantCount:          1,
+			wantPageSize:       10,
+			wantPageToken:      "token-abc",
+			wantTotalQueueSize: 1,
+		},
+		{
+			name: "Success With PageSize 0 Defaults to 10",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+				PageSize:  0,
+			},
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
+			fetcher: &mockWorkUnitFetcher{
+				workUnits: []*essmsgpb.WorkUnit{
+					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+					}),
+				},
+				totalQueueSize: 10,
+			},
+			wantCode:           codes.OK,
+			wantCount:          1,
+			wantPageSize:       10,
+			wantPageToken:      "",
+			wantTotalQueueSize: 10,
+		},
+		{
+			name: "Success With PageSize 200 Clamped to 100",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+				PageSize:  200,
+			},
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
+			fetcher: &mockWorkUnitFetcher{
+				workUnits: []*essmsgpb.WorkUnit{
+					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+					}),
+				},
+				totalQueueSize: 150,
+			},
+			wantCode:           codes.OK,
+			wantCount:          1,
+			wantPageSize:       100,
+			wantPageToken:      "",
+			wantTotalQueueSize: 150,
+		},
+		{
+			name: "Invalid PageToken Error",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+				PageSize:  10,
+				PageToken: "invalid-token",
+			},
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
+			fetcher:  &mockWorkUnitFetcher{err: fmt.Errorf("decoding error: %w", workunit.ErrInvalidPageToken)},
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name:      "Unavailable With Nil Fetcher",
@@ -230,16 +321,21 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			if len(resp.Jobs) != tt.wantCount {
 				t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
 			}
-			if fetcherImpl, ok := tt.fetcher.(*mockWorkUnitFetcher); ok && tt.req.PageSize > 0 {
-				if fetcherImpl.lastPageSize != tt.req.PageSize {
-					t.Errorf("PageSize = %d, want %d", fetcherImpl.lastPageSize, tt.req.PageSize)
-				}
-				if fetcherImpl.lastPageToken != tt.req.PageToken {
-					t.Errorf("PageToken = %q, want %q", fetcherImpl.lastPageToken, tt.req.PageToken)
-				}
-				if resp.NextPageToken != fetcherImpl.nextPageToken {
-					t.Errorf("NextPageToken = %q, want %q", resp.NextPageToken, fetcherImpl.nextPageToken)
-				}
+			fetcherImpl, ok := tt.fetcher.(*mockWorkUnitFetcher)
+			if !ok {
+				return
+			}
+			if fetcherImpl.lastPageSize != tt.wantPageSize {
+				t.Errorf("PageSize = %d, want %d", fetcherImpl.lastPageSize, tt.wantPageSize)
+			}
+			if fetcherImpl.lastPageToken != tt.wantPageToken {
+				t.Errorf("PageToken = %q, want %q", fetcherImpl.lastPageToken, tt.wantPageToken)
+			}
+			if resp.NextPageToken != fetcherImpl.nextPageToken {
+				t.Errorf("NextPageToken = %q, want %q", resp.NextPageToken, fetcherImpl.nextPageToken)
+			}
+			if resp.TotalQueueSize != tt.wantTotalQueueSize {
+				t.Errorf("TotalQueueSize = %d, want %d", resp.TotalQueueSize, tt.wantTotalQueueSize)
 			}
 			if tt.wantCount == 0 {
 				return

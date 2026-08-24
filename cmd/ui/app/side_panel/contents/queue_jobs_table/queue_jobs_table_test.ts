@@ -18,7 +18,7 @@ import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { GetRunningAndPendingJobsResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
@@ -210,5 +210,167 @@ describe('QueueJobsTable Component', () => {
       );
       expect(await harness.getRowCount()).toBe(2);
     }
+  });
+
+  it('should trigger server-side pagination when navigating backward', async () => {
+    const page1Jobs = Array.from({ length: 10 }, (_, i) => ({
+      positionInQueue: i + 1,
+      xid: 10000 + i,
+      workUnitId: i + 1,
+      user: `user${i}@example.com`,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 100,
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    }));
+    const page2Jobs = Array.from({ length: 2 }, (_, i) => ({
+      positionInQueue: 11 + i,
+      xid: 10010 + i,
+      workUnitId: 11 + i,
+      user: `user${10 + i}@example.com`,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 100,
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    }));
+
+    state.resourceService.getQueueJobs.and.callFake(
+      (queueName: string, pageSize?: number, pageToken?: string) => {
+        if (pageToken === 'page-2-token') {
+          return of({ jobs: page2Jobs, totalQueueSize: 12, nextPageToken: '' });
+        }
+        return of({ jobs: page1Jobs, totalQueueSize: 12, nextPageToken: 'page-2-token' });
+      },
+    );
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    expect(paginator).not.toBeNull();
+    if (paginator) {
+      await paginator.goToNextPage();
+      await flush();
+      expect(await harness.getRowCount()).toBe(2);
+
+      await paginator.goToPreviousPage();
+      await flush();
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 10, '');
+      expect(await harness.getRowCount()).toBe(10);
+    }
+  });
+
+  it('should reset to first page when page size changes', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    expect(paginator).not.toBeNull();
+    if (paginator) {
+      await paginator.setPageSize(20);
+      await flush();
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 20, '');
+    }
+  });
+
+  it('should reset pagination and fetch new jobs when active queue changes', async () => {
+    const page1Jobs = Array.from({ length: 10 }, (_, i) => ({
+      positionInQueue: i + 1,
+      xid: 10000 + i,
+      workUnitId: i + 1,
+      user: `user${i}@example.com`,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 100,
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    }));
+
+    state.resourceService.getQueueJobs.and.callFake(
+      (queueName: string, pageSize?: number, pageToken?: string) => {
+        if (queueName === 'tpu-cluster-queue') {
+          return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
+        }
+        if (pageToken === 'page-2-token') {
+          return of({ jobs: page1Jobs, totalQueueSize: 20, nextPageToken: '' });
+        }
+        return of({ jobs: page1Jobs, totalQueueSize: 20, nextPageToken: 'page-2-token' });
+      },
+    );
+
+    const hostComponent = bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    if (paginator) {
+      await paginator.goToNextPage();
+      await flush();
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+        'gpu-cluster-queue',
+        10,
+        'page-2-token',
+      );
+    }
+
+    hostComponent.queueName.set('tpu-cluster-queue');
+    await flush();
+
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('tpu-cluster-queue', 10, '');
+    expect(state.resourceService.getQueueJobs).not.toHaveBeenCalledWith(
+      'tpu-cluster-queue',
+      10,
+      'page-2-token',
+    );
+  });
+
+  it('should handle API errors gracefully', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      throwError(() => new Error('Network error')),
+    );
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getRowCount()).toBe(0);
+  });
+
+  it('should display empty state when queue has no jobs', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({ jobs: [], totalQueueSize: 0, nextPageToken: '' }),
+    );
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getRowCount()).toBe(0);
+
+    const paginator = await harness.getPaginator();
+    expect(paginator).not.toBeNull();
+
+    expect(document.querySelector('.jobs-empty-state')).not.toBeNull();
+    expect(document.body.textContent).toContain('No job ahead of you!');
+  });
+
+  it('should display loading state while fetching jobs', async () => {
+    const jobsSubject = new Subject<GetRunningAndPendingJobsResponse>();
+    state.resourceService.getQueueJobs.and.returnValue(jobsSubject.asObservable());
+
+    bootstrap(TestHostComponent);
+
+    expect(document.querySelector('.loading-container')).not.toBeNull();
+    expect(document.body.textContent).toContain('Loading jobs...');
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getPaginator()).not.toBeNull();
+
+    jobsSubject.next(TEST_QUEUE_JOBS_RESP);
+    await flush();
+
+    expect(document.querySelector('.loading-container')).toBeNull();
+    expect(await harness.getRowCount()).toBe(2);
   });
 });

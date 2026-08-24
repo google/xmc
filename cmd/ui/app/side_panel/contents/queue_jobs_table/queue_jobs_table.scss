@@ -59,47 +59,13 @@
   border-collapse: collapse;
 }
 
-.priority-badge {
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-
-  &.priority-low {
-    background-color: #e6f4ea;
-    color: #137333;
-  }
-
-  &.priority-normal {
-    background-color: #e8f0fe;
-    color: #1a73e8;
-  }
-
-  &.priority-high {
-    background-color: #fce8e6;
-    color: #c5221f;
-  }
-}
-
-.status-indicator {
-  display: inline-flex;
+.loading-container {
+  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-}
-
-.status-dot-icon {
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
-}
-
-.running-dot {
-  color: #1e8e3e;
-}
-
-.pending-dot {
-  color: #f9ab00;
+  padding: 40px 0;
+  color: #5f6368;
+  font-size: 14px;
 }
 
 .resources-cell {

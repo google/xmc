@@ -132,7 +132,7 @@ describe('ResourceService', () => {
       await flush();
     });
 
-    it('should pass page_size and page_token query parameters when requested', async () => {
+    it('should pass pageSize and pageToken query parameters when requested', async () => {
       const mockResponse: GetRunningAndPendingJobsResponse = {
         jobs: [],
         totalQueueSize: 100,

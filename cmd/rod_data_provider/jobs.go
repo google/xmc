@@ -16,7 +16,7 @@ package main
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -48,7 +48,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
-		if strings.Contains(err.Error(), "failed to decode page token") || strings.Contains(err.Error(), "invalid page_token") {
+		if errors.Is(err, workunit.ErrInvalidPageToken) {
 			return nil, status.Error(codes.InvalidArgument, "invalid page_token")
 		}
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
