@@ -129,6 +129,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
 	}
+	in.Spec.Generation = in.Generation
 	canonicalName := store.CanonicalComponentName(in.Name)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
@@ -143,7 +144,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		return res, nil
 	}
 	if !in.Enabled {
-		return r.reconcileDisabled(ctx, in, canonicalName, res), nil
+		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
 	if err := r.ensureWorkload(ctx, in, res); err != nil {
 		return res, nil
@@ -158,7 +159,9 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		return res, nil
 	}
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-		_ = r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name)
+		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
+			return nil, fmt.Errorf("failed to delete 1P workload: %w", err)
+		}
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		return nil, fmt.Errorf("failed to execute deletion in CMS: %w", err)
@@ -185,15 +188,22 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	return nil
 }
 
-func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) *ReconcileResult {
+func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-		_ = r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name)
+		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
+			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
+			return res, nil
+		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
-	_ = r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False")
-	return res
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
 }
 
 func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {

@@ -84,6 +84,13 @@ func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 		}
 		return cfg, nil
 	}
+	if envPath := os.Getenv("KUBECONFIG"); envPath != "" {
+		cfg, err := clientcmd.BuildConfigFromFlags("", envPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build kubeconfig from KUBECONFIG env %q: %w", envPath, err)
+		}
+		return cfg, nil
+	}
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build in-cluster kubeconfig: %w", err)
@@ -97,11 +104,18 @@ type Controller struct {
 	reconciler    *bridge.Reconciler
 	namespace     string
 	probeInterval time.Duration
+	probeTimeout  time.Duration
 }
 
 // NewController creates a new Controller instance.
-func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, interval time.Duration) *Controller {
-	return &Controller{dynamicClient: client, reconciler: r, namespace: ns, probeInterval: interval}
+func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, interval time.Duration, timeout time.Duration) *Controller {
+	return &Controller{
+		dynamicClient: client,
+		reconciler:    r,
+		namespace:     ns,
+		probeInterval: interval,
+		probeTimeout:  timeout,
+	}
 }
 
 // Run starts the reconciliation loop and blocks until context cancellation.
@@ -110,14 +124,18 @@ func (c *Controller) Run(ctx context.Context) error {
 	ticker := time.NewTicker(c.probeInterval)
 	defer ticker.Stop()
 
-	_ = c.RunReconcilePass(ctx)
+	if err := c.RunReconcilePass(ctx); err != nil {
+		log.Printf("Error running initial reconciliation pass: %v", err)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("Bridge Controller context cancelled, stopping run loop.")
 			return ctx.Err()
 		case <-ticker.C:
-			_ = c.RunReconcilePass(ctx)
+			if err := c.RunReconcilePass(ctx); err != nil {
+				log.Printf("Error running reconciliation pass: %v", err)
+			}
 		}
 	}
 }
@@ -136,16 +154,25 @@ func (c *Controller) RunReconcilePass(ctx context.Context) error {
 
 func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstructured) {
 	name := item.GetName()
-	res, err := c.reconciler.Reconcile(ctx, item)
+	reconcileCtx, cancel := context.WithTimeout(ctx, c.probeTimeout)
+	defer cancel()
+
+	res, err := c.reconciler.Reconcile(reconcileCtx, item)
 	if err != nil {
 		log.Printf("Error reconciling component %q: %v", name, err)
 		return
 	}
-	c.syncFinalizers(ctx, item, res)
-	c.syncStatus(ctx, name, res)
+	updatedItem, err := c.syncFinalizers(ctx, item, res)
+	if err != nil {
+		log.Printf("Error syncing finalizers for component %q: %v", name, err)
+		return
+	}
+	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
+		log.Printf("Error syncing status for component %q: %v", name, err)
+	}
 }
 
-func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) {
+func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
 	hasFin := false
 	for _, f := range item.GetFinalizers() {
 		if f == bridge.FinalizerDeletionProtection {
@@ -155,7 +182,7 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 	}
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
-		_, _ = c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
 	} else if res.RemoveFinalizer && hasFin {
 		var updated []string
 		for _, f := range item.GetFinalizers() {
@@ -164,17 +191,15 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 			}
 		}
 		item.SetFinalizers(updated)
-		_, _ = c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
 	}
+	return item, nil
 }
 
-func (c *Controller) syncStatus(ctx context.Context, name string, res *bridge.ReconcileResult) {
-	fresh, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return
-	}
-	fresh.Object["status"] = BuildStatusMap(res)
-	_, _ = c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, fresh, metav1.UpdateOptions{})
+func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	item.Object["status"] = BuildStatusMap(res)
+	_, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, item, metav1.UpdateOptions{})
+	return err
 }
 
 // BuildStatusMap serializes a ReconcileResult into an unstructured status map.
@@ -223,7 +248,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
-	return NewController(dynamicClient, reconciler, cfg.Namespace, cfg.ProbeInterval).Run(ctx)
+	return NewController(dynamicClient, reconciler, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
 }
 
 func main() {
