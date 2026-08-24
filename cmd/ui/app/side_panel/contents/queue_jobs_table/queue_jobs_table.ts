@@ -87,17 +87,19 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   );
 
   protected readonly isLoading = signal<boolean>(false);
-  protected readonly pageSize = signal<number>(10);
-  protected readonly pageIndex = signal<number>(0);
-  protected readonly pageToken = signal<string>('');
-  protected readonly pageTokens = signal<string[]>(['']);
-  protected readonly totalCount = signal<number>(0);
-  protected readonly nextPageToken = signal<string>('');
+  protected readonly tableControls = {
+    pageSize: signal<number>(10),
+    pageIndex: signal<number>(0),
+    pageToken: signal<string>(''),
+    pageTokens: signal<string[]>(['']),
+    totalCount: signal<number>(0),
+    nextPageToken: signal<string>(''),
+  };
 
   protected readonly requestParams = computed(() => ({
     queueName: this.activeQueueName(),
-    pageSize: this.pageSize(),
-    pageToken: this.pageToken(),
+    pageSize: this.tableControls.pageSize(),
+    pageToken: this.tableControls.pageToken(),
   }));
 
   protected readonly jobsResponse = toSignal(
@@ -107,13 +109,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
         this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
           tap((resp) => {
             this.isLoading.set(false);
-            this.totalCount.set(resp?.totalQueueSize ?? 0);
-            this.nextPageToken.set(resp?.nextPageToken ?? '');
+            this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
+            this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
           }),
           catchError(() => {
             this.isLoading.set(false);
-            this.totalCount.set(0);
-            this.nextPageToken.set('');
+            this.tableControls.totalCount.set(0);
+            this.tableControls.nextPageToken.set('');
             return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
           }),
         ),
@@ -142,9 +144,9 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     effect(() => {
       this.activeQueueName();
       untracked(() => {
-        this.pageIndex.set(0);
-        this.pageToken.set('');
-        this.pageTokens.set(['']);
+        this.tableControls.pageIndex.set(0);
+        this.tableControls.pageToken.set('');
+        this.tableControls.pageTokens.set(['']);
       });
     });
 
@@ -154,16 +156,16 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   }
 
   protected onPageChange(event: PageEvent): void {
-    if (event.pageSize !== this.pageSize()) {
-      this.pageSize.set(event.pageSize);
-      this.pageIndex.set(0);
-      this.pageToken.set('');
-      this.pageTokens.set(['']);
+    if (event.pageSize !== this.tableControls.pageSize()) {
+      this.tableControls.pageSize.set(event.pageSize);
+      this.tableControls.pageIndex.set(0);
+      this.tableControls.pageToken.set('');
+      this.tableControls.pageTokens.set(['']);
       return;
     }
 
     const newIndex = event.pageIndex;
-    const oldIndex = this.pageIndex();
+    const oldIndex = this.tableControls.pageIndex();
 
     if (newIndex === oldIndex) {
       return;
@@ -171,15 +173,15 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
     let token = '';
     if (newIndex > oldIndex) {
-      token = this.nextPageToken();
+      token = this.tableControls.nextPageToken();
     } else {
-      token = this.pageTokens()[newIndex] ?? '';
+      token = this.tableControls.pageTokens()[newIndex] ?? '';
     }
 
-    const updatedTokens = [...this.pageTokens()];
+    const updatedTokens = [...this.tableControls.pageTokens()];
     updatedTokens[newIndex] = token;
-    this.pageTokens.set(updatedTokens);
-    this.pageIndex.set(newIndex);
-    this.pageToken.set(token);
+    this.tableControls.pageTokens.set(updatedTokens);
+    this.tableControls.pageIndex.set(newIndex);
+    this.tableControls.pageToken.set(token);
   }
 }
