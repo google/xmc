@@ -134,10 +134,20 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 }
 
 func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wid int64, newWorkUnit *msgpb.WorkUnit, email string, operation *lropb.Operation) error {
+	if newWorkUnit == nil || newWorkUnit.GetCurrentWorkUnitExecution() == nil {
+		return fmt.Errorf("invalid work unit: %w", status.ErrInternal)
+	}
+	if operation == nil {
+		return fmt.Errorf("invalid operation: %w", status.ErrInternal)
+	}
+
 	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to fetch experiment", "error", err)
 		return fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
+	}
+	if exp == nil {
+		return fmt.Errorf("failed to fetch experiment: experiment %d not found: %w", xid, status.ErrInternal)
 	}
 
 	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
