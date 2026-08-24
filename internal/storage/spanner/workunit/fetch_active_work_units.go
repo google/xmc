@@ -51,13 +51,6 @@ var fetchActiveWorkUnitPKsSQL = safesql.New(
 	LIMIT @limit OFFSET @offset`,
 )
 
-var countActiveWorkUnitsSQL = safesql.New(
-	`SELECT COUNT(*)
-	FROM WorkUnits wu
-	WHERE wu.QueueName IN UNNEST(@queueNames)
-	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
-)
-
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
 	WorkUnits      []*essmsgpb.WorkUnit
@@ -207,13 +200,10 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	// Query 1: Count total active work units across matching queues
-	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
-	if err != nil {
-		return nil, err
-	}
+	// TODO(janzak): Calculate unpaginated total queue size in separate PR.
+	totalQueueSize := int64(0)
 
-	// Query 2: Fetch pageSize + 1 items to determine if nextPageToken is needed
+	// Fetch pageSize + 1 items to determine if nextPageToken is needed
 	limit := int64(pageSizeVal) + 1
 	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
 	if err != nil {
@@ -252,23 +242,4 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		NextPageToken:  nextPageToken,
 		TotalQueueSize: totalQueueSize,
 	}, nil
-}
-
-func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) (int64, error) {
-	countStmt := spanner.Statement{
-		SQL: countActiveWorkUnitsSQL.String(),
-		Params: map[string]interface{}{
-			"queueNames": queueNames,
-		},
-	}
-	var totalQueueSize int64
-	iterCount := txn.Query(ctx, countStmt)
-	defer iterCount.Stop()
-	if err := iterCount.Do(func(row *spanner.Row) error {
-		return row.Column(0, &totalQueueSize)
-	}); err != nil {
-		logging.Error(ctx, "failed to count active work units", "error", err)
-		return 0, fmt.Errorf("failed to count active work units: %w", err)
-	}
-	return totalQueueSize, nil
 }

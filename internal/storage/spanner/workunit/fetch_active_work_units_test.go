@@ -110,9 +110,9 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	}
 
 	pages := []pageExpectation{
-		{wantCount: 2, wantHasNext: true, wantTotalSize: 5},
-		{wantCount: 2, wantHasNext: true, wantTotalSize: 5},
-		{wantCount: 1, wantHasNext: false, wantTotalSize: 5},
+		{wantCount: 2, wantHasNext: true, wantTotalSize: 0},
+		{wantCount: 2, wantHasNext: true, wantTotalSize: 0},
+		{wantCount: 1, wantHasNext: false, wantTotalSize: 0},
 	}
 
 	token := ""
