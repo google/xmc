@@ -41,9 +41,8 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	pageSize := req.GetPageSize()
 	if pageSize <= 0 {
 		pageSize = 10
-	} else if pageSize > 100 {
-		pageSize = 100
 	}
+	pageSize = min(pageSize, 100)
 
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
