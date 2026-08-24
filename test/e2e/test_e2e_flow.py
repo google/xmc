@@ -451,7 +451,13 @@ def _run_isolated_stage(browser: Any, stage_name: str, test_func: Any, *args: An
         except Exception:
             try:
                 url = page.url
-            except Exception:
+                if args and isinstance(args[0], Path):
+                    safe_stage_name = "".join(
+                        c if c.isalnum() or c in "._-" else "_" for c in stage_name
+                    )
+                    save_screenshot(page, args[0], f"failure_{safe_stage_name}")
+            except Exception as e:
+                logger.warning("Failed to capture failure screenshot: %s", e)
                 url = "<unknown>"
             logger.exception("%s failed at URL: %s", stage_name, url)
             raise
