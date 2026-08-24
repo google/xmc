@@ -110,6 +110,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly dataSource = new MatTableDataSource<DashboardJob>();
   readonly matPaginator = viewChild(MatPaginator);
 
+  protected readonly pageSizeOptions = [5, 10, 20, 50];
+
   protected displayedColumns: string[] = [
     'position',
     'jobName',
