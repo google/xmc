@@ -92,12 +92,12 @@ class TestSpannerManager(unittest.TestCase):
 
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_setup_creates_dbs_and_runs_migrations(self, mock_run, mock_cleanup):
+    def test_setup_creates_dbs_with_ddl_files(self, mock_run, mock_cleanup):
         self.mgr.setup()
 
         mock_cleanup.assert_called_once()
 
-        # Check DB creation calls
+        # Check DB creation calls with --ddl-file
         mock_run.assert_any_call(
             [
                 "gcloud",
@@ -107,6 +107,7 @@ class TestSpannerManager(unittest.TestCase):
                 "e2e-ess-1000-abcdef",
                 "--instance=test-inst",
                 "--project=test-proj",
+                "--ddl-file=/workspace/internal/storage/spanner/schema/ess-schema.sql",
             ]
         )
         mock_run.assert_any_call(
@@ -118,23 +119,8 @@ class TestSpannerManager(unittest.TestCase):
                 "e2e-xid-1000-abcdef",
                 "--instance=test-inst",
                 "--project=test-proj",
+                "--ddl-file=/workspace/internal/storage/spanner/schema/xid-schema.sql",
             ]
-        )
-
-        # Check Bazel migration calls
-        mock_run.assert_any_call(
-            [
-                "bazel",
-                "run",
-                "//internal/storage/spanner/migrations:migrations",
-                "--",
-                "-project=test-proj",
-                "-instance=test-inst",
-                "-database=e2e-ess-1000-abcdef",
-                "-migrations_dir=ess",
-                "-command=up",
-            ],
-            cwd="/workspace",
         )
 
     @patch("test.e2e.lib.spanner.run_cmd")
