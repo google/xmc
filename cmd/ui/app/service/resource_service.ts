@@ -62,10 +62,10 @@ export class ResourceService {
   ): Observable<GetRunningAndPendingJobsResponse> {
     let params = new HttpParams();
     if (pageSize !== undefined && pageSize > 0) {
-      params = params.set('page_size', pageSize.toString());
+      params = params.set('pageSize', pageSize.toString());
     }
     if (pageToken) {
-      params = params.set('page_token', pageToken);
+      params = params.set('pageToken', pageToken);
     }
     return this.http
       .get<GetRunningAndPendingJobsResponse>(

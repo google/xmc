@@ -128,8 +128,11 @@
       <mat-paginator
         showFirstLastButtons
         aria-label="Select page of queue jobs"
+        [length]="totalCount()"
+        [pageSize]="pageSize()"
+        [pageIndex]="pageIndex()"
         [pageSizeOptions]="pageSizeOptions"
-        [pageSize]="10"
+        (page)="onPageChange($event)"
       />
     </div>
   }

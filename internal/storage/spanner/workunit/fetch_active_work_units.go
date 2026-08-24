@@ -40,13 +40,21 @@ var fetchActiveWorkUnitPKsSQL = safesql.New(
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
 	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
-	LIMIT @pageSize`,
+	LIMIT @limit OFFSET @offset`,
+)
+
+var countActiveWorkUnitsSQL = safesql.New(
+	`SELECT COUNT(*)
+	FROM WorkUnits wu
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits     []*essmsgpb.WorkUnit
-	NextPageToken string
+	WorkUnits      []*essmsgpb.WorkUnit
+	NextPageToken  string
+	TotalQueueSize int64
 }
 
 type workUnitPK struct {
@@ -54,12 +62,28 @@ type workUnitPK struct {
 	WorkUnitId     int64
 }
 
-func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, pageSize int32) ([]workUnitPK, []spanner.KeySet, error) {
+func decodePageToken(token string) (int64, error) {
+	if token == "" {
+		return 0, nil
+	}
+	var offset int64
+	if _, err := fmt.Sscanf(token, "%d", &offset); err != nil {
+		return 0, fmt.Errorf("invalid page_token format: %w", err)
+	}
+	return offset, nil
+}
+
+func encodePageToken(offset int64) string {
+	return fmt.Sprintf("%d", offset)
+}
+
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, []spanner.KeySet, error) {
 	stmt := spanner.Statement{
 		SQL: fetchActiveWorkUnitPKsSQL.String(),
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
-			"pageSize":   int64(pageSize),
+			"limit":      limit,
+			"offset":     offset,
 		},
 	}
 
@@ -155,8 +179,9 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:     []*essmsgpb.WorkUnit{},
-			NextPageToken: "",
+			WorkUnits:      []*essmsgpb.WorkUnit{},
+			NextPageToken:  "",
+			TotalQueueSize: 0,
 		}, nil
 	}
 
@@ -167,10 +192,34 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		pageSizeVal = maxPageSize
 	}
 
+	offset, err := decodePageToken(pageToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode page token: %w", err)
+	}
+
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, pageSizeVal)
+	// Query 1: Count total active work units across matching queues
+	countStmt := spanner.Statement{
+		SQL: countActiveWorkUnitsSQL.String(),
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+		},
+	}
+	var totalQueueSize int64
+	iterCount := txn.Query(ctx, countStmt)
+	defer iterCount.Stop()
+	if err := iterCount.Do(func(row *spanner.Row) error {
+		return row.Column(0, &totalQueueSize)
+	}); err != nil {
+		logging.Error(ctx, "failed to count active work units", "error", err)
+		return nil, fmt.Errorf("failed to count active work units: %w", err)
+	}
+
+	// Query 2: Fetch pageSize + 1 items to determine if nextPageToken is needed
+	limit := int64(pageSizeVal) + 1
+	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
@@ -178,9 +227,16 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:     []*essmsgpb.WorkUnit{},
-			NextPageToken: "",
+			WorkUnits:      []*essmsgpb.WorkUnit{},
+			NextPageToken:  "",
+			TotalQueueSize: totalQueueSize,
 		}, nil
+	}
+
+	nextPageToken := ""
+	if int64(len(orderedPKs)) > int64(pageSizeVal) {
+		orderedPKs = orderedPKs[:pageSizeVal]
+		nextPageToken = encodePageToken(offset + int64(pageSizeVal))
 	}
 
 	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
@@ -190,7 +246,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}
 
 	return &ActiveWorkUnitsResult{
-		WorkUnits:     workUnits,
-		NextPageToken: "",
+		WorkUnits:      workUnits,
+		NextPageToken:  nextPageToken,
+		TotalQueueSize: totalQueueSize,
 	}, nil
 }

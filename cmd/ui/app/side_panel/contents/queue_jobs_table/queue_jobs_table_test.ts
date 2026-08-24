@@ -88,7 +88,7 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     expect(host).toBeTruthy();
-    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 10, '');
   });
 
   it('should properly render all table column headers using harness', async () => {
@@ -160,8 +160,8 @@ describe('QueueJobsTable Component', () => {
     }
   });
 
-  it('should paginate table rows when jobs exceed page size', async () => {
-    const manyJobs = Array.from({ length: 12 }, (_, i) => ({
+  it('should trigger server-side pagination when navigating to next page', async () => {
+    const page1Jobs = Array.from({ length: 10 }, (_, i) => ({
       positionInQueue: i + 1,
       xid: 10000 + i,
       workUnitId: i + 1,
@@ -171,19 +171,43 @@ describe('QueueJobsTable Component', () => {
       timeInQueueSeconds: 100,
       requestedResources: [{ resourceType: 'cpu', count: 1 }],
     }));
-    state.resourceService.getQueueJobs.and.returnValue(of({ jobs: manyJobs, totalQueueSize: 12 }));
+    const page2Jobs = Array.from({ length: 2 }, (_, i) => ({
+      positionInQueue: 11 + i,
+      xid: 10010 + i,
+      workUnitId: 11 + i,
+      user: `user${10 + i}@example.com`,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 100,
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    }));
+
+    state.resourceService.getQueueJobs.and.callFake(
+      (queueName: string, pageSize?: number, pageToken?: string) => {
+        if (pageToken === 'page-2-token') {
+          return of({ jobs: page2Jobs, totalQueueSize: 12, nextPageToken: '' });
+        }
+        return of({ jobs: page1Jobs, totalQueueSize: 12, nextPageToken: 'page-2-token' });
+      },
+    );
 
     bootstrap(TestHostComponent);
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);
     expect(await harness.getRowCount()).toBe(10);
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 10, '');
 
     const paginator = await harness.getPaginator();
     expect(paginator).not.toBeNull();
     if (paginator) {
       await paginator.goToNextPage();
       await flush();
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+        'gpu-cluster-queue',
+        10,
+        'page-2-token',
+      );
       expect(await harness.getRowCount()).toBe(2);
     }
   });

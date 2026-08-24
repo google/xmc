@@ -20,16 +20,17 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
+import { MatPaginator, MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
-import { catchError, map, of, switchMap, tap } from 'rxjs';
+import { catchError, of, switchMap, tap } from 'rxjs';
 
 import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
@@ -87,25 +88,42 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   );
 
   protected readonly isLoading = signal<boolean>(false);
+  protected readonly pageSize = signal<number>(10);
+  protected readonly pageIndex = signal<number>(0);
+  protected readonly pageToken = signal<string>('');
+  protected readonly pageTokens = signal<string[]>(['']);
+  protected readonly totalCount = signal<number>(0);
+  protected readonly nextPageToken = signal<string>('');
 
-  protected readonly jobs = toSignal(
-    toObservable(this.activeQueueName).pipe(
+  protected readonly requestParams = computed(() => ({
+    queueName: this.activeQueueName(),
+    pageSize: this.pageSize(),
+    pageToken: this.pageToken(),
+  }));
+
+  protected readonly jobsResponse = toSignal(
+    toObservable(this.requestParams).pipe(
       tap(() => this.isLoading.set(true)),
-      switchMap((qName) =>
-        this.resourceService.getQueueJobs(qName).pipe(
-          map((resp) => resp?.jobs ?? []),
-          tap(() => this.isLoading.set(false)),
+      switchMap(({ queueName, pageSize, pageToken }) =>
+        this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
+          tap((resp) => {
+            this.isLoading.set(false);
+            this.totalCount.set(resp?.totalQueueSize ?? 0);
+            this.nextPageToken.set(resp?.nextPageToken ?? '');
+          }),
           catchError(() => {
             this.isLoading.set(false);
-            return of([]);
+            this.totalCount.set(0);
+            this.nextPageToken.set('');
+            return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
           }),
         ),
       ),
     ),
-    { initialValue: [] },
+    { initialValue: { jobs: [], totalQueueSize: 0, nextPageToken: '' } },
   );
 
-  protected readonly totalCount = computed(() => this.jobs().length);
+  protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
 
   protected readonly dataSource = new MatTableDataSource<DashboardJob>();
   readonly matPaginator = viewChild(MatPaginator);
@@ -124,10 +142,46 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   constructor() {
     effect(() => {
+      this.activeQueueName();
+      untracked(() => {
+        this.pageIndex.set(0);
+        this.pageToken.set('');
+        this.pageTokens.set(['']);
+      });
+    });
+
+    effect(() => {
       this.dataSource.data = this.jobs();
     });
-    effect(() => {
-      this.dataSource.paginator = this.matPaginator() ?? null;
-    });
+  }
+
+  protected onPageChange(event: PageEvent): void {
+    if (event.pageSize !== this.pageSize()) {
+      this.pageSize.set(event.pageSize);
+      this.pageIndex.set(0);
+      this.pageToken.set('');
+      this.pageTokens.set(['']);
+      return;
+    }
+
+    const newIndex = event.pageIndex;
+    const oldIndex = this.pageIndex();
+
+    if (newIndex === oldIndex) {
+      return;
+    }
+
+    let token = '';
+    if (newIndex > oldIndex) {
+      token = this.nextPageToken();
+    } else {
+      token = this.pageTokens()[newIndex] ?? '';
+    }
+
+    const updatedTokens = [...this.pageTokens()];
+    updatedTokens[newIndex] = token;
+    this.pageTokens.set(updatedTokens);
+    this.pageIndex.set(newIndex);
+    this.pageToken.set(token);
   }
 }

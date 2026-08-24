@@ -146,8 +146,8 @@ describe('ResourceService', () => {
       const req = state.httpMock.expectOne(
         (r: HttpRequest<unknown>) =>
           r.url === `${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs` &&
-          r.params.get('page_size') === '10' &&
-          r.params.get('page_token') === 'token-123',
+          r.params.get('pageSize') === '10' &&
+          r.params.get('pageToken') === 'token-123',
       );
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
