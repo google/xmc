@@ -138,7 +138,22 @@ def test_admin_flow_and_experiment_lifecycle(
     experiment_name = res_json.get("name", "")
     logger.info("✓ Created experiment successfully: %s", experiment_name)
 
-    # 4. Assert experiment appears in the UI table
+    # 4. Create an artifact under the admin experiment
+    logger.info("Creating artifact under experiment %s...", experiment_name)
+    art_response = page.request.post(
+        f"{BASE_URL}/v1/{experiment_name}/artifacts",
+        data={"url": {"url": "https://example.com/admin-artifact"}},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if art_response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to create artifact via API: {art_response.status} {art_response.text()}"
+        )
+    art_json = art_response.json()
+    admin_art_name = art_json.get("name", "")
+    logger.info("✓ Created admin artifact: %s", admin_art_name)
+
+    # 5. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
     page.reload()
 
@@ -147,7 +162,7 @@ def test_admin_flow_and_experiment_lifecycle(
     logger.info("✓ Experiment '%s' row verified in DataTable.", experiment_title)
     save_screenshot(page, screenshots_dir, "02_experiment_in_datatable")
 
-    return experiment_name
+    return experiment_name, admin_art_name
 
 
 def test_unauthorized_persona_boundary(
@@ -189,6 +204,7 @@ def test_viewer_permission_boundaries_and_isolation(
     screenshots_dir: Path,
     auth: DexAuthenticator,
     admin_exp_name: str,
+    admin_art_name: str,
 ) -> None:
     """Tests that a viewer persona is isolated from admin resources but can create own experiments.
 
@@ -197,6 +213,7 @@ def test_viewer_permission_boundaries_and_isolation(
         screenshots_dir: Destination directory for diagnostic screenshots.
         auth: DexAuthenticator instance for OIDC authentication.
         admin_exp_name: Name of the admin experiment.
+        admin_art_name: Name of the admin artifact.
 
     Raises:
         RuntimeError: If negative boundary checks or experiment creation fail.
@@ -303,11 +320,15 @@ def test_viewer_permission_boundaries_and_isolation(
     logger.info("✓ POST %s/artifacts returned 403 as expected.", exp_path)
 
     # 9. Assert DELETE artifacts returns 403
-    logger.info("Asserting negative permission: DELETE artifacts/1 -> 403...")
+    logger.info("Asserting negative permission: DELETE %s -> 403...", admin_art_name)
     del_res = page.request.delete(
-        f"{BASE_URL}/v1/artifacts/1",
+        f"{BASE_URL}/v1/{admin_art_name}",
         headers={"Origin": BASE_URL},
     )
+    if del_res.status in (200, 204):
+        raise RuntimeError(
+            f"Security vulnerability: Viewer successfully deleted admin artifact {admin_art_name}!"
+        )
     if del_res.status != 403:
         raise RuntimeError(
             f"Expected status 403 for DELETE artifact, got {del_res.status}: {del_res.text()}"
@@ -430,7 +451,7 @@ def main() -> None:
 
         try:
             # 1. Admin Flow in an isolated context
-            admin_exp_name = _run_isolated_stage(
+            admin_exp_name, admin_art_name = _run_isolated_stage(
                 browser,
                 "[1/4] Running Admin Flow",
                 test_admin_flow_and_experiment_lifecycle,
@@ -446,6 +467,7 @@ def main() -> None:
                 screenshots_dir,
                 auth,
                 admin_exp_name,
+                admin_art_name,
             )
 
             # 3. Token Expiration & Unauthenticated Boundary Flow in an isolated context
