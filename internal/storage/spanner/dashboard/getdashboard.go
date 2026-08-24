@@ -45,6 +45,20 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}
 
+	charts, err := r.readDashboardCharts(ctx, txn, dashboardId)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.hydrateChartPlots(ctx, txn, charts); err != nil {
+		return nil, fmt.Errorf("failed to hydrate chart plots: %w", err)
+	}
+
+	return data.DashboardRowToProto(row, charts)
+}
+
+// readDashboardCharts retrieves the child chart rows of a dashboard, without their plot specs.
+func (r *Repository) readDashboardCharts(ctx context.Context, txn *spanner.ReadOnlyTransaction, dashboardId string) ([]*dpb.Chart, error) {
 	filterExp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
 		EnableSimpleQuotedStrings:      true,
@@ -80,6 +94,5 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 		}
 		charts = append(charts, chart)
 	}
-
-	return data.DashboardRowToProto(row, charts)
+	return charts, nil
 }

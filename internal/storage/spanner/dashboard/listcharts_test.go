@@ -137,7 +137,10 @@ func TestListCharts_ParentDashboard(t *testing.T) {
 		t.Fatalf("ListCharts with dashboard parent failed: %v", err)
 	}
 	if len(charts) != 1 || charts[0].GetName() != c1.GetName() {
-		t.Errorf("ListCharts dashboard parent mismatch: got %+v", charts)
+		t.Fatalf("ListCharts dashboard parent mismatch: got %+v", charts)
+	}
+	if len(charts[0].GetPlots()) != len(c1.GetPlots()) {
+		t.Errorf("ListCharts dashboard parent plots len mismatch: got %d, want %d", len(charts[0].GetPlots()), len(c1.GetPlots()))
 	}
 }
 
@@ -196,6 +199,90 @@ func TestListCharts_ParentWorkUnit(t *testing.T) {
 	}
 	if len(charts) != 1 || charts[0].GetName() != target.GetName() {
 		t.Errorf("ListCharts work unit parent mismatch: got %+v, want only %q", charts, target.GetName())
+	}
+}
+
+func TestListCharts_HydratesPlotsPerChart(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	c1 := blankChartProto("hydrate-list-1", 100, 1)
+	c1.Plots = []*dpb.PlotSpec{{PlotId: "list-plot-1", Title: "Loss", Type: dpb.PlotType_SCATTER}}
+	c2 := blankChartProto("hydrate-list-2", 100, 1)
+	c2.Plots = []*dpb.PlotSpec{
+		{PlotId: "list-plot-2a", Title: "Accuracy", Type: dpb.PlotType_LINE},
+		{PlotId: "list-plot-2b", Title: "Throughput", Type: dpb.PlotType_BAR},
+	}
+	c3 := blankChartProto("hydrate-list-3", 100, 1)
+	c3.Plots = nil
+	for _, c := range []*dpb.Chart{c1, c2, c3} {
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
+		}
+	}
+
+	dash := blankDashboardProto("dashboards/hydrate-list-dash")
+	dash.Charts = []*dpb.Chart{c1, c2, c3}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	charts, _, err := repo.ListCharts(ctx, "dashboards/hydrate-list-dash", 10, "", "", "chart_id", 0)
+	if err != nil {
+		t.Fatalf("ListCharts failed: %v", err)
+	}
+	if len(charts) != 3 {
+		t.Fatalf("ListCharts len mismatch: got %d, want 3", len(charts))
+	}
+
+	wantPlotCounts := map[string]int{c1.GetName(): 1, c2.GetName(): 2, c3.GetName(): 0}
+	for _, chart := range charts {
+		want, ok := wantPlotCounts[chart.GetName()]
+		if !ok {
+			t.Errorf("ListCharts returned unexpected chart %q", chart.GetName())
+			continue
+		}
+		if len(chart.GetPlots()) != want {
+			t.Errorf("ListCharts plots for %q: got %d, want %d", chart.GetName(), len(chart.GetPlots()), want)
+		}
+	}
+}
+
+func TestListCharts_HydratesOnlyThePage(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	var created []*dpb.Chart
+	for _, id := range []string{"page-hydrate-1", "page-hydrate-2", "page-hydrate-3"} {
+		c := blankChartProto(id, 100, 1)
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", id, err)
+		}
+		created = append(created, c)
+	}
+
+	page1, token1, err := repo.ListCharts(ctx, "", 2, "", "", "chart_id", 0)
+	if err != nil {
+		t.Fatalf("ListCharts page 1 failed: %v", err)
+	}
+	if len(page1) != 2 || token1 == "" {
+		t.Fatalf("ListCharts page 1 mismatch: got %d charts, token %q", len(page1), token1)
+	}
+	for _, chart := range page1 {
+		if len(chart.GetPlots()) != 1 {
+			t.Errorf("ListCharts page 1 plots for %q: got %d, want 1", chart.GetName(), len(chart.GetPlots()))
+		}
+	}
+
+	page2, _, err := repo.ListCharts(ctx, "", 2, token1, "", "chart_id", 0)
+	if err != nil {
+		t.Fatalf("ListCharts page 2 failed: %v", err)
+	}
+	if len(page2) != 1 || page2[0].GetName() != created[2].GetName() {
+		t.Fatalf("ListCharts page 2 mismatch: got %+v", page2)
+	}
+	if len(page2[0].GetPlots()) != 1 {
+		t.Errorf("ListCharts page 2 plots: got %d, want 1", len(page2[0].GetPlots()))
 	}
 }
 

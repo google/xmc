@@ -63,6 +63,12 @@ func TestGetDashboard_Success(t *testing.T) {
 	if gotChart.GetTitle() != chart.GetTitle() {
 		t.Errorf("GetDashboard Chart Title mismatch: got %q, want %q", gotChart.GetTitle(), chart.GetTitle())
 	}
+	if len(gotChart.GetPlots()) != len(chart.GetPlots()) {
+		t.Fatalf("GetDashboard Chart Plots len mismatch: got %d, want %d", len(gotChart.GetPlots()), len(chart.GetPlots()))
+	}
+	if gotChart.GetPlots()[0].GetPlotId() != chart.GetPlots()[0].GetPlotId() {
+		t.Errorf("GetDashboard Chart PlotId mismatch: got %q, want %q", gotChart.GetPlots()[0].GetPlotId(), chart.GetPlots()[0].GetPlotId())
+	}
 	if gotChart.GetXid() != chart.GetXid() || gotChart.GetWid() != chart.GetWid() {
 		t.Errorf("GetDashboard Chart Xid/Wid mismatch: got (%d, %d), want (%d, %d)", gotChart.GetXid(), gotChart.GetWid(), chart.GetXid(), chart.GetWid())
 	}

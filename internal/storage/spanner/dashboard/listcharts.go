@@ -66,7 +66,10 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	iter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	txn := r.client.ReadOnlyTransaction().WithTimestampBound(spanner.ExactStaleness(staleness))
+	defer txn.Close()
+
+	iter := txn.Query(ctx, *stmt)
 	defer iter.Stop()
 
 	var charts []*dpb.Chart
@@ -82,7 +85,15 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", fmt.Errorf("failed to read chart rows: %w", err)
 	}
 
-	return ls.ApplyPagination(charts, pageSize, ExtractChartCursor)
+	// Paginate before hydrating so the over-fetched probe row never costs a plot lookup.
+	page, nextPageToken, err := ls.ApplyPagination(charts, pageSize, ExtractChartCursor)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := r.hydrateChartPlots(ctx, txn, page); err != nil {
+		return nil, "", fmt.Errorf("failed to hydrate chart plots: %w", err)
+	}
+	return page, nextPageToken, nil
 }
 
 // ExtractChartCursor extracts pagination cursor values from a Chart proto.

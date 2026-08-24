@@ -17,6 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 compat_go_library(
     name = "dashboard",
     srcs = [
+        "chartplots.go",
         "createchart.go",
         "createdashboard.go",
         "deletechart.go",
@@ -55,6 +56,7 @@ compat_go_library(
 compat_go_test(
     name = "dashboard_test",
     srcs = [
+        "chartplots_test.go",
         "createchart_test.go",
         "createdashboard_test.go",
         "deletechart_test.go",
