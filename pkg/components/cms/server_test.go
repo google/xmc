@@ -18,8 +18,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -477,11 +480,18 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetComponentIntent(validate_only=true) unexpected error: %v", err)
 	}
-	if valResp.GetStatusMessage() != "Validation successful (validate_only)" {
-		t.Errorf("StatusMessage = %q, want 'Validation successful (validate_only)'", valResp.GetStatusMessage())
+	wantVal := &componentspb.SetComponentIntentResponse{
+		Component: &componentspb.Component{
+			Name: "components/test-validate-only",
+			Spec: proto.Clone(spec).(*componentspb.ComponentSpec),
+			Status: &componentspb.ComponentAccessStatus{
+				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			},
+		},
+		StatusMessage: "Validation successful (validate_only)",
 	}
-	if valResp.GetComponent().GetName() != "components/test-validate-only" {
-		t.Errorf("GetComponent().GetName() = %q, want 'components/test-validate-only'", valResp.GetComponent().GetName())
+	if diff := cmp.Diff(wantVal, valResp, protocmp.Transform()); diff != "" {
+		t.Errorf("SetComponentIntent(validate_only=true) mismatch (-want +got):\n%s", diff)
 	}
 
 	// 2. Normal creation test

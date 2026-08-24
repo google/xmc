@@ -180,3 +180,15 @@ func populateProtoTimestamps(comp *componentspb.Component, r *ComponentRecord) {
 		comp.DeleteTime = timestamppb.New(*r.DeleteTime)
 	}
 }
+
+// copyMap creates a shallow copy of a string key-value map.
+func copyMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
