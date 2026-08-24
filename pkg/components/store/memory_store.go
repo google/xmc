@@ -121,52 +121,62 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	return cloneRecord(rec), nil
 }
 
-// GetComponent retrieves a component record by canonical or full resource name (stub in Layer 1).
+// GetComponent retrieves a component record by canonical or full resource name.
+// Note: Implemented in subsequent stacked PR (PR 2: feat/components-intent-fieldmask).
 func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetComponent not implemented in MemoryStore")
+	return nil, status.Error(codes.Unimplemented, "method GetComponent not implemented in MemoryStore (deferred to stacked PR 2)")
 }
 
-// GetComponentByID retrieves a component record by its unique database identifier (stub in Layer 1).
+// GetComponentByID retrieves a component record by its unique database identifier.
+// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (m *MemoryStore) GetComponentByID(ctx context.Context, componentID int64) (*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetComponentByID not implemented in MemoryStore")
+	return nil, status.Error(codes.Unimplemented, "method GetComponentByID not implemented in MemoryStore (deferred to stacked PR 3)")
 }
 
-// ListComponents returns all non-deleted components in the catalog (stub in Layer 1).
+// ListComponents returns all non-deleted components in the catalog.
+// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListComponents not implemented in MemoryStore")
+	return nil, status.Error(codes.Unimplemented, "method ListComponents not implemented in MemoryStore (deferred to stacked PR 3)")
 }
 
-// UpdateObservedGeneration synchronizes actual component access, generation, and state (stub in Layer 1).
+// UpdateObservedGeneration synchronizes actual component access, generation, and state.
+// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error {
-	return status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore")
+	return status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore (deferred to stacked PR 3)")
 }
 
-// PrepareDeactivation checks deactivation safety and cascading requirements (stub).
+// PrepareDeactivation checks deactivation safety and cascading requirements.
+// Note: To be implemented in subsequent component lifecycle & deactivation tasks.
 func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented in MemoryStore")
 }
 
-// CompleteDeactivation marks a component in DISABLING state as DISABLED (stub).
+// CompleteDeactivation marks a component in DISABLING state as DISABLED.
+// Note: To be implemented in subsequent component lifecycle & deactivation tasks.
 func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) error {
 	return status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented in MemoryStore")
 }
 
-// ExecuteDeletion deletes a component using the specified deletion policy (stub).
+// ExecuteDeletion deletes a component using the specified deletion policy.
+// Note: To be implemented in subsequent component lifecycle & deletion tasks.
 func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
 	return status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented in MemoryStore")
 }
 
-// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation (stub).
+// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
+// Note: To be implemented in subsequent snapshot resolution tasks.
 func (m *MemoryStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	return nil, nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented in MemoryStore")
 }
 
-// ValidateComponentRequirement checks if a required component type and version exists and is active (stub).
+// ValidateComponentRequirement checks if a required component type and version exists and is active.
+// Note: To be implemented in subsequent dependency validation tasks.
 func (m *MemoryStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented in MemoryStore")
 }
 
-// GetPlatformHealth retrieves overall system component health metrics and status (stub).
+// GetPlatformHealth retrieves overall system component health metrics and status.
+// Note: To be implemented in subsequent platform health monitoring tasks.
 func (m *MemoryStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in MemoryStore")
 }

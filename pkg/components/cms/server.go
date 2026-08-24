@@ -123,6 +123,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
+// Note: To be implemented in subsequent component lifecycle tasks.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
@@ -131,6 +132,7 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 }
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
+// Note: To be implemented in subsequent component lifecycle tasks.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
@@ -139,14 +141,16 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 }
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
+// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented")
+	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented (deferred to stacked PR 3)")
 }
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
+// Note: To be implemented in subsequent component lifecycle tasks.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
@@ -155,6 +159,7 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
+// Note: To be implemented in subsequent snapshot resolution tasks.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
@@ -163,6 +168,7 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
+// Note: To be implemented in subsequent dependency validation tasks.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
 	if _, err := validateNamedRequest(s, req); err != nil {
 		return nil, err
@@ -176,6 +182,7 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
+// Note: To be implemented in subsequent platform health monitoring tasks.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
