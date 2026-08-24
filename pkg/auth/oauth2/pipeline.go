@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
+	"xmanager_cloud/logging/logging"
 )
 
 var ErrAdminRoleNotConfigured = errors.New("admin IAM role not configured")
@@ -226,7 +226,7 @@ func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email
 		domainPrincipal = "domain:" + parts[1]
 	}
 
-	log.Printf("[IAM Pipeline] Verifying role %q for members user:%s serviceaccount:%s domain:%s", role, email, email, domainPrincipal)
+	logging.Info(ctx, "[IAM Pipeline] Verifying role for members", "role", role, "user", userPrincipal, "service_account", saPrincipal, "domain", domainPrincipal)
 
 	for _, binding := range policy.Bindings {
 		if binding.Role == role {
