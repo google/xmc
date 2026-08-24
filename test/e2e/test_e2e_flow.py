@@ -281,7 +281,11 @@ def test_viewer_permission_boundaries_and_isolation(
         data={"title": "Viewer Unauthorized Work Unit"},
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
-    if post_wu_res.status not in (403,):
+    if post_wu_res.status in (200, 201):
+        raise RuntimeError(
+            "Security vulnerability: Viewer successfully created a work unit under admin experiment via workUnits endpoint!"
+        )
+    if post_wu_res.status == 404:
         post_wu_res = page.request.post(
             f"{BASE_URL}/v1/{exp_path}/work_units",
             data={"title": "Viewer Unauthorized Work Unit"},
