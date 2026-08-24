@@ -54,7 +54,6 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 		return nil, err
 	}
 
-	res.Valid = (len(res.Errors) == 0)
 	return res, nil
 }
 

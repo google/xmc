@@ -49,6 +49,9 @@ type ComponentDependencyRef struct {
 
 // UnmarshalYAML implements custom decoding for ComponentDependencyRef supporting strings or mappings.
 func (d *ComponentDependencyRef) UnmarshalYAML(node *yaml.Node) error {
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+	}
 	if node.Kind == yaml.ScalarNode {
 		d.Name = node.Value
 		return nil
@@ -124,39 +127,60 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 	c.GracePeriodSeconds = raw.GracePeriodSeconds
 	c.ForceDeletion = raw.ForceDeletion
 
-	if c.DrainTimeoutSeconds == 0 && raw.DrainingTimeout.Value != "" {
-		sec, err := parseDurationSeconds(raw.DrainingTimeout.Value)
+	if c.DrainTimeoutSeconds == 0 {
+		sec, err := parseDurationNode(&raw.DrainingTimeout, "drainingTimeout")
 		if err != nil {
-			return fmt.Errorf("failed to parse drainingTimeout %q: %w", raw.DrainingTimeout.Value, err)
+			return err
 		}
 		c.DrainTimeoutSeconds = sec
 	}
-	if c.GracePeriodSeconds == 0 && raw.GracePeriod.Value != "" {
-		sec, err := parseDurationSeconds(raw.GracePeriod.Value)
+	if c.GracePeriodSeconds == 0 {
+		sec, err := parseDurationNode(&raw.GracePeriod, "gracePeriod")
 		if err != nil {
-			return fmt.Errorf("failed to parse gracePeriod %q: %w", raw.GracePeriod.Value, err)
+			return err
 		}
 		c.GracePeriodSeconds = sec
 	}
 	return nil
 }
 
-func parseDurationSeconds(s string) (int, error) {
-	var seconds int
-	if val, err := strconv.Atoi(s); err == nil {
-		seconds = val
-	} else {
-		d, err := time.ParseDuration(s)
-		if err != nil {
-			return 0, err
-		}
-		seconds = int(d.Round(time.Second).Seconds())
-		if d > 0 && seconds == 0 {
-			seconds = 1
-		}
+func parseDurationNode(node *yaml.Node, fieldName string) (int, error) {
+	if node == nil || node.Kind == 0 {
+		return 0, nil
 	}
-	if seconds < 0 {
-		return 0, fmt.Errorf("duration cannot be negative: %d", seconds)
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+	}
+	if node.Kind != yaml.ScalarNode {
+		return 0, fmt.Errorf("%s must be a scalar value", fieldName)
+	}
+	if node.Value == "" {
+		return 0, nil
+	}
+	sec, err := parseDurationSeconds(node.Value)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s %q: %w", fieldName, node.Value, err)
+	}
+	return sec, nil
+}
+
+func parseDurationSeconds(s string) (int, error) {
+	if val, err := strconv.Atoi(s); err == nil {
+		if val < 0 {
+			return 0, fmt.Errorf("duration cannot be negative: %d", val)
+		}
+		return val, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("duration cannot be negative: %s", s)
+	}
+	seconds := int(d.Round(time.Second).Seconds())
+	if d > 0 && seconds == 0 {
+		seconds = 1
 	}
 	return seconds, nil
 }
@@ -207,7 +231,13 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 }
 
 func (s *ComponentManifestSpec) decodeDependencies(node *yaml.Node) error {
-	if node == nil || node.Kind == 0 {
+	if node == nil {
+		return nil
+	}
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+	}
+	if node.Kind == 0 {
 		return nil
 	}
 	if node.Kind == yaml.SequenceNode {
