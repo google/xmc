@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -129,6 +130,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
 	}
+	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
 	in.Spec.Generation = in.Generation
 	canonicalName := store.CanonicalComponentName(in.Name)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
@@ -139,6 +141,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 
 	if !in.HasFinalizer && in.DeletionProtection {
 		res.AddFinalizer = true
+		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
 	if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
 		return res, nil
@@ -154,6 +157,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.DeletionProtection {
+		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeletionBlocked, ConditionStatusTrue, in.Generation, "DeletionProtectionEnabled", fmt.Sprintf("Cannot delete %q: deletionProtection is enabled", in.Name))
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
@@ -166,6 +170,7 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		return nil, fmt.Errorf("failed to execute deletion in CMS: %w", err)
 	}
+	logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
@@ -185,6 +190,7 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
 		res.State = setResp.GetComponent().GetStatus().GetState()
 	}
+	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
 	return nil
 }
 
@@ -203,6 +209,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
 		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
+	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
 }
 
@@ -214,6 +221,7 @@ func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentIn
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadProvisionFailed", err.Error())
 			return err
 		}
+		logging.Debug(ctx, "Ensured 1P child workload", "name", in.Name, "namespace", in.Namespace)
 	}
 	return nil
 }
@@ -238,6 +246,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
 		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
+	logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "healthy", isHealthy, "state", res.State.String(), "statusMsg", healthMsg)
 	return res, nil
 }
 

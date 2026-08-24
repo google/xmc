@@ -20,7 +20,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/components/bridge"
 )
 
@@ -120,21 +121,22 @@ func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, in
 
 // Run starts the reconciliation loop and blocks until context cancellation.
 func (c *Controller) Run(ctx context.Context) error {
-	log.Printf("Starting XMC Bridge Controller in namespace %q with interval %v", c.namespace, c.probeInterval)
+	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", c.namespace, "probeInterval", c.probeInterval, "probeTimeout", c.probeTimeout)
 	ticker := time.NewTicker(c.probeInterval)
 	defer ticker.Stop()
 
 	if err := c.RunReconcilePass(ctx); err != nil {
-		log.Printf("Error running initial reconciliation pass: %v", err)
+		logging.Warn(ctx, "Initial reconciliation sweep failed", "error", err)
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Bridge Controller context cancelled, stopping run loop.")
+			logging.Info(ctx, "Bridge Controller context cancelled, stopping run loop")
 			return ctx.Err()
 		case <-ticker.C:
+			logging.Debug(ctx, "Triggering periodic reconciliation sweep", "namespace", c.namespace)
 			if err := c.RunReconcilePass(ctx); err != nil {
-				log.Printf("Error running reconciliation pass: %v", err)
+				logging.Warn(ctx, "Periodic reconciliation sweep failed", "error", err)
 			}
 		}
 	}
@@ -146,6 +148,7 @@ func (c *Controller) RunReconcilePass(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to list Component resources: %w", err)
 	}
+	logging.Debug(ctx, "Reconciliation pass found components", "namespace", c.namespace, "count", len(list.Items))
 	for _, item := range list.Items {
 		c.reconcileItem(ctx, &item)
 	}
@@ -159,17 +162,18 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 
 	res, err := c.reconciler.Reconcile(reconcileCtx, item)
 	if err != nil {
-		log.Printf("Error reconciling component %q: %v", name, err)
+		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
 		return
 	}
 	updatedItem, err := c.syncFinalizers(ctx, item, res)
 	if err != nil {
-		log.Printf("Error syncing finalizers for component %q: %v", name, err)
+		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
 		return
 	}
 	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
-		log.Printf("Error syncing status for component %q: %v", name, err)
+		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
 	}
+	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 }
 
 func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
@@ -182,6 +186,7 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 	}
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
+		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
 		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
 	} else if res.RemoveFinalizer && hasFin {
 		var updated []string
@@ -191,6 +196,7 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 			}
 		}
 		item.SetFinalizers(updated)
+		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
 		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
 	}
 	return item, nil
@@ -199,6 +205,9 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
 	item.Object["status"] = BuildStatusMap(res)
 	_, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, item, metav1.UpdateOptions{})
+	if err == nil {
+		logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	}
 	return err
 }
 
@@ -230,12 +239,14 @@ func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
 
 // RunBridge executes the complete Bridge daemon lifecycle using the specified configuration.
 func RunBridge(ctx context.Context, cfg *Config) error {
+	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", cfg.CMSAddress)
 	conn, err := grpc.NewClient(cfg.CMSAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to connect to CMS at %q: %w", cfg.CMSAddress, err)
 	}
 	defer conn.Close()
 
+	logging.Info(ctx, "Configuring Kubernetes dynamic client", "kubeconfig", cfg.Kubeconfig)
 	k8sCfg, err := BuildKubeConfig(cfg.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to build Kubernetes client config: %w", err)
@@ -253,13 +264,18 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 
 func main() {
 	cfg, err := ParseConfig(os.Args[1:])
-	if err != nil {
-		log.Fatalf("Invalid configuration: %v", err)
-	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := RunBridge(ctx, cfg); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("Controller terminated: %v", err)
+	logger := logging.NewGCPLogger(slog.LevelInfo, "")
+	ctx = logging.WithLogger(ctx, logger)
+
+	if err != nil {
+		logging.Fatal(ctx, "Invalid configuration", "error", err)
 	}
+
+	if err := RunBridge(ctx, cfg); err != nil && !errors.Is(err, context.Canceled) {
+		logging.Fatal(ctx, "Bridge Controller terminated unexpectedly", "error", err)
+	}
+	logging.Info(ctx, "Bridge Controller exited cleanly")
 }

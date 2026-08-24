@@ -18,10 +18,14 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "bridge",
-    srcs = ["reconciler.go"],
+    srcs = [
+        "doc.go",
+        "reconciler.go",
+    ],
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
         "//pkg/components/store",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@org_golang_google_grpc//:go_default_library",

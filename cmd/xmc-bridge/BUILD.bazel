@@ -22,6 +22,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
         "//pkg/components/bridge",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
