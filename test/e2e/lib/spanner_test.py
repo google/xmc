@@ -92,12 +92,23 @@ class TestSpannerManager(unittest.TestCase):
 
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_setup_creates_dbs_with_ddl_files(self, mock_run, mock_cleanup):
+    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(self, mock_run, mock_cleanup):
         self.mgr.setup()
 
         mock_cleanup.assert_called_once()
 
-        # Check DB creation calls with --ddl-file
+        # Check proto descriptors build call
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "build",
+                "//api/protos/experiment:experiment_messages_descriptor",
+                "//api/protos/xid:xid_messages_descriptor",
+            ],
+            cwd="/workspace",
+        )
+
+        # Check DB creation calls with --ddl-file and --proto-descriptors-file
         mock_run.assert_any_call(
             [
                 "gcloud",
@@ -108,6 +119,7 @@ class TestSpannerManager(unittest.TestCase):
                 "--instance=test-inst",
                 "--project=test-proj",
                 "--ddl-file=/workspace/internal/storage/spanner/schema/ess-schema.sql",
+                "--proto-descriptors-file=/workspace/bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
             ]
         )
         mock_run.assert_any_call(
@@ -120,6 +132,7 @@ class TestSpannerManager(unittest.TestCase):
                 "--instance=test-inst",
                 "--project=test-proj",
                 "--ddl-file=/workspace/internal/storage/spanner/schema/xid-schema.sql",
+                "--proto-descriptors-file=/workspace/bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
             ]
         )
 

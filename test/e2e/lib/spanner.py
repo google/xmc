@@ -86,13 +86,28 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
-    def _create_database(self, db_name: str, ddl_file: str) -> None:
-        """Creates a single Spanner database and applies its schema via DDL file."""
+    def _build_proto_descriptors(self) -> None:
+        """Builds protobuf descriptor sets required for Spanner PROTO BUNDLE."""
+        logger.info("Building protobuf descriptor sets with Bazel...")
+        run_cmd(
+            [
+                "bazel",
+                "build",
+                "//api/protos/experiment:experiment_messages_descriptor",
+                "//api/protos/xid:xid_messages_descriptor",
+            ],
+            cwd=self.cfg.workspace_root,
+        )
+
+    def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
+        """Creates a single Spanner database and applies its schema via DDL file and descriptors."""
         ddl_path = os.path.join(self.cfg.workspace_root, ddl_file)
+        proto_desc_path = os.path.join(self.cfg.workspace_root, proto_desc_file)
         logger.info(
-            "Creating Spanner database %s with schema from %s...",
+            "Creating Spanner database %s with schema from %s and descriptors from %s...",
             db_name,
             ddl_file,
+            proto_desc_file,
         )
         run_cmd(
             [
@@ -104,6 +119,7 @@ class SpannerManager:
                 f"--instance={self.cfg.spanner_instance}",
                 f"--project={self.cfg.project_id}",
                 f"--ddl-file={ddl_path}",
+                f"--proto-descriptors-file={proto_desc_path}",
             ]
         )
 
@@ -111,21 +127,24 @@ class SpannerManager:
         """Creates ephemeral databases and initializes schemas concurrently."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
+        self._build_proto_descriptors()
         targets = [
             (
                 self.cfg.ess_db,
                 "internal/storage/spanner/schema/ess-schema.sql",
+                "bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
             ),
             (
                 self.cfg.xid_db,
                 "internal/storage/spanner/schema/xid-schema.sql",
+                "bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
             ),
         ]
         # Provision both databases concurrently with full schema DDL in a single batch
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             futures = [
-                executor.submit(self._create_database, db_name, ddl_file)
-                for db_name, ddl_file in targets
+                executor.submit(self._create_database, db_name, ddl_file, proto_file)
+                for db_name, ddl_file, proto_file in targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
