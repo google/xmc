@@ -1,6 +1,6 @@
 ---
 name: XMC Create PR
-description: Automates creating and updating GitHub Pull Requests, running pre-commit hooks, formatting PR body templates, and managing CI wait buffers.
+description: Automates creating and updating GitHub Pull Requests, running pre-commit hooks, formatting PR body templates, managing CI wait buffers, and enforcing strict confirmation gates for Draft PR conversion.
 ---
 
 # GitHub Pull Request Creation & Update Playbook
@@ -127,9 +127,10 @@ When creating a new PR or populating its description:
    > 
    > *Shall I proceed with creating the Draft Pull Request on GitHub? (Y/n)"*
 
-6. **Create PR via GitHub CLI**:
+6. **Create Draft PR via GitHub CLI**:
+   All new PRs must be created in Draft state:
    ```bash
-   gh pr create --title "<type>(<scope>): <summary>" --body-file pr_body.md
+   gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md
    ```
 
 ---
@@ -151,16 +152,37 @@ When updating an existing Pull Request description:
 
 ## 5. CI Wait Buffer Period
 
-1. After creating or updating a non-draft Pull Request, pause execution for approximately **2 minutes** (120 seconds).
+1. After creating or updating a Pull Request, pause execution for approximately **2 minutes** (120 seconds).
 2. Allow GitHub CI status checks and automated PR review passes to run and produce initial status checks before proceeding to subsequent workflow steps.
 
 ---
 
-## 6. Standard 5-Step End-to-End PR Lifecycle
+## 6. Draft PR to Open Conversion Policy (Strict Confirmation Gate)
 
-When creating and publishing Pull Requests, follow this mandatory 5-step lifecycle:
+Pull Requests in XMC MUST always be created as Draft PRs by default.
 
-1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3.5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
+> [!CAUTION]
+> **Strict Prohibition Against Automatic Draft-to-Open PR Conversion**:
+> Agents MUST NEVER execute `gh pr ready <pr_number>` or convert a Draft Pull Request to Open (ready for review) without explicit, separate user confirmation in the current conversation turn.
+
+### Rules & Guardrails:
+1. **Draft State Default**: All newly created PRs remain in Draft state throughout development, testing, and automated review iterations.
+2. **Generic Authorizations Insufficient**: General instructions like "proceed", "continue", "finish", "all done", "looks good", or "resolve comments" authorize local fixes or test verification, but **DO NOT authorize converting a Draft PR to Open**.
+3. **Mandatory Confirmation Prompt**: Even after all CI checks pass (`gh pr checks`) and 100% of review comments are resolved, the agent MUST NOT run `gh pr ready`. Instead, the agent reports completion and explicitly asks:
+   > *"All CI checks have passed and all review comments have been resolved for Draft PR #<pr_number>."*
+   > 
+   > *"Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)"*
+4. **Execution on Explicit Affirmation Only**:
+   - Run `gh pr ready <pr_number>` **ONLY IF** the user explicitly confirms (e.g., "yes", "Y", "convert to open", "mark ready for review").
+   - If the user declines ("no"), does not respond to the question, or provides any other instruction, the PR **MUST REMAIN in Draft state**.
+
+---
+
+## 7. Standard 5-Step End-to-End PR Lifecycle
+
+When creating and managing Pull Requests, follow this mandatory 5-step lifecycle:
+
+1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3, Step 5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
 2. **Wait for Automated Review Bot**:
    Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
 3. **Pull Review Comments**:
@@ -170,4 +192,5 @@ When creating and publishing Pull Requests, follow this mandatory 5-step lifecyc
    ```
 4. **Address Review Comments**:
    Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/verify_pr_comment_resolution.py`).
-5. **Verify CI Checks & Publish (Requires Confirmation Gate)**: Verify CI status with `gh pr checks <pr_number>`. When checks pass, obtain explicit user confirmation ('Shall I mark Pull Request #<pr_number> as ready for review? (Y/n)'), then run: `gh pr ready <pr_number>`
+5. **Verify CI Checks & Draft Status Report (Requires Explicit Confirmation Gate to Convert)**:
+   Verify CI status with `gh pr checks <pr_number>`. When checks pass and all comments are resolved, report the final state to the user. Do NOT automatically convert the PR to open. Explicitly ask for user confirmation per Section 6 ('*Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)*'). Only if explicitly confirmed by the user, execute: `gh pr ready <pr_number>`
