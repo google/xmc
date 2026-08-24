@@ -717,3 +717,71 @@ func TestEnsure1PWorkload_DetailedMutations(t *testing.T) {
 		t.Errorf("expected updated owner references on service, got %+v", updatedSvc.OwnerReferences)
 	}
 }
+
+func TestEqualIntPointers(t *testing.T) {
+	v32a, v32b, v32c := int32(10), int32(10), int32(20)
+	if !equalInt32Ptr(nil, nil) {
+		t.Error("expected equalInt32Ptr(nil, nil) to be true")
+	}
+	if equalInt32Ptr(&v32a, nil) || equalInt32Ptr(nil, &v32a) {
+		t.Error("expected equalInt32Ptr with one nil to be false")
+	}
+	if !equalInt32Ptr(&v32a, &v32b) {
+		t.Error("expected equalInt32Ptr with identical values to be true")
+	}
+	if equalInt32Ptr(&v32a, &v32c) {
+		t.Error("expected equalInt32Ptr with different values to be false")
+	}
+
+	v64a, v64b, v64c := int64(100), int64(100), int64(200)
+	if !equalInt64Ptr(nil, nil) {
+		t.Error("expected equalInt64Ptr(nil, nil) to be true")
+	}
+	if equalInt64Ptr(&v64a, nil) || equalInt64Ptr(nil, &v64a) {
+		t.Error("expected equalInt64Ptr with one nil to be false")
+	}
+	if !equalInt64Ptr(&v64a, &v64b) {
+		t.Error("expected equalInt64Ptr with identical values to be true")
+	}
+	if equalInt64Ptr(&v64a, &v64c) {
+		t.Error("expected equalInt64Ptr with different values to be false")
+	}
+}
+
+func TestEnsure1PWorkload_ContainerFieldMutations(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	mgr, _ := NewK8sWorkloadManager(clientset)
+	ns := "test-ns"
+	comp := "mut-test"
+
+	opts := WorkloadOptions{
+		Parameters: map[string]string{
+			"port":     "8080",
+			"logLevel": "info",
+		},
+	}
+	if err := mgr.Ensure1PWorkload(context.Background(), ns, comp, opts); err != nil {
+		t.Fatalf("initial Ensure1PWorkload failed: %v", err)
+	}
+
+	// 1. Mutate args
+	opts.Parameters["logLevel"] = "debug"
+	if err := mgr.Ensure1PWorkload(context.Background(), ns, comp, opts); err != nil {
+		t.Fatalf("Ensure1PWorkload with arg mutation failed: %v", err)
+	}
+	dep, _ := clientset.AppsV1().Deployments(ns).Get(context.Background(), comp, metav1.GetOptions{})
+	if len(dep.Spec.Template.Spec.Containers[0].Args) == 0 || dep.Spec.Template.Spec.Containers[0].Args[0] != "-log_level=debug" {
+		t.Errorf("expected updated args, got %+v", dep.Spec.Template.Spec.Containers[0].Args)
+	}
+
+	// 2. Mutate image tag
+	opts.ImageTag = "v2.0.0"
+	if err := mgr.Ensure1PWorkload(context.Background(), ns, comp, opts); err != nil {
+		t.Fatalf("Ensure1PWorkload with image mutation failed: %v", err)
+	}
+	dep, _ = clientset.AppsV1().Deployments(ns).Get(context.Background(), comp, metav1.GetOptions{})
+	expectedImg := fmt.Sprintf("%s/%s:v2.0.0", defaultImageRepoPrefix, comp)
+	if dep.Spec.Template.Spec.Containers[0].Image != expectedImg {
+		t.Errorf("expected updated image %q, got %q", expectedImg, dep.Spec.Template.Spec.Containers[0].Image)
+	}
+}

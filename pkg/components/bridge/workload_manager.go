@@ -189,9 +189,22 @@ func (m *K8sWorkloadManager) reconcileDeployment(ctx context.Context, namespace,
 				existing.Spec.Replicas = desired.Spec.Replicas
 				changed = true
 			}
-			if !reflect.DeepEqual(existing.Spec.Template, desired.Spec.Template) {
+			if !reflect.DeepEqual(existing.Spec.Template.Labels, desired.Spec.Template.Labels) ||
+				!equalInt64Ptr(existing.Spec.Template.Spec.TerminationGracePeriodSeconds, desired.Spec.Template.Spec.TerminationGracePeriodSeconds) ||
+				len(existing.Spec.Template.Spec.Containers) != len(desired.Spec.Template.Spec.Containers) {
 				existing.Spec.Template = desired.Spec.Template
 				changed = true
+			} else if len(existing.Spec.Template.Spec.Containers) > 0 {
+				eConn := existing.Spec.Template.Spec.Containers[0]
+				dConn := desired.Spec.Template.Spec.Containers[0]
+				if eConn.Name != dConn.Name ||
+					eConn.Image != dConn.Image ||
+					!reflect.DeepEqual(eConn.Ports, dConn.Ports) ||
+					!reflect.DeepEqual(eConn.Args, dConn.Args) ||
+					!reflect.DeepEqual(eConn.Lifecycle, dConn.Lifecycle) {
+					existing.Spec.Template = desired.Spec.Template
+					changed = true
+				}
 			}
 			return changed
 		},
@@ -200,6 +213,16 @@ func (m *K8sWorkloadManager) reconcileDeployment(ctx context.Context, namespace,
 }
 
 func equalInt32Ptr(a, b *int32) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func equalInt64Ptr(a, b *int64) bool {
 	if a == nil && b == nil {
 		return true
 	}
