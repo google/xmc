@@ -264,7 +264,8 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create workload manager: %w", err)
 	}
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, wm)
+	prober := bridge.New(dynamicClient, bridge.WithProbeTimeout(cfg.ProbeTimeout))
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), prober, wm)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}

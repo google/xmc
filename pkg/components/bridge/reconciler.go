@@ -19,6 +19,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -49,7 +53,9 @@ type CMSClient interface {
 
 // StatusDetectorHealthProber defines the health checking interface.
 type StatusDetectorHealthProber interface {
+	DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
+	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 }
 
 type serverClientAdapter struct {
@@ -119,6 +125,7 @@ type ReconcileComponentInput struct {
 	Enabled            bool
 	ExistingConditions []Condition
 	WorkloadOpts       WorkloadOptions
+	WrapperOpts        WrapperRef
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -147,6 +154,9 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	}
 	if !in.Enabled {
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
+	}
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		return r.reconcile3PWrapper(ctx, in, canonicalName, res)
 	}
 	if err := r.ensureWorkload(ctx, in, res); err != nil {
 		return res, nil
@@ -249,6 +259,124 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	return res, nil
 }
 
+func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if in.Spec.GetWrapperRef() == nil {
+		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+	}
+
+	if r.prober == nil {
+		return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
+	}
+
+	wRef := in.WrapperOpts
+	if wRef.Kind == "" || wRef.Name == "" {
+		wRef = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
+	}
+
+	resStatus, err := r.prober.DetectStatus(ctx, wRef)
+	if err != nil {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "DetectionFailed", err.Error())
+	}
+	if !resStatus.Found {
+		msg := resStatus.Message
+		if msg == "" {
+			msg = "Underlying 3P resource not found"
+		}
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "ResourceNotFound", msg)
+	}
+	if !resStatus.Ready {
+		msg := resStatus.Message
+		if msg == "" {
+			msg = "Underlying 3P resource not ready"
+		}
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "ResourceNotReady", msg)
+	}
+
+	if ok, reason, msg := r.verifyEndpointHealth(ctx, resStatus.Endpoint); !ok {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
+	}
+
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
+func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
+	if endpoint == "" {
+		return true, "", ""
+	}
+	probeRes, err := r.prober.Probe(ctx, endpoint, 5*time.Second)
+	if err != nil {
+		return false, "ProbeFailed", fmt.Sprintf("Health probe failed for %s: %v", endpoint, err)
+	}
+	if !probeRes.Healthy {
+		msg := probeRes.Message
+		if msg == "" {
+			msg = fmt.Sprintf("Health probe unhealthy for %s", endpoint)
+		}
+		return false, "ProbeUnhealthy", msg
+	}
+	return true, "", ""
+}
+
+func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	isHealthy, healthMsg := true, "Component is active"
+	if r.prober != nil {
+		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec)
+	}
+	if !isHealthy {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "HealthProbeFailed", healthMsg)
+	}
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
+}
+
+func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, message string) (*ReconcileResult, error) {
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
+}
+
+func populateAccessEnvVars(access *AccessStatus, resStatus *ResourceStatus, ns string) {
+	if resStatus == nil {
+		return
+	}
+	if resStatus.Endpoint != "" {
+		if coords := ParseCoordinates(resStatus.Endpoint, ns); coords != nil {
+			access.EnvVars["ENDPOINT"] = resStatus.Endpoint
+			access.EnvVars["HOST"] = coords.GetHost()
+			access.EnvVars["PORT"] = strconv.FormatUint(uint64(coords.GetPort()), 10)
+			access.EnvVars["SCHEME"] = coords.GetScheme()
+		}
+	}
+	if resStatus.ConnectionSecret != "" {
+		access.EnvVars["SECRET_NAME"] = resStatus.ConnectionSecret
+	}
+}
+
+func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *ResourceStatus) (*ReconcileResult, error) {
+	msg := "3P wrapper resource is operational and ready"
+	if resStatus != nil && resStatus.Message != "" {
+		msg = resStatus.Message
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+	if resStatus != nil && resStatus.ObservedGeneration > 0 {
+		res.ObservedGeneration = resStatus.ObservedGeneration
+	}
+
+	populateAccessEnvVars(res.Access, resStatus, in.Namespace)
+
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, res.ObservedGeneration, "ComponentHealthy", msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, res.ObservedGeneration, "ComponentHealthy", msg)
+
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ObservedGeneration, res.State, "Ready=True"); err != nil {
+		return nil, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
+}
+
 // Reconcile executes reconciliation on an unstructured Kubernetes Component object.
 func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructured) (*ReconcileResult, error) {
 	if obj == nil {
@@ -263,6 +391,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 	}
 	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
 	opts := ParseWorkloadOptions(obj.GetUID(), obj.Object["spec"], spec)
+	wOpts := ParseWrapperRefOptions(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
@@ -274,6 +403,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 		WorkloadOpts:       opts,
+		WrapperOpts:        wOpts,
 	})
 }
 
@@ -438,4 +568,105 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 		}
 	}
 	*conditions = append(*conditions, newCond)
+}
+
+// ToBridgeWrapperRef converts a protobuf WrapperRef to the bridge.WrapperRef data model.
+func ToBridgeWrapperRef(pRef *componentspb.WrapperRef, defaultNamespace string) WrapperRef {
+	if pRef == nil {
+		return WrapperRef{}
+	}
+	ns := pRef.GetTargetNamespace()
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	return WrapperRef{
+		Group:     pRef.GetCrdGroup(),
+		Version:   pRef.GetCrdVersion(),
+		Kind:      pRef.GetCrdKind(),
+		Name:      pRef.GetTargetName(),
+		Namespace: ns,
+	}
+}
+
+// ParseWrapperRefOptions extracts a WrapperRef with optional JSONPath queries from a custom resource spec.
+func ParseWrapperRefOptions(specObj any, defaultNamespace string) WrapperRef {
+	specMap, ok := specObj.(map[string]any)
+	if !ok || specMap == nil {
+		return WrapperRef{Namespace: defaultNamespace}
+	}
+	wr, ok := specMap["wrapperRef"].(map[string]any)
+	if !ok || wr == nil {
+		return WrapperRef{Namespace: defaultNamespace}
+	}
+	ns := extractStr(wr, "namespace")
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	return WrapperRef{
+		Group:                    extractStr(wr, "group"),
+		Version:                  extractStr(wr, "version"),
+		Kind:                     extractStr(wr, "kind"),
+		Name:                     extractStr(wr, "name"),
+		Namespace:                ns,
+		ObservedGenerationPath:   extractStr(wr, "observedGenerationPath"),
+		ReadyConditionPath:       extractStr(wr, "readyConditionPath"),
+		ExpectedReadyValue:       extractStr(wr, "expectedReadyValue"),
+		EndpointJSONPath:         extractStr(wr, "endpointJsonPath"),
+		ConnectionSecretJSONPath: extractStr(wr, "connectionSecretJsonPath"),
+	}
+}
+
+// ParseCoordinates extracts scheme, host, port, service name, and namespace from an endpoint string.
+func ParseCoordinates(endpoint, defaultNamespace string) *componentspb.ResolvedComponentCoordinates {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return nil
+	}
+
+	scheme := "http"
+	hostPort := trimmed
+	if strings.Contains(trimmed, "://") {
+		if u, err := url.Parse(trimmed); err == nil {
+			if u.Scheme != "" {
+				scheme = u.Scheme
+			}
+			hostPort = u.Host
+		}
+	}
+
+	host, portStr, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+		if scheme == "https" {
+			portStr = "443"
+		} else if scheme == "http" {
+			portStr = "80"
+		}
+	}
+
+	var port uint32
+	if p, err := strconv.ParseUint(portStr, 10, 32); err == nil {
+		port = uint32(p)
+	}
+
+	svcName, ns := parseServiceAndNamespace(host, defaultNamespace)
+
+	return &componentspb.ResolvedComponentCoordinates{
+		Scheme:      scheme,
+		Host:        host,
+		Port:        port,
+		ServiceName: svcName,
+		Namespace:   ns,
+	}
+}
+
+func parseServiceAndNamespace(host, defaultNamespace string) (string, string) {
+	if ip := net.ParseIP(host); ip != nil {
+		return "", defaultNamespace
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) >= 2 && parts[1] != "svc" {
+		return parts[0], parts[1]
+	}
+	return parts[0], defaultNamespace
 }
