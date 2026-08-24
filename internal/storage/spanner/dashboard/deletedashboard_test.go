@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"task/go/status"
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
 func TestDeleteDashboard_Success(t *testing.T) {
@@ -46,13 +45,14 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("test-chart-del-1", 100, 1)
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart := blankChartProto(chartID, 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-delete-cascade-1")
-	dash.Charts = []*dpb.Chart{{Name: chart.GetName()}}
+	dash.ChartIds = []string{chartID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 	}
 
 	// The referenced chart itself should still exist in Charts table.
-	if _, err := repo.GetChart(ctx, "test-chart-del-1"); err != nil {
+	if _, err := repo.GetChart(ctx, chartID); err != nil {
 		t.Errorf("GetChart after DeleteDashboard failed: %v, chart entity should still exist", err)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"task/go/status"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
@@ -27,7 +28,43 @@ var allowedUpdateDashboardPaths = map[string]bool{
 	"title":        true,
 	"description":  true,
 	"chart_layout": true,
-	"charts":       true,
+	"chartLayout":  true,
+	"chart_ids":    true,
+	"chartIds":     true,
+}
+
+// ValidateChartID validates that a string is a valid raw UUID.
+func ValidateChartID(s string) (string, error) {
+	if strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("chart ID cannot be empty or whitespace: %w", status.ErrInvalidArgument)
+	}
+	if strings.Contains(s, "/") {
+		return "", fmt.Errorf("chart ID %q must be a raw UUID, not a resource name: %w", s, status.ErrInvalidArgument)
+	}
+	parsed, err := uuid.Parse(s)
+	if err != nil {
+		return "", fmt.Errorf("invalid chart UUID %q: %w (%v)", s, status.ErrInvalidArgument, err)
+	}
+	return parsed.String(), nil
+}
+
+// ValidateChartIDs validates a slice of chart UUIDs, ensuring valid format and no duplicates.
+func ValidateChartIDs(chartIDs []string) error {
+	if len(chartIDs) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(chartIDs))
+	for _, id := range chartIDs {
+		normID, err := ValidateChartID(id)
+		if err != nil {
+			return err
+		}
+		if seen[normID] {
+			return fmt.Errorf("duplicate chart ID %q: %w", id, status.ErrInvalidArgument)
+		}
+		seen[normID] = true
+	}
+	return nil
 }
 
 // validateDashboardID checks if a dashboard ID string is non-empty and contains no slashes.
@@ -61,6 +98,11 @@ func ValidateCreateDashboardRequest(in *spb.CreateDashboardRequest) error {
 	if dash.GetName() != "" {
 		if _, err := ValidateDashboardName(dash.GetName()); err != nil {
 			return fmt.Errorf("invalid dashboard.name: %w", err)
+		}
+	}
+	if len(dash.GetChartIds()) > 0 {
+		if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -112,6 +154,11 @@ func ValidateUpdateDashboardRequest(in *spb.UpdateDashboardRequest) error {
 	if strings.TrimSpace(dash.GetTitle()) == "" {
 		return fmt.Errorf("dashboard title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
 	}
+	if len(dash.GetChartIds()) > 0 {
+		if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -120,10 +167,15 @@ func validateDashboardUpdateMask(in *spb.UpdateDashboardRequest) error {
 	dash := in.GetDashboard()
 	for _, path := range in.GetUpdateMask().GetPaths() {
 		if !allowedUpdateDashboardPaths[path] {
-			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, chart_layout, charts: %w", path, status.ErrInvalidArgument)
+			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, chart_layout (chartLayout), chart_ids (chartIds): %w", path, status.ErrInvalidArgument)
 		}
 		if path == "title" && strings.TrimSpace(dash.GetTitle()) == "" {
 			return fmt.Errorf("dashboard title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
+		if (path == "chart_ids" || path == "chartIds") && len(dash.GetChartIds()) > 0 {
+			if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

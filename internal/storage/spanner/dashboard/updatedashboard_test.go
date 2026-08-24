@@ -98,27 +98,29 @@ func TestUpdateDashboard_WithFieldMask(t *testing.T) {
 	}
 }
 
-func TestUpdateDashboard_WithCharts(t *testing.T) {
+func TestUpdateDashboard_WithChartIDs(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart1 := blankChartProto("test-chart-u1", 100, 1)
+	chartID1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chartID2 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	chart1 := blankChartProto(chartID1, 100, 1)
 	if err := repo.CreateChart(ctx, chart1); err != nil {
 		t.Fatalf("CreateChart 1 failed: %v", err)
 	}
-	chart2 := blankChartProto("test-chart-u2", 100, 1)
+	chart2 := blankChartProto(chartID2, 100, 1)
 	if err := repo.CreateChart(ctx, chart2); err != nil {
 		t.Fatalf("CreateChart 2 failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-update-charts-1")
-	dash.Charts = []*dpb.Chart{chart1}
+	dash.ChartIds = []string{chartID1}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
 	update := blankDashboardProto("dashboards/test-update-charts-1")
-	update.Charts = []*dpb.Chart{chart2}
+	update.ChartIds = []string{chartID2}
 
 	if _, err := repo.UpdateDashboard(ctx, update, nil); err != nil {
 		t.Fatalf("UpdateDashboard charts failed: %v", err)
@@ -128,8 +130,41 @@ func TestUpdateDashboard_WithCharts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
-	if len(fetched.GetCharts()) != 1 || fetched.GetCharts()[0].GetName() != chart2.GetName() {
-		t.Fatalf("fetched Charts mismatch: got %v, want %s", fetched.GetCharts(), chart2.GetName())
+	if len(fetched.GetChartIds()) != 1 || fetched.GetChartIds()[0] != chartID2 {
+		t.Fatalf("fetched ChartIds mismatch: got %v, want [%q]", fetched.GetChartIds(), chartID2)
+	}
+}
+
+func TestUpdateDashboard_ClearChartIDs(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chartID1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart1 := blankChartProto(chartID1, 100, 1)
+	if err := repo.CreateChart(ctx, chart1); err != nil {
+		t.Fatalf("CreateChart failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/test-update-clear-1")
+	dash.ChartIds = []string{chartID1}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	update := blankDashboardProto("dashboards/test-update-clear-1")
+	update.ChartIds = []string{}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"chart_ids"}}
+
+	if _, err := repo.UpdateDashboard(ctx, update, mask); err != nil {
+		t.Fatalf("UpdateDashboard clearing charts failed: %v", err)
+	}
+
+	fetched, err := repo.GetDashboard(ctx, "test-update-clear-1")
+	if err != nil {
+		t.Fatalf("GetDashboard failed: %v", err)
+	}
+	if len(fetched.GetChartIds()) != 0 {
+		t.Fatalf("Expected 0 chart IDs after clearing, got %v", fetched.GetChartIds())
 	}
 }
 
@@ -174,141 +209,108 @@ func TestUpdateDashboard_NilOrInvalid(t *testing.T) {
 	}
 }
 
-func TestChartsEqual_NilElements(t *testing.T) {
-	chartA := &dpb.Chart{Name: "charts/c1"}
-	chartB := &dpb.Chart{Name: "charts/c2"}
-
-	tests := []struct {
-		name string
-		a    []*dpb.Chart
-		b    []*dpb.Chart
-		want bool
-	}{
-		{
-			name: "both nil slices",
-			a:    nil,
-			b:    nil,
-			want: true,
-		},
-		{
-			name: "both empty slices",
-			a:    []*dpb.Chart{},
-			b:    []*dpb.Chart{},
-			want: true,
-		},
-		{
-			name: "different lengths",
-			a:    []*dpb.Chart{chartA},
-			b:    []*dpb.Chart{chartA, chartB},
-			want: false,
-		},
-		{
-			name: "both have nil element at same position",
-			a:    []*dpb.Chart{nil},
-			b:    []*dpb.Chart{nil},
-			want: true,
-		},
-		{
-			name: "one has nil element, other has non-nil",
-			a:    []*dpb.Chart{nil},
-			b:    []*dpb.Chart{chartA},
-			want: false,
-		},
-		{
-			name: "one has non-nil element, other has nil",
-			a:    []*dpb.Chart{chartA},
-			b:    []*dpb.Chart{nil},
-			want: false,
-		},
-		{
-			name: "equal chart names",
-			a:    []*dpb.Chart{chartA},
-			b:    []*dpb.Chart{{Name: "charts/c1"}},
-			want: true,
-		},
-		{
-			name: "different chart names",
-			a:    []*dpb.Chart{chartA},
-			b:    []*dpb.Chart{chartB},
-			want: false,
-		},
-		{
-			name: "reordered chart names",
-			a:    []*dpb.Chart{chartA, chartB},
-			b:    []*dpb.Chart{chartB, chartA},
-			want: true,
-		},
-		{
-			name: "reordered chart names with duplicates",
-			a:    []*dpb.Chart{chartA, chartA, chartB},
-			b:    []*dpb.Chart{chartB, chartA, chartA},
-			want: true,
-		},
-		{
-			name: "mismatched duplicate counts",
-			a:    []*dpb.Chart{chartA, chartA, chartB},
-			b:    []*dpb.Chart{chartA, chartB, chartB},
-			want: false,
-		},
-		{
-			name: "reordered with nil element",
-			a:    []*dpb.Chart{nil, chartA},
-			b:    []*dpb.Chart{chartA, nil},
-			want: true,
-		},
-		{
-			name: "mismatched nil counts same length",
-			a:    []*dpb.Chart{nil, chartA},
-			b:    []*dpb.Chart{chartA, chartB},
-			want: false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := chartsEqual(tc.a, tc.b); got != tc.want {
-				t.Errorf("chartsEqual() = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestUpdateDashboard_ReorderedCharts(t *testing.T) {
+func TestUpdateDashboard_ReorderedChartIDs(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart1 := blankChartProto("test-chart-reorder-1", 100, 1)
+	chartID1 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	chartID2 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart1 := blankChartProto(chartID1, 100, 1)
 	if err := repo.CreateChart(ctx, chart1); err != nil {
 		t.Fatalf("CreateChart 1 failed: %v", err)
 	}
-	chart2 := blankChartProto("test-chart-reorder-2", 100, 1)
+	chart2 := blankChartProto(chartID2, 100, 1)
 	if err := repo.CreateChart(ctx, chart2); err != nil {
 		t.Fatalf("CreateChart 2 failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-update-reorder-1")
-	dash.Charts = []*dpb.Chart{chart1, chart2}
+	dash.ChartIds = []string{chartID1, chartID2}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
 	// Update with reordered charts (reverse order)
 	update := blankDashboardProto("dashboards/test-update-reorder-1")
-	update.Charts = []*dpb.Chart{chart2, chart1}
+	update.ChartIds = []string{chartID2, chartID1}
 
 	got, err := repo.UpdateDashboard(ctx, update, nil)
 	if err != nil {
 		t.Fatalf("UpdateDashboard with reordered charts failed: %v", err)
 	}
-	if len(got.GetCharts()) != 2 || got.GetCharts()[0].GetName() != chart1.GetName() || got.GetCharts()[1].GetName() != chart2.GetName() {
-		t.Errorf("got Charts %v, want canonically sorted [%s, %s]", got.GetCharts(), chart1.GetName(), chart2.GetName())
+	if len(got.GetChartIds()) != 2 || got.GetChartIds()[0] != chartID1 || got.GetChartIds()[1] != chartID2 {
+		t.Errorf("got ChartIds %v, want canonically sorted [%s, %s]", got.GetChartIds(), chartID1, chartID2)
 	}
 
 	fetched, err := repo.GetDashboard(ctx, "test-update-reorder-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
-	if len(fetched.GetCharts()) != 2 || fetched.GetCharts()[0].GetName() != chart1.GetName() || fetched.GetCharts()[1].GetName() != chart2.GetName() {
-		t.Fatalf("fetched Charts mismatch: got %v, want sorted charts", fetched.GetCharts())
+	if len(fetched.GetChartIds()) != 2 || fetched.GetChartIds()[0] != chartID1 || fetched.GetChartIds()[1] != chartID2 {
+		t.Fatalf("fetched ChartIds mismatch: got %v, want sorted charts", fetched.GetChartIds())
+	}
+}
+
+func TestUpdateDashboard_CamelCaseChartIdsMask(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chartID1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chartID2 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	chart1 := blankChartProto(chartID1, 100, 1)
+	if err := repo.CreateChart(ctx, chart1); err != nil {
+		t.Fatalf("CreateChart 1 failed: %v", err)
+	}
+	chart2 := blankChartProto(chartID2, 100, 1)
+	if err := repo.CreateChart(ctx, chart2); err != nil {
+		t.Fatalf("CreateChart 2 failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/test-update-camel-1")
+	dash.ChartIds = []string{chartID1}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	update := blankDashboardProto("dashboards/test-update-camel-1")
+	update.ChartIds = []string{chartID2}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"chartIds"}}
+
+	if _, err := repo.UpdateDashboard(ctx, update, mask); err != nil {
+		t.Fatalf("UpdateDashboard with camelCase chartIds mask failed: %v", err)
+	}
+
+	fetched, err := repo.GetDashboard(ctx, "test-update-camel-1")
+	if err != nil {
+		t.Fatalf("GetDashboard failed: %v", err)
+	}
+	if len(fetched.GetChartIds()) != 1 || fetched.GetChartIds()[0] != chartID2 {
+		t.Fatalf("fetched ChartIds mismatch: got %v, want [%q]", fetched.GetChartIds(), chartID2)
+	}
+}
+
+func TestUpdateDashboard_NonExistentChartID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chartID1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart1 := blankChartProto(chartID1, 100, 1)
+	if err := repo.CreateChart(ctx, chart1); err != nil {
+		t.Fatalf("CreateChart failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/test-update-fk-1")
+	dash.ChartIds = []string{chartID1}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	update := blankDashboardProto("dashboards/test-update-fk-1")
+	update.ChartIds = []string{"00000000-0000-0000-0000-000000000000"}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"chart_ids"}}
+
+	_, err := repo.UpdateDashboard(ctx, update, mask)
+	if err == nil {
+		t.Fatalf("UpdateDashboard with non-existent chart ID expected foreign key error, got nil")
 	}
 }

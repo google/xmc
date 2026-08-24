@@ -17,8 +17,6 @@ package dashboard
 import (
 	"context"
 	"testing"
-
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
 func TestCreateDashboard_Success(t *testing.T) {
@@ -31,19 +29,20 @@ func TestCreateDashboard_Success(t *testing.T) {
 	}
 }
 
-func TestCreateDashboard_WithCharts(t *testing.T) {
+func TestCreateDashboard_WithChartIDs(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("test-chart-create-1", 100, 1)
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart := blankChartProto(chartID, 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-create-with-charts")
-	dash.Charts = []*dpb.Chart{chart}
+	dash.ChartIds = []string{chartID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
-		t.Fatalf("CreateDashboard with charts failed: %v", err)
+		t.Fatalf("CreateDashboard with chart IDs failed: %v", err)
 	}
 }
 
@@ -55,5 +54,18 @@ func TestCreateDashboard_WithoutLayout(t *testing.T) {
 	dash.ChartLayout = nil
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard without layout failed: %v", err)
+	}
+}
+
+func TestCreateDashboard_NonExistentChartID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	dash := blankDashboardProto("dashboards/test-create-nonexistent-chart")
+	dash.ChartIds = []string{"00000000-0000-0000-0000-000000000000"}
+
+	err := repo.CreateDashboard(ctx, dash)
+	if err == nil {
+		t.Fatalf("CreateDashboard with non-existent chart ID expected foreign key error, got nil")
 	}
 }
