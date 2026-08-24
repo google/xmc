@@ -224,8 +224,8 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 |                                                                  v (WIF Authenticated)  |
 |  +-----------------------------------------------------------------------------------+  |
 |  | GCP Cloud Spanner (Configured GCP Project & Spanner Instance)                     |  |
-|  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Schema from ess-schema.sql)                |  |
-|  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Schema from xid-schema.sql)                |  |
+|  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Schema from ess-schema.sql)               |  |
+|  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Schema from xid-schema.sql)               |  |
 |  +-----------------------------------------------------------------------------------+  |
 +-----------------------------------------------------------------------------------------+
 ```
