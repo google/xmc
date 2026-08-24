@@ -182,7 +182,7 @@ Pull Requests in XMC MUST always be created as Draft PRs by default.
 
 When creating and managing Pull Requests, follow this mandatory 5-step lifecycle:
 
-1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3.5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
+1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3, Step 5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
 2. **Wait for Automated Review Bot**:
    Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
 3. **Pull Review Comments**:
