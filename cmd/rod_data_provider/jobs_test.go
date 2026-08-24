@@ -323,17 +323,26 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			if !ok {
 				return
 			}
-			if fetcherImpl.lastPageSize != tt.wantPageSize {
-				t.Errorf("PageSize = %d, want %d", fetcherImpl.lastPageSize, tt.wantPageSize)
+			type paginationExpectation struct {
+				LastPageSize   int32
+				LastPageToken  string
+				NextPageToken  string
+				TotalQueueSize int64
 			}
-			if fetcherImpl.lastPageToken != tt.wantPageToken {
-				t.Errorf("PageToken = %q, want %q", fetcherImpl.lastPageToken, tt.wantPageToken)
+			gotPagination := paginationExpectation{
+				LastPageSize:   fetcherImpl.lastPageSize,
+				LastPageToken:  fetcherImpl.lastPageToken,
+				NextPageToken:  resp.NextPageToken,
+				TotalQueueSize: resp.TotalQueueSize,
 			}
-			if resp.NextPageToken != fetcherImpl.nextPageToken {
-				t.Errorf("NextPageToken = %q, want %q", resp.NextPageToken, fetcherImpl.nextPageToken)
+			wantPagination := paginationExpectation{
+				LastPageSize:   tt.wantPageSize,
+				LastPageToken:  tt.wantPageToken,
+				NextPageToken:  fetcherImpl.nextPageToken,
+				TotalQueueSize: tt.wantTotalQueueSize,
 			}
-			if resp.TotalQueueSize != tt.wantTotalQueueSize {
-				t.Errorf("TotalQueueSize = %d, want %d", resp.TotalQueueSize, tt.wantTotalQueueSize)
+			if diff := cmp.Diff(wantPagination, gotPagination); diff != "" {
+				t.Errorf("Pagination response mismatch (-want +got):\n%s", diff)
 			}
 			if tt.wantCount == 0 {
 				return
