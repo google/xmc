@@ -89,7 +89,7 @@ func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.W
 	return WorkUnitStatusHistoryItem{
 		BitReversedXid: 1,
 		WorkUnitId:     wid,
-		HistoryId:      wid,
+		HistoryId:      0,
 		QueueName:      queue,
 		TransitionTime: time.Now().Add(offset),
 		NewState:       int64(state),
@@ -107,10 +107,10 @@ func insertMockItems(t *testing.T, ctx context.Context, client *spanner.Client, 
 	var historyMutations []*spanner.Mutation
 	for i, item := range mockItems {
 		xid := item.BitReversedXid
-		if xid == 0 {
-			xid = 1
+		historyID := item.HistoryId
+		if historyID == 0 {
+			historyID = int64(i + 1)
 		}
-		historyID := int64(i + 1)
 		var eid *int64 = &historyID
 		var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
 		newState := essmsgpb.WorkUnitStatus_WorkUnitState(item.NewState).Enum()

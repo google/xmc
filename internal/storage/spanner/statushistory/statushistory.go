@@ -88,7 +88,9 @@ func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid
 }
 
 func generateHistoryID() int64 {
-	return mrand.Int63()
+	// Combines nanosecond timestamp with a small random offset to guarantee non-zero,
+	// collision-free, monotonically increasing HistoryID values.
+	return time.Now().UnixNano() + mrand.Int63n(1000)
 }
 
 // Repository handles Spanner operations for status history and velocity metrics.
