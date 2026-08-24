@@ -23,6 +23,7 @@ import (
 
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/logging/logging"
@@ -49,12 +50,6 @@ type CMSClient interface {
 // StatusDetectorHealthProber defines the health checking interface.
 type StatusDetectorHealthProber interface {
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
-}
-
-// WorkloadManager defines the lifecycle manager interface for 1P child workloads.
-type WorkloadManager interface {
-	Ensure1PWorkload(ctx context.Context, namespace string, name string, spec *componentspb.ComponentSpec) error
-	Delete1PWorkload(ctx context.Context, namespace string, name string) error
 }
 
 type serverClientAdapter struct {
@@ -123,6 +118,7 @@ type ReconcileComponentInput struct {
 	DeletionProtection bool
 	Enabled            bool
 	ExistingConditions []Condition
+	WorkloadOpts       WorkloadOptions
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -215,7 +211,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 
 func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-		if err := r.workloadManager.Ensure1PWorkload(ctx, in.Namespace, in.Name, in.Spec); err != nil {
+		if err := r.workloadManager.Ensure1PWorkload(ctx, in.Namespace, in.Name, in.WorkloadOpts); err != nil {
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadProvisionFailed", err.Error())
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadProvisionFailed", err.Error())
@@ -263,6 +259,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		}
 	}
 	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
+	opts := ParseWorkloadOptions(obj.GetUID(), obj.Object["spec"], spec)
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
@@ -273,7 +270,39 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		DeletionProtection: dp,
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
+		WorkloadOpts:       opts,
 	})
+}
+
+// ParseWorkloadOptions extracts WorkloadOptions from a Kubernetes custom resource spec and UID.
+func ParseWorkloadOptions(uid types.UID, specObj any, spec *componentspb.ComponentSpec) WorkloadOptions {
+	opts := WorkloadOptions{
+		OwnerUID: uid,
+	}
+	if spec != nil && spec.GetLifecycleControl() != nil && spec.GetLifecycleControl().GetDrainingTimeout() != nil {
+		opts.DrainTimeoutSeconds = int32(spec.GetLifecycleControl().GetDrainingTimeout().GetSeconds())
+	}
+	if spec != nil && spec.GetVersion() != "" {
+		opts.ImageTag = spec.GetVersion()
+	}
+	specMap, ok := specObj.(map[string]any)
+	if !ok || specMap == nil {
+		return opts
+	}
+	if tag, ok := specMap["imageTag"].(string); ok && tag != "" {
+		opts.ImageTag = tag
+	}
+	if pMap, ok := specMap["parameters"].(map[string]any); ok {
+		opts.Parameters = make(map[string]string, len(pMap))
+		for k, v := range pMap {
+			if s, ok := v.(string); ok {
+				opts.Parameters[k] = s
+			} else {
+				opts.Parameters[k] = fmt.Sprintf("%v", v)
+			}
+		}
+	}
+	return opts
 }
 
 // ParseSpecFromUnstructured parses an unstructured spec object.

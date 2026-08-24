@@ -71,7 +71,7 @@ type mockWM struct {
 	active               bool
 }
 
-func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, spec *componentspb.ComponentSpec) error {
+func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, opts WorkloadOptions) error {
 	if m == nil {
 		return nil
 	}

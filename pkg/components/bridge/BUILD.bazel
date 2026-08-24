@@ -21,25 +21,35 @@ go_library(
     srcs = [
         "doc.go",
         "reconciler.go",
+        "workload_builder.go",
     ],
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
         "//pkg/components/store",
+        "@io_k8s_api//apps/v1:apps",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/util/intstr",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )
 
 go_test(
     name = "bridge_test",
-    srcs = ["reconciler_test.go"],
+    srcs = [
+        "reconciler_test.go",
+        "workload_builder_test.go",
+    ],
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/types",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
