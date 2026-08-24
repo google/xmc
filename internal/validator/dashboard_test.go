@@ -510,6 +510,13 @@ func TestValidateGetChartRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "invalid_experiment_chart_request",
+			req: &spb.GetChartRequest{
+				Name: "experiments/1001/charts/chart-1",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
 			name:    "nil_request",
 			req:     nil,
 			wantErr: status.ErrInvalidArgument,

@@ -1026,6 +1026,11 @@ func TestParseChartName(t *testing.T) {
 		wantErr   error
 	}{
 		{
+			name:      "experiment_chart_without_wid",
+			chartName: "experiments/1001/charts/chart-1",
+			wantErr:   status.ErrInvalidArgument,
+		},
+		{
 			name:      "work_unit_chart",
 			chartName: "experiments/1001/workUnits/2002/charts/chart-1",
 			want: ParsedChartName{
