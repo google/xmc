@@ -245,11 +245,10 @@ def test_viewer_permission_boundaries_and_isolation(
     logger.info("✓ Viewer reached dashboard successfully.")
     save_screenshot(page, screenshots_dir, "04_viewer_dashboard_accessible")
 
-    exp_path = (
-        admin_resources.experiment_name
-        if admin_resources.experiment_name.startswith("experiments/")
-        else f"experiments/{admin_resources.experiment_name}"
-    )
+    exp_path = admin_resources.experiment_name
+    # In ESS, work unit mutations (:stop, :restart) authorize against the parent experiment (xid)
+    # before attempting storage lookup. Thus, testing with a standard work unit path exercises
+    # the negative authorization gate at the experiment boundary without needing full JobSet creation.
     wu_path = f"{exp_path}/workUnits/1"
 
     # 3. Assert GET admin experiment returns 403
@@ -261,8 +260,8 @@ def test_viewer_permission_boundaries_and_isolation(
         )
     logger.info("✓ GET %s returned 403 as expected.", exp_path)
 
-    # 4. Assert POST work units under admin experiment cannot succeed (returns 400/403)
-    logger.info("Asserting negative boundary: POST %s/workUnits cannot succeed...", exp_path)
+    # 4. Assert POST work units under admin experiment returns 403
+    logger.info("Asserting negative permission: POST %s/workUnits -> 403...", exp_path)
     post_wu_res = page.request.post(
         f"{BASE_URL}/v1/{exp_path}/workUnits",
         data={"title": "Viewer Unauthorized Work Unit"},
@@ -272,11 +271,11 @@ def test_viewer_permission_boundaries_and_isolation(
         raise RuntimeError(
             "Security vulnerability: Viewer successfully created a work unit under admin experiment via workUnits endpoint!"
         )
-    if post_wu_res.status not in (400, 403):
+    if post_wu_res.status != 403:
         raise RuntimeError(
-            f"Expected status 400 or 403 for POST work units under {exp_path}, got {post_wu_res.status}: {post_wu_res.text()}"
+            f"Expected status 403 for POST work units under {exp_path}, got {post_wu_res.status}: {post_wu_res.text()}"
         )
-    logger.info("✓ POST work units under admin exp rejected with status %d.", post_wu_res.status)
+    logger.info("✓ POST work units under admin exp returned 403 as expected.")
 
     # 5. Assert PATCH admin experiment returns 403
     logger.info("Asserting negative permission: PATCH %s -> 403...", exp_path)
