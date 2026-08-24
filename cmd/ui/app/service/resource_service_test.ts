@@ -14,7 +14,7 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpClient, HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -144,7 +144,7 @@ describe('ResourceService', () => {
       );
 
       const req = state.httpMock.expectOne(
-        (r) =>
+        (r: HttpRequest<unknown>) =>
           r.url === `${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs` &&
           r.params.get('page_size') === '10' &&
           r.params.get('page_token') === 'token-123',
