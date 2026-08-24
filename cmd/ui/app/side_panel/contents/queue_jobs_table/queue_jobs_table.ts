@@ -12,25 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  input,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
-import { MatTableDataSource, MatTableModule } from '@angular/material/table';
+import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
@@ -48,15 +39,12 @@ import {
 
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {
-  constructor(readonly queueName: string) {}
+  constructor(public readonly queueName: string) {}
 }
 
-/**
- * Modern Angular standalone component displaying pending and running jobs for a selected queue.
- */
+/** Component presenting the list of active/pending jobs for a given cluster queue. */
 @Component({
   selector: 'xmc-queue-jobs-table',
-  standalone: true,
   templateUrl: './queue_jobs_table.ng.html',
   styleUrl: './queue_jobs_table.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,22 +57,21 @@ export class QueueJobsTableData implements BaseSidePanelData {
     MatTooltipModule,
     StatusChip,
     ResourceChip,
-    QueueJobStatusPipe,
-    QueueJobPositionPipe,
-    QueueJobResourcesPipe,
     WipBannerComponent,
+    QueueJobPositionPipe,
+    QueueJobStatusPipe,
+    QueueJobResourcesPipe,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
-  private readonly resourceService = inject(ResourceService);
-  private currentQueue = '';
+  public readonly data = input<QueueJobsTableData>();
+  public readonly queueName = input<string>('gpu-cluster-queue');
 
-  readonly data = input<QueueJobsTableData>();
-  readonly queueName = input<string>('gpu-cluster-queue');
-
-  readonly activeQueueName = computed(
+  protected readonly activeQueueName = computed(
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
   );
+
+  private readonly resourceService = inject(ResourceService);
 
   protected readonly isLoading = signal<boolean>(false);
   protected readonly tableControls = {
@@ -95,6 +82,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     totalCount: signal<number>(0),
     nextPageToken: signal<string>(''),
   };
+
+  private currentQueue = '';
 
   protected readonly requestParams = computed(() => {
     const queueName = this.activeQueueName();
@@ -149,8 +138,6 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
 
-  protected readonly dataSource = new MatTableDataSource<DashboardJob>();
-
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
 
   protected displayedColumns: string[] = [
@@ -162,12 +149,6 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'workUnitId',
     'user',
   ];
-
-  constructor() {
-    effect(() => {
-      this.dataSource.data = this.jobs();
-    });
-  }
 
   protected onPageChange(event: PageEvent): void {
     if (event.pageSize !== this.tableControls.pageSize()) {
