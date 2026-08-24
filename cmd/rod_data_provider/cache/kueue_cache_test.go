@@ -111,10 +111,10 @@ func TestGetLocalQueuesForClusterQueues(t *testing.T) {
 
 	t.Run("returns target queues and mappings for cluster queues", func(t *testing.T) {
 		targetQueues, mapping := c.GetLocalQueuesForClusterQueues([]string{"cq-gpu", "cq-cpu", "cq-gpu"})
-		wantTargets := []string{"cq-cpu", "lq-1"}
+		wantTargets := []string{"lq-1"}
 		wantMapping := map[string][]string{
 			"cq-gpu": {"lq-1"},
-			"cq-cpu": {"cq-cpu"},
+			"cq-cpu": nil,
 		}
 		if diff := cmp.Diff(wantTargets, targetQueues); diff != "" {
 			t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
@@ -127,9 +127,9 @@ func TestGetLocalQueuesForClusterQueues(t *testing.T) {
 	t.Run("handles nil cache gracefully", func(t *testing.T) {
 		var nilCache *KueueCache
 		targetQueues, mapping := nilCache.GetLocalQueuesForClusterQueues([]string{"cq-gpu"})
-		wantTargets := []string{"cq-gpu"}
+		wantTargets := []string{}
 		wantMapping := map[string][]string{
-			"cq-gpu": {"cq-gpu"},
+			"cq-gpu": nil,
 		}
 		if diff := cmp.Diff(wantTargets, targetQueues); diff != "" {
 			t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)

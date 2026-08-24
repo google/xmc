@@ -21,10 +21,13 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 )
 
@@ -49,7 +52,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 	mockFetcher := &mockVelocityFetcher{
 		velocityRows: []statushistory.QueueMetricRow{
 			{
-				QueueName:    "cq-gpu",
+				QueueName:    "lq-1",
 				Count:        12,
 				TotalUnits:   96,
 				ResourceType: "nvidia-tesla-h100",
@@ -57,7 +60,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 		},
 		pendingRows: []statushistory.QueueMetricRow{
 			{
-				QueueName:    "cq-gpu",
+				QueueName:    "lq-1",
 				Count:        5,
 				TotalUnits:   40,
 				ResourceType: "nvidia-tesla-h100",
@@ -65,7 +68,14 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 		},
 	}
 
+	c := cache.NewKueueCache()
+	c.LocalQueues.Set("team-a/lq-1", &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-a"},
+		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-gpu"},
+	})
+
 	srv := &server{
+		cache:         c,
 		velocityStore: mockFetcher,
 	}
 
@@ -110,16 +120,22 @@ func TestBatchGetQueueSecondaryData_MultiResource(t *testing.T) {
 	ctx := context.Background()
 	mockFetcher := &mockVelocityFetcher{
 		velocityRows: []statushistory.QueueMetricRow{
-			{QueueName: "cq-mixed", Count: 10, TotalUnits: 16000, ResourceType: "CPU"},
-			{QueueName: "cq-mixed", Count: 10, TotalUnits: 32, ResourceType: "nvidia-tesla-h100"},
+			{QueueName: "lq-mixed", Count: 10, TotalUnits: 16000, ResourceType: "CPU"},
+			{QueueName: "lq-mixed", Count: 10, TotalUnits: 32, ResourceType: "nvidia-tesla-h100"},
 		},
 		pendingRows: []statushistory.QueueMetricRow{
-			{QueueName: "cq-mixed", Count: 4, TotalUnits: 8000, ResourceType: "CPU"},
-			{QueueName: "cq-mixed", Count: 4, TotalUnits: 16, ResourceType: "nvidia-tesla-h100"},
+			{QueueName: "lq-mixed", Count: 4, TotalUnits: 8000, ResourceType: "CPU"},
+			{QueueName: "lq-mixed", Count: 4, TotalUnits: 16, ResourceType: "nvidia-tesla-h100"},
 		},
 	}
 
-	srv := &server{velocityStore: mockFetcher}
+	c := cache.NewKueueCache()
+	c.LocalQueues.Set("team-a/lq-mixed", &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-mixed", Namespace: "team-a"},
+		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-mixed"},
+	})
+
+	srv := &server{cache: c, velocityStore: mockFetcher}
 	req := &spb.BatchGetQueueSecondaryDataRequest{
 		QueueNames: []string{"cq-mixed"},
 		Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
