@@ -147,7 +147,7 @@ def get_untracked_files() -> list[str]:
 
 
 def count_file_lines(file_path: str) -> int:
-    """Counts non-empty lines in a local file."""
+    """Counts lines in a local file."""
     path = Path(file_path)
     if not path.is_file():
         return 0
@@ -195,10 +195,10 @@ def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
-    prod_lines = sum(f["total"] for f in file_stats if f["category"] == "prod")
-    test_lines = sum(f["total"] for f in file_stats if f["category"] == "test")
-    doc_lines = sum(f["total"] for f in file_stats if f["category"] == "doc")
-    generated_lines = sum(f["total"] for f in file_stats if f["category"] == "generated")
+    prod_lines = sum(f["added"] for f in file_stats if f["category"] == "prod")
+    test_lines = sum(f["added"] for f in file_stats if f["category"] == "test")
+    doc_lines = sum(f["added"] for f in file_stats if f["category"] == "doc")
+    generated_lines = sum(f["added"] for f in file_stats if f["category"] == "generated")
     total_code_lines = prod_lines + test_lines
 
     exceeded_reasons: list[str] = []
@@ -246,7 +246,7 @@ def main() -> None:
     parser.add_argument(
         "--base-ref",
         default=None,
-        help="Optional git diff base reference (e.g. 'origin/main', 'HEAD~1'). Default inspects working tree diff.",
+        help="Optional git diff base reference (e.g. 'origin/main...', 'HEAD~1'). Default inspects working tree diff.",
     )
     parser.add_argument(
         "--prod-threshold",

@@ -167,7 +167,6 @@ When updating an existing Pull Request description:
 
 Pull Requests in XMC MUST always be created as Draft PRs by default.
 
-<<<<<<< HEAD
 > [!CAUTION]
 > **Strict Prohibition Against Automatic Draft-to-Open PR Conversion**:
 > Agents MUST NEVER execute `gh pr ready <pr_number>` or convert a Draft Pull Request to Open (ready for review) without explicit, separate user confirmation in the current conversation turn.

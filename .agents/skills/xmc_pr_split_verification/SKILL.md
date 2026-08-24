@@ -43,7 +43,7 @@ graph TD
 Before requesting user confirmation to open a PR (`gh pr create`), the agent MUST evaluate the proposed diff size using `tools/analyze_diff_size.py`:
 
 ```bash
-./tools/analyze_diff_size.py --base-ref origin/main
+./tools/analyze_diff_size.py --base-ref origin/main...
 ```
 
 ### Sizing Criteria & Thresholds

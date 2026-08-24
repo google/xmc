@@ -79,9 +79,9 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
     @mock.patch("analyze_diff_size.get_git_numstat")
     def test_analyze_diff_size_within_thresholds(self, mock_numstat, mock_untracked):
         mock_numstat.return_value = [
-            (100, 50, "pkg/reconciler/handler.go"),  # prod: 150
-            (200, 50, "pkg/reconciler/handler_test.go"),  # test: 250
-            (50, 10, "README.md"),  # doc: 60
+            (100, 50, "pkg/reconciler/handler.go"),  # prod: 100
+            (200, 50, "pkg/reconciler/handler_test.go"),  # test: 200
+            (50, 10, "README.md"),  # doc: 50
             (1000, 0, "pkg/api/v1/api.pb.go"),  # generated: 1000 (ignored)
         ]
         mock_untracked.return_value = []
@@ -97,23 +97,23 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
 
         self.assertFalse(res["threshold_exceeded"])
         self.assertFalse(res["should_trigger_split_verifier"])
-        self.assertEqual(res["metrics"]["prod_code_lines"], 150)
-        self.assertEqual(res["metrics"]["test_code_lines"], 250)
-        self.assertEqual(res["metrics"]["total_code_lines"], 400)
-        self.assertEqual(res["metrics"]["doc_lines"], 60)
+        self.assertEqual(res["metrics"]["prod_code_lines"], 100)
+        self.assertEqual(res["metrics"]["test_code_lines"], 200)
+        self.assertEqual(res["metrics"]["total_code_lines"], 300)
+        self.assertEqual(res["metrics"]["doc_lines"], 50)
         self.assertEqual(res["metrics"]["generated_lines"], 1000)
 
     @mock.patch("analyze_diff_size.get_untracked_files")
     @mock.patch("analyze_diff_size.get_git_numstat")
     def test_analyze_diff_size_exceeds_prod_threshold(self, mock_numstat, mock_untracked):
         mock_numstat.return_value = [
-            (410, 10, "pkg/reconciler/handler.go"),  # prod: 420 (>= 400)
-            (50, 10, "pkg/reconciler/handler_test.go"),  # test: 60
+            (410, 10, "pkg/reconciler/handler.go"),  # prod: 410 (>= 400)
+            (50, 10, "pkg/reconciler/handler_test.go"),  # test: 50
         ]
         mock_untracked.return_value = []
 
         args = argparse.Namespace(
-            base_ref="origin/main",
+            base_ref="origin/main...",
             prod_threshold=400,
             total_code_threshold=1000,
             doc_threshold=1000,
@@ -129,8 +129,8 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
     @mock.patch("analyze_diff_size.get_git_numstat")
     def test_analyze_diff_size_exceeds_total_code_threshold(self, mock_numstat, mock_untracked):
         mock_numstat.return_value = [
-            (300, 50, "pkg/reconciler/handler.go"),  # prod: 350 (< 400)
-            (600, 100, "pkg/reconciler/handler_test.go"),  # test: 700
+            (350, 50, "pkg/reconciler/handler.go"),  # prod: 350 (< 400)
+            (700, 100, "pkg/reconciler/handler_test.go"),  # test: 700
             # total code: 1050 (>= 1000)
         ]
         mock_untracked.return_value = []
@@ -152,8 +152,8 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
     @mock.patch("analyze_diff_size.get_git_numstat")
     def test_analyze_diff_size_exceeds_doc_threshold(self, mock_numstat, mock_untracked):
         mock_numstat.return_value = [
-            (100, 10, "pkg/reconciler/handler.go"),  # prod: 110
-            (950, 60, "docs/large_spec.md"),  # doc: 1010 (>= 1000)
+            (100, 10, "pkg/reconciler/handler.go"),  # prod: 100
+            (1010, 60, "docs/large_spec.md"),  # doc: 1010 (>= 1000)
         ]
         mock_untracked.return_value = []
 
