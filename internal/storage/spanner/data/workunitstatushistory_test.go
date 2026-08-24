@@ -106,9 +106,12 @@ func TestWorkUnitStatusHistoryToInsertMutation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := WorkUnitStatusHistoryToInsertMutation(
+			got, err := WorkUnitStatusHistoryToInsertMutation(
 				tt.xid, tt.wid, tt.historyID, tt.eid, tt.queueName, tt.prevState, tt.newState, tt.resourceType, tt.resourceUnits, tt.t,
 			)
+			if err != nil {
+				t.Fatalf("WorkUnitStatusHistoryToInsertMutation() returned error: %v", err)
+			}
 			if diff := cmp.Diff(tt.want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
 				t.Errorf("WorkUnitStatusHistoryToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
 			}

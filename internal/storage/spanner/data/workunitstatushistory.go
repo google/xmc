@@ -15,6 +15,7 @@
 package spannerdata
 
 import (
+	"fmt"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -36,7 +37,11 @@ type WorkUnitStatusHistoryItem struct {
 }
 
 // WorkUnitStatusHistoryToInsertMutation converts transition details into a Spanner insert mutation.
-func WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceType string, resourceUnits int64, t time.Time) *spanner.Mutation {
+func WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceType string, resourceUnits int64, t time.Time) (*spanner.Mutation, error) {
+	if newState == nil {
+		return nil, fmt.Errorf("newState cannot be nil")
+	}
+
 	var executionID spanner.NullInt64
 	if eid != nil {
 		executionID = spanner.NullInt64{Valid: true, Int64: *eid}
@@ -47,10 +52,7 @@ func WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID int64, eid *int64
 		previousStateVal = int64(*prevState)
 	}
 
-	newStateVal := int64(0)
-	if newState != nil {
-		newStateVal = int64(*newState)
-	}
+	newStateVal := int64(*newState)
 
 	if t.IsZero() {
 		t = time.Now()
@@ -71,5 +73,5 @@ func WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID int64, eid *int64
 			resourceUnits,
 			t,
 		},
-	)
+	), nil
 }

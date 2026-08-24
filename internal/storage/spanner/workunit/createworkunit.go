@@ -105,10 +105,14 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		resMap := statushistory.ExtractAllResourcesFromExecutable(localWU.GetExecutable())
 		qName := localWU.GetExecutable().GetSchedulingConstraints().GetQueueName()
 		var newState *essmsgpb.WorkUnitStatus_WorkUnitState
+		var stateTime time.Time
 		if status := localWU.GetCurrentWorkUnitExecution().GetStatus(); status != nil {
 			newState = status.GetState().Enum()
+			if status.GetUpdateTime() != nil {
+				stateTime = status.GetUpdateTime().AsTime()
+			}
 		}
-		statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &initialEID, qName, nil, newState, resMap, tx)
+		statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &initialEID, qName, nil, newState, resMap, stateTime, tx)
 
 		creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
 		if err != nil {

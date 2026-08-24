@@ -114,9 +114,12 @@ func insertMockItems(t *testing.T, ctx context.Context, client *spanner.Client, 
 		var eid *int64 = &historyID
 		var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
 		newState := essmsgpb.WorkUnitStatus_WorkUnitState(item.NewState).Enum()
-		m := spannerdata.WorkUnitStatusHistoryToInsertMutation(
+		m, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(
 			xid, item.WorkUnitId, historyID, eid, item.QueueName, prevState, newState, item.ResourceType, item.ResourceUnits, item.CreateTime,
 		)
+		if err != nil {
+			t.Fatalf("WorkUnitStatusHistoryToInsertMutation failed: %v", err)
+		}
 		historyMutations = append(historyMutations, m)
 	}
 

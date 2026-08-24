@@ -115,17 +115,12 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			}
 			queueNames[wid] = qName
 
-			var execBytes []byte
-			if err := row.ColumnByName("Executable", &execBytes); err != nil {
+			var exec essmsgpb.Executable
+			if err := row.ColumnByName("Executable", &exec); err != nil {
+				logging.Error(ctx, "failed to scan Executable column from WorkUnits table", "work_unit_id", wid, "error", err)
 				return fmt.Errorf("failed to scan Executable column: %w", err)
 			}
-			if len(execBytes) > 0 {
-				var exec essmsgpb.Executable
-				if err := proto.Unmarshal(execBytes, &exec); err != nil {
-					return fmt.Errorf("failed to unmarshal Executable proto: %w", err)
-				}
-				executables[wid] = &exec
-			}
+			executables[wid] = &exec
 
 			updatedExecutions[wid] = workUnitExecution
 			return nil
@@ -200,10 +195,14 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 				prevState = updatedExecutions[update.WID].Status.State.Enum()
 			}
 			var newState *essmsgpb.WorkUnitStatus_WorkUnitState
+			var stateTime time.Time
 			if updatedExecution.GetStatus() != nil {
 				newState = updatedExecution.Status.State.Enum()
+				if updatedExecution.Status.GetUpdateTime() != nil {
+					stateTime = updatedExecution.Status.GetUpdateTime().AsTime()
+				}
 			}
-			statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, txn)
+			statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, stateTime, txn)
 
 			updatedExecutions[update.WID] = updatedExecution
 		}

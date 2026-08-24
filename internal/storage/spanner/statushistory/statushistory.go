@@ -17,6 +17,7 @@ package statushistory
 import (
 	"context"
 	"fmt"
+	"math"
 	mrand "math/rand"
 	"time"
 
@@ -60,7 +61,7 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
-func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, tx *spanner.ReadWriteTransaction) {
+func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, t time.Time, tx *spanner.ReadWriteTransaction) {
 	if ctx == nil || ctx.Err() != nil {
 		return
 	}
@@ -72,25 +73,24 @@ func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid
 	}
 
 	if len(resourceMap) == 0 {
-		return
+		resourceMap = map[string]int64{"": 0}
 	}
 
-	now := time.Now()
+	if t.IsZero() {
+		t = time.Now()
+	}
 	for resType, units := range resourceMap {
-		if resType == "" || units <= 0 {
+		historyID := generateHistoryID()
+		mutation, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, currentState, newState, resType, units, t)
+		if err != nil {
 			continue
 		}
-
-		historyID := generateHistoryID()
-		mutation := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, currentState, newState, resType, units, now)
 		tx.BufferWrite([]*spanner.Mutation{mutation})
 	}
 }
 
 func generateHistoryID() int64 {
-	// Combines nanosecond timestamp with a small random offset to guarantee non-zero,
-	// collision-free, monotonically increasing HistoryID values.
-	return time.Now().UnixNano() + mrand.Int63n(1000)
+	return mrand.Int63n(math.MaxInt64-1) + 1
 }
 
 // Repository handles Spanner operations for status history and velocity metrics.

@@ -23,6 +23,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
@@ -104,6 +105,16 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 			})
 
 			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
+
+			qName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName()
+			resMap := statushistory.ExtractAllResourcesFromExecutable(wu.GetExecutable())
+			prevState := currentExecution.GetStatus().GetState().Enum()
+			newState := newExecution.GetStatus().GetState().Enum()
+			var stateTime time.Time
+			if newExecution.GetStatus().GetUpdateTime() != nil {
+				stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
+			}
+			statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime, tx)
 
 			// 5. Write the new execution to storage.
 			tx.BufferWrite([]*spanner.Mutation{
