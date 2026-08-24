@@ -29,15 +29,11 @@ func TestValidationResult_Diagnostics(t *testing.T) {
 		if !res.Valid || res.HasErrors() || len(res.Diagnostics) != 0 {
 			t.Fatalf("new ValidationResult should start clean and valid")
 		}
-
 		res.AddWarning("warn.yaml", 10, "WARN_RULE", "warning msg")
-		res.AddDiagnostic(linter.Diagnostic{
-			File: "info.yaml", Line: 1, Severity: linter.SeverityInfo, Rule: "INFO_RULE", Message: "info msg",
-		})
+		res.AddDiagnostic(linter.Diagnostic{File: "custom.yaml", Line: 1, Severity: "CUSTOM", Rule: "CUSTOM", Message: "custom"})
 		if !res.Valid || res.HasErrors() || len(res.Warnings) != 1 {
 			t.Errorf("expected valid=true with 1 warning, got valid=%v, warnings=%v", res.Valid, res.Warnings)
 		}
-
 		res.AddError("err.yaml", 20, "ERR_RULE", "error msg")
 		if res.Valid || !res.HasErrors() || len(res.Errors) != 1 {
 			t.Errorf("expected valid=false with 1 error, got valid=%v, errors=%v", res.Valid, res.Errors)

@@ -14,18 +14,17 @@
 
 package linter
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+)
 
 // DiagnosticSeverity defines the severity level of a diagnostic result.
 type DiagnosticSeverity string
 
 const (
-	// SeverityError indicates a blocking validation failure.
-	SeverityError DiagnosticSeverity = "ERROR"
-	// SeverityWarning indicates a non-blocking diagnostic recommendation.
+	SeverityError   DiagnosticSeverity = "ERROR"
 	SeverityWarning DiagnosticSeverity = "WARNING"
-	// SeverityInfo provides informational context on manifest validation.
-	SeverityInfo DiagnosticSeverity = "INFO"
 )
 
 // Diagnostic represents an individual lint issue located within a file.
@@ -48,12 +47,7 @@ type ValidationResult struct {
 
 // NewValidationResult initializes a clean ValidationResult.
 func NewValidationResult() *ValidationResult {
-	return &ValidationResult{
-		Valid:       true,
-		Diagnostics: []Diagnostic{},
-		Errors:      []string{},
-		Warnings:    []string{},
-	}
+	return &ValidationResult{Valid: true}
 }
 
 // AddDiagnostic appends a diagnostic to the result and updates validity status in a thread-safe manner.
@@ -73,24 +67,12 @@ func (vr *ValidationResult) AddDiagnostic(d Diagnostic) {
 
 // AddError records an ERROR severity diagnostic.
 func (vr *ValidationResult) AddError(file string, line int, rule string, msg string) {
-	vr.AddDiagnostic(Diagnostic{
-		File:     file,
-		Line:     line,
-		Severity: SeverityError,
-		Rule:     rule,
-		Message:  msg,
-	})
+	vr.AddDiagnostic(Diagnostic{File: file, Line: line, Severity: SeverityError, Rule: rule, Message: msg})
 }
 
 // AddWarning records a WARNING severity diagnostic.
 func (vr *ValidationResult) AddWarning(file string, line int, rule string, msg string) {
-	vr.AddDiagnostic(Diagnostic{
-		File:     file,
-		Line:     line,
-		Severity: SeverityWarning,
-		Rule:     rule,
-		Message:  msg,
-	})
+	vr.AddDiagnostic(Diagnostic{File: file, Line: line, Severity: SeverityWarning, Rule: rule, Message: msg})
 }
 
 // HasErrors returns true if the validation result contains any errors in a thread-safe manner.
@@ -98,4 +80,22 @@ func (vr *ValidationResult) HasErrors() bool {
 	vr.mu.RLock()
 	defer vr.mu.RUnlock()
 	return !vr.Valid || len(vr.Errors) > 0
+}
+
+// MarshalJSON implements json.Marshaler with thread-safe read locking.
+func (vr *ValidationResult) MarshalJSON() ([]byte, error) {
+	vr.mu.RLock()
+	defer vr.mu.RUnlock()
+	type alias struct {
+		Valid       bool         `json:"valid"`
+		Diagnostics []Diagnostic `json:"diagnostics"`
+		Errors      []string     `json:"errors"`
+		Warnings    []string     `json:"warnings"`
+	}
+	return json.Marshal(alias{
+		Valid:       vr.Valid,
+		Diagnostics: vr.Diagnostics,
+		Errors:      vr.Errors,
+		Warnings:    vr.Warnings,
+	})
 }

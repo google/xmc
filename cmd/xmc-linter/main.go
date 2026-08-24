@@ -19,53 +19,66 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"xmanager_cloud/pkg/components/linter"
 )
 
-func main() {
-	manifestsDir := flag.String("manifests-dir", "", "Path to directory containing component YAML manifests")
-	rulesConfig := flag.String("rules-config", "", "Path to rules.yaml defining static checks and compatibility matrix")
-	outputFormat := flag.String("output", "text", "Reporting format: text or json")
-	flag.Parse()
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("xmc-linter", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	manifestsDir := fs.String("manifests-dir", "", "Path to directory containing component YAML manifests")
+	rulesConfig := fs.String("rules-config", "", "Path to rules.yaml defining static checks and compatibility matrix")
+	outputFormat := fs.String("output", "text", "Reporting format: text or json")
+	if err := fs.Parse(args); err != nil || *manifestsDir == "" {
+		if err == nil {
+			fmt.Fprintf(stderr, "Error: --manifests-dir is required\n")
+		}
+		return 1
+	}
 
-	if *manifestsDir == "" {
-		fmt.Fprintf(os.Stderr, "Error: --manifests-dir is required\n")
-		flag.Usage()
-		os.Exit(1)
+	if *outputFormat != "text" && *outputFormat != "json" {
+		fmt.Fprintf(stderr, "Error: invalid --output format %q, must be 'text' or 'json'\n", *outputFormat)
+		return 1
 	}
 
 	lint := linter.NewLinter()
 	res, err := lint.ValidateDirectory(*manifestsDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error running linter on %q: %v\n", *manifestsDir, err)
-		os.Exit(1)
-	}
-
-	if *outputFormat == "json" {
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error marshaling JSON diagnostics: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println(string(data))
-		if !res.Valid {
-			os.Exit(1)
-		}
-		return
-	}
-
-	for _, w := range res.Warnings {
-		fmt.Printf("[WARNING] %s\n", w)
-	}
-	if !res.Valid {
-		fmt.Fprintf(os.Stderr, "Validation FAILED with %d error(s):\n", len(res.Errors))
-		for _, e := range res.Errors {
-			fmt.Fprintf(os.Stderr, "  [ERROR] %s\n", e)
-		}
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Error running linter on %q: %v\n", *manifestsDir, err)
+		return 1
 	}
 	_ = rulesConfig
-	fmt.Println("All component manifests passed static validation successfully!")
+	return printReport(res, *outputFormat, stdout, stderr)
+}
+
+func printReport(res *linter.ValidationResult, outputFormat string, stdout, stderr io.Writer) int {
+	if outputFormat == "json" {
+		data, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "Error marshaling JSON report: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, string(data))
+		if res.HasErrors() {
+			return 1
+		}
+		return 0
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintf(stdout, "[WARNING] %s\n", w)
+	}
+	for _, e := range res.Errors {
+		fmt.Fprintf(stderr, "[ERROR] %s\n", e)
+	}
+	if res.HasErrors() {
+		return 1
+	}
+	fmt.Fprintln(stdout, "All component manifests passed static validation successfully!")
+	return 0
+}
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
