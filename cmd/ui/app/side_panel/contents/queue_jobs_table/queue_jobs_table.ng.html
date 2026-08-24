@@ -127,15 +127,16 @@
         <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
       </table>
 
-      <mat-paginator
-        aria-label="Select page of queue jobs"
-        [hidden]="tableControls.totalCount() === 0"
-        [length]="tableControls.totalCount()"
-        [pageSize]="tableControls.pageSize()"
-        [pageIndex]="tableControls.pageIndex()"
-        [pageSizeOptions]="pageSizeOptions"
-        (page)="onPageChange($event)"
-      />
+      @if (tableControls.totalCount() > 0) {
+        <mat-paginator
+          aria-label="Select page of queue jobs"
+          [length]="tableControls.totalCount()"
+          [pageSize]="tableControls.pageSize()"
+          [pageIndex]="tableControls.pageIndex()"
+          [pageSizeOptions]="pageSizeOptions"
+          (page)="onPageChange($event)"
+        />
+      }
     </div>
   }
 </div>

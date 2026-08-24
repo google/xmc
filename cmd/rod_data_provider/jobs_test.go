@@ -80,6 +80,23 @@ var (
 	}
 )
 
+func newTestKueueCache() *cache.KueueCache {
+	c := cache.NewKueueCache()
+	c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+	})
+	return c
+}
+
+func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
+	return []*essmsgpb.WorkUnit{
+		proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+			wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+		}),
+	}
+}
+
 type mockWorkUnitFetcher struct {
 	workUnits      []*essmsgpb.WorkUnit
 	nextPageToken  string
@@ -125,23 +142,12 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		wantTotalQueueSize int64
 	}{
 		{
-			name: "Success With Fetcher",
-			ctx:  context.Background(),
-			req:  baseReq,
-			setupCache: func() *cache.KueueCache {
-				c := cache.NewKueueCache()
-				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-				})
-				return c
-			},
+			name:       "Success With Fetcher",
+			ctx:        context.Background(),
+			req:        baseReq,
+			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []*essmsgpb.WorkUnit{
-					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-					}),
-				},
+				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 1,
 			},
 			wantCode:           codes.OK,
@@ -158,20 +164,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				PageSize:  10,
 				PageToken: "token-abc",
 			},
-			setupCache: func() *cache.KueueCache {
-				c := cache.NewKueueCache()
-				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-				})
-				return c
-			},
+			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []*essmsgpb.WorkUnit{
-					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-					}),
-				},
+				workUnits:      newTestWorkUnits(now),
 				nextPageToken:  "token-xyz",
 				totalQueueSize: 1,
 			},
@@ -188,20 +183,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				QueueName: "gpu-cluster-queue",
 				PageSize:  0,
 			},
-			setupCache: func() *cache.KueueCache {
-				c := cache.NewKueueCache()
-				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-				})
-				return c
-			},
+			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []*essmsgpb.WorkUnit{
-					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-					}),
-				},
+				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 10,
 			},
 			wantCode:           codes.OK,
@@ -217,20 +201,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				QueueName: "gpu-cluster-queue",
 				PageSize:  200,
 			},
-			setupCache: func() *cache.KueueCache {
-				c := cache.NewKueueCache()
-				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-				})
-				return c
-			},
+			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []*essmsgpb.WorkUnit{
-					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-					}),
-				},
+				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 150,
 			},
 			wantCode:           codes.OK,
@@ -247,16 +220,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				PageSize:  10,
 				PageToken: "invalid-token",
 			},
-			setupCache: func() *cache.KueueCache {
-				c := cache.NewKueueCache()
-				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-				})
-				return c
-			},
-			fetcher:  &mockWorkUnitFetcher{err: fmt.Errorf("decoding error: %w", workunit.ErrInvalidPageToken)},
-			wantCode: codes.InvalidArgument,
+			setupCache: newTestKueueCache,
+			fetcher:    &mockWorkUnitFetcher{err: fmt.Errorf("decoding error: %w", workunit.ErrInvalidPageToken)},
+			wantCode:   codes.InvalidArgument,
 		},
 		{
 			name:      "Unavailable With Nil Fetcher",
