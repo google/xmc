@@ -36,6 +36,13 @@ const BASE_SCREENSHOT_STYLES = `
     padding: 24px !important;
     box-sizing: border-box !important;
   }
+  xmc-*,
+  [data-screenshot-target],
+  [class*="placeholder"],
+  [class*="scaffolding"] {
+    display: block !important;
+    box-sizing: border-box !important;
+  }
 `;
 
 export async function handleUserAuthRoute(route: Route) {
@@ -54,11 +61,23 @@ export async function handleConfigRoute(route: Route) {
   });
 }
 
+export const MOCK_CLUSTER_QUEUES = {
+  queues: [
+    {
+      queueName: 'gpu-cluster-queue',
+      queueCapacity: [{ resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 }],
+    },
+    {
+      queueName: 'cpu-cluster-queue',
+      queueCapacity: [{ resourceType: 'cpu', totalCapacity: 512, freeCapacity: 448 }],
+    },
+  ],
+};
+
 export const MOCK_JOBS = [
   {
     xid: '10293841',
     status: 'RUNNING',
-    positionInQueue: 0,
     priority: 100,
     requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 8 }],
     workUnitId: 'wu-1',
@@ -66,61 +85,44 @@ export const MOCK_JOBS = [
   {
     xid: '10293842',
     status: 'PENDING',
-    positionInQueue: 1,
     priority: 50,
     requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 4 }],
     workUnitId: 'wu-2',
   },
 ];
 
-export const MOCK_CLUSTER_QUEUES = [
-  {
-    queueName: 'gpu-cluster-queue',
-    cohort: 'gpu-cohort',
-    queueCapacity: [
-      { resourceType: 'nvidia.com/gpu', freeCapacity: 56, totalCapacity: 64, maxWorkloadSize: 64 },
-      { resourceType: 'cpu', freeCapacity: 448, totalCapacity: 512, maxWorkloadSize: 512 },
-    ],
-  },
-  {
-    queueName: 'cpu-cluster-queue',
-    cohort: 'cpu-cohort',
-    queueCapacity: [
-      { resourceType: 'cpu', freeCapacity: 448, totalCapacity: 512, maxWorkloadSize: 512 },
-    ],
-  },
-];
+/**
+ * UI test harness utilities for Playwright visual screenshot testing.
+ * Mocks user auth, feature flag configuration, and cluster queue data routes.
+ */
+export async function setupMockRoutes(page: Page) {
+  await page.route('/api/user', handleUserAuthRoute);
+  await page.route('**/health/userinfo', handleUserAuthRoute);
+  await page.route('/config.js', handleConfigRoute);
 
-export async function handleClusterQueuesRoute(route: Route) {
-  const url = route.request().url();
-  if (url.includes('/jobs')) {
+  await page.route('**/clusterqueues', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_CLUSTER_QUEUES),
+    });
+  });
+
+  await page.route('**/clusterqueues/*/jobs', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ jobs: MOCK_JOBS, totalQueueSize: MOCK_JOBS.length }),
     });
-  } else if (url.includes('/secondarydata')) {
+  });
+
+  await page.route('**/clusterqueues:batchGetSecondaryData', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ queuePredictability: {} }),
     });
-  } else {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ queues: MOCK_CLUSTER_QUEUES }),
-    });
-  }
-}
-
-/**
- * Mocks user auth and feature flag configuration routes for Playwright tests.
- */
-export async function setupMockRoutes(page: Page) {
-  await page.route('/api/user', handleUserAuthRoute);
-  await page.route('/config.js', handleConfigRoute);
-  await page.route('**/clusterqueues**', handleClusterQueuesRoute);
+  });
 }
 
 /**

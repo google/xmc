@@ -18,7 +18,7 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1200 });
+    await page.setViewportSize({ width: 1600, height: 900 });
     // Intercept user auth and config API endpoints so authGuard and feature flags succeed
     await setupMockRoutes(page);
     // Navigate to production route /resources
@@ -28,31 +28,38 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await jobsPromise;
+    await expect(page.locator('xmc-queue-jobs-table .jobs-card-title')).toHaveText(
+      'Jobs in the queue (2)',
+    );
     await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({
     page,
   }) => {
+    const dashboard = page.locator('xmc-resource-dashboard');
+    await expect(dashboard).toBeVisible();
+    await expect(page.locator('xmc-queue-jobs-table .jobs-mat-table')).toBeVisible();
+
     // Capture baseline screenshot of full Resource Dashboard container
-    await expect(page).toHaveScreenshot('resource-dashboard-initial.png');
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
   });
 
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
+    await expect(dashboard).toBeVisible();
+    await expect(page.locator('xmc-queue-jobs-table .jobs-mat-table')).toBeVisible();
 
-    // Click on unselected cluster queue item (cpu-cluster-queue) to trigger selection change
-    const queueItem = dashboard.locator('xmc-rod-queue-card', {
-      hasText: 'cpu-cluster-queue',
+    // Click on resolved cluster queue item
+    const queueItem = dashboard.locator('.queue-card', {
+      hasText: 'gpu-cluster-queue',
     });
-
-    const jobsResponsePromise = page.waitForResponse(
-      (resp) => resp.url().includes('/jobs') && resp.status() === 200,
-    );
     await queueItem.click();
-    await jobsResponsePromise;
+
+    // Verify selected class is applied
+    await expect(queueItem).toHaveClass(/selected/);
 
     // Capture screenshot with selected queue state
-    await expect(page).toHaveScreenshot('resource-dashboard-queue-selected.png');
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
   });
 });
