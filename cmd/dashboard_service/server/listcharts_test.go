@@ -41,8 +41,8 @@ func TestListCharts(t *testing.T) {
 			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
 				gotParent, gotPageSize, gotPageToken = parent, pageSize, pageToken
 				return []*dpb.Chart{
-					{Name: "charts/1", Title: "Loss"},
-					{Name: "charts/2", Title: "Accuracy"},
+					{Name: "charts/1", Title: "Loss", Xid: 42},
+					{Name: "charts/2", Title: "Accuracy", Xid: 42},
 				}, "next-tok", nil
 			},
 		}
@@ -121,7 +121,7 @@ func TestListCharts(t *testing.T) {
 		}
 	})
 
-	t.Run("dashboard parent does not consult the XID service", func(t *testing.T) {
+	t.Run("dashboard parent is not authorized as a whole", func(t *testing.T) {
 		called := false
 		xidMock := &mockXidClient{
 			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
@@ -135,7 +135,55 @@ func TestListCharts(t *testing.T) {
 			t.Fatalf("ListCharts failed: %v", err)
 		}
 		if called {
-			t.Error("Expected no XID authorization call for a dashboard parent")
+			t.Error("Expected no XID authorization call when a dashboard parent yields no charts")
+		}
+	})
+
+	t.Run("dashboard parent prunes charts the caller cannot read", func(t *testing.T) {
+		repo := &mockRepository{
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+				return []*dpb.Chart{
+					{Name: "charts/readable", Xid: 11},
+					{Name: "charts/forbidden", Xid: 22},
+				}, "next-tok", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetName() == "xids/11")}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/1"})
+		if err != nil {
+			t.Fatalf("ListCharts failed: %v", err)
+		}
+		if len(resp.GetCharts()) != 1 || resp.GetCharts()[0].GetName() != "charts/readable" {
+			t.Fatalf("Expected only 'charts/readable', got %d charts", len(resp.GetCharts()))
+		}
+		// Pruning must not suppress the token: AIP-158 clients keep following it even on a short page.
+		if resp.GetNextPageToken() != "next-tok" {
+			t.Errorf("Expected next page token 'next-tok', got %q", resp.GetNextPageToken())
+		}
+	})
+
+	t.Run("dashboard parent propagates XID service failure as Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+				return []*dpb.Chart{{Name: "charts/1", Xid: 11}}, "", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return nil, errors.New("xid service unavailable")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/1"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("Expected code Internal, got %v", status.Code(err))
 		}
 	})
 

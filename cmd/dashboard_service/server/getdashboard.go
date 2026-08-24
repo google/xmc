@@ -25,9 +25,11 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// GetDashboard retrieves a dashboard by resource name with open read for authenticated users (AIP-131).
+// GetDashboard retrieves a dashboard by resource name (AIP-131). The dashboard itself is an open
+// read for authenticated users, but its charts are pruned to those whose experiment the caller can
+// read, so a dashboard cannot be used to reach charts from an inaccessible experiment.
 func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest) (*dpb.Dashboard, error) {
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
@@ -41,6 +43,21 @@ func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest)
 		return nil, status.Errorf(codes.InvalidArgument, "invalid dashboard name: %v", err)
 	}
 
+	dash, err := s.readDashboard(ctx, dashID, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	charts, err := s.filterAuthorizedCharts(ctx, user, dash.GetCharts())
+	if err != nil {
+		return nil, err
+	}
+	dash.Charts = charts
+	return dash, nil
+}
+
+// readDashboard loads a dashboard by ID and maps storage failures onto gRPC status codes.
+func (s *Server) readDashboard(ctx context.Context, dashID, name string) (*dpb.Dashboard, error) {
 	if s.repo == nil {
 		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
 	}
@@ -48,10 +65,12 @@ func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest)
 	dash, err := s.repo.GetDashboard(ctx, dashID)
 	if err != nil {
 		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "dashboard %q not found", req.GetName())
+			return nil, status.Errorf(codes.NotFound, "dashboard %q not found", name)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to get dashboard: %v", err)
 	}
-
+	if dash == nil {
+		return nil, status.Errorf(codes.NotFound, "dashboard %q not found", name)
+	}
 	return dash, nil
 }

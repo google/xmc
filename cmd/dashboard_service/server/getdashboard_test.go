@@ -19,11 +19,14 @@ import (
 	"errors"
 	"testing"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func TestGetDashboard(t *testing.T) {
@@ -56,6 +59,62 @@ func TestGetDashboard(t *testing.T) {
 		}
 		if resp.GetOwner() != "owner@example.com" {
 			t.Errorf("Expected owner 'owner@example.com', got %q", resp.GetOwner())
+		}
+	})
+
+	t.Run("prunes charts whose experiment the caller cannot read", func(t *testing.T) {
+		repo := &mockRepository{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name: "dashboards/" + dashboardId,
+					Charts: []*dpb.Chart{
+						{Name: "charts/readable", Xid: 11},
+						{Name: "charts/forbidden", Xid: 22},
+						{Name: "charts/also-readable", Xid: 11},
+					},
+				}, nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetName() == "xids/11")}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		resp, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
+		if err != nil {
+			t.Fatalf("GetDashboard failed: %v", err)
+		}
+		if len(resp.GetCharts()) != 2 {
+			t.Fatalf("Expected 2 readable charts, got %d", len(resp.GetCharts()))
+		}
+		for _, chart := range resp.GetCharts() {
+			if chart.GetXid() != 11 {
+				t.Errorf("Expected only charts from experiment 11, got chart %q with xid %d", chart.GetName(), chart.GetXid())
+			}
+		}
+	})
+
+	t.Run("XID service failure returns Internal rather than an empty chart list", func(t *testing.T) {
+		repo := &mockRepository{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name:   "dashboards/" + dashboardId,
+					Charts: []*dpb.Chart{{Name: "charts/1", Xid: 11}},
+				}, nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return nil, errors.New("xid service unavailable")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("Expected code Internal, got %v", status.Code(err))
 		}
 	})
 
