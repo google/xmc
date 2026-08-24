@@ -48,13 +48,13 @@ func ValidateChartID(s string) (string, error) {
 	return parsed.String(), nil
 }
 
-// ValidateChartIDs validates a slice of chart UUIDs, ensuring valid format and no duplicates.
+// ValidateChartIDs validates a slice of chart UUIDs, ensuring valid format and no duplicates, and normalizes them in-place.
 func ValidateChartIDs(chartIDs []string) error {
 	if len(chartIDs) == 0 {
 		return nil
 	}
 	seen := make(map[string]bool, len(chartIDs))
-	for _, id := range chartIDs {
+	for i, id := range chartIDs {
 		normID, err := ValidateChartID(id)
 		if err != nil {
 			return err
@@ -63,6 +63,7 @@ func ValidateChartIDs(chartIDs []string) error {
 			return fmt.Errorf("duplicate chart ID %q: %w", id, status.ErrInvalidArgument)
 		}
 		seen[normID] = true
+		chartIDs[i] = normID
 	}
 	return nil
 }

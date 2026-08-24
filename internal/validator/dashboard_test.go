@@ -16,6 +16,7 @@ package validator
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -98,21 +99,31 @@ func TestValidateChartIDs(t *testing.T) {
 	tests := []struct {
 		name     string
 		chartIDs []string
+		wantIDs  []string
 		wantErr  error
 	}{
 		{
 			name:     "nil_slice",
 			chartIDs: nil,
+			wantIDs:  nil,
 			wantErr:  nil,
 		},
 		{
 			name:     "empty_slice",
 			chartIDs: []string{},
+			wantIDs:  []string{},
 			wantErr:  nil,
 		},
 		{
 			name:     "valid_chart_ids",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+			wantErr:  nil,
+		},
+		{
+			name:     "valid_chart_ids_normalized_in_place",
+			chartIDs: []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479", "C9A646D3-9C61-4CD7-BF10-8E96DC638210"},
+			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 			wantErr:  nil,
 		},
 		{
@@ -157,6 +168,11 @@ func TestValidateChartIDs(t *testing.T) {
 			err := ValidateChartIDs(tc.chartIDs)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateChartIDs() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && tc.wantIDs != nil {
+				if !slices.Equal(tc.chartIDs, tc.wantIDs) {
+					t.Errorf("ValidateChartIDs() normalized chartIDs = %v, want %v", tc.chartIDs, tc.wantIDs)
+				}
 			}
 		})
 	}
@@ -203,6 +219,16 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{
 					Title:    "Valid Dashboard",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_with_chart_ids_normalized_in_place",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Title:    "Valid Dashboard",
+					ChartIds: []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479"},
 				},
 			},
 			wantErr: nil,
@@ -284,6 +310,11 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			err := ValidateCreateDashboardRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateCreateDashboardRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.name == "valid_request_with_chart_ids_normalized_in_place" && err == nil {
+				if got := tc.req.GetDashboard().GetChartIds()[0]; got != "f47ac10b-58cc-4372-a567-0e02b2c3d479" {
+					t.Errorf("expected chart ID normalized to lowercase, got %q", got)
+				}
 			}
 		})
 	}
@@ -405,6 +436,21 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
 					Paths: []string{"title", "description", "chart_layout", "chart_ids"},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_partial_update_chart_ids_normalized_in_place",
+			req: &spb.UpdateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Name:        "dashboards/dash-123",
+					Title:       "Updated Title",
+					Description: "Updated Description",
+					ChartIds:    []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479"},
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"chart_ids"},
 				},
 			},
 			wantErr: nil,
@@ -610,6 +656,11 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 			err := ValidateUpdateDashboardRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateUpdateDashboardRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.name == "valid_partial_update_chart_ids_normalized_in_place" && err == nil {
+				if got := tc.req.GetDashboard().GetChartIds()[0]; got != "f47ac10b-58cc-4372-a567-0e02b2c3d479" {
+					t.Errorf("expected chart ID normalized to lowercase, got %q", got)
+				}
 			}
 		})
 	}
