@@ -619,19 +619,6 @@ func TestPropagateAuthContext(t *testing.T) {
 	})
 }
 
-func TestListCharts(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
-	if err != nil {
-		t.Fatalf("ListCharts failed: %v", err)
-	}
-	if len(resp.GetCharts()) == 0 {
-		t.Fatal("ListCharts returned 0 charts, want at least 1")
-	}
-}
-
 func TestUpdateChart(t *testing.T) {
 	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()

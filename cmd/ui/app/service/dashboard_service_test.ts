@@ -423,13 +423,18 @@ describe('DashboardService', () => {
   });
 
   describe('listCharts', () => {
-    const mockResponse: ListChartsResponse = {
+    const serverResponse = {
       charts: [
         {
           name: 'charts/chart-1',
           title: 'Loss Chart',
         },
       ],
+      nextPageToken: 'token_2',
+    };
+    // normalizeChart backfills the required xid and plots fields.
+    const expectedResponse: ListChartsResponse = {
+      charts: [{ name: 'charts/chart-1', title: 'Loss Chart', xid: 0, plots: [] }],
       nextPageToken: 'token_2',
     };
 
@@ -445,10 +450,10 @@ describe('DashboardService', () => {
         `${XMC_API_DOMAIN}/dashboards/dash-1/charts?pageSize=10&pageToken=token_1`,
       );
       expect(req.request.method).toBe('GET');
-      req.flush(mockResponse);
+      req.flush(serverResponse);
 
       const response = await responsePromise;
-      expect(response).toEqual(mockResponse);
+      expect(response).toEqual(expectedResponse);
     });
 
     it('should list charts under a work unit parent', async () => {
@@ -458,10 +463,10 @@ describe('DashboardService', () => {
 
       const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/42/workUnits/7/charts`);
       expect(req.request.method).toBe('GET');
-      req.flush(mockResponse);
+      req.flush(serverResponse);
 
       const response = await responsePromise;
-      expect(response).toEqual(mockResponse);
+      expect(response).toEqual(expectedResponse);
     });
 
     it('should return error when parent is missing', async () => {

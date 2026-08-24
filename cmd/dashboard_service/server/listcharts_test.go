@@ -20,11 +20,15 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestListCharts(t *testing.T) {
@@ -88,6 +92,64 @@ func TestListCharts(t *testing.T) {
 		}
 		if len(resp.GetCharts()) != 1 {
 			t.Errorf("Expected 1 chart, got %d", len(resp.GetCharts()))
+		}
+	})
+
+	t.Run("work unit parent requires experiment READER access", func(t *testing.T) {
+		var gotXidName, gotUser string
+		var gotRole xpb.XidAcls_RoleType
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				gotXidName, gotUser, gotRole = in.GetName(), in.GetUser(), in.GetRoleType()
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42/workUnits/7"})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("Expected code PermissionDenied, got %v", status.Code(err))
+		}
+		if gotXidName != "xids/42" {
+			t.Errorf("Expected xid name 'xids/42', got %q", gotXidName)
+		}
+		if gotUser != "user@example.com" {
+			t.Errorf("Expected authenticated user 'user@example.com', got %q", gotUser)
+		}
+		if gotRole != xpb.XidAcls_READER {
+			t.Errorf("Expected role READER, got %v", gotRole)
+		}
+	})
+
+	t.Run("dashboard parent does not consult the XID service", func(t *testing.T) {
+		called := false
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				called = true
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		if _, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/1"}); err != nil {
+			t.Fatalf("ListCharts failed: %v", err)
+		}
+		if called {
+			t.Error("Expected no XID authorization call for a dashboard parent")
+		}
+	})
+
+	t.Run("XID service failure returns Internal", func(t *testing.T) {
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return nil, errors.New("xid service unavailable")
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42/workUnits/7"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("Expected code Internal, got %v", status.Code(err))
 		}
 	})
 

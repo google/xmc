@@ -32,16 +32,19 @@ const (
 	maxChartPageSize int32 = 100
 )
 
-// ListCharts retrieves a paginated list of charts under a dashboard or work unit parent
-// without per-experiment ACL pruning (AIP-132).
+// ListCharts retrieves a paginated list of charts under a dashboard or work unit parent (AIP-132).
 func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*spb.ListChartsResponse, error) {
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
 
 	if err := validator.ValidateListChartsRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid list charts request: %v", err)
+	}
+
+	if err := s.authorizeChartParent(ctx, user, req.GetParent()); err != nil {
+		return nil, err
 	}
 
 	if s.repo == nil {
@@ -57,10 +60,18 @@ func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*s
 	if charts == nil {
 		charts = []*dpb.Chart{}
 	}
-	return &spb.ListChartsResponse{
-		Charts:        charts,
-		NextPageToken: nextPageToken,
-	}, nil
+	return &spb.ListChartsResponse{Charts: charts, NextPageToken: nextPageToken}, nil
+}
+
+// authorizeChartParent enforces experiment READER access when the parent names a work unit,
+// matching the per-chart check in GetChart. Dashboard parents stay an open read for authenticated
+// users, consistent with GetDashboard and ListDashboards.
+func (s *Server) authorizeChartParent(ctx context.Context, user, parent string) error {
+	xid, _, err := validator.ValidateWorkUnitName(parent)
+	if err != nil {
+		return nil
+	}
+	return s.authorizeExperimentRead(ctx, user, xid)
 }
 
 // clampChartPageSize applies the AIP-158 default and maximum page size bounds.
