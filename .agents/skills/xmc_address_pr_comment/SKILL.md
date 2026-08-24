@@ -171,6 +171,18 @@ The agent will parse this file (or generate a summary) to report the package tes
 
 Once local unit tests pass and building the affected binary targets succeeds, the agent commits the code to the current branch and replies to the reviewer's comment on GitHub.
 
+> [!IMPORTANT]
+> **Commit, Push, and Reply Are One Atomic Step**: Never end a turn, pause for user input, or move on to the next comment between pushing a fix and posting its inline reply. A pushed fix with no reply is indistinguishable from an unaddressed comment: reviewers see an open thread, and a session interrupted in that window leaves the PR publicly stale while the fix is already live. If several comments are addressed by one commit, post every corresponding reply immediately after the push completes, before any other work.
+>
+> **Resuming After an Interruption**: When returning to a PR whose state is uncertain, establish ground truth before writing any code:
+> 1. `git log origin/<branch>..HEAD` — is local work unpushed?
+> 2. `./tools/generate_review_checklist.py <owner> <repo> <pr_number>` — which threads are still unresolved?
+> 3. `./tools/verify_pr_comment_resolution.py <owner> <repo> <pr_number> pr_review_checklist.md` — which lack replies?
+>
+> Threads flagged unresolved may already be fixed in a pushed commit that never got its reply. Diff the commits against the checklist before re-implementing anything.
+>
+> **Keep the PR Description in Sync**: When follow-up commits change behaviour the PR body describes, update the description in the same step — a body that contradicts the shipped code misleads reviewers. Use `tools/update_pr_description.py` as required by [GitHub Authoring & PR Standards](../../rules/github_authoring_and_prs.md); `gh pr edit` is prohibited because the GraphQL classic-projects deprecation makes it fail while appearing to succeed.
+
 ### Build Targets Locally
 Before committing or deploying, verify that the affected binaries build successfully:
 ```bash

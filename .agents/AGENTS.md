@@ -37,6 +37,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | PR Creation & Authoring | [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
+| Implementing or modifying an RPC that reads a resource (Get / List handlers) | [Per-Resource Authorization Invariant](rules/architectural_contracts.md#3-per-resource-authorization-invariant) — mandatory before writing the handler |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
 | Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |
@@ -48,7 +49,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 
 ### Core Engineering & Operational Workflows
 - 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, high-fidelity test doubles, strict coverage, atomic PRs, and post-implementation reflection rules.
-- 📐 [Architectural Contracts & Invariants](rules/architectural_contracts.md): Core platform invariants including the Non-Restarting JobSets Contract (`MaxRestarts: 0`, `PodSpec.RestartPolicy: Never` for primary containers), agent halt triggers, and WorkUnit execution lifecycle boundaries.
+- 📐 [Architectural Contracts & Invariants](rules/architectural_contracts.md): Core platform invariants including the Non-Restarting JobSets Contract (`MaxRestarts: 0`, `PodSpec.RestartPolicy: Never` for primary containers), agent halt triggers, WorkUnit execution lifecycle boundaries, the Zero-Bypass Authentication Invariant, and the **Per-Resource Authorization Invariant** (every read path authorizes independently, per-item ACL pruning for multi-domain parents, explicit resource-name classification, fail-closed error handling).
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
 
 ### GitHub & PR Workflows
