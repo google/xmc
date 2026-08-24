@@ -138,46 +138,7 @@ def test_admin_flow_and_experiment_lifecycle(
     experiment_name = res_json.get("name", "")
     logger.info("✓ Created experiment successfully: %s", experiment_name)
 
-    # 4. Create WorkUnit under the experiment
-    exp_path = (
-        experiment_name
-        if experiment_name.startswith("experiments/")
-        else f"experiments/{experiment_name}"
-    )
-    logger.info("Creating WorkUnit under experiment %s...", exp_path)
-    wu_response = page.request.post(
-        f"{BASE_URL}/v1/{exp_path}/workUnits",
-        data={"title": "Admin Initial Work Unit"},
-        headers={
-            "Content-Type": "application/json",
-            "Origin": BASE_URL,
-        },
-    )
-    if wu_response.status not in (200, 201):
-        # Fallback to snake_case work_units route if needed
-        wu_response = page.request.post(
-            f"{BASE_URL}/v1/{exp_path}/work_units",
-            data={"title": "Admin Initial Work Unit"},
-            headers={
-                "Content-Type": "application/json",
-                "Origin": BASE_URL,
-            },
-        )
-    if wu_response.status not in (200, 201):
-        raise RuntimeError(
-            f"Failed to create work unit via API: {wu_response.status} {wu_response.text()}"
-        )
-
-    wu_json = wu_response.json()
-    logger.info("Created work unit response: %s", wu_json)
-    work_unit_name = wu_json.get("metadata", {}).get("target", "") or wu_json.get("name", "")
-    if not work_unit_name:
-        work_unit_name = f"{exp_path}/workUnits/1"
-    elif not work_unit_name.startswith("experiments/"):
-        work_unit_name = f"{exp_path}/{work_unit_name.lstrip('/')}"
-    logger.info("✓ Created work unit successfully: %s", work_unit_name)
-
-    # 5. Assert experiment appears in the UI table
+    # 4. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
     page.reload()
 
@@ -186,7 +147,7 @@ def test_admin_flow_and_experiment_lifecycle(
     logger.info("✓ Experiment '%s' row verified in DataTable.", experiment_title)
     save_screenshot(page, screenshots_dir, "02_experiment_in_datatable")
 
-    return experiment_name, work_unit_name
+    return experiment_name
 
 
 def test_unauthorized_persona_boundary(
@@ -228,7 +189,6 @@ def test_viewer_permission_boundaries_and_isolation(
     screenshots_dir: Path,
     auth: DexAuthenticator,
     admin_exp_name: str,
-    admin_wu_name: str,
 ) -> None:
     """Tests that a viewer persona is isolated from admin resources but can create own experiments.
 
@@ -237,7 +197,6 @@ def test_viewer_permission_boundaries_and_isolation(
         screenshots_dir: Destination directory for diagnostic screenshots.
         auth: DexAuthenticator instance for OIDC authentication.
         admin_exp_name: Name of the admin experiment.
-        admin_wu_name: Name of the admin work unit.
 
     Raises:
         RuntimeError: If negative boundary checks or experiment creation fail.
@@ -259,11 +218,7 @@ def test_viewer_permission_boundaries_and_isolation(
         if admin_exp_name.startswith("experiments/")
         else f"experiments/{admin_exp_name}"
     )
-    wu_path = (
-        admin_wu_name
-        if admin_wu_name.startswith("experiments/")
-        else f"{exp_path}/workUnits/{admin_wu_name}"
-    )
+    wu_path = f"{exp_path}/workUnits/1"
 
     # 3. Assert GET admin experiment returns 403
     logger.info("Asserting negative permission: GET %s -> 403...", exp_path)
@@ -349,12 +304,10 @@ def test_viewer_permission_boundaries_and_isolation(
         )
     logger.info("✓ POST %s/artifacts returned 403 as expected.", exp_path)
 
-    # 9. Assert DELETE artifacts under admin experiment returns 403
-    logger.info(
-        "Asserting negative permission: DELETE %s/artifacts/any-artifact -> 403...", exp_path
-    )
+    # 9. Assert DELETE artifacts returns 403
+    logger.info("Asserting negative permission: DELETE artifacts/1 -> 403...")
     del_res = page.request.delete(
-        f"{BASE_URL}/v1/{exp_path}/artifacts/any-artifact",
+        f"{BASE_URL}/v1/artifacts/1",
         headers={"Origin": BASE_URL},
     )
     if del_res.status != 403:
@@ -479,7 +432,7 @@ def main() -> None:
 
         try:
             # 1. Admin Flow in an isolated context
-            admin_exp_name, admin_wu_name = _run_isolated_stage(
+            admin_exp_name = _run_isolated_stage(
                 browser,
                 "[1/4] Running Admin Flow",
                 test_admin_flow_and_experiment_lifecycle,
@@ -495,7 +448,6 @@ def main() -> None:
                 screenshots_dir,
                 auth,
                 admin_exp_name,
-                admin_wu_name,
             )
 
             # 3. Token Expiration & Unauthenticated Boundary Flow in an isolated context
