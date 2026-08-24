@@ -159,7 +159,37 @@ Lifecycle durations (`spec.lifecycleControl.drainTimeoutSeconds` and `spec.lifec
 
 ---
 
-## 6. Running Tests
+## 6. Schema Conformance & Security Scope Validation (`schema.go`)
+
+The schema validation layer (`pkg/components/linter/schema.go`) verifies baseline Kubernetes YAML correctness, Component CRD schema compliance, and multi-tenant security guardrails.
+
+### Security Guardrails: Namespace Scope Enforcement
+
+When `staticChecks.enforceNamespaceScope: true` is configured in `rules.yaml`, `xmc-linter` rejects any manifests defining cluster-scoped resources to prevent privilege escalation:
+
+- **Forbidden Kinds (23 Types)**: `ClusterRole`, `ClusterRoleBinding`, `Namespace`, `CustomResourceDefinition`, `ValidatingAdmissionPolicy`, `ValidatingAdmissionPolicyBinding`, `MutatingWebhookConfiguration`, `ValidatingWebhookConfiguration`, `PersistentVolume`, `StorageClass`, `PriorityClass`, `RuntimeClass`, `VolumeSnapshotClass`, etc.
+- **Rule ID**: `CLUSTER_SCOPED_KIND_REJECTED`
+
+### CRD Schema Checks
+
+- **DNS-1123 RFC-1123 Label Conformance**: Validates that `metadata.name` contains only lowercase alphanumeric characters or `-`, starts and ends with an alphanumeric character, and does not exceed 63 characters (`INVALID_COMPONENT_NAME`).
+- **Component Type Validation**: Asserts `spec.componentType` is one of `CUSTOM_1P_COMPONENT` or `CUSTOM_3P_WRAPPER` (`INVALID_COMPONENT_TYPE`).
+- **3P Wrapper CRD References**: For `CUSTOM_3P_WRAPPER`, requires `spec.wrapperRef.crdGroup`, `crdVersion`, `crdKind`, and `targetName` to be non-empty (`MISSING_WRAPPER_REF`, `INVALID_WRAPPER_REF`). For `CUSTOM_1P_COMPONENT`, forbids `wrapperRef`.
+- **Deletion Policy & Protection**: Asserts `spec.deletionPolicy` is valid (`DELETE` or `ORPHAN`). If `staticChecks.enforceDeletionProtection: true` is enabled, asserts `spec.deletionProtection == true` (`DELETION_PROTECTION_DISABLED`).
+- **Lifecycle Drain Timeout Boundaries**: Validates that `spec.lifecycleControl.drainTimeoutSeconds` is non-negative and does not exceed `staticChecks.maxDrainTimeoutSeconds` (`DRAIN_TIMEOUT_EXCEEDED`).
+
+### Rules Configuration Schema (`rules.yaml`)
+
+```yaml
+staticChecks:
+  enforceNamespaceScope: true
+  enforceDeletionProtection: false
+  maxDrainTimeoutSeconds: 3600
+```
+
+---
+
+## 7. Running Tests
 
 Run all unit and integration tests across the CLI binary and linter packages:
 
@@ -170,4 +200,5 @@ bazel test //cmd/xmc-linter/... //pkg/components/linter/...
 # Run tests with detailed testlog output
 bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
 ```
+
 

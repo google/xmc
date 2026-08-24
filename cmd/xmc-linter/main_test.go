@@ -82,4 +82,24 @@ func TestRun_CLI(t *testing.T) {
 			t.Errorf("expected exit 1 for invalid output format")
 		}
 	})
+
+	t.Run("rules config flag validation", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "c1.yaml"), []byte("apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n"), 0644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+		rulesPath := filepath.Join(dir, "rules.yaml")
+		if err := os.WriteFile(rulesPath, []byte("staticChecks:\n  enforceNamespaceScope: true\n"), 0644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+		var out, errOut bytes.Buffer
+		if run([]string{"--manifests-dir=" + dir, "--rules-config=" + rulesPath}, &out, &errOut) != 0 {
+			t.Errorf("expected success with valid rules config, got: %s", errOut.String())
+		}
+		var outErr, errOutErr bytes.Buffer
+		if run([]string{"--manifests-dir=" + dir, "--rules-config=/tmp/nonexistent/rules.yaml"}, &outErr, &errOutErr) != 1 || !strings.Contains(errOutErr.String(), "Error loading rules") {
+			t.Errorf("expected error with nonexistent rules config")
+		}
+	})
 }
