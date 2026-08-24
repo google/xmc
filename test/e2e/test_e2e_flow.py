@@ -289,9 +289,13 @@ def test_viewer_permission_boundaries_and_isolation(
     logger.info("Asserting negative permission: POST %s/artifacts -> 403...", exp_path)
     art_res = page.request.post(
         f"{BASE_URL}/v1/{exp_path}/artifacts",
-        data={"title": "Unauthorized Artifact"},
+        data={"url": {"url": "https://example.com/unauthorized-artifact"}},
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
+    if art_res.status in (200, 201):
+        raise RuntimeError(
+            "Security vulnerability: Viewer successfully created an artifact under admin experiment!"
+        )
     if art_res.status != 403:
         raise RuntimeError(
             f"Expected status 403 for POST {exp_path}/artifacts, got {art_res.status}: {art_res.text()}"
