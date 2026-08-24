@@ -50,25 +50,14 @@ ADMIN_PASSWORD = "password123"
 VIEWER_USER = "viewer@xmc.local"
 VIEWER_PASSWORD = "password123"
 
+UNAUTHORIZED_USER = "unauthorized@xmc.local"
+UNAUTHORIZED_PASSWORD = "password123"
+
 logger = logging.getLogger(__name__)
 
 
-def test_admin_flow_and_experiment_lifecycle(
-    page: Page, screenshots_dir: Path, auth: DexAuthenticator
-) -> None:
-    """Tests admin authentication, safety banner, and experiment creation.
-
-    Args:
-        page: Active Playwright Page instance.
-        screenshots_dir: Destination directory for diagnostic screenshots.
-        auth: DexAuthenticator instance for OIDC authentication.
-
-    Raises:
-        RuntimeError: If experiment creation API fails.
-    """
-    logger.info("=== Testing Admin Authentication and Experiment Creation Lifecycle ===")
-    auth.authenticate(page, ADMIN_USER, ADMIN_PASSWORD, screenshots_dir)
-
+def _wait_for_dex_redirect(page: Page) -> None:
+    """Waits for redirection from Dex IdP back to XMC dashboard."""
     dex_parsed = urllib.parse.urlparse(DEX_URL)
     current_parsed = urllib.parse.urlparse(page.url)
     if "dex" in page.url or current_parsed.netloc == dex_parsed.netloc:
@@ -77,6 +66,27 @@ def test_admin_flow_and_experiment_lifecycle(
             lambda u: urllib.parse.urlparse(u).netloc != dex_parsed.netloc and "dex" not in u,
             timeout=DEFAULT_TIMEOUT_MS,
         )
+
+
+def test_admin_flow_and_experiment_lifecycle(
+    page: Page, screenshots_dir: Path, auth: DexAuthenticator
+) -> tuple[str, str]:
+    """Tests admin authentication, safety banner, and experiment/work unit creation.
+
+    Args:
+        page: Active Playwright Page instance.
+        screenshots_dir: Destination directory for diagnostic screenshots.
+        auth: DexAuthenticator instance for OIDC authentication.
+
+    Returns:
+        A tuple of (experiment_name, work_unit_name) for downstream boundary tests.
+
+    Raises:
+        RuntimeError: If experiment or work unit creation API fails.
+    """
+    logger.info("=== Testing Admin Authentication and Experiment Creation Lifecycle ===")
+    auth.authenticate(page, ADMIN_USER, ADMIN_PASSWORD, screenshots_dir)
+    _wait_for_dex_redirect(page)
 
     # 1. Assert Search Input field
     logger.info("Verifying authorization: search input field...")
@@ -91,7 +101,7 @@ def test_admin_flow_and_experiment_lifecycle(
     logger.info("✓ Non-production safety warning banner verified.")
     save_screenshot(page, screenshots_dir, "01_dashboard_with_warning_banner")
 
-    # 3. Create experiment via API using authenticated context
+    # 3. Create private experiment via API with admin-only ACLs
     experiment_title = f"E2E Automated Experiment {int(time.time())}"
     logger.info("Creating experiment via REST API: %s", experiment_title)
 
@@ -100,7 +110,7 @@ def test_admin_flow_and_experiment_lifecycle(
         "acls": {
             "owners": [{"user": ADMIN_USER}],
             "writers": [{"user": ADMIN_USER}],
-            "readers": [{"allAuthenticatedUsers": True}],
+            "readers": [{"user": ADMIN_USER}],
         },
         "priority": "PRIORITY_MEDIUM",
     }
@@ -128,7 +138,46 @@ def test_admin_flow_and_experiment_lifecycle(
     experiment_name = res_json.get("name", "")
     logger.info("✓ Created experiment successfully: %s", experiment_name)
 
-    # 4. Assert experiment appears in the UI table
+    # 4. Create WorkUnit under the experiment
+    exp_path = (
+        experiment_name
+        if experiment_name.startswith("experiments/")
+        else f"experiments/{experiment_name}"
+    )
+    logger.info("Creating WorkUnit under experiment %s...", exp_path)
+    wu_response = page.request.post(
+        f"{BASE_URL}/v1/{exp_path}/workUnits",
+        data={"title": "Admin Initial Work Unit"},
+        headers={
+            "Content-Type": "application/json",
+            "Origin": BASE_URL,
+        },
+    )
+    if wu_response.status not in (200, 201):
+        # Fallback to snake_case work_units route if needed
+        wu_response = page.request.post(
+            f"{BASE_URL}/v1/{exp_path}/work_units",
+            data={"title": "Admin Initial Work Unit"},
+            headers={
+                "Content-Type": "application/json",
+                "Origin": BASE_URL,
+            },
+        )
+    if wu_response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to create work unit via API: {wu_response.status} {wu_response.text()}"
+        )
+
+    wu_json = wu_response.json()
+    logger.info("Created work unit response: %s", wu_json)
+    work_unit_name = wu_json.get("metadata", {}).get("target", "") or wu_json.get("name", "")
+    if not work_unit_name:
+        work_unit_name = f"{exp_path}/workUnits/1"
+    elif not work_unit_name.startswith("experiments/"):
+        work_unit_name = f"{exp_path}/{work_unit_name.lstrip('/')}"
+    logger.info("✓ Created work unit successfully: %s", work_unit_name)
+
+    # 5. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
     page.reload()
 
@@ -137,21 +186,23 @@ def test_admin_flow_and_experiment_lifecycle(
     logger.info("✓ Experiment '%s' row verified in DataTable.", experiment_title)
     save_screenshot(page, screenshots_dir, "02_experiment_in_datatable")
 
+    return experiment_name, work_unit_name
 
-def test_viewer_unauthorized_boundary(
+
+def test_unauthorized_persona_boundary(
     page: Page, screenshots_dir: Path, auth: DexAuthenticator
 ) -> None:
-    """Tests that unauthorized persona (viewer@xmc.local) is rejected with Access Denied.
+    """Tests that unauthorized persona (unauthorized@xmc.local) is rejected with Access Denied.
 
     Args:
         page: Active Playwright Page instance.
         screenshots_dir: Destination directory for diagnostic screenshots.
         auth: DexAuthenticator instance for OIDC authentication.
     """
-    logger.info("=== Testing Unauthorized Persona Boundary (viewer@xmc.local) ===")
+    logger.info("=== Testing Unauthorized Persona Boundary (unauthorized@xmc.local) ===")
 
     # Login as unauthorized persona (runs in isolated context)
-    auth.authenticate(page, VIEWER_USER, VIEWER_PASSWORD, screenshots_dir)
+    auth.authenticate(page, UNAUTHORIZED_USER, UNAUTHORIZED_PASSWORD, screenshots_dir)
 
     # Wait for redirection to landing page with error parameter
     logger.info(
@@ -172,6 +223,240 @@ def test_viewer_unauthorized_boundary(
     save_screenshot(page, screenshots_dir, "03_access_denied_unauthorized_persona")
 
 
+def test_viewer_permission_boundaries_and_isolation(
+    page: Page,
+    screenshots_dir: Path,
+    auth: DexAuthenticator,
+    admin_exp_name: str,
+    admin_wu_name: str,
+) -> None:
+    """Tests that a viewer persona is isolated from admin resources but can create own experiments.
+
+    Args:
+        page: Active Playwright Page instance.
+        screenshots_dir: Destination directory for diagnostic screenshots.
+        auth: DexAuthenticator instance for OIDC authentication.
+        admin_exp_name: Name of the admin experiment.
+        admin_wu_name: Name of the admin work unit.
+
+    Raises:
+        RuntimeError: If negative boundary checks or experiment creation fail.
+    """
+    logger.info("=== Testing Viewer Permission Boundaries and Isolation ===")
+
+    # 1. Authenticate viewer persona
+    auth.authenticate(page, VIEWER_USER, VIEWER_PASSWORD, screenshots_dir)
+    _wait_for_dex_redirect(page)
+
+    # 2. Assert user reaches dashboard
+    search_input = page.locator("input[data-testid='search-input-field']")
+    expect(search_input).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
+    logger.info("✓ Viewer reached dashboard successfully.")
+    save_screenshot(page, screenshots_dir, "04_viewer_dashboard_accessible")
+
+    exp_path = (
+        admin_exp_name
+        if admin_exp_name.startswith("experiments/")
+        else f"experiments/{admin_exp_name}"
+    )
+    wu_path = (
+        admin_wu_name
+        if admin_wu_name.startswith("experiments/")
+        else f"{exp_path}/workUnits/{admin_wu_name}"
+    )
+
+    # 3. Assert GET admin experiment returns 403
+    logger.info("Asserting negative permission: GET %s -> 403...", exp_path)
+    get_res = page.request.get(f"{BASE_URL}/v1/{exp_path}")
+    if get_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for GET {exp_path}, got {get_res.status}: {get_res.text()}"
+        )
+    logger.info("✓ GET %s returned 403 as expected.", exp_path)
+
+    # 4. Assert POST work units under admin experiment returns 403
+    logger.info("Asserting negative permission: POST %s/workUnits -> 403...", exp_path)
+    post_wu_res = page.request.post(
+        f"{BASE_URL}/v1/{exp_path}/workUnits",
+        data={"title": "Viewer Unauthorized Work Unit"},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if post_wu_res.status not in (403,):
+        post_wu_res = page.request.post(
+            f"{BASE_URL}/v1/{exp_path}/work_units",
+            data={"title": "Viewer Unauthorized Work Unit"},
+            headers={"Content-Type": "application/json", "Origin": BASE_URL},
+        )
+    if post_wu_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for POST work units under {exp_path}, got {post_wu_res.status}: {post_wu_res.text()}"
+        )
+    logger.info("✓ POST work units under admin exp returned 403 as expected.")
+
+    # 5. Assert PATCH admin experiment returns 403
+    logger.info("Asserting negative permission: PATCH %s -> 403...", exp_path)
+    patch_res = page.request.patch(
+        f"{BASE_URL}/v1/{exp_path}",
+        data={"title": "Tampered Title"},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if patch_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for PATCH {exp_path}, got {patch_res.status}: {patch_res.text()}"
+        )
+    logger.info("✓ PATCH %s returned 403 as expected.", exp_path)
+
+    # 6. Assert POST work unit stop returns 403
+    logger.info("Asserting negative permission: POST %s:stop -> 403...", wu_path)
+    stop_res = page.request.post(
+        f"{BASE_URL}/v1/{wu_path}:stop",
+        data={},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if stop_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for POST {wu_path}:stop, got {stop_res.status}: {stop_res.text()}"
+        )
+    logger.info("✓ POST %s:stop returned 403 as expected.", wu_path)
+
+    # 7. Assert POST work unit restart returns 403
+    logger.info("Asserting negative permission: POST %s:restart -> 403...", wu_path)
+    restart_res = page.request.post(
+        f"{BASE_URL}/v1/{wu_path}:restart",
+        data={},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if restart_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for POST {wu_path}:restart, got {restart_res.status}: {restart_res.text()}"
+        )
+    logger.info("✓ POST %s:restart returned 403 as expected.", wu_path)
+
+    # 8. Assert POST artifacts under admin experiment returns 403
+    logger.info("Asserting negative permission: POST %s/artifacts -> 403...", exp_path)
+    art_res = page.request.post(
+        f"{BASE_URL}/v1/{exp_path}/artifacts",
+        data={"title": "Unauthorized Artifact"},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if art_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for POST {exp_path}/artifacts, got {art_res.status}: {art_res.text()}"
+        )
+    logger.info("✓ POST %s/artifacts returned 403 as expected.", exp_path)
+
+    # 9. Assert DELETE artifacts under admin experiment returns 403
+    logger.info(
+        "Asserting negative permission: DELETE %s/artifacts/any-artifact -> 403...", exp_path
+    )
+    del_res = page.request.delete(
+        f"{BASE_URL}/v1/{exp_path}/artifacts/any-artifact",
+        headers={"Origin": BASE_URL},
+    )
+    if del_res.status != 403:
+        raise RuntimeError(
+            f"Expected status 403 for DELETE artifact, got {del_res.status}: {del_res.text()}"
+        )
+    logger.info("✓ DELETE artifact returned 403 as expected.")
+
+    # 10. Assert viewer can create their own experiment
+    viewer_title = f"Viewer Private Experiment {int(time.time())}"
+    logger.info("Creating viewer's own experiment: %s...", viewer_title)
+    viewer_payload: dict[str, Any] = {
+        "title": viewer_title,
+        "acls": {
+            "owners": [{"user": VIEWER_USER}],
+            "writers": [{"user": VIEWER_USER}],
+            "readers": [{"user": VIEWER_USER}],
+        },
+        "priority": "PRIORITY_MEDIUM",
+    }
+    viewer_create_res = page.request.post(
+        f"{BASE_URL}/v1/experiments",
+        data=viewer_payload,
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if viewer_create_res.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to create viewer experiment: {viewer_create_res.status} {viewer_create_res.text()}"
+        )
+    logger.info("✓ Viewer created own experiment successfully: %s", viewer_create_res.json())
+    save_screenshot(page, screenshots_dir, "05_viewer_own_experiment_created")
+
+
+def test_token_expiration_and_unauthenticated_boundary(page: Page, screenshots_dir: Path) -> None:
+    """Tests that unauthenticated requests receive 401 and UI redirects to landing page.
+
+    Args:
+        page: Active Playwright Page instance (isolated clean context).
+        screenshots_dir: Destination directory for diagnostic screenshots.
+
+    Raises:
+        RuntimeError: If unauthenticated API requests do not return 401.
+    """
+    logger.info("=== Testing Token Expiration and Unauthenticated Boundary ===")
+
+    # 1. Unauthenticated /api/user check
+    logger.info("Asserting unauthenticated GET /api/user -> 401...")
+    user_res = page.request.get(f"{BASE_URL}/api/user")
+    if user_res.status != 401:
+        raise RuntimeError(
+            f"Expected status 401 for unauthenticated GET /api/user, got {user_res.status}: {user_res.text()}"
+        )
+    logger.info("✓ Unauthenticated /api/user returned 401.")
+
+    # 2. Unauthenticated /v1/experiments check
+    logger.info("Asserting unauthenticated GET /v1/experiments -> 401...")
+    exp_res = page.request.get(f"{BASE_URL}/v1/experiments")
+    if exp_res.status != 401:
+        raise RuntimeError(
+            f"Expected status 401 for unauthenticated GET /v1/experiments, got {exp_res.status}: {exp_res.text()}"
+        )
+    logger.info("✓ Unauthenticated /v1/experiments returned 401.")
+
+    # 3. Invalid / expired bearer token check
+    logger.info("Asserting invalid bearer token GET /api/user -> 401...")
+    invalid_token_res = page.request.get(
+        f"{BASE_URL}/api/user",
+        headers={"Authorization": "Bearer invalid_expired_jwt_token"},
+    )
+    if invalid_token_res.status != 401:
+        raise RuntimeError(
+            f"Expected status 401 for invalid bearer token, got {invalid_token_res.status}: {invalid_token_res.text()}"
+        )
+    logger.info("✓ Invalid bearer token returned 401.")
+
+    # 4. Direct UI navigation to protected route (/experiments)
+    logger.info("Navigating to protected route /experiments unauthenticated...")
+    page.goto(f"{BASE_URL}/experiments")
+    page.wait_for_url(
+        lambda u: urllib.parse.urlparse(u).path in ("", "/"),
+        timeout=DEFAULT_TIMEOUT_MS,
+    )
+    sign_in_btn = page.locator("button:has-text('Sign in')")
+    expect(sign_in_btn).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
+    logger.info(
+        "✓ Unauthenticated UI navigation redirected to landing page with Sign in button visible."
+    )
+    save_screenshot(page, screenshots_dir, "06_unauthenticated_redirect_to_landing")
+
+
+def _run_isolated_stage(browser: Any, stage_name: str, test_func: Any, *args: Any) -> Any:
+    """Runs a test stage within a dedicated isolated browser context."""
+    logger.info("--- %s ---", stage_name)
+    with browser.new_context(viewport={"width": 1280, "height": 800}) as ctx:
+        page = ctx.new_page()
+        try:
+            return test_func(page, *args)
+        except Exception:
+            try:
+                url = page.url
+            except Exception:
+                url = "<unknown>"
+            logger.exception("%s failed at URL: %s", stage_name, url)
+            raise
+
+
 def main() -> None:
     """Executes the Playwright test suite against the local KinD cluster."""
     screenshots_dir = get_screenshots_dir()
@@ -183,31 +468,42 @@ def main() -> None:
         browser = p.chromium.launch(headless=True)
 
         try:
-            # Run Admin Flow in an isolated context
-            with browser.new_context(viewport={"width": 1280, "height": 800}) as admin_ctx:
-                admin_page = admin_ctx.new_page()
-                try:
-                    test_admin_flow_and_experiment_lifecycle(admin_page, screenshots_dir, auth)
-                except Exception:
-                    try:
-                        url = admin_page.url
-                    except Exception:
-                        url = "<unknown>"
-                    logger.exception("Admin flow failed at URL: %s", url)
-                    raise
+            # 1. Admin Flow in an isolated context
+            admin_exp_name, admin_wu_name = _run_isolated_stage(
+                browser,
+                "[1/4] Running Admin Flow",
+                test_admin_flow_and_experiment_lifecycle,
+                screenshots_dir,
+                auth,
+            )
 
-            # Run Viewer Flow in an isolated context
-            with browser.new_context(viewport={"width": 1280, "height": 800}) as viewer_ctx:
-                viewer_page = viewer_ctx.new_page()
-                try:
-                    test_viewer_unauthorized_boundary(viewer_page, screenshots_dir, auth)
-                except Exception:
-                    try:
-                        url = viewer_page.url
-                    except Exception:
-                        url = "<unknown>"
-                    logger.exception("Viewer flow failed at URL: %s", url)
-                    raise
+            # 2. Viewer Flow in an isolated context
+            _run_isolated_stage(
+                browser,
+                "[2/4] Running Viewer Flow",
+                test_viewer_permission_boundaries_and_isolation,
+                screenshots_dir,
+                auth,
+                admin_exp_name,
+                admin_wu_name,
+            )
+
+            # 3. Token Expiration & Unauthenticated Boundary Flow in an isolated context
+            _run_isolated_stage(
+                browser,
+                "[3/4] Running Token Expiration & Unauthenticated Flow",
+                test_token_expiration_and_unauthenticated_boundary,
+                screenshots_dir,
+            )
+
+            # 4. Unauthorized Persona Boundary Flow in an isolated context
+            _run_isolated_stage(
+                browser,
+                "[4/4] Running Unauthorized Persona Boundary Flow",
+                test_unauthorized_persona_boundary,
+                screenshots_dir,
+                auth,
+            )
 
             logger.info("==================================================")
             logger.info("🎉 ALL E2E PLAYWRIGHT TESTS PASSED SUCCESSFULLY! 🎉")
