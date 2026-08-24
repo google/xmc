@@ -26,6 +26,13 @@ from xdash.client import (
     XDashError,
     XDashRPCError,
 )
+from xdash.presets import (
+    VCC_BASELINE_XID,
+    VCC_TUNED_V1_XID,
+    VCC_TUNED_V2_XID,
+    create_standard_experiment_chart,
+    create_vcc_comparison_dashboard,
+)
 
 __all__ = [
     "DashboardBuilder",
@@ -37,4 +44,9 @@ __all__ = [
     "XDashError",
     "XDashConnectionError",
     "XDashRPCError",
+    "create_vcc_comparison_dashboard",
+    "create_standard_experiment_chart",
+    "VCC_BASELINE_XID",
+    "VCC_TUNED_V1_XID",
+    "VCC_TUNED_V2_XID",
 ]

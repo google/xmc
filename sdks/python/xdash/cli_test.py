@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 from xdash._protos import messages_pb2
 from xdash.cli import run_cli
 from xdash.client import XDashConnectionError, XDashRPCError
+from xdash.presets import create_vcc_comparison_dashboard
 
 
 class CliTest(unittest.TestCase):
@@ -40,6 +41,67 @@ class CliTest(unittest.TestCase):
         ret, out, _ = self._run([])
         self.assertEqual(ret, 1)
         self.assertIn("usage: xdash", out)
+
+    def test_create_preset(self) -> None:
+        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard()
+
+        ret, out, _ = self._run(
+            ["create-preset", "--dashboard-id", "test_dash", "--title", "Test Title"]
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        args, kwargs = self.mock_client.create_dashboard.call_args
+        self.assertEqual(args[0].name, "dashboards/test_dash")
+        self.assertEqual(args[0].title, "Test Title")
+        self.assertEqual(len(args[0].charts), 3)
+        self.assertEqual(kwargs["dashboard_id"], "test_dash")
+        self.assertIn("3 charts", out)
+
+    def test_create_preset_defaults(self) -> None:
+        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard()
+
+        ret, _, _ = self._run(["create-preset"])
+        self.assertEqual(ret, 0)
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        self.assertEqual(built.name, "dashboards/vcc_comparison")
+        self.assertEqual(built.title, "VCC baseline tune comparison")
+
+    def test_create_dashboard_with_xids(self) -> None:
+        self.mock_client.create_dashboard.return_value = messages_pb2.Dashboard(
+            name="dashboards/d1", title="Dash 1"
+        )
+
+        ret, _, _ = self._run(
+            [
+                "create-dashboard",
+                "--title",
+                "Dash 1",
+                "--dashboard-id",
+                "d1",
+                "--xids",
+                "234911122, 234911123, ",
+            ]
+        )
+        self.assertEqual(ret, 0)
+        self.mock_client.create_dashboard.assert_called_once()
+        built = self.mock_client.create_dashboard.call_args[0][0]
+        # Whitespace trimmed and the trailing empty element dropped, not turned into a chart.
+        self.assertEqual([chart.xid for chart in built.charts], [234911122, 234911123])
+        self.assertEqual(
+            [chart.name for chart in built.charts],
+            [
+                "experiments/234911122/workUnits/1/charts/exp_234911122",
+                "experiments/234911123/workUnits/1/charts/exp_234911123",
+            ],
+        )
+
+    def test_create_dashboard_rejects_invalid_xids(self) -> None:
+        for bad in ("0", "-5", "not-a-number"):
+            with self.subTest(xids=bad):
+                ret, _, err = self._run(["create-dashboard", "--title", "Dash 1", "--xids", bad])
+                self.assertEqual(ret, 1)
+                self.assertIn("Error:", err)
+        self.mock_client.create_dashboard.assert_not_called()
 
     def test_create_dashboard(self) -> None:
         self.mock_client.create_dashboard.return_value = messages_pb2.Dashboard(

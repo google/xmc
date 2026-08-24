@@ -27,6 +27,10 @@ from xdash.builders import (
     summary_kpi_plot,
 )
 from xdash.client import DashboardClient, XDashError
+from xdash.presets import (
+    create_standard_experiment_chart,
+    create_vcc_comparison_dashboard,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -47,14 +51,35 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
+    # create-preset subcommand
+    preset_parser = subparsers.add_parser(
+        "create-preset",
+        help="Create standard VCC comparison dashboard using test data experiments",
+    )
+    preset_parser.add_argument(
+        "--dashboard-id",
+        default="vcc_comparison",
+        help="Resource ID slug for the preset dashboard",
+    )
+    preset_parser.add_argument(
+        "--title",
+        default="VCC baseline tune comparison",
+        help="Display title for the preset dashboard",
+    )
+
     # create-dashboard subcommand
     create_dash_parser = subparsers.add_parser(
         "create-dashboard",
-        help="Create a new dashboard",
+        help="Create a new dashboard with optional experiment charts",
     )
     create_dash_parser.add_argument("--title", required=True, help="Dashboard title")
     create_dash_parser.add_argument("--dashboard-id", default="", help="Custom dashboard ID slug")
     create_dash_parser.add_argument("--description", default="", help="Dashboard description")
+    create_dash_parser.add_argument(
+        "--xids",
+        default="",
+        help="Comma-separated experiment IDs to include standard comparison charts for",
+    )
 
     # create-chart subcommand
     create_chart_parser = subparsers.add_parser(
@@ -102,6 +127,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _handle_create_preset(client: DashboardClient, args: argparse.Namespace) -> int:
+    """Handles the create-preset subcommand."""
+    dashboard = create_vcc_comparison_dashboard(
+        dashboard_id=args.dashboard_id,
+        title=args.title,
+    )
+    created = client.create_dashboard(dashboard, dashboard_id=args.dashboard_id)
+    sys.stdout.write(
+        f"Created VCC preset dashboard: {created.name} ({len(created.charts)} charts)\n"
+    )
+    return 0
+
+
 def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) -> int:
     """Handles the create-dashboard subcommand."""
     dash_id = args.dashboard_id
@@ -109,6 +147,20 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
     builder = DashboardBuilder(name=dash_name).set_title(args.title)
     if args.description:
         builder.set_description(args.description)
+
+    if args.xids:
+        for xid_str in args.xids.split(","):
+            xid_str = xid_str.strip()
+            if not xid_str:
+                continue
+            try:
+                xid_val = int(xid_str)
+            except ValueError:
+                raise ValueError(f"--xids must be a comma-separated list of integers: {xid_str}")
+            # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
+            # with a clear message, rather than the dashboard silently losing a chart.
+            chart = create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
+            builder.add_chart(chart)
 
     created = client.create_dashboard(builder.build(), dashboard_id=dash_id or None)
     sys.stdout.write(f"Created dashboard: {created.name} (title: {created.title})\n")
@@ -254,6 +306,8 @@ def run_cli(
             )
             client = owned_client
 
+        if args.command == "create-preset":
+            return _handle_create_preset(client, args)
         if args.command == "create-dashboard":
             return _handle_create_dashboard(client, args)
         if args.command == "create-chart":
