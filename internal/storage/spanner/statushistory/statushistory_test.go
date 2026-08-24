@@ -91,7 +91,7 @@ func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.W
 		WorkUnitId:     wid,
 		HistoryId:      0,
 		QueueName:      queue,
-		TransitionTime: time.Now().Add(offset),
+		CreateTime:     time.Now().Add(offset),
 		NewState:       int64(state),
 		ResourceType:   resType,
 		ResourceUnits:  units,
@@ -115,7 +115,7 @@ func insertMockItems(t *testing.T, ctx context.Context, client *spanner.Client, 
 		var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
 		newState := essmsgpb.WorkUnitStatus_WorkUnitState(item.NewState).Enum()
 		m := spannerdata.WorkUnitStatusHistoryToInsertMutation(
-			xid, item.WorkUnitId, historyID, eid, item.QueueName, prevState, newState, item.ResourceType, item.ResourceUnits, item.TransitionTime,
+			xid, item.WorkUnitId, historyID, eid, item.QueueName, prevState, newState, item.ResourceType, item.ResourceUnits, item.CreateTime,
 		)
 		historyMutations = append(historyMutations, m)
 	}

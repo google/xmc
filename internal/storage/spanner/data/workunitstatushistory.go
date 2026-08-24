@@ -23,16 +23,16 @@ import (
 
 // WorkUnitStatusHistoryItem represents a single transition row in WorkUnitStatusHistory.
 type WorkUnitStatusHistoryItem struct {
-	Xid            int64
-	WorkUnitId     int64
-	HistoryId      int64
-	ExecutionId    *int64
-	QueueName      string
-	PreviousState  *essmsgpb.WorkUnitStatus_WorkUnitState
-	NewState       essmsgpb.WorkUnitStatus_WorkUnitState
-	ResourceType   string
-	ResourceUnits  int64
-	TransitionTime time.Time
+	Xid           int64
+	WorkUnitId    int64
+	HistoryId     int64
+	ExecutionId   *int64
+	QueueName     string
+	PreviousState *essmsgpb.WorkUnitStatus_WorkUnitState
+	NewState      essmsgpb.WorkUnitStatus_WorkUnitState
+	ResourceType  string
+	ResourceUnits int64
+	CreateTime    time.Time
 }
 
 // WorkUnitStatusHistoryToInsertMutation converts transition details into a Spanner insert mutation.
@@ -58,7 +58,7 @@ func WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID int64, eid *int64
 
 	return spanner.Insert(
 		"WorkUnitStatusHistory",
-		[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "TransitionTime"},
+		[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "CreateTime"},
 		[]any{
 			xid,
 			wid,

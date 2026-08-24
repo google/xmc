@@ -34,7 +34,7 @@ type WorkUnitStatusHistoryItem struct {
 	WorkUnitId     int64     `spanner:"WorkUnitId"`
 	HistoryId      int64     `spanner:"HistoryId"`
 	QueueName      string    `spanner:"QueueName"`
-	TransitionTime time.Time `spanner:"TransitionTime"`
+	CreateTime     time.Time `spanner:"CreateTime"`
 	NewState       int64     `spanner:"NewState"`
 	PreviousState  int64     `spanner:"PreviousState"`
 	ResourceType   string    `spanner:"ResourceType"`
@@ -163,9 +163,9 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 	stmt := spanner.Statement{
 		SQL: `WITH Admitted AS (
 		        SELECT QueueName, BitReversedXid, WorkUnitId, ResourceType, ResourceUnits
-		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndCreateTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
-		          AND TransitionTime >= @cutoffTime
+		          AND CreateTime >= @cutoffTime
 		          AND CAST(NewState AS INT64) IN UNNEST(@admittedStates)
 		      ),
 		      QueueTotals AS (
@@ -201,8 +201,8 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 
 	stmt := spanner.Statement{
 		SQL: `WITH MaxHistory AS (
-		        SELECT BitReversedXid, WorkUnitId, MAX(TransitionTime) AS MaxTransitionTime
-		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
+		        SELECT BitReversedXid, WorkUnitId, MAX(CreateTime) AS MaxCreateTime
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndCreateTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		        GROUP BY BitReversedXid, WorkUnitId
 		      ),
@@ -212,7 +212,7 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		        JOIN MaxHistory m
 		          ON h.BitReversedXid = m.BitReversedXid
 		         AND h.WorkUnitId = m.WorkUnitId
-		         AND h.TransitionTime = m.MaxTransitionTime
+		         AND h.CreateTime = m.MaxCreateTime
 		        WHERE CAST(h.NewState AS INT64) = @pendingState
 		      ),
 		      QueueTotals AS (

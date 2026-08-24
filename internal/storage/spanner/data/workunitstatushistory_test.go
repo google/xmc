@@ -58,7 +58,7 @@ func TestWorkUnitStatusHistoryToInsertMutation(t *testing.T) {
 			t:             now,
 			want: spanner.Insert(
 				"WorkUnitStatusHistory",
-				[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "TransitionTime"},
+				[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "CreateTime"},
 				[]any{
 					int64(100),
 					int64(1),
@@ -87,7 +87,7 @@ func TestWorkUnitStatusHistoryToInsertMutation(t *testing.T) {
 			t:             now,
 			want: spanner.Insert(
 				"WorkUnitStatusHistory",
-				[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "TransitionTime"},
+				[]string{"Xid", "WorkUnitId", "HistoryId", "ExecutionId", "QueueName", "PreviousState", "NewState", "ResourceType", "ResourceUnits", "CreateTime"},
 				[]any{
 					int64(200),
 					int64(2),
