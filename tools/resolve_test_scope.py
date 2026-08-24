@@ -38,9 +38,7 @@ CORE_INFRA_FILES: set[str] = {
     "compat.bzl",
 }
 
-WORKFLOW_FILES: set[str] = {
-    ".github/workflows/unit-tests.yml",
-}
+WORKFLOW_PREFIX: str = ".github/workflows/"
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
     "docs/",
@@ -104,7 +102,7 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         if not clean_f:
             continue
 
-        if clean_f in WORKFLOW_FILES:
+        if clean_f.startswith(WORKFLOW_PREFIX):
             has_workflow = True
 
         if clean_f in CORE_INFRA_FILES:
@@ -370,7 +368,7 @@ def resolve_test_scope(
 
     classification = classify_modified_files(files)
     has_core_infra = classification["has_core_infra"]
-    has_workflow = classification.get("has_workflow", False)
+    has_workflow = classification["has_workflow"]
     has_ui = classification["has_ui"]
     has_backend = classification["has_backend"]
 
