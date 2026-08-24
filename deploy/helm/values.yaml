@@ -33,6 +33,7 @@ health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-s
 dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
+xmc_bridge_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xmc-bridge-dev:latest"
 
 essDeployment:
   enabled: true
@@ -45,6 +46,9 @@ healthServiceDeployment:
 
 componentsDeployment:
   enabled: false
+  cmsAddress: "experiment-state-server-grpc:50051"
+  probeInterval: "5s"
+  probeTimeout: "2s"
 
 metrics:
   enabled: false
