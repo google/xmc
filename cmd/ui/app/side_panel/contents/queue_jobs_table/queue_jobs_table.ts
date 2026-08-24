@@ -45,6 +45,7 @@ export class QueueJobsTableData implements BaseSidePanelData {
 /** Component presenting the list of active/pending jobs for a given cluster queue. */
 @Component({
   selector: 'xmc-queue-jobs-table',
+  standalone: true,
   templateUrl: './queue_jobs_table.ng.html',
   styleUrl: './queue_jobs_table.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -140,7 +141,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
 
-  protected displayedColumns: string[] = [
+  protected readonly displayedColumns: readonly string[] = [
     'position',
     'jobName',
     'status',

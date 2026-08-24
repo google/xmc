@@ -27,6 +27,9 @@ import { bootstrap, cleanState, flush, setupModule } from 'xmanager_cloud/ui/app
 import { QueueJobsTable, QueueJobsTableData } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
+const EMPTY_STATE_SELECTOR = '.jobs-empty-state';
+const LOADING_CONTAINER_SELECTOR = '.loading-container';
+
 const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
   jobs: [
     {
@@ -242,7 +245,7 @@ describe('QueueJobsTable Component', () => {
     const paginator = await harness.getPaginator();
     expect(paginator).toBeNull();
 
-    expect(document.querySelector('.jobs-empty-state')).not.toBeNull();
+    expect(document.querySelector(EMPTY_STATE_SELECTOR)).not.toBeNull();
     expect(document.body.textContent).toContain('No job ahead of you!');
   });
 
@@ -252,7 +255,7 @@ describe('QueueJobsTable Component', () => {
 
     bootstrap(TestHostComponent);
 
-    expect(document.querySelector('.loading-container')).not.toBeNull();
+    expect(document.querySelector(LOADING_CONTAINER_SELECTOR)).not.toBeNull();
     expect(document.body.textContent).toContain('Loading jobs...');
 
     const harness = await getHarness(QueueJobsTableHarness);
@@ -261,7 +264,7 @@ describe('QueueJobsTable Component', () => {
     jobsSubject.next(TEST_QUEUE_JOBS_RESP);
     await flush();
 
-    expect(document.querySelector('.loading-container')).toBeNull();
+    expect(document.querySelector(LOADING_CONTAINER_SELECTOR)).toBeNull();
     expect(await harness.getRowCount()).toBe(2);
   });
 });
