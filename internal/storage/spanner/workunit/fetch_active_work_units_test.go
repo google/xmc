@@ -103,49 +103,34 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 		_ = spanner.CreateBlankWorkUnit(ctx, t, storage, xid, i)
 	}
 
-	// Page 1 with pageSize = 2
-	page1, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, "")
-	if err != nil {
-		t.Fatalf("Page 1 FetchActiveWorkUnitsByQueues failed: %v", err)
-	}
-	if len(page1.WorkUnits) != 2 {
-		t.Errorf("Page 1 work units count = %d, want 2", len(page1.WorkUnits))
-	}
-	if page1.NextPageToken == "" {
-		t.Errorf("Page 1 NextPageToken is empty, want non-empty token")
-	}
-	if page1.TotalQueueSize != 5 {
-		t.Errorf("Page 1 TotalQueueSize = %d, want 5", page1.TotalQueueSize)
+	type pageExpectation struct {
+		wantCount     int
+		wantHasNext   bool
+		wantTotalSize int64
 	}
 
-	// Page 2 with pageSize = 2
-	page2, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, page1.NextPageToken)
-	if err != nil {
-		t.Fatalf("Page 2 FetchActiveWorkUnitsByQueues failed: %v", err)
-	}
-	if len(page2.WorkUnits) != 2 {
-		t.Errorf("Page 2 work units count = %d, want 2", len(page2.WorkUnits))
-	}
-	if page2.NextPageToken == "" {
-		t.Errorf("Page 2 NextPageToken is empty, want non-empty token")
-	}
-	if page2.TotalQueueSize != 5 {
-		t.Errorf("Page 2 TotalQueueSize = %d, want 5", page2.TotalQueueSize)
+	pages := []pageExpectation{
+		{wantCount: 2, wantHasNext: true, wantTotalSize: 5},
+		{wantCount: 2, wantHasNext: true, wantTotalSize: 5},
+		{wantCount: 1, wantHasNext: false, wantTotalSize: 5},
 	}
 
-	// Page 3 with pageSize = 2 (should return last item)
-	page3, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, page2.NextPageToken)
-	if err != nil {
-		t.Fatalf("Page 3 FetchActiveWorkUnitsByQueues failed: %v", err)
-	}
-	if len(page3.WorkUnits) != 1 {
-		t.Errorf("Page 3 work units count = %d, want 1", len(page3.WorkUnits))
-	}
-	if page3.NextPageToken != "" {
-		t.Errorf("Page 3 NextPageToken = %q, want empty", page3.NextPageToken)
-	}
-	if page3.TotalQueueSize != 5 {
-		t.Errorf("Page 3 TotalQueueSize = %d, want 5", page3.TotalQueueSize)
+	token := ""
+	for i, page := range pages {
+		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token)
+		if err != nil {
+			t.Fatalf("Page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
+		}
+		if len(res.WorkUnits) != page.wantCount {
+			t.Errorf("Page %d work units count = %d, want %d", i+1, len(res.WorkUnits), page.wantCount)
+		}
+		if (res.NextPageToken != "") != page.wantHasNext {
+			t.Errorf("Page %d NextPageToken = %q, wantHasNext = %t", i+1, res.NextPageToken, page.wantHasNext)
+		}
+		if res.TotalQueueSize != page.wantTotalSize {
+			t.Errorf("Page %d TotalQueueSize = %d, want %d", i+1, res.TotalQueueSize, page.wantTotalSize)
+		}
+		token = res.NextPageToken
 	}
 
 	// Test boundary conditions for pageSize (<= 0 uses default 100, > 1000 clamped to 1000)
