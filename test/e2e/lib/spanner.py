@@ -124,25 +124,27 @@ class SpannerManager:
                         f"--project={self.cfg.project_id}",
                         f"--ddl-file={ddl_path}",
                         f"--proto-descriptors-file={proto_desc_path}",
-                    ]
+                    ],
+                    capture_output=True,
                 )
                 return
             except Exception as e:
-                err_str = str(e)
+                err_str = getattr(e, "stderr", "") or str(e)
                 if (
                     "RESOURCE_EXHAUSTED" in err_str
                     or "429" in err_str
                     or "maximum database limit" in err_str
                 ) and attempt < max_attempts:
+                    delay = min(base_delay * (2 ** (attempt - 1)), 120)
                     logger.warning(
                         "Database creation hit resource quota (attempt %d/%d). "
                         "Waiting %ds for a slot to free up...",
                         attempt,
                         max_attempts,
-                        base_delay,
+                        delay,
                     )
                     self._cleanup_stale_databases()
-                    time.sleep(base_delay)
+                    time.sleep(delay)
                 else:
                     raise
 
