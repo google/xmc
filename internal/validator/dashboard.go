@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"task/go/status"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
@@ -33,22 +32,18 @@ var allowedUpdateDashboardPaths = map[string]bool{
 	"chartIds":     true,
 }
 
-// ValidateChartID validates that a string is a valid raw UUID.
+// ValidateChartID validates that a chart ID string is non-empty and contains no slashes.
 func ValidateChartID(s string) (string, error) {
 	if strings.TrimSpace(s) == "" {
 		return "", fmt.Errorf("chart ID cannot be empty or whitespace: %w", status.ErrInvalidArgument)
 	}
 	if strings.Contains(s, "/") {
-		return "", fmt.Errorf("chart ID %q must be a raw UUID, not a resource name: %w", s, status.ErrInvalidArgument)
+		return "", fmt.Errorf("chart ID %q cannot contain slashes: %w", s, status.ErrInvalidArgument)
 	}
-	parsed, err := uuid.Parse(s)
-	if err != nil {
-		return "", fmt.Errorf("invalid chart UUID %q: %w (%v)", s, status.ErrInvalidArgument, err)
-	}
-	return parsed.String(), nil
+	return s, nil
 }
 
-// ValidateChartIDs validates a slice of chart UUIDs, ensuring valid format and no duplicates, and normalizes them in-place.
+// ValidateChartIDs validates a slice of chart IDs, ensuring valid format and no duplicates.
 func ValidateChartIDs(chartIDs []string) error {
 	if len(chartIDs) == 0 {
 		return nil
@@ -263,8 +258,10 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if strings.TrimSpace(in.GetChart().GetTitle()) == "" {
 		return fmt.Errorf("chart.title must be set and not only contain whitespace: %w", status.ErrInvalidArgument)
 	}
-	if in.GetChartId() != "" && strings.Contains(in.GetChartId(), "/") {
-		return fmt.Errorf("chart_id %q cannot contain slashes: %w", in.GetChartId(), status.ErrInvalidArgument)
+	if in.GetChartId() != "" {
+		if _, err := ValidateChartID(in.GetChartId()); err != nil {
+			return err
+		}
 	}
 	expXid, wuWid, err := ValidateCreateChartParent(in)
 	if err != nil {

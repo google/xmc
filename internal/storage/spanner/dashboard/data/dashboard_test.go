@@ -693,7 +693,7 @@ func TestDashboardProtoToUpdateMutations_InvalidInput(t *testing.T) {
 func TestDashboardProtoToInsertMutations_InvalidChartID(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name:     "dashboards/d1",
-		ChartIds: []string{"invalid chart id with spaces"},
+		ChartIds: []string{"invalid/chart/id"},
 	}
 	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
 		t.Errorf("DashboardProtoToInsertMutations with invalid chart ID succeeded, want error")
@@ -703,7 +703,7 @@ func TestDashboardProtoToInsertMutations_InvalidChartID(t *testing.T) {
 func TestDashboardProtoToUpdateMutations_InvalidChartID(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name:     "dashboards/d1",
-		ChartIds: []string{"invalid chart id with spaces"},
+		ChartIds: []string{"invalid/chart/id"},
 	}
 	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
 		t.Errorf("DashboardProtoToUpdateMutations with invalid chart ID succeeded, want error")

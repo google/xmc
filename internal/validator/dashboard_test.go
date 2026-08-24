@@ -34,16 +34,27 @@ func TestValidateChartID(t *testing.T) {
 		wantErr error
 	}{
 		{
+			name:    "valid_custom_chart_id",
+			input:   "custom-chart-1",
+			wantID:  "custom-chart-1",
+			wantErr: nil,
+		},
+		{
 			name:    "valid_raw_uuid",
 			input:   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
 			wantID:  "f47ac10b-58cc-4372-a567-0e02b2c3d479",
 			wantErr: nil,
 		},
 		{
-			name:    "valid_raw_uuid_uppercase_normalized",
-			input:   "F47AC10B-58CC-4372-A567-0E02B2C3D479",
-			wantID:  "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+			name:    "valid_arbitrary_string_without_slashes",
+			input:   "loss_plot_v2.0_run-99",
+			wantID:  "loss_plot_v2.0_run-99",
 			wantErr: nil,
+		},
+		{
+			name:    "rejected_slash_in_id",
+			input:   "invalid/chart-id",
+			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name:    "rejected_root_chart_name",
@@ -68,16 +79,6 @@ func TestValidateChartID(t *testing.T) {
 		{
 			name:    "whitespace_only",
 			input:   "   \t\n  ",
-			wantErr: status.ErrInvalidArgument,
-		},
-		{
-			name:    "invalid_non_uuid_string",
-			input:   "not-a-valid-uuid",
-			wantErr: status.ErrInvalidArgument,
-		},
-		{
-			name:    "invalid_uuid_length",
-			input:   "f47ac10b-58cc-4372-a567",
 			wantErr: status.ErrInvalidArgument,
 		},
 	}
@@ -116,15 +117,14 @@ func TestValidateChartIDs(t *testing.T) {
 		},
 		{
 			name:     "valid_chart_ids",
-			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
-			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "custom-chart-1"},
+			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "custom-chart-1"},
 			wantErr:  nil,
 		},
 		{
-			name:     "valid_chart_ids_normalized_in_place",
-			chartIDs: []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479", "C9A646D3-9C61-4CD7-BF10-8E96DC638210"},
-			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
-			wantErr:  nil,
+			name:     "rejected_slash_item_in_slice",
+			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "invalid/chart-id"},
+			wantErr:  status.ErrInvalidArgument,
 		},
 		{
 			name:     "rejected_resource_names_in_slice",
@@ -148,17 +148,7 @@ func TestValidateChartIDs(t *testing.T) {
 		},
 		{
 			name:     "exact_duplicate_ids",
-			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
-			wantErr:  status.ErrInvalidArgument,
-		},
-		{
-			name:     "case_insensitive_duplicate_ids",
-			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "F47AC10B-58CC-4372-A567-0E02B2C3D479"},
-			wantErr:  status.ErrInvalidArgument,
-		},
-		{
-			name:     "malformed_item_in_slice",
-			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "not-a-uuid"},
+			chartIDs: []string{"custom-chart-1", "custom-chart-1"},
 			wantErr:  status.ErrInvalidArgument,
 		},
 	}
@@ -224,11 +214,11 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "valid_request_with_chart_ids_normalized_in_place",
+			name: "valid_request_with_chart_ids_and_custom_ids",
 			req: &spb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Title:    "Valid Dashboard",
-					ChartIds: []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479"},
+					ChartIds: []string{"custom-chart-1", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			},
 			wantErr: nil,
@@ -310,11 +300,6 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			err := ValidateCreateDashboardRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateCreateDashboardRequest() error = %v, wantErr %v", err, tc.wantErr)
-			}
-			if tc.name == "valid_request_with_chart_ids_normalized_in_place" && err == nil {
-				if got := tc.req.GetDashboard().GetChartIds()[0]; got != "f47ac10b-58cc-4372-a567-0e02b2c3d479" {
-					t.Errorf("expected chart ID normalized to lowercase, got %q", got)
-				}
 			}
 		})
 	}
@@ -441,13 +426,13 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "valid_partial_update_chart_ids_normalized_in_place",
+			name: "valid_partial_update_chart_ids",
 			req: &spb.UpdateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Title:       "Updated Title",
 					Description: "Updated Description",
-					ChartIds:    []string{"F47AC10B-58CC-4372-A567-0E02B2C3D479"},
+					ChartIds:    []string{"custom-chart-1", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
 					Paths: []string{"chart_ids"},
@@ -523,11 +508,11 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "update_mask_chart_ids_with_malformed_id",
+			name: "update_mask_chart_ids_with_slash",
 			req: &spb.UpdateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Name:     "dashboards/dash-123",
-					ChartIds: []string{"not-a-uuid"},
+					ChartIds: []string{"invalid/chart/id"},
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
 					Paths: []string{"chart_ids"},
@@ -560,12 +545,12 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "full_update_with_malformed_chart_id",
+			name: "full_update_with_slash_chart_id",
 			req: &spb.UpdateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Name:     "dashboards/dash-123",
 					Title:    "Valid Title",
-					ChartIds: []string{"not-a-uuid"},
+					ChartIds: []string{"invalid/chart/id"},
 				},
 			},
 			wantErr: status.ErrInvalidArgument,
@@ -656,11 +641,6 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 			err := ValidateUpdateDashboardRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateUpdateDashboardRequest() error = %v, wantErr %v", err, tc.wantErr)
-			}
-			if tc.name == "valid_partial_update_chart_ids_normalized_in_place" && err == nil {
-				if got := tc.req.GetDashboard().GetChartIds()[0]; got != "f47ac10b-58cc-4372-a567-0e02b2c3d479" {
-					t.Errorf("expected chart ID normalized to lowercase, got %q", got)
-				}
 			}
 		})
 	}
