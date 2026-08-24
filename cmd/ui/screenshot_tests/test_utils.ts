@@ -91,6 +91,69 @@ export const MOCK_JOBS = [
   },
 ];
 
+export async function handleClusterQueuesRoute(route: Route) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(MOCK_CLUSTER_QUEUES),
+  });
+}
+
+export async function handleQueueJobsRoute(route: Route) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ jobs: MOCK_JOBS, totalQueueSize: MOCK_JOBS.length }),
+  });
+}
+
+export async function handleSecondaryDataRoute(route: Route) {
+  const mockPredictabilityData = {
+    'gpu-cluster-queue': {
+      queuePredictability: [
+        {
+          velocityRange: 'RANGE_PRESET_LAST_HOUR',
+          jobVelocity: 12.5,
+          resourceVelocity: {
+            resourceType: 'nvidia.com/gpu',
+            velocity: 100,
+          },
+          pendingJobs: 3,
+          pendingResourceRequests: {
+            resourceType: 'nvidia.com/gpu',
+            count: 24,
+          },
+        },
+      ],
+    },
+    'cpu-cluster-queue': {
+      queuePredictability: [
+        {
+          velocityRange: 'RANGE_PRESET_LAST_HOUR',
+          jobVelocity: 5.0,
+          resourceVelocity: {
+            resourceType: 'cpu',
+            velocity: 40,
+          },
+          pendingJobs: 2,
+          pendingResourceRequests: {
+            resourceType: 'cpu',
+            count: 16,
+          },
+        },
+      ],
+    },
+  };
+
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      queuePredictability: mockPredictabilityData,
+    }),
+  });
+}
+
 /**
  * UI test harness utilities for Playwright visual screenshot testing.
  * Mocks user auth, feature flag configuration, and cluster queue data routes.
@@ -99,72 +162,9 @@ export async function setupMockRoutes(page: Page) {
   await page.route(/\/api\/user/, handleUserAuthRoute);
   await page.route(/\/health\/userinfo/, handleUserAuthRoute);
   await page.route(/\/config\.js/, handleConfigRoute);
-
-  // 1. Base clusterqueues route (exact match ending with /clusterqueues)
-  await page.route(/\/clusterqueues$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(MOCK_CLUSTER_QUEUES),
-    });
-  });
-
-  // 2. Jobs sub-route
-  await page.route(/\/clusterqueues\/.*\/jobs/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ jobs: MOCK_JOBS, totalQueueSize: MOCK_JOBS.length }),
-    });
-  });
-
-  // 3. batchGetSecondaryData sub-route
-  await page.route(/.*batchGetSecondaryData.*/, async (route) => {
-    const mockData = {
-      'gpu-cluster-queue': {
-        queuePredictability: [
-          {
-            velocityRange: 'RANGE_PRESET_LAST_HOUR',
-            jobVelocity: 12.5,
-            resourceVelocity: {
-              resourceType: 'nvidia.com/gpu',
-              velocity: 100,
-            },
-            pendingJobs: 3,
-            pendingResourceRequests: {
-              resourceType: 'nvidia.com/gpu',
-              count: 24,
-            },
-          },
-        ],
-      },
-      'cpu-cluster-queue': {
-        queuePredictability: [
-          {
-            velocityRange: 'RANGE_PRESET_LAST_HOUR',
-            jobVelocity: 5.0,
-            resourceVelocity: {
-              resourceType: 'cpu',
-              velocity: 40,
-            },
-            pendingJobs: 2,
-            pendingResourceRequests: {
-              resourceType: 'cpu',
-              count: 16,
-            },
-          },
-        ],
-      },
-    };
-
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        queuePredictability: mockData,
-      }),
-    });
-  });
+  await page.route(/\/clusterqueues$/, handleClusterQueuesRoute);
+  await page.route(/\/clusterqueues\/.*\/jobs/, handleQueueJobsRoute);
+  await page.route(/.*batchGetSecondaryData.*/, handleSecondaryDataRoute);
 }
 
 /**
