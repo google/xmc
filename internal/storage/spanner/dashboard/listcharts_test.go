@@ -210,8 +210,8 @@ func TestListCharts_HydratesPlotsPerChart(t *testing.T) {
 	c1.Plots = []*dpb.PlotSpec{{PlotId: "list-plot-1", Title: "Loss", Type: dpb.PlotType_SCATTER}}
 	c2 := blankChartProto("hydrate-list-2", 100, 1)
 	c2.Plots = []*dpb.PlotSpec{
-		{PlotId: "list-plot-2a", Title: "Accuracy", Type: dpb.PlotType_LINE},
-		{PlotId: "list-plot-2b", Title: "Throughput", Type: dpb.PlotType_BAR},
+		{PlotId: "list-plot-2a", Title: "Accuracy", Type: dpb.PlotType_BAR},
+		{PlotId: "list-plot-2b", Title: "Throughput", Type: dpb.PlotType_HISTOGRAM},
 	}
 	c3 := blankChartProto("hydrate-list-3", 100, 1)
 	c3.Plots = nil

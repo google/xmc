@@ -28,7 +28,7 @@ func TestHydrateChartPlots_BatchesAcrossCharts(t *testing.T) {
 	withPlots := blankChartProto("hydrate-with-plots", 100, 1)
 	withPlots.Plots = []*dpb.PlotSpec{
 		{PlotId: "plot-a", Title: "Loss", Type: dpb.PlotType_SCATTER},
-		{PlotId: "plot-b", Title: "Accuracy", Type: dpb.PlotType_LINE},
+		{PlotId: "plot-b", Title: "Accuracy", Type: dpb.PlotType_BAR},
 	}
 	other := blankChartProto("hydrate-other", 100, 1)
 	noPlots := blankChartProto("hydrate-no-plots", 100, 1)
