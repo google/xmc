@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
+	"xmanager_cloud/logging/logging"
 )
 
 var randReader io.Reader = rand.Reader
@@ -90,7 +90,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
-		log.Printf("[Callback Auth] Failed to get user info: %v", err)
+		logging.Error(ctx, "[Callback Auth] Failed to get user info", "error", err)
 		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
 		return
 	}
@@ -99,14 +99,14 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	authorized, err := a.IsUserAuthorized(ctx, userInfo.Email)
 	if err != nil {
-		log.Printf("[Callback Auth] Authorization pipeline check failed: %v", err)
+		logging.Error(ctx, "[Callback Auth] Authorization pipeline check failed", "error", err)
 		permissionErrorURL := fmt.Sprintf("%s/?error=permission_error", dynamicFrontendURL)
 		http.Redirect(w, r, permissionErrorURL, http.StatusTemporaryRedirect)
 		return
 	}
 
 	if !authorized {
-		log.Printf("[Callback Auth] Access forbidden: user %q is not authorized", userInfo.Email)
+		logging.Warn(ctx, "[Callback Auth] Access forbidden: user is not authorized", "email", userInfo.Email)
 		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(userInfo.Email))
 		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
 		return
