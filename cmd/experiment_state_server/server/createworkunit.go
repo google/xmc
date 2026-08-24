@@ -41,10 +41,23 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 		return nil, err
 	}
 
-	// 2. Validate the request payload and enrich logging context.
-	xid, ctx, err := h.validateCreateWorkUnitRequest(ctx, req)
+	// 2. Validate the parent experiment name and enrich logging context.
+	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
+		logging.Warn(ctx, "Failed to validate experiment name", "error", err)
+		return nil, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
+	}
+	ctx = logging.WithExperimentName(ctx, req.GetParent())
+
+	// 3. Authorize the caller to create work units for this experiment.
+	if err := h.authorizeCreateWorkUnit(ctx, xid, email); err != nil {
 		return nil, err
+	}
+
+	// 4. Validate the request payload.
+	if err := validator.ValidateCreateWorkUnitRequest(req); err != nil {
+		logging.Warn(ctx, "CreateWorkUnit validation failed", "error", err)
+		return nil, fmt.Errorf("CreateWorkUnit validation failed: %w", err)
 	}
 
 	if req.GetWorkUnitId() == 0 {
@@ -56,12 +69,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 		return nil, err
 	}
 
-	// 3. Authorize the caller to create work units for this experiment.
-	if err := h.authorizeCreateWorkUnit(ctx, xid, email); err != nil {
-		return nil, err
-	}
-
-	// 4. Assemble the full WorkUnit object from the request.
+	// 5. Assemble the full WorkUnit object from the request.
 	wu := validator.FillWorkUnitNullValues(req.GetWorkUnit())
 
 	// 4.1. Construct the work unit name and current work unit execution.
@@ -114,17 +122,24 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 		h.stopOperationOnError(ctx, operation, err)
 	}()
 
-	// 7. Create the action to enqueue the work unit for scheduling.
+	// 7. Enqueue the work unit for scheduling.
 	logging.Debug(ctx, "Enqueuing work unit for scheduling")
+	if err = h.enqueueWorkUnitOnCreation(ctx, xid, wid, newWorkUnit, email, operation); err != nil {
+		return nil, err
+	}
 
-	// 8. Fetch the experiment to get the priority for the work unit creation.
+	// 8. Return the successful response.
+	logging.Info(ctx, "Created work unit", "work_unit", newWorkUnit.GetName())
+	return operation, nil
+}
+
+func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wid int64, newWorkUnit *msgpb.WorkUnit, email string, operation *lropb.Operation) error {
 	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to fetch experiment", "error", err)
-		return nil, fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
+		return fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
 	}
 
-	// 9. Enqueue the work unit for scheduling.
 	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
 	if err != nil {
 		log.ErrorContextf(ctx, "Failed to enqueue work unit for scheduling %s: %v", newWorkUnit.GetName(), err)
@@ -132,7 +147,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(newWorkUnit.GetCurrentWorkUnitExecution().GetName())
 		if err != nil {
 			log.ErrorContextf(ctx, "Failed to validate work unit execution name: %v", err)
-			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+			return fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
 		}
 
 		if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
@@ -143,12 +158,9 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 			logging.Error(ctx, "Failed to update work unit execution status message after failed create attempt", "error", statusMsgErr)
 		}
 		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "error", enqueueErr)
-		return nil, fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", status.ErrInternal, enqueueErr)
+		return fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", status.ErrInternal, enqueueErr)
 	}
-
-	// 10. Return the successful response.
-	logging.Info(ctx, "Created work unit", "work_unit", newWorkUnit.GetName())
-	return operation, nil
+	return nil
 }
 
 func (h *WorkUnitHandler) checkExecutionEnvCompatibility(ctx context.Context, wu *msgpb.WorkUnit) (ee.Environment, error) {
@@ -174,19 +186,4 @@ func (h *WorkUnitHandler) authorizeCreateWorkUnit(ctx context.Context, xid int64
 		return fmt.Errorf("user %s is not authorized to create work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
 	}
 	return nil
-}
-
-func (h *WorkUnitHandler) validateCreateWorkUnitRequest(ctx context.Context, req *apipb.CreateWorkUnitRequest) (int64, context.Context, error) {
-	xid, err := validator.ValidateExperimentName(req.GetParent())
-	if err != nil {
-		logging.Warn(ctx, "Failed to validate experiment name", "error", err)
-		return 0, ctx, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
-	}
-	ctx = logging.WithExperimentName(ctx, req.GetParent())
-
-	if err := validator.ValidateCreateWorkUnitRequest(req); err != nil {
-		logging.Warn(ctx, "CreateWorkUnit validation failed", "error", err)
-		return 0, ctx, fmt.Errorf("CreateWorkUnit validation failed: %w", err)
-	}
-	return xid, ctx, nil
 }
