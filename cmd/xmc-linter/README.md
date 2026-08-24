@@ -98,7 +98,68 @@ When validation issues are detected:
 
 ---
 
-## 5. Running Tests
+## 5. Component Manifest Specification & Flexible YAML AST
+
+`xmc-linter` defines the typed Component AST in `pkg/components/linter/manifest.go` and implements custom YAML deserializers in `pkg/components/linter/manifest_decoder.go` supporting flexible dependency declarations, duration formats, and YAML aliases.
+
+### Manifest Structure
+
+```yaml
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: storage-controller
+  namespace: xmc
+spec:
+  version: "1.4.2"
+  componentType: CUSTOM_1P_COMPONENT # CUSTOM_1P_COMPONENT | CUSTOM_3P_WRAPPER
+  enabled: true
+  deletionProtection: false
+  deletionPolicy: DELETE             # DELETE | ORPHAN | UNSPECIFIED
+  lifecycleControl:
+    drainTimeoutSeconds: "60s"       # Supports "60s", "5m", or integer 60
+    gracePeriodSeconds: 30
+  dependencies:
+    - name: storage-driver
+      version: "^2.0.0"
+      optional: false
+```
+
+### Flexible Dependency Notations
+
+Dependencies in `spec.dependencies` can be expressed in any of three equivalent formats:
+
+1. **List of Objects**:
+   ```yaml
+   dependencies:
+     - name: logging-agent
+       version: ">=1.2.0"
+       optional: true
+   ```
+2. **List of Strings** (version omitted, defaults to any version):
+   ```yaml
+   dependencies:
+     - logging-agent
+     - metrics-collector
+   ```
+3. **Key-Value Mapping** (component name to SemVer constraint string):
+   ```yaml
+   dependencies:
+     logging-agent: "^1.2.0"
+     metrics-collector: ">=2.0.0"
+     optional-driver: null
+   ```
+
+### Flexible Duration Parsing
+
+Lifecycle durations (`spec.lifecycleControl.drainTimeoutSeconds` and `spec.lifecycleControl.gracePeriodSeconds`) support both integer seconds and human-friendly duration strings:
+- String durations: `"30s"`, `"5m"`, `"1h"`.
+- Numeric seconds: `30`, `300`, `3600`.
+- Explicit `0` is preserved as a zero duration rather than treated as an omitted value.
+
+---
+
+## 6. Running Tests
 
 Run all unit and integration tests across the CLI binary and linter packages:
 
@@ -109,3 +170,4 @@ bazel test //cmd/xmc-linter/... //pkg/components/linter/...
 # Run tests with detailed testlog output
 bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
 ```
+

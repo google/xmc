@@ -30,3 +30,58 @@ type RawManifest struct {
 	FilePath   string         `yaml:"-" json:"-"`
 	Line       int            `yaml:"-" json:"-"`
 }
+
+// ComponentManifest represents a Component custom resource declaration.
+type ComponentManifest struct {
+	APIVersion string                `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string                `yaml:"kind" json:"kind"`
+	Metadata   ObjectMetadata        `yaml:"metadata" json:"metadata"`
+	Spec       ComponentManifestSpec `yaml:"spec" json:"spec"`
+	FilePath   string                `yaml:"-" json:"-"`
+	Line       int                   `yaml:"-" json:"-"`
+}
+
+// IsEnabled returns true if the component is explicitly enabled or defaults to enabled.
+func (c *ComponentManifest) IsEnabled() bool {
+	if c.Spec.Enabled == nil {
+		return true
+	}
+	return *c.Spec.Enabled
+}
+
+// ComponentDependencyRef specifies a dependency name and optional SemVer constraint.
+type ComponentDependencyRef struct {
+	Name     string `yaml:"name" json:"name"`
+	Version  string `yaml:"version,omitempty" json:"version,omitempty"`
+	Optional bool   `yaml:"optional,omitempty" json:"optional,omitempty"`
+}
+
+// ComponentWrapperRef configures reference metadata for third-party CRDs and controllers.
+type ComponentWrapperRef struct {
+	CrdGroup        string `yaml:"crdGroup" json:"crdGroup"`
+	CrdVersion      string `yaml:"crdVersion" json:"crdVersion"`
+	CrdKind         string `yaml:"crdKind" json:"crdKind"`
+	TargetNamespace string `yaml:"targetNamespace,omitempty" json:"targetNamespace,omitempty"`
+	TargetName      string `yaml:"targetName" json:"targetName"`
+}
+
+// ComponentLifecycleCtrl defines lifecycle timeouts and drain control.
+type ComponentLifecycleCtrl struct {
+	DrainTimeoutSeconds int  `yaml:"drainTimeoutSeconds,omitempty" json:"drainTimeoutSeconds,omitempty"`
+	GracePeriodSeconds  int  `yaml:"gracePeriodSeconds,omitempty" json:"gracePeriodSeconds,omitempty"`
+	ForceDeletion       bool `yaml:"forceDeletion,omitempty" json:"forceDeletion,omitempty"`
+}
+
+// ComponentManifestSpec holds the specification body of a Component manifest.
+type ComponentManifestSpec struct {
+	Enabled            *bool                    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	ComponentType      string                   `yaml:"componentType,omitempty" json:"componentType,omitempty"`
+	Version            string                   `yaml:"version,omitempty" json:"version,omitempty"`
+	DeletionPolicy     string                   `yaml:"deletionPolicy,omitempty" json:"deletionPolicy,omitempty"`
+	DeletionProtection bool                     `yaml:"deletionProtection,omitempty" json:"deletionProtection,omitempty"`
+	WrapperRef         *ComponentWrapperRef     `yaml:"wrapperRef,omitempty" json:"wrapperRef,omitempty"`
+	LifecycleControl   *ComponentLifecycleCtrl  `yaml:"lifecycleControl,omitempty" json:"lifecycleControl,omitempty"`
+	Dependencies       []ComponentDependencyRef `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	Manifests          []string                 `yaml:"manifests,omitempty" json:"manifests,omitempty"`
+	Description        string                   `yaml:"description,omitempty" json:"description,omitempty"`
+}
