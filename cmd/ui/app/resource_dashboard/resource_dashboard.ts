@@ -123,7 +123,8 @@ export class ResourceDashboard implements OnInit, OnDestroy {
             return this.resourceService
               .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
               .pipe(
-                catchError(() => {
+                catchError((err) => {
+                  console.error('CATCH ERROR IN SECONDARY DATA SUBSCRIPTION:', err);
                   this.isSecondaryLoading.set(false);
                   return EMPTY;
                 }),

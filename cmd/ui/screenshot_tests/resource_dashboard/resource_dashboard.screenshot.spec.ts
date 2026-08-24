@@ -19,29 +19,33 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 1200 });
-    // Intercept user auth and config API endpoints so authGuard and feature flags succeed
     await setupMockRoutes(page);
-    // Navigate to production route /resources
+
     const jobsPromise = page.waitForResponse(
       (resp) => resp.url().includes('/jobs') && resp.status() === 200,
+    );
+    const secondaryPromise = page.waitForResponse(
+      (resp) => resp.url().includes('batchGetSecondaryData') && resp.status() === 200,
     );
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await jobsPromise;
+    await secondaryPromise;
+
+    // Explicitly wait for predictability metrics grid to be rendered in DOM before screenshot
+    await page.locator('xmc-rod-queue-card .predictability-stats-grid').first().waitFor({ state: 'visible' });
     await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({
     page,
   }) => {
-    // Capture baseline screenshot of full Resource Dashboard container
     await expect(page).toHaveScreenshot('resource-dashboard-initial.png');
   });
 
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
 
-    // Click on unselected cluster queue item (cpu-cluster-queue) to trigger selection change
     const queueItem = dashboard.locator('xmc-rod-queue-card', {
       hasText: 'cpu-cluster-queue',
     });
@@ -52,7 +56,6 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await queueItem.click();
     await jobsResponsePromise;
 
-    // Capture screenshot with selected queue state
     await expect(page).toHaveScreenshot('resource-dashboard-queue-selected.png');
   });
 });

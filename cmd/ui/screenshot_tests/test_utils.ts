@@ -96,11 +96,12 @@ export const MOCK_JOBS = [
  * Mocks user auth, feature flag configuration, and cluster queue data routes.
  */
 export async function setupMockRoutes(page: Page) {
-  await page.route('/api/user', handleUserAuthRoute);
-  await page.route('**/health/userinfo', handleUserAuthRoute);
-  await page.route('/config.js', handleConfigRoute);
+  await page.route(/\/api\/user/, handleUserAuthRoute);
+  await page.route(/\/health\/userinfo/, handleUserAuthRoute);
+  await page.route(/\/config\.js/, handleConfigRoute);
 
-  await page.route('**/clusterqueues', async (route) => {
+  // 1. Base clusterqueues route (exact match ending with /clusterqueues)
+  await page.route(/\/clusterqueues$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -108,7 +109,8 @@ export async function setupMockRoutes(page: Page) {
     });
   });
 
-  await page.route('**/clusterqueues/*/jobs', async (route) => {
+  // 2. Jobs sub-route
+  await page.route(/\/clusterqueues\/.*\/jobs/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -116,11 +118,51 @@ export async function setupMockRoutes(page: Page) {
     });
   });
 
-  await page.route('**/clusterqueues:batchGetSecondaryData', async (route) => {
+  // 3. batchGetSecondaryData sub-route
+  await page.route(/.*batchGetSecondaryData.*/, async (route) => {
+    const mockData = {
+      'gpu-cluster-queue': {
+        queuePredictability: [
+          {
+            velocityRange: 'RANGE_PRESET_LAST_HOUR',
+            jobVelocity: 12.5,
+            resourceVelocity: {
+              resourceType: 'nvidia.com/gpu',
+              velocity: 100,
+            },
+            pendingJobs: 3,
+            pendingResourceRequests: {
+              resourceType: 'nvidia.com/gpu',
+              count: 24,
+            },
+          },
+        ],
+      },
+      'cpu-cluster-queue': {
+        queuePredictability: [
+          {
+            velocityRange: 'RANGE_PRESET_LAST_HOUR',
+            jobVelocity: 5.0,
+            resourceVelocity: {
+              resourceType: 'cpu',
+              velocity: 40,
+            },
+            pendingJobs: 2,
+            pendingResourceRequests: {
+              resourceType: 'cpu',
+              count: 16,
+            },
+          },
+        ],
+      },
+    };
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ queuePredictability: {} }),
+      body: JSON.stringify({
+        queuePredictability: mockData,
+      }),
     });
   });
 }
