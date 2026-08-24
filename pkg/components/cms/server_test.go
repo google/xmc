@@ -581,4 +581,25 @@ func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 	if comp.GetSpec().GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		t.Errorf("GetType() preserved = %v, want CUSTOM_1P_COMPONENT", comp.GetSpec().GetType())
 	}
+
+	// Upsert on non-existent component with update_mask
+	upsertResp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "comp-mask-upsert",
+		Spec: &componentspb.ComponentSpec{
+			Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Description: "Upserted description",
+			Version:     "v2.0.0", // not in mask, should remain default
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"type", "description"}},
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(update_mask upsert) failed: %v", err)
+	}
+	upsertComp := upsertResp.GetComponent()
+	if upsertComp.GetSpec().GetDescription() != "Upserted description" {
+		t.Errorf("GetDescription() = %q, want 'Upserted description'", upsertComp.GetSpec().GetDescription())
+	}
+	if upsertComp.GetSpec().GetVersion() != "" {
+		t.Errorf("GetVersion() = %q, want empty (omitted from mask)", upsertComp.GetSpec().GetVersion())
+	}
 }

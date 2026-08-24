@@ -21,7 +21,19 @@ import (
 )
 
 // ApplySpecUpdateMask merges fields from update into base according to field mask paths.
-// If base is nil, an empty ComponentSpec is used as the base.
+//
+// Supported top-level paths (both snake_case and camelCase):
+//   - "type"
+//   - "version"
+//   - "deletion_policy", "deletionPolicy"
+//   - "wrapper_ref", "wrapperRef"
+//   - "lifecycle_control", "lifecycleControl"
+//   - "manifests"
+//   - "description"
+//   - "generation"
+//
+// Unmapped, unknown, or sub-nested paths are ignored without mutating other fields.
+// If base is nil, an empty ComponentSpec is used as the base (useful for creation with update_mask).
 // If update is nil, a cloned base is returned.
 func ApplySpecUpdateMask(base, update *componentspb.ComponentSpec, paths []string) *componentspb.ComponentSpec {
 	if base == nil && update == nil {
