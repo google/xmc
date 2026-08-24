@@ -21,14 +21,14 @@ graph TD
     C -->|No| D["Proceed to Standard PR Creation Gate"]
     C -->|Yes| E["Spawn PR Split Verification Subagent"]
     
-    subgraph Subagent Verification Rubric
+    subgraph SVR ["Subagent Verification Rubric"]
         E --> F["1. SRP Audit: Single cohesive reason to change"]
         E --> G["2. Vertical Splitting Priority: End-to-end user flows"]
         E --> H["3. Dead Code Invariant: No orphaned functions / uncalled code"]
         E --> I["4. Test Reachability: Every slice fully tested"]
     end
     
-    Subagent Verification Rubric --> J{"Can Diff Be Split Vertically?"}
+    F & G & H & I --> J{"Can Diff Be Split Vertically?"}
     J -->|Yes| K["Propose gh-stack Plan & Present to User"]
     J -->|No / Valid Exception| L["Generate Exception Justification & Ask User Approval"]
     
