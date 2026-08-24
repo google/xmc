@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -62,6 +63,12 @@ func TestParseConfig(t *testing.T) {
 
 	if _, err := ParseConfig([]string{"--bad-flag=true"}); err == nil {
 		t.Error("expected error for bad flag")
+	}
+	if _, err := ParseConfig([]string{"--probe-interval=0s"}); err == nil {
+		t.Error("expected error for zero probe-interval")
+	}
+	if _, err := ParseConfig([]string{"--probe-timeout=-1s"}); err == nil {
+		t.Error("expected error for negative probe-timeout")
 	}
 }
 
@@ -126,6 +133,12 @@ func TestController_RunReconcilePass(t *testing.T) {
 	del, _ := fakeDyn.Resource(componentGVR).Namespace("xmc").Get(context.Background(), "redis", metav1.GetOptions{})
 	if len(del.GetFinalizers()) != 0 {
 		t.Errorf("expected finalizer removed: %+v", del.GetFinalizers())
+	}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := ctrl.RunReconcilePass(canceledCtx); err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
 	}
 }
 

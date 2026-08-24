@@ -67,6 +67,12 @@ func ParseConfig(args []string) (*Config, error) {
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse flags: %w", err)
 	}
+	if *probeInterval <= 0 {
+		return nil, fmt.Errorf("probe-interval must be a positive duration, got %v", *probeInterval)
+	}
+	if *probeTimeout <= 0 {
+		return nil, fmt.Errorf("probe-timeout must be a positive duration, got %v", *probeTimeout)
+	}
 	return &Config{
 		CMSAddress:    *cmsAddress,
 		Namespace:     *namespace,
@@ -78,23 +84,16 @@ func ParseConfig(args []string) (*Config, error) {
 
 // BuildKubeConfig builds a Kubernetes client config from a path or in-cluster environment.
 func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
-	if kubeconfigPath != "" {
-		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build kubeconfig from path %q: %w", kubeconfigPath, err)
-		}
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRules.ExplicitPath = kubeconfigPath
+	configOverrides := &clientcmd.ConfigOverrides{}
+	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
+	if err == nil {
 		return cfg, nil
 	}
-	if envPath := os.Getenv("KUBECONFIG"); envPath != "" {
-		cfg, err := clientcmd.BuildConfigFromFlags("", envPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build kubeconfig from KUBECONFIG env %q: %w", envPath, err)
-		}
-		return cfg, nil
-	}
-	cfg, err := rest.InClusterConfig()
+	cfg, err = rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build in-cluster kubeconfig: %w", err)
+		return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
 	}
 	return cfg, nil
 }
@@ -150,6 +149,9 @@ func (c *Controller) RunReconcilePass(ctx context.Context) error {
 	}
 	logging.Debug(ctx, "Reconciliation pass found components", "namespace", c.namespace, "count", len(list.Items))
 	for _, item := range list.Items {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		c.reconcileItem(ctx, &item)
 	}
 	return nil
@@ -168,6 +170,9 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 	updatedItem, err := c.syncFinalizers(ctx, item, res)
 	if err != nil {
 		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
+		return
+	}
+	if res.RemoveFinalizer {
 		return
 	}
 	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
