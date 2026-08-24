@@ -321,9 +321,10 @@ func TestParseHelpers(t *testing.T) {
 		"wrapperRef": map[string]any{
 			"group": "g", "version": "v", "kind": "k", "name": "n", "namespace": "ns",
 		},
+		"manifests": []any{"yaml-1", "yaml-2"},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
-	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" {
+	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" || len(spec.GetManifests()) != 2 {
 		t.Errorf("unexpected parsed spec: %+v", spec)
 	}
 

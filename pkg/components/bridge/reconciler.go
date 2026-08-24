@@ -269,8 +269,23 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		Version:        extractStr(specMap, "version"),
 		Description:    extractStr(specMap, "description"),
 		WrapperRef:     parseWrapperRef(specMap),
+		Manifests:      parseManifests(specMap),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
+}
+
+func parseManifests(m map[string]any) []string {
+	raw, ok := m["manifests"].([]any)
+	if !ok {
+		return nil
+	}
+	var res []string
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			res = append(res, s)
+		}
+	}
+	return res
 }
 
 func extractBool(m map[string]any, k string, def bool) bool {
