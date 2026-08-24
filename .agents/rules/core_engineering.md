@@ -66,7 +66,15 @@ function processUser(user: User | null) {
 - **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
 - **UI Visual Screenshot Testing**: UI component visual screenshot tests must use direct custom component host tags (`<xmc-*>`), rely on shared test utilities (`test_utils.ts`) for standard viewport sizing and layout formatting, configure `maxDiffPixelRatio` for cross-platform CI font rendering, and synchronize baseline PNG snapshots (see [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md#8-playwright-visual-screenshot-testing)).
 - **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
-- **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
+- **Small, Focused PRs & Sizing Thresholds**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
+  - **Sizing Thresholds (Evaluated via `tools/analyze_diff_size.py`)**:
+    - **Production Code**: $\ge 400$ lines triggers mandatory split verification.
+    - **Combined Code (Prod + Tests)**: $\ge 1,000$ lines triggers mandatory split verification.
+    - **Documentation / Markdown**: $\ge 1,000$ lines triggers modularization check.
+    - *Generated Code & Lockfiles*: Automatically excluded from sizing.
+  - **Vertical Slicing over Horizontal Splitting**: Always prioritize vertical slices (end-to-end usable flows spanning models, logic, and tests) over horizontal architectural layers (e.g. database-only PRs).
+  - **Dead Code & Reachability Invariant**: Intermediate PRs in a stack must NOT submit dead, uncalled, or orphaned logic. Every layer must be reachable and verified by comprehensive tests.
+  - **Mandatory Subagent Audit**: If any sizing threshold is exceeded, agents MUST spawn the PR Split Verification Subagent per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) and propose a stacked PR plan via [`gh-stack`](conversation://skills/gh-stack) before opening a PR.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
