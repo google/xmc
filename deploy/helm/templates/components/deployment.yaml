@@ -1,0 +1,65 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- if .Values.componentsDeployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xmc-bridge-deployment
+  labels:
+    app: xmc-bridge
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xmc-bridge
+  template:
+    metadata:
+      labels:
+        app: xmc-bridge
+        app.kubernetes.io/name: xmc-bridge
+        app.kubernetes.io/part-of: xmanager-cloud
+    spec:
+      serviceAccountName: xmc-bridge-sa
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: xmc-bridge
+        image: {{ .Values.xmc_bridge_custom_image | quote }}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop:
+            - ALL
+        args:
+        - "--cms-address={{ .Values.componentsDeployment.cmsAddress | default "experiment-state-server-grpc:50051" }}"
+        - "--namespace={{ .Release.Namespace }}"
+        - "--probe-interval={{ .Values.componentsDeployment.probeInterval | default "5s" }}"
+        - "--probe-timeout={{ .Values.componentsDeployment.probeTimeout | default "2s" }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+{{- end }}
