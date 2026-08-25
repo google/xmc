@@ -97,6 +97,56 @@ test('findLatestApproval ignores approvals superseded by CHANGES_REQUESTED', () 
   assert.strictEqual(result, null);
 });
 
+test('findLatestApproval finds prior approval when review was DISMISSED by stale approval policy', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie');
+  assert.deepStrictEqual(result, {
+    approver: 'alice',
+    approvedSha: 'sha-111111',
+    submittedAt: '2026-08-25T10:00:00Z'
+  });
+});
+
+test('findLatestApproval reconstructs dismissed approval from timeline events correctly', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      event: 'reviewed',
+      user: { login: 'alice' },
+      state: 'approved',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    },
+    {
+      event: 'dismissed_review',
+      review_id: 1,
+      dismissal_message: 'Dismissed automatically by push to branch'
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.deepStrictEqual(result, {
+    approver: 'alice',
+    approvedSha: 'sha-111111',
+    submittedAt: '2026-08-25T10:00:00Z'
+  });
+});
+
 test('findLatestApproval ignores self-approval from PR author', () => {
   const reviews = [
     {

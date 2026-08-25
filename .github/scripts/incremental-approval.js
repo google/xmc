@@ -26,15 +26,59 @@ const MAX_OWNER_GRACE_LINES = 10;
  * @param {string} [prAuthor=''] - Username of the PR author to ignore self-reviews.
  * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
  */
-function findLatestApproval(reviews, prAuthor = '') {
+function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
+  const authorLower = (prAuthor || '').toLowerCase();
+
+  // If timeline events are available, use them to reconstruct original review states including dismissed reviews
+  if (Array.isArray(timelineEvents) && timelineEvents.length > 0) {
+    const reviewEvents = timelineEvents
+      .filter(e => e.event === 'reviewed' && e.user && e.commit_id)
+      .sort((a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0));
+
+    const latestStateByReviewer = new Map();
+
+    for (const event of reviewEvents) {
+      const reviewer = event.user ? event.user.login : '';
+      if (!reviewer || reviewer.toLowerCase() === authorLower) {
+        continue;
+      }
+      const state = (event.state || '').toUpperCase();
+      if (state === 'COMMENTED') {
+        continue;
+      }
+      latestStateByReviewer.set(reviewer.toLowerCase(), {
+        approver: reviewer,
+        state: state,
+        approvedSha: event.commit_id,
+        submittedAt: event.submitted_at
+      });
+    }
+
+    const approvals = Array.from(latestStateByReviewer.values()).filter(
+      r => r.state === 'APPROVED' && r.approvedSha
+    );
+
+    if (approvals.length > 0) {
+      approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+      return {
+        approver: approvals[0].approver,
+        approvedSha: approvals[0].approvedSha,
+        submittedAt: approvals[0].submittedAt
+      };
+    }
+  }
+
   if (!Array.isArray(reviews) || reviews.length === 0) {
     return null;
   }
 
-  const authorLower = (prAuthor || '').toLowerCase();
+  const sortedReviews = [...reviews].sort(
+    (a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0)
+  );
+
   const latestReviewByReviewer = new Map();
 
-  for (const review of reviews) {
+  for (const review of sortedReviews) {
     const reviewer = review.user ? review.user.login : '';
     if (!reviewer || reviewer.toLowerCase() === authorLower) {
       continue;
@@ -46,7 +90,7 @@ function findLatestApproval(reviews, prAuthor = '') {
   }
 
   const activeApprovals = Array.from(latestReviewByReviewer.values()).filter(
-    r => r.state === 'APPROVED' && r.commit_id
+    r => (r.state === 'APPROVED' || (r.state === 'DISMISSED' && r.commit_id)) && r.commit_id
   );
 
   if (activeApprovals.length === 0) {
@@ -205,8 +249,8 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
       'git',
       [
         'range-diff',
-        `origin/${baseRef}...${approvedSha}`,
-        `origin/${baseRef}...${currentSha}`
+        `origin/${baseRef}..${approvedSha}`,
+        `origin/${baseRef}..${currentSha}`
       ],
       { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
     );
@@ -221,8 +265,8 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
         'git',
         [
           'range-diff',
-          `origin/${baseRef}...${approvedSha}`,
-          `origin/${baseRef}...${currentSha}`
+          `origin/${baseRef}..${approvedSha}`,
+          `origin/${baseRef}..${currentSha}`
         ],
         { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
       );
@@ -258,7 +302,19 @@ async function run({ github, context, core }) {
     per_page: 100
   });
 
-  const latestApproval = findLatestApproval(reviews, prAuthor);
+  let timelineEvents = [];
+  try {
+    timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
+      owner,
+      repo,
+      issue_number: prNumber,
+      per_page: 100
+    });
+  } catch (timelineError) {
+    core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+  }
+
+  const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
   if (!latestApproval) {
     core.info(`PR #${prNumber} does not have any prior active approvals. Skipping auto-reapproval.`);
     return;
