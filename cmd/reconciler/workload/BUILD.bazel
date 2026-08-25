@@ -63,6 +63,7 @@ compat_go_test(
         "//internal/compat/protocmp",
         "//internal/kubernetes/common/constants",
         "//internal/storage",
+        "//internal/testing/envtest",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

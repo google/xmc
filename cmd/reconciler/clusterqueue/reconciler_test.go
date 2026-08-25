@@ -25,6 +25,7 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/internal/testing/envtest"
 )
 
 func newScheme() *runtime.Scheme {
@@ -151,5 +152,67 @@ func TestClusterQueueReconciler_NotFound(t *testing.T) {
 
 	if len(cache.Names()) != 0 {
 		t.Errorf("Expected cache to be empty, got %v", cache.Names())
+	}
+}
+
+func TestClusterQueueReconciler_Envtest(t *testing.T) {
+	testEnv := envtest.SetupTestEnv(t)
+	ctx := context.Background()
+
+	cache := NewNameCache()
+	rec, err := NewReconciler(Params{
+		Client: testEnv.Client,
+		Scheme: testEnv.Scheme,
+		Cache:  cache,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	cq := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "envtest-clusterqueue",
+		},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			NamespaceSelector: &metav1.LabelSelector{},
+		},
+	}
+
+	if err := testEnv.Client.Create(ctx, cq); err != nil {
+		t.Fatalf("failed to create ClusterQueue in envtest: %v", err)
+	}
+
+	// 1. Reconcile existing ClusterQueue from API server
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name: "envtest-clusterqueue",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned unexpected error: %v", err)
+	}
+
+	want := []string{"envtest-clusterqueue"}
+	got := cache.Names()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Cache contents differ (-want +got):\n%s", diff)
+	}
+
+	// 2. Delete ClusterQueue from API server and reconcile deletion
+	if err := testEnv.Client.Delete(ctx, cq); err != nil {
+		t.Fatalf("failed to delete ClusterQueue: %v", err)
+	}
+
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name: "envtest-clusterqueue",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned unexpected error after delete: %v", err)
+	}
+
+	if len(cache.Names()) != 0 {
+		t.Errorf("Expected cache to be empty after delete reconcile, got %v", cache.Names())
 	}
 }

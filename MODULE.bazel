@@ -30,7 +30,13 @@ go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
 
 repo_import = use_extension("//:import.bzl", "repo_import")
-use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
+use_repo(
+    repo_import,
+    "com_github_grpc_ecosystem_grpc_gateway_v2_custom",
+    "envtest_binaries",
+    "jobset_manifests",
+    "kueue_manifests",
+)
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
@@ -82,6 +88,7 @@ use_repo(
     "com_google_cloud_go_spanner",
     "in_gopkg_yaml_v3",
     "io_k8s_api",
+    "io_k8s_apiextensions_apiserver",
     "io_k8s_apimachinery",
     "io_k8s_client_go",
     "io_k8s_sigs_controller_runtime",

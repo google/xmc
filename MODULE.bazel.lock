@@ -221,12 +221,24 @@
   "moduleExtensions": {
     "//:import.bzl%repo_import": {
       "general": {
-        "bzlTransitiveDigest": "g9gJACaE246lzlieYHGiNRJxdvGs2RFTlOqviBztkw8=",
+        "bzlTransitiveDigest": "fIV4dvczQnTLE3zgjxBhjxQ/DEHtcNw33+egfZZE8kg=",
         "usagesDigest": "kDlR5ZWx4ycbeEcOmldVRQoSLzORk8CsesseAYBptZ8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "com_github_grpc_ecosystem_grpc_gateway_v2_custom": {
             "repoRuleId": "@@//:import.bzl%_custom_grpc_gateway",
+            "attributes": {}
+          },
+          "envtest_binaries": {
+            "repoRuleId": "@@//:import.bzl%envtest_binaries",
+            "attributes": {}
+          },
+          "jobset_manifests": {
+            "repoRuleId": "@@//:import.bzl%jobset_manifests",
+            "attributes": {}
+          },
+          "kueue_manifests": {
+            "repoRuleId": "@@//:import.bzl%kueue_manifests",
             "attributes": {}
           }
         }

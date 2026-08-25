@@ -40,6 +40,7 @@ import (
 	"k8s.io/utils/ptr"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/testing/envtest"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	storagepkg "xmanager_cloud/storage/storage"
@@ -2129,5 +2130,107 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 				t.Errorf("isStaleExecutionForMLRun(%q, %d) = %v, want %v", tc.executionName, tc.reconciledEID, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestJobSetReconciler_Envtest(t *testing.T) {
+	testEnv := envtest.SetupTestEnv(t)
+	ctx := context.Background()
+	ns := testEnv.CreateNamespace(ctx, t, "jobset-envtest")
+
+	storage := &mockStorageUpdater{}
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storage)
+
+	rec, err := NewReconciler(Params{
+		Client:      testEnv.Client,
+		Scheme:      testEnv.Scheme,
+		Batcher:     batcher,
+		Project:     "test-project",
+		Location:    "us-central1",
+		ClusterName: "test-cluster",
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	js := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "envtest-jobset",
+			Namespace: ns,
+			Labels: map[string]string{
+				constants.ManagedByLabel:    constants.XmcLabelValue,
+				constants.ExperimentIDLabel: "101",
+				constants.WorkUnitIDLabel:   "201",
+				constants.ExecutionIDLabel:  "301",
+			},
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{
+				{
+					Name:     "worker",
+					Replicas: 1,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									RestartPolicy: corev1.RestartPolicyNever,
+									Containers: []corev1.Container{
+										{
+											Name:  "worker",
+											Image: "busybox",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := testEnv.Client.Create(ctx, js); err != nil {
+		t.Fatalf("failed to create JobSet: %v", err)
+	}
+
+	// 1. Initial reconcile
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "envtest-jobset",
+			Namespace: ns,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned error: %v", err)
+	}
+
+	// 2. Update status subresource with Completed condition
+	js.Status.Conditions = append(js.Status.Conditions, metav1.Condition{
+		Type:               string(v1alpha2.JobSetCompleted),
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "JobSetCompleted",
+		Message:            "JobSet completed successfully",
+	})
+	if err := testEnv.Client.Status().Update(ctx, js); err != nil {
+		t.Fatalf("failed to update JobSet status: %v", err)
+	}
+
+	// 3. Reconcile after status update (verifies real status subresource read)
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "envtest-jobset",
+			Namespace: ns,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned error after status update: %v", err)
+	}
+
+	// Verify update was dispatched to batcher for xid=101 wid=201
+	batcher.UpdatesMu.Lock()
+	defer batcher.UpdatesMu.Unlock()
+	if _, ok := batcher.Updates[101][201][shared.JobsetSource]; !ok {
+		t.Errorf("Expected batcher to contain update for xid=101, wid=201")
 	}
 }

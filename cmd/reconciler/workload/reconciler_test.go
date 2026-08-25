@@ -34,6 +34,7 @@ import (
 	"k8s.io/utils/ptr"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/testing/envtest"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	storagepkg "xmanager_cloud/storage/storage"
@@ -605,5 +606,122 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 				t.Errorf("Predicate UpdateFunc() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestWorkloadReconciler_Envtest(t *testing.T) {
+	testEnv := envtest.SetupTestEnv(t)
+	ctx := context.Background()
+	ns := testEnv.CreateNamespace(ctx, t, "workload-envtest")
+
+	storage := &mockStorageUpdater{}
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storage)
+
+	rec, err := NewReconciler(Params{
+		Client:  testEnv.Client,
+		Scheme:  testEnv.Scheme,
+		Batcher: batcher,
+		ManagementClusterInfo: &spb.ClusterInfo{
+			Project: "mgmt-project",
+		},
+		DetectInadmissibleWorkUnits: true,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	wl := &v1beta1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "envtest-workload",
+			Namespace: ns,
+		},
+		Spec: v1beta1.WorkloadSpec{
+			QueueName: "test-queue",
+			PodSets: []v1beta1.PodSet{
+				{
+					Name:  "main",
+					Count: 1,
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								constants.ExperimentIDLabel: "100",
+								constants.WorkUnitIDLabel:   "200",
+								constants.ExecutionIDLabel:  "300",
+							},
+						},
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers: []corev1.Container{
+								{
+									Name:  "c",
+									Image: "busybox",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := testEnv.Client.Create(ctx, wl); err != nil {
+		t.Fatalf("failed to create Workload: %v", err)
+	}
+
+	// 1. Initial reconcile on created Workload
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "envtest-workload",
+			Namespace: ns,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned error: %v", err)
+	}
+
+	// 2. Create MultiKueueCluster and update status subresource with Admission condition and ClusterName
+	mkc := &v1beta1.MultiKueueCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "worker-cluster-1",
+		},
+		Spec: v1beta1.MultiKueueClusterSpec{
+			KubeConfig: v1beta1.KubeConfig{
+				LocationType: v1beta1.SecretLocationType,
+				Location:     "my-secret",
+			},
+		},
+	}
+	if err := testEnv.Client.Create(ctx, mkc); err != nil {
+		t.Fatalf("failed to create MultiKueueCluster: %v", err)
+	}
+
+	wl.Status.ClusterName = ptr.To("worker-cluster-1")
+	wl.Status.Conditions = append(wl.Status.Conditions, metav1.Condition{
+		Type:               v1beta1.WorkloadAdmitted,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "Admitted",
+		Message:            "Admitted by ClusterQueue",
+	})
+	if err := testEnv.Client.Status().Update(ctx, wl); err != nil {
+		t.Fatalf("failed to update Workload status: %v", err)
+	}
+
+	// 3. Reconcile after status update (verifies real status subresource read)
+	_, err = rec.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "envtest-workload",
+			Namespace: ns,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() returned error after status update: %v", err)
+	}
+
+	// Verify batcher recorded update for xid=100 wid=200
+	batcher.UpdatesMu.Lock()
+	defer batcher.UpdatesMu.Unlock()
+	if _, ok := batcher.Updates[100][200][shared.WorkloadSource]; !ok {
+		t.Errorf("Expected batcher to contain update for xid=100, wid=200")
 	}
 }

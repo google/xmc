@@ -26,6 +26,8 @@ import (
 
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
+	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
+	k8scorev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/fields/fields"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
@@ -42,6 +44,7 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/testing/envtest"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
@@ -476,5 +479,101 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 
 	if diff := cmp.Diff(wantCalls, gotCalls, protocmp.Transform(), sortWorkUnitExecutionUpdates, protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
 		t.Errorf("UpdateWorkUnitNotesAboutPosition() made unexpected calls to storage (-want +got):\n%s", diff)
+	}
+}
+
+func TestKueueSync_Envtest(t *testing.T) {
+	testEnv := envtest.SetupTestEnv(t)
+	ctx := context.Background()
+
+	storage := &mockStorage{}
+	updateBatcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storage)
+	cache := clusterqueue.NewNameCache()
+	cache.Add(ClusterQueue1)
+
+	workloadsJSON, err := json.Marshal(testPendingWorkloads)
+	if err != nil {
+		t.Fatalf("failed to marshal workloads: %v", err)
+	}
+
+	fakeRestClient := createFakeRestClient(t, workloadsJSON)
+	fcs := kubernetesfake.NewSimpleClientset()
+	cs := &fakeClientset{
+		Clientset: fcs,
+		fakeCoreV1: &fakeCoreV1Impl{
+			CoreV1Interface: fcs.CoreV1(),
+			fakeRestClient:  fakeRestClient,
+		},
+	}
+
+	rec, err := NewReconciler(Params{
+		Client:                           testEnv.Client,
+		Clientset:                        cs,
+		CQCache:                          cache,
+		Storage:                          storage,
+		UpdateBatcher:                    updateBatcher,
+		KueueSyncTickDuration:            1 * time.Second,
+		MaxConcurrentKueueSyncReconciles: 10,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	js1 := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "owner1",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.ManagedByLabel:    constants.XmcLabelValue,
+				constants.ExperimentIDLabel: "1",
+				constants.WorkUnitIDLabel:   "1",
+				constants.ExecutionIDLabel:  "1",
+			},
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{
+				{
+					Name:     "worker",
+					Replicas: 1,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: k8scorev1.PodTemplateSpec{
+								Spec: k8scorev1.PodSpec{
+									RestartPolicy: k8scorev1.RestartPolicyNever,
+									Containers: []k8scorev1.Container{
+										{
+											Name:  "c",
+											Image: "busybox",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := testEnv.Client.Create(ctx, js1); err != nil {
+		t.Fatalf("failed to create JobSet in envtest: %v", err)
+	}
+
+	// Fetch JobSet directly from envtest client
+	fetched, err := rec.fetchJobSetByName(ctx, "owner1", "default")
+	if err != nil {
+		t.Fatalf("fetchJobSetByName() failed against envtest: %v", err)
+	}
+	if fetched.GetName() != "owner1" {
+		t.Errorf("got jobset name %q, want owner1", fetched.GetName())
+	}
+
+	// Run updateWorkUnitNotesAboutPosition against envtest JobSet storage
+	rec.updateWorkUnitNotesAboutPosition(ctx)
+
+	updateBatcher.UpdatesMu.Lock()
+	defer updateBatcher.UpdatesMu.Unlock()
+	if _, ok := updateBatcher.Updates[1][1][shared.KueueSyncSource]; !ok {
+		t.Errorf("Expected batcher to contain update for xid=1, wid=1 from envtest JobSet")
 	}
 }

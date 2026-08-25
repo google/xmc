@@ -14,6 +14,7 @@
 package k8sclient
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -33,6 +34,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"k8s.io/utils/ptr"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/testing/envtest"
 	constants "xmanager_cloud/kubernetes/common/constants"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -3494,5 +3496,76 @@ func TestHostNetworkAndDNSPolicy(t *testing.T) {
 				t.Errorf("podSpec.DNSPolicy = %q, want %q", podSpec.DNSPolicy, tt.wantDNSPolicy)
 			}
 		})
+	}
+}
+
+func TestActuatorJobSet_Envtest(t *testing.T) {
+	testEnv := envtest.SetupTestEnv(t)
+	ctx := context.Background()
+	ns := testEnv.CreateNamespace(ctx, t, "actuator-envtest")
+
+	client := NewWithClients(
+		testEnv.Clientset,
+		testEnv.DynamicClient,
+		ActuatorRuntimeConfig{
+			CreateNewNamespaces:         false,
+			DefaultExecutionEnvironment: "gke",
+		},
+		&alwaysPassingPreconditionsValidator{},
+		nil,
+		nil,
+	)
+
+	target := "experiments/10/workUnits/20/executions/30"
+	workUnit := createTestWorkUnit(ns)
+
+	// 1. Create JobSet against real API server via dynamic client
+	if err := client.createJobSet(ctx, workUnit, target, "author@google.com", testTime, Priorities{}); err != nil {
+		t.Fatalf("createJobSet() failed against envtest: %v", err)
+	}
+
+	// 2. Query JobSet by target label
+	jsUnstructured, err := client.getJobSetByTargetAndNamespace(ctx, target, ns)
+	if err != nil {
+		t.Fatalf("getJobSetByTargetAndNamespace() returned error: %v", err)
+	}
+	if jsUnstructured == nil {
+		t.Fatalf("JobSet for target %q not found in envtest", target)
+	}
+
+	// 3. Mutate status subresource on real API server
+	statusObj := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"type":               "Ready",
+				"status":             "True",
+				"lastTransitionTime": time.Now().UTC().Format(time.RFC3339),
+				"reason":             "AllJobsReady",
+				"message":            "All jobs are ready",
+			},
+		},
+	}
+	jsUnstructured.Object["status"] = statusObj
+	if _, err := testEnv.DynamicClient.Resource(JobSetGVR).Namespace(ns).UpdateStatus(ctx, jsUnstructured, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("failed to update status subresource: %v", err)
+	}
+
+	// Fetch latest object to get the updated resourceVersion after status mutation
+	latestJS, err := testEnv.DynamicClient.Resource(JobSetGVR).Namespace(ns).Get(ctx, jsUnstructured.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get latest JobSet: %v", err)
+	}
+	latestJS.SetFinalizers(nil)
+	if _, err := testEnv.DynamicClient.Resource(JobSetGVR).Namespace(ns).Update(ctx, latestJS, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("failed to clear finalizers: %v", err)
+	}
+
+	// 4. Delete JobSet via actuator client
+	deleted, err := client.deleteJobSet(ctx, target, ns, testTime.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("deleteJobSet() returned error: %v", err)
+	}
+	if !deleted {
+		t.Errorf("deleteJobSet() returned deleted=false, want true")
 	}
 }

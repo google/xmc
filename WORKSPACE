@@ -91,3 +91,11 @@ switched_rules_by_language(
     name = "com_google_googleapis_imports",
     go = True,
 )
+
+load("//:import.bzl", "envtest_binaries", "jobset_manifests", "kueue_manifests")
+
+envtest_binaries(name = "envtest_binaries")
+
+jobset_manifests(name = "jobset_manifests")
+
+kueue_manifests(name = "kueue_manifests")
