@@ -16,7 +16,10 @@ package workunit
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"cloud.google.com/go/spanner"
 	"googlesql/safesql/go/safesql"
@@ -34,19 +37,32 @@ const (
 	maxPageSize     = int32(1000)
 )
 
+var (
+	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
+	ErrInvalidPageToken = errors.New("invalid page_token")
+)
+
 var fetchActiveWorkUnitPKsSQL = safesql.New(
 	`SELECT BitReversedXid, WorkUnitId
 	FROM WorkUnits wu
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
 	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
-	LIMIT @pageSize`,
+	LIMIT @limit OFFSET @offset`,
+)
+
+var countActiveWorkUnitsSQL = safesql.New(
+	`SELECT COUNT(*)
+	FROM WorkUnits wu
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits     []*essmsgpb.WorkUnit
-	NextPageToken string
+	WorkUnits      []*essmsgpb.WorkUnit
+	NextPageToken  string
+	TotalQueueSize int64
 }
 
 type workUnitPK struct {
@@ -54,12 +70,38 @@ type workUnitPK struct {
 	WorkUnitId     int64
 }
 
-func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, pageSize int32) ([]workUnitPK, []spanner.KeySet, error) {
+func decodePageToken(token string) (int64, error) {
+	if token == "" {
+		return 0, nil
+	}
+	bytes, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		bytes, err = base64.RawURLEncoding.DecodeString(token)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+		}
+	}
+	offset, err := strconv.ParseInt(string(bytes), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("%w: offset cannot be negative", ErrInvalidPageToken)
+	}
+	return offset, nil
+}
+
+func encodePageToken(offset int64) string {
+	return base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(offset, 10)))
+}
+
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
 	stmt := spanner.Statement{
 		SQL: fetchActiveWorkUnitPKsSQL.String(),
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
-			"pageSize":   int64(pageSize),
+			"limit":      limit,
+			"offset":     offset,
 		},
 	}
 
@@ -67,7 +109,6 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	defer iter.Stop()
 
 	var orderedPKs []workUnitPK
-	var keys []spanner.Key
 	if err := iter.Do(func(row *spanner.Row) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -84,22 +125,12 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			WorkUnitId:     workUnitId,
 		}
 		orderedPKs = append(orderedPKs, pk)
-		keys = append(keys, spanner.Key{bitReversedXid, workUnitId})
 		return nil
 	}); err != nil {
-		return nil, nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
+		return nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
 	}
 
-	if len(orderedPKs) == 0 {
-		return nil, nil, nil
-	}
-
-	keySets := make([]spanner.KeySet, len(keys))
-	for i, k := range keys {
-		keySets[i] = k
-	}
-	keySetList := []spanner.KeySet{spanner.KeySets(keySets...)}
-	return orderedPKs, keySetList, nil
+	return orderedPKs, nil
 }
 
 func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
@@ -163,14 +194,26 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	pageSizeVal := pageSize
 	if pageSizeVal <= 0 {
 		pageSizeVal = defaultPageSize
-	} else if pageSizeVal > maxPageSize {
-		pageSizeVal = maxPageSize
+	}
+	pageSizeVal = min(pageSizeVal, maxPageSize)
+
+	offset, err := decodePageToken(pageToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
 
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, pageSizeVal)
+	// Query 1: Count total active work units across matching queues
+	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch pageSize + 1 items to determine if nextPageToken is needed
+	limit := int64(pageSizeVal) + 1
+	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
@@ -178,10 +221,23 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:     []*essmsgpb.WorkUnit{},
-			NextPageToken: "",
+			WorkUnits:      []*essmsgpb.WorkUnit{},
+			NextPageToken:  "",
+			TotalQueueSize: totalQueueSize,
 		}, nil
 	}
+
+	nextPageToken := ""
+	if int64(len(orderedPKs)) > int64(pageSizeVal) {
+		orderedPKs = orderedPKs[:pageSizeVal]
+		nextPageToken = encodePageToken(offset + int64(pageSizeVal))
+	}
+
+	keys := make([]spanner.KeySet, len(orderedPKs))
+	for i, pk := range orderedPKs {
+		keys[i] = spanner.Key{pk.BitReversedXid, pk.WorkUnitId}
+	}
+	keySetList := []spanner.KeySet{spanner.KeySets(keys...)}
 
 	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
 	if err != nil {
@@ -190,7 +246,27 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}
 
 	return &ActiveWorkUnitsResult{
-		WorkUnits:     workUnits,
-		NextPageToken: "",
+		WorkUnits:      workUnits,
+		NextPageToken:  nextPageToken,
+		TotalQueueSize: totalQueueSize,
 	}, nil
+}
+
+func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) (int64, error) {
+	countStmt := spanner.Statement{
+		SQL: countActiveWorkUnitsSQL.String(),
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+		},
+	}
+	var totalQueueSize int64
+	iterCount := txn.Query(ctx, countStmt)
+	defer iterCount.Stop()
+	if err := iterCount.Do(func(row *spanner.Row) error {
+		return row.Column(0, &totalQueueSize)
+	}); err != nil {
+		logging.Error(ctx, "failed to count active work units", "error", err)
+		return 0, fmt.Errorf("failed to count active work units: %w", err)
+	}
+	return totalQueueSize, nil
 }
