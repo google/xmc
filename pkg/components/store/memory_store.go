@@ -58,11 +58,22 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 		return nil, err
 	}
 
-	deps := ExtractDependencies(spec, labels, canonicalName)
+	deps := ExtractDependencies(spec, labels, "")
 	now := time.Now().UTC()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Prospective dependency cycle validation.
+	var existingRecords []*ComponentRecord
+	for _, r := range m.componentsByName {
+		if !isDeletedRecord(r) {
+			existingRecords = append(existingRecords, r)
+		}
+	}
+	if err := ValidateProspectiveDependencies(existingRecords, canonicalName, deps); err != nil {
+		return nil, err
+	}
 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && rec.DeleteTime == nil && rec.State != componentspb.ComponentState_COMPONENT_STATE_DELETED {
@@ -78,13 +89,21 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	return cloneRecord(rec), nil
 }
 
-func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+func validateResourceName(name string) (string, error) {
 	canonicalName := CanonicalComponentName(name)
 	if canonicalName == "" {
 		return "", status.Error(codes.InvalidArgument, "component name is required")
 	}
 	if !IsValidComponentName(canonicalName) {
 		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	return canonicalName, nil
+}
+
+func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
 	}
 	if spec == nil {
 		return "", status.Error(codes.InvalidArgument, "component spec is required")
@@ -221,12 +240,9 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 }
 
 func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return "", status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
 	}
 	if observedGen < 0 {
 		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
@@ -235,6 +251,9 @@ func validateUpdateObservedArgs(name string, observedGen int64) (string, error) 
 }
 
 func isDeletedRecord(rec *ComponentRecord) bool {
+	if rec == nil {
+		return true
+	}
 	return rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED
 }
 

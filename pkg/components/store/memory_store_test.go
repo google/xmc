@@ -500,6 +500,48 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 	}
 }
 
+func TestMemoryStore_SetComponentIntent_CycleRejection(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	// 1. Direct self cycle
+	specSelf := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-self",
+	}
+	_, err := ms.SetComponentIntent(ctx, "comp-self", specSelf, nil, 0)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("SetComponentIntent(self-cycle) got error %v, want code FailedPrecondition", err)
+	}
+
+	// 2. Transitive cycle A -> B -> A
+	specA := sampleSpec("Component A")
+	if _, err := ms.SetComponentIntent(ctx, "comp-a", specA, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-a) failed: %v", err)
+	}
+
+	specB := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-a",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-b", specB, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-b) failed: %v", err)
+	}
+
+	// Update comp-a to depend on comp-b -> cycle
+	specACycle := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.1.0",
+		Description: "@depends-on: comp-b",
+	}
+	_, err = ms.SetComponentIntent(ctx, "comp-a", specACycle, nil, 0)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("SetComponentIntent(transitive cycle) got error %v, want code FailedPrecondition", err)
+	}
+}
+
 func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
