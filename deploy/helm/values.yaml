@@ -54,6 +54,12 @@ ingestionGatewayDeployment:
   hpa:
     minReplicas: 3
     maxReplicas: 10
+  # Message bus backend the gateway publishes to: "redpanda" or "pubsub".
+  # In "pubsub" mode the redpandaBrokers/minPartitions/minReplicas/sasl/tls settings
+  # below are ignored, topicName is the Pub/Sub topic ID, and the topic is published
+  # to in projectId. See deploy/addons/metrics/pubsub/README.md for the required
+  # topic and IAM setup. Pub/Sub mode has no ClickHouse consumer.
+  messageBus: "redpanda"
   redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
   topicName: "xmc-metrics"
   minPartitions: 128
@@ -65,7 +71,14 @@ ingestionGatewayDeployment:
   tls:
     enabled: false
     secretName: ""
+  # Kubernetes ServiceAccount the gateway pod runs as. A ServiceAccount of this name
+  # is created by the chart unless it is left as "default", which the chart never
+  # creates or annotates because it does not own the namespace default account.
   serviceAccountName: "default"
+  # Google service account to bind via GKE Workload Identity, e.g.
+  # "xmc-ingestion-gateway@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com". Required in
+  # "pubsub" mode. Falls back to the top-level gcpServiceAccount when empty.
+  gcpServiceAccount: ""
   resources:
     requests:
       cpu: "10m"

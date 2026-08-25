@@ -1,8 +1,11 @@
 {{- if .Values.ingestionGatewayDeployment.enabled -}}
+{{- $messageBus := .Values.ingestionGatewayDeployment.messageBus | default "redpanda" -}}
+{{- $useRedpanda := ne $messageBus "pubsub" -}}
 {{- $sasl := .Values.ingestionGatewayDeployment.sasl | default dict -}}
 {{- $tls := .Values.ingestionGatewayDeployment.tls | default dict -}}
-{{- $useSasl := and $sasl.enabled $sasl.secretName -}}
-{{- $useTls := and $tls.enabled $tls.secretName -}}
+{{- /* SASL and TLS configure the Kafka connection only; the gateway rejects them in pubsub mode. */ -}}
+{{- $useSasl := and $useRedpanda $sasl.enabled $sasl.secretName -}}
+{{- $useTls := and $useRedpanda $tls.enabled $tls.secretName -}}
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -81,11 +84,13 @@ spec:
           name: http-port
         args:
         - "-port=8080"
-        - "-redpanda_brokers={{ .Values.ingestionGatewayDeployment.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
+        - "-message_bus={{ $messageBus }}"
         - "-topic_name={{ .Values.ingestionGatewayDeployment.topicName | default "xmc-metrics" }}"
+        - "-project_id={{ .Values.projectId }}"
+        {{- if $useRedpanda }}
+        - "-redpanda_brokers={{ .Values.ingestionGatewayDeployment.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
         - "-min_partitions={{ .Values.ingestionGatewayDeployment.minPartitions | default 128 }}"
         - "-min_replicas={{ .Values.ingestionGatewayDeployment.minReplicas | default 3 }}"
-        - "-project_id={{ .Values.projectId }}"
         {{- if .Values.ingestionGatewayDeployment.sasl }}
         - "-sasl_enabled={{ $sasl.enabled | default false }}"
         {{- if $useSasl }}
@@ -94,7 +99,8 @@ spec:
         {{- end }}
         {{- end }}
         {{- if .Values.ingestionGatewayDeployment.tls }}
-        - "-tls_enabled={{ .Values.ingestionGatewayDeployment.tls.enabled | default false }}"
+        - "-tls_enabled={{ $tls.enabled | default false }}"
+        {{- end }}
         {{- end }}
         readinessProbe:
           httpGet:

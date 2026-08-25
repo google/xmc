@@ -210,3 +210,14 @@ curl -s -X POST localhost:8080/api/v1/metrics -H 'Content-Type: application/json
 
 gcloud pubsub subscriptions pull xmc-metrics-sub --auto-ack --limit=1
 ```
+
+---
+
+## 6. Deployment
+
+The Helm chart selects the backend with `ingestionGatewayDeployment.messageBus` in
+[`deploy/helm/values.yaml`](../../deploy/helm/values.yaml), which renders `-message_bus` and, in
+`redpanda` mode only, the broker/topology/SASL/TLS arguments.
+
+- Redpanda backend: [`deploy/addons/metrics/redpanda/README.md`](../../deploy/addons/metrics/redpanda/README.md)
+- Pub/Sub backend — topic, service accounts, and IAM: [`deploy/addons/metrics/pubsub/README.md`](../../deploy/addons/metrics/pubsub/README.md)

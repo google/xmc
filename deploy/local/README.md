@@ -6,6 +6,9 @@ This directory documents the developer cluster testing workflow for XManager on 
 > In XMC v2, Redpanda and ClickHouse are **Bring-Your-Own (BYO)** infrastructure components managed out-of-band by enterprise platform administrators. They are not bundled as local Docker containers in the delivered XMC product stack.
 > For developer testing, BYO Redpanda and ClickHouse instances are deployed directly onto a GKE developer test cluster (e.g. `xmc` namespace in project `xmc-example-project`) via Helm addons ([`deploy/addons/metrics/`](../addons/metrics)).
 
+> [!IMPORTANT]
+> This guide covers the default Redpanda backend. The Ingestion Gateway can instead publish to Google Cloud Pub/Sub with `-message_bus=pubsub` ([setup guide](../addons/metrics/pubsub/README.md)), but that is a **producer-only** path: ClickHouse consumes `xmc-metrics` through its native `ENGINE = Kafka` table and has no Pub/Sub equivalent. In Pub/Sub mode the Redpanda port-forward, the `xmc-diag` Redpanda checks, and the ClickHouse verification queries in section 4 all have nothing to observe — verify with `gcloud pubsub subscriptions pull` against a real project instead.
+
 ---
 
 ## 1. Developer Test Cluster Architecture
@@ -138,7 +141,7 @@ curl -X POST http://localhost:8080/api/v1/metrics \
 
 *Expected Response:*
 ```json
-{"status":"accepted","valid_count":3}
+{"status":"accepted","count":3}
 ```
 
 ---
