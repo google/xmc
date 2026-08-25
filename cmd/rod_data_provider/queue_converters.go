@@ -157,9 +157,13 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 		return nil
 	}
 
+	// Step 1: Extract active resource usage across all flavors from Status.
 	totalUsedCapacityByResourceType := extractTotalResourceUsageByResourceType(clusterQueue.Status, rfMap)
+
+	// Step 2: Aggregate nominal quotas and borrowing limits across all flavors from Spec.
 	aggregatedQuotas := aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue, rfMap)
 
+	// Step 3: Compute free capacities and build proto messages.
 	queueCapacities := make([]*spb.QueueResourceCapacity, 0, len(aggregatedQuotas.orderedTypes))
 	for _, resourceType := range aggregatedQuotas.orderedTypes {
 		quotaAggregator := aggregatedQuotas.aggregators[resourceType]
