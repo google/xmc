@@ -157,7 +157,11 @@ func parseDurationSeconds(s string) (int, error) {
 	if d < 0 {
 		return 0, fmt.Errorf("duration cannot be negative: %s", s)
 	}
-	seconds := int(d.Round(time.Second) / time.Second)
+	secs64 := int64(d.Round(time.Second) / time.Second)
+	if int64(int(secs64)) != secs64 {
+		return 0, fmt.Errorf("duration overflows integer limit: %s", s)
+	}
+	seconds := int(secs64)
 	if d > 0 && seconds == 0 {
 		seconds = 1
 	}
@@ -253,6 +257,9 @@ func decodeMappingDependency(keyNode, valNode *yaml.Node) (*ComponentDependencyR
 	}
 	if keyNode.Kind != yaml.ScalarNode {
 		return nil, fmt.Errorf("invalid dependency name: key must be a scalar")
+	}
+	if strings.TrimSpace(keyNode.Value) == "" {
+		return nil, fmt.Errorf("dependency name cannot be empty")
 	}
 	dep := &ComponentDependencyRef{Name: keyNode.Value}
 	if valNode.Tag == "!!null" || valNode.Value == "~" || valNode.Value == "null" {

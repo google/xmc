@@ -131,6 +131,8 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 			`spec: { dependencies: "scalar-string" }`,
 			`spec: { dependencies: [ { name: [ nested ] } ] }`,
 			"spec:\n  dependencies:\n    ? [invalid_non_scalar_key]\n    : \">=1.0.0\"\n",
+			"spec:\n  dependencies:\n    \"\": \">=1.0.0\"\n",
+			"spec:\n  dependencies:\n    \"   \": \">=1.0.0\"\n",
 		} {
 			var comp linter.ComponentManifest
 			if err := yaml.Unmarshal([]byte(s), &comp); err == nil {
