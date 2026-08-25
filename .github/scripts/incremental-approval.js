@@ -18,87 +18,157 @@ const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
 
 const MAX_OWNER_GRACE_LINES = 10;
+const GIT_EXEC_TIMEOUT_MS = 60000;
+const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
+const SHA_REGEX = /^[0-9a-f]{7,40}$/i;
+const REF_REGEX = /^[a-zA-Z0-9_./-]+$/;
 
 /**
- * Pure function: Finds the latest active approved review on a PR from eligible reviewers.
- * Tracks the latest review per reviewer so approvals superseded by changes requested are ignored.
- * @param {Array<Object>} reviews - List of review objects from GitHub API.
- * @param {string} [prAuthor=''] - Username of the PR author to ignore self-reviews.
+ * Pure function: Validates git revision and branch reference formatting.
+ * @param {string} baseRef - Target base branch name.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ */
+function validateGitRefs(baseRef, approvedSha, currentSha) {
+  if (!baseRef || !REF_REGEX.test(baseRef) || baseRef.startsWith('-') || baseRef.includes('..')) {
+    throw new Error(`Invalid base reference: "${baseRef}"`);
+  }
+  if (!approvedSha || !SHA_REGEX.test(approvedSha)) {
+    throw new Error(`Invalid approved commit SHA: "${approvedSha}"`);
+  }
+  if (!currentSha || !SHA_REGEX.test(currentSha)) {
+    throw new Error(`Invalid current commit SHA: "${currentSha}"`);
+  }
+}
+
+/**
+ * Pure function: Checks whether a username belongs to an automated bot.
+ * @param {string} username - GitHub username.
+ * @returns {boolean} True if the user is a bot.
+ */
+function isBotUser(username) {
+  if (!username || typeof username !== 'string') {
+    return false;
+  }
+  const lower = username.toLowerCase();
+  return lower.endsWith('[bot]') || lower === 'github-actions';
+}
+
+/**
+ * Pure function: Reconstructs latest active approval from timeline events.
+ * Honors dismissed reviews and checks for active blocking CHANGES_REQUESTED.
+ * @param {Array<Object>} timelineEvents - List of timeline events from GitHub API.
+ * @param {string} [prAuthor=''] - Username of the PR author.
  * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
  */
-function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
+function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
+  if (!Array.isArray(timelineEvents) || timelineEvents.length === 0) {
+    return null;
+  }
+
   const authorLower = (prAuthor || '').toLowerCase();
+  const sortedEvents = [...timelineEvents].sort(
+    (a, b) => new Date(a.submitted_at || a.created_at || 0) - new Date(b.submitted_at || b.created_at || 0)
+  );
 
-  // If timeline events are available, use them to reconstruct original review states including dismissed reviews
-  if (Array.isArray(timelineEvents) && timelineEvents.length > 0) {
-    const reviewEvents = timelineEvents
-      .filter(e => e.event === 'reviewed' && e.user && e.commit_id)
-      .sort((a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0));
+  const latestByReviewer = new Map();
+  const dismissedReviewIds = new Set();
 
-    const latestStateByReviewer = new Map();
-
-    for (const event of reviewEvents) {
-      const reviewer = event.user ? event.user.login : '';
-      if (!reviewer || reviewer.toLowerCase() === authorLower) {
-        continue;
-      }
-      const state = (event.state || '').toUpperCase();
-      if (state === 'COMMENTED') {
-        continue;
-      }
-      latestStateByReviewer.set(reviewer.toLowerCase(), {
-        approver: reviewer,
-        state: state,
-        approvedSha: event.commit_id,
-        submittedAt: event.submitted_at
-      });
-    }
-
-    const approvals = Array.from(latestStateByReviewer.values()).filter(
-      r => r.state === 'APPROVED' && r.approvedSha
-    );
-
-    if (approvals.length > 0) {
-      approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-      return {
-        approver: approvals[0].approver,
-        approvedSha: approvals[0].approvedSha,
-        submittedAt: approvals[0].submittedAt
-      };
+  for (const event of sortedEvents) {
+    if (event.event === 'dismissed_review' && (event.review_id || event.id)) {
+      dismissedReviewIds.add(event.review_id || event.id);
     }
   }
 
+  for (const event of sortedEvents) {
+    if (event.event !== 'reviewed' || !event.user || !event.commit_id) {
+      continue;
+    }
+    const reviewer = event.user.login;
+    if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
+      continue;
+    }
+    const state = (event.state || '').toUpperCase();
+    if (state === 'COMMENTED') {
+      continue;
+    }
+    const reviewId = event.id || event.review_id;
+    if (reviewId && dismissedReviewIds.has(reviewId)) {
+      continue;
+    }
+    latestByReviewer.set(reviewer.toLowerCase(), {
+      approver: reviewer,
+      state,
+      approvedSha: event.commit_id,
+      submittedAt: event.submitted_at
+    });
+  }
+
+  const activeReviews = Array.from(latestByReviewer.values());
+  const hasBlockingChanges = activeReviews.some(r => r.state === 'CHANGES_REQUESTED');
+  if (hasBlockingChanges) {
+    return null;
+  }
+
+  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
+  if (approvals.length === 0) {
+    return null;
+  }
+
+  approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+  return {
+    approver: approvals[0].approver,
+    approvedSha: approvals[0].approvedSha,
+    submittedAt: approvals[0].submittedAt
+  };
+}
+
+/**
+ * Pure function: Finds latest active approval from PR reviews list.
+ * Excludes bot reviews, self-approvals, and checks for active CHANGES_REQUESTED.
+ * @param {Array<Object>} reviews - List of review objects from GitHub API.
+ * @param {string} [prAuthor=''] - Username of the PR author.
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ */
+function findLatestApprovalFromReviews(reviews, prAuthor = '') {
   if (!Array.isArray(reviews) || reviews.length === 0) {
     return null;
   }
 
+  const authorLower = (prAuthor || '').toLowerCase();
   const sortedReviews = [...reviews].sort(
     (a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0)
   );
 
-  const latestReviewByReviewer = new Map();
+  const latestByReviewer = new Map();
 
   for (const review of sortedReviews) {
     const reviewer = review.user ? review.user.login : '';
-    if (!reviewer || reviewer.toLowerCase() === authorLower) {
+    if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
       continue;
     }
     if (review.state === 'COMMENTED') {
       continue;
     }
-    latestReviewByReviewer.set(reviewer.toLowerCase(), review);
+    latestByReviewer.set(reviewer.toLowerCase(), review);
   }
 
-  const activeApprovals = Array.from(latestReviewByReviewer.values()).filter(
-    r => (r.state === 'APPROVED' || (r.state === 'DISMISSED' && r.commit_id)) && r.commit_id
-  );
-
-  if (activeApprovals.length === 0) {
+  const activeReviews = Array.from(latestByReviewer.values());
+  const hasBlockingChanges = activeReviews.some(r => r.state === 'CHANGES_REQUESTED');
+  if (hasBlockingChanges) {
     return null;
   }
 
-  activeApprovals.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-  const latest = activeApprovals[0];
+  const approvals = activeReviews.filter(
+    r => (r.state === 'APPROVED' || (r.state === 'DISMISSED' && r.commit_id)) && r.commit_id
+  );
+  if (approvals.length === 0) {
+    return null;
+  }
+
+  approvals.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+  const latest = approvals[0];
 
   return {
     approver: latest.user.login,
@@ -108,64 +178,98 @@ function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
 }
 
 /**
- * Pure function: Parses git range-diff output to extract changed patch lines (additions + deletions).
+ * Pure function: Dispatches approval lookup to timeline reconstruction with reviews fallback.
+ * @param {Array<Object>} reviews - List of review objects.
+ * @param {string} [prAuthor=''] - Username of the PR author.
+ * @param {Array<Object>} [timelineEvents=[]] - List of timeline events.
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ */
+function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
+  if (Array.isArray(timelineEvents) && timelineEvents.length > 0) {
+    return findLatestApprovalFromTimeline(timelineEvents, prAuthor);
+  }
+  return findLatestApprovalFromReviews(reviews, prAuthor);
+}
+
+/**
+ * Pure function: Parses git range-diff output using Column 1 (outer diff) to detect line changes.
  * @param {string} output - Raw output of `git range-diff`.
- * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean }}
  */
 function parseRangeDiff(output) {
   if (!output || typeof output !== 'string' || output.trim() === '') {
-    return { additions: 0, deletions: 0, totalDelta: 0, isCleanRebase: true };
+    return { additions: 0, deletions: 0, totalDelta: 0, isCleanRebase: true, hasUnmatchedCommits: false };
   }
 
   const lines = output.split(/\r?\n/);
   let additions = 0;
   let deletions = 0;
-  let inDiffHunk = false;
+  let inCodeDiffHunk = false;
   let hasModifiedCommits = false;
+  let hasUnmatchedCommits = false;
 
   for (const line of lines) {
-    const commitMatch = line.match(/^\s*(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
+    const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+    const commitMatch = cleanLine.match(/^\s*(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
     if (commitMatch) {
-      if (commitMatch[2] !== '=') {
+      const status = commitMatch[2];
+      if (status !== '=') {
         hasModifiedCommits = true;
       }
-      inDiffHunk = false;
+      if (status === '<' || status === '>') {
+        hasUnmatchedCommits = true;
+      }
+      inCodeDiffHunk = false;
       continue;
     }
 
-    if (line.trim().startsWith('@@ Metadata') || line.trim().startsWith('Author:') || line.trim().startsWith('Commit:')) {
-      inDiffHunk = false;
+    const trimmed = cleanLine.trim();
+    if (
+      trimmed.startsWith('@@ Metadata') ||
+      trimmed.startsWith('Author:') ||
+      trimmed.startsWith('Commit:') ||
+      trimmed === '## Commit message ##' ||
+      trimmed.startsWith('## Notes')
+    ) {
+      inCodeDiffHunk = false;
       continue;
     }
 
-    if (line.trim().startsWith('## ') && line.trim().endsWith(' ##')) {
-      inDiffHunk = true;
+    if (trimmed.startsWith('## ') && trimmed.endsWith(' ##')) {
+      inCodeDiffHunk = true;
       continue;
     }
 
-    if (line.trim().startsWith('@@') && line.trim().endsWith('@@')) {
-      inDiffHunk = true;
+    if (trimmed.startsWith('@@')) {
+      inCodeDiffHunk = true;
       continue;
     }
 
-    if (inDiffHunk) {
-      const match = line.match(/^ {4}([-+ ])([-+ ])?/);
-      if (match) {
-        const left = match[1];
-        const right = match[2];
-        if (left === '+' || right === '+') {
-          additions++;
-        } else if (left === '-' || right === '-') {
-          deletions++;
-        }
+    if (inCodeDiffHunk) {
+      const hunkMatch = cleanLine.match(/^ {4}([-+ ])([-+ ])?(.*)$/);
+      if (!hunkMatch) {
+        continue;
+      }
+
+      const outerCol = hunkMatch[1];
+      const content = (hunkMatch[3] || '').trim();
+
+      if (content.startsWith('## ') || content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
+        continue;
+      }
+
+      if (outerCol === '+') {
+        additions++;
+      } else if (outerCol === '-') {
+        deletions++;
       }
     }
   }
 
   const totalDelta = additions + deletions;
-  const isCleanRebase = !hasModifiedCommits && totalDelta === 0;
+  const isCleanRebase = !hasModifiedCommits && !hasUnmatchedCommits && totalDelta === 0;
 
-  return { additions, deletions, totalDelta, isCleanRebase };
+  return { additions, deletions, totalDelta, isCleanRebase, hasUnmatchedCommits };
 }
 
 /**
@@ -177,6 +281,7 @@ function parseRangeDiff(output) {
  * @param {boolean} params.isAuthorOwner
  * @param {number} params.deltaLines
  * @param {boolean} params.isCleanRebase
+ * @param {boolean} [params.hasUnmatchedCommits=false]
  * @param {number} [params.maxGraceLines=10]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
@@ -187,6 +292,7 @@ function evaluateIncrementalApproval({
   isAuthorOwner,
   deltaLines,
   isCleanRebase,
+  hasUnmatchedCommits = false,
   maxGraceLines = MAX_OWNER_GRACE_LINES
 }) {
   if (!hasPriorApproval || !approvedSha) {
@@ -205,7 +311,16 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (isCleanRebase || deltaLines === 0) {
+  const validDelta = typeof deltaLines === 'number' && !isNaN(deltaLines) && deltaLines >= 0;
+  if (!validDelta) {
+    return {
+      shouldReapprove: false,
+      reason: `Invalid delta lines count: ${deltaLines}. Manual review required.`,
+      trigger: 'INVALID_DELTA'
+    };
+  }
+
+  if (isCleanRebase && validDelta && deltaLines === 0 && !hasUnmatchedCommits) {
     return {
       shouldReapprove: true,
       reason: 'Clean rebase detected with zero semantic patch lines changed.',
@@ -213,7 +328,15 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (isAuthorOwner && deltaLines <= maxGraceLines) {
+  if (hasUnmatchedCommits) {
+    return {
+      shouldReapprove: false,
+      reason: 'PR contains added, removed, or rewritten commits that could not be paired. Manual review required.',
+      trigger: 'UNMATCHED_COMMITS'
+    };
+  }
+
+  if (isAuthorOwner && validDelta && deltaLines <= maxGraceLines) {
     return {
       shouldReapprove: true,
       reason: `PR author is a code owner and changes since last approval (${deltaLines} line${deltaLines === 1 ? '' : 's'}) are within the ${maxGraceLines}-line grace delta.`,
@@ -244,32 +367,31 @@ function evaluateIncrementalApproval({
  * @returns {string} Output of git range-diff.
  */
 function runGitRangeDiff(baseRef, approvedSha, currentSha) {
+  validateGitRefs(baseRef, approvedSha, currentSha);
+
+  const execOptions = {
+    encoding: 'utf8',
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+    timeout: GIT_EXEC_TIMEOUT_MS
+  };
+  const diffArgs = [
+    'range-diff',
+    '--no-color',
+    '--',
+    `origin/${baseRef}..${approvedSha}`,
+    `origin/${baseRef}..${currentSha}`
+  ];
+
   try {
-    return execFileSync(
-      'git',
-      [
-        'range-diff',
-        `origin/${baseRef}..${approvedSha}`,
-        `origin/${baseRef}..${currentSha}`
-      ],
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-    );
+    return execFileSync('git', diffArgs, execOptions);
   } catch (initialError) {
     try {
       execFileSync(
         'git',
-        ['fetch', 'origin', baseRef, approvedSha, currentSha],
-        { encoding: 'utf8', stdio: 'ignore' }
+        ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha],
+        { encoding: 'utf8', stdio: 'ignore', timeout: GIT_EXEC_TIMEOUT_MS }
       );
-      return execFileSync(
-        'git',
-        [
-          'range-diff',
-          `origin/${baseRef}..${approvedSha}`,
-          `origin/${baseRef}..${currentSha}`
-        ],
-        { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-      );
+      return execFileSync('git', diffArgs, execOptions);
     } catch (fallbackError) {
       throw new Error(`Failed to execute git range-diff: ${fallbackError.message}`);
     }
@@ -287,20 +409,36 @@ async function run({ github, context, core }) {
     return;
   }
 
+  if (pr.draft) {
+    core.info(`PR #${pr.number} is in draft mode. Skipping auto-reapproval.`);
+    return;
+  }
+
   const { owner, repo } = context.repo;
   const prNumber = pr.number;
   const prAuthor = pr.user ? pr.user.login : '';
-  const currentSha = pr.head.sha;
-  const baseRef = pr.base.ref;
+  const currentSha = pr.head ? pr.head.sha : '';
+  const baseRef = pr.base ? pr.base.ref : '';
+
+  if (!currentSha || !baseRef) {
+    core.setFailed('PR payload missing head SHA or base ref.');
+    return;
+  }
 
   core.info(`Evaluating incremental approval for PR #${prNumber} (Author: @${prAuthor}, Base: ${baseRef}, HEAD: ${currentSha.slice(0, 7)})`);
 
-  const reviews = await github.paginate(github.rest.pulls.listReviews, {
-    owner,
-    repo,
-    pull_number: prNumber,
-    per_page: 100
-  });
+  let reviews = [];
+  try {
+    reviews = await github.paginate(github.rest.pulls.listReviews, {
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100
+    });
+  } catch (reviewErr) {
+    core.setFailed(`Failed to fetch PR reviews: ${reviewErr.message}`);
+    return;
+  }
 
   let timelineEvents = [];
   try {
@@ -316,7 +454,7 @@ async function run({ github, context, core }) {
 
   const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
   if (!latestApproval) {
-    core.info(`PR #${prNumber} does not have any prior active approvals. Skipping auto-reapproval.`);
+    core.info(`PR #${prNumber} does not have any prior active approvals or has blocking change requests. Skipping auto-reapproval.`);
     return;
   }
 
@@ -339,8 +477,8 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const { totalDelta, isCleanRebase } = parseRangeDiff(rangeDiffOutput);
-  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, totalDelta=${totalDelta} lines`);
+  const { totalDelta, isCleanRebase, hasUnmatchedCommits } = parseRangeDiff(rangeDiffOutput);
+  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, totalDelta=${totalDelta} lines, hasUnmatchedCommits=${hasUnmatchedCommits}`);
 
   const decision = evaluateIncrementalApproval({
     hasPriorApproval: true,
@@ -348,7 +486,8 @@ async function run({ github, context, core }) {
     currentSha,
     isAuthorOwner,
     deltaLines: totalDelta,
-    isCleanRebase
+    isCleanRebase,
+    hasUnmatchedCommits
   });
 
   if (!decision.shouldReapprove) {
@@ -377,6 +516,10 @@ async function run({ github, context, core }) {
 
 module.exports = {
   MAX_OWNER_GRACE_LINES,
+  validateGitRefs,
+  isBotUser,
+  findLatestApprovalFromTimeline,
+  findLatestApprovalFromReviews,
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
