@@ -89,12 +89,14 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
-	return []*essmsgpb.WorkUnit{
-		proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-			wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-			wu.Creator = "alice@example.com"
-		}),
+func newTestWorkUnits(now time.Time) []workunit.WorkUnitEnhanced {
+	return []workunit.WorkUnitEnhanced{
+		{
+			WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+			}),
+			User: "alice@example.com",
+		},
 	}
 }
 
