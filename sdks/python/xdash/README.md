@@ -86,9 +86,8 @@ with DashboardClient() as client:
     created_charts = client.create_charts([chart])
 
     # Phase 2: create the dashboard, referencing the IDs the server assigned.
-    builder = (
-        DashboardBuilder(name="dashboards/exp_1001_dashboard")
-        .set_title("Experiment 1001 Dashboard")
+    builder = DashboardBuilder(name="dashboards/exp_1001_dashboard").set_title(
+        "Experiment 1001 Dashboard"
     )
     for created_chart in created_charts:
         builder.add_chart_id(chart_id_from_name(created_chart.name))
