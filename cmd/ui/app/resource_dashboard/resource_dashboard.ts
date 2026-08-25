@@ -138,27 +138,26 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
-    const types = new Set<string>();
-    for (const q of this.queues()) {
-      for (const cap of q.queueCapacity ?? []) {
-        if (cap.resourceType) {
-          types.add(cap.resourceType);
-        }
-      }
-    }
-    return Array.from(types).sort();
+    return [
+      ...new Set(
+        this.queues()
+          .flatMap((q) => q.queueCapacity ?? [])
+          .map((cap) => cap.resourceType)
+          .filter((type): type is string => Boolean(type)),
+      ),
+    ].sort();
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {
     const query = this.activeQuery();
     if (!query) return [];
-    const types = new Set<string>();
-    for (const req of query.requirements) {
-      if (req.resourceType && req.resourceType.trim() !== '') {
-        types.add(req.resourceType.trim());
-      }
-    }
-    return Array.from(types);
+    return [
+      ...new Set(
+        query.requirements
+          .map((req) => req.resourceType?.trim())
+          .filter((type): type is string => Boolean(type)),
+      ),
+    ];
   });
 
   protected readonly filteredQueues = computed<QueueOverview[]>(() => {

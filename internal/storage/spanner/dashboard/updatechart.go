@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
@@ -40,10 +42,12 @@ func (r *Repository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
 		return err
 	}
 
-	if _, err := r.client.Apply(ctx, mutations); err != nil {
+	commitTime, err := r.client.Apply(ctx, mutations)
+	if err != nil {
 		logging.Error(ctx, "Failed to apply update chart mutations", "error", err)
 		return fmt.Errorf("failed to apply update chart mutations: %w", err)
 	}
 
+	chart.UpdateTime = timestamppb.New(commitTime)
 	return nil
 }

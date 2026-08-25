@@ -100,7 +100,7 @@ class SpannerManager:
         )
 
     def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
-        """Creates a single Spanner database and applies its schema via DDL file and descriptors."""
+        """Creates a single Spanner database with retries on RESOURCE_EXHAUSTED / 429."""
         ddl_path = os.path.join(self.cfg.workspace_root, ddl_file)
         proto_desc_path = os.path.join(self.cfg.workspace_root, proto_desc_file)
         logger.info(
@@ -109,19 +109,43 @@ class SpannerManager:
             ddl_file,
             proto_desc_file,
         )
-        run_cmd(
-            [
-                "gcloud",
-                "spanner",
-                "databases",
-                "create",
-                db_name,
-                f"--instance={self.cfg.spanner_instance}",
-                f"--project={self.cfg.project_id}",
-                f"--ddl-file={ddl_path}",
-                f"--proto-descriptors-file={proto_desc_path}",
-            ]
-        )
+        max_attempts = 10
+        base_delay = 15
+        for attempt in range(1, max_attempts + 1):
+            try:
+                run_cmd(
+                    [
+                        "gcloud",
+                        "spanner",
+                        "databases",
+                        "create",
+                        db_name,
+                        f"--instance={self.cfg.spanner_instance}",
+                        f"--project={self.cfg.project_id}",
+                        f"--ddl-file={ddl_path}",
+                        f"--proto-descriptors-file={proto_desc_path}",
+                    ],
+                    capture_output=True,
+                )
+                return
+            except Exception as e:
+                err_str = getattr(e, "stderr", "") or str(e)
+                if (
+                    "RESOURCE_EXHAUSTED" in err_str
+                    or "429" in err_str
+                    or "maximum database limit" in err_str
+                ) and attempt < max_attempts:
+                    delay = min(base_delay * (2 ** (attempt - 1)), 120)
+                    logger.warning(
+                        "Database creation hit resource quota (attempt %d/%d). "
+                        "Waiting %ds for a slot to free up...",
+                        attempt,
+                        max_attempts,
+                        delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    raise
 
     def _init_migration_version(self, db_name: str, mig_dir: str) -> None:
         """Initializes SchemaMigrations version tracking table without re-running DDLs."""

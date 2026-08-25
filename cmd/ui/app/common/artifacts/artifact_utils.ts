@@ -153,15 +153,7 @@ function sortArtifactsByPriority(typedArtifacts: TypedArtifact[]): TypedArtifact
 }
 
 function groupArtifactsByType(typedArtifacts: TypedArtifact[]): Map<PayloadType, TypedArtifact[]> {
-  const artifactsByType = new Map<PayloadType, TypedArtifact[]>();
-  for (const item of typedArtifacts) {
-    const type = item.type;
-    if (!artifactsByType.has(type)) {
-      artifactsByType.set(type, []);
-    }
-    artifactsByType.get(type)!.push(item);
-  }
-  return artifactsByType;
+  return Map.groupBy(typedArtifacts, (item) => item.type);
 }
 
 function buildArtifactListItems(

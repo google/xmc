@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	cstatus "task/go/status"
@@ -44,6 +43,8 @@ type DashboardRepository interface {
 	DeleteDashboard(ctx context.Context, dashboardId string) error
 	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
+	UpdateChart(ctx context.Context, chart *dpb.Chart) error
+	DeleteChart(ctx context.Context, chartId string) error
 }
 
 // ChartDataEngine defines the interface for fetching analytics chart data.
@@ -322,14 +323,4 @@ func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*s
 			},
 		},
 	}, nil
-}
-
-// UpdateChart updates a chart stub.
-func (s *Server) UpdateChart(ctx context.Context, req *spb.UpdateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
-}
-
-// DeleteChart deletes a chart stub.
-func (s *Server) DeleteChart(ctx context.Context, req *spb.DeleteChartRequest) (*emptypb.Empty, error) {
-	return &emptypb.Empty{}, nil
 }

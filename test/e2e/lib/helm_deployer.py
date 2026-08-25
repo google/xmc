@@ -125,7 +125,7 @@ essDeployment:
 auth:
   disableAuthentication: false
   isNonProdAuth: true
-  allowedEmails: "admin@xmc.local"
+  allowedEmails: "admin@xmc.local,viewer@xmc.local"
   clientId: "xmc-client"
   iap:
     clientId: "xmc-client"

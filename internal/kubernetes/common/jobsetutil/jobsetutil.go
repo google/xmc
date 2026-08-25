@@ -15,7 +15,9 @@
 package jobsetutil
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -24,46 +26,35 @@ import (
 
 // PrimaryContainerName returns the primary container name for a job, defaulting to the job name if unset.
 func PrimaryContainerName(job *esspb.KubernetesJob) string {
-	if name := job.GetSpec().GetName(); name != "" {
-		return name
-	}
-	return job.GetName()
+	return cmp.Or(job.GetSpec().GetName(), job.GetName())
 }
 
 // SidecarContainerName returns the container name for a sidecar at the given index,
 // defaulting to "<jobName>-sidecar-<i>" if unset.
 func SidecarContainerName(job *esspb.KubernetesJob, sidecar *esspb.ExecutableSpec, idx int) string {
-	if name := sidecar.GetName(); name != "" {
-		return name
-	}
-	return fmt.Sprintf("%s-sidecar-%d", job.GetName(), idx)
+	return cmp.Or(sidecar.GetName(), fmt.Sprintf("%s-sidecar-%d", job.GetName(), idx))
 }
 
 // InitContainerName returns the container name for an init container at the given index,
 // defaulting to "<jobName>-init-<i>" if unset.
 func InitContainerName(job *esspb.KubernetesJob, initContainer *esspb.ExecutableSpec, idx int) string {
-	if name := initContainer.GetName(); name != "" {
-		return name
-	}
-	return fmt.Sprintf("%s-init-%d", job.GetName(), idx)
+	return cmp.Or(initContainer.GetName(), fmt.Sprintf("%s-init-%d", job.GetName(), idx))
 }
 
 // HasCondition checks if a JobSet has a condition of the given type and status.
 func HasCondition(jobSet *v1alpha2.JobSet, conditionType v1alpha2.JobSetConditionType, status metav1.ConditionStatus) bool {
-	for _, condition := range jobSet.Status.Conditions {
-		if condition.Type == string(conditionType) && condition.Status == status {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(jobSet.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == string(conditionType) && c.Status == status
+	})
 }
 
 // FindConditionWithType finds a condition of the given type with status True.
 func FindConditionWithType(jobSet *v1alpha2.JobSet, conditionType v1alpha2.JobSetConditionType) *metav1.Condition {
-	for i := range jobSet.Status.Conditions {
-		if jobSet.Status.Conditions[i].Type == string(conditionType) && jobSet.Status.Conditions[i].Status == metav1.ConditionTrue {
-			return &jobSet.Status.Conditions[i]
-		}
+	idx := slices.IndexFunc(jobSet.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == string(conditionType) && c.Status == metav1.ConditionTrue
+	})
+	if idx < 0 {
+		return nil
 	}
-	return nil
+	return &jobSet.Status.Conditions[idx]
 }

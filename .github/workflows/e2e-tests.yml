@@ -15,24 +15,10 @@
 name: 'XMC Headless E2E Tests'
 
 on:
-  pull_request:
-    paths:
-      - 'cmd/**'
-      - 'deploy/**'
-      - 'internal/**'
-      - 'pkg/**'
-      - 'test/e2e/**'
-      - '.github/workflows/e2e-tests.yml'
-      - 'go.mod'
-      - 'go.sum'
-      - 'WORKSPACE'
-      - 'MODULE.bazel'
-      - 'BUILD.bazel'
-      - '.bazelrc'
+  merge_group:
   push:
     branches:
       - main
-  merge_group:
   workflow_dispatch:
 
 concurrency:

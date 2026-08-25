@@ -16,6 +16,7 @@
 """Helper CLI script to generate PR review audit checklists and existing comment indexes."""
 
 import argparse
+import collections
 import os
 import re
 from pathlib import Path
@@ -291,11 +292,11 @@ def format_rereview_audit_markdown(
 
     # Group comment threads
     root_comments = [c for c in comments if not c.get("in_reply_to_id")]
-    replies_by_root: dict[int, list[dict[str, Any]]] = {}
+    replies_by_root: dict[int, list[dict[str, Any]]] = collections.defaultdict(list)
     for c in comments:
         reply_to = c.get("in_reply_to_id")
         if reply_to:
-            replies_by_root.setdefault(reply_to, []).append(c)
+            replies_by_root[reply_to].append(c)
 
     resolved_thread_ids = _get_resolved_thread_ids(owner, repo, pr_number, comments)
 

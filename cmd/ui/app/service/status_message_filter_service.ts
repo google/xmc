@@ -106,8 +106,8 @@ export class StatusMessageFilterService {
   }
 
   private getContextFromUrl(url: string): string {
-    const path = url.split('?')[0].split('#')[0];
-    const segments = path.split('/').filter((s) => s.length > 0);
+    // Base URL is required by the standard URL API when parsing relative path strings.
+    const segments = new URL(url, 'https://dummy.local').pathname.split('/').filter(Boolean);
     const isDetail = segments.some((segment) => /^\d+$/.test(segment));
     const resource = segments.length > 0 ? segments[0] : 'default';
     return `${resource}-${isDetail ? 'detail' : 'list'}`;

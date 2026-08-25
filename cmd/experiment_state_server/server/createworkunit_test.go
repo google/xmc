@@ -351,6 +351,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 
 	testCases := []struct {
 		name          string
+		req           *apipb.CreateWorkUnitRequest
 		authenticator auth.AuthorizerInterface
 		xidClient     xidgrpcpb.XidServiceClient
 		storage       storage.Storage
@@ -377,6 +378,19 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
+			wantErr: status.ErrPermissionDenied,
+		},
+		{
+			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
+			xidClient: &mockXidClient{
+				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+			},
+			storage: &storage.MockStorage{},
+			req: &apipb.CreateWorkUnitRequest{
+				Parent:     "experiments/123",
+				WorkUnitId: 1,
+				WorkUnit:   nil,
+			},
 			wantErr: status.ErrPermissionDenied,
 		},
 		{
@@ -425,7 +439,11 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 			}
 			opts = append(opts, withConfig(cfg))
 			server := newTestServer(t, opts...)
-			_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
+			req := goodReq
+			if tc.req != nil {
+				req = tc.req
+			}
+			_, err := server.CreateWorkUnit(ctx, proto.Clone(req).(*apipb.CreateWorkUnitRequest))
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateWorkUnit() = error %v, want %v", err, tc.wantErr)
 			}

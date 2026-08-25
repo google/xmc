@@ -29,6 +29,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/validation/field/field"
 	"golang/prometheus/client/prometheus/testutil/testutil"
+	"k8s.io/utils/ptr"
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -436,8 +437,6 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 	}
 }
 
-func stringPtr(s string) *string { return &s }
-
 type actuatorPayloadTestCase struct {
 	name        string
 	action      *actuatortaskpb.Action
@@ -585,7 +584,7 @@ func TestHandleActuatorPayload(t *testing.T) {
 			h := newTestTaskHandler(t, withK8sClient(&mockK8sClient{err: tc.k8sErr}))
 
 			payload := &actuatortaskpb.ActuatorPayload{
-				Target: stringPtr("workunits/123"),
+				Target: ptr.To("workunits/123"),
 				Action: tc.action,
 			}
 
@@ -760,13 +759,13 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 	defaultOpts := validJWTOptions(payload, testAudience, testServiceAccount)
 
 	failOptsAud := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsAud.Audience = stringPtr("another-audience")
+	failOptsAud.Audience = ptr.To("another-audience")
 
 	failOptsIss := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsIss.Issuer = stringPtr("another-issuer")
+	failOptsIss.Issuer = ptr.To("another-issuer")
 
 	failOptsSub := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsSub.Subject = stringPtr("another-subject")
+	failOptsSub.Subject = ptr.To("another-subject")
 
 	failOptsNoExp := validJWTOptions(payload, testAudience, testServiceAccount)
 	failOptsNoExp.ExpiresAt = nil
@@ -780,7 +779,7 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 	failOptsNoIat.IssuedAt = nil
 
 	failOptsDigest := validJWTOptions(payload, testAudience, testServiceAccount)
-	failOptsDigest.MessageDigest = stringPtr("sha256:invalid")
+	failOptsDigest.MessageDigest = ptr.To("sha256:invalid")
 
 	testCases := []struct {
 		name        string
@@ -947,6 +946,73 @@ func TestIsRetryableError(t *testing.T) {
 			got := isRetryableError(tc.err)
 			if got != tc.want {
 				t.Errorf("isRetryableError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractOIDCToken(t *testing.T) {
+	testCases := []struct {
+		name       string
+		authHeader string
+		wantToken  string
+		wantOK     bool
+	}{
+		{
+			name:       "valid_bearer_token",
+			authHeader: "Bearer valid_token_123",
+			wantToken:  "valid_token_123",
+			wantOK:     true,
+		},
+		{
+			name:       "valid_case_insensitive_bearer",
+			authHeader: "bearer valid_token_456",
+			wantToken:  "valid_token_456",
+			wantOK:     true,
+		},
+		{
+			name:       "invalid_multiple_spaces",
+			authHeader: "Bearer  extra_space_token",
+			wantToken:  "",
+			wantOK:     false,
+		},
+		{
+			name:       "invalid_trailing_words",
+			authHeader: "Bearer valid_token extra_word",
+			wantToken:  "",
+			wantOK:     false,
+		},
+		{
+			name:       "invalid_empty_token",
+			authHeader: "Bearer ",
+			wantToken:  "",
+			wantOK:     false,
+		},
+		{
+			name:       "invalid_scheme",
+			authHeader: "Basic user:pass",
+			wantToken:  "",
+			wantOK:     false,
+		},
+		{
+			name:       "invalid_no_scheme",
+			authHeader: "only_a_token",
+			wantToken:  "",
+			wantOK:     false,
+		},
+		{
+			name:       "invalid_empty_header",
+			authHeader: "",
+			wantToken:  "",
+			wantOK:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotToken, gotOK := extractOIDCToken(tc.authHeader)
+			if gotToken != tc.wantToken || gotOK != tc.wantOK {
+				t.Errorf("extractOIDCToken(%q) = (%q, %v), want (%q, %v)", tc.authHeader, gotToken, gotOK, tc.wantToken, tc.wantOK)
 			}
 		})
 	}

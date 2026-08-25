@@ -14,6 +14,7 @@
 
 """Zero-dependency HTTP client with connection recycling for XMC Metrics."""
 
+import contextlib
 import enum
 import http.client
 import json
@@ -267,10 +268,8 @@ class HTTPClient:
 
     def _close_conn(self) -> None:
         if self._conn is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._conn.close()
-            except Exception:
-                pass
             self._conn = None
 
     def __enter__(self) -> "HTTPClient":
