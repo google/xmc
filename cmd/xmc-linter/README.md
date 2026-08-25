@@ -181,7 +181,37 @@ staticChecks:
 
 ---
 
-## 7. Running Tests
+## 7. Dependency DAG Construction & Cycle Detection (`dag.go`)
+
+The DAG validation layer (`pkg/components/linter/dag.go`) constructs a directed acyclic graph (DAG) of component dependencies and ensures dependency completeness and acyclicity.
+
+### Dependency Graph & Cycle Detection
+
+The linter traverses the dependency tree using a 3-state Depth First Search (DFS) (`UNVISITED`, `VISITING`, `VISITED`) to detect circular dependency paths across any depth:
+
+```mermaid
+flowchart LR
+    A["Component A"] -->|"requires"| B["Component B"]
+    B -->|"requires"| C["Component C"]
+    C -.->|"CYCLE (Detected)"| A
+```
+
+- **Cycle Path Formatting**: When a cycle is detected, `xmc-linter` reports the exact closed loop traversal path:
+  ```text
+  [ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
+  ```
+- **Rule ID**: `CYCLIC_DEPENDENCY`
+
+### Enabled-State Completeness & Optional Dependencies
+
+- **Missing Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ must exist in the scanned manifest set (`MISSING_DEPENDENCY`).
+- **Disabled Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ cannot have `spec.enabled: false` (`DISABLED_DEPENDENCY`).
+- **Optional Dependencies (`optional: true`)**: Optional dependencies may be omitted or disabled without raising errors. If present and enabled, their version constraints are validated during compatibility matrix checking.
+- **Duplicate Prevention**: Rejects multiple manifests defining the same component `metadata.name` across directories (`DUPLICATE_COMPONENT_NAME`).
+
+---
+
+## 8. Running Tests
 
 Run all unit and integration tests across the CLI binary and linter packages:
 
@@ -192,5 +222,6 @@ bazel test //cmd/xmc-linter/... //pkg/components/linter/...
 # Run tests with detailed testlog output
 bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
 ```
+
 
 

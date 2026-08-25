@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "linter",
     srcs = [
+        "dag.go",
         "diagnostic.go",
         "linter.go",
         "manifest.go",
@@ -35,6 +36,7 @@ go_library(
 go_test(
     name = "linter_test",
     srcs = [
+        "dag_test.go",
         "diagnostic_test.go",
         "linter_test.go",
         "manifest_decoder_test.go",
