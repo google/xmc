@@ -48,6 +48,10 @@ data:
         hash: "$2b$10$i.aTTP2x4NcvTXwknktngeFWY5/h.eqmidwbbKHAtJKXrLJnEiusm"
         username: "viewer"
         userID: "18a5ba03-e7e8-4970-a7e3-8c52b4456b36"
+      - email: "unauthorized@xmc.local"
+        hash: "$2b$10$i.aTTP2x4NcvTXwknktngeFWY5/h.eqmidwbbKHAtJKXrLJnEiusm"
+        username: "unauthorized"
+        userID: "28a5ba03-e7e8-4970-a7e3-8c52b4456b37"
 ---
 apiVersion: apps/v1
 kind: Deployment
