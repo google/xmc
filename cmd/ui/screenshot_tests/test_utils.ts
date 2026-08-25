@@ -77,22 +77,20 @@ export const MOCK_CLUSTER_QUEUES = {
 
 export const MOCK_JOBS = [
   {
-    jobId: 'wu-1',
-    experimentId: '10293841',
-    status: 'Running',
+    xid: 10293841,
+    workUnitId: 1,
+    status: 'RUNNING',
     priority: 100,
-    resourceRequest: '8 x nvidia.com/gpu',
-    workUnitName: 'wu-1',
-    author: 'jdoe@google.com',
+    requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 8 }],
+    user: 'jdoe@google.com',
   },
   {
-    jobId: 'wu-2',
-    experimentId: '10293842',
-    status: 'Pending',
+    xid: 10293842,
+    workUnitId: 2,
+    status: 'PENDING',
     priority: 50,
-    resourceRequest: '4 x nvidia.com/gpu',
-    workUnitName: 'wu-2',
-    author: 'jdoe@google.com',
+    requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 4 }],
+    user: 'jdoe@google.com',
   },
 ];
 
