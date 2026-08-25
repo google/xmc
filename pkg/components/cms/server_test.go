@@ -853,7 +853,48 @@ func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
 	}
 
-	// 3. Nonexistent component -> NotFound
+	// 3. Dependent component deletion tests
+	specRoot := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Root for deletion",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-root", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-dep", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 3a. Delete root with non-cascading policy without force -> FailedPrecondition
+	_, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+		Force:          false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(with dep, orphan policy) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 3b. Delete root with cascading policy -> succeeds
+	resp, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(cascading) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
+	}
+
+	// 4. Nonexistent component -> NotFound
 	_, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
 		Name: "components/nonexistent",
 	})

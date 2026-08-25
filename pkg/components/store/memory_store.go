@@ -320,6 +320,11 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) err
 		return ErrInvalidStateTransition
 	}
 
+	activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
+	if len(activeDependents) > 0 {
+		return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
+	}
+
 	now := time.Now().UTC()
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	if rec.Status == nil {
@@ -346,22 +351,24 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		return ErrComponentNotFound
 	}
 
-	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, force); err != nil {
+	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
 		return err
 	}
 
 	now := time.Now().UTC()
-	rec.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
-	if rec.Status == nil {
-		rec.Status = &componentspb.ComponentAccessStatus{}
-	}
-	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
-	rec.DeleteTime = &now
-	rec.UpdateTime = now
+	transitionToDeleted(rec, now)
 	if policy != componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED && rec.Spec != nil {
 		rec.Spec.DeletionPolicy = policy
 	}
-	rec.Etag = generateEtag(rec)
+
+	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
+		activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
+		for _, depName := range activeDependents {
+			if depRec, ok := m.componentsByName[depName]; ok && !isDeletedRecord(depRec) {
+				transitionToDeleted(depRec, now)
+			}
+		}
+	}
 	return nil
 }
 
@@ -371,6 +378,17 @@ func transitionToDisabling(rec *ComponentRecord, now time.Time) {
 		rec.Status = &componentspb.ComponentAccessStatus{}
 	}
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
+	rec.UpdateTime = now
+	rec.Etag = generateEtag(rec)
+}
+
+func transitionToDeleted(rec *ComponentRecord, now time.Time) {
+	rec.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	if rec.Status == nil {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	rec.DeleteTime = &now
 	rec.UpdateTime = now
 	rec.Etag = generateEtag(rec)
 }

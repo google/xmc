@@ -210,34 +210,39 @@ func TestValidateDeletionSafety(t *testing.T) {
 	}
 
 	// 1. Safe deletion
-	if err := ValidateDeletionSafety(components, "comp-safe", false); err != nil {
+	if err := ValidateDeletionSafety(components, "comp-safe", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false); err != nil {
 		t.Errorf("ValidateDeletionSafety(comp-safe) unexpected error: %v", err)
 	}
 
 	// 2. Protected component without force -> ErrDeletionProtected
-	err := ValidateDeletionSafety(components, "comp-protected", false)
+	err := ValidateDeletionSafety(components, "comp-protected", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ValidateDeletionSafety(protected, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
 	// 3. Protected component with force -> success
-	if err := ValidateDeletionSafety(components, "comp-protected", true); err != nil {
+	if err := ValidateDeletionSafety(components, "comp-protected", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, true); err != nil {
 		t.Errorf("ValidateDeletionSafety(protected, force=true) unexpected error: %v", err)
 	}
 
-	// 4. Component with active dependents without force -> ErrHasActiveDependents
-	err = ValidateDeletionSafety(components, "comp-with-dep", false)
+	// 4. Component with active dependents without force and non-cascading policy -> ErrHasActiveDependents
+	err = ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("ValidateDeletionSafety(with-dep, force=false) got code %v, want FailedPrecondition", status.Code(err))
+		t.Errorf("ValidateDeletionSafety(with-dep, non-cascading, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
-	// 5. Component with active dependents with force -> success
-	if err := ValidateDeletionSafety(components, "comp-with-dep", true); err != nil {
+	// 5. Component with active dependents with cascading policy -> success
+	if err := ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Errorf("ValidateDeletionSafety(with-dep, cascading, force=false) unexpected error: %v", err)
+	}
+
+	// 6. Component with active dependents with force -> success
+	if err := ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
 		t.Errorf("ValidateDeletionSafety(with-dep, force=true) unexpected error: %v", err)
 	}
 
-	// 6. Nonexistent component -> ErrComponentNotFound
-	err = ValidateDeletionSafety(components, "nonexistent", false)
+	// 7. Nonexistent component -> ErrComponentNotFound
+	err = ValidateDeletionSafety(components, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ValidateDeletionSafety(nonexistent) got code %v, want NotFound", status.Code(err))
 	}

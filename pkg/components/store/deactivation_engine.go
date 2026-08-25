@@ -129,7 +129,7 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 }
 
 // ValidateDeletionSafety checks if a component can be deleted without violating protection or dependency constraints.
-func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, force bool) error {
+func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, policy componentspb.DeletionPolicy, force bool) error {
 	canonicalName := CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
 	if !exists || isDeletedRecord(targetRec) {
@@ -140,6 +140,9 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 	}
 	if IsDeletionProtected(targetRec) {
 		return ErrDeletionProtected
+	}
+	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
+		return nil
 	}
 
 	activeDependents, _ := findActiveDependents(components, canonicalName)

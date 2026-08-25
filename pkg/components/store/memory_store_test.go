@@ -622,12 +622,36 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 		t.Errorf("CompleteDeactivation(not disabling) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
-	// 2. Prepare deactivation first
+	// 2. Prepare deactivation
 	if _, err := ms.PrepareDeactivation(ctx, "comp-deact", false); err != nil {
 		t.Fatalf("PrepareDeactivation failed: %v", err)
 	}
 
-	// 3. Complete deactivation -> succeeds and transitions to DISABLED
+	// 3. Add an active dependent
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-deact",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-active", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-active) failed: %v", err)
+	}
+
+	// 4. Attempt complete deactivation while dependent is active -> FailedPrecondition
+	err = ms.CompleteDeactivation(ctx, "comp-deact")
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(with active dependent) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 5. Deactivate and complete dependent first
+	if _, err := ms.PrepareDeactivation(ctx, "dep-active", false); err != nil {
+		t.Fatalf("PrepareDeactivation(dep-active) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "dep-active"); err != nil {
+		t.Fatalf("CompleteDeactivation(dep-active) failed: %v", err)
+	}
+
+	// 6. Now complete deactivation on root -> succeeds
 	if err := ms.CompleteDeactivation(ctx, "comp-deact"); err != nil {
 		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
 	}
@@ -643,7 +667,7 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 		t.Errorf("Status.State = %v, want DISABLED", rec.Status.GetState())
 	}
 
-	// 4. Nonexistent component
+	// 7. Nonexistent component
 	err = ms.CompleteDeactivation(ctx, "nonexistent")
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
@@ -671,7 +695,7 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 		t.Fatalf("ExecuteDeletion(protected, force=true) unexpected error: %v", err)
 	}
 
-	// Component 2: With active dependent
+	// Component 2: With active dependent & Non-cascading policy
 	specRoot := sampleSpec("Root for deletion")
 	if _, err := ms.SetComponentIntent(ctx, "root-del", specRoot, nil, 0); err != nil {
 		t.Fatalf("SetComponentIntent(root-del) failed: %v", err)
@@ -685,21 +709,23 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 		t.Fatalf("SetComponentIntent(dep-del) failed: %v", err)
 	}
 
-	// Attempt deletion without force -> ErrHasActiveDependents
-	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	// Attempt non-cascading deletion without force -> ErrHasActiveDependents
+	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("ExecuteDeletion(with dep, force=false) got code %v, want FailedPrecondition", status.Code(err))
+		t.Errorf("ExecuteDeletion(with dep, orphan policy, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
-	// Deletion with force -> succeeds
-	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
-		t.Fatalf("ExecuteDeletion(with dep, force=true) unexpected error: %v", err)
+	// Cascading deletion without force -> succeeds and deletes both root and dependent
+	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion(with dep, delete policy, force=false) unexpected error: %v", err)
 	}
 
-	// Verify GetComponent returns NotFound for deleted components
-	_, err = ms.GetComponent(ctx, "root-del")
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("GetComponent(deleted) got code %v, want NotFound", status.Code(err))
+	// Verify GetComponent returns NotFound for both root and cascaded deleted dependent
+	if _, err := ms.GetComponent(ctx, "root-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(root-del) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "dep-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(dep-del) got code %v, want NotFound", status.Code(err))
 	}
 
 	// Nonexistent deletion
