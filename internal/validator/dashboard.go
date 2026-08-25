@@ -269,7 +269,7 @@ func ValidateDeleteChartRequest(in *spb.DeleteChartRequest) error {
 	if in.GetName() == "" {
 		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, _, err := ValidateChartName(in.GetName()); err != nil {
+	if _, err := ValidateRootChartName(in.GetName()); err != nil {
 		return fmt.Errorf("invalid chart name: %w", err)
 	}
 	return nil
