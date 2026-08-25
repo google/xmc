@@ -99,7 +99,7 @@ func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []*essmsgpb.WorkUnit
+	workUnits      []workunit.ActiveWorkUnit
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -117,7 +117,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []*essmsgpb.WorkUnit{},
+			WorkUnits: []workunit.ActiveWorkUnit{},
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
@@ -149,7 +149,14 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits:      newTestWorkUnits(now),
+				workUnits: []workunit.ActiveWorkUnit{
+					{
+						WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+						}),
+						User: "alice@example.com",
+					},
+				},
 				totalQueueSize: 1,
 			},
 			wantCode:           codes.OK,
@@ -395,7 +402,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		}
 	})
 
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, "", now)
 	if job == nil {
 		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
 	}

@@ -84,17 +84,17 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []workunit.ActiveWorkUnit, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}
 	return result.WorkUnits, result.NextPageToken
 }
 
-func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []*essmsgpb.WorkUnit, now time.Time) []*spb.DashboardJob {
+func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []workunit.ActiveWorkUnit, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
-	for _, wu := range workUnits {
-		if job := mapWorkUnitToDashboardJob(ctx, wu, now); job != nil {
+	for _, item := range workUnits {
+		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.User, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
@@ -102,7 +102,7 @@ func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []*essmsgpb.Work
 }
 
 // mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
-func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now time.Time) *spb.DashboardJob {
+func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user string, now time.Time) *spb.DashboardJob {
 	if wu == nil {
 		return nil
 	}
@@ -114,7 +114,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 	return &spb.DashboardJob{
 		Xid:                xid,
 		WorkUnitId:         wid,
-		User:               wu.GetCreator(),
+		User:               user,
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),

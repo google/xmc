@@ -109,9 +109,6 @@ func WorkUnitRowToProto(row *spanner.Row) (*pb.WorkUnit, error) {
 		workUnit.UpdateTime = timestamppb.New(updateTime.Time)
 	}
 
-	// Creator is optional (populated when joined with Experiments table).
-	_ = row.ColumnByName("Creator", &workUnit.Creator)
-
 	return workUnit, nil
 }
 

@@ -43,7 +43,7 @@ var (
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT wu.BitReversedXid, wu.WorkUnitId, e.Creator AS Creator
+	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator
 	FROM WorkUnits wu
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
@@ -59,9 +59,15 @@ var countActiveWorkUnitsSQL = safesql.New(
 	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
+// ActiveWorkUnit wraps a WorkUnit proto with additional query-time metadata.
+type ActiveWorkUnit struct {
+	WorkUnit *essmsgpb.WorkUnit
+	User     string
+}
+
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits      []*essmsgpb.WorkUnit
+	WorkUnits      []ActiveWorkUnit
 	NextPageToken  string
 	TotalQueueSize int64
 }
@@ -140,7 +146,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	return orderedPKs, nil
 }
 
-func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]ActiveWorkUnit, error) {
 	type workUnitKey struct {
 		bitReversedXid int64
 		workUnitId     int64
@@ -173,7 +179,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		}
 	}
 
-	workUnits := make([]*essmsgpb.WorkUnit, 0, len(orderedPKs))
+	workUnits := make([]ActiveWorkUnit, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
 		key := workUnitKey{
 			bitReversedXid: pk.BitReversedXid,
@@ -183,10 +189,10 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
-		if pk.Creator != "" {
-			wu.Creator = pk.Creator
-		}
-		workUnits = append(workUnits, wu)
+		workUnits = append(workUnits, ActiveWorkUnit{
+			WorkUnit: wu,
+			User:     pk.Creator,
+		})
 	}
 
 	return workUnits, nil
@@ -204,7 +210,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:     []*essmsgpb.WorkUnit{},
+			WorkUnits:     []ActiveWorkUnit{},
 			NextPageToken: "",
 		}, nil
 	}
@@ -240,7 +246,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:      []*essmsgpb.WorkUnit{},
+			WorkUnits:      []ActiveWorkUnit{},
 			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil
