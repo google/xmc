@@ -163,12 +163,11 @@ Lifecycle durations (`spec.lifecycleControl.drainTimeoutSeconds` and `spec.lifec
 
 The schema validation layer (`pkg/components/linter/schema.go`) verifies baseline Kubernetes YAML correctness, Component CRD schema compliance, and multi-tenant security guardrails.
 
-### Security Guardrails: Namespace Scope Enforcement
+### Security Guardrails: Forbidden Kinds
 
-When `staticChecks.enforceNamespaceScope: true` is configured in `rules.yaml`, `xmc-linter` rejects any manifests defining cluster-scoped resources to prevent privilege escalation:
+When `staticChecks.forbiddenKinds` is configured in `rules.yaml`, `xmc-linter` rejects any raw manifests matching forbidden Kubernetes resource kinds:
 
-- **Forbidden Kinds (24 Types)**: `ClusterRole`, `ClusterRoleBinding`, `Namespace`, `CustomResourceDefinition`, `ValidatingAdmissionPolicy`, `ValidatingAdmissionPolicyBinding`, `MutatingWebhookConfiguration`, `ValidatingWebhookConfiguration`, `PersistentVolume`, `StorageClass`, `PriorityClass`, `RuntimeClass`, `VolumeSnapshotClass`, `VolumeAttributesClass`, `VolumeSnapshotContent`, `IngressClass`, `GatewayClass`, `ClusterIssuer`, `APIService`, `FlowSchema`, `PriorityLevelConfiguration`, `Node`, `ClusterCIDR`, `CertificateSigningRequest`.
-- **Rule ID**: `CLUSTER_SCOPED_KIND_REJECTED`
+- **Rule ID**: `FORBIDDEN_KIND_REJECTED`
 
 ### CRD Schema Checks
 
@@ -182,7 +181,9 @@ When `staticChecks.enforceNamespaceScope: true` is configured in `rules.yaml`, `
 
 ```yaml
 staticChecks:
-  enforceNamespaceScope: true
+  forbiddenKinds:
+    - ClusterRole
+    - StorageClass
   enforceDeletionProtection: false
   maxDrainTimeoutSeconds: 3600
 ```

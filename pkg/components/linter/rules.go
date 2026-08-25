@@ -28,9 +28,9 @@ import (
 
 // StaticChecksConfig specifies toggles and limits for Pass 1 structural and security checks.
 type StaticChecksConfig struct {
-	EnforceNamespaceScope     bool `yaml:"enforceNamespaceScope" json:"enforceNamespaceScope"`
-	EnforceDeletionProtection bool `yaml:"enforceDeletionProtection" json:"enforceDeletionProtection"`
-	MaxDrainTimeoutSeconds    int  `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
+	ForbiddenKinds            []string `yaml:"forbiddenKinds,omitempty" json:"forbiddenKinds,omitempty"`
+	EnforceDeletionProtection bool     `yaml:"enforceDeletionProtection" json:"enforceDeletionProtection"`
+	MaxDrainTimeoutSeconds    int      `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
 }
 
 // RulesConfig is the top-level structure loaded from rules.yaml.

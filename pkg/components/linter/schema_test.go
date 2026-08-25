@@ -98,10 +98,10 @@ spec:
 			wantRules: []string{"INVALID_COMPONENT_NAME"},
 		},
 		{
-			name: "enforce namespace scope rejects lowercase cluster-scoped kind clusterrole",
+			name: "forbidden kinds rejects case-insensitive kind clusterrole",
 			rules: &linter.RulesConfig{
 				StaticChecks: linter.StaticChecksConfig{
-					EnforceNamespaceScope: true,
+					ForbiddenKinds: []string{"ClusterRole"},
 				},
 			},
 			manifests: map[string]string{
@@ -113,67 +113,31 @@ metadata:
 `,
 			},
 			wantValid: false,
-			wantRules: []string{"CLUSTER_SCOPED_KIND_REJECTED"},
+			wantRules: []string{"FORBIDDEN_KIND_REJECTED"},
 		},
 		{
-			name: "enforce namespace scope rejects ValidatingAdmissionPolicyBinding",
+			name: "forbidden kinds rejects StorageClass",
 			rules: &linter.RulesConfig{
 				StaticChecks: linter.StaticChecksConfig{
-					EnforceNamespaceScope: true,
+					ForbiddenKinds: []string{"StorageClass"},
 				},
 			},
 			manifests: map[string]string{
-				"binding.yaml": `
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
+				"sc.yaml": `
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
 metadata:
-  name: demo-binding
+  name: fast-storage
 `,
 			},
 			wantValid: false,
-			wantRules: []string{"CLUSTER_SCOPED_KIND_REJECTED"},
+			wantRules: []string{"FORBIDDEN_KIND_REJECTED"},
 		},
 		{
-			name: "enforce namespace scope rejects IngressClass",
+			name: "forbidden kinds allows non-forbidden Deployment",
 			rules: &linter.RulesConfig{
 				StaticChecks: linter.StaticChecksConfig{
-					EnforceNamespaceScope: true,
-				},
-			},
-			manifests: map[string]string{
-				"ingress-class.yaml": `
-apiVersion: networking.k8s.io/v1
-kind: IngressClass
-metadata:
-  name: custom-ingress
-`,
-			},
-			wantValid: false,
-			wantRules: []string{"CLUSTER_SCOPED_KIND_REJECTED"},
-		},
-		{
-			name: "enforce namespace scope rejects CustomResourceDefinition",
-			rules: &linter.RulesConfig{
-				StaticChecks: linter.StaticChecksConfig{
-					EnforceNamespaceScope: true,
-				},
-			},
-			manifests: map[string]string{
-				"crd.yaml": `
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: crontabs.stable.example.com
-`,
-			},
-			wantValid: false,
-			wantRules: []string{"CLUSTER_SCOPED_KIND_REJECTED"},
-		},
-		{
-			name: "enforce namespace scope allows namespaced Deployment",
-			rules: &linter.RulesConfig{
-				StaticChecks: linter.StaticChecksConfig{
-					EnforceNamespaceScope: true,
+					ForbiddenKinds: []string{"ClusterRole", "StorageClass"},
 				},
 			},
 			manifests: map[string]string{

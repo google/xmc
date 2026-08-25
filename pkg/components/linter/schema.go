@@ -21,34 +21,7 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-var clusterScopedKinds = map[string]bool{
-	"clusterrole":                      true,
-	"clusterrolebinding":               true,
-	"namespace":                        true,
-	"customresourcedefinition":         true,
-	"validatingadmissionpolicy":        true,
-	"validatingadmissionpolicybinding": true,
-	"mutatingwebhookconfiguration":     true,
-	"validatingwebhookconfiguration":   true,
-	"persistentvolume":                 true,
-	"storageclass":                     true,
-	"priorityclass":                    true,
-	"runtimeclass":                     true,
-	"volumesnapshotclass":              true,
-	"volumeattributesclass":            true,
-	"volumesnapshotcontent":            true,
-	"ingressclass":                     true,
-	"gatewayclass":                     true,
-	"clusterissuer":                    true,
-	"apiservice":                       true,
-	"flowschema":                       true,
-	"prioritylevelconfiguration":       true,
-	"node":                             true,
-	"clustercidr":                      true,
-	"certificatesigningrequest":        true,
-}
-
-// validateSchema validates YAML structural correctness, namespace scope, and schema conformance.
+// validateSchema validates YAML structural correctness, schema conformance, and forbidden kinds.
 func (l *Linter) validateSchema(rawManifests []*RawManifest, compManifests []*ComponentManifest, res *ValidationResult) {
 	rules := l.rules
 	if rules == nil {
@@ -76,10 +49,10 @@ func (l *Linter) validateRawManifest(m *RawManifest, rules *RulesConfig, res *Va
 	if strings.TrimSpace(m.Metadata.Name) == "" {
 		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "metadata.name is required and cannot be empty")
 	}
-	if rules.StaticChecks.EnforceNamespaceScope {
-		normalizedKind := strings.ToLower(strings.TrimSpace(m.Kind))
-		if clusterScopedKinds[normalizedKind] {
-			res.AddError(m.FilePath, line, "CLUSTER_SCOPED_KIND_REJECTED", fmt.Sprintf("cluster-scoped kind %q is forbidden when namespace scope is enforced", m.Kind))
+	for _, forbidden := range rules.StaticChecks.ForbiddenKinds {
+		if strings.EqualFold(strings.TrimSpace(m.Kind), strings.TrimSpace(forbidden)) {
+			res.AddError(m.FilePath, line, "FORBIDDEN_KIND_REJECTED", fmt.Sprintf("manifest kind %q is forbidden by staticChecks.forbiddenKinds rule", m.Kind))
+			break
 		}
 	}
 }
