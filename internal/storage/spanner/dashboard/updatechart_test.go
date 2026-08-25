@@ -72,6 +72,15 @@ func TestUpdateChart_Success(t *testing.T) {
 	if got.GetPlotLayout() == nil || got.GetPlotLayout().GetColumns() != 3 {
 		t.Errorf("GetChart PlotLayout mismatch: got %+v", got.GetPlotLayout())
 	}
+	if updated.GetUpdateTime() == nil || updated.GetUpdateTime().AsTime().IsZero() {
+		t.Errorf("updated.UpdateTime was not populated with commit timestamp")
+	}
+	if got.GetUpdateTime() == nil || got.GetUpdateTime().AsTime().IsZero() {
+		t.Errorf("GetChart UpdateTime was not updated by storage layer")
+	}
+	if got.GetUpdateTime().GetSeconds() != updated.GetUpdateTime().GetSeconds() {
+		t.Errorf("GetChart UpdateTime (%v) does not match commit UpdateTime (%v)", got.GetUpdateTime(), updated.GetUpdateTime())
+	}
 }
 
 func TestUpdateChart_WithoutLayout(t *testing.T) {

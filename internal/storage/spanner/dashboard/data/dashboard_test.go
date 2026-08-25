@@ -653,6 +653,123 @@ func TestMergeDashboards_NilInputs(t *testing.T) {
 	}
 }
 
+func TestMergeCharts_AllFieldsNoMask(t *testing.T) {
+	current := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Xid:         100,
+		Wid:         1,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p1", Title: "Plot 1", Type: dpb.PlotType_SCATTER}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
+	}
+	updated := &dpb.Chart{
+		Name:        "charts/c1-ignored",
+		Title:       "New Title",
+		Description: "New Desc",
+		Xid:         999,
+		Wid:         2,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p2", Title: "Plot 2", Type: dpb.PlotType_BAR}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_WRAP, Columns: 3},
+	}
+
+	merged, err := MergeCharts(current, updated, nil)
+	if err != nil {
+		t.Fatalf("MergeCharts failed: %v", err)
+	}
+
+	if merged.GetTitle() != "New Title" {
+		t.Errorf("Title: got %q, want 'New Title'", merged.GetTitle())
+	}
+	if merged.GetDescription() != "New Desc" {
+		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
+	}
+	if merged.GetWid() != 1 {
+		t.Errorf("Wid: got %d, want 1 (wid must be preserved)", merged.GetWid())
+	}
+	if merged.GetXid() != 100 {
+		t.Errorf("Xid: got %d, want 100 (xid must be preserved)", merged.GetXid())
+	}
+	if len(merged.GetPlots()) != 1 || merged.GetPlots()[0].GetPlotId() != "p2" {
+		t.Errorf("Plots: got %v, want plot with ID 'p2'", merged.GetPlots())
+	}
+	if merged.GetPlotLayout().GetType() != dpb.LayoutSpec_WRAP || merged.GetPlotLayout().GetColumns() != 3 {
+		t.Errorf("PlotLayout: got %v, want WRAP with 3 columns", merged.GetPlotLayout())
+	}
+}
+
+func TestMergeCharts_ImmutableFieldsInMask(t *testing.T) {
+	current := &dpb.Chart{Name: "charts/c1", Xid: 10, Wid: 1}
+	updated := &dpb.Chart{Name: "charts/c1", Xid: 20, Wid: 2}
+
+	for _, field := range []string{"wid", "xid"} {
+		mask := &fieldmaskpb.FieldMask{Paths: []string{field}}
+		if _, err := MergeCharts(current, updated, mask); err == nil {
+			t.Errorf("MergeCharts with immutable field %q in mask succeeded, want error", field)
+		}
+	}
+}
+
+func TestMergeCharts_WithFieldMask(t *testing.T) {
+	current := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Wid:         1,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p1"}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
+	}
+	updated := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "New Title",
+		Description: "New Desc",
+		Wid:         5,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p2"}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_SIDE_BY_SIDE, Columns: 2},
+	}
+
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"description", "plot_layout"}}
+	merged, err := MergeCharts(current, updated, mask)
+	if err != nil {
+		t.Fatalf("MergeCharts failed: %v", err)
+	}
+
+	if merged.GetTitle() != "Old Title" {
+		t.Errorf("Title: got %q, want 'Old Title' (should not change)", merged.GetTitle())
+	}
+	if merged.GetDescription() != "New Desc" {
+		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
+	}
+	if merged.GetWid() != 1 {
+		t.Errorf("Wid: got %d, want 1 (should not change)", merged.GetWid())
+	}
+	if len(merged.GetPlots()) != 1 || merged.GetPlots()[0].GetPlotId() != "p1" {
+		t.Errorf("Plots: got %v, want 'p1' (should not change)", merged.GetPlots())
+	}
+	if merged.GetPlotLayout().GetType() != dpb.LayoutSpec_SIDE_BY_SIDE {
+		t.Errorf("PlotLayout: got %v, want SIDE_BY_SIDE", merged.GetPlotLayout())
+	}
+}
+
+func TestMergeCharts_InvalidPath(t *testing.T) {
+	current := &dpb.Chart{Name: "charts/c1"}
+	updated := &dpb.Chart{Name: "charts/c1"}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"invalid_field"}}
+
+	if _, err := MergeCharts(current, updated, mask); err == nil {
+		t.Errorf("MergeCharts with invalid field mask path succeeded, want error")
+	}
+}
+
+func TestMergeCharts_NilInputs(t *testing.T) {
+	if _, err := MergeCharts(nil, &dpb.Chart{}, nil); err == nil {
+		t.Errorf("MergeCharts(nil, updated, nil) succeeded, want error")
+	}
+	if _, err := MergeCharts(&dpb.Chart{}, nil, nil); err == nil {
+		t.Errorf("MergeCharts(current, nil, nil) succeeded, want error")
+	}
+}
+
 func TestDashboardProtoToUpdateMutations_Success(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name:        "dashboards/d1",

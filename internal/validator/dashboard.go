@@ -61,6 +61,14 @@ func ValidateChartIDs(chartIDs []string) error {
 	return nil
 }
 
+var allowedUpdateChartPaths = map[string]bool{
+	"title":       true,
+	"description": true,
+	"plots":       true,
+	"plot_layout": true,
+	"plotLayout":  true,
+}
+
 // validateDashboardID checks if a dashboard ID string is non-empty and contains no slashes.
 func validateDashboardID(id string) error {
 	if id == "" {
@@ -296,15 +304,34 @@ func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if in.GetChart() == nil {
+	chart := in.GetChart()
+	if chart == nil {
 		return fmt.Errorf("chart cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	chart := in.GetChart()
 	if chart.GetName() == "" {
 		return fmt.Errorf("chart.name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, _, err := ValidateChartName(chart.GetName()); err != nil {
+	if _, err := ValidateRootChartName(chart.GetName()); err != nil {
 		return fmt.Errorf("invalid chart.name: %w", err)
+	}
+	if in.GetUpdateMask() == nil || len(in.GetUpdateMask().GetPaths()) == 0 {
+		if strings.TrimSpace(chart.GetTitle()) == "" {
+			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	return validateChartUpdateMask(chart.GetTitle(), in.GetUpdateMask().GetPaths())
+}
+
+// validateChartUpdateMask verifies update mask paths and associated field constraints for a chart.
+func validateChartUpdateMask(title string, paths []string) error {
+	for _, path := range paths {
+		if !allowedUpdateChartPaths[path] {
+			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, plots, plot_layout: %w", path, status.ErrInvalidArgument)
+		}
+		if path == "title" && strings.TrimSpace(title) == "" {
+			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }
