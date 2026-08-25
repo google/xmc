@@ -43,7 +43,9 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test('should match baseline screenshot for initial layout and cluster queues', async ({
     page,
   }) => {
-    await expect(page).toHaveScreenshot('resource-dashboard-initial.png');
+    const dashboard = page.locator('xmc-resource-dashboard');
+    await expect(dashboard).toBeVisible();
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
   });
 
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
@@ -59,6 +61,6 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await queueItem.click();
     await jobsResponsePromise;
 
-    await expect(page).toHaveScreenshot('resource-dashboard-queue-selected.png');
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
   });
 });
