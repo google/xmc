@@ -504,41 +504,265 @@ func TestMemoryStore_SetComponentIntent_CycleRejection(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	// 1. Direct self cycle
-	specSelf := &componentspb.ComponentSpec{
+	// 1. Create comp-a depending on comp-b
+	specA := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version:     "v1.0.0",
-		Description: "@depends-on: comp-self",
+		Description: "@depends-on: comp-b",
 	}
-	_, err := ms.SetComponentIntent(ctx, "comp-self", specSelf, nil, 0)
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("SetComponentIntent(self-cycle) got error %v, want code FailedPrecondition", err)
-	}
-
-	// 2. Transitive cycle A -> B -> A
-	specA := sampleSpec("Component A")
 	if _, err := ms.SetComponentIntent(ctx, "comp-a", specA, nil, 0); err != nil {
-		t.Fatalf("SetComponentIntent(comp-a) failed: %v", err)
+		t.Fatalf("SetComponentIntent(comp-a) unexpected error: %v", err)
 	}
 
+	// 2. Attempt to create comp-b depending on comp-a -> Cycle detected!
 	specB := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version:     "v1.0.0",
 		Description: "@depends-on: comp-a",
 	}
-	if _, err := ms.SetComponentIntent(ctx, "comp-b", specB, nil, 0); err != nil {
-		t.Fatalf("SetComponentIntent(comp-b) failed: %v", err)
+	_, err := ms.SetComponentIntent(ctx, "comp-b", specB, nil, 0)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("SetComponentIntent(comp-b with cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
 	}
 
-	// Update comp-a to depend on comp-b -> cycle
-	specACycle := &componentspb.ComponentSpec{
+	// 3. Create comp-b without cycle (depending on comp-c)
+	specBValid := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version:     "v1.1.0",
-		Description: "@depends-on: comp-b",
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-c",
 	}
-	_, err = ms.SetComponentIntent(ctx, "comp-a", specACycle, nil, 0)
+	if _, err := ms.SetComponentIntent(ctx, "comp-b", specBValid, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-b valid) unexpected error: %v", err)
+	}
+
+	// 4. Update comp-c to depend on comp-a -> Cycle detected across 3 nodes!
+	specC := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-a",
+	}
+	_, err = ms.SetComponentIntent(ctx, "comp-c", specC, nil, 0)
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("SetComponentIntent(transitive cycle) got error %v, want code FailedPrecondition", err)
+		t.Errorf("SetComponentIntent(comp-c transitive cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
+	}
+}
+
+func TestMemoryStore_PrepareDeactivation(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	specRoot := sampleSpec("Root component")
+	if _, err := ms.SetComponentIntent(ctx, "root-comp", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-comp) failed: %v", err)
+	}
+
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-comp",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dependent-comp", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dependent-comp) failed: %v", err)
+	}
+
+	// 1. Prepare deactivation without cascade on root -> rejected due to active dependent
+	_, err := ms.PrepareDeactivation(ctx, "root-comp", false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("PrepareDeactivation(root, cascade=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation with cascade -> succeeds and marks both DISABLING
+	res, err := ms.PrepareDeactivation(ctx, "root-comp", true)
+	if err != nil {
+		t.Fatalf("PrepareDeactivation(root, cascade=true) unexpected error: %v", err)
+	}
+	if !res.IsSafeToDeactivate {
+		t.Error("IsSafeToDeactivate = false, want true")
+	}
+	if diff := cmp.Diff([]string{"dependent-comp"}, res.CascadedDeactivations); diff != "" {
+		t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
+	}
+
+	// Verify states in store
+	recRoot, err := ms.GetComponent(ctx, "root-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(root-comp) failed: %v", err)
+	}
+	if recRoot.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("root-comp State = %v, want DISABLING", recRoot.State)
+	}
+
+	recDep, err := ms.GetComponent(ctx, "dependent-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(dependent-comp) failed: %v", err)
+	}
+	if recDep.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("dependent-comp State = %v, want DISABLING", recDep.State)
+	}
+
+	// 3. Nonexistent component
+	_, err = ms.PrepareDeactivation(ctx, "nonexistent", false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("PrepareDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_CompleteDeactivation(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("Deactivation target")
+	if _, err := ms.SetComponentIntent(ctx, "comp-deact", spec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Complete deactivation on non-disabling state -> ErrInvalidStateTransition
+	err := ms.CompleteDeactivation(ctx, "comp-deact")
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(not disabling) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation
+	if _, err := ms.PrepareDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Fatalf("PrepareDeactivation failed: %v", err)
+	}
+
+	// 3. Add an active dependent
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-deact",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-active", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-active) failed: %v", err)
+	}
+
+	// 4. Attempt complete deactivation while dependent is active -> FailedPrecondition
+	err = ms.CompleteDeactivation(ctx, "comp-deact")
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(with active dependent) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 5. Deactivate and complete dependent first
+	if _, err := ms.PrepareDeactivation(ctx, "dep-active", false); err != nil {
+		t.Fatalf("PrepareDeactivation(dep-active) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "dep-active"); err != nil {
+		t.Fatalf("CompleteDeactivation(dep-active) failed: %v", err)
+	}
+
+	// 6. Now complete deactivation on root -> succeeds
+	if err := ms.CompleteDeactivation(ctx, "comp-deact"); err != nil {
+		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
+	}
+
+	rec, err := ms.GetComponent(ctx, "comp-deact")
+	if err != nil {
+		t.Fatalf("GetComponent failed: %v", err)
+	}
+	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("State = %v, want DISABLED", rec.State)
+	}
+	if rec.Status.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("Status.State = %v, want DISABLED", rec.Status.GetState())
+	}
+
+	// 7. Nonexistent component
+	err = ms.CompleteDeactivation(ctx, "nonexistent")
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_ExecuteDeletion(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	// Component 1: Protected
+	spec1 := sampleSpec("Protected")
+	if _, err := ms.SetComponentIntent(ctx, "comp-prot", spec1, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-prot) failed: %v", err)
+	}
+
+	// Attempt deletion without force -> ErrDeletionProtected
+	err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(protected, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Deletion with force -> succeeds
+	if err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Fatalf("ExecuteDeletion(protected, force=true) unexpected error: %v", err)
+	}
+
+	// Component 2: With active dependent & Non-cascading policy
+	specRoot := sampleSpec("Root for deletion")
+	if _, err := ms.SetComponentIntent(ctx, "root-del", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-del) failed: %v", err)
+	}
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-del",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-del", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-del) failed: %v", err)
+	}
+
+	// Attempt non-cascading deletion without force -> ErrHasActiveDependents
+	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(with dep, orphan policy, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Cascading deletion without force -> succeeds and deletes both root and dependent
+	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion(with dep, delete policy, force=false) unexpected error: %v", err)
+	}
+
+	// Verify GetComponent returns NotFound for both root and cascaded deleted dependent
+	if _, err := ms.GetComponent(ctx, "root-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(root-del) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "dep-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(dep-del) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Component 3: Cascading deletion with protected dependent
+	specParent := sampleSpec("Parent with protected child")
+	if _, err := ms.SetComponentIntent(ctx, "parent-prot", specParent, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(parent-prot) failed: %v", err)
+	}
+	specChild := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: parent-prot",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "child-prot", specChild, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent(child-prot) failed: %v", err)
+	}
+
+	// Cascading deletion without force -> ErrDeletionProtected
+	err = ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(cascading with protected child, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Cascading deletion with force -> succeeds and deletes both parent and child
+	if err := ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Fatalf("ExecuteDeletion(cascading with protected child, force=true) unexpected error: %v", err)
+	}
+	if _, err := ms.GetComponent(ctx, "parent-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(parent-prot) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "child-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(child-prot) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Nonexistent deletion
+	err = ms.ExecuteDeletion(ctx, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
 	}
 }
 
@@ -546,15 +770,6 @@ func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, err := ms.PrepareDeactivation(ctx, "comp-1", false); status.Code(err) != codes.Unimplemented {
-		t.Errorf("PrepareDeactivation got code %v, want Unimplemented", status.Code(err))
-	}
-	if err := ms.CompleteDeactivation(ctx, "comp-1"); status.Code(err) != codes.Unimplemented {
-		t.Errorf("CompleteDeactivation got code %v, want Unimplemented", status.Code(err))
-	}
-	if err := ms.ExecuteDeletion(ctx, "comp-1", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ExecuteDeletion got code %v, want Unimplemented", status.Code(err))
-	}
 	if _, _, err := ms.ResolveComponentSnapshot(ctx, "comp-1", 1); status.Code(err) != codes.Unimplemented {
 		t.Errorf("ResolveComponentSnapshot got code %v, want Unimplemented", status.Code(err))
 	}
