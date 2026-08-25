@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
@@ -77,7 +77,7 @@ function parseRangeDiff(output) {
   let hasModifiedCommits = false;
 
   for (const line of lines) {
-    const commitMatch = line.match(/^\s*\d+:\s+([a-f0-9]+)\s+([=!<>])\s+\d+:\s+([a-f0-9]+)/);
+    const commitMatch = line.match(/^\s*(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
     if (commitMatch) {
       if (commitMatch[2] !== '=') {
         hasModifiedCommits = true;
@@ -194,13 +194,31 @@ function evaluateIncrementalApproval({
  */
 function runGitRangeDiff(baseRef, approvedSha, currentSha) {
   try {
-    const cmd = `git range-diff origin/${baseRef}...${approvedSha} origin/${baseRef}...${currentSha}`;
-    return execSync(cmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    return execFileSync(
+      'git',
+      [
+        'range-diff',
+        `origin/${baseRef}...${approvedSha}`,
+        `origin/${baseRef}...${currentSha}`
+      ],
+      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+    );
   } catch (initialError) {
     try {
-      execSync(`git fetch origin ${baseRef} ${approvedSha} ${currentSha}`, { encoding: 'utf8', stdio: 'ignore' });
-      const cmd = `git range-diff origin/${baseRef}...${approvedSha} origin/${baseRef}...${currentSha}`;
-      return execSync(cmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+      execFileSync(
+        'git',
+        ['fetch', 'origin', baseRef, approvedSha, currentSha],
+        { encoding: 'utf8', stdio: 'ignore' }
+      );
+      return execFileSync(
+        'git',
+        [
+          'range-diff',
+          `origin/${baseRef}...${approvedSha}`,
+          `origin/${baseRef}...${currentSha}`
+        ],
+        { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+      );
     } catch (fallbackError) {
       throw new Error(`Failed to execute git range-diff: ${fallbackError.message}`);
     }

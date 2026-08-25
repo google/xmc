@@ -126,6 +126,15 @@ test('parseRangeDiff counts modified patch additions and deletions accurately', 
   assert.strictEqual(result.totalDelta, 3);
 });
 
+test('parseRangeDiff identifies added or removed commits as not a clean rebase', () => {
+  const sampleOutput = `
+-:  ------- > 1:  e5f6g7h Added commit
+1:  a1b2c3d < -:  ------- Removed commit
+`;
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.isCleanRebase, false);
+});
+
 test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: false,
