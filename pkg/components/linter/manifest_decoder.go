@@ -85,32 +85,31 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 	}
 	c.ForceDeletion = raw.ForceDeletion
 
-	if raw.DrainTimeoutSeconds.Kind != 0 {
-		sec, err := parseDurationNode(&raw.DrainTimeoutSeconds, "drainTimeoutSeconds")
-		if err != nil {
-			return err
-		}
-		c.DrainTimeoutSeconds = &sec
-	} else if raw.DrainingTimeout.Kind != 0 {
-		sec, err := parseDurationNode(&raw.DrainingTimeout, "drainingTimeout")
+	drainNode := firstNonEmptyNode(&raw.DrainTimeoutSeconds, &raw.DrainingTimeout)
+	if drainNode != nil {
+		sec, err := parseDurationNode(drainNode, "drainTimeoutSeconds")
 		if err != nil {
 			return err
 		}
 		c.DrainTimeoutSeconds = &sec
 	}
 
-	if raw.GracePeriodSeconds.Kind != 0 {
-		sec, err := parseDurationNode(&raw.GracePeriodSeconds, "gracePeriodSeconds")
+	graceNode := firstNonEmptyNode(&raw.GracePeriodSeconds, &raw.GracePeriod)
+	if graceNode != nil {
+		sec, err := parseDurationNode(graceNode, "gracePeriodSeconds")
 		if err != nil {
 			return err
 		}
 		c.GracePeriodSeconds = &sec
-	} else if raw.GracePeriod.Kind != 0 {
-		sec, err := parseDurationNode(&raw.GracePeriod, "gracePeriod")
-		if err != nil {
-			return err
+	}
+	return nil
+}
+
+func firstNonEmptyNode(nodes ...*yaml.Node) *yaml.Node {
+	for _, n := range nodes {
+		if n != nil && n.Kind != 0 {
+			return n
 		}
-		c.GracePeriodSeconds = &sec
 	}
 	return nil
 }
@@ -192,6 +191,9 @@ func (s *ComponentManifestSpec) decodeDependencies(node *yaml.Node) error {
 	for node.Kind == yaml.AliasNode && node.Alias != nil {
 		node = node.Alias
 	}
+	if node.Tag == "!!null" || node.Value == "~" || node.Value == "null" {
+		return nil
+	}
 	if node.Kind == yaml.SequenceNode {
 		for _, elem := range node.Content {
 			var dep ComponentDependencyRef
@@ -241,18 +243,22 @@ func decodeMappingDependency(keyNode, valNode *yaml.Node) (*ComponentDependencyR
 		return dep, nil
 	}
 	if valNode.Kind == yaml.MappingNode {
-		type rawDepDetail struct {
-			Version  string `yaml:"version"`
-			Optional bool   `yaml:"optional"`
-		}
-		var detail rawDepDetail
-		if err := valNode.Decode(&detail); err != nil {
-			return nil, err
-		}
-		dep.Version, dep.Optional = detail.Version, detail.Optional
-		return dep, nil
+		return decodeMappingDependencyDetails(dep, valNode)
 	}
 	return nil, fmt.Errorf("invalid dependency detail format for %q", keyNode.Value)
+}
+
+func decodeMappingDependencyDetails(dep *ComponentDependencyRef, valNode *yaml.Node) (*ComponentDependencyRef, error) {
+	type rawDepDetail struct {
+		Version  string `yaml:"version"`
+		Optional bool   `yaml:"optional"`
+	}
+	var detail rawDepDetail
+	if err := valNode.Decode(&detail); err != nil {
+		return nil, err
+	}
+	dep.Version, dep.Optional = detail.Version, detail.Optional
+	return dep, nil
 }
 
 func firstNonEmpty(vals ...string) string {

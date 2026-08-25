@@ -46,6 +46,18 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(`spec: { dependencies: { cert-manager: null, kueue: "~" } }`), &compNull); err != nil || len(compNull.Spec.Dependencies) != 2 || compNull.Spec.Dependencies[0].Version != "" {
 			t.Fatalf("unmarshal null mapping deps failed: %v", err)
 		}
+		var compSpecNull linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: null }`), &compSpecNull); err != nil || len(compSpecNull.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal null spec dependencies failed: %v", err)
+		}
+		var compSpecTilde linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: "~" }`), &compSpecTilde); err != nil || len(compSpecTilde.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal tilde spec dependencies failed: %v", err)
+		}
+		var compSpecTildeRaw linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: ~ }`), &compSpecTildeRaw); err != nil || len(compSpecTildeRaw.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal raw tilde spec dependencies failed: %v", err)
+		}
 	})
 
 	t.Run("unmarshal wrapperRef alias fallback", func(t *testing.T) {
