@@ -82,7 +82,7 @@ const MOCK_USER_INFO = {
 
 test.describe('Admin Panel Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 1350 });
 
     // Mock generic auth/config
     await setupMockRoutes(page);
