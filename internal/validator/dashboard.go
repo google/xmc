@@ -49,16 +49,14 @@ func ValidateChartIDs(chartIDs []string) error {
 		return nil
 	}
 	seen := make(map[string]bool, len(chartIDs))
-	for i, id := range chartIDs {
-		normID, err := ValidateChartID(id)
-		if err != nil {
+	for _, id := range chartIDs {
+		if _, err := ValidateChartID(id); err != nil {
 			return err
 		}
-		if seen[normID] {
+		if seen[id] {
 			return fmt.Errorf("duplicate chart ID %q: %w", id, status.ErrInvalidArgument)
 		}
-		seen[normID] = true
-		chartIDs[i] = normID
+		seen[id] = true
 	}
 	return nil
 }

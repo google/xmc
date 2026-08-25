@@ -16,7 +16,6 @@ package validator
 
 import (
 	"errors"
-	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -100,25 +99,21 @@ func TestValidateChartIDs(t *testing.T) {
 	tests := []struct {
 		name     string
 		chartIDs []string
-		wantIDs  []string
 		wantErr  error
 	}{
 		{
 			name:     "nil_slice",
 			chartIDs: nil,
-			wantIDs:  nil,
 			wantErr:  nil,
 		},
 		{
 			name:     "empty_slice",
 			chartIDs: []string{},
-			wantIDs:  []string{},
 			wantErr:  nil,
 		},
 		{
 			name:     "valid_chart_ids",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "custom-chart-1"},
-			wantIDs:  []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "custom-chart-1"},
 			wantErr:  nil,
 		},
 		{
@@ -159,12 +154,21 @@ func TestValidateChartIDs(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateChartIDs() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if tc.wantErr == nil && tc.wantIDs != nil {
-				if !slices.Equal(tc.chartIDs, tc.wantIDs) {
-					t.Errorf("ValidateChartIDs() normalized chartIDs = %v, want %v", tc.chartIDs, tc.wantIDs)
-				}
-			}
 		})
+	}
+}
+
+func TestValidateChartIDs_DoesNotMutateInputSlice(t *testing.T) {
+	orig := []string{"Valid-1", "Invalid/2", "Valid-3"}
+	input := []string{"Valid-1", "Invalid/2", "Valid-3"}
+	_ = ValidateChartIDs(input)
+	if len(input) != len(orig) {
+		t.Fatalf("ValidateChartIDs mutated input slice length")
+	}
+	for i := range orig {
+		if input[i] != orig[i] {
+			t.Errorf("ValidateChartIDs mutated input slice at index %d: got %q, want %q", i, input[i], orig[i])
+		}
 	}
 }
 
