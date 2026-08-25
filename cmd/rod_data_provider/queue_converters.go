@@ -39,16 +39,74 @@ func buildQueueOverviews(c *cache.KueueCache, rfMap map[string]*kueuev1beta1.Res
 		return nil
 	}
 	clusterQueues := c.ClusterQueues.List()
+	cohortFreeMaps := computeCohortFreeCapacities(clusterQueues, rfMap)
+
 	overviews := make([]*spb.QueueOverview, 0, len(clusterQueues))
 	for _, cq := range clusterQueues {
 		if cq == nil {
 			continue
 		}
-		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap); overview != nil {
+		var cohortFreeMap map[string]float64
+		if cq.Spec.Cohort != "" {
+			cohortFreeMap = cohortFreeMaps[string(cq.Spec.Cohort)]
+		}
+		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap, cohortFreeMap); overview != nil {
 			overviews = append(overviews, overview)
 		}
 	}
 	return overviews
+}
+
+// computeCohortFreeCapacities calculates CohortFree = max(0, Sum(nominalQuotas in Cohort) - Sum(totalUsedCapacity in Cohort))
+// for each resource type across all ClusterQueues in the given slice.
+func computeCohortFreeCapacities(clusterQueues []*kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) map[string]map[string]float64 {
+	cohortNominal := make(map[string]map[string]float64)
+	cohortUsed := make(map[string]map[string]float64)
+
+	for _, cq := range clusterQueues {
+		if cq == nil || cq.Spec.Cohort == "" {
+			continue
+		}
+		cohortName := string(cq.Spec.Cohort)
+		if cohortNominal[cohortName] == nil {
+			cohortNominal[cohortName] = make(map[string]float64)
+			cohortUsed[cohortName] = make(map[string]float64)
+		}
+
+		totalUsedCapacityByResourceType := extractTotalResourceUsageByResourceType(cq.Status, rfMap)
+		for resourceType, used := range totalUsedCapacityByResourceType {
+			cohortUsed[cohortName][resourceType] += used
+		}
+
+		aggregatedQuotas := aggregateClusterQueueNominalAndBorrowingLimits(cq, rfMap)
+		for resourceType, quotaAgg := range aggregatedQuotas.aggregators {
+			if quotaAgg != nil {
+				cohortNominal[cohortName][resourceType] += quotaAgg.nominalQuota
+			}
+		}
+	}
+
+	cohortFreeMap := make(map[string]map[string]float64)
+	for cohortName, nominals := range cohortNominal {
+		cohortFreeMap[cohortName] = make(map[string]float64)
+		allResourceTypes := make(map[string]struct{})
+		for resType := range nominals {
+			allResourceTypes[resType] = struct{}{}
+		}
+		for resType := range cohortUsed[cohortName] {
+			allResourceTypes[resType] = struct{}{}
+		}
+
+		for resType := range allResourceTypes {
+			cohortFree := nominals[resType] - cohortUsed[cohortName][resType]
+			if cohortFree < 0 {
+				cohortFree = 0
+			}
+			cohortFreeMap[cohortName][resType] = cohortFree
+		}
+	}
+
+	return cohortFreeMap
 }
 
 // ResourceQuotaAggregator holds accumulated nominal quotas and borrowing limits for a specific resource type across all flavors.
@@ -68,8 +126,8 @@ type aggregatedClusterQueueQuotas struct {
 // It executes a clear 3-step pipeline:
 //  1. Extract total used capacity per resource type from ClusterQueueStatus (summed across flavors, with accelerator resolution).
 //  2. Aggregate nominal quotas and borrowing limits per resource type from ClusterQueueSpec (summed across flavors, with accelerator resolution).
-//  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type.
-func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) *spb.QueueOverview {
+//  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type (clamping FreeCapacityWithBorrowing to available cohort capacity if present).
+func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor, cohortFreeMap map[string]float64) *spb.QueueOverview {
 	if clusterQueue == nil {
 		return nil
 	}
@@ -85,7 +143,14 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 	for _, resourceType := range aggregatedQuotas.orderedTypes {
 		quotaAggregator := aggregatedQuotas.aggregators[resourceType]
 		usedCapacity := totalUsedCapacityByResourceType[resourceType]
-		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity)
+
+		var cohortFree *float64
+		if clusterQueue.Spec.Cohort != "" && cohortFreeMap != nil {
+			val := cohortFreeMap[resourceType]
+			cohortFree = &val
+		}
+
+		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity, cohortFree)
 		queueCapacities = append(queueCapacities, capacityProto)
 	}
 
@@ -132,7 +197,8 @@ func addFlavorResourceQuotaToAggregator(resourceQuota kueuev1beta1.ResourceQuota
 }
 
 // convertAggregatedQuotaToResourceCapacity combines an aggregated ResourceQuotaAggregator and used capacity into a QueueResourceCapacity proto.
-func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64) *spb.QueueResourceCapacity {
+// If cohortFree is non-nil, FreeCapacityWithBorrowing is capped at *cohortFree (min(LocalFree, CohortFree)).
+func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64, cohortFree *float64) *spb.QueueResourceCapacity {
 	var nominalQuota, borrowingLimit float64
 	if quotaAggregator != nil {
 		nominalQuota = quotaAggregator.nominalQuota
@@ -146,11 +212,15 @@ func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregat
 	if freeCapacityWithBorrowing < 0 {
 		freeCapacityWithBorrowing = 0
 	}
+	if cohortFree != nil {
+		if *cohortFree < freeCapacityWithBorrowing {
+			freeCapacityWithBorrowing = *cohortFree
+		}
+	}
 	return &spb.QueueResourceCapacity{
-		ResourceType:  resourceType,
-		TotalCapacity: nominalQuota,
-		FreeCapacity:  freeCapacity,
-		// TODO: Make sure that FreeCapacityWithBorrowing doesn't go above what is already used within the same cohort
+		ResourceType:              resourceType,
+		TotalCapacity:             nominalQuota,
+		FreeCapacity:              freeCapacity,
 		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}
 }

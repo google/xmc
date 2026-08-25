@@ -128,7 +128,7 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 				nominalQuota:   tt.in.nominalQuota,
 				borrowingLimit: tt.in.borrowingLimit,
 			}
-			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.in.totalUsed)
+			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.in.totalUsed, nil)
 
 			if capMetric.TotalCapacity != tt.want.total {
 				t.Errorf("TotalCapacity = %v, want %v", capMetric.TotalCapacity, tt.want.total)
@@ -143,9 +143,23 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 	}
 
 	t.Run("Nil aggregator safety", func(t *testing.T) {
-		capMetric := convertAggregatedQuotaToResourceCapacity("cpu", nil, 5.0)
+		capMetric := convertAggregatedQuotaToResourceCapacity("cpu", nil, 5.0, nil)
 		if capMetric.TotalCapacity != 0 || capMetric.FreeCapacity != 0 || capMetric.FreeCapacityWithBorrowing != 0 {
 			t.Errorf("convertAggregatedQuotaToResourceCapacity(nil) = %v, want all zero capacities", capMetric)
+		}
+	})
+
+	t.Run("Cohort capacity clamping", func(t *testing.T) {
+		aggregator := &ResourceQuotaAggregator{
+			nominalQuota:   100.0,
+			borrowingLimit: 50.0,
+		}
+		cohortFree := 30.0
+		// LocalFree = (100 + 50) - 20 = 130. CohortFree = 30.
+		// FreeCapacityWithBorrowing should be min(130, 30) = 30.
+		capMetric := convertAggregatedQuotaToResourceCapacity("cpu", aggregator, 20.0, &cohortFree)
+		if capMetric.FreeCapacityWithBorrowing != 30.0 {
+			t.Errorf("FreeCapacityWithBorrowing = %v, want 30.0", capMetric.FreeCapacityWithBorrowing)
 		}
 	})
 }
@@ -245,21 +259,21 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		},
 	}
 
-	overview := buildQueueOverviewFromClusterQueue(cq, rfMap)
+	overview := buildQueueOverviewFromClusterQueue(cq, rfMap, nil)
 	if diff := cmp.Diff(wantOverview, overview, protocmp.Transform()); diff != "" {
 		t.Errorf("buildQueueOverviewFromClusterQueue mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestBuildQueueOverviewFromClusterQueue_NilAndEmpty(t *testing.T) {
-	if got := buildQueueOverviewFromClusterQueue(nil, nil); got != nil {
+	if got := buildQueueOverviewFromClusterQueue(nil, nil, nil); got != nil {
 		t.Errorf("buildQueueOverviewFromClusterQueue(nil) = %v, want nil", got)
 	}
 
 	emptyCQ := &kueuev1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{Name: "empty-cq"},
 	}
-	overview := buildQueueOverviewFromClusterQueue(emptyCQ, nil)
+	overview := buildQueueOverviewFromClusterQueue(emptyCQ, nil, nil)
 	if overview == nil {
 		t.Fatalf("buildQueueOverviewFromClusterQueue(emptyCQ) is nil, want non-nil")
 	}
@@ -335,4 +349,154 @@ func TestBuildQueueOverviews(t *testing.T) {
 			t.Errorf("QueueName = %q, want 'test-cq'", got[0].QueueName)
 		}
 	})
+}
+
+func TestCohortResourceBorrowingCalculation(t *testing.T) {
+	c := cache.NewKueueCache()
+
+	borrowingLimit50 := resource.MustParse("50")
+
+	// cq1: nominal 100, borrowingLimit 50, used 40 (in cohort "shared-cohort")
+	// LocalFree = (100 + 50) - 40 = 110
+	cq1 := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "queue-1"},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			Cohort: "shared-cohort",
+			ResourceGroups: []kueuev1beta1.ResourceGroup{
+				{
+					Flavors: []kueuev1beta1.FlavorQuotas{
+						{
+							Name: "default-flavor",
+							Resources: []kueuev1beta1.ResourceQuota{
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("100"), BorrowingLimit: &borrowingLimit50},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: kueuev1beta1.ClusterQueueStatus{
+			FlavorsReservation: []kueuev1beta1.FlavorUsage{
+				{
+					Name: "default-flavor",
+					Resources: []kueuev1beta1.ResourceUsage{
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("40")},
+					},
+				},
+			},
+		},
+	}
+
+	// cq2: nominal 100, borrowingLimit 50, used 130 (in cohort "shared-cohort", borrowing 30 from cq1)
+	// LocalFree = (100 + 50) - 130 = 20
+	cq2 := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "queue-2"},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			Cohort: "shared-cohort",
+			ResourceGroups: []kueuev1beta1.ResourceGroup{
+				{
+					Flavors: []kueuev1beta1.FlavorQuotas{
+						{
+							Name: "default-flavor",
+							Resources: []kueuev1beta1.ResourceQuota{
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("100"), BorrowingLimit: &borrowingLimit50},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: kueuev1beta1.ClusterQueueStatus{
+			FlavorsReservation: []kueuev1beta1.FlavorUsage{
+				{
+					Name: "default-flavor",
+					Resources: []kueuev1beta1.ResourceUsage{
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("130")},
+					},
+				},
+			},
+		},
+	}
+
+	c.ClusterQueues.Set("queue-1", cq1)
+	c.ClusterQueues.Set("queue-2", cq2)
+
+	// Cohort Total Nominal = 100 + 100 = 200
+	// Cohort Total Used = 40 + 130 = 170
+	// CohortFree = max(0, 200 - 170) = 30
+	// For cq1: LocalFree = 110, CohortFree = 30 => FreeCapacityWithBorrowing = min(110, 30) = 30
+	// For cq2: LocalFree = 20, CohortFree = 30 => FreeCapacityWithBorrowing = min(20, 30) = 20
+
+	overviews := buildQueueOverviews(c, nil)
+	if len(overviews) != 2 {
+		t.Fatalf("buildQueueOverviews returned %d overviews, want 2", len(overviews))
+	}
+
+	overviewMap := make(map[string]*spb.QueueOverview)
+	for _, o := range overviews {
+		overviewMap[o.QueueName] = o
+	}
+
+	cq1Overview := overviewMap["queue-1"]
+	if cq1Overview == nil || len(cq1Overview.QueueCapacity) != 1 {
+		t.Fatalf("cq1 overview missing or invalid: %v", cq1Overview)
+	}
+	if got := cq1Overview.QueueCapacity[0].FreeCapacityWithBorrowing; got != 30.0 {
+		t.Errorf("cq1 FreeCapacityWithBorrowing = %v, want 30.0 (clamped to CohortFree)", got)
+	}
+
+	cq2Overview := overviewMap["queue-2"]
+	if cq2Overview == nil || len(cq2Overview.QueueCapacity) != 1 {
+		t.Fatalf("cq2 overview missing or invalid: %v", cq2Overview)
+	}
+	if got := cq2Overview.QueueCapacity[0].FreeCapacityWithBorrowing; got != 20.0 {
+		t.Errorf("cq2 FreeCapacityWithBorrowing = %v, want 20.0 (limited by LocalFree)", got)
+	}
+}
+
+func TestCohortResourceBorrowingCalculation_NotAllInCohort(t *testing.T) {
+	c := cache.NewKueueCache()
+	borrowingLimit50 := resource.MustParse("50")
+
+	// cqStandalone: not in a cohort (Cohort == "")
+	// Nominal 100, borrowingLimit 50, used 40 => FreeCapacityWithBorrowing = LocalFree = 110
+	cqStandalone := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "queue-standalone"},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			Cohort: "",
+			ResourceGroups: []kueuev1beta1.ResourceGroup{
+				{
+					Flavors: []kueuev1beta1.FlavorQuotas{
+						{
+							Name: "default-flavor",
+							Resources: []kueuev1beta1.ResourceQuota{
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("100"), BorrowingLimit: &borrowingLimit50},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: kueuev1beta1.ClusterQueueStatus{
+			FlavorsReservation: []kueuev1beta1.FlavorUsage{
+				{
+					Name: "default-flavor",
+					Resources: []kueuev1beta1.ResourceUsage{
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("40")},
+					},
+				},
+			},
+		},
+	}
+
+	c.ClusterQueues.Set("queue-standalone", cqStandalone)
+
+	overviews := buildQueueOverviews(c, nil)
+	if len(overviews) != 1 {
+		t.Fatalf("buildQueueOverviews returned %d overviews, want 1", len(overviews))
+	}
+
+	if got := overviews[0].QueueCapacity[0].FreeCapacityWithBorrowing; got != 110.0 {
+		t.Errorf("standalone queue FreeCapacityWithBorrowing = %v, want 110.0 (LocalFree without cohort capping)", got)
+	}
 }
