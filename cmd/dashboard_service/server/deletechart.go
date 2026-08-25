@@ -49,8 +49,16 @@ func (s *Server) DeleteChart(ctx context.Context, req *spb.DeleteChartRequest) (
 		}
 		return nil, status.Errorf(codes.Internal, "failed to get chart: %v", err)
 	}
+	if chart == nil {
+		return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", req.GetName())
+	}
 
-	if err := s.authorizeExperimentWrite(ctx, user, chart.GetXid()); err != nil {
+	xid := chart.GetXid()
+	if xid <= 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", req.GetName(), xid)
+	}
+
+	if err := s.authorizeExperimentWrite(ctx, user, xid); err != nil {
 		return nil, err
 	}
 

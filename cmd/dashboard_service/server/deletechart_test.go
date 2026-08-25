@@ -163,6 +163,38 @@ func TestDeleteChart(t *testing.T) {
 		}
 	})
 
+	t.Run("nil chart returned by repository returns Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+		_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "charts/chart-1"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("Expected code Internal, got %v", status.Code(err))
+		}
+	})
+
+	t.Run("chart with non-positive experiment xid returns FailedPrecondition", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "Chart Missing XID",
+					Xid:   0,
+				}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+		_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "charts/chart-1"})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
+		}
+	})
+
 	t.Run("unauthorized user without writer role returns PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
