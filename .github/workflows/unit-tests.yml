@@ -198,12 +198,12 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: cmd/ui
 
-      - name: 'Install Playwright Browsers'
-        run: npx playwright install --with-deps chromium
-        working-directory: cmd/ui
-
       - name: 'Run Angular UI Unit Tests'
         run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
+
+      - name: 'Install Playwright Browsers'
+        run: npx playwright install --with-deps chromium
         working-directory: cmd/ui
 
       - name: 'Build Angular Application'
