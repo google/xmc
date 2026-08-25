@@ -64,8 +64,16 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	records := make([]*ComponentRecord, 0, len(m.componentsByName))
+	for _, r := range m.componentsByName {
+		records = append(records, r)
+	}
+	if err := ValidateProspectiveDependencies(records, canonicalName, deps); err != nil {
+		return nil, err
+	}
+
 	rec, exists := m.componentsByName[canonicalName]
-	if exists && rec.DeleteTime == nil && rec.State != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+	if exists && !isDeletedRecord(rec) {
 		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
 		return cloneRecord(rec), nil
 	}
@@ -78,13 +86,21 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	return cloneRecord(rec), nil
 }
 
-func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+func validateResourceName(name string) (string, error) {
 	canonicalName := CanonicalComponentName(name)
 	if canonicalName == "" {
 		return "", status.Error(codes.InvalidArgument, "component name is required")
 	}
 	if !IsValidComponentName(canonicalName) {
 		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	return canonicalName, nil
+}
+
+func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
 	}
 	if spec == nil {
 		return "", status.Error(codes.InvalidArgument, "component spec is required")
@@ -140,19 +156,16 @@ func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.Co
 
 // GetComponent retrieves a component record by canonical or full resource name.
 func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return nil, err
 	}
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	rec, exists := m.componentsByName[canonicalName]
-	if !exists || rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
+	if !exists || isDeletedRecord(rec) {
 		return nil, ErrComponentNotFound
 	}
 	return cloneRecord(rec), nil
@@ -221,12 +234,9 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 }
 
 func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return "", status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
 	}
 	if observedGen < 0 {
 		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
@@ -254,22 +264,112 @@ func applyStatusUpdates(rec *ComponentRecord, observedGen int64, state component
 	}
 }
 
-// PrepareDeactivation checks deactivation safety and cascading requirements.
-// Note: To be implemented in subsequent component lifecycle & deactivation tasks.
+// PrepareDeactivation checks deactivation safety, transitions the target and any cascaded dependents to DISABLING.
 func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented in MemoryStore")
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || isDeletedRecord(rec) {
+		return nil, ErrComponentNotFound
+	}
+
+	result, err := EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, minDrainTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	transitionToDisabling(rec, now)
+
+	if requestCascade {
+		for _, depName := range result.CascadedDeactivations {
+			if depRec, ok := m.componentsByName[depName]; ok && !isDeletedRecord(depRec) {
+				transitionToDisabling(depRec, now)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-// Note: To be implemented in subsequent component lifecycle & deactivation tasks.
 func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) error {
-	return status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented in MemoryStore")
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || isDeletedRecord(rec) {
+		return ErrComponentNotFound
+	}
+
+	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		return ErrInvalidStateTransition
+	}
+
+	now := time.Now().UTC()
+	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
+	if rec.Status == nil {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
+	rec.UpdateTime = now
+	rec.Etag = generateEtag(rec)
+	return nil
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-// Note: To be implemented in subsequent component lifecycle & deletion tasks.
 func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
-	return status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented in MemoryStore")
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || isDeletedRecord(rec) {
+		return ErrComponentNotFound
+	}
+
+	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, force); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	rec.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	if rec.Status == nil {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	rec.DeleteTime = &now
+	rec.UpdateTime = now
+	if policy != componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED && rec.Spec != nil {
+		rec.Spec.DeletionPolicy = policy
+	}
+	rec.Etag = generateEtag(rec)
+	return nil
+}
+
+func transitionToDisabling(rec *ComponentRecord, now time.Time) {
+	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
+	if rec.Status == nil {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
+	rec.UpdateTime = now
+	rec.Etag = generateEtag(rec)
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.

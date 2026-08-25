@@ -17,10 +17,13 @@ package cms
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -130,22 +133,46 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}, nil
 }
 
-// PrepareDeactivation evaluates the safety of deactivating a component and calculates drain timeouts.
-// Note: To be implemented in subsequent component lifecycle tasks.
+// PrepareDeactivation evaluates the safety of deactivating a component and initiates draining.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method PrepareDeactivation not implemented")
+
+	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce())
+	if err != nil {
+		return nil, err
+	}
+
+	msg := fmt.Sprintf("Component %s deactivation prepared successfully (drain: %ds)", canonicalName, res.RecommendedDrainSec)
+	if len(res.CascadedDeactivations) > 0 {
+		msg = fmt.Sprintf("Component %s and %d dependent(s) deactivation prepared successfully (drain: %ds)", canonicalName, len(res.CascadedDeactivations), res.RecommendedDrainSec)
+	}
+
+	return &componentspb.PrepareDeactivationResponse{
+		State:                 componentspb.ComponentState_COMPONENT_STATE_DISABLING,
+		DeactivationStartTime: timestamppb.New(time.Now().UTC()),
+		Message:               msg,
+	}, nil
 }
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
-// Note: To be implemented in subsequent component lifecycle tasks.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method CompleteDeactivation not implemented")
+
+	if err := s.store.CompleteDeactivation(ctx, canonicalName); err != nil {
+		return nil, err
+	}
+
+	return &componentspb.CompleteDeactivationResponse{
+		State:          componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+		CompletionTime: timestamppb.New(time.Now().UTC()),
+		Message:        fmt.Sprintf("Component %s deactivation completed successfully", canonicalName),
+	}, nil
 }
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
@@ -171,12 +198,20 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 }
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
-// Note: To be implemented in subsequent component lifecycle tasks.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method ExecuteDeletion not implemented")
+
+	if err := s.store.ExecuteDeletion(ctx, canonicalName, req.GetDeletionPolicy(), req.GetForce()); err != nil {
+		return nil, err
+	}
+
+	return &componentspb.ExecuteDeletionResponse{
+		State:   componentspb.ComponentState_COMPONENT_STATE_DELETED,
+		Message: fmt.Sprintf("Component %s deleted successfully", canonicalName),
+	}, nil
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.

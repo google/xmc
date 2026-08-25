@@ -500,11 +500,6 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
 	}
 
-	// Ensure validate_only did not persist to the store
-	if _, err := ms.GetComponent(ctx, "test-validate-only"); status.Code(err) != codes.NotFound {
-		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
-	}
-
 	// 2. Normal creation test
 	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 		Name: "components/test-comp",
@@ -695,5 +690,174 @@ func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("SetComponentIntent(update_mask non-existent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create root component
+	specRoot := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Root",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-root",
+		Spec: specRoot,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(cms-root) failed: %v", err)
+	}
+
+	// Create dependent component
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-dep",
+		Spec: specDep,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(cms-dep) failed: %v", err)
+	}
+
+	// 1. Prepare deactivation without cascade -> fails with FailedPrecondition
+	_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("PrepareDeactivation(no force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation with force (cascade) -> succeeds
+	resp, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: true,
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation(force) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("GetState() = %v, want DISABLING", resp.GetState())
+	}
+	if resp.GetDeactivationStartTime() == nil {
+		t.Error("GetDeactivationStartTime() is nil, want timestamp")
+	}
+	if resp.GetMessage() == "" {
+		t.Error("GetMessage() is empty, want informative message")
+	}
+
+	// 3. Nonexistent component -> NotFound
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("PrepareDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Deact test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-deact",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Complete without prepare -> FailedPrecondition
+	_, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/cms-deact",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(unprepared) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare first
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/cms-deact",
+	}); err != nil {
+		t.Fatalf("PrepareDeactivation failed: %v", err)
+	}
+
+	// 3. Complete deactivation -> succeeds
+	resp, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/cms-deact",
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("GetState() = %v, want DISABLED", resp.GetState())
+	}
+	if resp.GetCompletionTime() == nil {
+		t.Error("GetCompletionTime() is nil, want timestamp")
+	}
+
+	// 4. Nonexistent component -> NotFound
+	_, err = server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create protected component
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Protected",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-prot", spec, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Delete protected without force -> FailedPrecondition
+	_, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-prot",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(protected, no force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Delete protected with force -> succeeds
+	resp, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-prot",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(protected, force) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
+	}
+
+	// 3. Nonexistent component -> NotFound
+	_, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
 	}
 }
