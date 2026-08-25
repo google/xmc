@@ -96,14 +96,10 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	specToSet := req.GetSpec()
 	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
 		existingRec, err := s.store.GetComponent(ctx, canonicalName)
-		if err != nil && status.Code(err) != codes.NotFound {
+		if err != nil {
 			return nil, err
 		}
-		var existingSpec *componentspb.ComponentSpec
-		if err == nil && existingRec != nil {
-			existingSpec = existingRec.Spec
-		}
-		specToSet = store.ApplySpecUpdateMask(existingSpec, req.GetSpec(), req.GetUpdateMask().GetPaths())
+		specToSet = store.ApplySpecUpdateMask(existingRec.Spec, req.GetSpec(), req.GetUpdateMask().GetPaths())
 	}
 
 	if version := specToSet.GetVersion(); version != "" {
