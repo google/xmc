@@ -44,6 +44,10 @@ const BASE_SCREENSHOT_STYLES = `
   [class*="scaffolding"] {
     box-sizing: border-box !important;
   }
+  mat-sidenav,
+  xmc-header {
+    display: none !important;
+  }
 `;
 
 export async function handleUserAuthRoute(route: Route) {
