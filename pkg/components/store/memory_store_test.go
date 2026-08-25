@@ -269,7 +269,8 @@ func TestMemoryStore_GetComponent_SoftDeleted(t *testing.T) {
 	ms := NewMemoryStore()
 
 	spec := sampleSpec("Soft delete test")
-	if _, err := ms.SetComponentIntent(ctx, "comp-deleted", spec, nil, 0); err != nil {
+	rec, err := ms.SetComponentIntent(ctx, "comp-deleted", spec, nil, 0)
+	if err != nil {
 		t.Fatalf("SetComponentIntent() failed: %v", err)
 	}
 
@@ -280,9 +281,142 @@ func TestMemoryStore_GetComponent_SoftDeleted(t *testing.T) {
 	ms.componentsByName["comp-deleted"].State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	ms.mu.Unlock()
 
-	_, err := ms.GetComponent(ctx, "comp-deleted")
+	_, err = ms.GetComponent(ctx, "comp-deleted")
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("GetComponent(deleted) got code %v, want NotFound", status.Code(err))
+	}
+
+	_, err = ms.GetComponentByID(ctx, rec.ComponentID)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponentByID(deleted) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_GetComponentByID(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("ByID test")
+	created, err := ms.SetComponentIntent(ctx, "comp-id-test", spec, nil, 0)
+	if err != nil {
+		t.Fatalf("SetComponentIntent() failed: %v", err)
+	}
+
+	rec, err := ms.GetComponentByID(ctx, created.ComponentID)
+	if err != nil {
+		t.Fatalf("GetComponentByID(%d) unexpected error: %v", created.ComponentID, err)
+	}
+	if rec.Name != "comp-id-test" {
+		t.Errorf("Name = %q, want 'comp-id-test'", rec.Name)
+	}
+
+	// Nonexistent ID
+	_, err = ms.GetComponentByID(ctx, 99999)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponentByID(99999) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Invalid IDs
+	for _, invalidID := range []int64{0, -1, -100} {
+		_, err = ms.GetComponentByID(ctx, invalidID)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetComponentByID(%d) got code %v, want InvalidArgument", invalidID, status.Code(err))
+		}
+	}
+}
+
+func TestMemoryStore_ListComponents(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	// Empty list
+	emptyList, err := ms.ListComponents(ctx)
+	if err != nil {
+		t.Fatalf("ListComponents() on empty store failed: %v", err)
+	}
+	if len(emptyList) != 0 {
+		t.Errorf("ListComponents() len = %d, want 0", len(emptyList))
+	}
+
+	// Populate multiple components out of alphabetical order
+	names := []string{"comp-c", "comp-a", "comp-b"}
+	for _, n := range names {
+		if _, err := ms.SetComponentIntent(ctx, n, sampleSpec(n), nil, 0); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", n, err)
+		}
+	}
+
+	list, err := ms.ListComponents(ctx)
+	if err != nil {
+		t.Fatalf("ListComponents() failed: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("ListComponents() returned %d items, want 3", len(list))
+	}
+
+	// Verify alphabetical order
+	expectedOrder := []string{"comp-a", "comp-b", "comp-c"}
+	for i, exp := range expectedOrder {
+		if list[i].Name != exp {
+			t.Errorf("list[%d].Name = %q, want %q", i, list[i].Name, exp)
+		}
+	}
+}
+
+func TestMemoryStore_UpdateObservedGeneration(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("Observed gen test")
+	_, err := ms.SetComponentIntent(ctx, "comp-obs", spec, nil, 0)
+	if err != nil {
+		t.Fatalf("SetComponentIntent() failed: %v", err)
+	}
+
+	access := &componentspb.ComponentAccessStatus{
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ClusterName: "gke-cluster-1",
+			Namespace:   "default",
+			ServiceName: "comp-obs-svc",
+			Port:        8080,
+		},
+		Ready: true,
+	}
+
+	rec, err := ms.UpdateObservedGeneration(ctx, "comp-obs", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciliation successful")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration() unexpected error: %v", err)
+	}
+
+	if rec.ObservedGeneration == nil || *rec.ObservedGeneration != 1 {
+		t.Errorf("ObservedGeneration = %v, want 1", rec.ObservedGeneration)
+	}
+	if rec.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("State = %v, want ENABLED", rec.State)
+	}
+	if rec.Status == nil {
+		t.Fatal("Status is nil, expected non-nil")
+	}
+	if rec.Status.GetState() != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("Status.State = %v, want ENABLED", rec.Status.GetState())
+	}
+	if rec.Status.GetHealthMessage() != "Reconciliation successful" {
+		t.Errorf("Status.HealthMessage = %q, want 'Reconciliation successful'", rec.Status.GetHealthMessage())
+	}
+	if rec.Status.GetCoordinates().GetServiceName() != "comp-obs-svc" {
+		t.Errorf("Status.Coordinates.ServiceName = %q, want 'comp-obs-svc'", rec.Status.GetCoordinates().GetServiceName())
+	}
+
+	// Update on nonexistent component
+	_, err = ms.UpdateObservedGeneration(ctx, "nonexistent", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("UpdateObservedGeneration(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Negative observed generation
+	_, err = ms.UpdateObservedGeneration(ctx, "comp-obs", -1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("UpdateObservedGeneration(negative) got code %v, want InvalidArgument", status.Code(err))
 	}
 }
 
@@ -334,15 +468,22 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 			compName := fmt.Sprintf("comp-%d", gid%10)
 
 			for op := 0; op < opsPerGoroutine; op++ {
-				if op%2 == 0 {
+				switch op % 5 {
+				case 0:
 					spec := &componentspb.ComponentSpec{
 						Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 						Version:     "v1.0.0",
 						Description: fmt.Sprintf("goroutine %d op %d", gid, op),
 					}
 					_, _ = ms.SetComponentIntent(ctx, compName, spec, map[string]string{"g": fmt.Sprintf("%d", gid)}, 0)
-				} else {
+				case 1:
 					_, _ = ms.GetComponent(ctx, compName)
+				case 2:
+					_, _ = ms.GetComponentByID(ctx, int64((gid%10)+1))
+				case 3:
+					_, _ = ms.ListComponents(ctx)
+				case 4:
+					_, _ = ms.UpdateObservedGeneration(ctx, compName, int64(op), nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK")
 				}
 			}
 		}(g)
@@ -350,16 +491,12 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 
 	wg.Wait()
 
-	// Verify all components exist
-	for i := 0; i < 10; i++ {
-		compName := fmt.Sprintf("comp-%d", i)
-		rec, err := ms.GetComponent(ctx, compName)
-		if err != nil {
-			t.Errorf("GetComponent(%s) failed after concurrent stress: %v", compName, err)
-		}
-		if rec == nil {
-			t.Errorf("GetComponent(%s) returned nil record", compName)
-		}
+	list, err := ms.ListComponents(ctx)
+	if err != nil {
+		t.Fatalf("ListComponents() after concurrent stress failed: %v", err)
+	}
+	if len(list) == 0 {
+		t.Error("ListComponents() returned 0 components after concurrent writes")
 	}
 }
 
@@ -367,15 +504,6 @@ func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, err := ms.GetComponentByID(ctx, 1); status.Code(err) != codes.Unimplemented {
-		t.Errorf("GetComponentByID got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := ms.ListComponents(ctx); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ListComponents got code %v, want Unimplemented", status.Code(err))
-	}
-	if _, err := ms.UpdateObservedGeneration(ctx, "comp-1", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); status.Code(err) != codes.Unimplemented {
-		t.Errorf("UpdateObservedGeneration got code %v, want Unimplemented", status.Code(err))
-	}
 	if _, err := ms.PrepareDeactivation(ctx, "comp-1", false); status.Code(err) != codes.Unimplemented {
 		t.Errorf("PrepareDeactivation got code %v, want Unimplemented", status.Code(err))
 	}
