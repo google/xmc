@@ -84,7 +84,7 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "0s" } }`), &compZero); err != nil || compZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
 			t.Errorf("zero seconds failed: %+v", compZero.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: null, gracePeriod: "~" } }`), &compNull); err != nil || compNull.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compNull.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: null, gracePeriod: "~" } }`), &compNull); err != nil || compNull.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compNull.Spec.LifecycleControl.GracePeriodSeconds != nil {
 			t.Errorf("null duration failed: %+v", compNull.Spec.LifecycleControl)
 		}
 		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: 0, drainingTimeout: "5m" } }`), &compExplicitZero); err != nil || compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
@@ -96,6 +96,10 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		var compOmitted linter.ComponentManifest
 		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { forceDeletion: true } }`), &compOmitted); err != nil || compOmitted.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compOmitted.Spec.LifecycleControl.GracePeriodSeconds != nil {
 			t.Errorf("omitted fields should be nil: %+v", compOmitted.Spec.LifecycleControl)
+		}
+		var compNullModern linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: null, gracePeriodSeconds: ~ } }`), &compNullModern); err != nil || compNullModern.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compNullModern.Spec.LifecycleControl.GracePeriodSeconds != nil {
+			t.Errorf("modern null duration fields should be nil: %+v", compNullModern.Spec.LifecycleControl)
 		}
 	})
 
@@ -126,6 +130,7 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 			`spec: { dependencies: { comp-a: [nested, list] } }`,
 			`spec: { dependencies: "scalar-string" }`,
 			`spec: { dependencies: [ { name: [ nested ] } ] }`,
+			"spec:\n  dependencies:\n    ? [invalid_non_scalar_key]\n    : \">=1.0.0\"\n",
 		} {
 			var comp linter.ComponentManifest
 			if err := yaml.Unmarshal([]byte(s), &comp); err == nil {

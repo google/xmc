@@ -91,7 +91,7 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.DrainTimeoutSeconds = &sec
+		c.DrainTimeoutSeconds = sec
 	}
 
 	graceNode := firstNonEmptyNode(&raw.GracePeriodSeconds, &raw.GracePeriod)
@@ -100,7 +100,7 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.GracePeriodSeconds = &sec
+		c.GracePeriodSeconds = sec
 	}
 	return nil
 }
@@ -114,27 +114,27 @@ func firstNonEmptyNode(nodes ...*yaml.Node) *yaml.Node {
 	return nil
 }
 
-func parseDurationNode(node *yaml.Node, fieldName string) (int, error) {
+func parseDurationNode(node *yaml.Node, fieldName string) (*int, error) {
 	if node == nil || node.Kind == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	for node.Kind == yaml.AliasNode && node.Alias != nil {
 		node = node.Alias
 	}
 	if node.Tag == "!!null" || node.Value == "~" || node.Value == "null" {
-		return 0, nil
+		return nil, nil
 	}
 	if node.Kind != yaml.ScalarNode {
-		return 0, fmt.Errorf("%s must be a scalar value", fieldName)
+		return nil, fmt.Errorf("%s must be a scalar value", fieldName)
 	}
 	if node.Value == "" {
-		return 0, nil
+		return nil, nil
 	}
 	sec, err := parseDurationSeconds(node.Value)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s %q: %w", fieldName, node.Value, err)
+		return nil, fmt.Errorf("failed to parse %s %q: %w", fieldName, node.Value, err)
 	}
-	return sec, nil
+	return &sec, nil
 }
 
 func parseDurationSeconds(s string) (int, error) {
@@ -233,6 +233,9 @@ func decodeMappingDependency(keyNode, valNode *yaml.Node) (*ComponentDependencyR
 	}
 	for valNode.Kind == yaml.AliasNode && valNode.Alias != nil {
 		valNode = valNode.Alias
+	}
+	if keyNode.Kind != yaml.ScalarNode {
+		return nil, fmt.Errorf("invalid dependency name: key must be a scalar")
 	}
 	dep := &ComponentDependencyRef{Name: keyNode.Value}
 	if valNode.Tag == "!!null" || valNode.Value == "~" || valNode.Value == "null" {
