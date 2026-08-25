@@ -174,6 +174,12 @@ class DashboardClientTest(unittest.TestCase):
                 self.client.create_charts([bad])
         self.mock_stub.CreateChart.assert_not_called()
 
+    def test_create_charts_rejects_a_none_element(self) -> None:
+        # A None must fail the same way create_chart's own guard does, rather than as
+        # an AttributeError from reading .xid off it.
+        with self.assertRaises(ValueError):
+            self.client.create_charts([None])  # type: ignore[list-item]
+
     def test_get_chart(self) -> None:
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
         self.mock_stub.GetChart.return_value = chart

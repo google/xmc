@@ -272,11 +272,15 @@ class DashboardClient:
             The created charts, in the order supplied.
 
         Raises:
-            ValueError: If a chart is missing a positive xid or wid, since the parent
-                work unit cannot be derived without both.
+            ValueError: If a chart is None, or is missing a positive xid or wid, since
+                the parent work unit cannot be derived without both.
         """
         created: list[messages_pb2.Chart] = []
         for chart in charts:
+            # Guarded explicitly so a None in the sequence surfaces as the same
+            # ValueError create_chart raises, not an AttributeError from chart.xid.
+            if chart is None:
+                raise ValueError("chart message is required and cannot be None")
             if chart.xid <= 0 or chart.wid <= 0:
                 raise ValueError(
                     f"chart {chart.name or '<unnamed>'!r} needs a positive xid and wid to "

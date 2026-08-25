@@ -58,7 +58,14 @@ def chart_id_from_name(name: str) -> str:
 
     CreateChart returns a chart whose name is
     'experiments/{xid}/workUnits/{wid}/charts/{chart_id}'; a dashboard needs only the
-    trailing '{chart_id}'.
+    trailing '{chart_id}'. The other two Chart patterns, 'charts/{chart_id}' and
+    'dashboards/{dashboard}/charts/{chart_id}', are accepted too.
+
+    The name must actually identify a chart. Taking the trailing segment on its own
+    would turn a work unit name into a plausible-looking ID — 'experiments/1001/
+    workUnits/1' would yield '1' — that the server then resolves to nothing, or to the
+    wrong chart. Requiring the 'charts' collection segment rejects that at the call
+    site instead.
 
     Args:
         name: Full chart resource name.
@@ -67,16 +74,20 @@ def chart_id_from_name(name: str) -> str:
         The trailing chart ID segment.
 
     Raises:
-        ValueError: If name is blank or yields an empty trailing segment.
+        ValueError: If name is blank or does not name a chart.
     """
     if not name or not name.strip():
         raise ValueError("chart resource name is required and cannot be blank")
     # rstrip first: a trailing slash would otherwise yield an empty ID that only fails
     # later, at the server, with a message pointing nowhere near the real cause.
-    chart_id = name.rstrip("/").split("/")[-1]
-    if not chart_id:
-        raise ValueError(f"could not derive a chart ID from resource name {name!r}")
-    return chart_id
+    segments = name.strip().rstrip("/").split("/")
+    # Match on the collection segment rather than a leading '/charts/', so the
+    # top-level 'charts/{chart_id}' pattern is not rejected for lacking a parent.
+    if len(segments) < 2 or segments[-2] != "charts" or not segments[-1]:
+        raise ValueError(
+            f"{name!r} is not a chart resource name: expected a trailing 'charts/<chart_id>'"
+        )
+    return segments[-1]
 
 
 def _validate_plot_args(plot_id: str, metrics: Sequence[str]) -> None:

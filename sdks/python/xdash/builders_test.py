@@ -204,6 +204,30 @@ class BuildersTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 chart_id_from_name(blank)
 
+    def test_chart_id_from_name_accepts_every_chart_pattern(self) -> None:
+        # All three patterns the Chart resource declares, including the top-level one
+        # that has no parent collection before "charts".
+        for name in (
+            "experiments/1001/workUnits/1/charts/c1",
+            "charts/c1",
+            "dashboards/d1/charts/c1",
+        ):
+            self.assertEqual(chart_id_from_name(name), "c1")
+
+    def test_chart_id_from_name_rejects_names_that_are_not_charts(self) -> None:
+        for name in (
+            # Would silently yield "1" if only the trailing segment were taken.
+            "experiments/1001/workUnits/1",
+            # Would silently yield "charts", the collection name, not a chart ID.
+            "experiments/1001/workUnits/1/charts",
+            "experiments/1001/workUnits/1/charts/",
+            "charts",
+            "c1",
+        ):
+            with self.assertRaises(ValueError, msg=name) as cm:
+                chart_id_from_name(name)
+            self.assertIn("not a chart resource name", str(cm.exception))
+
     def test_validate_chart_id_strips_surrounding_whitespace(self) -> None:
         self.assertEqual(validate_chart_id("  c1  "), "c1")
 
