@@ -896,11 +896,32 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "valid_request",
+			name: "valid_root_chart",
+			req: &spb.DeleteChartRequest{
+				Name: "charts/chart-1",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_root_chart_custom_id",
+			req: &spb.DeleteChartRequest{
+				Name: "charts/custom-chart-123",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_dashboard_chart_name",
 			req: &spb.DeleteChartRequest{
 				Name: "dashboards/dash-1/charts/chart-1",
 			},
-			wantErr: nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_work_unit_chart_name",
+			req: &spb.DeleteChartRequest{
+				Name: "experiments/1001/workUnits/123/charts/chart-1",
+			},
+			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
@@ -918,6 +939,20 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 			name: "invalid_name",
 			req: &spb.DeleteChartRequest{
 				Name: "invalid-name",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_whitespace_name",
+			req: &spb.DeleteChartRequest{
+				Name: "charts/   ",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_empty_chart_id",
+			req: &spb.DeleteChartRequest{
+				Name: "charts/",
 			},
 			wantErr: status.ErrInvalidArgument,
 		},
