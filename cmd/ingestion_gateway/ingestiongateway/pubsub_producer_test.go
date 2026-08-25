@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/apiv1/pubsubpb"
 	"cloud.google.com/go/pubsub/pstest"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/api/option"
@@ -185,6 +186,67 @@ func TestPubSubProducer_ProduceResumesPublishAfterFailure(t *testing.T) {
 	if err := produceAndWait(t, producer, &MetricRecord{Topic: testTopicID, Key: key, Value: []byte("second")}); err != nil {
 		t.Fatalf("publishing to a previously failed ordering key must succeed after ResumePublish, got: %v", err)
 	}
+}
+
+// TestPubSubProducer_ProduceResumesPublishAfterCallerCancels covers the harder half of the
+// ordering-key wedge. A client that disconnects mid-request cancels the context the promise waits
+// on, so the producer learns of a cancellation while the publish is still in flight. Resuming on
+// that alone is a no-op, and the failure that arrives afterwards would suspend the key for good.
+func TestPubSubProducer_ProduceResumesPublishAfterCallerCancels(t *testing.T) {
+	producer, srv := newFakePubSubProducer(context.Background(), t, testTopicID, nil)
+
+	// Every response is queued explicitly. Leaving the fake on auto-response would let it answer
+	// the in-flight publish successfully before the injected failure is queued, and the ordering
+	// key would never be suspended at all.
+	srv.SetAutoPublishResponse(false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	key := FormatCompositeKey(101, 1)
+	done := make(chan error, 1)
+	producer.Produce(ctx, &MetricRecord{Topic: testTopicID, Key: key, Value: []byte("first")}, func(_ *MetricRecord, err error) {
+		done <- err
+	})
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected the promise to report the caller's cancellation, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for the publish promise")
+	}
+
+	// Only now does the in-flight publish fail, suspending the ordering key. InvalidArgument is
+	// outside the publisher's retry set, so it consumes exactly this one response and the success
+	// queued behind it is left for the first probe that finds the key resumed.
+	srv.AddPublishResponse(nil, status.Error(codes.InvalidArgument, "injected publish failure"))
+	srv.AddPublishResponse(&pubsubpb.PublishResponse{MessageIds: []string{"resumed"}}, nil)
+
+	waitUntilOrderingKeyPublishable(t, producer, key)
+}
+
+// waitUntilOrderingKeyPublishable polls until key accepts a publish again. The resume runs on a
+// goroutine detached from the cancelled request, so it is not ordered against the caller.
+//
+// The probe deliberately goes through topic.Publish rather than PubSubProducer.Produce: Produce
+// resumes the key itself on any error, which would heal the wedge the poll is trying to observe.
+func waitUntilOrderingKeyPublishable(t *testing.T, producer *PubSubProducer, key []byte) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		result := producer.topic.Publish(context.Background(), &pubsub.Message{
+			Data:        []byte("second"),
+			OrderingKey: string(key),
+		})
+		if _, lastErr = result.Get(context.Background()); lastErr == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("ordering key %q was never resumed after the detached publish failure, last error: %v", key, lastErr)
 }
 
 func TestPubSubProducer_ProduceRecordsTelemetry(t *testing.T) {
