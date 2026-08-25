@@ -60,6 +60,7 @@ class TestResolveTestScope(unittest.TestCase):
         # Pure doc file
         res_doc = classify_modified_files(["README.md", "docs/guide.md"])
         self.assertFalse(res_doc["has_core_infra"])
+        self.assertFalse(res_doc["has_workflow"])
         self.assertFalse(res_doc["has_ui"])
         self.assertFalse(res_doc["has_backend"])
 
@@ -69,6 +70,13 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(res["has_core_infra"])
         self.assertTrue(res["has_ui"])
         self.assertTrue(res["has_backend"])
+
+        # Workflow file
+        res_wf = classify_modified_files([".github/workflows/unit-tests.yml"])
+        self.assertFalse(res_wf["has_core_infra"])
+        self.assertTrue(res_wf["has_workflow"])
+        self.assertTrue(res_wf["has_ui"])
+        self.assertTrue(res_wf["has_backend"])
 
     def test_resolve_test_scope_ui_only(self):
         scope = resolve_test_scope(
@@ -113,6 +121,14 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertTrue(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "all")
+
+    def test_resolve_test_scope_workflow_file_modified(self):
+        scope = resolve_test_scope([".github/workflows/unit-tests.yml"], use_rdeps=False)
+        self.assertTrue(scope["run_backend"])
+        self.assertTrue(scope["run_ui"])
+        self.assertEqual(scope["backend_mode"], "all")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["reason"], "workflow file modified")
 
     def test_resolve_test_scope_main_branch_push(self):
         scope = resolve_test_scope(
