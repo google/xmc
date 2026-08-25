@@ -252,14 +252,21 @@ func validateSingleRequiredCRD(filePath string, line int, compName, crd string, 
 		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("empty requiredCRD in platform rule for component %q", compName))
 		return
 	}
-	if !strings.Contains(trimmed, ".") {
+	parts := strings.Split(trimmed, ".")
+	if len(parts) < 2 {
 		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must be in <plural>.<group> format", trimmed, compName))
 		return
 	}
-	for _, r := range trimmed {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
-			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must contain only lowercase alphanumeric characters, '-' or '.'", trimmed, compName))
+	for _, part := range parts {
+		if part == "" || strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
+			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segments must be non-empty and cannot start or end with '-'", trimmed, compName))
 			return
+		}
+		for _, r := range part {
+			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+				res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segments must contain only lowercase alphanumeric characters or '-'", trimmed, compName))
+				return
+			}
 		}
 	}
 }

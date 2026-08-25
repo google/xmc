@@ -882,6 +882,26 @@ spec:
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
 		},
+		{
+			name: "invalid requiredCRD with leading dot or trailing hyphen",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{".invalid.group", "jobsets.-k8s.io", "foo.bar_baz"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
 	}
 
 	for _, tc := range tests {
