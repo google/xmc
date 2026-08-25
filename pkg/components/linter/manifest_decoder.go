@@ -90,13 +90,13 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.DrainTimeoutSeconds = sec
-	} else {
+		c.DrainTimeoutSeconds = &sec
+	} else if raw.DrainingTimeout.Kind != 0 {
 		sec, err := parseDurationNode(&raw.DrainingTimeout, "drainingTimeout")
 		if err != nil {
 			return err
 		}
-		c.DrainTimeoutSeconds = sec
+		c.DrainTimeoutSeconds = &sec
 	}
 
 	if raw.GracePeriodSeconds.Kind != 0 {
@@ -104,13 +104,13 @@ func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.GracePeriodSeconds = sec
-	} else {
+		c.GracePeriodSeconds = &sec
+	} else if raw.GracePeriod.Kind != 0 {
 		sec, err := parseDurationNode(&raw.GracePeriod, "gracePeriod")
 		if err != nil {
 			return err
 		}
-		c.GracePeriodSeconds = sec
+		c.GracePeriodSeconds = &sec
 	}
 	return nil
 }
@@ -223,6 +223,9 @@ func (s *ComponentManifestSpec) decodeDependenciesMap(node *yaml.Node) error {
 }
 
 func decodeMappingDependency(keyNode, valNode *yaml.Node) (*ComponentDependencyRef, error) {
+	if keyNode == nil || valNode == nil {
+		return nil, fmt.Errorf("invalid mapping dependency: key or value node is nil")
+	}
 	for keyNode.Kind == yaml.AliasNode && keyNode.Alias != nil {
 		keyNode = keyNode.Alias
 	}

@@ -67,8 +67,8 @@ type ComponentWrapperRef struct {
 
 // ComponentLifecycleCtrl defines lifecycle timeouts and drain control.
 type ComponentLifecycleCtrl struct {
-	DrainTimeoutSeconds int  `yaml:"drainTimeoutSeconds,omitempty" json:"drainTimeoutSeconds,omitempty"`
-	GracePeriodSeconds  int  `yaml:"gracePeriodSeconds,omitempty" json:"gracePeriodSeconds,omitempty"`
+	DrainTimeoutSeconds *int `yaml:"drainTimeoutSeconds,omitempty" json:"drainTimeoutSeconds,omitempty"`
+	GracePeriodSeconds  *int `yaml:"gracePeriodSeconds,omitempty" json:"gracePeriodSeconds,omitempty"`
 	ForceDeletion       bool `yaml:"forceDeletion,omitempty" json:"forceDeletion,omitempty"`
 }
 

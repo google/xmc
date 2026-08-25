@@ -63,23 +63,27 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 	t.Run("unmarshal lifecycleControl durations", func(t *testing.T) {
 		t.Parallel()
 		var comp, compMs, compZero, compNull, compExplicitZero, compStringFields linter.ComponentManifest
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "5m", gracePeriod: "30", forceDeletion: true } }`), &comp); err != nil || comp.Spec.LifecycleControl.DrainTimeoutSeconds != 300 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "5m", gracePeriod: "30", forceDeletion: true } }`), &comp); err != nil || comp.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *comp.Spec.LifecycleControl.DrainTimeoutSeconds != 300 {
 			t.Errorf("lifecycleControl mismatch: %+v", comp.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "500ms" } }`), &compMs); err != nil || compMs.Spec.LifecycleControl.DrainTimeoutSeconds != 1 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "500ms" } }`), &compMs); err != nil || compMs.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compMs.Spec.LifecycleControl.DrainTimeoutSeconds != 1 {
 			t.Errorf("sub-second round failed: %+v", compMs.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "0s" } }`), &compZero); err != nil || compZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "0s" } }`), &compZero); err != nil || compZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
 			t.Errorf("zero seconds failed: %+v", compZero.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: null, gracePeriod: "~" } }`), &compNull); err != nil || compNull.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: null, gracePeriod: "~" } }`), &compNull); err != nil || compNull.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compNull.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
 			t.Errorf("null duration failed: %+v", compNull.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: 0, drainingTimeout: "5m" } }`), &compExplicitZero); err != nil || compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: 0, drainingTimeout: "5m" } }`), &compExplicitZero); err != nil || compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
 			t.Errorf("explicit zero timeout failed: %+v", compExplicitZero.Spec.LifecycleControl)
 		}
-		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: "60s", gracePeriodSeconds: "30s" } }`), &compStringFields); err != nil || compStringFields.Spec.LifecycleControl.DrainTimeoutSeconds != 60 || compStringFields.Spec.LifecycleControl.GracePeriodSeconds != 30 {
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: "60s", gracePeriodSeconds: "30s" } }`), &compStringFields); err != nil || compStringFields.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compStringFields.Spec.LifecycleControl.DrainTimeoutSeconds != 60 || compStringFields.Spec.LifecycleControl.GracePeriodSeconds == nil || *compStringFields.Spec.LifecycleControl.GracePeriodSeconds != 30 {
 			t.Errorf("string fields parsing failed: %+v", compStringFields.Spec.LifecycleControl)
+		}
+		var compOmitted linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { forceDeletion: true } }`), &compOmitted); err != nil || compOmitted.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compOmitted.Spec.LifecycleControl.GracePeriodSeconds != nil {
+			t.Errorf("omitted fields should be nil: %+v", compOmitted.Spec.LifecycleControl)
 		}
 	})
 
@@ -122,7 +126,7 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		t.Parallel()
 		rawYAML := "shared_dep: &cert_dep { name: cert-manager, version: \">=1.0.0\" }\nshared_key: &dep_key \"kueue\"\nshared_timeout: &timeout \"60s\"\nspec:\n  dependencies:\n    - *cert_dep\n  lifecycleControl: { drainingTimeout: *timeout }\n"
 		var comp linter.ComponentManifest
-		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil || len(comp.Spec.Dependencies) != 1 || comp.Spec.LifecycleControl.DrainTimeoutSeconds != 60 {
+		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil || len(comp.Spec.Dependencies) != 1 || comp.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *comp.Spec.LifecycleControl.DrainTimeoutSeconds != 60 {
 			t.Fatalf("alias decoding failed: %v", err)
 		}
 
@@ -130,6 +134,40 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		var compMap linter.ComponentManifest
 		if err := yaml.Unmarshal([]byte(mapYAML), &compMap); err != nil || len(compMap.Spec.Dependencies) != 1 || compMap.Spec.Dependencies[0].Name != "kueue" {
 			t.Fatalf("mapping key alias decoding failed: %v", err)
+		}
+	})
+
+	t.Run("unmarshal lifecycleControl invalid drain and grace durations", func(t *testing.T) {
+		t.Parallel()
+		for _, s := range []string{
+			`spec: { lifecycleControl: { drainTimeoutSeconds: "invalid" } }`,
+			`spec: { lifecycleControl: { gracePeriodSeconds: "invalid" } }`,
+			`spec: { lifecycleControl: { drainingTimeout: "" } }`,
+			`spec: { dependencies: [ [ nested ] ] }`,
+			`spec: { dependencies: { cert-manager: { version: [1, 2] } } }`,
+		} {
+			var comp linter.ComponentManifest
+			if err := yaml.Unmarshal([]byte(s), &comp); err == nil && s != `spec: { lifecycleControl: { drainingTimeout: "" } }` {
+				t.Errorf("expected error for %s", s)
+			}
+		}
+	})
+
+	t.Run("unmarshal dependency reference direct and alias", func(t *testing.T) {
+		t.Parallel()
+		var dep linter.ComponentDependencyRef
+		if err := yaml.Unmarshal([]byte(`cert-manager`), &dep); err != nil || dep.Name != "cert-manager" {
+			t.Errorf("failed scalar unmarshal: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(`[nested]`), &dep); err == nil {
+			t.Errorf("expected error for sequence dependency")
+		}
+		aliasYAML := "alias: &ref\n  name: kueue\n  version: \">=1.0.0\"\ndep:\n  *ref\n"
+		var wrapper struct {
+			Dep linter.ComponentDependencyRef `yaml:"dep"`
+		}
+		if err := yaml.Unmarshal([]byte(aliasYAML), &wrapper); err != nil || wrapper.Dep.Name != "kueue" {
+			t.Errorf("alias unmarshal failed: %v, got: %+v", err, wrapper.Dep)
 		}
 	})
 }
