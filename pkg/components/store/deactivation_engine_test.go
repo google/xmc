@@ -207,6 +207,17 @@ func TestValidateDeletionSafety(t *testing.T) {
 			State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 			Dependencies: []string{"comp-with-dep"},
 		},
+		"comp-with-protected-dep": {
+			Name:  "comp-with-protected-dep",
+			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		"dep-protected-child": {
+			Name:         "dep-protected-child",
+			State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			Dependencies: []string{"comp-with-protected-dep"},
+			Labels:       map[string]string{"xmc.dev/deletion-protection": "true"},
+		},
+		"nil-entry": nil,
 	}
 
 	// 1. Safe deletion
@@ -236,12 +247,29 @@ func TestValidateDeletionSafety(t *testing.T) {
 		t.Errorf("ValidateDeletionSafety(with-dep, cascading, force=false) unexpected error: %v", err)
 	}
 
-	// 6. Component with active dependents with force -> success
+	// 6. Cascading deletion when an active dependent is deletion-protected -> ErrDeletionProtected
+	err = ValidateDeletionSafety(components, "comp-with-protected-dep", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ValidateDeletionSafety(cascading with protected dependent, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 7. Cascading deletion of protected dependent with force -> success
+	if err := ValidateDeletionSafety(components, "comp-with-protected-dep", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Errorf("ValidateDeletionSafety(cascading with protected dependent, force=true) unexpected error: %v", err)
+	}
+
+	// 8. Component with active dependents with force -> success
 	if err := ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
 		t.Errorf("ValidateDeletionSafety(with-dep, force=true) unexpected error: %v", err)
 	}
 
-	// 7. Nonexistent component -> ErrComponentNotFound
+	// 9. Nil map entry -> ErrComponentNotFound
+	err = ValidateDeletionSafety(components, "nil-entry", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ValidateDeletionSafety(nil-entry) got code %v, want NotFound", status.Code(err))
+	}
+
+	// 10. Nonexistent component -> ErrComponentNotFound
 	err = ValidateDeletionSafety(components, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ValidateDeletionSafety(nonexistent) got code %v, want NotFound", status.Code(err))

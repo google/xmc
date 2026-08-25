@@ -245,6 +245,9 @@ func validateUpdateObservedArgs(name string, observedGen int64) (string, error) 
 }
 
 func isDeletedRecord(rec *ComponentRecord) bool {
+	if rec == nil {
+		return true
+	}
 	return rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED
 }
 
@@ -275,7 +278,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	defer m.mu.Unlock()
 
 	rec, exists := m.componentsByName[canonicalName]
-	if !exists || isDeletedRecord(rec) {
+	if !exists || rec == nil || isDeletedRecord(rec) {
 		return nil, ErrComponentNotFound
 	}
 
@@ -292,7 +295,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 
 	if requestCascade {
 		for _, depName := range result.CascadedDeactivations {
-			if depRec, ok := m.componentsByName[depName]; ok && !isDeletedRecord(depRec) {
+			if depRec, ok := m.componentsByName[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
 				transitionToDisabling(depRec, now)
 			}
 		}
@@ -312,7 +315,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) err
 	defer m.mu.Unlock()
 
 	rec, exists := m.componentsByName[canonicalName]
-	if !exists || isDeletedRecord(rec) {
+	if !exists || rec == nil || isDeletedRecord(rec) {
 		return ErrComponentNotFound
 	}
 
@@ -347,7 +350,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	defer m.mu.Unlock()
 
 	rec, exists := m.componentsByName[canonicalName]
-	if !exists || isDeletedRecord(rec) {
+	if !exists || rec == nil || isDeletedRecord(rec) {
 		return ErrComponentNotFound
 	}
 
@@ -364,7 +367,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
 		activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
 		for _, depName := range activeDependents {
-			if depRec, ok := m.componentsByName[depName]; ok && !isDeletedRecord(depRec) {
+			if depRec, ok := m.componentsByName[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
 				transitionToDeleted(depRec, now)
 			}
 		}

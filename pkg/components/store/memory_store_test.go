@@ -728,6 +728,37 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 		t.Errorf("GetComponent(dep-del) got code %v, want NotFound", status.Code(err))
 	}
 
+	// Component 3: Cascading deletion with protected dependent
+	specParent := sampleSpec("Parent with protected child")
+	if _, err := ms.SetComponentIntent(ctx, "parent-prot", specParent, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(parent-prot) failed: %v", err)
+	}
+	specChild := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: parent-prot",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "child-prot", specChild, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent(child-prot) failed: %v", err)
+	}
+
+	// Cascading deletion without force -> ErrDeletionProtected
+	err = ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(cascading with protected child, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Cascading deletion with force -> succeeds and deletes both parent and child
+	if err := ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Fatalf("ExecuteDeletion(cascading with protected child, force=true) unexpected error: %v", err)
+	}
+	if _, err := ms.GetComponent(ctx, "parent-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(parent-prot) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "child-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(child-prot) got code %v, want NotFound", status.Code(err))
+	}
+
 	// Nonexistent deletion
 	err = ms.ExecuteDeletion(ctx, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
 	if status.Code(err) != codes.NotFound {

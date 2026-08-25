@@ -80,7 +80,7 @@ func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, defaultDrain time.Duration) (*PrepareDeactivationResult, error) {
 	canonicalName := CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
-	if !exists || isDeletedRecord(targetRec) {
+	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
 		return nil, ErrComponentNotFound
 	}
 
@@ -119,7 +119,7 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 	var activeRecords []*ComponentRecord
 	for _, depName := range transitive {
 		depRec, ok := components[depName]
-		if !ok || isDeletedRecord(depRec) || depRec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		if !ok || depRec == nil || isDeletedRecord(depRec) || depRec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 			continue
 		}
 		activeNames = append(activeNames, depName)
@@ -132,7 +132,7 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, policy componentspb.DeletionPolicy, force bool) error {
 	canonicalName := CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
-	if !exists || isDeletedRecord(targetRec) {
+	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
 		return ErrComponentNotFound
 	}
 	if force {
@@ -141,11 +141,17 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 	if IsDeletionProtected(targetRec) {
 		return ErrDeletionProtected
 	}
+
+	activeDependents, activeRecords := findActiveDependents(components, canonicalName)
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
+		for _, depRec := range activeRecords {
+			if IsDeletionProtected(depRec) {
+				return ErrDeletionProtected
+			}
+		}
 		return nil
 	}
 
-	activeDependents, _ := findActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 {
 		return ErrHasActiveDependents
 	}
