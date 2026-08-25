@@ -56,10 +56,15 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
+	var totalQueueSize int64
+	if result != nil {
+		totalQueueSize = result.TotalQueueSize
+	}
+
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
-		TotalQueueSize: int64(len(workUnits)),
+		TotalQueueSize: totalQueueSize,
 	}, nil
 }
 

@@ -120,8 +120,9 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
-		WorkUnits:     m.workUnits,
-		NextPageToken: m.nextPageToken,
+		WorkUnits:      m.workUnits,
+		NextPageToken:  m.nextPageToken,
+		TotalQueueSize: m.totalQueueSize,
 	}, nil
 }
 
@@ -192,7 +193,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCount:          1,
 			wantPageSize:       10,
 			wantPageToken:      "",
-			wantTotalQueueSize: 1,
+			wantTotalQueueSize: 10,
 		},
 		{
 			name: "Success With PageSize 200 Clamped to 100",
@@ -210,7 +211,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCount:          1,
 			wantPageSize:       100,
 			wantPageToken:      "",
-			wantTotalQueueSize: 1,
+			wantTotalQueueSize: 150,
 		},
 		{
 			name: "Invalid PageToken Error",
