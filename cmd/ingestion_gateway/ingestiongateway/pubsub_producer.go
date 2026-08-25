@@ -120,14 +120,35 @@ func (p *PubSubProducer) Produce(ctx context.Context, rec *MetricRecord, promise
 
 	go func() {
 		_, err := result.Get(ctx)
-		if err != nil {
-			// Pub/Sub suspends an ordering key permanently after any publish failure. Without this
-			// call a single transient error would black-hole one work unit's metrics for the
-			// lifetime of the process, invisibly to aggregate error rates.
-			p.topic.ResumePublish(orderingKey)
-		}
+		p.resumeOnPublishFailure(ctx, orderingKey, result, err)
 		p.metrics.RecordProducedRecord(len(rec.Value), err)
 		promise(rec, classifyPubSubError(err))
+	}()
+}
+
+// resumeOnPublishFailure lifts the suspension Pub/Sub applies to an ordering key after a failed
+// publish, so a single transient error cannot black-hole one work unit's metrics for the lifetime
+// of the process, invisibly to aggregate error rates.
+//
+// getErr is not necessarily the publish outcome. PublishResult.Get abandons its wait as soon as
+// ctx is done, while the message is still in the client's batcher and the RPC still in flight on a
+// context the caller does not control. Resuming on a cancellation would target a key that is not
+// suspended yet, and the suspension that lands moments later would never be lifted. So when the
+// caller's context ended the wait, repeat it detached from ctx and decide on the real outcome.
+//
+// The detached wait is bounded by the topic's publish timeout, not by the request.
+func (p *PubSubProducer) resumeOnPublishFailure(ctx context.Context, orderingKey string, result *pubsub.PublishResult, getErr error) {
+	if getErr == nil {
+		return
+	}
+	if ctx.Err() == nil {
+		p.topic.ResumePublish(orderingKey)
+		return
+	}
+	go func() {
+		if _, err := result.Get(context.Background()); err != nil {
+			p.topic.ResumePublish(orderingKey)
+		}
 	}()
 }
 

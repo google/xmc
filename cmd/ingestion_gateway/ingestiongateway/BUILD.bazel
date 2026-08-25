@@ -84,6 +84,7 @@ compat_go_test(
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_google_cloud_go_pubsub//:pubsub",
+        "@com_google_cloud_go_pubsub//apiv1/pubsubpb",
         "@com_google_cloud_go_pubsub//pstest",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//:go_default_library",
