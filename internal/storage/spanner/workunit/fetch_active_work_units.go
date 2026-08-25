@@ -208,6 +208,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	// Query 1: Count total active work units across matching queues
 	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
 	if err != nil {
+		logging.Error(ctx, "failed to count active work units", "error", err)
 		return nil, err
 	}
 
@@ -265,7 +266,6 @@ func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction,
 	if err := iterCount.Do(func(row *spanner.Row) error {
 		return row.Column(0, &totalQueueSize)
 	}); err != nil {
-		logging.Error(ctx, "failed to count active work units", "error", err)
 		return 0, fmt.Errorf("failed to count active work units: %w", err)
 	}
 	return totalQueueSize, nil
