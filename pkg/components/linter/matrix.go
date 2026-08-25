@@ -242,8 +242,24 @@ func validateK8sConstraint(filePath string, line int, compName, k8sConstraint st
 // validateRequiredCRDs validates all required CRD identifier strings in a platform requirement rule.
 func validateRequiredCRDs(filePath string, line int, compName string, requiredCRDs []string, res *ValidationResult) {
 	for _, crd := range requiredCRDs {
-		if strings.TrimSpace(crd) == "" {
-			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("empty requiredCRD in platform rule for component %q", compName))
+		validateSingleRequiredCRD(filePath, line, compName, crd, res)
+	}
+}
+
+func validateSingleRequiredCRD(filePath string, line int, compName, crd string, res *ValidationResult) {
+	trimmed := strings.TrimSpace(crd)
+	if trimmed == "" {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("empty requiredCRD in platform rule for component %q", compName))
+		return
+	}
+	if !strings.Contains(trimmed, ".") {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must be in <plural>.<group> format", trimmed, compName))
+		return
+	}
+	for _, r := range trimmed {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
+			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must contain only lowercase alphanumeric characters, '-' or '.'", trimmed, compName))
+			return
 		}
 	}
 }

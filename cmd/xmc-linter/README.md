@@ -248,8 +248,10 @@ compatibilityMatrix:
 
   # Platform-level integration rules
   platformRequirements:
-    minK8sVersion: "1.28.0"
-    kubernetesVersion: ">=1.28.0 <1.32.0"
+    - component: storage-controller
+      platform:
+        minK8sVersion: "1.28.0"
+        kubernetesVersion: ">=1.28.0 <1.32.0"
 ```
 
 - **Disabled Component Handling**: If a component declared in `rules.yaml` is present but marked `spec.enabled: false`, it is ignored to prevent false-positive validation errors during gradual rollouts or deprecations.
