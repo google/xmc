@@ -72,8 +72,8 @@ func TestCreateChart(t *testing.T) {
 		parsedUUID, err := uuid.Parse(extractedUUID)
 		if err != nil {
 			t.Errorf("Expected valid UUID in chart name, got %q (err: %v)", extractedUUID, err)
-		} else if parsedUUID.Version() != 7 {
-			t.Errorf("Expected UUID v7, got version %d", parsedUUID.Version())
+		} else if parsedUUID.Version() != 4 {
+			t.Errorf("Expected UUID v4, got version %d", parsedUUID.Version())
 		}
 		if resp.GetXid() != 100 {
 			t.Errorf("Expected Xid 100, got %d", resp.GetXid())

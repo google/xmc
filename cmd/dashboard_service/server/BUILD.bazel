@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "createchart.go",
         "createdashboard.go",
+        "deletechart.go",
         "deletedashboard.go",
         "getchart.go",
         "getdashboard.go",
@@ -52,6 +53,7 @@ go_test(
     srcs = [
         "createchart_test.go",
         "createdashboard_test.go",
+        "deletechart_test.go",
         "deletedashboard_test.go",
         "getchart_test.go",
         "getdashboard_test.go",

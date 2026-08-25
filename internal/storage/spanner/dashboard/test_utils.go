@@ -66,7 +66,7 @@ func blankDashboardProto(name string) *dpb.Dashboard {
 		Title:       "Test Dashboard Title",
 		Description: "Test Dashboard Description",
 		Owner:       "user@example.com",
-		Charts:      []*dpb.Chart{},
+		ChartIds:    []string{},
 		ChartLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,
 			Columns: 2,

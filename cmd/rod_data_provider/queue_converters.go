@@ -39,99 +39,16 @@ func buildQueueOverviews(c *cache.KueueCache, rfMap map[string]*kueuev1beta1.Res
 		return nil
 	}
 	clusterQueues := c.ClusterQueues.List()
-	cohortCapacitiesMap := computeCohortCapacities(clusterQueues, rfMap)
-
 	overviews := make([]*spb.QueueOverview, 0, len(clusterQueues))
 	for _, cq := range clusterQueues {
 		if cq == nil {
 			continue
 		}
-		var cohortCapacities *CohortResourceCapacities
-		if cq.Spec.Cohort != "" {
-			cohortCapacities = cohortCapacitiesMap[string(cq.Spec.Cohort)]
-		}
-		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap, cohortCapacities); overview != nil {
+		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap); overview != nil {
 			overviews = append(overviews, overview)
 		}
 	}
 	return overviews
-}
-
-// CohortResourceQuota holds accumulated nominal quota and used capacity for a specific resource type within a cohort.
-type CohortResourceQuota struct {
-	NominalQuota float64
-	UsedCapacity float64
-}
-
-// FreeCapacity returns max(0, NominalQuota - UsedCapacity).
-func (q *CohortResourceQuota) FreeCapacity() float64 {
-	if q == nil {
-		return 0
-	}
-	free := q.NominalQuota - q.UsedCapacity
-	if free < 0 {
-		return 0
-	}
-	return free
-}
-
-// CohortResourceCapacities holds aggregated resource quotas per resource type for a cohort.
-type CohortResourceCapacities struct {
-	quotas map[string]*CohortResourceQuota
-}
-
-// FreeCapacityFor returns the available free capacity for a given resource type in this cohort.
-func (c *CohortResourceCapacities) FreeCapacityFor(resourceType string) *float64 {
-	if c == nil {
-		return nil
-	}
-	q, exists := c.quotas[resourceType]
-	if !exists {
-		return nil
-	}
-	free := q.FreeCapacity()
-	return &free
-}
-
-func (c *CohortResourceCapacities) getOrCreateQuota(resourceType string) *CohortResourceQuota {
-	if c.quotas == nil {
-		c.quotas = make(map[string]*CohortResourceQuota)
-	}
-	if c.quotas[resourceType] == nil {
-		c.quotas[resourceType] = &CohortResourceQuota{}
-	}
-	return c.quotas[resourceType]
-}
-
-// computeCohortCapacities calculates aggregated nominal quotas and used capacities across all ClusterQueues for each cohort.
-func computeCohortCapacities(clusterQueues []*kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) map[string]*CohortResourceCapacities {
-	cohortCapacitiesMap := make(map[string]*CohortResourceCapacities)
-	for _, cq := range clusterQueues {
-		if cq == nil || cq.Spec.Cohort == "" {
-			continue
-		}
-		cohortName := string(cq.Spec.Cohort)
-		if cohortCapacitiesMap[cohortName] == nil {
-			cohortCapacitiesMap[cohortName] = &CohortResourceCapacities{}
-		}
-		accumulateClusterQueueIntoCohort(cq, cohortCapacitiesMap[cohortName], rfMap)
-	}
-	return cohortCapacitiesMap
-}
-
-func accumulateClusterQueueIntoCohort(cq *kueuev1beta1.ClusterQueue, cohortCapacities *CohortResourceCapacities, rfMap map[string]*kueuev1beta1.ResourceFlavor) {
-	for resourceType, used := range extractTotalResourceUsageByResourceType(cq.Status, rfMap) {
-		quota := cohortCapacities.getOrCreateQuota(resourceType)
-		quota.UsedCapacity += used
-	}
-
-	aggregatedQuotas := aggregateClusterQueueNominalAndBorrowingLimits(cq, rfMap)
-	for resourceType, quotaAgg := range aggregatedQuotas.aggregators {
-		if quotaAgg != nil {
-			quota := cohortCapacities.getOrCreateQuota(resourceType)
-			quota.NominalQuota += quotaAgg.nominalQuota
-		}
-	}
 }
 
 // ResourceQuotaAggregator holds accumulated nominal quotas and borrowing limits for a specific resource type across all flavors.
@@ -151,8 +68,8 @@ type aggregatedClusterQueueQuotas struct {
 // It executes a clear 3-step pipeline:
 //  1. Extract total used capacity per resource type from ClusterQueueStatus (summed across flavors, with accelerator resolution).
 //  2. Aggregate nominal quotas and borrowing limits per resource type from ClusterQueueSpec (summed across flavors, with accelerator resolution).
-//  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type (clamping FreeCapacityWithBorrowing to available cohort capacity if present).
-func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor, cohortCapacities *CohortResourceCapacities) *spb.QueueOverview {
+//  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type.
+func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) *spb.QueueOverview {
 	if clusterQueue == nil {
 		return nil
 	}
@@ -164,17 +81,11 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 	aggregatedQuotas := aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue, rfMap)
 
 	// Step 3: Compute free capacities and build proto messages.
-	queueCapacities := make([]*spb.QueueResourceCapacity, 0, len(aggregatedQuotas.orderedTypes))
+	var queueCapacities []*spb.QueueResourceCapacity
 	for _, resourceType := range aggregatedQuotas.orderedTypes {
 		quotaAggregator := aggregatedQuotas.aggregators[resourceType]
 		usedCapacity := totalUsedCapacityByResourceType[resourceType]
-
-		var cohortFree *float64
-		if clusterQueue.Spec.Cohort != "" {
-			cohortFree = cohortCapacities.FreeCapacityFor(resourceType)
-		}
-
-		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity, cohortFree)
+		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity)
 		queueCapacities = append(queueCapacities, capacityProto)
 	}
 
@@ -190,9 +101,6 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) *aggregatedClusterQueueQuotas {
 	result := &aggregatedClusterQueueQuotas{
 		aggregators: make(map[string]*ResourceQuotaAggregator),
-	}
-	if clusterQueue == nil {
-		return result
 	}
 
 	for _, resourceGroup := range clusterQueue.Spec.ResourceGroups {
@@ -224,8 +132,7 @@ func addFlavorResourceQuotaToAggregator(resourceQuota kueuev1beta1.ResourceQuota
 }
 
 // convertAggregatedQuotaToResourceCapacity combines an aggregated ResourceQuotaAggregator and used capacity into a QueueResourceCapacity proto.
-// If cohortFree is non-nil, FreeCapacityWithBorrowing is capped at *cohortFree (min(LocalFree, CohortFree)).
-func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64, cohortFree *float64) *spb.QueueResourceCapacity {
+func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64) *spb.QueueResourceCapacity {
 	var nominalQuota, borrowingLimit float64
 	if quotaAggregator != nil {
 		nominalQuota = quotaAggregator.nominalQuota
@@ -239,15 +146,11 @@ func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregat
 	if freeCapacityWithBorrowing < 0 {
 		freeCapacityWithBorrowing = 0
 	}
-	if cohortFree != nil {
-		if *cohortFree < freeCapacityWithBorrowing {
-			freeCapacityWithBorrowing = *cohortFree
-		}
-	}
 	return &spb.QueueResourceCapacity{
-		ResourceType:              resourceType,
-		TotalCapacity:             nominalQuota,
-		FreeCapacity:              freeCapacity,
+		ResourceType:  resourceType,
+		TotalCapacity: nominalQuota,
+		FreeCapacity:  freeCapacity,
+		// TODO: Make sure that FreeCapacityWithBorrowing doesn't go above what is already used within the same cohort
 		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}
 }
