@@ -16,54 +16,87 @@ import { expect, test } from '@playwright/test';
 
 import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
+const MOCK_HEALTH_STATUS = {
+  healthState: 'HEALTH_STATE_UNHEALTHY',
+  systemInfo: {
+    appVersion: '1.5.1',
+    buildVersion: 'v1.5.1-build.42',
+    essDbSchemaVersion: '3',
+    xidDbSchemaVersion: '1',
+    observabilityUrl: 'https://monitoring.xmc.internal',
+    isSchedulingPaused: false,
+  },
+  components: [
+    {
+      name: 'actuator-deployment',
+      type: 'COMPONENT_TYPE_CORE_SERVICE',
+      healthState: 'HEALTH_STATE_HEALTHY',
+    },
+    {
+      name: 'experiment-state-server-deployment',
+      type: 'COMPONENT_TYPE_CORE_SERVICE',
+      healthState: 'HEALTH_STATE_UNHEALTHY',
+      errorMessage:
+        'Error: Connection timeout to Spanner experiment-db after 5000ms. Retrying in 30s.',
+    },
+    {
+      name: 'xid-service-deployment',
+      type: 'COMPONENT_TYPE_CORE_SERVICE',
+      healthState: 'HEALTH_STATE_HEALTHY',
+    },
+    {
+      name: 'Cloud Spanner (experiment-db)',
+      type: 'COMPONENT_TYPE_EXTERNAL_DEPENDENCY',
+      healthState: 'HEALTH_STATE_HEALTHY',
+    },
+    {
+      name: 'Cloud Tasks',
+      type: 'COMPONENT_TYPE_EXTERNAL_DEPENDENCY',
+      healthState: 'HEALTH_STATE_HEALTHY',
+    },
+    {
+      name: 'Internal Git Provider',
+      type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
+      healthState: 'HEALTH_STATE_HEALTHY',
+    },
+  ],
+  healthCheckTime: { seconds: 1717804800, nanos: 0 },
+};
+
 const MOCK_CONFIGS = {
-  configs: [
+  configGroups: [
     {
-      key: 'FEATURE_NEW_ROD_UI',
-      value: 'true',
-      type: 'BOOL',
-      description: 'Enable the redesigned Resource Dashboard UI.',
-      modifiedBy: 'jdoe@google.com',
-      modifiedAt: '2026-03-30T10:15:00Z',
-    },
-    {
-      key: 'MAX_PENDING_JOBS_PER_QUEUE',
-      value: '500',
-      type: 'INT',
-      description: 'Maximum pending jobs allowed in a single queue before throttling.',
-      modifiedBy: 'admin@google.com',
-      modifiedAt: '2026-03-28T14:22:10Z',
-    },
-    {
-      key: 'DEFAULT_SCHEDULER_MODE',
-      value: 'FAIR_SHARE',
-      type: 'STRING',
-      description: 'Default scheduling algorithm for cluster resource allocation.',
-      modifiedBy: 'sys-admin@google.com',
-      modifiedAt: '2026-03-25T08:45:30Z',
+      displayName: 'Main Configuration',
+      configs: [
+        { key: 'spannerUrl', value: 'spanner.googleapis.com/projects/xmanager-prod' },
+        { key: 'maxConcurrentWorkloads', value: '500' },
+      ],
     },
   ],
 };
 
 const MOCK_USER_INFO = {
-  user: {
-    email: 'admin@google.com',
-    roles: ['admin', 'operator'],
-  },
-  systemStatus: {
-    version: 'v1.5.1-build.42',
-    uptimeSeconds: 864200,
-    healthy: true,
-    activeNodes: 128,
-  },
+  userEmail: 'test@google.com',
+  privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
+
+test.use({ viewport: { width: 1600, height: 900 } });
 
 test.describe('Admin Panel Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1240, height: 1300 });
+    // Mock generic auth/config
     await setupMockRoutes(page);
 
-    await page.route('**/admin/configs', async (route) => {
+    // Mock Admin Panel specific endpoints
+    await page.route('**/health/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_HEALTH_STATUS),
+      });
+    });
+
+    await page.route('**/health/configs', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -79,13 +112,20 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
       });
     });
 
+    // Go to admin panel
     await page.goto('/admin');
     await page.waitForSelector('xmc-admin-panel');
     await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for the entire Admin Panel page', async ({ page }) => {
-    // Take screenshot of the entire admin panel page viewport
-    await expect(page).toHaveScreenshot('admin-panel-page.png');
+    const adminPanel = page.locator('xmc-admin-panel');
+    await expect(adminPanel).toBeVisible();
+
+    const footer = page.locator('.admin-panel-footer');
+    await expect(footer).toContainText('Build Version: v1.5.1-build.42');
+
+    // Take screenshot of the entire admin panel page
+    await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
   });
 });
