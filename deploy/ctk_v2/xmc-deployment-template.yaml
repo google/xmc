@@ -71,6 +71,17 @@ vars:
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
   enable_metrics: false
 
+  # Message bus the Ingestion Gateway publishes to: "redpanda" or "pubsub".
+  # "pubsub" provisions the topic and its IAM and needs no Redpanda cluster, but
+  # ClickHouse can only consume the Kafka topic, so it is a producer-only pipeline.
+  # See deploy/addons/metrics/pubsub/README.md.
+  message_bus: redpanda
+
+  # Metrics topic name. In "pubsub" mode this is the Pub/Sub topic ID the blueprint
+  # creates; in "redpanda" mode it is the Kafka topic the gateway writes to, which
+  # ClickHouse expects to be named "xmc-metrics".
+  metrics_topic_name: xmc-metrics
+
   # Enable Foundational Component Controllers
   enable_components: false
 

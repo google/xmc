@@ -40,6 +40,8 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
+*   **`message_bus`**: Message bus the Ingestion Gateway publishes to, `redpanda` (default) or `pubsub`. With `pubsub` the blueprint creates the Pub/Sub topic, grants the gateway's service account `roles/pubsub.publisher` and `roles/pubsub.viewer` on it, and binds that account to the `ingestion-gateway-service-account` KSA through Workload Identity. Nothing Pub/Sub-related is provisioned when this is `redpanda`. See [the Pub/Sub addon guide](../addons/metrics/pubsub/README.md) — in particular, Pub/Sub mode is producer-only, because ClickHouse consumes the metrics topic through its native `ENGINE = Kafka` table and has no Pub/Sub equivalent.
+*   **`metrics_topic_name`**: Name of the metrics topic (default: `xmc-metrics`). In `pubsub` mode this is the topic ID the blueprint creates; in `redpanda` mode it is the Kafka topic name, which ClickHouse expects to be `xmc-metrics`.
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
 
 ---

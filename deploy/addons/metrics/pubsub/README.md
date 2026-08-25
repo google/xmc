@@ -4,6 +4,9 @@ This directory documents the out-of-band Google Cloud setup required to run the 
 
 Unlike the [Redpanda](../redpanda/README.md) and [ClickHouse](../clickhouse/README.md) addons, there is nothing to install into the cluster: Pub/Sub is a managed service. What this guide covers is the topic, the service accounts, and the IAM bindings the gateway needs, plus the Helm values that switch the backend on.
 
+> [!TIP]
+> If you deploy with the Cluster Toolkit blueprint ([`deploy/ctk_v2/`](../../../ctk_v2/README.md)), none of the manual setup in sections 1–4 is needed. Set `message_bus: pubsub` alongside `enable_metrics: true` in your deployment variables and the blueprint provisions the topic, the `xmc-ig-sa` service account, both IAM bindings, the Workload Identity binding, and the matching Helm values through [`deploy/terraform/modules/metrics_pubsub`](../../../terraform/modules/metrics_pubsub/main.tf). Skip to [Verification](#5-verification). The rest of this guide is for Helm-only installs, or for anyone who wants to understand what the blueprint sets up.
+
 > [!IMPORTANT]
 > Pub/Sub mode is a **producer-only** path. XMC has no consumer service of its own — ClickHouse consumes the `xmc-metrics` topic directly through its native `ENGINE = Kafka` table ([`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql)), and ClickHouse has no Pub/Sub table engine. With `-message_bus=pubsub` the gateway publishes correctly, but nothing in XMC delivers those messages to ClickHouse. Choose this backend only if you are supplying your own subscriber.
 
@@ -46,7 +49,21 @@ gcloud pubsub topics create "${TOPIC_NAME}" \
 
 The gateway does **not** create the topic. It calls `Topic.Exists` at startup and refuses to start if the topic is missing, which is the Pub/Sub analogue of the Redpanda topology assertion (`-min_partitions` / `-min_replicas`).
 
-If you manage infrastructure with Terraform, [`deploy/terraform/modules/log_monitor/main.tf`](../../../terraform/modules/log_monitor/main.tf) is the in-repo pattern for `google_pubsub_topic` plus `google_pubsub_topic_iam_member`. No Terraform module is shipped for the ingestion gateway topic.
+If you manage infrastructure with Terraform, [`deploy/terraform/modules/metrics_pubsub`](../../../terraform/modules/metrics_pubsub/main.tf) does everything in sections 1 and 2 and can be called directly:
+
+```hcl
+module "metrics_pubsub" {
+  source = "./deploy/terraform/modules/metrics_pubsub"
+
+  project_id                      = "YOUR_GCP_PROJECT_ID"
+  message_bus                     = "pubsub"
+  metrics_enabled                 = true
+  topic_name                      = "xmc-metrics"
+  publisher_service_account_email = google_service_account.ingestion_gateway.email
+}
+```
+
+It provisions nothing when `message_bus` is `"redpanda"` or `metrics_enabled` is `false`, and it expects `pubsub.googleapis.com` to be enabled by the caller.
 
 ---
 

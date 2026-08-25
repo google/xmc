@@ -56,6 +56,12 @@ vars:
   redis_region:
   status_message_history_enabled: true
   enable_metrics: false
+  # Message bus the ingestion gateway publishes to: "redpanda" or "pubsub".
+  # With "pubsub" the blueprint provisions the topic and its IAM, and the gateway
+  # runs on a dedicated Workload Identity service account. Note that ClickHouse can
+  # only consume the Kafka topic, so "pubsub" is a producer-only pipeline.
+  message_bus: redpanda
+  metrics_topic_name: xmc-metrics
   enable_components: false
   health_service_deployment_enabled: false
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
@@ -80,6 +86,7 @@ deployment_groups:
       - cloudresourcemanager.googleapis.com
       - servicenetworking.googleapis.com
       - certificatemanager.googleapis.com
+      - pubsub.googleapis.com
 
 - group: primary
   modules:
@@ -143,6 +150,29 @@ deployment_groups:
       - run.viewer
       - iam.securityReviewer
       - serviceusage.serviceUsageConsumer
+
+  # The ingestion gateway gets its own identity rather than sharing the workload
+  # service account: in pubsub mode it is granted publish access to the metrics
+  # topic, and that grant should not extend to every other workload.
+  - id: ingestion_gateway_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-ig-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - serviceusage.serviceUsageConsumer
+
+  # Provisions nothing unless message_bus is "pubsub" and enable_metrics is true.
+  - id: metrics_pubsub
+    source: ./deploy/terraform/modules/metrics_pubsub
+    use: [ingestion_gateway_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      message_bus: $(vars.message_bus)
+      metrics_enabled: $(vars.enable_metrics)
+      topic_name: $(vars.metrics_topic_name)
+      publisher_service_account_email: $(ingestion_gateway_service_account.service_account_email)
 
   - id: db_spanner
     source: modules/database/spanner
@@ -259,6 +289,12 @@ deployment_groups:
     settings:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: rod-data-provider-service-account
+
+  - id: xmc_wi_binding_ingestion_gateway
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(ingestion_gateway_service_account.service_account_email)
+      k8s_service_account_name: ingestion-gateway-service-account
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
@@ -448,6 +484,14 @@ deployment_groups:
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.enable_metrics)
         type: auto
+      - name: ingestionGatewayDeployment.messageBus
+        value: $(vars.message_bus)
+      - name: ingestionGatewayDeployment.topicName
+        value: $(metrics_pubsub.topic_name)
+      - name: ingestionGatewayDeployment.serviceAccountName
+        value: "ingestion-gateway-service-account"
+      - name: ingestionGatewayDeployment.gcpServiceAccount
+        value: $(ingestion_gateway_service_account.service_account_email)
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
         type: auto
