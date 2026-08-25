@@ -41,6 +41,21 @@ This document defines standards and policy rules for AI agents acting as **Code 
   ```
 - **Atomic Commits**: Keep commits logical, focused, and self-contained. Each commit must compile and pass relevant local tests.
 
+## 3. Pull Request Creation & PR Sizing Standards
+- **Mandatory PR Sizing & Vertical Splitting Gate**:
+  - **Threshold Criteria (Evaluated via `tools/analyze_diff_size.py`)**:
+    - **Production Code**: $\ge 400$ lines (added + modified across `.go`, `.py`, `.ts`, `.js`, `.ng.html`, `.html`, `.scss`, `.css`, `.yaml`, `.tf`, `.proto`).
+    - **Combined Code (Prod + Tests)**: $\ge 1,000$ lines (including unit, integration, and E2E tests).
+    - **Documentation / Markdown**: $\ge 1,000$ lines (measured separately from code).
+    - *Generated Code & Lockfiles*: Automatically excluded (`*.pb.go`, `package-lock.json`, `MODULE.bazel.lock`, `go.sum`).
+  - **Mandatory Split Verification Subagent**: If any sizing threshold is exceeded, the author agent MUST launch the **PR Split Verification Subagent** per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) prior to opening a PR.
+  - **Vertical Slices over Horizontal Layers**: Always decompose work into vertical end-to-end user flow slices (schema + backend + handler + tests) rather than horizontal architectural tiers (all models in PR 1, all handlers in PR 2).
+  - **Dead Code & Reachability Invariant**:
+    - **Production Caller Required**: Every intermediate or standalone PR merged to `main` MUST have an active production call site. Submitting uncalled helpers, orphaned utilities, or unused structs (even with 100% unit tests in a planned `gh-stack`) is prohibited because stacks can stall or change, leaving dead code in `main`.
+    - **Functional Thin Slices over Layer Splits**: Decompose oversized features by functional depth (e.g. Slice 1: minimal happy-path caller + basic helper; Slice 2: advanced options, caching, and error recovery) rather than by structural layer.
+    - **Standalone Entrypoint Exception**: Self-contained executable entrypoints (e.g. scaffolding a new CLI binary in `cmd/`, a new service binary, or a standalone script in `tools/`) are permitted without external callers because they are directly runnable on their own.
+  - **Stacked PR Workflow (`gh-stack`)**: When splittable, format and manage the multi-branch chain using [`gh-stack`](conversation://skills/gh-stack).
+  - **Exception Justification**: Monolithic PRs exceeding thresholds are permitted only for atomic automated migrations, large code deletions, or single-document design specs, and require explicit user confirmation.
 - **Mandatory User Confirmation Gate Before PR Creation & Draft Conversion**: NEVER execute `gh pr create` (draft or non-draft) or `gh pr ready` without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request or converting a Draft PR to Open. Draft PRs MUST NEVER be converted to Open (ready for review) without a separate, explicit user confirmation gate. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population) (Step 5) and [Section 6](../skills/xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate) for mandatory confirmation templates.
 - **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).

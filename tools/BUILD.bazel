@@ -406,3 +406,23 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "analyze_diff_size_lib",
+    srcs = ["analyze_diff_size.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "analyze_diff_size_test",
+    srcs = ["analyze_diff_size_test.py"],
+    imports = ["."],
+    deps = [
+        ":analyze_diff_size_lib",
+        ":tool_utils",
+    ],
+)
