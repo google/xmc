@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package statushistory
 
 import (
@@ -20,8 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
 func TestQueueMetricRow(t *testing.T) {
@@ -39,23 +40,23 @@ func TestQueueMetricRow(t *testing.T) {
 	}
 }
 
-func TestFetchBatchQueueMetrics_EmptyQueues(t *testing.T) {
+func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
 	ctx := context.Background()
 	repo := NewRepository(nil)
-	batchVel, err := repo.FetchBatchQueueVelocity(ctx, nil, 1*time.Hour)
+	batchVel, err := repo.FetchBatchQueueVelocity(ctx, []string{"cq-gpu"}, 1*time.Hour)
 	if err != nil {
-		t.Fatalf("expected no error for empty queueNames, got %v", err)
+		t.Fatalf("expected no error for nil client batch velocity, got %v", err)
 	}
 	if len(batchVel) != 0 {
-		t.Errorf("expected empty batch for empty queueNames, got %+v", batchVel)
+		t.Errorf("expected empty batch map for nil client, got %+v", batchVel)
 	}
 
-	batchPending, err := repo.FetchBatchPendingQueueMetrics(ctx, nil)
+	batchPending, err := repo.FetchBatchPendingQueueMetrics(ctx, []string{"cq-gpu"})
 	if err != nil {
-		t.Fatalf("expected no error for empty queueNames, got %v", err)
+		t.Fatalf("expected no error for nil client batch pending, got %v", err)
 	}
 	if len(batchPending) != 0 {
-		t.Errorf("expected empty batch for empty queueNames, got %+v", batchPending)
+		t.Errorf("expected empty batch map for nil client, got %+v", batchPending)
 	}
 }
 
@@ -88,50 +89,46 @@ func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.W
 	return WorkUnitStatusHistoryItem{
 		BitReversedXid: 1,
 		WorkUnitId:     wid,
-		HistoryId:      wid,
+		HistoryId:      0,
 		QueueName:      queue,
-		TransitionTime: time.Now().Add(offset),
+		CreateTime:     time.Now().Add(offset),
 		NewState:       int64(state),
 		ResourceType:   resType,
 		ResourceUnits:  units,
 	}
 }
 
-func TestFetchBatchQueueVelocity_DefaultMockData(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
-	queueNames := []string{"cpu-queue", "tpu-queue"}
-	got, err := FetchBatchQueueVelocity(ctx, essClient, queueNames, 1*time.Hour)
-	if err != nil {
-		t.Fatalf("FetchBatchQueueVelocity failed: %v", err)
+func insertMockItems(t *testing.T, ctx context.Context, client *spanner.Client, mockItems []WorkUnitStatusHistoryItem) {
+	t.Helper()
+	if len(mockItems) == 0 {
+		return
 	}
 
-	want := []QueueMetricRow{
-		{QueueName: "cpu-queue", Count: 1, TotalUnits: 16000, ResourceType: ResourceTypeCPU},
-		{QueueName: "tpu-queue", Count: 2, TotalUnits: 48, ResourceType: "v5p"},
+	var historyMutations []*spanner.Mutation
+	for i, item := range mockItems {
+		xid := item.BitReversedXid
+		historyID := item.HistoryId
+		if historyID == 0 {
+			historyID = int64(i + 1)
+		}
+		var eid *int64 = &historyID
+		var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
+		newState := essmsgpb.WorkUnitStatus_WorkUnitState(item.NewState).Enum()
+		m, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(
+			xid, item.WorkUnitId, historyID, eid, item.QueueName, prevState, newState, item.ResourceType, item.ResourceUnits, item.CreateTime,
+		)
+		if err != nil {
+			t.Fatalf("WorkUnitStatusHistoryToInsertMutation failed: %v", err)
+		}
+		historyMutations = append(historyMutations, m)
 	}
 
-	compareQueueMetricRows(t, got, want)
+	if len(historyMutations) > 0 {
+		if _, err := client.Apply(ctx, historyMutations); err != nil {
+			t.Fatalf("failed to insert WorkUnitStatusHistory into Spanner emulator: %v", err)
+		}
+	}
 }
-
-func TestFetchBatchPendingQueueMetrics_DefaultMockData(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
-	queueNames := []string{"cpu-queue", "tpu-queue"}
-	got, err := FetchBatchPendingQueueMetrics(ctx, essClient, queueNames)
-	if err != nil {
-		t.Fatalf("FetchBatchPendingQueueMetrics failed: %v", err)
-	}
-
-	want := []QueueMetricRow{
-		{QueueName: "cpu-queue", Count: 1, TotalUnits: 8000, ResourceType: ResourceTypeCPU},
-	}
-
-	compareQueueMetricRows(t, got, want)
-}
-
 func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -202,14 +199,15 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := FetchBatchQueueVelocityWithMockItems(ctx, essClient, tt.queueNames, tt.window, tt.mockItems)
+			ctx := context.Background()
+			_, essClient := emulator.Setup(ctx, t)
+			insertMockItems(t, ctx, essClient, tt.mockItems)
+
+			got, err := FetchBatchQueueVelocity(ctx, essClient, tt.queueNames, tt.window)
 			if err != nil {
-				t.Fatalf("FetchBatchQueueVelocityWithMockItems failed: %v", err)
+				t.Fatalf("FetchBatchQueueVelocity failed: %v", err)
 			}
 			compareQueueMetricRows(t, got, tt.want)
 		})
@@ -277,14 +275,15 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := FetchBatchPendingQueueMetricsWithMockItems(ctx, essClient, tt.queueNames, tt.mockItems)
+			ctx := context.Background()
+			_, essClient := emulator.Setup(ctx, t)
+			insertMockItems(t, ctx, essClient, tt.mockItems)
+
+			got, err := FetchBatchPendingQueueMetrics(ctx, essClient, tt.queueNames)
 			if err != nil {
-				t.Fatalf("FetchBatchPendingQueueMetricsWithMockItems failed: %v", err)
+				t.Fatalf("FetchBatchPendingQueueMetrics failed: %v", err)
 			}
 			compareQueueMetricRows(t, got, tt.want)
 		})
