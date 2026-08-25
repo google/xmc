@@ -179,12 +179,34 @@ func TestManifest_YAMLUnmarshaling(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(`[nested]`), &dep); err == nil {
 			t.Errorf("expected error for sequence dependency")
 		}
+		if err := yaml.Unmarshal([]byte(`""`), &dep); err == nil {
+			t.Errorf("expected error for empty scalar dependency name")
+		}
+		if err := yaml.Unmarshal([]byte(`version: ">=1.0.0"`), &dep); err == nil {
+			t.Errorf("expected error for mapping dependency missing name")
+		}
+		var compListNull linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte("spec:\n  dependencies:\n    - null\n"), &compListNull); err == nil {
+			t.Errorf("expected error for null list dependency element")
+		}
+		if err := yaml.Unmarshal([]byte("spec:\n  dependencies:\n    - \"\"\n"), &compListNull); err == nil {
+			t.Errorf("expected error for empty string list dependency element")
+		}
 		aliasYAML := "alias: &ref\n  name: kueue\n  version: \">=1.0.0\"\ndep:\n  *ref\n"
 		var wrapper struct {
 			Dep linter.ComponentDependencyRef `yaml:"dep"`
 		}
 		if err := yaml.Unmarshal([]byte(aliasYAML), &wrapper); err != nil || wrapper.Dep.Name != "kueue" {
 			t.Errorf("alias unmarshal failed: %v, got: %+v", err, wrapper.Dep)
+		}
+	})
+
+	t.Run("unmarshal mapping dependency unknown field rejected", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := "spec:\n  dependencies:\n    kueue:\n      version: \">=1.0.0\"\n      optinal: true\n"
+		var comp linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err == nil {
+			t.Errorf("expected error for unknown field in dependency details")
 		}
 	})
 }

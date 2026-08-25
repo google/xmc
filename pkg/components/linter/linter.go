@@ -112,7 +112,12 @@ func decodeDocumentNode(path string, node *yaml.Node, res *ValidationResult) (*R
 	if raw == nil {
 		return nil, nil
 	}
-	if raw.Kind != "Component" || !strings.HasPrefix(raw.APIVersion, "components.xmc.dev/") {
+	hasComponentGroup := strings.HasPrefix(raw.APIVersion, "components.xmc.dev/") || raw.APIVersion == "components.xmc.dev"
+	if hasComponentGroup && raw.Kind != "Component" {
+		res.AddError(path, raw.Line, "SCHEMA_ERROR", fmt.Sprintf("invalid kind %q for apiVersion %q; expected \"Component\"", raw.Kind, raw.APIVersion))
+		return raw, nil
+	}
+	if !hasComponentGroup || raw.Kind != "Component" {
 		return raw, nil
 	}
 	var comp ComponentManifest

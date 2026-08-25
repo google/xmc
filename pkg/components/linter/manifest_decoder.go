@@ -29,6 +29,9 @@ func (d *ComponentDependencyRef) UnmarshalYAML(node *yaml.Node) error {
 		node = node.Alias
 	}
 	if node.Kind == yaml.ScalarNode {
+		if node.Tag == "!!null" || node.Value == "~" || node.Value == "null" || strings.TrimSpace(node.Value) == "" {
+			return fmt.Errorf("dependency name cannot be null or empty")
+		}
 		d.Name = node.Value
 		return nil
 	}
@@ -39,6 +42,9 @@ func (d *ComponentDependencyRef) UnmarshalYAML(node *yaml.Node) error {
 			return err
 		}
 		*d = ComponentDependencyRef(a)
+		if strings.TrimSpace(d.Name) == "" {
+			return fmt.Errorf("dependency name cannot be empty")
+		}
 		return nil
 	}
 	return fmt.Errorf("invalid dependency reference format")
@@ -194,20 +200,31 @@ func (s *ComponentManifestSpec) decodeDependencies(node *yaml.Node) error {
 	if node.Tag == "!!null" || node.Value == "~" || node.Value == "null" {
 		return nil
 	}
-	if node.Kind == yaml.SequenceNode {
-		for _, elem := range node.Content {
-			var dep ComponentDependencyRef
-			if err := elem.Decode(&dep); err != nil {
-				return err
-			}
-			s.Dependencies = append(s.Dependencies, dep)
-		}
-		return nil
-	}
-	if node.Kind == yaml.MappingNode {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		return s.decodeDependenciesSeq(node)
+	case yaml.MappingNode:
 		return s.decodeDependenciesMap(node)
+	default:
+		return fmt.Errorf("dependencies must be a sequence or a mapping")
 	}
-	return fmt.Errorf("dependencies must be a sequence or a mapping")
+}
+
+func (s *ComponentManifestSpec) decodeDependenciesSeq(node *yaml.Node) error {
+	for _, elem := range node.Content {
+		for elem.Kind == yaml.AliasNode && elem.Alias != nil {
+			elem = elem.Alias
+		}
+		if elem.Tag == "!!null" || elem.Value == "~" || elem.Value == "null" {
+			return fmt.Errorf("dependency entry in sequence cannot be null")
+		}
+		var dep ComponentDependencyRef
+		if err := elem.Decode(&dep); err != nil {
+			return err
+		}
+		s.Dependencies = append(s.Dependencies, dep)
+	}
+	return nil
 }
 
 func (s *ComponentManifestSpec) decodeDependenciesMap(node *yaml.Node) error {
@@ -252,6 +269,18 @@ func decodeMappingDependency(keyNode, valNode *yaml.Node) (*ComponentDependencyR
 }
 
 func decodeMappingDependencyDetails(dep *ComponentDependencyRef, valNode *yaml.Node) (*ComponentDependencyRef, error) {
+	for i := 0; i < len(valNode.Content); i += 2 {
+		keyNode := valNode.Content[i]
+		for keyNode.Kind == yaml.AliasNode && keyNode.Alias != nil {
+			keyNode = keyNode.Alias
+		}
+		if keyNode.Kind == yaml.ScalarNode {
+			key := keyNode.Value
+			if key != "version" && key != "optional" {
+				return nil, fmt.Errorf("unknown field %q in dependency details for %q", key, dep.Name)
+			}
+		}
+	}
 	type rawDepDetail struct {
 		Version  string `yaml:"version"`
 		Optional bool   `yaml:"optional"`

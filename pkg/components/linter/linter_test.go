@@ -94,6 +94,8 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "empty.yaml", "foo: bar\n---\nmetadata: 123\n")
+		writeTestManifest(t, dir, "invalid-group-kind.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: InvalidKind\nmetadata: { name: invalid }\n")
+		writeTestManifest(t, dir, "decode-error.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nspec: [invalid_seq]\n")
 		l := linter.NewLinter()
 		res, err := l.ValidateDirectory(dir)
 		if err != nil {
