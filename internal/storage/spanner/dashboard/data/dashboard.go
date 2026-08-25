@@ -82,6 +82,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 }
 
 // MergeCharts merges an updated Chart proto message into a current Chart proto message based on an update mask.
+// Note: xid and wid are immutable chart ownership fields and cannot be updated.
 func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
 	if current == nil {
 		return nil, fmt.Errorf("current chart is nil: %w", status.ErrInvalidArgument)
@@ -94,9 +95,6 @@ func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask)
 	if updateMask == nil || len(updateMask.GetPaths()) == 0 {
 		merged.Title = updated.GetTitle()
 		merged.Description = updated.GetDescription()
-		if updated.GetWid() != 0 {
-			merged.Wid = updated.GetWid()
-		}
 		merged.Plots = updated.GetPlots()
 		merged.PlotLayout = updated.GetPlotLayout()
 		return merged, nil
@@ -108,8 +106,6 @@ func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask)
 			merged.Title = updated.GetTitle()
 		case "description":
 			merged.Description = updated.GetDescription()
-		case "wid":
-			merged.Wid = updated.GetWid()
 		case "plots":
 			merged.Plots = updated.GetPlots()
 		case "plot_layout", "plotLayout":

@@ -1171,14 +1171,13 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Name:        "charts/chart-1",
 					Title:       "Updated Title",
 					Description: "Updated Description",
-					Wid:         2,
 					Plots: []*dpb.PlotSpec{
 						{PlotId: "p1", Title: "Plot 1", Type: dpb.PlotType_SCATTER},
 					},
 					PlotLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 2},
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
-					Paths: []string{"title", "description", "plots", "plot_layout", "plotLayout", "wid"},
+					Paths: []string{"title", "description", "plots", "plot_layout", "plotLayout"},
 				},
 			},
 			wantErr: nil,
@@ -1290,6 +1289,32 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
 					Paths: []string{"title"},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "unsupported_update_mask_path_wid",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "Updated Title",
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"wid"},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "unsupported_update_mask_path_xid",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "Updated Title",
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"xid"},
 				},
 			},
 			wantErr: status.ErrInvalidArgument,

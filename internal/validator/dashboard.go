@@ -67,7 +67,6 @@ var allowedUpdateChartPaths = map[string]bool{
 	"plots":       true,
 	"plot_layout": true,
 	"plotLayout":  true,
-	"wid":         true,
 }
 
 // validateDashboardID checks if a dashboard ID string is non-empty and contains no slashes.
@@ -328,7 +327,7 @@ func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
 func validateChartUpdateMask(title string, paths []string) error {
 	for _, path := range paths {
 		if !allowedUpdateChartPaths[path] {
-			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, plots, plot_layout, wid: %w", path, status.ErrInvalidArgument)
+			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, plots, plot_layout: %w", path, status.ErrInvalidArgument)
 		}
 		if path == "title" && strings.TrimSpace(title) == "" {
 			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)

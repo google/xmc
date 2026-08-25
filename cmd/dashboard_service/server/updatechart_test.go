@@ -98,8 +98,8 @@ func TestUpdateChart(t *testing.T) {
 		if resp.GetDescription() != "New Description" {
 			t.Errorf("Description: got %q, want 'New Description'", resp.GetDescription())
 		}
-		if resp.GetWid() != 5 {
-			t.Errorf("Wid: got %d, want 5", resp.GetWid())
+		if resp.GetWid() != 1 {
+			t.Errorf("Wid: got %d, want 1 (wid must be preserved from existing chart)", resp.GetWid())
 		}
 		if resp.GetXid() != 100 {
 			t.Errorf("Xid: got %d, want 100 (preserved from existing)", resp.GetXid())

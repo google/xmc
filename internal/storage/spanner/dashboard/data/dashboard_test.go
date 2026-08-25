@@ -684,8 +684,8 @@ func TestMergeCharts_AllFieldsNoMask(t *testing.T) {
 	if merged.GetDescription() != "New Desc" {
 		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
 	}
-	if merged.GetWid() != 2 {
-		t.Errorf("Wid: got %d, want 2", merged.GetWid())
+	if merged.GetWid() != 1 {
+		t.Errorf("Wid: got %d, want 1 (wid must be preserved)", merged.GetWid())
 	}
 	if merged.GetXid() != 100 {
 		t.Errorf("Xid: got %d, want 100 (xid must be preserved)", merged.GetXid())
@@ -695,6 +695,18 @@ func TestMergeCharts_AllFieldsNoMask(t *testing.T) {
 	}
 	if merged.GetPlotLayout().GetType() != dpb.LayoutSpec_WRAP || merged.GetPlotLayout().GetColumns() != 3 {
 		t.Errorf("PlotLayout: got %v, want WRAP with 3 columns", merged.GetPlotLayout())
+	}
+}
+
+func TestMergeCharts_ImmutableFieldsInMask(t *testing.T) {
+	current := &dpb.Chart{Name: "charts/c1", Xid: 10, Wid: 1}
+	updated := &dpb.Chart{Name: "charts/c1", Xid: 20, Wid: 2}
+
+	for _, field := range []string{"wid", "xid"} {
+		mask := &fieldmaskpb.FieldMask{Paths: []string{field}}
+		if _, err := MergeCharts(current, updated, mask); err == nil {
+			t.Errorf("MergeCharts with immutable field %q in mask succeeded, want error", field)
+		}
 	}
 }
 
