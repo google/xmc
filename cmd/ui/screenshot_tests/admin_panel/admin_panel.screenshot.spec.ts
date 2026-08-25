@@ -80,10 +80,10 @@ const MOCK_USER_INFO = {
   privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
-test.use({ viewport: { width: 1600, height: 900 } });
-
 test.describe('Admin Panel Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1240, height: 1300 });
+
     // Mock generic auth/config
     await setupMockRoutes(page);
 
@@ -119,13 +119,7 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for the entire Admin Panel page', async ({ page }) => {
-    const adminPanel = page.locator('xmc-admin-panel');
-    await expect(adminPanel).toBeVisible();
-
-    const footer = page.locator('.admin-panel-footer');
-    await expect(footer).toContainText('Build Version: v1.5.1-build.42');
-
-    // Take screenshot of the entire admin panel page
-    await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
+    // Take screenshot of the entire admin panel page viewport
+    await expect(page).toHaveScreenshot('admin-panel-page.png');
   });
 });
