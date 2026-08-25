@@ -99,7 +99,7 @@ func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []workunit.ActiveWorkUnit
+	workUnits      []workunit.WorkUnitEnhanced
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -117,7 +117,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []workunit.ActiveWorkUnit{},
+			WorkUnits: []workunit.WorkUnitEnhanced{},
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
@@ -149,7 +149,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []workunit.ActiveWorkUnit{
+				workUnits: []workunit.WorkUnitEnhanced{
 					{
 						WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
