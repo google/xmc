@@ -15,15 +15,18 @@
 import type { Page, Route } from '@playwright/test';
 
 export const MOCK_USER = {
-  email: 'test@google.com',
+  userEmail: 'admin@google.com',
+  email: 'admin@google.com',
   name: 'Test User',
   pictureUrl: '',
   sessionExpiresAt: 9999999999,
   allowedDomains: ['google.com'],
+  roles: ['admin', 'operator'],
+  privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
 /**
- * Generic base layout reset for component screenshot testing.
+ * Generic base layout reset for page screenshot testing.
  */
 const BASE_SCREENSHOT_STYLES = `
   html, body {
@@ -36,11 +39,9 @@ const BASE_SCREENSHOT_STYLES = `
     padding: 24px !important;
     box-sizing: border-box !important;
   }
-  xmc-*,
   [data-screenshot-target],
   [class*="placeholder"],
   [class*="scaffolding"] {
-    display: block !important;
     box-sizing: border-box !important;
   }
 `;
@@ -76,18 +77,22 @@ export const MOCK_CLUSTER_QUEUES = {
 
 export const MOCK_JOBS = [
   {
-    xid: '10293841',
-    status: 'RUNNING',
+    jobId: 'wu-1',
+    experimentId: '10293841',
+    status: 'Running',
     priority: 100,
-    requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 8 }],
-    workUnitId: 'wu-1',
+    resourceRequest: '8 x nvidia.com/gpu',
+    workUnitName: 'wu-1',
+    author: 'jdoe@google.com',
   },
   {
-    xid: '10293842',
-    status: 'PENDING',
+    jobId: 'wu-2',
+    experimentId: '10293842',
+    status: 'Pending',
     priority: 50,
-    requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 4 }],
-    workUnitId: 'wu-2',
+    resourceRequest: '4 x nvidia.com/gpu',
+    workUnitName: 'wu-2',
+    author: 'jdoe@google.com',
   },
 ];
 
@@ -174,28 +179,4 @@ export async function setupScreenshotEnvironment(page: Page) {
   await page.addStyleTag({
     content: BASE_SCREENSHOT_STYLES,
   });
-}
-
-/**
- * Mounts a component HTML harness into the DOM for isolated component screenshot testing.
- */
-export async function mountComponentHarness(page: Page, htmlContent: string) {
-  await page.evaluate((html) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    const targetElement = tempDiv.firstElementChild as HTMLElement | null;
-    const container =
-      document.querySelector('.page-container, .guest-page-container') ||
-      document.querySelector('app-root') ||
-      document.body;
-
-    if (targetElement) {
-      const tagName = targetElement.tagName.toLowerCase();
-      const liveElement = document.querySelector(tagName);
-      if (liveElement && !targetElement.innerHTML.trim()) {
-        targetElement.innerHTML = liveElement.innerHTML;
-      }
-    }
-    container.innerHTML = `<div class="screenshot-harness-container">${tempDiv.innerHTML}</div>`;
-  }, htmlContent);
 }
