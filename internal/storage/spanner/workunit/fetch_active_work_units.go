@@ -59,15 +59,15 @@ var countActiveWorkUnitsSQL = safesql.New(
 	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
-// WorkUnitEnhanced wraps a WorkUnit proto with additional query-time metadata.
-type WorkUnitEnhanced struct {
+// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
+type WorkUnitWithAuthor struct {
 	WorkUnit *essmsgpb.WorkUnit
-	User     string
+	Author   string
 }
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits      []WorkUnitEnhanced
+	WorkUnits      []WorkUnitWithAuthor
 	NextPageToken  string
 	TotalQueueSize int64
 }
@@ -146,7 +146,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	return orderedPKs, nil
 }
 
-func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]WorkUnitEnhanced, error) {
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]WorkUnitWithAuthor, error) {
 	type workUnitKey struct {
 		bitReversedXid int64
 		workUnitId     int64
@@ -179,7 +179,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		}
 	}
 
-	workUnits := make([]WorkUnitEnhanced, 0, len(orderedPKs))
+	workUnits := make([]WorkUnitWithAuthor, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
 		key := workUnitKey{
 			bitReversedXid: pk.BitReversedXid,
@@ -189,9 +189,9 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
-		workUnits = append(workUnits, WorkUnitEnhanced{
+		workUnits = append(workUnits, WorkUnitWithAuthor{
 			WorkUnit: wu,
-			User:     pk.Creator,
+			Author:   pk.Creator,
 		})
 	}
 
@@ -210,7 +210,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:     []WorkUnitEnhanced{},
+			WorkUnits:     []WorkUnitWithAuthor{},
 			NextPageToken: "",
 		}, nil
 	}
@@ -246,7 +246,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits:      []WorkUnitEnhanced{},
+			WorkUnits:      []WorkUnitWithAuthor{},
 			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil

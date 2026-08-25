@@ -89,19 +89,19 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []workunit.WorkUnitEnhanced {
-	return []workunit.WorkUnitEnhanced{
+func newTestWorkUnits(now time.Time) []workunit.WorkUnitWithAuthor {
+	return []workunit.WorkUnitWithAuthor{
 		{
 			WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 			}),
-			User: "alice@example.com",
+			Author: "alice@example.com",
 		},
 	}
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []workunit.WorkUnitEnhanced
+	workUnits      []workunit.WorkUnitWithAuthor
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -119,7 +119,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []workunit.WorkUnitEnhanced{},
+			WorkUnits: []workunit.WorkUnitWithAuthor{},
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
@@ -151,12 +151,12 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []workunit.WorkUnitEnhanced{
+				workUnits: []workunit.WorkUnitWithAuthor{
 					{
 						WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 						}),
-						User: "alice@example.com",
+						Author: "alice@example.com",
 					},
 				},
 				totalQueueSize: 1,

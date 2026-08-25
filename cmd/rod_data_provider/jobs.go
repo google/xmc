@@ -84,17 +84,17 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []workunit.WorkUnitEnhanced, nextPageToken string) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []workunit.WorkUnitWithAuthor, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}
 	return result.WorkUnits, result.NextPageToken
 }
 
-func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []workunit.WorkUnitEnhanced, now time.Time) []*spb.DashboardJob {
+func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []workunit.WorkUnitWithAuthor, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
 	for _, item := range workUnits {
-		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.User, now); job != nil {
+		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
