@@ -429,7 +429,7 @@ var (
 	ChartTables = []querytools.TableView{chartsTableView, dashboardChartsJoinedTableView}
 
 	// DashboardChartsTables is the list of TableViews for DashboardCharts queries.
-	DashboardChartsTables = []querytools.TableView{dashboardChartsJoinedTableView}
+	DashboardChartsTables = []querytools.TableView{dashboardChartsTableView}
 
 	// ChartPlotsTables is the list of TableViews for ChartPlots queries.
 	ChartPlotsTables = []querytools.TableView{chartPlotsTableView}

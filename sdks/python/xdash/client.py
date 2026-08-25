@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from typing import Any
 
 try:
@@ -253,6 +254,41 @@ class DashboardClient:
             chart_id=chart_id or "",
         )
         return self._execute_rpc(self._stub.CreateChart, req, "CreateChart")
+
+    def create_charts(
+        self,
+        charts: Sequence[messages_pb2.Chart],
+    ) -> list[messages_pb2.Chart]:
+        """Creates each chart under the work unit parent derived from its own xid/wid.
+
+        A Dashboard references charts by ID and never creates them, so charts must exist
+        before CreateDashboard runs. This walks that first phase and hands back the
+        server's versions, whose names carry the authoritative chart IDs.
+
+        Args:
+            charts: Chart messages to create, each with xid and wid set.
+
+        Returns:
+            The created charts, in the order supplied.
+
+        Raises:
+            ValueError: If a chart is None, or is missing a positive xid or wid, since
+                the parent work unit cannot be derived without both.
+        """
+        created: list[messages_pb2.Chart] = []
+        for chart in charts:
+            # Guarded explicitly so a None in the sequence surfaces as the same
+            # ValueError create_chart raises, not an AttributeError from chart.xid.
+            if chart is None:
+                raise ValueError("chart message is required and cannot be None")
+            if chart.xid <= 0 or chart.wid <= 0:
+                raise ValueError(
+                    f"chart {chart.name or '<unnamed>'!r} needs a positive xid and wid to "
+                    "derive its work unit parent; set them via ChartBuilder.for_experiment()"
+                )
+            parent = f"experiments/{chart.xid}/workUnits/{chart.wid}"
+            created.append(self.create_chart(parent, chart))
+        return created
 
     def get_chart(self, name: str) -> messages_pb2.Chart:
         """Retrieves a chart by its full resource name."""

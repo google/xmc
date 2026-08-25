@@ -117,8 +117,10 @@ func TestListCharts_ParentDashboard(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	c1 := blankChartProto("dash-linked-1", 100, 1)
-	c2 := blankChartProto("dash-unlinked-2", 100, 1)
+	c1ID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	c2ID := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	c1 := blankChartProto(c1ID, 100, 1)
+	c2 := blankChartProto(c2ID, 100, 1)
 	if err := repo.CreateChart(ctx, c1); err != nil {
 		t.Fatalf("CreateChart c1 failed: %v", err)
 	}
@@ -127,7 +129,7 @@ func TestListCharts_ParentDashboard(t *testing.T) {
 	}
 
 	dash := blankDashboardProto("dashboards/parent-dash-1")
-	dash.Charts = []*dpb.Chart{c1}
+	dash.ChartIds = []string{c1ID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -208,13 +210,14 @@ func TestListCharts_ParentDashboard_WithStaleness(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	c1 := blankChartProto("dash-stale-1", 100, 1)
+	c1ID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	c1 := blankChartProto(c1ID, 100, 1)
 	if err := repo.CreateChart(ctx, c1); err != nil {
 		t.Fatalf("CreateChart c1 failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/parent-dash-stale")
-	dash.Charts = []*dpb.Chart{c1}
+	dash.ChartIds = []string{c1ID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -234,9 +237,11 @@ func TestListCharts_ParentDashboard_WithFilter(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	c1 := blankChartProto("dash-filter-1", 100, 1)
+	c1ID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	c2ID := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	c1 := blankChartProto(c1ID, 100, 1)
 	c1.Title = "Target Chart"
-	c2 := blankChartProto("dash-filter-2", 100, 1)
+	c2 := blankChartProto(c2ID, 100, 1)
 	c2.Title = "Other Chart"
 	if err := repo.CreateChart(ctx, c1); err != nil {
 		t.Fatalf("CreateChart c1 failed: %v", err)
@@ -246,7 +251,7 @@ func TestListCharts_ParentDashboard_WithFilter(t *testing.T) {
 	}
 
 	dash := blankDashboardProto("dashboards/parent-dash-filter")
-	dash.Charts = []*dpb.Chart{c1, c2}
+	dash.ChartIds = []string{c1ID, c2ID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -265,16 +270,18 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	var createdCharts []*dpb.Chart
-	for _, id := range []string{"dp-1", "dp-2", "dp-3"} {
+	var chartIDs []string
+	for _, id := range []string{"f47ac10b-58cc-4372-a567-0e02b2c3d471", "f47ac10b-58cc-4372-a567-0e02b2c3d472", "f47ac10b-58cc-4372-a567-0e02b2c3d473"} {
 		c := blankChartProto(id, 100, 1)
 		if err := repo.CreateChart(ctx, c); err != nil {
 			t.Fatalf("CreateChart %s failed: %v", id, err)
 		}
 		createdCharts = append(createdCharts, c)
+		chartIDs = append(chartIDs, id)
 	}
 
 	dash := blankDashboardProto("dashboards/parent-dash-page")
-	dash.Charts = createdCharts
+	dash.ChartIds = chartIDs
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}

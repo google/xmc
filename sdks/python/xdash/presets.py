@@ -15,10 +15,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from xdash._protos import messages_pb2
 from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
 )
@@ -27,6 +30,13 @@ from xdash.builders import (
 VCC_BASELINE_XID = 234911122
 VCC_TUNED_V1_XID = 234911123
 VCC_TUNED_V2_XID = 234911124
+
+# Experiment ID, chart ID slug, and display title for each run in the VCC preset.
+VCC_COMPARISON_RUNS = (
+    (VCC_BASELINE_XID, "baseline", "VCC Baseline"),
+    (VCC_TUNED_V1_XID, "tuned_v1", "VCC tuned_v1"),
+    (VCC_TUNED_V2_XID, "tuned_v2", "VCC tuned_v2"),
+)
 
 
 def create_standard_experiment_chart(
@@ -63,33 +73,47 @@ def create_standard_experiment_chart(
     return builder.build()
 
 
+def create_vcc_comparison_charts() -> list[messages_pb2.Chart]:
+    """Builds the three standard VCC comparison charts, one per experiment run.
+
+    These must be created with DashboardClient.create_chart() before a dashboard can
+    reference them: CreateDashboard records chart references but never creates charts.
+
+    Returns:
+        A list of messages_pb2.Chart messages in baseline, tuned_v1, tuned_v2 order.
+    """
+    return [
+        create_standard_experiment_chart(xid=xid, wid=1, chart_id=chart_slug, title=exp_title)
+        for xid, chart_slug, exp_title in VCC_COMPARISON_RUNS
+    ]
+
+
 def create_vcc_comparison_dashboard(
     dashboard_id: str = "vcc_comparison",
     title: str = "VCC baseline tune comparison",
+    chart_ids: Sequence[str] | None = None,
 ) -> messages_pb2.Dashboard:
     """Creates the standard 3-experiment VCC comparison dashboard.
 
     Args:
         dashboard_id: Resource identifier suffix for the dashboard.
         title: Human-readable title for the dashboard.
+        chart_ids: Raw IDs of already-created charts to reference. Defaults to the
+            preset slugs from VCC_COMPARISON_RUNS, which match what create_chart()
+            assigns for the charts from create_vcc_comparison_charts(). Pass the IDs
+            returned by the server whenever it assigned them itself.
 
     Returns:
-        A populated messages_pb2.Dashboard message containing baseline and tuned charts.
+        A populated messages_pb2.Dashboard message referencing the comparison charts.
     """
-    experiments = [
-        (VCC_BASELINE_XID, "baseline", "VCC Baseline"),
-        (VCC_TUNED_V1_XID, "tuned_v1", "VCC tuned_v1"),
-        (VCC_TUNED_V2_XID, "tuned_v2", "VCC tuned_v2"),
-    ]
+    if chart_ids is None:
+        chart_ids = [chart_id_from_name(chart.name) for chart in create_vcc_comparison_charts()]
     builder = (
         DashboardBuilder(name=f"dashboards/{dashboard_id}")
         .set_title(title)
         .set_description("Comparative evaluation of VCC baseline tuning across hyperparameter runs")
         .set_grid_layout(columns=2)
     )
-    for xid, chart_slug, exp_title in experiments:
-        chart = create_standard_experiment_chart(
-            xid=xid, wid=1, chart_id=chart_slug, title=exp_title
-        )
-        builder.add_chart(chart)
+    for chart_id in chart_ids:
+        builder.add_chart_id(chart_id)
     return builder.build()

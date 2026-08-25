@@ -59,6 +59,34 @@ func TestGetDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("successful retrieval with populated chart_ids", func(t *testing.T) {
+		repo := &mockRepository{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name:     "dashboards/" + dashboardId,
+					Title:    "Dashboard with Charts",
+					Owner:    "owner@example.com",
+					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "reader@example.com", "user-1", nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+
+		req := &spb.GetDashboardRequest{Name: "dashboards/dash-123"}
+		resp, err := s.GetDashboard(ctx, req)
+		if err != nil {
+			t.Fatalf("GetDashboard failed: %v", err)
+		}
+		if len(resp.GetChartIds()) != 2 {
+			t.Errorf("Expected 2 chart_ids, got %v", resp.GetChartIds())
+		}
+	})
+
 	t.Run("unauthenticated caller returns Unauthenticated", func(t *testing.T) {
 		authMock := &mockAuthorizer{
 			authenticateFn: func(ctx context.Context) (string, string, error) {
