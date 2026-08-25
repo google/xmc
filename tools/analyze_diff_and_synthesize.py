@@ -67,12 +67,12 @@ def extract_diff_structure(changed_files: list[str], diff_text: str) -> dict[str
         category = "other"
 
     added_lines = [
-        line[1:].strip()
+        line.removeprefix("+").strip()
         for line in diff_text.splitlines()
         if line.startswith("+") and not line.startswith("+++")
     ]
     removed_lines = [
-        line[1:].strip()
+        line.removeprefix("-").strip()
         for line in diff_text.splitlines()
         if line.startswith("-") and not line.startswith("---")
     ]

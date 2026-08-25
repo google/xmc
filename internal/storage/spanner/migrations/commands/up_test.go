@@ -24,6 +24,7 @@ import (
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
 	stubs "golang/github_com/golang_migrate/migrate/v/v4/source/stub/stub"
+	"k8s.io/utils/ptr"
 	dbadminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	xmcemulator "xmanager_cloud/storage/spanner/emulator/emulator"
 )
@@ -55,7 +56,7 @@ func TestUp(t *testing.T) {
 		},
 		{
 			name:            "UpStep",
-			steps:           ptr(1),
+			steps:           ptr.To(1),
 			initialVersion:  1,
 			expectError:     false,
 			expectedVersion: 2,
@@ -63,7 +64,7 @@ func TestUp(t *testing.T) {
 		},
 		{
 			name:            "UpNegativeStep",
-			steps:           ptr(-1),
+			steps:           ptr.To(-1),
 			initialVersion:  1,
 			expectError:     true,
 			expectedVersion: 1,
@@ -149,8 +150,4 @@ func updateDDL(t *testing.T, client *spanner.Client, emu *emulator.Emulator, sta
 	if err := op.Wait(ctx); err != nil {
 		t.Fatalf("Failed to wait for DDL operation: %v", err)
 	}
-}
-
-func ptr(i int) *int {
-	return &i
 }

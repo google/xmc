@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { DOCUMENT } from '@angular/common';
-import { inject, Injectable, InjectionToken } from '@angular/core';
-import { BehaviorSubject, combineLatest, EMPTY, Observable, timer } from 'rxjs';
-import { distinctUntilChanged, map, mapTo, pairwise, startWith, switchMap } from 'rxjs/operators';
+import { inject, Injectable } from '@angular/core';
+import { BehaviorSubject, combineLatest, EMPTY, fromEvent, Observable, timer } from 'rxjs';
+import { distinctUntilChanged, map, pairwise, startWith, switchMap } from 'rxjs/operators';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
-
-/** Injection token for the window object. */
-export const WINDOW = new InjectionToken<Window>('WindowToken', {
-  providedIn: 'root',
-  factory: () => window,
-});
 
 /**
  * Control interface for an auto-reloading process.
@@ -63,7 +57,6 @@ export interface CreateReloaderOptions {
 @Injectable({ providedIn: 'root' })
 export class AutoReloadService {
   private readonly document: Document = inject(DOCUMENT);
-  private readonly window: Window = inject(WINDOW);
   private readonly refreshIntervalMs = inject(AUTO_REFRESH_INTERVAL_MS);
 
   /**
@@ -98,27 +91,20 @@ export class AutoReloadService {
         }
         return EMPTY;
       }),
-      mapTo(undefined),
+      map(() => undefined),
     );
 
     return { reloader$, start: () => isActive$.next(true), stop: () => isActive$.next(false) };
   }
 
   private getVisibilityObservable(): Observable<boolean> {
-    return new Observable<boolean>((subscriber) => {
-      if (typeof this.window.addEventListener !== 'function') {
-        subscriber.next(true); // If there's no real DOM, assume the page is always visible.
-        return;
-      }
-      const handler = () => {
-        subscriber.next(!this.document.hidden);
-      };
-      this.document.addEventListener('visibilitychange', handler);
-      handler(); // Initial state
-
-      return () => {
-        this.document.removeEventListener('visibilitychange', handler);
-      };
-    }).pipe(distinctUntilChanged());
+    if (typeof this.document?.addEventListener !== 'function') {
+      return new BehaviorSubject(true);
+    }
+    return fromEvent(this.document, 'visibilitychange').pipe(
+      startWith(null),
+      map(() => !this.document.hidden),
+      distinctUntilChanged(),
+    );
   }
 }
