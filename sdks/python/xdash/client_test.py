@@ -150,6 +150,30 @@ class DashboardClientTest(unittest.TestCase):
         # A trailing slash used to derive "", which the server rejects with an opaque error.
         self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "derived")
 
+    def test_create_charts_derives_each_parent_from_the_chart(self) -> None:
+        charts = [
+            messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/a", xid=1001, wid=1),
+            messages_pb2.Chart(name="experiments/1002/workUnits/7/charts/b", xid=1002, wid=7),
+        ]
+        self.mock_stub.CreateChart.side_effect = charts
+
+        results = self.client.create_charts(charts)
+        self.assertEqual([c.name for c in results], [charts[0].name, charts[1].name])
+        parents = [call[0][0].parent for call in self.mock_stub.CreateChart.call_args_list]
+        # The wid varies between the two charts, so a hardcoded parent would fail here.
+        self.assertEqual(parents, ["experiments/1001/workUnits/1", "experiments/1002/workUnits/7"])
+
+    def test_create_charts_rejects_a_chart_without_an_experiment(self) -> None:
+        # Without xid/wid there is no parent to send, and the derived
+        # "experiments/0/workUnits/0" would be rejected by the server with an opaque error.
+        for bad in (
+            messages_pb2.Chart(name="charts/no_xid", wid=1),
+            messages_pb2.Chart(name="charts/no_wid", xid=1001),
+        ):
+            with self.assertRaises(ValueError):
+                self.client.create_charts([bad])
+        self.mock_stub.CreateChart.assert_not_called()
+
     def test_get_chart(self) -> None:
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
         self.mock_stub.GetChart.return_value = chart

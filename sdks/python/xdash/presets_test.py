@@ -20,6 +20,7 @@ from xdash.presets import (
     VCC_TUNED_V1_XID,
     VCC_TUNED_V2_XID,
     create_standard_experiment_chart,
+    create_vcc_comparison_charts,
     create_vcc_comparison_dashboard,
 )
 
@@ -68,28 +69,42 @@ class PresetsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_standard_experiment_chart(xid=VCC_BASELINE_XID, wid=0)
 
+    def test_create_vcc_comparison_charts(self) -> None:
+        charts = create_vcc_comparison_charts()
+        self.assertEqual(
+            [chart.xid for chart in charts],
+            [VCC_BASELINE_XID, VCC_TUNED_V1_XID, VCC_TUNED_V2_XID],
+        )
+        self.assertEqual(
+            [chart.title for chart in charts],
+            ["VCC Baseline", "VCC tuned_v1", "VCC tuned_v2"],
+        )
+        self.assertEqual(
+            [chart.name.rsplit("/", 1)[-1] for chart in charts],
+            ["baseline", "tuned_v1", "tuned_v2"],
+        )
+
     def test_create_vcc_comparison_dashboard(self) -> None:
         dash = create_vcc_comparison_dashboard(dashboard_id="vcc_test", title="VCC Comparison Test")
         self.assertEqual(dash.name, "dashboards/vcc_test")
         self.assertEqual(dash.title, "VCC Comparison Test")
-        self.assertEqual(len(dash.charts), 3)
+        # The dashboard references charts by bare ID; the preset slugs match what
+        # create_chart() assigns for the charts from create_vcc_comparison_charts().
+        self.assertEqual(list(dash.chart_ids), ["baseline", "tuned_v1", "tuned_v2"])
 
-        xids = [chart.xid for chart in dash.charts]
-        self.assertEqual(xids, [VCC_BASELINE_XID, VCC_TUNED_V1_XID, VCC_TUNED_V2_XID])
-        self.assertEqual(
-            [chart.title for chart in dash.charts],
-            ["VCC Baseline", "VCC tuned_v1", "VCC tuned_v2"],
-        )
-        self.assertEqual(
-            [chart.name.rsplit("/", 1)[-1] for chart in dash.charts],
-            ["baseline", "tuned_v1", "tuned_v2"],
-        )
+    def test_create_vcc_comparison_dashboard_accepts_server_assigned_ids(self) -> None:
+        server_ids = [
+            "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "9f8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        ]
+        dash = create_vcc_comparison_dashboard(chart_ids=server_ids)
+        self.assertEqual(list(dash.chart_ids), server_ids)
 
     def test_create_vcc_comparison_dashboard_defaults(self) -> None:
         dash = create_vcc_comparison_dashboard()
         self.assertEqual(dash.name, "dashboards/vcc_comparison")
         self.assertEqual(dash.title, "VCC baseline tune comparison")
-        self.assertEqual(len(dash.charts), 3)
+        self.assertEqual(len(dash.chart_ids), 3)
 
 
 if __name__ == "__main__":

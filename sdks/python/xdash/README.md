@@ -64,6 +64,7 @@ from xdash import (
     ChartBuilder,
     DashboardBuilder,
     DashboardClient,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
 )
@@ -79,20 +80,48 @@ chart = (
     .build()
 )
 
-# Attach to a new Dashboard
-dashboard = (
-    DashboardBuilder(name="dashboards/exp_1001_dashboard")
-    .set_title("Experiment 1001 Dashboard")
-    .add_chart(chart)
-    .build()
-)
-
 with DashboardClient() as client:
-    created = client.create_dashboard(dashboard)
+    # Phase 1: create the charts. CreateDashboard never creates charts, so they must
+    # exist before anything can reference them.
+    created_charts = client.create_charts([chart])
+
+    # Phase 2: create the dashboard, referencing the IDs the server assigned.
+    builder = (
+        DashboardBuilder(name="dashboards/exp_1001_dashboard")
+        .set_title("Experiment 1001 Dashboard")
+    )
+    for created_chart in created_charts:
+        builder.add_chart_id(chart_id_from_name(created_chart.name))
+
+    created = client.create_dashboard(builder.build())
 ```
 
 `create_chart` attaches a chart to a **WorkUnit** parent — `experiments/{xid}/workUnits/{wid}` —
-which is the only parent the `CreateChart` RPC accepts.
+which is the only parent the `CreateChart` RPC accepts. `create_charts` is the batch convenience
+wrapper: it derives each parent from the chart's own `xid`/`wid`, so `for_experiment()` must have
+been called on every chart it is given.
+
+### Referencing Charts from a Dashboard
+
+A `Dashboard` stores a list of bare chart IDs (`chart_ids`), not embedded `Chart` messages, and it
+does not create the charts it points at. Two builder methods cover both spellings:
+
+```python
+builder.add_chart_id("f47ac10b-58cc-4372-a567-0e02b2c3d479")  # a bare ID
+builder.add_chart(created_chart)  # a created Chart; the ID is taken from chart.name
+```
+
+Both reject blanks, IDs containing a `/` (a full resource name is not a chart ID — pass it through
+`chart_id_from_name()` first), and IDs already referenced by the same dashboard. Use `add_chart()`
+only with a chart the server has returned: a locally built chart whose `name` you chose yourself
+would embed an ID that does not exist yet.
+
+Two consequences of the ID-only model are worth knowing at call sites:
+
+- `GetDashboard` returns `chart_ids` **sorted and de-duplicated**, so the order you added them in
+  is not preserved. Drive layout from `chart_layout` positions, not from list order.
+- A `GridPosition` for a chart must set `item_id` to the raw chart ID, matching an entry in
+  `chart_ids`; a full resource name will not be matched to any chart.
 
 ### Creating a Dashboard from Presets
 
@@ -100,16 +129,27 @@ Use the built-in VCC comparison dashboard preset (featuring experiments `2349111
 `234911124`):
 
 ```python
-from xdash import DashboardClient, create_vcc_comparison_dashboard
-
-dashboard = create_vcc_comparison_dashboard(
-    dashboard_id="my_vcc_comparison", title="VCC Baseline vs Tuned Runs"
+from xdash import (
+    DashboardClient,
+    chart_id_from_name,
+    create_vcc_comparison_charts,
+    create_vcc_comparison_dashboard,
 )
 
 with DashboardClient(endpoint="localhost:8080") as client:
+    created_charts = client.create_charts(create_vcc_comparison_charts())
+    dashboard = create_vcc_comparison_dashboard(
+        dashboard_id="my_vcc_comparison",
+        title="VCC Baseline vs Tuned Runs",
+        chart_ids=[chart_id_from_name(c.name) for c in created_charts],
+    )
     created_dashboard = client.create_dashboard(dashboard)
     print(f"Created: {created_dashboard.name}")
 ```
+
+`create_vcc_comparison_dashboard()` defaults `chart_ids` to the preset slugs (`baseline`,
+`tuned_v1`, `tuned_v2`), which is only correct if the charts were created under exactly those IDs.
+Pass the IDs back from `create_charts()` whenever the server may assign them itself.
 
 A runnable end-to-end version of this, including a virtualenv installer, lives in
 [`examples/xdash_dashboard/`](../../../examples/xdash_dashboard/).

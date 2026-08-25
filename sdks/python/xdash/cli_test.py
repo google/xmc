@@ -29,6 +29,9 @@ class CliTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.mock_client = MagicMock()
+        # A real CreateChart echoes the chart back with its resolved resource name, and
+        # the CLI derives the dashboard's chart IDs from those names.
+        self.mock_client.create_charts.side_effect = lambda charts: list(charts)
 
     def _run(self, argv: list[str]) -> tuple[int, str, str]:
         """Runs the CLI with a mock client, capturing its exit code, stdout and stderr."""
@@ -53,9 +56,11 @@ class CliTest(unittest.TestCase):
         args, kwargs = self.mock_client.create_dashboard.call_args
         self.assertEqual(args[0].name, "dashboards/test_dash")
         self.assertEqual(args[0].title, "Test Title")
-        self.assertEqual(len(args[0].charts), 3)
+        self.assertEqual(list(args[0].chart_ids), ["baseline", "tuned_v1", "tuned_v2"])
         self.assertEqual(kwargs["dashboard_id"], "test_dash")
         self.assertIn("3 charts", out)
+        # Charts must be created before the dashboard that references them.
+        self.mock_client.create_charts.assert_called_once()
 
     def test_create_preset_defaults(self) -> None:
         self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard()
@@ -86,9 +91,11 @@ class CliTest(unittest.TestCase):
         self.mock_client.create_dashboard.assert_called_once()
         built = self.mock_client.create_dashboard.call_args[0][0]
         # Whitespace trimmed and the trailing empty element dropped, not turned into a chart.
-        self.assertEqual([chart.xid for chart in built.charts], [234911122, 234911123])
+        self.assertEqual(list(built.chart_ids), ["exp_234911122", "exp_234911123"])
+        created_charts = self.mock_client.create_charts.call_args[0][0]
+        self.assertEqual([chart.xid for chart in created_charts], [234911122, 234911123])
         self.assertEqual(
-            [chart.name for chart in built.charts],
+            [chart.name for chart in created_charts],
             [
                 "experiments/234911122/workUnits/1/charts/exp_234911122",
                 "experiments/234911123/workUnits/1/charts/exp_234911123",
@@ -275,7 +282,7 @@ class CliTest(unittest.TestCase):
             name="dashboards/d1",
             title="D1",
             description="First dashboard",
-            charts=[messages_pb2.Chart(name="dashboards/d1/charts/c1")],
+            chart_ids=["c1"],
         )
 
         ret, out, _ = self._run(["get", "dashboards/d1"])

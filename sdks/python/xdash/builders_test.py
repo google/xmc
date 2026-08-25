@@ -20,8 +20,10 @@ from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
     bar_plot,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
+    validate_chart_id,
 )
 
 
@@ -159,8 +161,51 @@ class BuildersTest(unittest.TestCase):
         self.assertEqual(dash.name, "dashboards/my_dash")
         self.assertEqual(dash.title, "My Dashboard")
         self.assertEqual(dash.description, "Dashboard desc")
-        self.assertEqual(len(dash.charts), 1)
+        # A dashboard stores the bare chart ID, not the embedded Chart message.
+        self.assertEqual(list(dash.chart_ids), ["c1"])
         self.assertEqual(dash.chart_layout.columns, 2)
+
+    def test_add_chart_derives_id_from_resource_name(self) -> None:
+        dash = (
+            DashboardBuilder(name="dashboards/d1")
+            .set_title("D1")
+            .add_chart(
+                messages_pb2.Chart(
+                    name="experiments/1001/workUnits/1/charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                )
+            )
+            .build()
+        )
+        self.assertEqual(list(dash.chart_ids), ["f47ac10b-58cc-4372-a567-0e02b2c3d479"])
+
+    def test_add_chart_requires_a_name_to_reference(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            DashboardBuilder().set_title("D1").add_chart(messages_pb2.Chart(title="No name"))
+        self.assertIn("chart.name", str(cm.exception))
+
+    def test_add_chart_id_rejects_resource_names_and_blanks(self) -> None:
+        builder = DashboardBuilder().set_title("D1")
+        with self.assertRaises(ValueError) as cm:
+            builder.add_chart_id("experiments/1001/workUnits/1/charts/c1")
+        self.assertIn("cannot contain slashes", str(cm.exception))
+        for blank in ("", "   ", "\t\n"):
+            with self.assertRaises(ValueError):
+                builder.add_chart_id(blank)
+
+    def test_add_chart_id_rejects_duplicates(self) -> None:
+        builder = DashboardBuilder().set_title("D1").add_chart_id("c1")
+        with self.assertRaises(ValueError) as cm:
+            builder.add_chart_id("c1")
+        self.assertIn("already referenced", str(cm.exception))
+
+    def test_chart_id_from_name_handles_trailing_slash(self) -> None:
+        self.assertEqual(chart_id_from_name("dashboards/d1/charts/c1/"), "c1")
+        for blank in ("", "   ", "/"):
+            with self.assertRaises(ValueError):
+                chart_id_from_name(blank)
+
+    def test_validate_chart_id_strips_surrounding_whitespace(self) -> None:
+        self.assertEqual(validate_chart_id("  c1  "), "c1")
 
     def test_dashboard_builder_requires_title(self) -> None:
         builder = DashboardBuilder(name="dashboards/empty")

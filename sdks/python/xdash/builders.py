@@ -27,6 +27,58 @@ def _slugify(text: str) -> str:
     return slug.strip("_") or "default"
 
 
+def validate_chart_id(chart_id: str) -> str:
+    """Validates a raw chart ID and returns it stripped of surrounding whitespace.
+
+    A dashboard references its charts by raw ID, never by resource name, so a value
+    containing a slash is rejected rather than silently stored as an unresolvable
+    reference. This mirrors ValidateChartID in the Go validator package.
+
+    Args:
+        chart_id: Raw chart identifier, normally the UUID assigned by CreateChart.
+
+    Returns:
+        The validated chart ID.
+
+    Raises:
+        ValueError: If chart_id is blank or contains a slash.
+    """
+    if not chart_id or not chart_id.strip():
+        raise ValueError("chart_id is required and cannot be blank")
+    if "/" in chart_id:
+        raise ValueError(
+            f"chart_id {chart_id!r} cannot contain slashes. Dashboards reference charts by "
+            "raw ID, not by resource name — use chart_id_from_name() to extract it."
+        )
+    return chart_id.strip()
+
+
+def chart_id_from_name(name: str) -> str:
+    """Extracts the raw chart ID from a full chart resource name.
+
+    CreateChart returns a chart whose name is
+    'experiments/{xid}/workUnits/{wid}/charts/{chart_id}'; a dashboard needs only the
+    trailing '{chart_id}'.
+
+    Args:
+        name: Full chart resource name.
+
+    Returns:
+        The trailing chart ID segment.
+
+    Raises:
+        ValueError: If name is blank or yields an empty trailing segment.
+    """
+    if not name or not name.strip():
+        raise ValueError("chart resource name is required and cannot be blank")
+    # rstrip first: a trailing slash would otherwise yield an empty ID that only fails
+    # later, at the server, with a message pointing nowhere near the real cause.
+    chart_id = name.rstrip("/").split("/")[-1]
+    if not chart_id:
+        raise ValueError(f"could not derive a chart ID from resource name {name!r}")
+    return chart_id
+
+
 def _validate_plot_args(plot_id: str, metrics: Sequence[str]) -> None:
     """Validates the identifier and metric list shared by every plot helper.
 
@@ -263,7 +315,7 @@ class DashboardBuilder:
         self._name: str | None = name
         self._title: str = title
         self._description: str = description
-        self._charts: list[messages_pb2.Chart] = []
+        self._chart_ids: list[str] = []
         self._columns: int = 2
 
     def set_name(self, name: str) -> DashboardBuilder:
@@ -288,16 +340,46 @@ class DashboardBuilder:
         self._columns = columns
         return self
 
-    def add_chart(self, chart: messages_pb2.Chart) -> DashboardBuilder:
-        """Appends a Chart message to the dashboard.
+    def add_chart_id(self, chart_id: str) -> DashboardBuilder:
+        """References an existing chart by its raw ID.
+
+        The chart must already exist: CreateDashboard records the reference but never
+        creates the chart itself, so pass the ID of a chart returned by
+        DashboardClient.create_chart().
+
+        Args:
+            chart_id: Raw chart identifier, normally a server-assigned UUID.
 
         Raises:
-            ValueError: If chart is None. See ChartBuilder.add_plot.
+            ValueError: If chart_id is blank, contains a slash, or is already referenced.
+                Duplicates are rejected here because the server rejects them too, and a
+                clear client-side error beats an opaque InvalidArgument.
+        """
+        validated = validate_chart_id(chart_id)
+        if validated in self._chart_ids:
+            raise ValueError(f"chart_id {validated!r} is already referenced by this dashboard")
+        self._chart_ids.append(validated)
+        return self
+
+    def add_chart(self, chart: messages_pb2.Chart) -> DashboardBuilder:
+        """References a chart by deriving its raw ID from the Chart message's name.
+
+        Convenience wrapper over add_chart_id() for the common case of holding the
+        Chart returned by create_chart(). Only the ID is stored — a Dashboard no longer
+        carries embedded Chart messages.
+
+        Raises:
+            ValueError: If chart is None, its name is unset, or the derived ID is
+                already referenced. See ChartBuilder.add_plot.
         """
         if chart is None:
             raise ValueError("chart is required and cannot be None")
-        self._charts.append(chart)
-        return self
+        if not chart.name:
+            raise ValueError(
+                "chart.name must be set to reference it from a dashboard. Build the chart "
+                "with ChartBuilder(name=...) or use the Chart returned by create_chart()."
+            )
+        return self.add_chart_id(chart_id_from_name(chart.name))
 
     def _resolve_resource_name(self) -> str:
         """Determines the default dashboard resource name if not explicitly set."""
@@ -308,6 +390,10 @@ class DashboardBuilder:
 
     def build(self) -> messages_pb2.Dashboard:
         """Validates configuration and builds the Dashboard protobuf message.
+
+        Note that GetDashboard returns chart_ids sorted and de-duplicated, so the order
+        charts were added here is not preserved on read. Use chart_layout positions,
+        keyed by raw chart ID, when placement matters.
 
         Returns:
             A populated messages_pb2.Dashboard instance.
@@ -326,6 +412,6 @@ class DashboardBuilder:
             name=self._resolve_resource_name(),
             title=self._title,
             description=self._description,
-            charts=self._charts,
+            chart_ids=self._chart_ids,
             chart_layout=layout,
         )
