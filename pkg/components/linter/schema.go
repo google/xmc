@@ -72,7 +72,7 @@ func (l *Linter) validateRawManifest(m *RawManifest, res *ValidationResult) {
 	if strings.TrimSpace(m.Metadata.Name) == "" {
 		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "metadata.name is required and cannot be empty")
 	}
-	if l.rules != nil && l.rules.StaticChecks.EnforceNamespaceScope {
+	if l.rules.StaticChecks.EnforceNamespaceScope {
 		normalizedKind := strings.ToLower(strings.TrimSpace(m.Kind))
 		if clusterScopedKinds[normalizedKind] {
 			res.AddError(m.FilePath, line, "CLUSTER_SCOPED_KIND_REJECTED", fmt.Sprintf("cluster-scoped kind %q is forbidden when namespace scope is enforced", m.Kind))
@@ -100,7 +100,7 @@ func (l *Linter) validateComponentManifest(c *ComponentManifest, res *Validation
 		res.AddError(c.FilePath, line, "INVALID_COMPONENT_TYPE", "spec.wrapperRef is only allowed for 3P wrapper components")
 	}
 	validateLifecycleControl(c.Spec.LifecycleControl, c.FilePath, line, l.rules, res)
-	if l.rules != nil && l.rules.StaticChecks.EnforceDeletionProtection {
+	if l.rules.StaticChecks.EnforceDeletionProtection {
 		if !c.Spec.DeletionProtection {
 			res.AddError(c.FilePath, line, "DELETION_PROTECTION_REQUIRED", "spec.deletionProtection must be true when deletion protection is enforced")
 		}
@@ -117,7 +117,7 @@ func validateLifecycleControl(ctrl *ComponentLifecycleCtrl, filePath string, lin
 	if ctrl.GracePeriodSeconds < 0 {
 		res.AddError(filePath, line, "INVALID_GRACE_PERIOD", "spec.lifecycleControl.gracePeriodSeconds must be non-negative")
 	}
-	if rules != nil && rules.StaticChecks.MaxDrainTimeoutSeconds > 0 && ctrl.DrainTimeoutSeconds > rules.StaticChecks.MaxDrainTimeoutSeconds {
+	if rules.StaticChecks.MaxDrainTimeoutSeconds > 0 && ctrl.DrainTimeoutSeconds > rules.StaticChecks.MaxDrainTimeoutSeconds {
 		res.AddError(filePath, line, "DRAIN_TIMEOUT_EXCEEDED", fmt.Sprintf("spec.lifecycleControl.drainTimeoutSeconds (%d) exceeds max allowed (%d)", ctrl.DrainTimeoutSeconds, rules.StaticChecks.MaxDrainTimeoutSeconds))
 	}
 }

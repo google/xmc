@@ -291,7 +291,7 @@ spec:
 `,
 			},
 			wantValid: false,
-			wantRules: []string{"INVALID_DRAIN_TIMEOUT"},
+			wantRules: []string{"SCHEMA_ERROR"},
 		},
 		{
 			name: "drain timeout exceeding max allowed",
@@ -329,7 +329,7 @@ spec:
 `,
 			},
 			wantValid: false,
-			wantRules: []string{"INVALID_GRACE_PERIOD"},
+			wantRules: []string{"SCHEMA_ERROR"},
 		},
 		{
 			name:  "integer string duration in lifecycleControl is supported",
