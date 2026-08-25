@@ -168,12 +168,9 @@ class TestSpannerManager(unittest.TestCase):
             cwd="/workspace",
         )
 
-    @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("time.sleep")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_create_database_retries_on_resource_exhausted(
-        self, mock_run, mock_sleep, mock_cleanup
-    ):
+    def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep):
         mock_run.side_effect = [
             subprocess.CalledProcessError(
                 returncode=1,
@@ -186,7 +183,6 @@ class TestSpannerManager(unittest.TestCase):
         self.mgr._create_database("test-db", "schema.sql", "desc.pb")
 
         self.assertEqual(mock_run.call_count, 2)
-        mock_cleanup.assert_called_once()
         mock_sleep.assert_called_once_with(15)
 
     @patch("test.e2e.lib.spanner.run_cmd")

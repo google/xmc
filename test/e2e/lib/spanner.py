@@ -143,7 +143,6 @@ class SpannerManager:
                         max_attempts,
                         delay,
                     )
-                    self._cleanup_stale_databases()
                     time.sleep(delay)
                 else:
                     raise
