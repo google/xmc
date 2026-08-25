@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -227,8 +228,7 @@ func (k *KeyReloader[T, K]) reloadKey(latestModTime time.Time) error {
 	}
 
 	k.mu.RLock()
-	keysToConvert := make([]K, len(k.recentKeys))
-	copy(keysToConvert, k.recentKeys)
+	keysToConvert := slices.Clone(k.recentKeys)
 	k.mu.RUnlock()
 
 	key, newRecentKeys, err := k.converter(block, keysToConvert, k.maxRecentKeys)
@@ -314,14 +314,10 @@ func convertToVerifier(block *pem.Block, recentCerts []x509.Certificate, maxRece
 }
 
 func validCerts(certs []x509.Certificate) []x509.Certificate {
-	var newCerts []x509.Certificate
 	now := time.Now()
-	for _, cert := range certs {
-		if now.After(cert.NotBefore) && now.Before(cert.NotAfter) {
-			newCerts = append(newCerts, cert)
-		}
-	}
-	return newCerts
+	return slices.DeleteFunc(slices.Clone(certs), func(cert x509.Certificate) bool {
+		return !now.After(cert.NotBefore) || !now.Before(cert.NotAfter)
+	})
 }
 
 func publicKeys(certs []x509.Certificate) []crypto.PublicKey {

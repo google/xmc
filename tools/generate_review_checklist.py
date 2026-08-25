@@ -16,6 +16,7 @@
 """Tool to generate a PR review checklist markdown file from unresolved comments."""
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from github_utils import (
@@ -227,8 +228,7 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
 
     output_path = args.output
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(markdown_content)
+        Path(output_path).write_text(markdown_content, encoding="utf-8")
     except OSError as e:
         raise HandledError(
             f"Failed to write output file '{output_path}': {str(e)}",

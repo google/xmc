@@ -45,7 +45,7 @@ export class WorkUnitsStatusBar {
 
   /** Sort by state so the status bar looks consistent. */
   readonly sortedStateCounts: Signal<ExperimentStatus.StateCount[]> = computed(() => {
-    return this.stateCounts().sort((a, b) => {
+    return this.stateCounts().toSorted((a, b) => {
       return (
         ORDERED_STATES.indexOf(a.state ?? 'WORK_UNIT_STATE_UNSPECIFIED') -
         ORDERED_STATES.indexOf(b.state ?? 'WORK_UNIT_STATE_UNSPECIFIED')

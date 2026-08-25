@@ -176,7 +176,7 @@ function toTableRow(experiment: Experiment, filterService: StatusMessageFilterSe
 
   return {
     name: experiment.name,
-    xid: experiment.name?.split('/').pop(),
+    xid: experiment.name?.split('/').at(-1),
     title: experiment.title,
     tags: experiment.tags || [],
     stateCounts: experiment.status?.childStateCounts || [],

@@ -46,7 +46,7 @@ DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
 
 @dataclass(kw_only=True)
-class UpgradeConfig(DeploymentConfig):
+class UpgradeConfig(DeploymentConfig):  # type: ignore[misc]
     """Holds deployment configuration values for XMC upgrade."""
 
     config_path: str
@@ -192,14 +192,10 @@ def extract_migration_version(sql_files: list[Path]) -> int:
     Returns:
       Highest numeric version integer found, or 0 if none.
     """
-    max_version = 0
-    for path in sql_files:
-        prefix = path.name.split("_")[0]
-        if prefix.isdigit():
-            version = int(prefix)
-            if version > max_version:
-                max_version = version
-    return max_version
+    return max(
+        (int(p) for path in sql_files if (p := path.name.partition("_")[0]).isdigit()),
+        default=0,
+    )
 
 
 def get_migration_status(

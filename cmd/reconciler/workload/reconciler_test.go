@@ -31,6 +31,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
+	"k8s.io/utils/ptr"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -170,7 +171,7 @@ func TestWorkloadReconciler(t *testing.T) {
 		},
 		Spec: workloadSpecWithNecessaryLabels,
 		Status: v1beta1.WorkloadStatus{
-			ClusterName: stringPtr("worker-cluster"),
+			ClusterName: ptr.To("worker-cluster"),
 		},
 	}
 	mkc := &v1beta1.MultiKueueCluster{
@@ -516,7 +517,7 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 		},
 		Spec: workloadSpecWithNecessaryLabels,
 		Status: v1beta1.WorkloadStatus{
-			ClusterName: stringPtr("cluster-a"),
+			ClusterName: ptr.To("cluster-a"),
 			Admission: &v1beta1.Admission{
 				PodSetAssignments: []v1beta1.PodSetAssignment{
 					{
@@ -551,7 +552,7 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 			new: func() *v1beta1.Workload {
 				w := baseWorkload.DeepCopy()
 				w.ResourceVersion = "2"
-				w.Status.ClusterName = stringPtr("cluster-b")
+				w.Status.ClusterName = ptr.To("cluster-b")
 				return w
 			}(),
 			want: true,
