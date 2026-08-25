@@ -47,9 +47,24 @@ type ComponentDependencyRule struct {
 	Requires         []DependencyRequirement `yaml:"requires" json:"requires"`
 }
 
-// CompatibilityMatrixConfig holds matrix rules for component dependencies.
+// PlatformRequirementConfig specifies target Kubernetes and CRD requirements for a component.
+type PlatformRequirementConfig struct {
+	KubernetesVersion string   `yaml:"kubernetesVersion,omitempty" json:"kubernetesVersion,omitempty"`
+	MinK8sVersion     string   `yaml:"minK8sVersion,omitempty" json:"minK8sVersion,omitempty"`
+	MaxK8sVersion     string   `yaml:"maxK8sVersion,omitempty" json:"maxK8sVersion,omitempty"`
+	RequiredCRDs      []string `yaml:"requiredCRDs,omitempty" json:"requiredCRDs,omitempty"`
+}
+
+// PlatformIntegrationRule specifies platform requirements for a specific component.
+type PlatformIntegrationRule struct {
+	Component string                    `yaml:"component" json:"component"`
+	Platform  PlatformRequirementConfig `yaml:"platform" json:"platform"`
+}
+
+// CompatibilityMatrixConfig holds matrix rules for component dependencies and platform constraints.
 type CompatibilityMatrixConfig struct {
 	ComponentDependencies []ComponentDependencyRule `yaml:"componentDependencies" json:"componentDependencies"`
+	PlatformRequirements  []PlatformIntegrationRule `yaml:"platformRequirements" json:"platformRequirements"`
 }
 
 // RulesConfig is the top-level configuration for the static linter engine.
