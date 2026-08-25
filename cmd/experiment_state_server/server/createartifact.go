@@ -38,21 +38,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 		return nil, err
 	}
 
-	// 2. Validate the request payload.
-	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
-		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
-		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
-	}
-
-	// 2.1. Fill in any null values in the request payload.
-	artifact := validator.FillArtifactNullValues(req.GetArtifact())
-
-	// 2.2. Validate ChartArtifact payload.
-	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
-		return nil, err
-	}
-
-	// 3. Get the parent experiment or work unit.
+	// 2. Validate the parent experiment or work unit format and enrich logging context.
 	parentXID, _, err := validator.ValidateArtifactParent(req.GetParent())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
@@ -60,7 +46,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
-	// 3.1. Authorize the user to write against the parent experiment or work unit.
+	// 3. Authorize the user to create artifacts for the parent experiment or work unit.
 	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
@@ -70,7 +56,21 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 		return nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, status.ErrPermissionDenied)
 	}
 
-	// 4. Provision an XIDEntry for the artifact.
+	// 4. Validate the request payload.
+	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
+		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
+		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
+	}
+
+	// 4.1. Fill in any null values in the request payload.
+	artifact := validator.FillArtifactNullValues(req.GetArtifact())
+
+	// 4.2. Validate ChartArtifact payload.
+	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
+		return nil, err
+	}
+
+	// 5. Provision an XIDEntry for the artifact.
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", creator)
 	artifactXIDEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
 	if err != nil {
