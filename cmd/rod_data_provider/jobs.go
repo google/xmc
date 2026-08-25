@@ -114,7 +114,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 	return &spb.DashboardJob{
 		Xid:                xid,
 		WorkUnitId:         wid,
-		User:               "", // TODO(#186): Properly populate user field
+		User:               wu.GetCreator(),
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),

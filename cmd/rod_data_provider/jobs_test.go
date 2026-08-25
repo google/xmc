@@ -93,6 +93,7 @@ func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
 	return []*essmsgpb.WorkUnit{
 		proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 			wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+			wu.Creator = "alice@example.com"
 		}),
 	}
 }
@@ -325,7 +326,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantJob := &spb.DashboardJob{
 				Xid:             100,
 				WorkUnitId:      1,
-				User:            "",
+				User:            "alice@example.com",
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,

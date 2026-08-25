@@ -216,3 +216,39 @@ func TestWorkUnitRowToProto_MissingColumn(t *testing.T) {
 		t.Errorf("WorkUnitRowToProto() with missing columns succeeded, want error")
 	}
 }
+
+func TestWorkUnitRowToProto_WithCreator(t *testing.T) {
+	keys := []string{"Xid", "WorkUnitId", "WorkUnitType", "Priority", "Urls", "Tags", "Notes", "Executable", "ExecutionCreateTime", "ExecutionUpdateTime", "ExecutionCompleteTime", "ExecutionId", "ExecutionMetadata", "WorkUnitStatus", "CreateTime", "UpdateTime", "Creator"}
+	values := []any{
+		int64(123),
+		int64(456),
+		fullTestWorkUnit.WorkUnitType,
+		int64(fullTestWorkUnit.Priority),
+		fullTestWorkUnit.Urls,
+		fullTestWorkUnit.Tags,
+		fullTestWorkUnit.Notes,
+		fullTestWorkUnit.Executable,
+		fullTestWorkUnit.CurrentWorkUnitExecution.CreateTime.AsTime(),
+		fullTestWorkUnit.CurrentWorkUnitExecution.UpdateTime.AsTime(),
+		spanner.NullTime{Time: fullTestWorkUnit.CurrentWorkUnitExecution.CompleteTime.AsTime(), Valid: true},
+		int64(789),
+		fullTestWorkUnit.CurrentWorkUnitExecution.Metadata,
+		fullTestWorkUnit.CurrentWorkUnitExecution.Status,
+		fullTestWorkUnit.CreateTime.AsTime(),
+		fullTestWorkUnit.UpdateTime.AsTime(),
+		"alice@example.com",
+	}
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+
+	got, err := WorkUnitRowToProto(row)
+	if err != nil {
+		t.Fatalf("WorkUnitRowToProto() failed: %v", err)
+	}
+
+	if got.GetCreator() != "alice@example.com" {
+		t.Errorf("WorkUnitRowToProto() Creator = %q, want %q", got.GetCreator(), "alice@example.com")
+	}
+}

@@ -43,8 +43,9 @@ var (
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT BitReversedXid, WorkUnitId
+	`SELECT wu.BitReversedXid, wu.WorkUnitId, e.Creator AS Creator
 	FROM WorkUnits wu
+	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
 	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
@@ -68,6 +69,7 @@ type ActiveWorkUnitsResult struct {
 type workUnitPK struct {
 	BitReversedXid int64
 	WorkUnitId     int64
+	Creator        string
 }
 
 func decodePageToken(token string) (int64, error) {
@@ -114,15 +116,20 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			return err
 		}
 		var bitReversedXid, workUnitId int64
+		var creator string
 		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
 			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
 		}
 		if err := row.ColumnByName("WorkUnitId", &workUnitId); err != nil {
 			return fmt.Errorf("failed to read column WorkUnitId: %w", err)
 		}
+		if err := row.ColumnByName("Creator", &creator); err != nil {
+			return fmt.Errorf("failed to read column Creator: %w", err)
+		}
 		pk := workUnitPK{
 			BitReversedXid: bitReversedXid,
 			WorkUnitId:     workUnitId,
+			Creator:        creator,
 		}
 		orderedPKs = append(orderedPKs, pk)
 		return nil
@@ -134,7 +141,11 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 }
 
 func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
-	workUnitMap := make(map[workUnitPK]*essmsgpb.WorkUnit)
+	type workUnitKey struct {
+		bitReversedXid int64
+		workUnitId     int64
+	}
+	workUnitMap := make(map[workUnitKey]*essmsgpb.WorkUnit)
 	for _, keySet := range keySetList {
 		iter := txn.Read(ctx, workunitschema.WorkUnitTableName, keySet, workunitschema.WorkUnitColumns)
 		err := iter.Do(func(row *spanner.Row) error {
@@ -149,11 +160,11 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 			if err != nil {
 				return fmt.Errorf("failed to validate WorkUnit name %q: %w", wu.GetName(), err)
 			}
-			pk := workUnitPK{
-				BitReversedXid: spannerutils.ReverseBits(xid),
-				WorkUnitId:     wid,
+			key := workUnitKey{
+				bitReversedXid: spannerutils.ReverseBits(xid),
+				workUnitId:     wid,
 			}
-			workUnitMap[pk] = wu
+			workUnitMap[key] = wu
 			return nil
 		})
 		iter.Stop()
@@ -164,9 +175,16 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 
 	workUnits := make([]*essmsgpb.WorkUnit, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
-		wu, ok := workUnitMap[pk]
+		key := workUnitKey{
+			bitReversedXid: pk.BitReversedXid,
+			workUnitId:     pk.WorkUnitId,
+		}
+		wu, ok := workUnitMap[key]
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
+		}
+		if pk.Creator != "" {
+			wu.Creator = pk.Creator
 		}
 		workUnits = append(workUnits, wu)
 	}

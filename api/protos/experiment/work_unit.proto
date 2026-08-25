@@ -62,6 +62,8 @@ message WorkUnit {
   // The current work unit execution.
   WorkUnitExecution current_work_unit_execution = 10
       [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The creator of the work unit.
+  string creator = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message Executable {
