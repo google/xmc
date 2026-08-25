@@ -43,6 +43,7 @@ type (
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
 	deleteChartFunc     = func(ctx context.Context, chartId string) error
+	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 )
 
 type mockRepository struct {
@@ -54,6 +55,7 @@ type mockRepository struct {
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
 	deleteChartFn     deleteChartFunc
+	updateChartFn     updateChartFunc
 }
 
 func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
@@ -108,6 +110,13 @@ func (m *mockRepository) GetChart(ctx context.Context, chartId string) (*dpb.Cha
 func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error {
 	if m.deleteChartFn != nil {
 		return m.deleteChartFn(ctx, chartId)
+	}
+	return nil
+}
+
+func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
+	if m.updateChartFn != nil {
+		return m.updateChartFn(ctx, chart)
 	}
 	return nil
 }
@@ -629,22 +638,6 @@ func TestListCharts(t *testing.T) {
 	}
 	if len(resp.GetCharts()) == 0 {
 		t.Fatal("ListCharts returned 0 charts, want at least 1")
-	}
-}
-
-func TestUpdateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	req := &spb.UpdateChartRequest{
-		Chart: &dpb.Chart{Name: "dashboards/123/charts/456", Title: "Updated"},
-	}
-	resp, err := s.UpdateChart(ctx, req)
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if resp.GetName() != "dashboards/123/charts/456" {
-		t.Errorf("UpdateChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
 	}
 }
 

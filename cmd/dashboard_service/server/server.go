@@ -43,6 +43,7 @@ type DashboardRepository interface {
 	DeleteDashboard(ctx context.Context, dashboardId string) error
 	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
+	UpdateChart(ctx context.Context, chart *dpb.Chart) error
 	DeleteChart(ctx context.Context, chartId string) error
 }
 
@@ -322,9 +323,4 @@ func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*s
 			},
 		},
 	}, nil
-}
-
-// UpdateChart updates a chart stub.
-func (s *Server) UpdateChart(ctx context.Context, req *spb.UpdateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
 }

@@ -1154,11 +1154,44 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "valid_request",
+			name: "valid_full_update",
 			req: &spb.UpdateChartRequest{
 				Chart: &dpb.Chart{
-					Name:  "dashboards/dash-1/charts/chart-1",
-					Title: "Updated Chart",
+					Name:        "charts/chart-1",
+					Title:       "Updated Chart",
+					Description: "Updated Description",
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_partial_update_all_allowed_fields",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:        "charts/chart-1",
+					Title:       "Updated Title",
+					Description: "Updated Description",
+					Wid:         2,
+					Plots: []*dpb.PlotSpec{
+						{PlotId: "p1", Title: "Plot 1", Type: dpb.PlotType_SCATTER},
+					},
+					PlotLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 2},
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"title", "description", "plots", "plot_layout", "plotLayout", "wid"},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_partial_update_without_title",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:        "charts/chart-1",
+					Description: "Only description updated",
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"description"},
 				},
 			},
 			wantErr: nil,
@@ -1179,7 +1212,8 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 			name: "empty_chart_name",
 			req: &spb.UpdateChartRequest{
 				Chart: &dpb.Chart{
-					Name: "",
+					Name:  "",
+					Title: "Updated Chart",
 				},
 			},
 			wantErr: status.ErrInvalidArgument,
@@ -1188,7 +1222,74 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 			name: "invalid_chart_name",
 			req: &spb.UpdateChartRequest{
 				Chart: &dpb.Chart{
-					Name: "invalid-name",
+					Name:  "invalid-name",
+					Title: "Updated Chart",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "rejected_dashboard_chart_name",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "dashboards/dash-1/charts/chart-1",
+					Title: "Updated Chart",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "rejected_work_unit_chart_name",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "experiments/100/workUnits/1/charts/chart-1",
+					Title: "Updated Chart",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_empty_title",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_whitespace_title",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "   \t\n  ",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "unsupported_update_mask_path",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "Updated Title",
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"name"},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "update_mask_title_with_empty_title",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "charts/chart-1",
+					Title: "   ",
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"title"},
 				},
 			},
 			wantErr: status.ErrInvalidArgument,
