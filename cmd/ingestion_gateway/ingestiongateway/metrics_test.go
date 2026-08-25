@@ -136,9 +136,9 @@ func TestMetricsEndpoint(t *testing.T) {
 		"xmc_ingestion_active_connections",
 		"xmc_ingestion_dropped_payloads_total",
 		"franz_go_brokers_connections",
-		"franz_go_produce_batch_size_bytes",
-		"franz_go_produce_records_total",
-		"franz_go_produce_errors_total",
+		"xmc_ingestion_produce_batch_size_bytes",
+		"xmc_ingestion_produce_records_total",
+		"xmc_ingestion_produce_errors_total",
 		"go_goroutines",
 		"process_open_fds",
 	}
@@ -176,6 +176,35 @@ func TestFranzGoMetricsHook(t *testing.T) {
 	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 1.0 {
 		t.Errorf("expected ProduceErrorsTotal to be 1.0, got %f", errorsCount)
 	}
+}
+
+// TestRecordProducedRecord covers the backend-neutral seam both producers publish through, so a
+// Pub/Sub publish and a Kafka produce land on the same series.
+func TestRecordProducedRecord(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewGatewayMetrics(reg)
+
+	m.RecordProducedRecord(128, nil)
+	if records := testutil.ToFloat64(m.ProduceRecordsTotal); records != 1.0 {
+		t.Errorf("expected ProduceRecordsTotal to be 1.0, got %f", records)
+	}
+	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 0.0 {
+		t.Errorf("expected ProduceErrorsTotal to be 0.0, got %f", errorsCount)
+	}
+
+	// A failed publish counts as an error only; it must not also count as a produced record.
+	m.RecordProducedRecord(64, errors.New("publish failed"))
+	if records := testutil.ToFloat64(m.ProduceRecordsTotal); records != 1.0 {
+		t.Errorf("expected ProduceRecordsTotal to stay 1.0 after a failure, got %f", records)
+	}
+	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 1.0 {
+		t.Errorf("expected ProduceErrorsTotal to be 1.0, got %f", errorsCount)
+	}
+}
+
+func TestRecordProducedRecord_NilReceiver(t *testing.T) {
+	var m *GatewayMetrics
+	m.RecordProducedRecord(128, nil) // must not panic when metrics are disabled
 }
 
 func TestSanitizePath(t *testing.T) {

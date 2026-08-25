@@ -15,9 +15,11 @@
 package ingestiongateway
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -170,6 +172,86 @@ func TestConfigValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "Unsupported message bus",
+			cfg: Config{
+				Port:            "8080",
+				MessageBus:      "rabbitmq",
+				RedpandaBrokers: []string{"localhost:9092"},
+				TopicName:       "xmc-metrics",
+				MinPartitions:   128,
+				MinReplicas:     3,
+			},
+			wantErr: true,
+		},
+		{
+			name: "Valid Pub/Sub config",
+			cfg: Config{
+				Port:       "8080",
+				MessageBus: MessageBusPubSub,
+				TopicName:  "xmc-metrics",
+				ProjectID:  "my-project",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Pub/Sub without project id",
+			cfg: Config{
+				Port:       "8080",
+				MessageBus: MessageBusPubSub,
+				TopicName:  "xmc-metrics",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Pub/Sub ignores broker topology settings",
+			cfg: Config{
+				Port:          "8080",
+				MessageBus:    MessageBusPubSub,
+				TopicName:     "xmc-metrics",
+				ProjectID:     "my-project",
+				MinPartitions: 0,
+				MinReplicas:   0,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Pub/Sub rejects SASL",
+			cfg: Config{
+				Port:          "8080",
+				MessageBus:    MessageBusPubSub,
+				TopicName:     "xmc-metrics",
+				ProjectID:     "my-project",
+				SASLEnabled:   true,
+				SASLMechanism: "SCRAM-SHA-256",
+				SASLUser:      "user",
+				SASLPassword:  "secret",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Pub/Sub rejects TLS",
+			cfg: Config{
+				Port:       "8080",
+				MessageBus: MessageBusPubSub,
+				TopicName:  "xmc-metrics",
+				ProjectID:  "my-project",
+				TLSEnabled: true,
+			},
+			wantErr: true,
+		},
+		{
+			name: "Redpanda without project id is valid",
+			cfg: Config{
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"localhost:9092"},
+				TopicName:       "xmc-metrics",
+				MinPartitions:   128,
+				MinReplicas:     3,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -179,6 +261,108 @@ func TestConfigValidate(t *testing.T) {
 				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestRegisterFlags_MessageBusDefault(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	f := RegisterFlags(fs)
+
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("failed to parse an empty flag set: %v", err)
+	}
+	if f.MessageBus != MessageBusRedpanda {
+		t.Errorf("default -message_bus = %q, want %q", f.MessageBus, MessageBusRedpanda)
+	}
+}
+
+func TestLoadConfig_MessageBus(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags *Flags
+		env   map[string]string
+		want  string
+	}{
+		{
+			name:  "Defaults to redpanda",
+			flags: &Flags{ProjectID: "my-project"},
+			want:  MessageBusRedpanda,
+		},
+		{
+			name:  "Flag selects pubsub",
+			flags: &Flags{MessageBus: MessageBusPubSub, ProjectID: "my-project"},
+			want:  MessageBusPubSub,
+		},
+		{
+			name:  "Value is normalized",
+			flags: &Flags{MessageBus: "  PubSub  ", ProjectID: "my-project"},
+			want:  MessageBusPubSub,
+		},
+		{
+			name:  "MESSAGE_BUS overrides the default",
+			flags: &Flags{ProjectID: "my-project"},
+			env:   map[string]string{"MESSAGE_BUS": MessageBusPubSub},
+			want:  MessageBusPubSub,
+		},
+		{
+			name:  "XMC_MESSAGE_BUS overrides the default",
+			flags: &Flags{ProjectID: "my-project"},
+			env:   map[string]string{"XMC_MESSAGE_BUS": MessageBusPubSub},
+			want:  MessageBusPubSub,
+		},
+		{
+			// getEnvOrDefault cannot tell an explicitly passed default from an unset flag, so the
+			// environment still wins here. Matches how every other flag in this config behaves.
+			name:  "Environment wins over a flag left at the default",
+			flags: &Flags{MessageBus: MessageBusRedpanda, ProjectID: "my-project"},
+			env:   map[string]string{"MESSAGE_BUS": MessageBusPubSub},
+			want:  MessageBusPubSub,
+		},
+		{
+			name:  "Non-default flag wins over the environment",
+			flags: &Flags{MessageBus: MessageBusPubSub, ProjectID: "my-project"},
+			env:   map[string]string{"MESSAGE_BUS": "rabbitmq"},
+			want:  MessageBusPubSub,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := LoadConfig(tt.flags)
+			if err != nil {
+				t.Fatalf("LoadConfig() unexpected error: %v", err)
+			}
+			if cfg.MessageBus != tt.want {
+				t.Errorf("MessageBus = %q, want %q", cfg.MessageBus, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfig_PubSubSkipsSASLSecretFiles asserts a stray sasl_enabled in Pub/Sub mode is reported
+// as an unsupported setting rather than failing earlier on an unreadable credentials directory.
+func TestLoadConfig_PubSubSkipsSASLSecretFiles(t *testing.T) {
+	_, err := LoadConfig(&Flags{
+		MessageBus:         MessageBusPubSub,
+		ProjectID:          "my-project",
+		SASLEnabled:        true,
+		SASLCredentialsDir: filepath.Join(t.TempDir(), "does-not-exist"),
+	})
+	if err == nil {
+		t.Fatalf("expected LoadConfig to reject sasl_enabled in Pub/Sub mode")
+	}
+	if !strings.Contains(err.Error(), "sasl_enabled is not supported") {
+		t.Errorf("LoadConfig() error = %v, want it to reject sasl_enabled", err)
+	}
+}
+
+func TestLoadConfig_UnsupportedMessageBus(t *testing.T) {
+	if _, err := LoadConfig(&Flags{MessageBus: "rabbitmq"}); err == nil {
+		t.Fatalf("expected LoadConfig to reject an unsupported message bus")
 	}
 }
 
