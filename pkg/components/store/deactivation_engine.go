@@ -67,7 +67,7 @@ func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 	}
 	lc := rec.Spec.GetLifecycleControl()
 	var d time.Duration
-	if dt := lc.GetDrainingTimeout(); dt != nil && dt.IsValid() {
+	if dt := lc.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() > 0 {
 		d = dt.AsDuration()
 	}
 	if gp := lc.GetGracePeriod(); gp != nil && gp.IsValid() && gp.AsDuration() > d {
