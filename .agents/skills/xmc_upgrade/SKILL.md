@@ -12,8 +12,8 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 
 > [!CAUTION]
 > **Exclusive Execution Tool Policy**:
-> Environment upgrades MUST be performed EXCLUSIVELY using `python3 ./tools/upgrade_dev_env.py`.
-> Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 ./tools/upgrade_dev_env.py --start-from <step>` or `--only <step>`.
+> Environment upgrades MUST be performed EXCLUSIVELY using `python3 ./tools/dev_env/upgrade_dev_env.py`.
+> Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 ./tools/dev_env/upgrade_dev_env.py --start-from <step>` or `--only <step>`.
 
 > [!CAUTION]
 > **Authentication Integrity Policy**: Under no circumstances should `upgrade_dev_env.py` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
@@ -21,12 +21,12 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 ```mermaid
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]
-    CheckEnv --> CheckRun["Run python3 ./tools/upgrade_dev_env.py --only check"]
-    CheckRun --> MigrateCheck["Run python3 ./tools/upgrade_dev_env.py --only migrate"]
-    MigrateCheck -->|No pending migrations| AutoRun["Run python3 ./tools/upgrade_dev_env.py --start-from images"]
+    CheckEnv --> CheckRun["Run python3 ./tools/dev_env/upgrade_dev_env.py --only check"]
+    CheckRun --> MigrateCheck["Run python3 ./tools/dev_env/upgrade_dev_env.py --only migrate"]
+    MigrateCheck -->|No pending migrations| AutoRun["Run python3 ./tools/dev_env/upgrade_dev_env.py --start-from images"]
     MigrateCheck -->|"Pending migrations (Exit 10)"| PromptUser["Prompt User to run migrations"]
     PromptUser -->|User declines| Abort["Abort Upgrade"]
-    PromptUser -->|User approves| AutoRunMigrate["Run python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations"]
+    PromptUser -->|User approves| AutoRunMigrate["Run python3 ./tools/dev_env/upgrade_dev_env.py --start-from migrate --run-migrations"]
     AutoRunMigrate --> Verify["Verification & Validation"]
     AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
@@ -69,18 +69,18 @@ If no configuration file is found at the default path:
 
 ## 2. Automated Dev Upgrade (`upgrade_dev_env.py`)
 
-Use the automated upgrade tool (`python3 ./tools/upgrade_dev_env.py`) to execute the environment upgrade.
+Use the automated upgrade tool (`python3 ./tools/dev_env/upgrade_dev_env.py`) to execute the environment upgrade.
 
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
-python3 ./tools/upgrade_dev_env.py --only check
+python3 ./tools/dev_env/upgrade_dev_env.py --only check
 ```
 
 ### Step 2: Check for Pending Database Migrations
 Verify if there are any pending Spanner database migrations:
 ```bash
-python3 ./tools/upgrade_dev_env.py --only migrate
+python3 ./tools/dev_env/upgrade_dev_env.py --only migrate
 ```
 
 > [!IMPORTANT]
@@ -101,12 +101,12 @@ If no migrations were pending, or if the user approved running migrations:
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from images
+    python3 ./tools/dev_env/upgrade_dev_env.py --start-from images
     ```
 *   **Case B: User approved migrations**:
     Run the upgrade starting from `migrate` step and authorize migration execution:
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations
+    python3 ./tools/dev_env/upgrade_dev_env.py --start-from migrate --run-migrations
     ```
 
 > [!NOTE]
@@ -117,11 +117,11 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 
 *   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `restart`, `verify`):
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from <failed_step>
+    python3 ./tools/dev_env/upgrade_dev_env.py --start-from <failed_step>
     ```
 *   **Execute a single step**: To execute **only** one specific step:
     ```bash
-    python3 ./tools/upgrade_dev_env.py --only <step>
+    python3 ./tools/dev_env/upgrade_dev_env.py --only <step>
     ```
     *Valid steps: `check`, `migrate`, `images`, `app`, `restart`, `verify`*
 
