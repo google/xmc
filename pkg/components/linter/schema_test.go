@@ -42,11 +42,11 @@ kind: Component
 metadata:
   name: test-component
 spec:
-  type: CUSTOM_1P_COMPONENT
+  componentType: CUSTOM_1P_COMPONENT
   version: "1.0.0"
   deletionPolicy: DELETE
   lifecycleControl:
-    drainingTimeout: 300s
+    drainTimeoutSeconds: 300s
 `,
 			},
 			wantValid: true,
@@ -342,8 +342,8 @@ metadata:
   name: int-duration
 spec:
   lifecycleControl:
-    drainingTimeout: "300"
-    gracePeriod: "60"
+    drainTimeoutSeconds: "300"
+    gracePeriodSeconds: "60"
 `,
 			},
 			wantValid: true,
