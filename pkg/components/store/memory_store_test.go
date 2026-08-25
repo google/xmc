@@ -21,8 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -50,17 +52,28 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
 
+	wantProto := &componentspb.Component{
+		Name: "components/my-comp",
+		Spec: &componentspb.ComponentSpec{
+			Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:     "v1.0.0",
+			Description: "Initial intent",
+			Manifests: []string{
+				"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: dep-svc",
+			},
+			Generation: 1,
+		},
+		Status: &componentspb.ComponentAccessStatus{
+			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		Labels: map[string]string{"env": "test"},
+	}
+	if diff := cmp.Diff(wantProto, ToProtoComponent(rec), protocmp.Transform(), protocmp.IgnoreFields(&componentspb.Component{}, "etag", "create_time", "update_time")); diff != "" {
+		t.Errorf("ToProtoComponent(rec) mismatch (-want +got):\n%s", diff)
+	}
+
 	if rec.ComponentID != 1 {
 		t.Errorf("ComponentID = %d, want 1", rec.ComponentID)
-	}
-	if rec.Name != "my-comp" {
-		t.Errorf("Name = %q, want %q", rec.Name, "my-comp")
-	}
-	if rec.Generation != 1 {
-		t.Errorf("Generation = %d, want 1", rec.Generation)
-	}
-	if rec.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
-		t.Errorf("State = %v, want PENDING_RECONCILIATION", rec.State)
 	}
 	if rec.Etag == "" {
 		t.Error("Etag is empty, expected non-empty etag")
@@ -70,12 +83,6 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 	}
 	if len(rec.Dependencies) != 1 || rec.Dependencies[0] != "dep-svc" {
 		t.Errorf("Dependencies = %v, want [dep-svc]", rec.Dependencies)
-	}
-	if rec.Labels["env"] != "test" {
-		t.Errorf("Labels[env] = %q, want %q", rec.Labels["env"], "test")
-	}
-	if rec.Spec.GetGeneration() != 1 {
-		t.Errorf("Spec.Generation = %d, want 1", rec.Spec.GetGeneration())
 	}
 }
 
@@ -107,20 +114,25 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 		t.Fatalf("Second SetComponentIntent() failed: %v", err)
 	}
 
+	wantProto := &componentspb.Component{
+		Name: "components/my-comp",
+		Spec: &componentspb.ComponentSpec{
+			Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:     "v1.1.0",
+			Description: "Updated version",
+			Generation:  2,
+		},
+		Status: &componentspb.ComponentAccessStatus{
+			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		Labels: map[string]string{"tier": "prod"},
+	}
+	if diff := cmp.Diff(wantProto, ToProtoComponent(rec2), protocmp.Transform(), protocmp.IgnoreFields(&componentspb.Component{}, "etag", "create_time", "update_time")); diff != "" {
+		t.Errorf("ToProtoComponent(rec2) mismatch (-want +got):\n%s", diff)
+	}
+
 	if rec2.ComponentID != rec1.ComponentID {
 		t.Errorf("ComponentID changed from %d to %d", rec1.ComponentID, rec2.ComponentID)
-	}
-	if rec2.Generation != 2 {
-		t.Errorf("Generation = %d, want 2", rec2.Generation)
-	}
-	if rec2.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
-		t.Errorf("State = %v, want PENDING_RECONCILIATION after updating intent", rec2.State)
-	}
-	if rec2.Spec.GetDescription() != "Updated version" {
-		t.Errorf("Spec.Description = %q, want 'Updated version'", rec2.Spec.GetDescription())
-	}
-	if rec2.Labels["tier"] != "prod" {
-		t.Errorf("Labels[tier] = %q, want 'prod'", rec2.Labels["tier"])
 	}
 	if rec2.Etag == rec1.Etag {
 		t.Error("Etag should have changed after update")
@@ -139,11 +151,24 @@ func TestMemoryStore_SetComponentIntent_DesiredGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
-	if rec.Generation != 5 {
-		t.Errorf("Generation = %d, want 5", rec.Generation)
+
+	wantProto := &componentspb.Component{
+		Name: "components/my-comp",
+		Spec: &componentspb.ComponentSpec{
+			Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:     "v1.0.0",
+			Description: "Generation override",
+			Manifests: []string{
+				"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: dep-svc",
+			},
+			Generation: 5,
+		},
+		Status: &componentspb.ComponentAccessStatus{
+			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
 	}
-	if rec.Spec.GetGeneration() != 5 {
-		t.Errorf("Spec.Generation = %d, want 5", rec.Spec.GetGeneration())
+	if diff := cmp.Diff(wantProto, ToProtoComponent(rec), protocmp.Transform(), protocmp.IgnoreFields(&componentspb.Component{}, "etag", "create_time", "update_time")); diff != "" {
+		t.Errorf("ToProtoComponent(rec) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -265,7 +290,7 @@ func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	if _, err := ms.ListComponents(ctx); status.Code(err) != codes.Unimplemented {
 		t.Errorf("ListComponents got code %v, want Unimplemented", status.Code(err))
 	}
-	if err := ms.UpdateObservedGeneration(ctx, "comp-1", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); status.Code(err) != codes.Unimplemented {
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-1", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); status.Code(err) != codes.Unimplemented {
 		t.Errorf("UpdateObservedGeneration got code %v, want Unimplemented", status.Code(err))
 	}
 	if _, err := ms.PrepareDeactivation(ctx, "comp-1", false); status.Code(err) != codes.Unimplemented {

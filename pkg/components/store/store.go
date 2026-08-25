@@ -103,8 +103,8 @@ type Store interface {
 	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
 	CompleteDeactivation(ctx context.Context, name string) error
 
-	// UpdateObservedGeneration synchronizes actual component access and state.
-	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error
+	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
+	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
 
 	// ExecuteDeletion deletes a component using the specified deletion policy.
 	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error

@@ -52,15 +52,9 @@ func NewMemoryStore() *MemoryStore {
 
 // SetComponentIntent applies or updates component intent within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
-	canonicalName := CanonicalComponentName(name)
-	if canonicalName == "" {
-		return nil, status.Error(codes.InvalidArgument, "component name is required")
-	}
-	if !IsValidComponentName(canonicalName) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
-	}
-	if spec == nil {
-		return nil, status.Error(codes.InvalidArgument, "component spec is required")
+	canonicalName, err := validateIntentArgs(name, spec)
+	if err != nil {
+		return nil, err
 	}
 
 	deps := ExtractDependencies(spec, labels, canonicalName)
@@ -71,26 +65,52 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && rec.DeleteTime == nil && rec.State != componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		newGen := rec.Generation + 1
-		if desiredGen > rec.Generation {
-			newGen = desiredGen
-		}
-		rec.Generation = newGen
-		rec.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		rec.Spec = proto.Clone(spec).(*componentspb.ComponentSpec)
-		rec.Spec.Generation = newGen
-		rec.Dependencies = deps
-		rec.Labels = copyMap(labels)
-		rec.UpdateTime = now
-		rec.Etag = generateEtag(rec)
-		if rec.Status == nil {
-			rec.Status = &componentspb.ComponentAccessStatus{}
-		}
-		rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
 		return cloneRecord(rec), nil
 	}
 
 	m.nextID++
+	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, desiredGen, now)
+	m.componentsByName[canonicalName] = rec
+	m.componentsByID[rec.ComponentID] = rec
+
+	return cloneRecord(rec), nil
+}
+
+func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+	canonicalName := CanonicalComponentName(name)
+	if canonicalName == "" {
+		return "", status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !IsValidComponentName(canonicalName) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	if spec == nil {
+		return "", status.Error(codes.InvalidArgument, "component spec is required")
+	}
+	return canonicalName, nil
+}
+
+func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) {
+	newGen := rec.Generation + 1
+	if desiredGen > rec.Generation {
+		newGen = desiredGen
+	}
+	rec.Generation = newGen
+	rec.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	rec.Spec = proto.Clone(spec).(*componentspb.ComponentSpec)
+	rec.Spec.Generation = newGen
+	rec.Dependencies = deps
+	rec.Labels = copyMap(labels)
+	rec.UpdateTime = now
+	rec.Etag = generateEtag(rec)
+	if rec.Status == nil {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+}
+
+func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) *ComponentRecord {
 	gen := int64(1)
 	if desiredGen > 1 {
 		gen = desiredGen
@@ -99,8 +119,8 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = gen
 
-	rec = &ComponentRecord{
-		ComponentID:  m.nextID,
+	rec := &ComponentRecord{
+		ComponentID:  id,
 		Name:         canonicalName,
 		Spec:         specClone,
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -114,11 +134,7 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 		},
 	}
 	rec.Etag = generateEtag(rec)
-
-	m.componentsByName[canonicalName] = rec
-	m.componentsByID[rec.ComponentID] = rec
-
-	return cloneRecord(rec), nil
+	return rec
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.
@@ -141,8 +157,8 @@ func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, e
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
 // Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
-func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error {
-	return status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore (deferred to stacked PR 3)")
+func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore (deferred to stacked PR 3)")
 }
 
 // PrepareDeactivation checks deactivation safety and cascading requirements.

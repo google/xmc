@@ -55,8 +55,8 @@ func (s *stubStore) CompleteDeactivation(ctx context.Context, name string) error
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error {
-	return status.Error(codes.Unimplemented, "not implemented")
+func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
 func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
