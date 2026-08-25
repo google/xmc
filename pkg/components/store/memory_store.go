@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -158,21 +159,99 @@ func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*Component
 }
 
 // GetComponentByID retrieves a component record by its unique database identifier.
-// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (m *MemoryStore) GetComponentByID(ctx context.Context, componentID int64) (*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetComponentByID not implemented in MemoryStore (deferred to stacked PR 3)")
+	if componentID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	rec, exists := m.componentsByID[componentID]
+	if !exists || isDeletedRecord(rec) {
+		return nil, ErrComponentNotFound
+	}
+	return cloneRecord(rec), nil
 }
 
-// ListComponents returns all non-deleted components in the catalog.
-// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
+// ListComponents returns all non-deleted components in the catalog sorted by name.
 func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListComponents not implemented in MemoryStore (deferred to stacked PR 3)")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var results []*ComponentRecord
+	for _, rec := range m.componentsByName {
+		if !isDeletedRecord(rec) {
+			results = append(results, cloneRecord(rec))
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Name < results[j].Name
+	})
+	return results, nil
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
-// Note: Implemented in subsequent stacked PR (PR 3: feat/components-observed-gen-reconciliation).
 func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateObservedGeneration not implemented in MemoryStore (deferred to stacked PR 3)")
+	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || isDeletedRecord(rec) {
+		return nil, ErrComponentNotFound
+	}
+
+	rec.ObservedGeneration = &observedGen
+	if access != nil {
+		rec.Status = proto.Clone(access).(*componentspb.ComponentAccessStatus)
+	}
+	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		rec.State = state
+	}
+	applyStatusUpdates(rec, observedGen, state, statusMsg)
+
+	rec.UpdateTime = time.Now().UTC()
+	rec.Etag = generateEtag(rec)
+	return cloneRecord(rec), nil
+}
+
+func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
+	canonicalName := CanonicalComponentName(name)
+	if canonicalName == "" {
+		return "", status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !IsValidComponentName(canonicalName) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	if observedGen < 0 {
+		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
+	}
+	return canonicalName, nil
+}
+
+func isDeletedRecord(rec *ComponentRecord) bool {
+	return rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED
+}
+
+func applyStatusUpdates(rec *ComponentRecord, observedGen int64, state componentspb.ComponentState, statusMsg string) {
+	if rec.Status == nil && (observedGen > 0 || statusMsg != "" || state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED) {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	if rec.Status == nil {
+		return
+	}
+	rec.Status.ObservedGeneration = observedGen
+	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		rec.Status.State = state
+	}
+	if statusMsg != "" {
+		rec.Status.HealthMessage = statusMsg
+	}
 }
 
 // PrepareDeactivation checks deactivation safety and cascading requirements.
