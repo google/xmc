@@ -186,7 +186,7 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 		}
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "IntentApplicationFailed", err.Error())
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "IntentApplicationFailed", err.Error())
-		return err
+		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	}
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
 		res.State = setResp.GetComponent().GetStatus().GetState()
@@ -201,7 +201,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
-			return res, err
+			return res, fmt.Errorf("failed to delete 1P workload: %w", err)
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
@@ -220,7 +220,7 @@ func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentIn
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadProvisionFailed", err.Error())
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadProvisionFailed", err.Error())
-			return err
+			return fmt.Errorf("failed to ensure 1P workload: %w", err)
 		}
 		logging.Debug(ctx, "Ensured 1P child workload", "name", in.Name, "namespace", in.Namespace)
 	}

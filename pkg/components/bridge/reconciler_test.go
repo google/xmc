@@ -91,6 +91,14 @@ func (m *mockWM) Delete1PWorkload(ctx context.Context, ns, name string) error {
 	return m.deleteErr
 }
 
+type testStringer struct {
+	val string
+}
+
+func (s testStringer) String() string {
+	return s.val
+}
+
 func TestNewReconciler(t *testing.T) {
 	if _, err := NewReconciler(nil, nil, nil); err == nil {
 		t.Fatal("expected error on nil CMS client")
@@ -138,6 +146,16 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name: "active 1P with nil prober defaults to healthy",
+			cms:  &mockCMS{},
+			wm:   &mockWM{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		{
 			name: "deletion blocked by protection",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
@@ -147,7 +165,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
-			name: "deletion successful",
+			name: "deletion successful 1P",
 			cms:  &mockCMS{},
 			wm:   &mockWM{active: true},
 			in: ReconcileComponentInput{
@@ -156,6 +174,26 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
+		},
+		{
+			name: "deletion successful 3P",
+			cms:  &mockCMS{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 2, Spec: spec3P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
+			name: "deletion 1P workload delete failure",
+			cms:  &mockCMS{},
+			wm:   &mockWM{deleteErr: errors.New("delete error")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantErr: true,
 		},
 		{
 			name: "deletion CMS failure",
@@ -174,6 +212,28 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
 			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+		},
+		{
+			name: "disabled component 1P workload delete failure",
+			cms:  &mockCMS{},
+			wm:   &mockWM{deleteErr: errors.New("cannot stop container")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+			},
+			wantErr:   true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name: "disabled component update observed CMS failure",
+			cms:  &mockCMS{obsErr: errors.New("cms unreachable")},
+			wm:   &mockWM{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+			},
+			wantErr:   true,
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
 		{
@@ -207,6 +267,16 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "health probe healthy",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: true, msg: "Service active"},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
 		{
 			name: "update observed CMS error",
@@ -253,8 +323,16 @@ func TestReconcile_Unstructured(t *testing.T) {
 	r, _ := NewReconciler(&mockCMS{}, nil, nil)
 	u := &unstructured.Unstructured{
 		Object: map[string]any{
-			"metadata": map[string]any{"name": "test-comp", "namespace": "xmc", "generation": int64(1)},
-			"spec":     map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"},
+			"metadata": map[string]any{
+				"name":       "test-comp",
+				"namespace":  "xmc",
+				"generation": int64(1),
+				"finalizers": []any{FinalizerDeletionProtection},
+			},
+			"spec": map[string]any{
+				"enabled":       true,
+				"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
+			},
 		},
 	}
 	res, err := r.Reconcile(context.Background(), u)
@@ -263,17 +341,29 @@ func TestReconcile_Unstructured(t *testing.T) {
 	}
 }
 
-func TestSetCondition_PreservesTimestamp(t *testing.T) {
+func TestSetCondition(t *testing.T) {
 	prev := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	existing := []Condition{{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: prev}}
+	existing := []Condition{
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: prev},
+	}
 	var conds []Condition
+
+	// Test 1: Preserves existing timestamp when status matches
 	setCondition(&conds, existing, ConditionTypeReady, ConditionStatusTrue, 1, "R", "M")
 	if len(conds) != 1 || conds[0].LastTransitionTime != prev {
 		t.Errorf("expected transition time preserved: %+v", conds)
 	}
+
+	// Test 2: Updates condition when status changes
 	setCondition(&conds, existing, ConditionTypeReady, ConditionStatusFalse, 2, "R2", "M2")
-	if len(conds) != 1 || conds[0].Status != ConditionStatusFalse {
-		t.Errorf("expected updated condition: %+v", conds)
+	if len(conds) != 1 || conds[0].Status != ConditionStatusFalse || conds[0].LastTransitionTime == prev {
+		t.Errorf("expected updated condition with new transition time: %+v", conds)
+	}
+
+	// Test 3: Appends a new condition of a different type
+	setCondition(&conds, existing, ConditionTypeDegraded, ConditionStatusTrue, 2, "D", "DegradedMsg")
+	if len(conds) != 2 {
+		t.Errorf("expected 2 conditions, got: %+v", conds)
 	}
 }
 
@@ -323,11 +413,19 @@ func TestParseHelpers(t *testing.T) {
 		"wrapperRef": map[string]any{
 			"group": "g", "version": "v", "kind": "k", "name": "n", "namespace": "ns",
 		},
-		"manifests": []any{"yaml-1", "yaml-2"},
+		"manifests": []any{"yaml-1", 123, "yaml-2"},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
 	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" || len(spec.GetManifests()) != 2 {
 		t.Errorf("unexpected parsed spec: %+v", spec)
+	}
+
+	rawDelete := map[string]any{
+		"deletionPolicy": "DELETION_POLICY_ORPHAN",
+	}
+	specDel, _, _ := ParseSpecFromUnstructured(rawDelete)
+	if specDel.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
+		t.Errorf("expected DELETION_POLICY_ORPHAN, got %v", specDel.GetDeletionPolicy())
 	}
 
 	if ParseConditionsFromUnstructured(nil) != nil || ParseConditionsFromUnstructured(map[string]any{"conditions": "inv"}) != nil {
@@ -337,9 +435,86 @@ func TestParseHelpers(t *testing.T) {
 	conds := ParseConditionsFromUnstructured(map[string]any{
 		"conditions": []any{
 			map[string]any{"type": "Ready", "status": "True", "observedGeneration": float64(2), "lastTransitionTime": "2026-08-24T00:00:00Z"},
+			map[string]any{"type": "Degraded", "status": "False", "observedGeneration": "invalid", "lastTransitionTime": "invalid-date"},
+			"not-a-map",
 		},
 	})
-	if len(conds) != 1 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" {
+	if len(conds) != 2 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" || conds[1].ObservedGeneration != 0 {
 		t.Errorf("unexpected conditions: %+v", conds)
+	}
+}
+
+func TestExtractHelpers(t *testing.T) {
+	m := map[string]any{
+		"int64":         int64(42),
+		"int":           int(100),
+		"float64":       float64(200.5),
+		"stringInt":     "300",
+		"stringBad":     "bad",
+		"stringerInt":   testStringer{val: "400"},
+		"stringerFloat": testStringer{val: "500.5"},
+		"stringerBad":   testStringer{val: "not_a_number"},
+		"boolVal":       true,
+		"strVal":        "hello",
+		"emptyWrapper":  "not-a-map",
+		"emptyList":     "not-a-list",
+	}
+
+	if extractInt(m, "int64") != 42 {
+		t.Errorf("extractInt int64 failed")
+	}
+	if extractInt(m, "int") != 100 {
+		t.Errorf("extractInt int failed")
+	}
+	if extractInt(m, "float64") != 200 {
+		t.Errorf("extractInt float64 failed")
+	}
+	if extractInt(m, "stringInt") != 300 {
+		t.Errorf("extractInt stringInt failed")
+	}
+	if extractInt(m, "stringBad") != 0 {
+		t.Errorf("extractInt stringBad failed")
+	}
+	if extractInt(m, "stringerInt") != 400 {
+		t.Errorf("extractInt stringerInt failed")
+	}
+	if extractInt(m, "stringerFloat") != 500 {
+		t.Errorf("extractInt stringerFloat failed")
+	}
+	if extractInt(m, "stringerBad") != 0 {
+		t.Errorf("extractInt stringerBad failed")
+	}
+	if extractInt(m, "boolVal") != 0 {
+		t.Errorf("extractInt boolVal failed")
+	}
+	if extractInt(m, "nonexistent") != 0 {
+		t.Errorf("extractInt nonexistent failed")
+	}
+
+	if extractStr(m, "strVal") != "hello" {
+		t.Errorf("extractStr strVal failed")
+	}
+	if extractStr(m, "int") != "" {
+		t.Errorf("extractStr int failed")
+	}
+	if extractStr(m, "nonexistent") != "" {
+		t.Errorf("extractStr nonexistent failed")
+	}
+
+	if !extractBool(m, "boolVal", false) {
+		t.Errorf("extractBool boolVal failed")
+	}
+	if !extractBool(m, "nonexistent", true) {
+		t.Errorf("extractBool nonexistent default true failed")
+	}
+	if extractBool(m, "strVal", false) {
+		t.Errorf("extractBool strVal default false failed")
+	}
+
+	if parseManifests(m) != nil {
+		t.Errorf("parseManifests not-a-list failed")
+	}
+	if parseWrapperRef(m) != nil {
+		t.Errorf("parseWrapperRef not-a-map failed")
 	}
 }
