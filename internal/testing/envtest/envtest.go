@@ -116,7 +116,9 @@ func (e *TestEnv) CreateNamespace(ctx context.Context, t *testing.T, prefix stri
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = e.Client.Delete(cleanupCtx, ns)
+		if err := e.Client.Delete(cleanupCtx, ns); err != nil {
+			t.Logf("failed to delete namespace %q during cleanup: %v", ns.Name, err)
+		}
 	})
 
 	return nsName
@@ -186,19 +188,25 @@ func StartEnvironment(ctx context.Context, opts ...Option) (*TestEnv, error) {
 
 	ctrlCl, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: cfg.scheme})
 	if err != nil {
-		_ = env.Stop()
+		if stopErr := env.Stop(); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to stop envtest: %v\n", stopErr)
+		}
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
 
 	dynCl, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
-		_ = env.Stop()
+		if stopErr := env.Stop(); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to stop envtest: %v\n", stopErr)
+		}
 		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		_ = env.Stop()
+		if stopErr := env.Stop(); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to stop envtest: %v\n", stopErr)
+		}
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
