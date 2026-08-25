@@ -164,6 +164,15 @@ def parse_args(
         help=f"XManager git branch (default: {default_branch})",
     )
     parser.add_argument(
+        "--xmanager-local",
+        default=os.environ.get("XMANAGER_LOCAL"),
+        help=(
+            "Path to a local XManager checkout to use instead of cloning from "
+            "GitHub. When set, --xmanager-branch is ignored and the working "
+            "tree is copied as-is (useful for testing unpushed changes)."
+        ),
+    )
+    parser.add_argument(
         "--venv",
         default=default_venv,
         help="Virtual environment target directory (default: ./venv)",
@@ -219,29 +228,49 @@ def clone_repositories(
     xmanager_branch: str,
     xmanager_dir: Path,
     googleapis_dir: Path,
+    xmanager_local: str | None = None,
 ) -> None:
-    """Clone XManager and Google APIs repositories.
+    """Provision XManager and clone the Google APIs repository.
 
     Args:
-        xmanager_branch: Git branch for XManager repository.
-        xmanager_dir: Path where XManager repository should be cloned.
+        xmanager_branch: Git branch for XManager repository (ignored when
+          xmanager_local is set).
+        xmanager_dir: Path where the XManager repository should be placed.
         googleapis_dir: Path where Google APIs repository should be cloned.
+        xmanager_local: Optional path to a local XManager checkout to copy
+          instead of cloning from GitHub.
     """
-    xmanager_repo_url = "https://github.com/google-deepmind/xmanager.git"
-    sys.stdout.write(f"Cloning XManager repo (branch: {xmanager_branch})...\n")
-    subprocess.run(
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "-b",
-            xmanager_branch,
-            xmanager_repo_url,
-            str(xmanager_dir),
-        ],
-        check=True,
-    )
+    if xmanager_local:
+        local_src = Path(xmanager_local).expanduser().resolve()
+        if not (local_src / "xmanager_cloud").is_dir():
+            error_exit(
+                f"--xmanager-local path does not look like an xmanager repo "
+                f"(no xmanager_cloud/ dir): {local_src}"
+            )
+        sys.stdout.write(f"Using local XManager checkout: {local_src}\n")
+        shutil.copytree(
+            local_src,
+            xmanager_dir,
+            ignore=shutil.ignore_patterns(".git", "venv", "__pycache__"),
+        )
+    else:
+        xmanager_repo_url = "https://github.com/google-deepmind/xmanager.git"
+        sys.stdout.write(
+            f"Cloning XManager repo (branch: {xmanager_branch})...\n"
+        )
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "-b",
+                xmanager_branch,
+                xmanager_repo_url,
+                str(xmanager_dir),
+            ],
+            check=True,
+        )
     sys.stdout.write("Cloning Google APIs repository...\n")
     subprocess.run(
         [
@@ -464,10 +493,13 @@ def main(raw_args: list[str] | None = None) -> None:
 
     sys.stdout.write("=== Configuration ===\n")
     sys.stdout.write(f"Protos Location: {args.protos_loc}\n")
-    sys.stdout.write(
-        "XManager Repo:   https://github.com/google-deepmind/xmanager.git "
-        f"(branch: {args.xmanager_branch})\n"
-    )
+    if args.xmanager_local:
+        sys.stdout.write(f"XManager Source: {args.xmanager_local} (local)\n")
+    else:
+        sys.stdout.write(
+            "XManager Repo:   https://github.com/google-deepmind/xmanager.git "
+            f"(branch: {args.xmanager_branch})\n"
+        )
     sys.stdout.write(f"Venv Target:     {venv_dir}\n")
     sys.stdout.write("=====================\n")
 
@@ -480,7 +512,12 @@ def main(raw_args: list[str] | None = None) -> None:
         googleapis_dir = temp_dir / "googleapis"
         xmc_protos_dir = temp_dir / "xmc_protos"
 
-        clone_repositories(args.xmanager_branch, xmanager_dir, googleapis_dir)
+        clone_repositories(
+            args.xmanager_branch,
+            xmanager_dir,
+            googleapis_dir,
+            args.xmanager_local,
+        )
         retrieve_protos(args.protos_loc, xmc_protos_dir)
 
         sys.stdout.write("Copying protos into xmanager_cloud...\n")
