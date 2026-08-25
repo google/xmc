@@ -92,7 +92,7 @@ func newValidatedPubSubProducer(ctx context.Context, cfg *Config, gMetrics *Gate
 
 // ValidateTopic asserts the configured topic exists and is visible to the caller.
 //
-// This is the Pub/Sub analogue of ValidateTopicTopology: it turns a missing topic or a missing
+// This is the Pub/Sub equivalent of ValidateTopicTopology: it turns a missing topic or a missing
 // pubsub.topics.get permission into a startup failure instead of a per-request error. Note that
 // roles/pubsub.publisher alone does not grant pubsub.topics.get.
 func (p *PubSubProducer) ValidateTopic(ctx context.Context) error {
@@ -147,12 +147,12 @@ func classifyPubSubError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// Payload too large is the analogue of kerr.MessageTooLarge, which IsClientProduceError treats
+	// Payload too large is the equivalent of kerr.MessageTooLarge, which IsClientProduceError treats
 	// as a client fault.
 	if errors.Is(err, pubsub.ErrOversizedMessage) {
 		return newPublishError(PublishErrorClient, err)
 	}
-	// Shutdown in progress is the analogue of kgo.ErrClientClosed, which IsCongestionError treats
+	// Shutdown in progress is the equivalent of kgo.ErrClientClosed, which IsCongestionError treats
 	// as transient.
 	if errors.Is(err, pubsub.ErrTopicStopped) {
 		return newPublishError(PublishErrorCongestion, err)
