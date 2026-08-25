@@ -17,8 +17,10 @@ from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
     bar_plot,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
+    validate_chart_id,
 )
 from xdash.client import (
     DashboardClient,
@@ -28,9 +30,11 @@ from xdash.client import (
 )
 from xdash.presets import (
     VCC_BASELINE_XID,
+    VCC_COMPARISON_RUNS,
     VCC_TUNED_V1_XID,
     VCC_TUNED_V2_XID,
     create_standard_experiment_chart,
+    create_vcc_comparison_charts,
     create_vcc_comparison_dashboard,
 )
 
@@ -40,13 +44,17 @@ __all__ = [
     "summary_kpi_plot",
     "scatter_plot",
     "bar_plot",
+    "chart_id_from_name",
+    "validate_chart_id",
     "DashboardClient",
     "XDashError",
     "XDashConnectionError",
     "XDashRPCError",
     "create_vcc_comparison_dashboard",
+    "create_vcc_comparison_charts",
     "create_standard_experiment_chart",
     "VCC_BASELINE_XID",
     "VCC_TUNED_V1_XID",
     "VCC_TUNED_V2_XID",
+    "VCC_COMPARISON_RUNS",
 ]

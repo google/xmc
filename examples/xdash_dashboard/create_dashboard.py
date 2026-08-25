@@ -31,6 +31,7 @@ from xdash import (
     DashboardBuilder,
     DashboardClient,
     XDashError,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
 )
@@ -83,8 +84,21 @@ def create_example_dashboard(
     dashboard_id: str,
     title: str,
 ) -> None:
-    """Creates and displays a comparative metrics dashboard across experiment runs."""
+    """Creates and displays a comparative metrics dashboard across experiment runs.
+
+    A Dashboard stores only chart IDs and never creates the charts it references, so
+    this runs in two phases: create every chart, then create the dashboard pointing at
+    the IDs the server assigned.
+    """
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
+
+    charts = []
+    for xid, slug, run_title in EXPERIMENT_RUNS:
+        sys.stdout.write(f"    - Building chart for Experiment {xid} ({run_title})...\n")
+        charts.append(build_experiment_chart(xid, slug, run_title))
+
+    sys.stdout.write("--> Sending CreateChart requests to DashboardService...\n")
+    created_charts = client.create_charts(charts)
 
     dashboard_builder = (
         DashboardBuilder(name=f"dashboards/{dashboard_id}")
@@ -92,25 +106,21 @@ def create_example_dashboard(
         .set_description("Comparative evaluation of model tuning across multiple experiments.")
         .set_grid_layout(columns=2)
     )
-
-    for xid, slug, run_title in EXPERIMENT_RUNS:
-        sys.stdout.write(f"    - Adding chart for Experiment {xid} ({run_title})...\n")
-        chart = build_experiment_chart(xid, slug, run_title)
-        dashboard_builder.add_chart(chart)
-
-    dashboard = dashboard_builder.build()
+    for created_chart in created_charts:
+        dashboard_builder.add_chart_id(chart_id_from_name(created_chart.name))
 
     sys.stdout.write("--> Sending CreateDashboard request to DashboardService...\n")
-    created = client.create_dashboard(dashboard, dashboard_id=dashboard_id)
+    created = client.create_dashboard(dashboard_builder.build(), dashboard_id=dashboard_id)
 
     sys.stdout.write("\n=== ✅ Dashboard Created Successfully! ===\n")
     sys.stdout.write(f"Resource Name: {created.name}\n")
     sys.stdout.write(f"Title:         {created.title}\n")
-    sys.stdout.write(f"Total Charts:  {len(created.charts)}\n")
+    sys.stdout.write(f"Total Charts:  {len(created.chart_ids)}\n")
 
-    # Demonstrate fetching chart data for the first chart
-    if created.charts:
-        first_chart_name = created.charts[0].name
+    # Demonstrate fetching chart data for the first chart. The full resource name comes
+    # from the created Chart, since the dashboard itself stores only the bare ID.
+    if created_charts:
+        first_chart_name = created_charts[0].name
         sys.stdout.write(f"\n--> Fetching evaluated ChartData for {first_chart_name}...\n")
         try:
             chart_data = client.get_chart_data(first_chart_name)
