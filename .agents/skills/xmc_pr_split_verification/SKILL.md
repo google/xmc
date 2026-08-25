@@ -50,7 +50,7 @@ Before requesting user confirmation to open a PR (`gh pr create`), the agent MUS
 
 | Category | Threshold | Measurement Rule |
 | :--- | :--- | :--- |
-| **Production Code** | **$\ge 400$ lines** | Added + modified lines across production files (`.go`, `.py`, `.ts`, `.js`, `.yaml`, `.tf`, `.proto`). |
+| **Production Code** | **$\ge 400$ lines** | Added + modified lines across production files (`.go`, `.py`, `.ts`, `.js`, `.ng.html`, `.html`, `.scss`, `.css`, `.yaml`, `.tf`, `.proto`). |
 | **Total Code (Prod + Tests)** | **$\ge 1,000$ lines** | Combined production and test code (`*_test.go`, `*_test.py`, `*.spec.ts`, `test/**`). |
 | **Documentation / Markdown** | **$\ge 1,000$ lines** | Markdown files (`.md`, `.markdown`, `.rst`, `docs/**`). Excluded from code calculations. |
 | **Generated Code & Lockfiles** | *Ignored* | Automatically excluded (`*.pb.go`, `package-lock.json`, `MODULE.bazel.lock`, `go.sum`). |
@@ -97,9 +97,10 @@ The verification subagent must evaluate the diff against the following four core
 * **Horizontal Slicing (Forbidden Anti-Pattern)**: Splitting by architectural tiers (e.g., PR 1 = All database tables, PR 2 = All business logic, PR 3 = All HTTP handlers). This violates reachability and leaves uncalled code in trunk.
 
 ### Pillar 2: Dead Code & Test Reachability Invariant
-* **No Orphaned Logic**: Every newly introduced function, struct, or endpoint must be directly referenced and reachable in the slice where it lands.
+* **Production Caller Required**: Every intermediate or standalone PR merged to `main` MUST have an active production call site. Submitting uncalled helpers, orphaned utilities, or unused classes (even with 100% unit tests in a planned stack) is prohibited because stacks can stall or change, leaving dead code in `main`.
+* **Functional Thin Slices over Layer Splits**: Decompose oversized work by functional depth (e.g. Slice 1: minimal happy-path caller + basic helper + tests; Slice 2: advanced options, caching, and error recovery) rather than by structural layers.
+* **Standalone Entrypoint Exception**: Self-contained executable entrypoints (such as scaffolding a new CLI tool under `cmd/`, a new service binary, or a standalone utility under `tools/`) are permitted without external callers because they are directly runnable and testable on their own.
 * **End-to-End Testability**: Each slice must pass local test matrices (`bazel test //...`) and include dedicated unit/integration tests exercising the new functionality.
-* **Foundational Contracts**: If a foundational interface or base type must land first without full operational consumption, it must be validated by complete unit test fixtures and test doubles in that same layer.
 
 ### Pillar 3: Documentation & Rule Modularity (for Markdown diffs)
 * When documentation or agent rules exceed 1,000 lines, decompose them across separate PRs by **Domain / Topic / Lifecycle Phase** (e.g. Core Architecture Rules in PR 1, PR Lifecycle in PR 2, Language Guidelines in PR 3).

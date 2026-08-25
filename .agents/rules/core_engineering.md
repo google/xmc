@@ -73,7 +73,7 @@ function processUser(user: User | null) {
     - **Documentation / Markdown**: $\ge 1,000$ lines triggers modularization check.
     - *Generated Code & Lockfiles*: Automatically excluded from sizing.
   - **Vertical Slicing over Horizontal Splitting**: Always prioritize vertical slices (end-to-end usable flows spanning models, logic, and tests) over horizontal architectural layers (e.g. database-only PRs).
-  - **Dead Code & Reachability Invariant**: Intermediate PRs in a stack must NOT submit dead, uncalled, or orphaned logic. Every layer must be reachable and verified by comprehensive tests.
+  - **Dead Code & Reachability Invariant**: Intermediate PRs in a stack must NOT submit dead, uncalled, or orphaned logic (even with unit tests). Every PR merged to `main` must have an active production call site or be a self-contained runnable entrypoint (e.g., a new CLI binary).
   - **Mandatory Subagent Audit**: If any sizing threshold is exceeded, agents MUST spawn the PR Split Verification Subagent per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) and propose a stacked PR plan via [`gh-stack`](conversation://skills/gh-stack) before opening a PR.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
