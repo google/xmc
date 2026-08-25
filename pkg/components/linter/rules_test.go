@@ -42,6 +42,26 @@ func TestParseRules(t *testing.T) {
 			},
 		},
 		{
+			name:     "comments only yaml returns empty config without error",
+			yamlData: "# only comments\n# nothing else\n",
+			wantErr:  false,
+			wantChecks: linter.StaticChecksConfig{
+				EnforceNamespaceScope:     false,
+				EnforceDeletionProtection: false,
+				MaxDrainTimeoutSeconds:    0,
+			},
+		},
+		{
+			name:     "whitespace only yaml returns empty config without error",
+			yamlData: "   \n  \n",
+			wantErr:  false,
+			wantChecks: linter.StaticChecksConfig{
+				EnforceNamespaceScope:     false,
+				EnforceDeletionProtection: false,
+				MaxDrainTimeoutSeconds:    0,
+			},
+		},
+		{
 			name: "valid static checks config",
 			yamlData: `
 staticChecks:

@@ -470,3 +470,78 @@ func assertDiagnosticRules(t *testing.T, res *linter.ValidationResult, wantRules
 		assertDiagnosticRule(t, res, rule)
 	}
 }
+
+func TestLinter_ZeroValueRulesValidation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "comp.yaml")
+	content := `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: safe-component
+spec:
+  version: "1.0.0"
+`
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test manifest: %v", err)
+	}
+
+	t.Run("zero value struct Linter does not panic", func(t *testing.T) {
+		t.Parallel()
+		var l linter.Linter
+		res, err := l.ValidateDirectory(dir)
+		if err != nil {
+			t.Fatalf("ValidateDirectory() unexpected error: %v", err)
+		}
+		if !res.Valid {
+			t.Errorf("expected valid result, got errors: %v", res.Errors)
+		}
+	})
+
+	t.Run("NewLinter with nil rules does not panic", func(t *testing.T) {
+		t.Parallel()
+		l := linter.NewLinter(nil)
+		res, err := l.ValidateDirectory(dir)
+		if err != nil {
+			t.Fatalf("ValidateDirectory() unexpected error: %v", err)
+		}
+		if !res.Valid {
+			t.Errorf("expected valid result, got errors: %v", res.Errors)
+		}
+	})
+}
+
+func TestSchema_EdgeCaseCoverage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	compFile := filepath.Join(dir, "comp_wrapper.yaml")
+	content := `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: wrapper-empty-fields
+spec:
+  componentType: CUSTOM_3P_WRAPPER
+  wrapperRef:
+    crdGroup: ""
+    crdVersion: "v1"
+    crdKind: ""
+    targetName: "jobset"
+`
+	if err := os.WriteFile(compFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test manifest: %v", err)
+	}
+
+	l := linter.NewLinter(nil)
+	res, err := l.ValidateDirectory(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Valid {
+		t.Errorf("expected invalid result for empty wrapper fields")
+	}
+	assertDiagnosticRule(t, res, "INVALID_WRAPPER_REF")
+}

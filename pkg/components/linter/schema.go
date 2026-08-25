@@ -50,15 +50,19 @@ var clusterScopedKinds = map[string]bool{
 
 // validateSchema validates YAML structural correctness, namespace scope, and schema conformance.
 func (l *Linter) validateSchema(rawManifests []*RawManifest, compManifests []*ComponentManifest, res *ValidationResult) {
+	rules := l.rules
+	if rules == nil {
+		rules = &RulesConfig{}
+	}
 	for _, m := range rawManifests {
-		l.validateRawManifest(m, res)
+		l.validateRawManifest(m, rules, res)
 	}
 	for _, c := range compManifests {
-		l.validateComponentManifest(c, res)
+		l.validateComponentManifest(c, rules, res)
 	}
 }
 
-func (l *Linter) validateRawManifest(m *RawManifest, res *ValidationResult) {
+func (l *Linter) validateRawManifest(m *RawManifest, rules *RulesConfig, res *ValidationResult) {
 	line := m.Line
 	if line <= 0 {
 		line = 1
@@ -72,7 +76,7 @@ func (l *Linter) validateRawManifest(m *RawManifest, res *ValidationResult) {
 	if strings.TrimSpace(m.Metadata.Name) == "" {
 		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "metadata.name is required and cannot be empty")
 	}
-	if l.rules.StaticChecks.EnforceNamespaceScope {
+	if rules.StaticChecks.EnforceNamespaceScope {
 		normalizedKind := strings.ToLower(strings.TrimSpace(m.Kind))
 		if clusterScopedKinds[normalizedKind] {
 			res.AddError(m.FilePath, line, "CLUSTER_SCOPED_KIND_REJECTED", fmt.Sprintf("cluster-scoped kind %q is forbidden when namespace scope is enforced", m.Kind))
@@ -80,7 +84,7 @@ func (l *Linter) validateRawManifest(m *RawManifest, res *ValidationResult) {
 	}
 }
 
-func (l *Linter) validateComponentManifest(c *ComponentManifest, res *ValidationResult) {
+func (l *Linter) validateComponentManifest(c *ComponentManifest, rules *RulesConfig, res *ValidationResult) {
 	line := c.Line
 	if line <= 0 {
 		line = 1
@@ -99,8 +103,8 @@ func (l *Linter) validateComponentManifest(c *ComponentManifest, res *Validation
 	} else if c.Spec.WrapperRef != nil {
 		res.AddError(c.FilePath, line, "INVALID_COMPONENT_TYPE", "spec.wrapperRef is only allowed for 3P wrapper components")
 	}
-	validateLifecycleControl(c.Spec.LifecycleControl, c.FilePath, line, l.rules, res)
-	if l.rules.StaticChecks.EnforceDeletionProtection {
+	validateLifecycleControl(c.Spec.LifecycleControl, c.FilePath, line, rules, res)
+	if rules.StaticChecks.EnforceDeletionProtection {
 		if !c.Spec.DeletionProtection {
 			res.AddError(c.FilePath, line, "DELETION_PROTECTION_REQUIRED", "spec.deletionProtection must be true when deletion protection is enforced")
 		}
@@ -111,14 +115,16 @@ func validateLifecycleControl(ctrl *ComponentLifecycleCtrl, filePath string, lin
 	if ctrl == nil {
 		return
 	}
-	if ctrl.DrainTimeoutSeconds < 0 {
-		res.AddError(filePath, line, "INVALID_DRAIN_TIMEOUT", "spec.lifecycleControl.drainTimeoutSeconds must be non-negative")
+	if ctrl.DrainTimeoutSeconds != nil {
+		drain := *ctrl.DrainTimeoutSeconds
+		if drain < 0 {
+			res.AddError(filePath, line, "INVALID_DRAIN_TIMEOUT", "spec.lifecycleControl.drainTimeoutSeconds must be non-negative")
+		} else if rules != nil && rules.StaticChecks.MaxDrainTimeoutSeconds > 0 && drain > rules.StaticChecks.MaxDrainTimeoutSeconds {
+			res.AddError(filePath, line, "DRAIN_TIMEOUT_EXCEEDED", fmt.Sprintf("spec.lifecycleControl.drainTimeoutSeconds (%d) exceeds max allowed (%d)", drain, rules.StaticChecks.MaxDrainTimeoutSeconds))
+		}
 	}
-	if ctrl.GracePeriodSeconds < 0 {
+	if ctrl.GracePeriodSeconds != nil && *ctrl.GracePeriodSeconds < 0 {
 		res.AddError(filePath, line, "INVALID_GRACE_PERIOD", "spec.lifecycleControl.gracePeriodSeconds must be non-negative")
-	}
-	if rules.StaticChecks.MaxDrainTimeoutSeconds > 0 && ctrl.DrainTimeoutSeconds > rules.StaticChecks.MaxDrainTimeoutSeconds {
-		res.AddError(filePath, line, "DRAIN_TIMEOUT_EXCEEDED", fmt.Sprintf("spec.lifecycleControl.drainTimeoutSeconds (%d) exceeds max allowed (%d)", ctrl.DrainTimeoutSeconds, rules.StaticChecks.MaxDrainTimeoutSeconds))
 	}
 }
 
@@ -142,11 +148,10 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 	}
 }
 
-func isValidComponentType(ct string) bool {
+func is1PComponent(ct string) bool {
 	switch strings.ToUpper(strings.TrimSpace(ct)) {
 	case "COMPONENT_TYPE_UNSPECIFIED",
-		"COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT", "1P", "1P_COMPONENT",
-		"COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "CUSTOM_3P_WRAPPER", "3P", "3P_WRAPPER":
+		"COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT", "1P", "1P_COMPONENT":
 		return true
 	default:
 		return false
@@ -160,6 +165,10 @@ func is3PWrapper(ct string) bool {
 	default:
 		return false
 	}
+}
+
+func isValidComponentType(ct string) bool {
+	return is1PComponent(ct) || is3PWrapper(ct)
 }
 
 func isValidDeletionPolicy(dp string) bool {

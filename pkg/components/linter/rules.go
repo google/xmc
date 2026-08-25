@@ -18,7 +18,9 @@ package linter
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -57,6 +59,9 @@ func ParseRules(data []byte) (*RulesConfig, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return &RulesConfig{}, nil
+		}
 		return nil, fmt.Errorf("failed to parse rules configuration: %w", err)
 	}
 	return &cfg, nil
