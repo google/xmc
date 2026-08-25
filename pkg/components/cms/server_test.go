@@ -18,8 +18,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -52,8 +55,8 @@ func (s *stubStore) CompleteDeactivation(ctx context.Context, name string) error
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error {
-	return status.Error(codes.Unimplemented, "not implemented")
+func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
 func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
@@ -454,5 +457,78 @@ func TestCMSServer_UninitializedStore(t *testing.T) {
 				t.Errorf("%s got code %v, want %v", tc.name, status.Code(err), codes.Unavailable)
 			}
 		})
+	}
+}
+
+func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "A test component",
+	}
+
+	// 1. ValidateOnly test
+	valResp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name:         "components/test-validate-only",
+		Spec:         spec,
+		ValidateOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(validate_only=true) unexpected error: %v", err)
+	}
+	wantVal := &componentspb.SetComponentIntentResponse{
+		Component: &componentspb.Component{
+			Name: "components/test-validate-only",
+			Spec: proto.Clone(spec).(*componentspb.ComponentSpec),
+			Status: &componentspb.ComponentAccessStatus{
+				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			},
+		},
+		StatusMessage: "Validation successful (validate_only)",
+	}
+	if diff := cmp.Diff(wantVal, valResp, protocmp.Transform()); diff != "" {
+		t.Errorf("SetComponentIntent(validate_only=true) mismatch (-want +got):\n%s", diff)
+	}
+
+	// 2. Normal creation test
+	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/test-comp",
+		Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
+	}
+	if resp.GetComponent().GetName() != "components/test-comp" {
+		t.Errorf("GetName() = %q, want 'components/test-comp'", resp.GetComponent().GetName())
+	}
+	if resp.GetComponent().GetSpec().GetGeneration() != 1 {
+		t.Errorf("GetSpec().GetGeneration() = %d, want 1", resp.GetComponent().GetSpec().GetGeneration())
+	}
+	if resp.GetComponent().GetStatus().GetState() != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("GetStatus().GetState() = %v, want PENDING_RECONCILIATION", resp.GetComponent().GetStatus().GetState())
+	}
+
+	// 3. Update existing component test
+	updatedSpec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.1.0",
+		Description: "Updated description",
+	}
+	resp2, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "test-comp",
+		Spec: updatedSpec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(update) unexpected error: %v", err)
+	}
+	if resp2.GetComponent().GetSpec().GetGeneration() != 2 {
+		t.Errorf("GetSpec().GetGeneration() = %d, want 2", resp2.GetComponent().GetSpec().GetGeneration())
+	}
+	if resp2.GetComponent().GetSpec().GetDescription() != "Updated description" {
+		t.Errorf("GetSpec().GetDescription() = %q, want 'Updated description'", resp2.GetComponent().GetSpec().GetDescription())
 	}
 }
