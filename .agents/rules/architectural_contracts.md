@@ -30,3 +30,26 @@ This document defines core architectural contracts and invariants across the XMC
    - In production environments, services validate standard OpenID Connect (OIDC) tokens against enterprise Identity Providers (Google IAP, Google Workspace, Okta, Azure AD).
    - In ephemeral testing environments (KinD, CI/CD, local development), services validate standard OIDC tokens against an in-cluster CNCF Dex instance with pre-configured static test personas (`admin@xmc.local`, `viewer@xmc.local`).
    - This ensures real cryptographic token verification, session lifecycle management, and multi-user RBAC boundary enforcement run identically in all environments without introducing dangerous production backdoors.
+
+---
+
+## 3. Per-Resource Authorization Invariant
+
+Authentication establishes *who* the caller is (§2). This section governs *what they may read*. It applies to every RPC that returns a resource carrying an ACL identifier (`xid`), including collection reads.
+
+1. **Every Read Path Authorizes Independently**:
+   - Consistency with an existing unauthorized read path is **NEVER** a justification for leaving a new one open. If an adjacent handler returns the same resource without an ACL check, that is a bug to report — not a precedent to follow.
+   - "The repository already returns this data elsewhere without filtering, so pruning here closes no hole" is an invalid argument. It generalizes a defect instead of containing it.
+
+2. **Authorize by the Resource, Not the Request Shape**:
+   - A parent carrying exactly one ACL identifier (e.g. `experiments/{xid}/workUnits/{wid}`) MAY be authorized as a whole, and MUST be authorized **before** any storage access so an unauthorized caller never triggers a query.
+   - A parent spanning multiple ACL domains (e.g. a dashboard referencing charts from several experiments) MUST have its result set pruned **per item** after the read. Check each distinct `xid` exactly once — either memoize the verdict per `xid` for the lifetime of the request, or collect the distinct set and issue one batched ACL call — so round trips scale with the number of ACL domains, not the number of items.
+   - Pruning after pagination may yield a page shorter than `page_size` while `next_page_token` is still set. This is permitted by AIP-158 — clients must follow the token regardless — and MUST be documented at the call site.
+
+3. **Classify Resource Names Explicitly, Never by Elimination**:
+   - Validate each supported resource-name shape by name and reject everything else. Treating "failed to parse as A" as "therefore it is B" silently downgrades authorization the moment a third shape is introduced.
+   - Where two parent shapes are authorized differently, model the outcome as a named type (e.g. a `parentKind` enum), not a bare bool or a re-parsed string, so the authorization decision is explicit at the call site.
+
+4. **Fail Closed**:
+   - `PermissionDenied` is a decision: drop the item and continue. Every other authorization error (transport failure, timeout, unavailable ACL service) MUST propagate. An unreachable ACL service must never be indistinguishable from an empty result.
+   - Items with an absent, zero, or otherwise invalid ACL identifier are dropped with a warning, never returned.
