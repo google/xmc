@@ -22,6 +22,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { map, Observable } from 'rxjs';
 
 import {
   AddExperimentDialogComponent,
@@ -88,8 +89,18 @@ export class DashboardsPage implements OnInit {
     this.dashboardService.getDashboard(name).subscribe({
       next: (dashboard) => {
         this.dashboardTitle.set(dashboard.title || dashboard.name || 'Dashboard');
-        this.charts.set(dashboard.charts ?? []);
-        this.isLoading.set(false);
+        // The dashboard resource carries chart IDs only, so the chart bodies come from ListCharts.
+        this.fetchCharts().subscribe({
+          next: (charts) => {
+            this.charts.set(charts);
+            this.isLoading.set(false);
+          },
+          error: () => {
+            this.charts.set([]);
+            this.isLoading.set(false);
+            this.snackbar?.open?.('Failed to load dashboard charts');
+          },
+        });
       },
       error: () => {
         this.dashboardNotFound.set(true);
@@ -101,13 +112,19 @@ export class DashboardsPage implements OnInit {
   onRefresh(): void {
     if (!this.currentDashboardName) return;
 
-    this.dashboardService.listCharts({ parent: this.currentDashboardName }).subscribe({
-      next: (response) => {
-        this.charts.set(response.charts ?? []);
+    this.fetchCharts().subscribe({
+      next: (charts) => {
+        this.charts.set(charts);
         this.snackbar?.open?.('Dashboard refreshed');
       },
       error: () => this.snackbar?.open?.('Failed to refresh dashboard'),
     });
+  }
+
+  private fetchCharts(): Observable<Chart[]> {
+    return this.dashboardService
+      .listCharts({ parent: this.currentDashboardName })
+      .pipe(map((response) => response.charts ?? []));
   }
 
   onOpenAddExperiment(): void {
@@ -149,7 +166,9 @@ export class DashboardsPage implements OnInit {
         dashboard: {
           name: this.currentDashboardName,
           title: this.dashboardTitle(),
-          charts: this.charts(),
+          chartIds: this.charts()
+            .map((chart) => chart.name?.split('/').pop() ?? '')
+            .filter((chartId) => chartId !== ''),
         },
       })
       .subscribe({

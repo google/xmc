@@ -58,16 +58,16 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 		if err != nil {
 			return err
 		}
-		// Sort charts canonically by Name to ensure consistent ordering with Spanner storage reads and accurate proto.Equal no-op detection.
-		merged.Charts = data.SortCharts(merged.GetCharts())
+		// Sort chart IDs canonically to ensure consistent ordering with Spanner storage reads and accurate proto.Equal no-op detection.
+		merged.ChartIds = data.SortChartIDs(merged.GetChartIds())
 
 		updatedDashboard = merged
 		if proto.Equal(existing, merged) {
 			return nil
 		}
 
-		updateCharts := !chartsEqual(existing.GetCharts(), merged.GetCharts())
-		mutations, err := data.DashboardProtoToUpdateMutations(merged, updateCharts)
+		updateChartIDs := !data.ChartIDsEqual(existing.GetChartIds(), merged.GetChartIds())
+		mutations, err := data.DashboardProtoToUpdateMutations(merged, updateChartIDs)
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 	return updatedDashboard, nil
 }
 
-// fetchDashboardInTransaction reads an existing dashboard and its child charts inside a ReadWriteTransaction.
+// fetchDashboardInTransaction reads an existing dashboard and its child chart IDs inside a ReadWriteTransaction.
 func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) (*dpb.Dashboard, error) {
 	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
@@ -92,20 +92,20 @@ func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTran
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}
 
-	charts, err := fetchDashboardChartsInTransaction(ctx, txn, dashboardId)
+	chartIDs, err := fetchDashboardChartsInTransaction(ctx, txn, dashboardId)
 	if err != nil {
 		return nil, err
 	}
 
-	return data.DashboardRowToProto(row, charts)
+	return data.DashboardRowToProto(row, chartIDs)
 }
 
 // fetchDashboardChartsInTransaction reads child chart IDs for a given dashboard via Spanner prefix read.
-func fetchDashboardChartsInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) ([]*dpb.Chart, error) {
+func fetchDashboardChartsInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) ([]string, error) {
 	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.Key{dashboardId}.AsPrefix(), []string{"ChartId"})
 	defer iter.Stop()
 
-	var charts []*dpb.Chart
+	var chartIDs []string
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
@@ -118,43 +118,8 @@ func fetchDashboardChartsInTransaction(ctx context.Context, txn *spanner.ReadWri
 		if err := row.Columns(&chartId); err != nil {
 			return nil, err
 		}
-		charts = append(charts, &dpb.Chart{Name: chartId})
+		chartIDs = append(chartIDs, chartId)
 	}
 
-	return charts, nil
-}
-
-// chartsEqual checks if two slices of charts contain identical chart names regardless of order using an O(N) frequency map.
-func chartsEqual(a, b []*dpb.Chart) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	counts := make(map[string]int, len(a))
-	nilA, nilB := 0, 0
-	for _, c := range a {
-		if c == nil {
-			nilA++
-			continue
-		}
-		counts[c.GetName()]++
-	}
-	for _, c := range b {
-		if c == nil {
-			nilB++
-			continue
-		}
-		counts[c.GetName()]--
-		if counts[c.GetName()] < 0 {
-			return false
-		}
-	}
-	if nilA != nilB {
-		return false
-	}
-	for _, count := range counts {
-		if count != 0 {
-			return false
-		}
-	}
-	return true
+	return chartIDs, nil
 }

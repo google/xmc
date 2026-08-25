@@ -14,6 +14,7 @@
 
 """Common utilities for XMC framework integrations."""
 
+import contextlib
 import re
 from typing import Any
 
@@ -42,15 +43,13 @@ def extract_scalar(val: Any) -> float | int | None:
         return val
 
     if hasattr(val, "item") and callable(val.item):
-        try:
+        with contextlib.suppress(Exception):
             res = val.item()
             if isinstance(res, (int, float)):
                 return res
-        except Exception:
-            pass
 
     if hasattr(val, "numpy") and callable(val.numpy):
-        try:
+        with contextlib.suppress(Exception):
             n_val = val.numpy()
             if isinstance(n_val, (int, float)):
                 return n_val
@@ -59,10 +58,7 @@ def extract_scalar(val: Any) -> float | int | None:
                 if isinstance(res, (int, float)):
                     return res
             return float(n_val)
-        except Exception:
-            pass
 
-    try:
+    with contextlib.suppress(Exception):
         return float(val)
-    except Exception:
-        return None
+    return None

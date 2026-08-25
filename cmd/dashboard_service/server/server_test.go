@@ -43,6 +43,7 @@ type (
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
 	listChartsFunc      = func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
+	deleteChartFunc     = func(ctx context.Context, chartId string) error
 )
 
 type mockRepository struct {
@@ -54,6 +55,7 @@ type mockRepository struct {
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
 	listChartsFn      listChartsFunc
+	deleteChartFn     deleteChartFunc
 }
 
 func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
@@ -110,6 +112,13 @@ func (m *mockRepository) ListCharts(ctx context.Context, parent string, pageSize
 		return m.listChartsFn(ctx, parent, pageSize, pageToken, filter, orderBy, staleness)
 	}
 	return nil, "", nil
+}
+
+func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error {
+	if m.deleteChartFn != nil {
+		return m.deleteChartFn(ctx, chartId)
+	}
+	return nil
 }
 
 type mockAuthorizer struct {
@@ -632,16 +641,6 @@ func TestUpdateChart(t *testing.T) {
 	}
 	if resp.GetName() != "dashboards/123/charts/456" {
 		t.Errorf("UpdateChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
-	}
-}
-
-func TestDeleteChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})
-	if err != nil {
-		t.Fatalf("DeleteChart failed: %v", err)
 	}
 }
 

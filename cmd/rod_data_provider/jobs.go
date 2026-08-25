@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -37,19 +38,33 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 
 	targetQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
 
-	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
+	pageSize := req.GetPageSize()
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	pageSize = min(pageSize, 100)
+
+	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
+		if errors.Is(err, workunit.ErrInvalidPageToken) {
+			return nil, status.Error(codes.InvalidArgument, "invalid page_token")
+		}
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
 	}
 
 	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
+	var totalQueueSize int64
+	if result != nil {
+		totalQueueSize = result.TotalQueueSize
+	}
+
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
-		TotalQueueSize: int64(len(workUnits)),
+		TotalQueueSize: totalQueueSize,
 	}, nil
 }
 

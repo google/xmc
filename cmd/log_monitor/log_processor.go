@@ -14,6 +14,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -281,15 +282,13 @@ func toMessageSeverity(ctx context.Context, severity string) essmsgpb.Structured
 }
 
 func extractMessageAndStackTrace(entry LogEntry, logKeyword string) (message string, stackTrace string) {
-	if entry.JSONPayload.Message != "" {
-		message = entry.JSONPayload.Message
-	} else {
-		message = entry.TextPayload
-	}
+	message = cmp.Or(entry.JSONPayload.Message, entry.TextPayload)
 
 	// If the message has logKeyword (by default set to "XMC LOG:") as a prefix, we want to remove it.
-	if logKeyword != "" && strings.HasPrefix(message, logKeyword) {
-		message = strings.TrimSpace(strings.TrimPrefix(message, logKeyword))
+	if logKeyword != "" {
+		if after, ok := strings.CutPrefix(message, logKeyword); ok {
+			message = strings.TrimSpace(after)
+		}
 	}
 	return message, entry.JSONPayload.StackTrace
 }

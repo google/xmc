@@ -37,16 +37,13 @@ import (
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	"k8s.io/utils/ptr"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	storagepkg "xmanager_cloud/storage/storage"
 )
-
-func boolPtr(b bool) *bool {
-	return &b
-}
 
 type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
@@ -532,7 +529,7 @@ func TestJobSetPredicate_Update(t *testing.T) {
 			ReplicatedJobs: []v1alpha2.ReplicatedJob{
 				{Name: "worker", Replicas: 2},
 			},
-			Suspend: boolPtr(false),
+			Suspend: ptr.To(false),
 		},
 		Status: v1alpha2.JobSetStatus{
 			Conditions: []metav1.Condition{
@@ -651,7 +648,7 @@ func TestJobSetPredicate_Update(t *testing.T) {
 			newObj: func() *v1alpha2.JobSet {
 				js := baseJobSet.DeepCopy()
 				js.ResourceVersion = "2"
-				js.Spec.Suspend = boolPtr(true)
+				js.Spec.Suspend = ptr.To(true)
 				return js
 			}(),
 			want: true,
@@ -697,7 +694,7 @@ func TestJobSetPredicate_Update(t *testing.T) {
 			newObj: func() *v1alpha2.JobSet {
 				js := baseJobSet.DeepCopy()
 				// change something that would normally trigger update, but resource version is same
-				js.Spec.Suspend = boolPtr(true)
+				js.Spec.Suspend = ptr.To(true)
 				return js
 			}(),
 			want: false,

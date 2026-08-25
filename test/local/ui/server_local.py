@@ -212,9 +212,7 @@ class SPAHandler(server.SPAHandler):
             if clean_path in ("/v1/dashboards", "/dashboards"):
                 self.send_json(200, {"dashboards": SPAHandler.in_memory_dashboards})
                 return
-            dashboard_name = clean_path.lstrip("/")
-            if dashboard_name.startswith("v1/"):
-                dashboard_name = dashboard_name[3:]
+            dashboard_name = clean_path.lstrip("/").removeprefix("v1/")
             for dash in SPAHandler.in_memory_dashboards:
                 if dash.get("name") == dashboard_name:
                     self.send_json(200, dash)
@@ -285,9 +283,7 @@ class SPAHandler(server.SPAHandler):
 
     def _handle_dashboards_delete(self) -> None:
         """Deletes a dashboard from in-memory store."""
-        clean_path = self.path.split("?")[0].lstrip("/")
-        if clean_path.startswith("v1/"):
-            clean_path = clean_path[3:]
+        clean_path = self.path.split("?")[0].lstrip("/").removeprefix("v1/")
         initial_len = len(SPAHandler.in_memory_dashboards)
         SPAHandler.in_memory_dashboards = [
             d for d in SPAHandler.in_memory_dashboards if d.get("name") != clean_path
@@ -319,9 +315,7 @@ class SPAHandler(server.SPAHandler):
 
     def _handle_chart_data(self, path: str) -> None:
         """Serves chart data using golden fixtures."""
-        clean_path = path.split("?")[0].replace(":getData", "").lstrip("/")
-        if clean_path.startswith("v1/"):
-            clean_path = clean_path[3:]
+        clean_path = path.split("?")[0].replace(":getData", "").lstrip("/").removeprefix("v1/")
 
         # Exact match in golden files
         if clean_path in SPAHandler.goldens:

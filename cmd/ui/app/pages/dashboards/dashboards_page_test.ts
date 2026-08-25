@@ -25,7 +25,10 @@ import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/compo
 import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { createMockComparisonDashboard } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
+import {
+  createMockComparisonCharts,
+  createMockComparisonDashboard,
+} from 'xmanager_cloud/ui/app/testing/mock_dashboards';
 import {
   bootstrap,
   cleanState,
@@ -48,9 +51,7 @@ describe('DashboardsPage', () => {
     const snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
 
     dashboardServiceSpy.updateDashboard.and.returnValue(of({}));
-    dashboardServiceSpy.listCharts.and.returnValue(
-      of({ charts: [{ name: 'charts/refreshed', title: 'Refreshed Chart' }] }),
-    );
+    dashboardServiceSpy.listCharts.and.returnValue(of({ charts: createMockComparisonCharts() }));
     dashboardServiceSpy.getChartData.and.returnValue(
       of({
         plotsData: [],
@@ -146,9 +147,30 @@ describe('DashboardsPage', () => {
     expect(pageComponent.charts().length).toBe(3);
   });
 
+  it('should load chart bodies through ListCharts on initial load', () => {
+    const pageComponent = bootstrap(DashboardsPage);
+    expect(state.dashboardServiceSpy.listCharts).toHaveBeenCalledWith({
+      parent: 'dashboards/vcc_comparison',
+    });
+    expect(pageComponent.charts().length).toBe(3);
+    expect(pageComponent.isLoading()).toBeFalse();
+  });
+
+  it('should render an empty dashboard and warn when the initial chart load fails', () => {
+    state.dashboardServiceSpy.listCharts.and.returnValue(throwError(() => new Error('boom')));
+    const pageComponent = bootstrap(DashboardsPage);
+    expect(pageComponent.charts().length).toBe(0);
+    expect(pageComponent.isLoading()).toBeFalse();
+    expect(pageComponent.dashboardNotFound()).toBeFalse();
+    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to load dashboard charts');
+  });
+
   it('should refresh dashboard charts when clicking refresh button', async () => {
     const pageComponent = bootstrap(DashboardsPage);
     const harness = await getHarness(DashboardsPageHarness);
+    state.dashboardServiceSpy.listCharts.and.returnValue(
+      of({ charts: [{ name: 'charts/refreshed', title: 'Refreshed Chart' }] }),
+    );
     await harness.clickRefresh();
     expect(state.dashboardServiceSpy.listCharts).toHaveBeenCalledWith({
       parent: 'dashboards/vcc_comparison',
@@ -159,9 +181,9 @@ describe('DashboardsPage', () => {
   });
 
   it('should keep existing charts and warn when refresh fails', async () => {
-    state.dashboardServiceSpy.listCharts.and.returnValue(throwError(() => new Error('boom')));
     const pageComponent = bootstrap(DashboardsPage);
     const harness = await getHarness(DashboardsPageHarness);
+    state.dashboardServiceSpy.listCharts.and.returnValue(throwError(() => new Error('boom')));
     await harness.clickRefresh();
     expect(pageComponent.charts().length).toBe(3);
     expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to refresh dashboard');
@@ -239,6 +261,12 @@ describe('DashboardsPage', () => {
 
     const grid = getDebugEl(DashboardGridComponent).componentInstance as DashboardGridComponent;
     grid.removeChart.emit('experiments/234911124/charts/tuned_v2');
-    expect(state.dashboardServiceSpy.updateDashboard).toHaveBeenCalled();
+    expect(state.dashboardServiceSpy.updateDashboard).toHaveBeenCalledWith({
+      dashboard: {
+        name: 'dashboards/vcc_comparison',
+        title: 'VCC baseline tune comparison',
+        chartIds: ['baseline', 'tuned_v1'],
+      },
+    });
   });
 });

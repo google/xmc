@@ -31,6 +31,7 @@ import (
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"golang/protobuf/v2/proto/proto"
+	"k8s.io/utils/ptr"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
 
@@ -160,7 +161,7 @@ var jobSetWithNoJobs = &jobsetv1alpha2.JobSet{
 	},
 	Spec: jobsetv1alpha2.JobSetSpec{
 		ReplicatedJobs: nil,
-		Suspend:        boolPtr(false),
+		Suspend:        ptr.To(false),
 		SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 			Operator: jobsetv1alpha2.OperatorAll,
 		},
@@ -325,7 +326,7 @@ func TestConstructJobSet(t *testing.T) {
 						},
 						Spec: batchv1.JobSpec{
 							BackoffLimit:   proto.Int32(1),
-							CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+							CompletionMode: ptr.To(batchv1.IndexedCompletion),
 							Completions:    proto.Int32(1),
 							PodFailurePolicy: &batchv1.PodFailurePolicy{
 								Rules: []batchv1.PodFailurePolicyRule{
@@ -516,11 +517,11 @@ func TestConstructJobSet(t *testing.T) {
 				},
 			},
 			Network: &jobsetv1alpha2.Network{
-				EnableDNSHostnames:       boolPtr(true),
+				EnableDNSHostnames:       ptr.To(true),
 				Subdomain:                "xmc-operation-123-456",
-				PublishNotReadyAddresses: boolPtr(true),
+				PublishNotReadyAddresses: ptr.To(true),
 			},
-			Suspend: boolPtr(false),
+			Suspend: ptr.To(false),
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
 			},
@@ -800,7 +801,7 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 							SecretKeyRef: &esspb.SecretKeyRef{
 								Name:     "my-secret",
 								Key:      "my-key",
-								Optional: boolPtr(true),
+								Optional: ptr.To(true),
 							},
 						},
 					},
@@ -865,7 +866,7 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 						Name: "my-secret",
 					},
 					Key:      "my-key",
-					Optional: boolPtr(true),
+					Optional: ptr.To(true),
 				},
 			},
 		},

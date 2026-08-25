@@ -25,12 +25,12 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// GetDashboard retrieves a dashboard by resource name (AIP-131). The dashboard itself is an open
-// read for authenticated users, but its charts are pruned to those whose experiment the caller can
-// read, so a dashboard cannot be used to reach charts from an inaccessible experiment.
+// GetDashboard retrieves a dashboard by resource name with open read for authenticated users
+// (AIP-131). The dashboard carries only chart IDs, not chart bodies, so there is nothing here to
+// authorize per experiment; READER is enforced when those charts are fetched via GetChart or
+// ListCharts.
 func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest) (*dpb.Dashboard, error) {
-	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
-	if err != nil {
+	if _, _, err := s.auth.AuthenticateUserFromContext(ctx); err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
 
@@ -43,17 +43,7 @@ func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest)
 		return nil, status.Errorf(codes.InvalidArgument, "invalid dashboard name: %v", err)
 	}
 
-	dash, err := s.readDashboard(ctx, dashID, req.GetName())
-	if err != nil {
-		return nil, err
-	}
-
-	charts, err := s.filterAuthorizedCharts(ctx, user, dash.GetCharts())
-	if err != nil {
-		return nil, err
-	}
-	dash.Charts = charts
-	return dash, nil
+	return s.readDashboard(ctx, dashID, req.GetName())
 }
 
 // readDashboard loads a dashboard by ID and maps storage failures onto gRPC status codes.
