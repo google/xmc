@@ -98,7 +98,7 @@ func TestRun_CLI(t *testing.T) {
 			t.Errorf("expected success with valid rules config, got: %s", errOut.String())
 		}
 		var outErr, errOutErr bytes.Buffer
-		if run([]string{"--manifests-dir=" + dir, "--rules-config=/tmp/nonexistent/rules.yaml"}, &outErr, &errOutErr) != 1 || !strings.Contains(errOutErr.String(), "Error loading rules") {
+		if run([]string{"--manifests-dir=" + dir, "--rules-config=" + filepath.Join(dir, "nonexistent.yaml")}, &outErr, &errOutErr) != 1 || !strings.Contains(errOutErr.String(), "Error loading rules") {
 			t.Errorf("expected error with nonexistent rules config")
 		}
 	})

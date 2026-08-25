@@ -430,7 +430,7 @@ spec:
   componentType: CUSTOM_1P_COMPONENT
   wrapperRef:
     crdGroup: jobset.x-k8s.io
-    targetKind: JobSet
+    crdKind: JobSet
     targetName: jobset-controller
 `,
 			},
