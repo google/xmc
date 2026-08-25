@@ -500,3 +500,24 @@ func TestCohortResourceBorrowingCalculation_NotAllInCohort(t *testing.T) {
 		t.Errorf("standalone queue FreeCapacityWithBorrowing = %v, want 110.0 (LocalFree without cohort capping)", got)
 	}
 }
+
+func TestCohortResourceCapacities_MissingResourceType(t *testing.T) {
+	var capacities *CohortResourceCapacities = nil
+	if got := capacities.FreeCapacityFor("cpu"); got != nil {
+		t.Errorf("FreeCapacityFor on nil CohortResourceCapacities = %v, want nil", got)
+	}
+
+	c := &CohortResourceCapacities{
+		quotas: map[string]*CohortResourceQuota{
+			"cpu": {NominalQuota: 100.0, UsedCapacity: 20.0},
+		},
+	}
+
+	if got := c.FreeCapacityFor("memory"); got != nil {
+		t.Errorf("FreeCapacityFor missing resource 'memory' = %v, want nil", got)
+	}
+
+	if got := c.FreeCapacityFor("cpu"); got == nil || *got != 80.0 {
+		t.Errorf("FreeCapacityFor 'cpu' = %v, want 80.0", got)
+	}
+}
