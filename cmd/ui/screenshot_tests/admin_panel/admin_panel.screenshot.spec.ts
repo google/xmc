@@ -125,9 +125,9 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
     const footer = page.locator('.admin-panel-footer');
     await expect(footer).toContainText('Build Version: v1.5.1-build.42');
 
-    // Wait for asynchronous config entries card to render fully before capturing screenshot
-    const configCard = page.locator('xmc-config-entries-card');
-    await expect(configCard).toBeVisible();
+    // Wait for asynchronous config entries card and its table rows to render fully
+    const configRow = page.locator('xmc-config-entries-card .config-row').first();
+    await expect(configRow).toBeVisible();
 
     // Take screenshot of the entire admin panel page
     await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
