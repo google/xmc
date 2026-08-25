@@ -141,4 +141,10 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	if len(pageDefault.WorkUnits) != 5 {
 		t.Errorf("pageSize 0 returned count = %d, want 5", len(pageDefault.WorkUnits))
 	}
+	if len(res.WorkUnits) == 0 {
+		t.Fatalf("FetchActiveWorkUnitsByQueues returned empty work units, expected > 0")
+	}
+	if got, want := res.WorkUnits[0].User, "test@example.com"; got != want {
+		t.Errorf("res.WorkUnits[0].User = %q, want %q", got, want)
+	}
 }
