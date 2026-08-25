@@ -39,6 +39,9 @@ function findLatestApproval(reviews, prAuthor = '') {
     if (!reviewer || reviewer.toLowerCase() === authorLower) {
       continue;
     }
+    if (review.state === 'COMMENTED') {
+      continue;
+    }
     latestReviewByReviewer.set(reviewer.toLowerCase(), review);
   }
 
@@ -102,11 +105,15 @@ function parseRangeDiff(output) {
     }
 
     if (inDiffHunk) {
-      const trimmedLeading = line.replace(/^\s{0,4}/, '');
-      if (trimmedLeading.startsWith('+') && !trimmedLeading.startsWith('+++')) {
-        additions++;
-      } else if (trimmedLeading.startsWith('-') && !trimmedLeading.startsWith('---')) {
-        deletions++;
+      const match = line.match(/^ {4}([-+ ])([-+ ])?/);
+      if (match) {
+        const left = match[1];
+        const right = match[2];
+        if (left === '+' || right === '+') {
+          additions++;
+        } else if (left === '-' || right === '-') {
+          deletions++;
+        }
       }
     }
   }
@@ -244,7 +251,7 @@ async function run({ github, context, core }) {
 
   core.info(`Evaluating incremental approval for PR #${prNumber} (Author: @${prAuthor}, Base: ${baseRef}, HEAD: ${currentSha.slice(0, 7)})`);
 
-  const { data: reviews } = await github.rest.pulls.listReviews({
+  const reviews = await github.paginate(github.rest.pulls.listReviews, {
     owner,
     repo,
     pull_number: prNumber,

@@ -51,6 +51,31 @@ test('findLatestApproval finds latest approved review correctly', () => {
   });
 });
 
+test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'APPROVED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    },
+    {
+      id: 2,
+      user: { login: 'alice' },
+      state: 'COMMENTED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T11:00:00Z'
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie');
+  assert.deepStrictEqual(result, {
+    approver: 'alice',
+    approvedSha: 'sha-111111',
+    submittedAt: '2026-08-25T10:00:00Z'
+  });
+});
+
 test('findLatestApproval ignores approvals superseded by CHANGES_REQUESTED', () => {
   const reviews = [
     {
@@ -118,12 +143,18 @@ test('parseRangeDiff counts modified patch additions and deletions accurately', 
     +    logTrace()
     -    oldMethod()
      }
+    ## src/other.go ##
+    @@ src/other.go:5,4 +5,4 @@
+     func Other() {
+     -    oldLine
+     +    newLine
+     }
 `;
   const result = parseRangeDiff(sampleOutput);
   assert.strictEqual(result.isCleanRebase, false);
-  assert.strictEqual(result.additions, 2);
-  assert.strictEqual(result.deletions, 1);
-  assert.strictEqual(result.totalDelta, 3);
+  assert.strictEqual(result.additions, 3);
+  assert.strictEqual(result.deletions, 2);
+  assert.strictEqual(result.totalDelta, 5);
 });
 
 test('parseRangeDiff identifies added or removed commits as not a clean rebase', () => {
