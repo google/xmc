@@ -47,7 +47,7 @@ gcloud pubsub topics create "${TOPIC_NAME}" \
     --message-storage-policy-allowed-regions=us-central1
 ```
 
-The gateway does **not** create the topic. It calls `Topic.Exists` at startup and refuses to start if the topic is missing, which is the Pub/Sub analogue of the Redpanda topology assertion (`-min_partitions` / `-min_replicas`).
+The gateway does **not** create the topic. It calls `Topic.Exists` at startup and refuses to start if the topic is missing, which is the Pub/Sub equivalent of the Redpanda topology assertion (`-min_partitions` / `-min_replicas`).
 
 If you manage infrastructure with Terraform, [`deploy/terraform/modules/metrics_pubsub`](../../../terraform/modules/metrics_pubsub/main.tf) does everything in sections 1 and 2 and can be called directly:
 
