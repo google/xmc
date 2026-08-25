@@ -119,7 +119,13 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for the entire Admin Panel page', async ({ page }) => {
-    // Take screenshot of the entire admin panel page viewport
-    await expect(page).toHaveScreenshot('admin-panel-page.png');
+    const adminPanel = page.locator('xmc-admin-panel');
+    await expect(adminPanel).toBeVisible();
+
+    const footer = page.locator('.admin-panel-footer');
+    await expect(footer).toContainText('Build Version: v1.5.1-build.42');
+
+    // Take screenshot of the entire admin panel page
+    await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
   });
 });
