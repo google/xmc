@@ -138,9 +138,23 @@ func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.Co
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.
-// Note: Implemented in subsequent stacked PR (PR 2: feat/components-intent-fieldmask).
 func (m *MemoryStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetComponent not implemented in MemoryStore (deferred to stacked PR 2)")
+	canonicalName := CanonicalComponentName(name)
+	if canonicalName == "" {
+		return nil, status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !IsValidComponentName(canonicalName) {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || rec.DeleteTime != nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		return nil, ErrComponentNotFound
+	}
+	return cloneRecord(rec), nil
 }
 
 // GetComponentByID retrieves a component record by its unique database identifier.

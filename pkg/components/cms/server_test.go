@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -494,6 +495,11 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 		t.Errorf("SetComponentIntent(validate_only=true) mismatch (-want +got):\n%s", diff)
 	}
 
+	// Ensure validate_only did not persist to the store
+	if _, err := ms.GetComponent(ctx, "test-validate-only"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
+	}
+
 	// 2. Normal creation test
 	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 		Name: "components/test-comp",
@@ -530,5 +536,63 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	}
 	if resp2.GetComponent().GetSpec().GetDescription() != "Updated description" {
 		t.Errorf("GetSpec().GetDescription() = %q, want 'Updated description'", resp2.GetComponent().GetSpec().GetDescription())
+	}
+}
+
+func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create initial component
+	initialSpec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Initial description",
+	}
+	_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "comp-mask-test",
+		Spec: initialSpec,
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent() initial create failed: %v", err)
+	}
+
+	// Partial update with update_mask only updating description
+	updateSpec := &componentspb.ComponentSpec{
+		Description: "Updated description only",
+	}
+	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name:       "comp-mask-test",
+		Spec:       updateSpec,
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
+	})
+	if err != nil {
+		t.Fatalf("SetComponentIntent(update_mask) unexpected error: %v", err)
+	}
+
+	comp := resp.GetComponent()
+	if comp.GetSpec().GetDescription() != "Updated description only" {
+		t.Errorf("GetDescription() = %q, want 'Updated description only'", comp.GetSpec().GetDescription())
+	}
+	if comp.GetSpec().GetVersion() != "v1.0.0" {
+		t.Errorf("GetVersion() preserved = %q, want 'v1.0.0'", comp.GetSpec().GetVersion())
+	}
+	if comp.GetSpec().GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		t.Errorf("GetType() preserved = %v, want CUSTOM_1P_COMPONENT", comp.GetSpec().GetType())
+	}
+
+	// Non-existent component with update_mask returns NotFound (AIP-134 compliance)
+	_, err = server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "comp-non-existent",
+		Spec: &componentspb.ComponentSpec{
+			Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Description: "Upserted description",
+			Version:     "v2.0.0",
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"type", "description"}},
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("SetComponentIntent(update_mask non-existent) got code %v, want NotFound", status.Code(err))
 	}
 }

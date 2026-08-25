@@ -223,6 +223,69 @@ func TestMemoryStore_SetComponentIntent_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestMemoryStore_GetComponent(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("Testing GetComponent")
+	_, err := ms.SetComponentIntent(ctx, "comp-a", spec, nil, 0)
+	if err != nil {
+		t.Fatalf("SetComponentIntent() failed: %v", err)
+	}
+
+	// Canonical name lookup
+	rec, err := ms.GetComponent(ctx, "comp-a")
+	if err != nil {
+		t.Fatalf("GetComponent(comp-a) unexpected error: %v", err)
+	}
+	if rec.Name != "comp-a" {
+		t.Errorf("Name = %q, want 'comp-a'", rec.Name)
+	}
+
+	// AIP-122 full resource name lookup
+	recAIP, err := ms.GetComponent(ctx, "components/comp-a")
+	if err != nil {
+		t.Fatalf("GetComponent(components/comp-a) unexpected error: %v", err)
+	}
+	if recAIP.Name != "comp-a" {
+		t.Errorf("Name = %q, want 'comp-a'", recAIP.Name)
+	}
+
+	// Nonexistent lookup
+	_, err = ms.GetComponent(ctx, "comp-nonexistent")
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(comp-nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Invalid name
+	_, err = ms.GetComponent(ctx, "invalid name with spaces")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetComponent(invalid) got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestMemoryStore_GetComponent_SoftDeleted(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("Soft delete test")
+	if _, err := ms.SetComponentIntent(ctx, "comp-deleted", spec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent() failed: %v", err)
+	}
+
+	// Simulate soft deletion directly in internal state
+	ms.mu.Lock()
+	now := time.Now().UTC()
+	ms.componentsByName["comp-deleted"].DeleteTime = &now
+	ms.componentsByName["comp-deleted"].State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	ms.mu.Unlock()
+
+	_, err := ms.GetComponent(ctx, "comp-deleted")
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(deleted) got code %v, want NotFound", status.Code(err))
+	}
+}
+
 func TestMemoryStore_Immutability(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
@@ -239,17 +302,20 @@ func TestMemoryStore_Immutability(t *testing.T) {
 	rec1.Labels["key"] = "MUTATED"
 	rec1.Dependencies[0] = "MUTATED"
 
-	// Mutate original input spec
-	spec.Description = "MUTATED_INPUT"
-
-	// Invoke SetComponentIntent again and verify internal state used original clean data
-	rec2, err := ms.SetComponentIntent(ctx, "comp-immutable", sampleSpec("Second Spec"), nil, 0)
+	// Fetch again and verify internal state remained unchanged
+	rec2, err := ms.GetComponent(ctx, "comp-immutable")
 	if err != nil {
-		t.Fatalf("Second SetComponentIntent() failed: %v", err)
+		t.Fatalf("GetComponent() failed: %v", err)
 	}
 
-	if rec2.Generation != 2 {
-		t.Errorf("Generation = %d, want 2", rec2.Generation)
+	if rec2.Spec.GetDescription() == "MUTATED" {
+		t.Error("MemoryStore internal Spec was mutated!")
+	}
+	if rec2.Labels["key"] == "MUTATED" {
+		t.Error("MemoryStore internal Labels map was mutated!")
+	}
+	if rec2.Dependencies[0] == "MUTATED" {
+		t.Error("MemoryStore internal Dependencies slice was mutated!")
 	}
 }
 
@@ -268,26 +334,39 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 			compName := fmt.Sprintf("comp-%d", gid%10)
 
 			for op := 0; op < opsPerGoroutine; op++ {
-				spec := &componentspb.ComponentSpec{
-					Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-					Version:     "v1.0.0",
-					Description: fmt.Sprintf("goroutine %d op %d", gid, op),
+				if op%2 == 0 {
+					spec := &componentspb.ComponentSpec{
+						Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+						Version:     "v1.0.0",
+						Description: fmt.Sprintf("goroutine %d op %d", gid, op),
+					}
+					_, _ = ms.SetComponentIntent(ctx, compName, spec, map[string]string{"g": fmt.Sprintf("%d", gid)}, 0)
+				} else {
+					_, _ = ms.GetComponent(ctx, compName)
 				}
-				_, _ = ms.SetComponentIntent(ctx, compName, spec, map[string]string{"g": fmt.Sprintf("%d", gid)}, 0)
 			}
 		}(g)
 	}
 
 	wg.Wait()
+
+	// Verify all components exist
+	for i := 0; i < 10; i++ {
+		compName := fmt.Sprintf("comp-%d", i)
+		rec, err := ms.GetComponent(ctx, compName)
+		if err != nil {
+			t.Errorf("GetComponent(%s) failed after concurrent stress: %v", compName, err)
+		}
+		if rec == nil {
+			t.Errorf("GetComponent(%s) returned nil record", compName)
+		}
+	}
 }
 
 func TestMemoryStore_UnimplementedStubs(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, err := ms.GetComponent(ctx, "comp-1"); status.Code(err) != codes.Unimplemented {
-		t.Errorf("GetComponent got code %v, want Unimplemented", status.Code(err))
-	}
 	if _, err := ms.GetComponentByID(ctx, 1); status.Code(err) != codes.Unimplemented {
 		t.Errorf("GetComponentByID got code %v, want Unimplemented", status.Code(err))
 	}
