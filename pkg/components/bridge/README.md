@@ -41,10 +41,8 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
 ---
 
-## Package Sub-Components
+## Core Capabilities
 
-- [`reconciler.go`](reconciler.go): Core reconciliation state machine, condition management, and CMS client adapter.
-- [`workload_builder.go`](workload_builder.go): 1P Deployment and Service specification constructors with 4-tier image resolution and 5s preStop connection drain hooks.
-- [`workload_manager.go`](workload_manager.go): Kubernetes client-go workload lifecycle engine with optimistic locking and sidecar container preservation.
-- [`status_detector.go`](status_detector.go): Dynamic 3P wrapper CR status detector with normalized JSONPath query evaluation.
-- [`health_prober.go`](health_prober.go): Active HTTP and TCP network health socket prober with coordinate parser.
+- **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
+- **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
+- **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
