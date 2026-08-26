@@ -236,15 +236,7 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 	res, err := c.reconciler.Reconcile(reconcileCtx, item)
 	if err != nil {
 		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
-		if res != nil {
-			if updatedItem, syncErr := c.syncFinalizers(ctx, item, res); syncErr != nil {
-				logging.Error(ctx, "Error syncing finalizers after reconciliation failure", "name", name, "error", syncErr)
-			} else if !res.RemoveFinalizer {
-				if syncErr := c.syncStatus(ctx, updatedItem, res); syncErr != nil {
-					logging.Error(ctx, "Error syncing status after reconciliation failure", "name", name, "error", syncErr)
-				}
-			}
-		}
+		c.handleReconcileFailure(ctx, item, res)
 		return
 	}
 	updatedItem, err := c.syncFinalizers(ctx, item, res)
@@ -259,6 +251,26 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
 	}
 	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+}
+
+// handleReconcileFailure handles status and finalizer synchronization when Reconcile returns an error
+// but produced a non-nil ReconcileResult (e.g. Setting Degraded=True status or persisting finalizers).
+func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) {
+	if res == nil {
+		return
+	}
+	name := item.GetName()
+	updatedItem, syncErr := c.syncFinalizers(ctx, item, res)
+	if syncErr != nil {
+		logging.Error(ctx, "Error syncing finalizers after reconciliation failure", "name", name, "error", syncErr)
+		return
+	}
+	if res.RemoveFinalizer {
+		return
+	}
+	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
+		logging.Error(ctx, "Error syncing status after reconciliation failure", "name", name, "error", err)
+	}
 }
 
 // syncFinalizers attaches the deletion protection finalizer if res.AddFinalizer is true,
