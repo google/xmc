@@ -22,6 +22,7 @@ compat_go_library(
         "admin_role_guard.go",
         "config.go",
         "health_checker.go",
+        "lazy_spanner_client.go",
         "list_configs.go",
         "main.go",
         "server.go",
@@ -77,6 +78,7 @@ compat_go_test(
     srcs = [
         "admin_role_guard_test.go",
         "health_checker_test.go",
+        "lazy_spanner_client_test.go",
         "list_configs_test.go",
         "server_test.go",
     ],

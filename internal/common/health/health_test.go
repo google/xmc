@@ -54,6 +54,18 @@ func TestCheckSpanner(t *testing.T) {
 			t.Error("CheckSpanner(ctx, closedClient) succeeded, want error")
 		}
 	})
+
+	t.Run("realSpannerHealthClient Close closes underlying client", func(t *testing.T) {
+		clients := emulator.SetupWithEmulator(ctx, t)
+		healthCl := NewSpannerHealthClient(clients.XIDClient)
+		if closer, ok := healthCl.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				t.Fatalf("unexpected error on Close: %v", err)
+			}
+		} else {
+			t.Fatal("expected realSpannerHealthClient to implement Close()")
+		}
+	})
 }
 
 type mockSpannerHealthClient struct {
