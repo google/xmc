@@ -39,18 +39,23 @@ const (
 
 // CMSClient defines the interface for communicating with the CMS control plane.
 type CMSClient interface {
+	// SetComponentIntent registers or updates declarative component intent in CMS.
 	SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error)
+	// UpdateObservedGeneration updates the observed generation, state, and status message of a component in CMS.
 	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
 }
 
-// StatusDetectorHealthProber defines the health checking interface.
+// StatusDetectorHealthProber defines the health checking interface for custom resources.
 type StatusDetectorHealthProber interface {
+	// ProbeHealth evaluates the runtime health of a component based on its spec, returning health status and message.
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
 }
 
 // WorkloadManager defines the lifecycle manager interface for 1P child workloads.
 type WorkloadManager interface {
+	// Ensure1PWorkload reconciles Kubernetes Deployment and Service workloads matching spec.
 	Ensure1PWorkload(ctx context.Context, namespace string, name string, spec *componentspb.ComponentSpec) error
+	// Delete1PWorkload deletes child workloads associated with the named component.
 	Delete1PWorkload(ctx context.Context, namespace string, name string) error
 }
 
@@ -58,7 +63,7 @@ type serverClientAdapter struct {
 	server componentspb.ComponentManagerServiceServer
 }
 
-// NewCMSClientAdapter creates a CMSClient adapter wrapping a gRPC server.
+// NewCMSClientAdapter creates a CMSClient adapter wrapping an in-process gRPC server.
 func NewCMSClientAdapter(s componentspb.ComponentManagerServiceServer) CMSClient {
 	return &serverClientAdapter{server: s}
 }
@@ -72,22 +77,36 @@ func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *
 
 // Condition represents a standardized Kubernetes custom resource condition.
 type Condition struct {
-	Type, Status, Reason, Message string
-	ObservedGeneration            int64
-	LastTransitionTime            time.Time
+	// Type is the condition identifier (e.g. Ready, Degraded, DeletionBlocked).
+	Type string
+	// Status is the condition state ("True" or "False").
+	Status string
+	// Reason is a single-word camelCase reason explaining the condition transition.
+	Reason string
+	// Message is a human-readable description of the condition details.
+	Message string
+	// ObservedGeneration records the metadata.generation at the time of evaluation.
+	ObservedGeneration int64
+	// LastTransitionTime records when the condition transitioned between status values.
+	LastTransitionTime time.Time
 }
 
-// AccessStatus encapsulates network and access metadata.
+// AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
 type AccessStatus struct {
+	// EnvVars maps configuration and coordinate keys to their resolved values.
 	EnvVars map[string]string
 }
 
-// ReconcileResult encapsulates the outcome of a reconciliation pass.
+// ReconcileResult encapsulates the outcome of a single component reconciliation pass.
 type ReconcileResult struct {
+	// ObservedGeneration is the custom resource metadata.generation evaluated.
 	ObservedGeneration int64
-	State              componentspb.ComponentState
-	Conditions         []Condition
-	Access             *AccessStatus
+	// State is the resulting lifecycle state in CMS.
+	State componentspb.ComponentState
+	// Conditions is the updated list of Kubernetes status conditions.
+	Conditions []Condition
+	// Access contains resolved network access coordinates and environment variables.
+	Access *AccessStatus
 }
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
@@ -98,6 +117,9 @@ type Reconciler struct {
 }
 
 // NewReconciler constructs a new Reconciler instance.
+// cms is the required gRPC client for CMS communication.
+// prober is an optional health prober for component health checks.
+// wm is an optional WorkloadManager for provisioning 1P child workloads.
 func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, wm WorkloadManager) (*Reconciler, error) {
 	if cms == nil {
 		return nil, errors.New("cms client must not be nil")
@@ -107,14 +129,27 @@ func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, wm Workload
 
 // ReconcileComponentInput bundles parameters for a component reconciliation pass.
 type ReconcileComponentInput struct {
-	Namespace, Name    string
-	Generation         int64
-	Spec               *componentspb.ComponentSpec
-	Enabled            bool
+	// Namespace is the Kubernetes namespace of the Component custom resource.
+	Namespace string
+	// Name is the custom resource name.
+	Name string
+	// Generation is the metadata.generation of the custom resource.
+	Generation int64
+	// Spec is the parsed protobuf ComponentSpec.
+	Spec *componentspb.ComponentSpec
+	// Enabled indicates whether the component should be active.
+	Enabled bool
+	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
+// The flow executes the following steps:
+// 1. Validates input name and spec.
+// 2. Synchronizes declarative intent with CMS via applyIntent.
+// 3. If !Enabled, handles deactivation via reconcileDisabled.
+// 4. Ensures 1P child workloads via ensureWorkload.
+// 5. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
@@ -136,6 +171,9 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
+// applyIntent registers the desired ComponentSpec in CMS via SetComponentIntent RPC.
+// If CMS intent registration fails, conditions are updated with Ready=False, Degraded=True
+// and an error is returned without tearing down existing data-plane workloads.
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
@@ -151,6 +189,9 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	return nil
 }
 
+// reconcileDisabled tears down 1P child workloads when the component is deactivated (enabled: false),
+// sets state to COMPONENT_STATE_DISABLED, sets conditions to Ready=False, Degraded=False,
+// and updates the observed generation in CMS.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
 		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
@@ -170,6 +211,8 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	return res, nil
 }
 
+// ensureWorkload provisions or updates 1P child Kubernetes workloads (Deployment/Service)
+// via WorkloadManager.Ensure1PWorkload.
 func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
 		if err := r.workloadManager.Ensure1PWorkload(ctx, in.Namespace, in.Name, in.Spec); err != nil {
@@ -183,6 +226,8 @@ func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentIn
 	return nil
 }
 
+// evaluateHealth probes the runtime health of the component, sets the Ready and Degraded
+// conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, healthMsg := true, "Component is active"
 	if r.prober != nil {
@@ -207,7 +252,8 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	return res, nil
 }
 
-// Reconcile executes reconciliation on an unstructured Kubernetes Component object.
+// Reconcile is the top-level reconciler entrypoint for an unstructured Kubernetes Component custom resource.
+// It parses the spec, generation, and status conditions into ReconcileComponentInput and calls ReconcileComponent.
 func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructured) (*ReconcileResult, error) {
 	if obj == nil {
 		return nil, errors.New("unstructured object must not be nil")
@@ -223,7 +269,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 	})
 }
 
-// ParseSpecFromUnstructured parses an unstructured spec object.
+// ParseSpecFromUnstructured converts an unstructured spec map into a typed protobuf ComponentSpec,
+// alongside the boolean flags deletionProtection (default true) and enabled (default true).
 func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, bool) {
 	specMap, ok := specObj.(map[string]any)
 	if !ok || specMap == nil {
@@ -240,6 +287,7 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
 }
 
+// parseManifests converts an unstructured manifests slice into a slice of YAML string documents.
 func parseManifests(m map[string]any) []string {
 	raw, ok := m["manifests"].([]any)
 	if !ok {
@@ -254,18 +302,23 @@ func parseManifests(m map[string]any) []string {
 	return res
 }
 
+// extractBool extracts a boolean key from map m, returning def if missing or of invalid type.
 func extractBool(m map[string]any, k string, def bool) bool {
 	if v, ok := m[k].(bool); ok {
 		return v
 	}
 	return def
 }
+
+// extractStr extracts a string key from map m, returning "" if missing or of invalid type.
 func extractStr(m map[string]any, k string) string {
 	if v, ok := m[k].(string); ok {
 		return v
 	}
 	return ""
 }
+
+// extractInt extracts an int64 integer key from map m, handling int64, int, float64, and string representations.
 func extractInt(m map[string]any, k string) int64 {
 	v, ok := m[k]
 	if !ok {
@@ -294,6 +347,7 @@ func extractInt(m map[string]any, k string) int64 {
 	return 0
 }
 
+// parseComponentType parses the componentType string field into its corresponding protobuf enum.
 func parseComponentType(m map[string]any) componentspb.ComponentType {
 	if ct, ok := m["componentType"].(string); ok && ct == "COMPONENT_TYPE_CUSTOM_3P_WRAPPER" {
 		return componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER
@@ -301,6 +355,7 @@ func parseComponentType(m map[string]any) componentspb.ComponentType {
 	return componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT
 }
 
+// parseDeletionPolicy parses the deletionPolicy string field into its corresponding protobuf enum (Delete vs Orphan).
 func parseDeletionPolicy(m map[string]any) componentspb.DeletionPolicy {
 	if dp, ok := m["deletionPolicy"].(string); ok && (dp == "Orphan" || dp == "DELETION_POLICY_ORPHAN") {
 		return componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN
@@ -308,6 +363,8 @@ func parseDeletionPolicy(m map[string]any) componentspb.DeletionPolicy {
 	return componentspb.DeletionPolicy_DELETION_POLICY_DELETE
 }
 
+// parseWrapperRef extracts a 3P wrapper reference from the unstructured spec map,
+// supporting both camelCase and protobuf field names.
 func parseWrapperRef(m map[string]any) *componentspb.WrapperRef {
 	wr, ok := m["wrapperRef"].(map[string]any)
 	if !ok || wr == nil {
@@ -322,6 +379,7 @@ func parseWrapperRef(m map[string]any) *componentspb.WrapperRef {
 	}
 }
 
+// firstNonEmpty returns the first string in values that is not empty, or "" if all are empty.
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if v != "" {
@@ -331,7 +389,8 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// ParseConditionsFromUnstructured parses unstructured conditions.
+// ParseConditionsFromUnstructured extracts and parses a slice of Condition objects from the .status map,
+// converting lastTransitionTime RFC3339 strings into time.Time values.
 func ParseConditionsFromUnstructured(statusObj any) []Condition {
 	statusMap, ok := statusObj.(map[string]any)
 	if !ok || statusMap == nil {
@@ -360,6 +419,7 @@ func ParseConditionsFromUnstructured(statusObj any) []Condition {
 	return res
 }
 
+// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.
 func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
 	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
 		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
@@ -367,6 +427,8 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int
 	return err
 }
 
+// setCondition inserts or updates a Condition in the conditions slice. If the condition already
+// existed with the same status, its lastTransitionTime is preserved; otherwise, it is updated to time.Now().UTC().
 func setCondition(conditions *[]Condition, existing []Condition, condType, status string, gen int64, reason, message string) {
 	transitionTime := time.Now().UTC()
 	for _, c := range existing {
