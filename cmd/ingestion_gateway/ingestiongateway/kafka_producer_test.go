@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,12 +250,18 @@ func TestBuildProducerOptions_AllSASLMechanisms(t *testing.T) {
 		name        string
 		saslEnabled bool
 		mechanism   string
+		wantErr     bool
 	}{
 		{name: "Disabled SASL", saslEnabled: false, mechanism: ""},
 		{name: "SCRAM-SHA-256", saslEnabled: true, mechanism: "SCRAM-SHA-256"},
 		{name: "SCRAM-SHA-512", saslEnabled: true, mechanism: "SCRAM-SHA-512"},
 		{name: "PLAIN", saslEnabled: true, mechanism: "PLAIN"},
-		{name: "Unknown Mechanism", saslEnabled: true, mechanism: "UNSUPPORTED"},
+		// An unsupported mechanism must fail loudly. Building options without SASL attached would
+		// hand back a client that connects unauthenticated.
+		{name: "Unknown Mechanism", saslEnabled: true, mechanism: "UNSUPPORTED", wantErr: true},
+		{name: "Empty Mechanism", saslEnabled: true, mechanism: "", wantErr: true},
+		// SASLEnabled is what gates the switch, so a bad mechanism is ignored while SASL is off.
+		{name: "Unknown Mechanism With SASL Disabled", saslEnabled: false, mechanism: "UNSUPPORTED"},
 	}
 
 	for _, tt := range tests {
@@ -267,6 +274,18 @@ func TestBuildProducerOptions_AllSASLMechanisms(t *testing.T) {
 				SASLPassword:    "testpass",
 			}
 			opts, err := BuildProducerOptions(cfg, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error for mechanism %q, got none", tt.mechanism)
+				}
+				if !strings.Contains(err.Error(), "unsupported sasl_mechanism") {
+					t.Errorf("expected an unsupported sasl_mechanism error, got %v", err)
+				}
+				if opts != nil {
+					t.Errorf("expected nil options alongside the error, got %d", len(opts))
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error building producer options for %s: %v", tt.name, err)
 			}
