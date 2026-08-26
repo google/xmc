@@ -260,3 +260,21 @@ class ImageBuilder:
             ]
         )
         log_success("Container images loaded into KinD cluster.")
+
+    def build_and_load_into_kind(
+        self,
+        services: list[str] | None = None,
+        skip_build: bool = False,
+    ) -> list[str]:
+        """Builds container images in parallel and loads them into KinD cluster nodes.
+
+        Args:
+            services: Optional list of specific services to build.
+            skip_build: If True, skips compiling and only loads existing images.
+
+        Returns:
+            List of Docker image tags built and loaded.
+        """
+        image_tags = self.build_images(services=services, skip_build=skip_build)
+        self.load_images_into_kind(image_tags)
+        return image_tags

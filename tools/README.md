@@ -34,8 +34,10 @@ Centralized utilities and build helpers used across tools:
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)
 Playbooks and unified CLI for deploying, upgrading, and managing local/remote development clusters:
-- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for all environment lifecycle operations (`gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`, `cluster`, `status`, `logs`, `spanner`, `build-images`).
+- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for all environment lifecycle operations (`up`, `down`, `reload`, `gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`, `cluster`, `status`, `logs`, `spanner`, `build-images`).
 - [`config.py`](dev_env/config.py): Configurable local development environment settings (`LocalDevConfig`), multi-source resolution precedence (CLI > Env > YAML > Defaults), and dynamic Spanner / database naming.
+- [`change_detector.py`](dev_env/change_detector.py): Git diff inspection and smart mapping of file modifications to affected microservices and Helm charts.
+- [`local_runner.py`](dev_env/local_runner.py): Local KinD orchestrator with single-shot and continuous watch mode (`-w`) fast reload, debouncing, and live Helm deployments.
 - [`kind_manager.py`](dev_env/kind_manager.py): Pre-flight CLI tool verification, KinD cluster creation/deletion, credentials/secret provisioning (`gcp-sa-key`, `backend-oauth-secrets`, self-signed TLS certs), and local manifest application (`dummy_crds.yaml`, `redis.yaml`, `dex.yaml`, `gateway_proxy.yaml`).
 - [`spanner_manager.py`](dev_env/spanner_manager.py): Cloud Spanner database existence verification, parallel creation with single-batch DDL & proto descriptors, schema migrations, and database dropping (`dev_env.py spanner`).
 - [`image_builder.py`](dev_env/image_builder.py): Parallel Bazel OCI container image compilation, Docker archive loading, and loading images directly into KinD nodes (`dev_env.py build-images`).

@@ -570,11 +570,16 @@ class DevEnvCliTest(unittest.TestCase):
     @patch("tools.dev_env.local_runner.LocalRunner.reload")
     @patch("tools.dev_env.config.load_config")
     def test_reload_action_auto(self, mock_load_config: MagicMock, mock_reload: MagicMock) -> None:
-        """Verifies 'dev_env reload' dispatches to LocalRunner.reload with None."""
+        """Verifies 'dev_env reload' dispatches to LocalRunner.reload with defaults."""
         args = self.parser.parse_args(["reload"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
-        mock_reload.assert_called_once_with(services=None, helm=False)
+        mock_reload.assert_called_once_with(
+            services=None,
+            watch=False,
+            helm=False,
+            interval=1.5,
+        )
 
     @patch("tools.dev_env.local_runner.LocalRunner.reload")
     @patch("tools.dev_env.config.load_config")
@@ -585,7 +590,12 @@ class DevEnvCliTest(unittest.TestCase):
         args = self.parser.parse_args(["reload", "reconciler", "ui"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
-        mock_reload.assert_called_once_with(services=["reconciler", "ui"], helm=False)
+        mock_reload.assert_called_once_with(
+            services=["reconciler", "ui"],
+            watch=False,
+            helm=False,
+            interval=1.5,
+        )
 
     @patch("tools.dev_env.local_runner.LocalRunner.reload")
     @patch("tools.dev_env.config.load_config")
@@ -594,7 +604,28 @@ class DevEnvCliTest(unittest.TestCase):
         args = self.parser.parse_args(["reload", "--helm"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
-        mock_reload.assert_called_once_with(services=None, helm=True)
+        mock_reload.assert_called_once_with(
+            services=None,
+            watch=False,
+            helm=True,
+            interval=1.5,
+        )
+
+    @patch("tools.dev_env.local_runner.LocalRunner.reload")
+    @patch("tools.dev_env.config.load_config")
+    def test_reload_action_watch_and_helm(
+        self, mock_load_config: MagicMock, mock_reload: MagicMock
+    ) -> None:
+        """Verifies 'dev_env reload -w --helm' passes flags to LocalRunner.reload."""
+        args = self.parser.parse_args(["reload", "-w", "--helm", "--interval", "2.5"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_reload.assert_called_once_with(
+            services=None,
+            watch=True,
+            helm=True,
+            interval=2.5,
+        )
 
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")

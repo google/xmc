@@ -199,13 +199,14 @@ CMD ["nginx", "-g", "daemon off;"]
             # Copy package.json first so Docker can cache npm dependencies across source code edits.
             print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
             copy_flat(ui_src_dir, temp_build_dir)
+            ui_build_config = os.environ.get("XMC_UI_BUILD_CONFIG", "development")
             with open(dockerfile_path, "w") as f:
-                f.write("""FROM node:22-alpine AS builder
+                f.write(f"""FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
-RUN npx ng build --configuration production
+RUN npx ng build --configuration {ui_build_config}
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -191,7 +191,9 @@ def handle_reload(args: argparse.Namespace) -> None:
     cfg = config.load_config(args)
     LocalRunner(cfg).reload(
         services=getattr(args, "services", None) or None,
+        watch=getattr(args, "watch", False),
         helm=getattr(args, "helm", False),
+        interval=getattr(args, "interval", 1.5),
     )
 
 
@@ -475,9 +477,21 @@ def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Services to reload (e.g. reconciler, ui). Defaults to auto-detecting changes from git.",
     )
     p.add_argument(
+        "-w",
+        "--watch",
+        action="store_true",
+        help="Continuously watch filesystem and reload on changes.",
+    )
+    p.add_argument(
         "--helm",
         action="store_true",
         help="Upgrade Helm release on cluster.",
+    )
+    p.add_argument(
+        "--interval",
+        type=float,
+        default=1.5,
+        help="Watch mode polling interval in seconds (default: 1.5).",
     )
     _add_common_config_flags(p)
     p.add_argument("-c", "--config", help="Path to deployment YAML config.")
@@ -495,6 +509,7 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py down --drop-db
   python3 tools/dev_env/dev_env.py reload
   python3 tools/dev_env/dev_env.py reload reconciler ui
+  python3 tools/dev_env/dev_env.py reload -w
   python3 tools/dev_env/dev_env.py reload --helm
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
