@@ -328,8 +328,26 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if (tt.name == "deletion 1P workload delete failure" || tt.name == "deletion CMS failure") && len(res.Conditions) == 0 {
 				t.Errorf("expected conditions to be populated on deletion failure, got empty conditions")
 			}
+			if tt.name == "deletion blocked by protection" {
+				assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusFalse)
+				assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusFalse)
+				assertConditionStatus(t, res.Conditions, ConditionTypeDeletionBlocked, ConditionStatusTrue)
+			}
 		})
 	}
+}
+
+func assertConditionStatus(t *testing.T, conds []Condition, cType string, wantStatus string) {
+	t.Helper()
+	for _, c := range conds {
+		if c.Type == cType {
+			if c.Status != wantStatus {
+				t.Errorf("condition %v: got status %v, want %v", cType, c.Status, wantStatus)
+			}
+			return
+		}
+	}
+	t.Errorf("condition %v not found", cType)
 }
 
 func TestReconcile_Unstructured(t *testing.T) {

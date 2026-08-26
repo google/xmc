@@ -408,3 +408,29 @@ func TestController_SyncFinalizers_NilResult(t *testing.T) {
 	}
 }
 
+func TestController_ReconcileItem(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
+	r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+
+	item := &unstructured.Unstructured{
+		Object: map[string]any{
+			"metadata": map[string]any{
+				"name":      "test-item",
+				"namespace": "xmc",
+			},
+			"spec": map[string]any{
+				"enabled": true,
+			},
+		},
+	}
+
+	// Should safely reconcile without panicking
+	ctrl.reconcileItem(ctx, item)
+}
+

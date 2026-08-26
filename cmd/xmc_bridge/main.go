@@ -239,6 +239,10 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 		c.handleReconcileFailure(ctx, item, res)
 		return
 	}
+	if res == nil {
+		logging.Error(ctx, "Reconciler returned nil result without error", "name", name)
+		return
+	}
 	updatedItem, err := c.syncFinalizers(ctx, item, res)
 	if err != nil {
 		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
