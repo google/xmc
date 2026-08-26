@@ -18,12 +18,15 @@
 import argparse
 import re
 import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
-try:
-    from tools.common.tool_utils import HandledError, run_tool
-except ImportError:
-    from tool_utils import HandledError, run_tool
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 # Mandatory sizing thresholds (lines added / modified)
 PROD_THRESHOLD = 400

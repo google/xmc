@@ -20,11 +20,16 @@ import json
 import math
 import statistics
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import HandledError, run_tool
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 
 def parse_iso_timestamp(timestamp_str: str) -> datetime:

@@ -15,7 +15,9 @@
 """Unit tests for generate_review_checklist tool."""
 
 import unittest
-from unittest.mock import MagicMock, mock_open, patch
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
 from tools.pr_review.generate_review_checklist import (
@@ -76,7 +78,7 @@ class TestGenerateReviewChecklist(unittest.TestCase):
 
     def test_parse_graphql_nodes_null_author(self):
         """Test parsing GraphQL nodes handles null author and null threads safely."""
-        nodes = [
+        nodes: list[dict[str, Any] | None] = [
             None,
             {
                 "isResolved": False,
@@ -219,8 +221,8 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertIn("Invalid PR number: invalid", ctx.exception.message)
 
     @patch("tools.pr_review.generate_review_checklist.fetch_unresolved_comments")
-    @patch("builtins.open", new_callable=mock_open)
-    def test_generate_review_checklist_success(self, mock_file, mock_fetch):
+    @patch.object(Path, "write_text")
+    def test_generate_review_checklist_success(self, mock_write_text, mock_fetch):
         """Test successful execution of generate_review_checklist."""
         mock_fetch.return_value = [
             {
@@ -245,12 +247,11 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertEqual(result["pr_number"], 145)
         self.assertEqual(result["unresolved_comment_count"], 1)
 
-        mock_file.assert_called_once_with("pr_review_checklist.md", "w", encoding="utf-8")
-        mock_file().write.assert_called_once()
+        mock_write_text.assert_called_once()
 
     @patch("tools.pr_review.generate_review_checklist.fetch_unresolved_comments")
-    @patch("builtins.open", side_effect=OSError("Permission denied"))
-    def test_generate_review_checklist_os_error(self, mock_file, mock_fetch):
+    @patch.object(Path, "write_text", side_effect=OSError("Permission denied"))
+    def test_generate_review_checklist_os_error(self, mock_write_text, mock_fetch):
         """Test generate_review_checklist handles OSError on file write."""
         mock_fetch.return_value = []
         args = MagicMock()

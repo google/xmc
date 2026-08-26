@@ -348,10 +348,10 @@ By default, the script uses the deployment configuration file at `deploy/ctk_v2/
 Run the upgrade script:
 ```bash
 # Run pre-flight verification checks
-python3 ./tools/upgrade_dev_env.py --only check
+python3 ./tools/dev_env/upgrade_dev_env.py --only check
 
 # Upgrade environment end-to-end (checks migrations, rebuilds/pushes images, deploys app workloads, and restarts services)
-python3 ./tools/upgrade_dev_env.py
+python3 ./tools/dev_env/upgrade_dev_env.py
 ```
 
 #### Automated Agent Upgrade (`xmc_upgrade` skill)

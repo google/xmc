@@ -16,15 +16,17 @@
 
 import argparse
 import subprocess
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
-try:
-    from tools import analyze_diff_size
-    from tools.common.tool_utils import HandledError
-except ImportError:
-    import analyze_diff_size
-    from tool_utils import HandledError
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools import analyze_diff_size  # noqa: E402
+from tools.common.tool_utils import HandledError  # noqa: E402
 
 
 class AnalyzeDiffSizeTest(unittest.TestCase):

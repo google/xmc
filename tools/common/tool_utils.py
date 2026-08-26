@@ -262,11 +262,7 @@ def load_and_validate_config(
     path = Path(config_file)
     yaml_vars = parse_yaml_vars(path)
 
-    config: dict[str, Any] = {}
-    if defaults:
-        config.update(defaults)
-
-    config.update(yaml_vars)
+    config: dict[str, Any] = (defaults or {}) | yaml_vars
 
     for env_var, config_key in ENV_VAR_MAPPING.items():
         val = os.getenv(env_var)

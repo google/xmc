@@ -59,9 +59,10 @@ Harness for testing and evaluating skill/rule modifications:
 
 ## Backward Compatibility & Forwarding Wrappers
 
-For backward compatibility with existing developer scripts and agent skill definitions, top-level forwarding wrappers are maintained directly in `tools/`:
-- Executing `./tools/<script>.py` or `python tools/<script>.py` transparently delegates to the corresponding modular script in `tools/<subpackage>/<script>.py`.
-- Bazel targets under `//tools:...` alias to their respective `//tools/<subpackage>:...` targets.
+For backward compatibility with existing developer scripts and agent skill definitions, top-level forwarding wrappers and repository-level utilities are maintained directly in `tools/`:
+- **Repository Entrypoints & Hooks**: Tools invoked directly by git hooks or top-level entrypoints (`analyze_diff_size.py`, `dev_env.py`) remain at the `tools/` root for immediate access.
+- **Forwarding Wrappers**: Executing `./tools/<script>.py` or `python tools/<script>.py` transparently delegates to the corresponding modular script in `tools/<subpackage>/<script>.py`.
+- **Bazel Aliases**: Bazel targets under `//tools:...` alias to their respective `//tools/<subpackage>:...` targets.
 
 ---
 

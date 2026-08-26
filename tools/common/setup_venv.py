@@ -79,9 +79,9 @@ def install_requirements(venv_python: Path, req_path: Path) -> None:
             "\nError: Dependency installation failed.\n"
             "If packages are not found in your default index (e.g., corporate staging index),\n"
             "you can override or append index URLs using environment variables:\n\n"
-            "  PIP_INDEX_URL=https://pypi.org/simple python3 tools/setup_venv.py\n"
+            "  PIP_INDEX_URL=https://pypi.org/simple python3 tools/common/setup_venv.py\n"
             "  or\n"
-            "  PIP_EXTRA_INDEX_URL=https://pypi.org/simple python3 tools/setup_venv.py\n\n"
+            "  PIP_EXTRA_INDEX_URL=https://pypi.org/simple python3 tools/common/setup_venv.py\n\n"
             "Alternatively, ensure your global pip configuration (e.g., ~/.config/pip/pip.conf)\n"
             "points to a registry containing PyYAML, requests, and python-dotenv.\n"
         )
@@ -92,8 +92,6 @@ def main(args_list: list[str] | None = None) -> None:
     """Orchestrates virtual environment creation and dependency installation."""
     check_prerequisites()
     default_reqs = "./tools/common/requirements.txt"
-    if not Path(default_reqs).exists() and Path("./tools/requirements.txt").exists():
-        default_reqs = "./tools/requirements.txt"
 
     parser = argparse.ArgumentParser(
         description=(
