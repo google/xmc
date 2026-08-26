@@ -6,7 +6,7 @@ This document describes how to build, test, and lint the codebase, configure con
 
 ## Tools & Scripts Virtual Environment
 
-All automation tools, deployment scripts (`tools/dev_env/deploy_dev_env.py`, `tools/dev_env/upgrade_dev_env.py`), and verification scripts (`deploy/ctk_v2/verify_xmc.py`) require a Python virtual environment. Virtual environments must be explicitly created using **Python 3.13.14**:
+All automation tools, deployment scripts (`tools/dev_env/dev_env.py`, `tools/dev_env/deploy_dev_env.py`, `tools/dev_env/upgrade_dev_env.py`), and verification scripts (`deploy/ctk_v2/verify_xmc.py`) require a Python virtual environment. Virtual environments must be explicitly created using **Python 3.13.14**:
 
 ```bash
 python3.13 -m venv ./tools/venv

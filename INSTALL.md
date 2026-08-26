@@ -328,14 +328,14 @@ When updating an existing XMC installation to a newer version or release branch,
 
 You can perform the upgrade either using the automated script (recommended for development environments) or manually step-by-step.
 
-### Option A: Automated Upgrade (upgrade_dev_env.py)
+### Option A: Automated Upgrade (`tools/dev_env/dev_env.py gke-upgrade`)
 
 > [!WARNING]
 > The automated upgrade script is designed **only for development and testing environments**. It builds and pushes images directly from your local workspace and triggers rolling restarts which are not suitable for production deployments. For production environments, follow the manual upgrade steps (Option B) to ensure proper release management.
 
-To upgrade an existing running XMC development environment on GKE to the latest code in your current local branch (`HEAD`), you can use the automated upgrade script:
+To upgrade an existing running XMC development environment on GKE to the latest code in your current local branch (`HEAD`), you can use the automated upgrade command:
 
-#### Using the Upgrade Script Directly
+#### Using the Upgrade Command Directly
 
 By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag.
 
@@ -345,13 +345,13 @@ By default, the script uses the deployment configuration file at `deploy/ctk_v2/
 > set -o allexport; source .env; set +o allexport
 > ```
 
-Run the upgrade script:
+Run the upgrade command (legacy `./tools/upgrade_dev_env.py` is also supported):
 ```bash
 # Run pre-flight verification checks
-python3 ./tools/dev_env/upgrade_dev_env.py --only check
+python3 ./tools/dev_env/dev_env.py gke-upgrade --only check
 
 # Upgrade environment end-to-end (checks migrations, rebuilds/pushes images, deploys app workloads, and restarts services)
-python3 ./tools/dev_env/upgrade_dev_env.py
+python3 ./tools/dev_env/dev_env.py gke-upgrade
 ```
 
 #### Automated Agent Upgrade (`xmc_upgrade` skill)

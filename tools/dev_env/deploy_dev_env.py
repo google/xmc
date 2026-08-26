@@ -751,14 +751,13 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
     log_success("XMC environment deployed and verified.")
 
 
-def main(argv: list[str]) -> None:
-    """Main entry point for the deployment script.
+def run_deployment(args: argparse.Namespace) -> None:
+    """Executes the GKE deployment pipeline.
 
     Args:
-        argv: Command line arguments.
+        args: Parsed command line arguments containing config, dns_project,
+          dns_zone, start_from, only.
     """
-    ensure_venv()
-    args = parse_args(argv)
     config = load_and_validate_config(args.config)
 
     # Run validations (corresponds to run_checks in bash)
@@ -818,6 +817,19 @@ def main(argv: list[str]) -> None:
     print("Add this redirect URI in your GCloud Console OAuth Client ID config:")
     print(f"  - {BOLD}https://{env}.{dom}/api/callback{NC}")
     print(f"{GREEN}" + "=" * 56 + f"{NC}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Main entry point for the deployment script.
+
+    Args:
+        argv: Command line arguments.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+    ensure_venv()
+    args = parse_args(argv)
+    run_deployment(args)
 
 
 if __name__ == "__main__":

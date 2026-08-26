@@ -20,8 +20,40 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "deploy_dev_env.py",
+    "dev_env.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "dev_env_lib",
+    srcs = ["dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        ":deploy_dev_env_lib",
+        ":upgrade_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "dev_env",
+    srcs = ["dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        ":dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "dev_env_test",
+    srcs = ["dev_env_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "deploy_dev_env_lib",

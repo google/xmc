@@ -31,9 +31,10 @@ Centralized utilities and build helpers used across tools:
 - [`requirements.txt`](common/requirements.txt): Pinned third-party Python dependencies for developer tools.
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)
-Playbooks for deploying and updating local/GKE development clusters:
-- [`deploy_dev_env.py`](dev_env/deploy_dev_env.py): Orchestrates Cluster Toolkit (`gcluster`) compilation and step-by-step deployment.
-- [`upgrade_dev_env.py`](dev_env/upgrade_dev_env.py): Rebuilds changed services, pushes OCI images, and rolls out Helm charts or deployments without recreating infrastructure.
+Playbooks and unified CLI for deploying, upgrading, and managing development environments:
+- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for environment lifecycle operations (`gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`).
+- [`deploy_dev_env.py`](dev_env/deploy_dev_env.py): Orchestrates Cluster Toolkit (`gcluster`) compilation and step-by-step remote infrastructure rollout (invoked via `python3 tools/dev_env/dev_env.py gke-deploy`).
+- [`upgrade_dev_env.py`](dev_env/upgrade_dev_env.py): Rebuilds changed services, pushes OCI images, and rolls out Helm charts or deployments without recreating infrastructure (invoked via `python3 tools/dev_env/dev_env.py gke-upgrade`).
 
 ### 3. `tools/pr_review/` (PR Review & GitHub Automation)
 Utilities supporting multi-agent PR review and authoring workflows:

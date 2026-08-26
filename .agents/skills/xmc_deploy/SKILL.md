@@ -13,7 +13,7 @@ This skill guides the agent through deploying the XManager on Cloud (XMC) infras
 > [!IMPORTANT]
 > **Enforced Choice Prompt**:
 > Before executing any checks, compilation, or deployment commands, you **MUST ask the user** to choose their preferred deployment method:
-> *   **Option 1: Automated Dev Setup**: Uses the `python3 ./tools/dev_env/deploy_dev_env.py` script to automate all steps.
+> *   **Option 1: Automated Dev Setup**: Uses the `python3 tools/dev_env/dev_env.py gke-deploy` CLI (or legacy `deploy_dev_env.py`) to automate all steps.
 > *   **Option 2: Manual Step-by-Step Deployment**: Manually compiles and deploys each group using `gcluster`.
 >
 > Stop execution and wait for the user to respond with their selection. Do not proceed to any other section of this workflow without their explicit choice.
@@ -23,7 +23,7 @@ graph TD
     Start[Choose Deployment Method] -->|Option 1| Auto[Automated Dev Setup]
     Start -->|Option 2| Manual[Manual Step-by-Step]
     
-    Auto --> AutoRun["Run python3 ./tools/dev_env/deploy_dev_env.py"]
+    Auto --> AutoRun["Run python3 tools/dev_env/dev_env.py gke-deploy"]
     AutoRun --> Verify[Verification & Validation]
     
     Manual --> A["1. Pre-flight CLI Checks"]
@@ -64,9 +64,9 @@ Before running any compilation or deployment steps, verify that all necessary CL
 
 ---
 
-## 2. Option 1: Automated Dev Setup (deploy_dev_env.py)
+## 2. Option 1: Automated Dev Setup (`tools/dev_env/dev_env.py gke-deploy`)
 
-Use the automated script to execute the deployment end-to-end. The script handles registry credentials config (`gcloud auth configure-docker`), code compilation, GKE setup, and app deployment.
+Use the unified environment automation tool to execute the deployment end-to-end (legacy direct invocation `python3 ./tools/dev_env/deploy_dev_env.py` and `deploy` command are also supported). The tool handles registry credentials config (`gcloud auth configure-docker`), code compilation, GKE setup, and app deployment.
 
 > [!IMPORTANT]
 > **Enforced DNS Parameters Check**:
@@ -80,7 +80,7 @@ Use the automated script to execute the deployment end-to-end. The script handle
 ### Step 1: Check configurations
 Always run the checks first to validate active GCP project alignment and CLI tools:
 ```bash
-python3 ./tools/dev_env/deploy_dev_env.py \
+python3 tools/dev_env/dev_env.py gke-deploy \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \
@@ -90,7 +90,7 @@ python3 ./tools/dev_env/deploy_dev_env.py \
 ### Step 2: Deploy
 Run the automated deployment script by providing the DNS project and zone details:
 ```bash
-python3 ./tools/dev_env/deploy_dev_env.py \
+python3 tools/dev_env/dev_env.py gke-deploy \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name>
@@ -99,7 +99,7 @@ python3 ./tools/dev_env/deploy_dev_env.py \
 ### Step 3: Resuming or Running Specific Steps
 To resume from a failed step, run:
 ```bash
-python3 ./tools/dev_env/deploy_dev_env.py \
+python3 tools/dev_env/dev_env.py gke-deploy \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \
@@ -108,7 +108,7 @@ python3 ./tools/dev_env/deploy_dev_env.py \
 
 To run **only** a single specific step (e.g. rebuild/push images or run verify tests), run:
 ```bash
-python3 ./tools/dev_env/deploy_dev_env.py \
+python3 tools/dev_env/dev_env.py gke-deploy \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \
