@@ -175,6 +175,28 @@ Common OAuth environment variables for XMC services.
 {{- end -}}
 
 {{/*
+ClickHouse connection environment variables for XMC services backed by the metrics pipeline.
+Consumed by pkg/clickhouse.GetOptions. The password is sourced from the clickhouse-secret
+Secret rendered by templates/metrics/clickhouse-secret.yaml.
+*/}}
+{{- define "xmanager-cloud.clickhouseEnv" -}}
+{{- $clickhouse := (default (dict) .Values.metrics.clickhouse) -}}
+- name: CLICKHOUSE_HOST
+  value: {{ $clickhouse.host | default "clickhouse.xmc-metrics.svc.cluster.local" | quote }}
+- name: CLICKHOUSE_PORT
+  value: {{ $clickhouse.port | default "9000" | quote }}
+- name: CLICKHOUSE_DATABASE
+  value: {{ $clickhouse.database | default "default" | quote }}
+- name: CLICKHOUSE_USER
+  value: {{ $clickhouse.user | default "default" | quote }}
+- name: CLICKHOUSE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: clickhouse-secret
+      key: clickhouse-password
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}

@@ -56,6 +56,13 @@ vars:
   redis_region:
   status_message_history_enabled: true
   enable_metrics: false
+  # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
+  # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
   enable_components: false
   health_service_deployment_enabled: false
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
@@ -445,6 +452,16 @@ deployment_groups:
       - name: metrics.enabled
         value: $(vars.enable_metrics)
         type: auto
+      - name: metrics.clickhouse.host
+        value: $(vars.clickhouse_host)
+      - name: metrics.clickhouse.port
+        value: $(vars.clickhouse_port)
+      - name: metrics.clickhouse.database
+        value: $(vars.clickhouse_database)
+      - name: metrics.clickhouse.user
+        value: $(vars.clickhouse_user)
+      - name: metrics.clickhouse.password
+        value: $(vars.clickhouse_password)
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.enable_metrics)
         type: auto
