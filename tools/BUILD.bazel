@@ -426,3 +426,23 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "extract_release_prs_lib",
+    srcs = ["extract_release_prs.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "extract_release_prs_test",
+    srcs = ["extract_release_prs_test.py"],
+    imports = ["."],
+    deps = [
+        ":extract_release_prs_lib",
+        ":tool_utils",
+    ],
+)

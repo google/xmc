@@ -39,6 +39,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
+| Release Notes & Changelogs | [XMC Draft Release Notes Skill](skills/xmc_draft_release_notes/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |
 
@@ -56,6 +57,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR sizing gates, PR title & body formatting rules, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
 - 🔀 [XMC PR Split Verification Skill](skills/xmc_pr_split_verification/SKILL.md): Sizing threshold evaluation, SRP verification subagent rubric, vertical slice decomposition, dead code prevention, and `gh-stack` execution plans.
 - 📦 [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md): Playbook for checking branch format, running pre-commit hooks, formatting PR body templates, updating PR descriptions via helper script, managing CI wait buffers, and enforcing strict user confirmation gates for Draft PR creation and Open conversion.
+- 📝 [XMC Draft Release Notes Skill](skills/xmc_draft_release_notes/SKILL.md): Automated extraction and grouping of merged PRs by project domain and generation of customer-centric release notes.
 - ⚡ [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md): Playbook for requirements scoping, clean code design, running affected test matrices, measuring Bazel coverage, and pre-commit verification.
 - 📋 [Code Review & Comment Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review feedback standards, and mandatory PR comment resolution rules.
 
