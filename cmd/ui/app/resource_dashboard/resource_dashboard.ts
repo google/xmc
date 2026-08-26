@@ -52,7 +52,6 @@ import {
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
 import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
-import { matchesResourceFilter } from './utils/resource_filter';
 import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
 /**
@@ -227,7 +226,7 @@ function matchesRequirementRow(
   row: ResourceRequirementRow,
 ): boolean {
   if (!capacities) return false;
-  const filter = (row.resourceType || '').trim();
+  const filter = (row.resourceType || '').trim().toLowerCase();
   const reqAmount = row.amount;
 
   return capacities.some((cap) => {
@@ -235,6 +234,7 @@ function matchesRequirementRow(
     if (free < reqAmount) return false;
     if (!filter) return true;
 
-    return matchesResourceFilter(cap.resourceType || '', filter);
+    const rName = (cap.resourceType || '').toLowerCase();
+    return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
   });
 }

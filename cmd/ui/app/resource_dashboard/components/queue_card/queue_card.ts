@@ -39,7 +39,6 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { matchesResourceFilter } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_filter';
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
@@ -87,14 +86,14 @@ export class QueueCardComponent {
   protected readonly capacities = computed(() => {
     const allCapacities = this.queue()?.queueCapacity ?? [];
     const filters = this.activeResourceFilters()
-      .map((f) => f.trim())
+      .map((f) => f.trim().toLowerCase())
       .filter((f) => f !== '');
     if (filters.length === 0) {
       return allCapacities;
     }
     return allCapacities.filter((cap) => {
-      const rName = cap.resourceType || '';
-      return !!rName && filters.some((f) => matchesResourceFilter(rName, f));
+      const rName = (cap.resourceType || '').toLowerCase();
+      return !!rName && filters.some((f) => rName === f || rName.includes(f) || f.includes(rName));
     });
   });
 

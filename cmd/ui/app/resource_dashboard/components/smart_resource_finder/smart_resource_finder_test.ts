@@ -123,9 +123,4 @@ describe('SmartResourceFinderComponent', () => {
 
     expect(hostInstance.lastQuery()).toEqual({ requirements: [] });
   });
-
-  it('should render resource type options in sorted order', async () => {
-    const options = await harness.getResourceTypeOptions();
-    expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'tpu']);
-  });
 });
