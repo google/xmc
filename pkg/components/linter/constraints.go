@@ -263,6 +263,20 @@ func matchWildcard(v *store.Version, term string) (bool, error) {
 	return false, fmt.Errorf("unsupported wildcard format %q", term)
 }
 
+// normalizeConstraintVersion normalizes a user-specified constraint version string into a canonical
+// 3-part SemVer 2.0.0 format (MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]) required by store.Parse.
+//
+// Specifically, it performs the following transformations:
+//  1. Trims leading and trailing whitespace.
+//  2. Strips any leading 'v' or 'V' release prefix (e.g., "v1.2" -> "1.2").
+//  3. Isolates any pre-release or build metadata suffix beginning with '-' or '+' (e.g., "-alpha.1", "+build.42").
+//  4. Expands partial numeric core versions into full 3-segment triples:
+//     - 1-segment: "1"   -> "1.0.0"
+//     - 2-segment: "1.2" -> "1.2.0"
+//     - 3-segment: "1.2.3" -> preserved as "1.2.3"
+//  5. Re-attaches the pre-release or build metadata suffix to the padded core version (e.g., "v1.2-rc1" -> "1.2.0-rc1").
+//
+// Returns an empty string if the input string is empty or contains only whitespace.
 func normalizeConstraintVersion(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "v")
