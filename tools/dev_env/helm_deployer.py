@@ -167,7 +167,10 @@ class HelmDeployer:
                 text,
             )
             if count > 0:
-                path.chmod(path.stat().st_mode | 0o200)
+                try:
+                    path.chmod(path.stat().st_mode | 0o200)
+                except OSError:
+                    pass
                 path.write_text(patched, encoding="utf-8")
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:

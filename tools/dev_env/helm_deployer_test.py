@@ -151,8 +151,24 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("ingestionGatewayDeployment", content)
         self.assertIn("ingestion_gateway_image:latest", content)
 
+    def test_prepare_local_chart_read_only_template(self) -> None:
+        helm_src = self.temp_path / "deploy" / "helm" / "templates" / "ess"
+        helm_src.mkdir(parents=True, exist_ok=True)
+        dep_file = helm_src / "deployment.yaml"
+        dep_file.write_text("imagePullPolicy: Always\n", encoding="utf-8")
+        dep_file.chmod(0o444)
+
+        prepared_dir = self.deployer.prepare_local_chart()
+        surviving = prepared_dir / "templates" / "ess" / "deployment.yaml"
+        self.assertTrue(surviving.exists())
+        content = surviving.read_text(encoding="utf-8")
+        self.assertIn("imagePullPolicy: IfNotPresent", content)
+
+    @patch("tools.dev_env.helm_deployer.shutil.which")
     @patch("tools.dev_env.helm_deployer.run_command")
-    def test_capture_diagnostics(self, mock_run: MagicMock) -> None:
+    def test_capture_diagnostics(self, mock_run: MagicMock, mock_which: MagicMock) -> None:
+        mock_which.return_value = "/usr/local/bin/kubectl"
+
         def side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             cmd_str = " ".join(cmd)
             if "get pods" in cmd_str and "-o jsonpath" in cmd_str:
@@ -174,6 +190,19 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("=== EVENTS (namespace: xmc) ===", content)
         self.assertIn("--- Logs for pod: pod-1 (ns: xmc) ---", content)
         self.assertIn("Container log line", content)
+
+    @patch("tools.dev_env.helm_deployer.shutil.which")
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_capture_diagnostics_no_kubectl(
+        self, mock_run: MagicMock, mock_which: MagicMock
+    ) -> None:
+        mock_which.return_value = None
+        diag_path = self.deployer.capture_diagnostics()
+
+        self.assertTrue(diag_path.is_file())
+        content = diag_path.read_text(encoding="utf-8")
+        self.assertIn("kubectl CLI not found", content)
+        mock_run.assert_not_called()
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:
@@ -280,6 +309,18 @@ class TestHelmDeployer(unittest.TestCase):
         mock_run.side_effect = RuntimeError("Rollout timed out")
         with self.assertRaises(RuntimeError):
             self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=10)
+        mock_diag.assert_called_once()
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    @patch.object(HelmDeployer, "capture_diagnostics")
+    def test_wait_for_rollouts_failure_diagnostic_exception_suppressed(
+        self, mock_diag: MagicMock, mock_run: MagicMock
+    ) -> None:
+        mock_run.side_effect = RuntimeError("Rollout timed out")
+        mock_diag.side_effect = RuntimeError("Diagnostic disk full error")
+        with self.assertRaises(RuntimeError) as ctx:
+            self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=10)
+        self.assertEqual(str(ctx.exception), "Rollout timed out")
         mock_diag.assert_called_once()
 
     @patch("tools.dev_env.helm_deployer.run_command")
