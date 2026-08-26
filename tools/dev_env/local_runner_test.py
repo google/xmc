@@ -475,6 +475,85 @@ class TestLocalRunner(unittest.TestCase):
             self.assertGreater(sig["test.txt"][1], 0)
             self.assertEqual(sig["nonexistent.txt"], (0, 0))
 
+    def test_reload_watch_mode_invalid_interval_raises_error(self) -> None:
+        """Verifies reload(watch=True) raises ValueError when interval <= 0."""
+        with patch.object(self.runner.kind_mgr, "exists", return_value=True):
+            with self.assertRaisesRegex(
+                ValueError, "Watch interval must be greater than 0 seconds."
+            ):
+                self.runner.reload(watch=True, interval=0)
+            with self.assertRaisesRegex(
+                ValueError, "Watch interval must be greater than 0 seconds."
+            ):
+                self.runner.reload(watch=True, interval=-1.5)
+
+    def test_reload_explicit_services_with_changed_files_filters_services(self) -> None:
+        """Verifies explicit services are filtered against change detector when changed_files is passed."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["reconciler"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/reconciler/main.go"],
+            reasons={"reconciler": ["cmd/reconciler/main.go"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner._reload_once(
+                services=["ui", "reconciler"], changed_files=["cmd/reconciler/main.go"]
+            )
+            mock_detect.assert_called_once_with(files=["cmd/reconciler/main.go"])
+            mock_build_load.assert_called_once_with(services=["reconciler"])
+
+    def test_reload_explicit_services_with_changed_files_no_match(self) -> None:
+        """Verifies no reload occurs if changed_files does not affect requested explicit services."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["ui"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/ui/main.ts"],
+            reasons={"ui": ["cmd/ui/main.ts"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+        ):
+            reloaded = self.runner._reload_once(
+                services=["reconciler"], changed_files=["cmd/ui/main.ts"]
+            )
+            self.assertFalse(reloaded)
+            mock_detect.assert_called_once_with(files=["cmd/ui/main.ts"])
+            mock_build_load.assert_not_called()
+
+    @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_debounce_clean_workspace(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop safely skips reload if workspace becomes clean during debounce."""
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"f.go": (1, 10)},  # initial sig
+                    {"f.go": (2, 20)},  # change detected
+                    {},  # clean after debounce
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

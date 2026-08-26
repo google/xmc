@@ -149,7 +149,7 @@ class LocalRunner:
 
         if watch:
             if interval <= 0:
-                raise ValueError(f"Watch interval must be greater than 0, got {interval}")
+                raise ValueError("Watch interval must be greater than 0 seconds.")
             self._watch_loop(services=services, interval=interval, helm=helm)
             return
 
@@ -202,6 +202,9 @@ class LocalRunner:
                 if current_sig and current_sig != last_sig:
                     time.sleep(0.5)  # debounce rapid filesystem events
                     current_sig = self._get_workspace_signature()
+                    if not current_sig:
+                        last_sig = {}
+                        continue
                     delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
                     deleted_files = [f for f in last_sig if f not in current_sig]
                     changed_delta = sorted(set(delta_files + deleted_files))
@@ -246,8 +249,14 @@ class LocalRunner:
                 enabled_services=self.change_detector.enabled_services,
                 helm=helm_needed,
             )
-            target_services.update(explicit_targets)
-            helm_needed = explicit_helm
+            if changed_files is not None:
+                det = self.change_detector.detect_changes(files=changed_files)
+                if det.helm_upgrade_needed:
+                    helm_needed = True
+                target_services.update(s for s in explicit_targets if s in det.services)
+            else:
+                target_services.update(explicit_targets)
+                helm_needed = explicit_helm
 
         return target_services, helm_needed
 
