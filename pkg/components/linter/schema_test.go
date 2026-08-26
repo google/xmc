@@ -98,60 +98,6 @@ spec:
 			wantRules: []string{"INVALID_COMPONENT_NAME"},
 		},
 		{
-			name: "forbidden kinds rejects case-insensitive kind clusterrole",
-			rules: &linter.RulesConfig{
-				StaticChecks: linter.StaticChecksConfig{
-					ForbiddenKinds: []string{"ClusterRole"},
-				},
-			},
-			manifests: map[string]string{
-				"role.yaml": `
-apiVersion: rbac.authorization.k8s.io/v1
-kind: clusterrole
-metadata:
-  name: secret-reader
-`,
-			},
-			wantValid: false,
-			wantRules: []string{"FORBIDDEN_KIND_REJECTED"},
-		},
-		{
-			name: "forbidden kinds rejects StorageClass",
-			rules: &linter.RulesConfig{
-				StaticChecks: linter.StaticChecksConfig{
-					ForbiddenKinds: []string{"StorageClass"},
-				},
-			},
-			manifests: map[string]string{
-				"sc.yaml": `
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-storage
-`,
-			},
-			wantValid: false,
-			wantRules: []string{"FORBIDDEN_KIND_REJECTED"},
-		},
-		{
-			name: "forbidden kinds allows non-forbidden Deployment",
-			rules: &linter.RulesConfig{
-				StaticChecks: linter.StaticChecksConfig{
-					ForbiddenKinds: []string{"ClusterRole", "StorageClass"},
-				},
-			},
-			manifests: map[string]string{
-				"deploy.yaml": `
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-  namespace: prod
-`,
-			},
-			wantValid: true,
-		},
-		{
 			name:  "invalid componentType",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{

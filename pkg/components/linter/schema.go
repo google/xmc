@@ -21,7 +21,7 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-// validateSchema validates YAML structural correctness, schema conformance, and forbidden kinds.
+// validateSchema validates YAML structural correctness and schema conformance.
 func (l *Linter) validateSchema(rawManifests []*RawManifest, compManifests []*ComponentManifest, res *ValidationResult) {
 	rules := l.rules
 	if rules == nil {
@@ -48,12 +48,6 @@ func (l *Linter) validateRawManifest(m *RawManifest, rules *RulesConfig, res *Va
 	}
 	if strings.TrimSpace(m.Metadata.Name) == "" {
 		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "metadata.name is required and cannot be empty")
-	}
-	for _, forbidden := range rules.StaticChecks.ForbiddenKinds {
-		if strings.EqualFold(strings.TrimSpace(m.Kind), strings.TrimSpace(forbidden)) {
-			res.AddError(m.FilePath, line, "FORBIDDEN_KIND_REJECTED", fmt.Sprintf("manifest kind %q is forbidden by staticChecks.forbiddenKinds rule", m.Kind))
-			break
-		}
 	}
 }
 

@@ -36,7 +36,6 @@ func TestParseRules(t *testing.T) {
 			yamlData: "",
 			wantErr:  false,
 			wantChecks: linter.StaticChecksConfig{
-				ForbiddenKinds:            nil,
 				EnforceDeletionProtection: false,
 				MaxDrainTimeoutSeconds:    0,
 			},
@@ -46,7 +45,6 @@ func TestParseRules(t *testing.T) {
 			yamlData: "# only comments\n# nothing else\n",
 			wantErr:  false,
 			wantChecks: linter.StaticChecksConfig{
-				ForbiddenKinds:            nil,
 				EnforceDeletionProtection: false,
 				MaxDrainTimeoutSeconds:    0,
 			},
@@ -56,7 +54,6 @@ func TestParseRules(t *testing.T) {
 			yamlData: "   \n  \n",
 			wantErr:  false,
 			wantChecks: linter.StaticChecksConfig{
-				ForbiddenKinds:            nil,
 				EnforceDeletionProtection: false,
 				MaxDrainTimeoutSeconds:    0,
 			},
@@ -65,15 +62,11 @@ func TestParseRules(t *testing.T) {
 			name: "valid static checks config",
 			yamlData: `
 staticChecks:
-  forbiddenKinds:
-    - ClusterRole
-    - StorageClass
   enforceDeletionProtection: true
   maxDrainTimeoutSeconds: 300
 `,
 			wantErr: false,
 			wantChecks: linter.StaticChecksConfig{
-				ForbiddenKinds:            []string{"ClusterRole", "StorageClass"},
 				EnforceDeletionProtection: true,
 				MaxDrainTimeoutSeconds:    300,
 			},
@@ -104,9 +97,6 @@ staticChecks:
 			if err != nil {
 				t.Fatalf("ParseRules() unexpected error: %v", err)
 			}
-			if len(cfg.StaticChecks.ForbiddenKinds) != len(tc.wantChecks.ForbiddenKinds) {
-				t.Errorf("ForbiddenKinds length = %v, want %v", len(cfg.StaticChecks.ForbiddenKinds), len(tc.wantChecks.ForbiddenKinds))
-			}
 			if cfg.StaticChecks.EnforceDeletionProtection != tc.wantChecks.EnforceDeletionProtection {
 				t.Errorf("EnforceDeletionProtection = %v, want %v", cfg.StaticChecks.EnforceDeletionProtection, tc.wantChecks.EnforceDeletionProtection)
 			}
@@ -124,8 +114,8 @@ func TestLoadRules(t *testing.T) {
 	validFile := filepath.Join(tmpDir, "rules.yaml")
 	rulesContent := `
 staticChecks:
-  forbiddenKinds:
-    - ClusterRole
+  enforceDeletionProtection: true
+  maxDrainTimeoutSeconds: 600
 `
 	if err := os.WriteFile(validFile, []byte(rulesContent), 0644); err != nil {
 		t.Fatalf("failed to write test rules file: %v", err)
@@ -137,8 +127,11 @@ staticChecks:
 		if err != nil {
 			t.Fatalf("LoadRules() unexpected error: %v", err)
 		}
-		if len(cfg.StaticChecks.ForbiddenKinds) != 1 || cfg.StaticChecks.ForbiddenKinds[0] != "ClusterRole" {
-			t.Errorf("expected ForbiddenKinds to contain ClusterRole")
+		if !cfg.StaticChecks.EnforceDeletionProtection {
+			t.Errorf("expected EnforceDeletionProtection to be true")
+		}
+		if cfg.StaticChecks.MaxDrainTimeoutSeconds != 600 {
+			t.Errorf("expected MaxDrainTimeoutSeconds to be 600, got %d", cfg.StaticChecks.MaxDrainTimeoutSeconds)
 		}
 	})
 

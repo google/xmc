@@ -159,15 +159,9 @@ Lifecycle durations (`spec.lifecycleControl.drainTimeoutSeconds` and `spec.lifec
 
 ---
 
-## 6. Schema Conformance & Security Scope Validation (`schema.go`)
+## 6. Schema Conformance Validation (`schema.go`)
 
-The schema validation layer (`pkg/components/linter/schema.go`) verifies baseline Kubernetes YAML correctness, Component CRD schema compliance, and multi-tenant security guardrails.
-
-### Security Guardrails: Forbidden Kinds
-
-When `staticChecks.forbiddenKinds` is configured in `rules.yaml`, `xmc-linter` rejects any raw manifests matching forbidden Kubernetes resource kinds:
-
-- **Rule ID**: `FORBIDDEN_KIND_REJECTED`
+The schema validation layer (`pkg/components/linter/schema.go`) verifies baseline Kubernetes YAML correctness and Component CRD schema compliance.
 
 ### CRD Schema Checks
 
@@ -181,9 +175,6 @@ When `staticChecks.forbiddenKinds` is configured in `rules.yaml`, `xmc-linter` r
 
 ```yaml
 staticChecks:
-  forbiddenKinds:
-    - ClusterRole
-    - StorageClass
   enforceDeletionProtection: false
   maxDrainTimeoutSeconds: 3600
 ```

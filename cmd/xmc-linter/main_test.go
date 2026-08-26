@@ -90,7 +90,7 @@ func TestRun_CLI(t *testing.T) {
 			t.Fatalf("write failed: %v", err)
 		}
 		rulesPath := filepath.Join(dir, "rules.yaml")
-		if err := os.WriteFile(rulesPath, []byte("staticChecks:\n  forbiddenKinds:\n    - ClusterRole\n"), 0644); err != nil {
+		if err := os.WriteFile(rulesPath, []byte("staticChecks:\n  maxDrainTimeoutSeconds: 300\n"), 0644); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 		var out, errOut bytes.Buffer
