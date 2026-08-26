@@ -93,6 +93,28 @@ def handle_spanner(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def handle_cluster(args: argparse.Namespace) -> None:
+    """Handler for KinD cluster lifecycle operations.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.kind_manager import KindManager
+
+    cfg = config.load_config(args)
+    mgr = KindManager(cfg)
+    action = getattr(args, "cluster_action", "create")
+    if action == "create":
+        mgr.check_prerequisites()
+        mgr.create_cluster(recreate=getattr(args, "recreate", False))
+        mgr.ensure_secrets()
+    elif action == "delete":
+        mgr.delete_cluster()
+    else:
+        log_error(f"Unknown cluster action: {action}")
+        sys.exit(1)
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -231,6 +253,30 @@ def _add_spanner_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_spanner)
 
 
+def _add_cluster_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'cluster' subcommand parser for KinD cluster management."""
+    p = subparsers.add_parser(
+        "cluster",
+        help="Manage local KinD Kubernetes cluster (create, delete).",
+        description="Provisions or deletes local KinD cluster and configures secrets.",
+    )
+    p.add_argument(
+        "cluster_action",
+        nargs="?",
+        default="create",
+        choices=["create", "delete"],
+        help="Action to perform on KinD cluster (default: create).",
+    )
+    p.add_argument(
+        "--recreate",
+        action="store_true",
+        help="Delete existing cluster and recreate if already present.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_cluster)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -241,6 +287,8 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
+  python3 tools/dev_env/dev_env.py cluster create --cluster-name my-kind
+  python3 tools/dev_env/dev_env.py cluster delete --cluster-name my-kind
   python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner migrate --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
@@ -295,6 +343,7 @@ def create_parser() -> argparse.ArgumentParser:
     _add_upgrade_flags(upgrade_p, is_gke=False)
     upgrade_p.set_defaults(func=handle_upgrade)
 
+    _add_cluster_parser(subparsers)
     _add_spanner_parser(subparsers)
 
     return parser

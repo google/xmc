@@ -42,6 +42,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertIn("gke-upgrade", output)
         self.assertIn("deploy", output)
         self.assertIn("upgrade", output)
+        self.assertIn("cluster", output)
         self.assertIn("--verbose", output)
         self.assertIn("--quiet", output)
         self.assertIn("--version", output)
@@ -406,6 +407,55 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once()
 
+    @patch("tools.dev_env.kind_manager.KindManager.ensure_secrets")
+    @patch("tools.dev_env.kind_manager.KindManager.create_cluster")
+    @patch("tools.dev_env.kind_manager.KindManager.check_prerequisites")
+    @patch("tools.dev_env.config.load_config")
+    def test_cluster_create_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_check_pre: MagicMock,
+        mock_create: MagicMock,
+        mock_ensure: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env cluster create' executes preflight, cluster creation, and secrets."""
+        args = self.parser.parse_args(
+            ["cluster", "create", "--cluster-name", "my-kind", "--recreate"]
+        )
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_check_pre.assert_called_once()
+        mock_create.assert_called_once_with(recreate=True)
+        mock_ensure.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.delete_cluster")
+    @patch("tools.dev_env.config.load_config")
+    def test_cluster_delete_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_delete: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env cluster delete' dispatches to KindManager.delete_cluster."""
+        args = self.parser.parse_args(["cluster", "delete", "--cluster-name", "my-kind"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_delete.assert_called_once()
+
+    @patch("tools.dev_env.config.load_config")
+    @patch("tools.dev_env.dev_env.log_error")
+    def test_cluster_unknown_action(
+        self,
+        mock_log_error: MagicMock,
+        mock_load_config: MagicMock,
+    ) -> None:
+        """Verifies unknown cluster action exits with error code 1."""
+        args = self.parser.parse_args(["cluster"])
+        args.cluster_action = "invalid"
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.handle_cluster(args)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once()
+>>>>>>> 0a884fd0 (feat(dev_env): introduce KindManager for cluster provisioning and secret management)
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
