@@ -42,6 +42,14 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
 
+### ClickHouse Connection (Metrics Pipeline)
+ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). These variables are applied only when `enable_metrics` is `true`, and the dashboard service requires them to serve chart data — without them it starts with no data engine and every chart data request fails.
+*   **`clickhouse_host`**: ClickHouse hostname reachable from the cluster (default: `clickhouse.xmc-metrics.svc.cluster.local`).
+*   **`clickhouse_port`**: ClickHouse native protocol port (default: `9000`).
+*   **`clickhouse_database`**: Database holding the metrics tables (default: `default`).
+*   **`clickhouse_user`**: ClickHouse username (default: `default`).
+*   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap.
+
 ---
 
 ## 🏁 Phase 2: How to Deploy
