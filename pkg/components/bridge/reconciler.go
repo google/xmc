@@ -31,10 +31,13 @@ import (
 )
 
 const (
-	ConditionTypeReady    = "Ready"
-	ConditionTypeDegraded = "Degraded"
-	ConditionStatusTrue   = "True"
-	ConditionStatusFalse  = "False"
+	FinalizerDeletionProtection      = "finalizers.xmc.dev/deletion-protection"
+	ConditionTypeReady               = "Ready"
+	ConditionTypeDegraded            = "Degraded"
+	ConditionTypeDeletionBlocked     = "DeletionBlocked"
+	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
+	ConditionStatusTrue              = "True"
+	ConditionStatusFalse             = "False"
 )
 
 // CMSClient defines the interface for communicating with the CMS control plane.
@@ -43,6 +46,8 @@ type CMSClient interface {
 	SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error)
 	// UpdateObservedGeneration updates the observed generation, state, and status message of a component in CMS.
 	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
+	// ExecuteDeletion executes component deletion in the CMS backend.
+	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
 }
 
 // StatusDetectorHealthProber defines the health checking interface for custom resources.
@@ -73,6 +78,9 @@ func (a *serverClientAdapter) SetComponentIntent(ctx context.Context, in *compon
 }
 func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
 	return a.server.UpdateObservedGeneration(ctx, in)
+}
+func (a *serverClientAdapter) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
+	return a.server.ExecuteDeletion(ctx, in)
 }
 
 // Condition represents a standardized Kubernetes custom resource condition.
@@ -107,6 +115,10 @@ type ReconcileResult struct {
 	Conditions []Condition
 	// Access contains resolved network access coordinates and environment variables.
 	Access *AccessStatus
+	// AddFinalizer indicates whether the deletion protection finalizer should be attached.
+	AddFinalizer bool
+	// RemoveFinalizer indicates whether the deletion protection finalizer should be detached.
+	RemoveFinalizer bool
 }
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
@@ -137,6 +149,12 @@ type ReconcileComponentInput struct {
 	Generation int64
 	// Spec is the parsed protobuf ComponentSpec.
 	Spec *componentspb.ComponentSpec
+	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
+	IsDeleting bool
+	// HasFinalizer indicates whether the deletion protection finalizer is already present on the resource.
+	HasFinalizer bool
+	// DeletionProtection indicates whether the custom resource is protected against deletion.
+	DeletionProtection bool
 	// Enabled indicates whether the component should be active.
 	Enabled bool
 	// ExistingConditions contains conditions previously reported on the custom resource.
@@ -146,19 +164,29 @@ type ReconcileComponentInput struct {
 // ReconcileComponent executes a single reconciliation pass for a Component.
 // The flow executes the following steps:
 // 1. Validates input name and spec.
-// 2. Synchronizes declarative intent with CMS via applyIntent.
-// 3. If !Enabled, handles deactivation via reconcileDisabled.
-// 4. Ensures 1P child workloads via ensureWorkload.
-// 5. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
+// 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
+// 3. Attaches deletion protection finalizer if not already present.
+// 4. Synchronizes declarative intent with CMS via applyIntent.
+// 5. If !Enabled, handles deactivation via reconcileDisabled.
+// 6. Ensures 1P child workloads via ensureWorkload.
+// 7. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
 	}
-	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled)
+	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
 	in.Spec.Generation = in.Generation
 	canonicalName := store.CanonicalComponentName(in.Name)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
+	if in.IsDeleting {
+		return r.reconcileDeletion(ctx, in, canonicalName, res)
+	}
+
+	if !in.HasFinalizer {
+		res.AddFinalizer = true
+		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
+	}
 	if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
 		return res, err
 	}
@@ -171,9 +199,34 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
-// applyIntent registers the desired ComponentSpec in CMS via SetComponentIntent RPC.
-// If CMS intent registration fails, conditions are updated with Ready=False, Degraded=True
-// and an error is returned without tearing down existing data-plane workloads.
+// reconcileDeletion handles component teardown when a deletionTimestamp is present.
+// If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
+// and finalizers remain intact. Otherwise, child workloads are pruned and CMS ExecuteDeletion is called.
+func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if in.DeletionProtection {
+		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeletionBlocked, ConditionStatusTrue, in.Generation, "DeletionProtectionEnabled", fmt.Sprintf("Cannot delete %q: deletionProtection is enabled", in.Name))
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
+		return res, nil
+	}
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
+		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
+			return res, fmt.Errorf("failed to delete 1P workload: %w", err)
+		}
+	}
+	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "CMSDeletionFailed", err.Error())
+		return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
+	}
+	logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+	res.RemoveFinalizer = true
+	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	return res, nil
+}
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
@@ -274,12 +327,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 	if obj == nil {
 		return nil, errors.New("unstructured object must not be nil")
 	}
-	spec, _, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
+	hasFinalizer := false
+	for _, f := range obj.GetFinalizers() {
+		if f == FinalizerDeletionProtection {
+			hasFinalizer = true
+			break
+		}
+	}
+	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
 		Generation:         obj.GetGeneration(),
 		Spec:               spec,
+		IsDeleting:         obj.GetDeletionTimestamp() != nil,
+		HasFinalizer:       hasFinalizer,
+		DeletionProtection: dp,
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 	})

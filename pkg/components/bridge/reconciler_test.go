@@ -51,6 +51,10 @@ func (m *mockCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb
 	return &componentspb.UpdateObservedGenerationResponse{}, m.obsErr
 }
 
+func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
+	return &componentspb.ExecuteDeletionResponse{State: componentspb.ComponentState_COMPONENT_STATE_DELETED}, m.delErr
+}
+
 type mockProber struct {
 	healthy bool
 	msg     string
@@ -114,22 +118,25 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER}
 
 	tests := []struct {
-		name      string
-		cms       *mockCMS
-		prober    *mockProber
-		wm        *mockWM
-		in        ReconcileComponentInput
-		wantErr   bool
-		wantState componentspb.ComponentState
+		name          string
+		cms           *mockCMS
+		prober        *mockProber
+		wm            *mockWM
+		in            ReconcileComponentInput
+		wantErr       bool
+		wantState     componentspb.ComponentState
+		wantAddFin    bool
+		wantRemoveFin bool
 	}{
 		{
-			name: "active 3P component",
+			name: "active 3P with finalizer addition",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				Enabled: true,
+				DeletionProtection: true, Enabled: true,
 			},
-			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
 		},
 		{
 			name: "active 1P with nil prober defaults to healthy",
@@ -137,9 +144,58 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wm:   &mockWM{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		{
+			name: "deletion blocked by protection",
+			cms:  &mockCMS{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name: "deletion successful 1P",
+			cms:  &mockCMS{},
+			wm:   &mockWM{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
+			name: "deletion successful 3P",
+			cms:  &mockCMS{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 2, Spec: spec3P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
+			name: "deletion 1P workload delete failure",
+			cms:  &mockCMS{},
+			wm:   &mockWM{deleteErr: errors.New("delete error")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "deletion CMS failure",
+			cms:  &mockCMS{delErr: errors.New("cms spanner error")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true,
+			},
+			wantErr: true,
 		},
 		{
 			name: "disabled component",
@@ -147,7 +203,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wm:   &mockWM{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				Enabled: false,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
@@ -157,7 +213,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wm:   &mockWM{deleteErr: errors.New("cannot stop container")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				Enabled: false,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
 			},
 			wantErr:   true,
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -168,7 +224,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wm:   &mockWM{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				Enabled: false,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
 			},
 			wantErr:   true,
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
@@ -180,7 +236,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -191,7 +247,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -201,7 +257,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{healthy: false, msg: "Pod CrashLoop"},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -211,7 +267,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{healthy: true, msg: "Service active"},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
@@ -220,7 +276,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:  &mockCMS{obsErr: errors.New("timeout")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				Enabled: true,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -244,6 +300,12 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if err == nil {
 				if res.State != tt.wantState {
 					t.Errorf("got state %v, want %v", res.State, tt.wantState)
+				}
+				if res.AddFinalizer != tt.wantAddFin {
+					t.Errorf("got AddFinalizer %v, want %v", res.AddFinalizer, tt.wantAddFin)
+				}
+				if res.RemoveFinalizer != tt.wantRemoveFin {
+					t.Errorf("got RemoveFinalizer %v, want %v", res.RemoveFinalizer, tt.wantRemoveFin)
 				}
 			}
 			if tt.name == "intent application CMS error" && tt.wm != nil && !tt.wm.active {
@@ -312,6 +374,10 @@ func (d *dummyServer) UpdateObservedGeneration(context.Context, *componentspb.Up
 	return &componentspb.UpdateObservedGenerationResponse{}, nil
 }
 
+func (d *dummyServer) ExecuteDeletion(context.Context, *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
+	return &componentspb.ExecuteDeletionResponse{}, nil
+}
+
 func TestCMSClientAdapter(t *testing.T) {
 	a := NewCMSClientAdapter(&dummyServer{})
 	ctx := context.Background()
@@ -319,6 +385,9 @@ func TestCMSClientAdapter(t *testing.T) {
 		t.Error(err)
 	}
 	if _, err := a.UpdateObservedGeneration(ctx, nil); err != nil {
+		t.Error(err)
+	}
+	if _, err := a.ExecuteDeletion(ctx, nil); err != nil {
 		t.Error(err)
 	}
 }

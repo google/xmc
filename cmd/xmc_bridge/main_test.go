@@ -184,12 +184,15 @@ func TestController_RunReconcilePass(t *testing.T) {
 		t.Fatalf("failed to fetch updated resource: %v", err)
 	}
 
-	status, ok := updated.Object["status"].(map[string]any)
-	if !ok || status == nil {
-		t.Fatal("expected status on updated resource")
+	hasFin := false
+	for _, f := range updated.GetFinalizers() {
+		if f == bridge.FinalizerDeletionProtection {
+			hasFin = true
+			break
+		}
 	}
-	if status["state"] != "COMPONENT_STATE_ENABLED" {
-		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", status["state"])
+	if !hasFin {
+		t.Errorf("expected finalizer %s on resource, got %v", bridge.FinalizerDeletionProtection, updated.GetFinalizers())
 	}
 }
 

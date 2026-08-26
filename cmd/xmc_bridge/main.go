@@ -234,16 +234,62 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 	defer cancel()
 
 	res, err := c.reconciler.Reconcile(reconcileCtx, item)
-	if res != nil {
-		if syncErr := c.syncStatus(ctx, item, res); syncErr != nil {
-			logging.Error(ctx, "Error syncing status for component", "name", name, "error", syncErr)
-		}
-	}
 	if err != nil {
 		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
+		if res != nil {
+			if updatedItem, syncErr := c.syncFinalizers(ctx, item, res); syncErr != nil {
+				logging.Error(ctx, "Error syncing finalizers after reconciliation failure", "name", name, "error", syncErr)
+			} else if !res.RemoveFinalizer {
+				if syncErr := c.syncStatus(ctx, updatedItem, res); syncErr != nil {
+					logging.Error(ctx, "Error syncing status after reconciliation failure", "name", name, "error", syncErr)
+				}
+			}
+		}
 		return
 	}
+	updatedItem, err := c.syncFinalizers(ctx, item, res)
+	if err != nil {
+		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
+		return
+	}
+	if res.RemoveFinalizer {
+		return
+	}
+	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
+		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
+	}
 	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+}
+
+// syncFinalizers attaches the deletion protection finalizer if res.AddFinalizer is true,
+// or removes it if res.RemoveFinalizer is true, updating the custom resource in Kubernetes.
+func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
+	if res == nil {
+		return item, nil
+	}
+	hasFin := false
+	for _, f := range item.GetFinalizers() {
+		if f == bridge.FinalizerDeletionProtection {
+			hasFin = true
+			break
+		}
+	}
+	if res.AddFinalizer && !hasFin {
+		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
+		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
+		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+	} else if res.RemoveFinalizer && hasFin {
+		var updated []string
+		for _, f := range item.GetFinalizers() {
+			if f != bridge.FinalizerDeletionProtection {
+				updated = append(updated, f)
+			}
+		}
+		item.SetFinalizers(updated)
+		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
+		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+	}
+	return item, nil
 }
 
 // syncStatus serializes the ReconcileResult into the .status map of item and persists it
