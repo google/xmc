@@ -455,7 +455,7 @@ class DevEnvCliTest(unittest.TestCase):
             dev_env.handle_cluster(args)
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once()
->>>>>>> 0a884fd0 (feat(dev_env): introduce KindManager for cluster provisioning and secret management)
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
