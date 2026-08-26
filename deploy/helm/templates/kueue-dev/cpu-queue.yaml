@@ -25,7 +25,7 @@ metadata:
 spec:
   namespaceSelector: {}
   resourceGroups:
-  - coveredResources: ["cpu", "memory", "nvidia.com/gpu"]
+  - coveredResources: ["cpu", "memory"]
     flavors:
     - name: "cpu-flavor"
       resources:
@@ -33,10 +33,6 @@ spec:
         nominalQuota: 100000000
       - name: "memory"
         nominalQuota: 100000000Gi
-    - name: "gpu-flavor"
-      resources:
-      - name: "nvidia.com/gpu"
-        nominalQuota: 100000000
 ---
 apiVersion: v1
 kind: Namespace
