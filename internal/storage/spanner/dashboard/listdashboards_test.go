@@ -17,6 +17,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -190,6 +191,78 @@ func TestListDashboards_WithStaleness(t *testing.T) {
 	}
 	if len(dashboards) != 1 {
 		t.Fatalf("got %d dashboards, want 1", len(dashboards))
+	}
+}
+
+func TestListDashboards_HydratesChartIDs(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chartIDs := []string{
+		"f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		"c9a646d3-9c61-4cd7-bf10-8e96dc638210",
+	}
+	charts := make([]*dpb.Chart, 0, len(chartIDs))
+	for _, chartID := range chartIDs {
+		charts = append(charts, blankChartProto(chartID, 100, 1))
+	}
+
+	withCharts := blankDashboardProto("dashboards/test-list-hydrate-charts")
+	withCharts.ChartIds = chartIDs
+	if err := repo.CreateDashboard(ctx, withCharts, charts); err != nil {
+		t.Fatalf("CreateDashboard with charts failed: %v", err)
+	}
+
+	withoutCharts := blankDashboardProto("dashboards/test-list-hydrate-empty")
+	if err := repo.CreateDashboard(ctx, withoutCharts, nil); err != nil {
+		t.Fatalf("CreateDashboard without charts failed: %v", err)
+	}
+
+	dashboards, _, err := repo.ListDashboards(ctx, 10, "", "", "dashboard_id asc", 0)
+	if err != nil {
+		t.Fatalf("ListDashboards failed: %v", err)
+	}
+	if len(dashboards) != 2 {
+		t.Fatalf("got %d dashboards, want 2", len(dashboards))
+	}
+
+	gotChartIDs := slices.Clone(dashboards[0].GetChartIds())
+	slices.Sort(gotChartIDs)
+	wantChartIDs := slices.Clone(chartIDs)
+	slices.Sort(wantChartIDs)
+	if !slices.Equal(gotChartIDs, wantChartIDs) {
+		t.Errorf("ChartIds for %q = %v, want %v", dashboards[0].GetName(), gotChartIDs, wantChartIDs)
+	}
+	if len(dashboards[1].GetChartIds()) != 0 {
+		t.Errorf("ChartIds for %q = %v, want none", dashboards[1].GetName(), dashboards[1].GetChartIds())
+	}
+}
+
+func TestListDashboards_HydratesOnlyThePageReturned(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	for i := 1; i <= 3; i++ {
+		chartID := fmt.Sprintf("00000000-0000-0000-0000-00000000000%d", i)
+		dash := blankDashboardProto(fmt.Sprintf("dashboards/test-list-hydrate-page-%d", i))
+		dash.ChartIds = []string{chartID}
+		if err := repo.CreateDashboard(ctx, dash, []*dpb.Chart{blankChartProto(chartID, 100, 1)}); err != nil {
+			t.Fatalf("CreateDashboard %d failed: %v", i, err)
+		}
+	}
+
+	page, token, err := repo.ListDashboards(ctx, 2, "", "", "dashboard_id asc", 0)
+	if err != nil {
+		t.Fatalf("ListDashboards failed: %v", err)
+	}
+	if len(page) != 2 || token == "" {
+		t.Fatalf("got %d dashboards and token %q, want 2 and a non-empty token", len(page), token)
+	}
+	for i, dash := range page {
+		want := fmt.Sprintf("00000000-0000-0000-0000-00000000000%d", i+1)
+		if len(dash.GetChartIds()) != 1 || dash.GetChartIds()[0] != want {
+			t.Errorf("ChartIds for %q = %v, want [%q]", dash.GetName(), dash.GetChartIds(), want)
+		}
 	}
 }
 
