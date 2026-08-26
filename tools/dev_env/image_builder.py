@@ -94,7 +94,7 @@ class ImageBuilder:
         Returns:
             List of tuples: (bazel_package, bazel_target, docker_image_tag).
         """
-        active_services = services or self.config.enabled_services
+        active_services = self.config.enabled_services if services is None else services
         specs: list[tuple[str, str, str]] = []
         for s in active_services:
             if s in _SERVICE_TARGET_MAP:
@@ -119,6 +119,10 @@ class ImageBuilder:
             List of Docker image tags built and loaded.
         """
         specs = self.get_service_specs(services)
+        if not specs:
+            log_info("No service images specified or enabled to build.")
+            return []
+
         image_tags = [tag for _, _, tag in specs]
         if skip_build:
             log_info("Skipping container image build (--skip-build specified).")
@@ -133,7 +137,13 @@ class ImageBuilder:
             capture_output=True,
             cwd=self.repo_root,
         )
-        bazel_bin = Path(bazel_bin_res.stdout.strip())
+        stdout = bazel_bin_res.stdout
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8")
+        raw_bazel_bin = stdout.strip() if stdout else ""
+        if not raw_bazel_bin:
+            raise RuntimeError("Failed to resolve bazel-bin path from Bazel.")
+        bazel_bin = Path(raw_bazel_bin)
 
         log_info("Loading built image tarballs into Docker daemon...")
         for pkg, target, _ in specs:
