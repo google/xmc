@@ -137,7 +137,7 @@ func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompNa
 	reqComp, reqExists := compMap[reqCompName]
 	if !reqExists || reqComp == nil || !reqComp.IsEnabled() {
 		if !req.Optional {
-			res.AddError(comp.FilePath, line, "REQUIRED_COMPONENT_MISSING", fmt.Sprintf("component %q requires missing or disabled component %q (%s)", ruleCompName, reqCompName, req.Version))
+			reportMissingRequiredComponent(comp.FilePath, line, ruleCompName, reqCompName, req, res)
 		}
 		return
 	}
@@ -149,10 +149,29 @@ func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompNa
 	}
 	satisfied, err := MatchConstraint(reqComp.Spec.Version, req.Version)
 	if err != nil {
-		res.AddError(comp.FilePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid version constraint %q in compatibility rule for %q: %v", req.Version, reqCompName, err))
+		res.AddError(comp.FilePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid version constraint %q for dependency %q in compatibility rule for %q: %v", req.Version, reqCompName, ruleCompName, err))
 		return
 	}
 	if !satisfied {
-		res.AddError(comp.FilePath, line, "VERSION_INCOMPATIBILITY", fmt.Sprintf("component %q requires %q version %q, but found version %q", ruleCompName, reqCompName, req.Version, reqComp.Spec.Version))
+		reportVersionIncompatibility(comp.FilePath, line, ruleCompName, reqCompName, req, reqComp.Spec.Version, res)
 	}
+}
+
+func reportMissingRequiredComponent(filePath string, line int, ruleCompName, reqCompName string, req DependencyRequirement, res *ValidationResult) {
+	msg := fmt.Sprintf("component %q requires missing or disabled component %q", ruleCompName, reqCompName)
+	if req.Version != "" {
+		msg = fmt.Sprintf("component %q requires missing or disabled component %q (%s)", ruleCompName, reqCompName, req.Version)
+	}
+	if req.Reason != "" {
+		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
+	}
+	res.AddError(filePath, line, "REQUIRED_COMPONENT_MISSING", msg)
+}
+
+func reportVersionIncompatibility(filePath string, line int, ruleCompName, reqCompName string, req DependencyRequirement, actualVersion string, res *ValidationResult) {
+	msg := fmt.Sprintf("component %q requires %q version %q, but found version %q", ruleCompName, reqCompName, req.Version, actualVersion)
+	if req.Reason != "" {
+		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
+	}
+	res.AddError(filePath, line, "VERSION_INCOMPATIBILITY", msg)
 }

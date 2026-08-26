@@ -509,6 +509,54 @@ spec:
 			wantValid: false,
 			wantRule:  "INVALID_VERSION",
 		},
+		{
+			name: "missing component requirement with empty version and reason formats message cleanly",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Reason:    "certificate generation required",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "REQUIRED_COMPONENT_MISSING",
+		},
+		{
+			name: "version incompatibility reports custom reason",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">=2.0.0",
+									Reason:    "API v2 is required for webhook support",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.4.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "VERSION_INCOMPATIBILITY",
+		},
 	}
 
 	for _, tc := range tests {
