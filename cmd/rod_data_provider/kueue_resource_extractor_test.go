@@ -69,6 +69,16 @@ func TestParseK8sResourceQuantity_CPUNormalization(t *testing.T) {
 	}
 }
 
+func testFlavorMap(name, labelKey, labelVal string) map[string]*kueuev1beta1.ResourceFlavor {
+	return map[string]*kueuev1beta1.ResourceFlavor{
+		name: {
+			Spec: kueuev1beta1.ResourceFlavorSpec{
+				NodeLabels: map[string]string{labelKey: labelVal},
+			},
+		},
+	}
+}
+
 func TestExtractTotalResourceUsageByResourceType_Reservation(t *testing.T) {
 	status := kueuev1beta1.ClusterQueueStatus{
 		FlavorsReservation: []kueuev1beta1.FlavorUsage{
@@ -132,15 +142,7 @@ func TestExtractTotalResourceUsageByResourceType_WithAcceleratorResolution(t *te
 			},
 		},
 	}
-	rfMap := map[string]*kueuev1beta1.ResourceFlavor{
-		"flavor-h100": {
-			Spec: kueuev1beta1.ResourceFlavorSpec{
-				NodeLabels: map[string]string{
-					"cloud.google.com/gke-accelerator": "nvidia-tesla-h100",
-				},
-			},
-		},
-	}
+	rfMap := testFlavorMap("flavor-h100", "cloud.google.com/gke-accelerator", "nvidia-tesla-h100")
 
 	totals := extractTotalResourceUsageByResourceType(status, rfMap)
 	if got := totals["nvidia-tesla-h100"]; got != 2.0 {
@@ -160,79 +162,43 @@ func TestResolveResourceType(t *testing.T) {
 			name:         "Non-accelerator resource CPU remains unchanged",
 			resourceName: "cpu",
 			flavorName:   "nvidia-tesla-h100",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"nvidia-tesla-h100": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"},
-					},
-				},
-			},
-			want: "cpu",
+			rfMap:        testFlavorMap("nvidia-tesla-h100", "cloud.google.com/gke-accelerator", "nvidia-tesla-h100"),
+			want:         "cpu",
 		},
 		{
 			name:         "Multi-label cloud.google.com/gke-accelerator",
 			resourceName: "nvidia.com/gpu",
 			flavorName:   "flavor-1",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-1": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"},
-					},
-				},
-			},
-			want: "nvidia-tesla-h100",
+			rfMap:        testFlavorMap("flavor-1", "cloud.google.com/gke-accelerator", "nvidia-tesla-h100"),
+			want:         "nvidia-tesla-h100",
 		},
 		{
 			name:         "Multi-label cloud.google.com/gke-gpu-type",
 			resourceName: "nvidia.com/gpu",
 			flavorName:   "flavor-2",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-2": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"cloud.google.com/gke-gpu-type": "nvidia-l4"},
-					},
-				},
-			},
-			want: "nvidia-l4",
+			rfMap:        testFlavorMap("flavor-2", "cloud.google.com/gke-gpu-type", "nvidia-l4"),
+			want:         "nvidia-l4",
 		},
 		{
 			name:         "Multi-label cloud.google.com/gke-tpu-accelerator",
 			resourceName: "google.com/tpu",
 			flavorName:   "flavor-3",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-3": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"cloud.google.com/gke-tpu-accelerator": "tpu-v5p"},
-					},
-				},
-			},
-			want: "tpu-v5p",
+			rfMap:        testFlavorMap("flavor-3", "cloud.google.com/gke-tpu-accelerator", "tpu-v5p"),
+			want:         "tpu-v5p",
 		},
 		{
 			name:         "Multi-label kueue.x-k8s.io/gpack-gpu",
 			resourceName: "nvidia.com/gpu",
 			flavorName:   "flavor-4",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-4": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"kueue.x-k8s.io/gpack-gpu": "gpack-h100"},
-					},
-				},
-			},
-			want: "gpack-h100",
+			rfMap:        testFlavorMap("flavor-4", "kueue.x-k8s.io/gpack-gpu", "gpack-h100"),
+			want:         "gpack-h100",
 		},
 		{
 			name:         "Multi-label gpu.nvidia.com/class",
 			resourceName: "gpu",
 			flavorName:   "flavor-5",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-5": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{"gpu.nvidia.com/class": "h100"},
-					},
-				},
-			},
-			want: "h100",
+			rfMap:        testFlavorMap("flavor-5", "gpu.nvidia.com/class", "h100"),
+			want:         "h100",
 		},
 		{
 			name:         "Fallback to flavorName when specific accelerator flavor name without node labels",
@@ -266,16 +232,8 @@ func TestResolveResourceType(t *testing.T) {
 			name:         "TPU topology label cloud.google.com/gke-tpu-topology is ignored during accelerator resolution",
 			resourceName: "google.com/tpu",
 			flavorName:   "flavor-tpu",
-			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
-				"flavor-tpu": {
-					Spec: kueuev1beta1.ResourceFlavorSpec{
-						NodeLabels: map[string]string{
-							"cloud.google.com/gke-tpu-topology": "2x2x1",
-						},
-					},
-				},
-			},
-			want: "google.com/tpu",
+			rfMap:        testFlavorMap("flavor-tpu", "cloud.google.com/gke-tpu-topology", "2x2x1"),
+			want:         "google.com/tpu",
 		},
 	}
 
