@@ -76,6 +76,7 @@ func main() {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
 	oauthCfg, err := oauth2.LoadConfig()
@@ -151,7 +152,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 
-	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server credentials", "error", err)
 	}
@@ -205,7 +206,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 }
 
 func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
-	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create client credentials", "error", err)
 	}

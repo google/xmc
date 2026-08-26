@@ -264,12 +264,16 @@ export class StatusMessagesListFilter {
     return selected.map(formatFn).join(', ');
   }
 
+  private static readonly timeFormatter = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
   private formatTimeString(dateStr?: string): string {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return '';
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
+    return StatusMessagesListFilter.timeFormatter.format(date);
   }
 }

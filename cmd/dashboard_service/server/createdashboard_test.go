@@ -67,6 +67,40 @@ func TestCreateDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("successful creation with chart_ids", func(t *testing.T) {
+		var savedDash *dpb.Dashboard
+		repo := &mockRepository{
+			createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard) error {
+				savedDash = dashboard
+				return nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "author@example.com", "user-1", nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+
+		req := &spb.CreateDashboardRequest{
+			Dashboard: &dpb.Dashboard{
+				Title:    "Dashboard with Charts",
+				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+			},
+		}
+
+		resp, err := s.CreateDashboard(ctx, req)
+		if err != nil {
+			t.Fatalf("CreateDashboard failed: %v", err)
+		}
+		if len(resp.GetChartIds()) != 2 {
+			t.Errorf("Expected 2 chart IDs, got %v", resp.GetChartIds())
+		}
+		if savedDash == nil || len(savedDash.GetChartIds()) != 2 {
+			t.Errorf("Expected saved dashboard chart IDs to have 2 items, got %v", savedDash)
+		}
+	})
+
 	t.Run("successful creation with explicit dashboard_id", func(t *testing.T) {
 		repo := &mockRepository{}
 		authMock := &mockAuthorizer{
@@ -126,6 +160,18 @@ func TestCreateDashboard(t *testing.T) {
 			{name: "invalid dashboard ID", req: &spb.CreateDashboardRequest{
 				DashboardId: "invalid/id",
 				Dashboard:   &dpb.Dashboard{Title: "Title"},
+			}},
+			{name: "duplicate chart IDs", req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Title:    "Title",
+					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+				},
+			}},
+			{name: "resource name chart ID rejected", req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Title:    "Title",
+					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+				},
 			}},
 		}
 

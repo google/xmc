@@ -16,12 +16,12 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/logging/logging"
 
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
@@ -127,7 +127,7 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 	for _, c := range res.Components {
 		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
-			slog.Warn("Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
+			logging.Warn(ctx, "Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
 		}
 	}
 
@@ -204,7 +204,7 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
 	email, hasRole, err := s.guard.HasAdminRole(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to check admin role for user info", "error", err)
+		logging.Error(ctx, "Failed to check admin role for user info", "error", err)
 		return &spb.UserInfoResponse{UserEmail: "", Privileges: nil}, nil
 	}
 

@@ -51,5 +51,6 @@ compat_go_test(
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+        "@io_k8s_utils//ptr",
     ],
 )

@@ -21,12 +21,14 @@ py_library(
         "__init__.py",
         "command.py",
         "config.py",
+        "dex_authenticator.py",
         "helm_deployer.py",
         "image_builder.py",
         "kind.py",
         "orchestrator.py",
         "spanner.py",
         "test_executor.py",
+        "ui_diagnostics.py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -76,5 +78,17 @@ py_test(
 py_test(
     name = "orchestrator_test",
     srcs = ["orchestrator_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "ui_diagnostics_test",
+    srcs = ["ui_diagnostics_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "dex_authenticator_test",
+    srcs = ["dex_authenticator_test.py"],
     deps = [":orchestration_lib"],
 )

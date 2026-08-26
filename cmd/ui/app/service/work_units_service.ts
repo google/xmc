@@ -32,13 +32,11 @@ export class WorkUnitsService {
     const url = `${XMC_API_DOMAIN}/${request.parent}/workUnits`;
     const { pageSize, pageToken } = request;
 
-    let params = new HttpParams();
-    if (pageSize) {
-      params = params.set('pageSize', pageSize);
-    }
-    if (pageToken) {
-      params = params.set('pageToken', pageToken);
-    }
+    const params = new HttpParams({
+      fromObject: Object.fromEntries(
+        Object.entries({ pageSize, pageToken }).filter(([_, v]) => Boolean(v)),
+      ),
+    });
     return this.http.get<api.ListWorkUnitsResponse>(url, { params, withCredentials: true });
   }
 

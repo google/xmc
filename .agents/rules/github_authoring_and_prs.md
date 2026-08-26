@@ -41,7 +41,22 @@ This document defines standards and policy rules for AI agents acting as **Code 
   ```
 - **Atomic Commits**: Keep commits logical, focused, and self-contained. Each commit must compile and pass relevant local tests.
 
-- **Mandatory User Confirmation Gate Before PR Creation & Publishing**: NEVER execute `gh pr create` (draft or non-draft) or `gh pr ready` without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening or publishing a remote Pull Request. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#35-mandatory-user-confirmation-gate-before-pr-creation) for the mandatory confirmation template.
+## 3. Pull Request Creation & PR Sizing Standards
+- **Mandatory PR Sizing & Vertical Splitting Gate**:
+  - **Threshold Criteria (Evaluated via `tools/analyze_diff_size.py`)**:
+    - **Production Code**: $\ge 400$ lines (added + modified across `.go`, `.py`, `.ts`, `.js`, `.ng.html`, `.html`, `.scss`, `.css`, `.yaml`, `.tf`, `.proto`).
+    - **Combined Code (Prod + Tests)**: $\ge 1,000$ lines (including unit, integration, and E2E tests).
+    - **Documentation / Markdown**: $\ge 1,000$ lines (measured separately from code).
+    - *Generated Code & Lockfiles*: Automatically excluded (`*.pb.go`, `package-lock.json`, `MODULE.bazel.lock`, `go.sum`).
+  - **Mandatory Split Verification Subagent**: If any sizing threshold is exceeded, the author agent MUST launch the **PR Split Verification Subagent** per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) prior to opening a PR.
+  - **Vertical Slices over Horizontal Layers**: Always decompose work into vertical end-to-end user flow slices (schema + backend + handler + tests) rather than horizontal architectural tiers (all models in PR 1, all handlers in PR 2).
+  - **Dead Code & Reachability Invariant**:
+    - **Production Caller Required**: Every intermediate or standalone PR merged to `main` MUST have an active production call site. Submitting uncalled helpers, orphaned utilities, or unused structs (even with 100% unit tests in a planned `gh-stack`) is prohibited because stacks can stall or change, leaving dead code in `main`.
+    - **Functional Thin Slices over Layer Splits**: Decompose oversized features by functional depth (e.g. Slice 1: minimal happy-path caller + basic helper; Slice 2: advanced options, caching, and error recovery) rather than by structural layer.
+    - **Standalone Entrypoint Exception**: Self-contained executable entrypoints (e.g. scaffolding a new CLI binary in `cmd/`, a new service binary, or a standalone script in `tools/`) are permitted without external callers because they are directly runnable on their own.
+  - **Stacked PR Workflow (`gh-stack`)**: When splittable, format and manage the multi-branch chain using [`gh-stack`](conversation://skills/gh-stack).
+  - **Exception Justification**: Monolithic PRs exceeding thresholds are permitted only for atomic automated migrations, large code deletions, or single-document design specs, and require explicit user confirmation.
+- **Mandatory User Confirmation Gate Before PR Creation & Draft Conversion**: NEVER execute `gh pr create` (draft or non-draft) or `gh pr ready` without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request or converting a Draft PR to Open. Draft PRs MUST NEVER be converted to Open (ready for review) without a separate, explicit user confirmation gate. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population) (Step 5) and [Section 6](../skills/xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate) for mandatory confirmation templates.
 - **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).
 - **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
@@ -74,7 +89,8 @@ This document defines standards and policy rules for AI agents acting as **Code 
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback Policy
-- **Wait Buffer Policy After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, agents MUST pause for approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#5-ci-wait-buffer-period).
+- **Wait Buffer Policy After PR Creation**: When instructed to create or update a Pull Request, after creating the PR, agents MUST pause for approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#5-ci-wait-buffer-period).
+- **Strict Draft-to-Open PR Conversion Policy**: Pull Requests in XMC MUST be created as Draft PRs by default. Agents are strictly prohibited from converting a Draft PR to Open (`gh pr ready`) automatically. Even if all CI status checks pass and 100% of review comments are resolved, the PR MUST remain in Draft state until the user explicitly confirms converting it to Open.
 - **Addressing Review Comments**: When review feedback is received, execute the detailed comment resolution workflow defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md) (fetching comment context, generating checklist artifacts, running local tests, confirming contract changes with the user, posting inline thread replies, and verifying 1-to-1 resolution).
 - **Prohibition of Force-Pushing on PR Branches**: NEVER use force-push (`git push --force` or `git push --force-with-lease`) when pushing fix commits or addressing review comments on an active Pull Request branch. Always append incremental commits to the branch so reviewers can easily inspect diffs before and after changes between review passes.
 

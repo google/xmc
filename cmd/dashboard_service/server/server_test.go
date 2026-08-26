@@ -30,7 +30,6 @@ import (
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/dashboard/dataengine"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -43,6 +42,8 @@ type (
 	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
+	deleteChartFunc     = func(ctx context.Context, chartId string) error
+	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 )
 
 type mockRepository struct {
@@ -53,6 +54,8 @@ type mockRepository struct {
 	deleteDashboardFn deleteDashboardFunc
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
+	deleteChartFn     deleteChartFunc
+	updateChartFn     updateChartFunc
 }
 
 func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
@@ -104,6 +107,20 @@ func (m *mockRepository) GetChart(ctx context.Context, chartId string) (*dpb.Cha
 	return nil, status.Error(codes.NotFound, "not found")
 }
 
+func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error {
+	if m.deleteChartFn != nil {
+		return m.deleteChartFn(ctx, chartId)
+	}
+	return nil
+}
+
+func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
+	if m.updateChartFn != nil {
+		return m.updateChartFn(ctx, chart)
+	}
+	return nil
+}
+
 type mockAuthorizer struct {
 	authenticateFn          func(ctx context.Context) (string, string, error)
 	isUserAuthorizedFn      func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error)
@@ -143,18 +160,20 @@ func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb
 	return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 }
 
-func TestGetChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
+type mockChartDataEngine struct {
+	fetchChartDataFn func(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error)
+}
 
-	req := &spb.GetChartRequest{Name: "dashboards/123/charts/456"}
-	resp, err := s.GetChart(ctx, req)
-	if err != nil {
-		t.Fatalf("GetChart failed: %v", err)
+func (m *mockChartDataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+	if m.fetchChartDataFn != nil {
+		return m.fetchChartDataFn(ctx, chart, req)
 	}
-	if resp.GetName() != "dashboards/123/charts/456" {
-		t.Errorf("GetChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
-	}
+	return &dpb.ChartData{
+		Name:      chart.GetName(),
+		Xid:       chart.GetXid(),
+		Wid:       chart.GetWid(),
+		PlotsData: []*dpb.ChartData_PlotData{},
+	}, nil
 }
 
 func TestNewServer(t *testing.T) {
@@ -245,7 +264,7 @@ func TestGetChartData(t *testing.T) {
 		s := &Server{
 			auth:       &mockAuthorizer{},
 			xidClient:  &mockXidClient{},
-			dataEngine: &dataengine.DataEngine{},
+			dataEngine: &mockChartDataEngine{},
 		}
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
@@ -257,7 +276,7 @@ func TestGetChartData(t *testing.T) {
 		s := &Server{
 			auth:       &mockAuthorizer{},
 			repo:       &mockRepository{},
-			dataEngine: &dataengine.DataEngine{},
+			dataEngine: &mockChartDataEngine{},
 		}
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
@@ -271,7 +290,7 @@ func TestGetChartData(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
@@ -284,7 +303,20 @@ func TestGetChartData(t *testing.T) {
 				return nil, status.Error(codes.Unknown, "database failure")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
+	t.Run("chart repo returning nil chart returns Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
@@ -297,7 +329,7 @@ func TestGetChartData(t *testing.T) {
 				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 0, Wid: 1}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
@@ -315,7 +347,7 @@ func TestGetChartData(t *testing.T) {
 				return nil, errors.New("xid service unavailable")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
@@ -333,7 +365,7 @@ func TestGetChartData(t *testing.T) {
 				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.PermissionDenied {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.PermissionDenied)
@@ -362,7 +394,7 @@ func TestGetChartData(t *testing.T) {
 				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
 		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
@@ -393,7 +425,7 @@ func TestGetChartData(t *testing.T) {
 				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
 
 		incomingMD := metadata.Pairs(
 			"x-goog-iap-jwt-assertion", "jwt-token-val",
@@ -439,7 +471,7 @@ func TestGetChartData(t *testing.T) {
 				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
 		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
@@ -467,7 +499,7 @@ func TestGetChartData(t *testing.T) {
 				return "user@example.com", "uid-1", nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, &mockChartDataEngine{})
 		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
@@ -498,7 +530,7 @@ func TestGetChartData(t *testing.T) {
 				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
 		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
@@ -508,6 +540,67 @@ func TestGetChartData(t *testing.T) {
 		}
 		if capturedReq == nil || capturedReq.GetName() != "xids/1001" {
 			t.Errorf("Expected xids/1001, got %v", capturedReq)
+		}
+	})
+
+	t.Run("returns InvalidArgument when experiment chart without work unit is requested", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
+	t.Run("returns InvalidArgument for work unit 0 chart names", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/workUnits/0/charts/baseline"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
+	t.Run("synthesizes fallback chart and returns data for positive work unit when not in repository", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, status.Error(codes.NotFound, "not found")
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/workUnits/5/charts/baseline"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if resp.GetName() != "experiments/234911122/workUnits/5/charts/baseline" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/234911122/workUnits/5/charts/baseline")
+		}
+		if resp.GetXid() != 234911122 {
+			t.Errorf("GetChartData().Xid = %d, want 234911122", resp.GetXid())
+		}
+		if resp.GetWid() != 5 {
+			t.Errorf("GetChartData().Wid = %d, want 5", resp.GetWid())
+		}
+	})
+
+	t.Run("returns NotFound when repository returns NotFound and name is not a work unit chart", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, status.Error(codes.NotFound, "not found")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/nonexistent"})
+		if status.Code(err) != codes.NotFound {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
 		}
 	})
 }
@@ -545,32 +638,6 @@ func TestListCharts(t *testing.T) {
 	}
 	if len(resp.GetCharts()) == 0 {
 		t.Fatal("ListCharts returned 0 charts, want at least 1")
-	}
-}
-
-func TestUpdateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	req := &spb.UpdateChartRequest{
-		Chart: &dpb.Chart{Name: "dashboards/123/charts/456", Title: "Updated"},
-	}
-	resp, err := s.UpdateChart(ctx, req)
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if resp.GetName() != "dashboards/123/charts/456" {
-		t.Errorf("UpdateChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
-	}
-}
-
-func TestDeleteChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})
-	if err != nil {
-		t.Fatalf("DeleteChart failed: %v", err)
 	}
 }
 

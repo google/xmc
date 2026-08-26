@@ -21,8 +21,6 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "api/filter/filter_expression_go_proto"
-	aipfilter "api/filter/go/filter"
 	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
@@ -30,7 +28,7 @@ import (
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
 
-// GetDashboard retrieves a dashboard by its unique ID along with its layout and child charts.
+// GetDashboard retrieves a dashboard by its unique ID along with its layout and child chart IDs.
 func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
 	if dashboardId == "" {
 		return nil, fmt.Errorf("dashboardId must not be empty: %w", status.ErrInvalidArgument)
@@ -42,44 +40,30 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 
 	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
+		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
+			return nil, fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
+		}
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}
 
-	filterExp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
-		RejectLegacyOperatorPrecedence: true,
-		EnableSimpleQuotedStrings:      true,
-		EnforceValidStrings:            true,
-	}.Build(), fmt.Sprintf("dashboard_id = %q", dashboardId))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse filter for dashboard charts: %w", err)
-	}
-
-	stmt, _, _, err := r.dashboardChartsQueryGen.GenerateQuery(
-		dashboardschema.ChartsSelectFields,
-		nil, nil, filterExp, nil, 0, 0, nil, nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate dashboard charts query: %w", err)
-	}
-
-	iter := txn.Query(ctx, *stmt)
+	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.Key{dashboardId}.AsPrefix(), []string{"ChartId"})
 	defer iter.Stop()
 
-	var charts []*dpb.Chart
+	var chartIDs []string
 	for {
 		dcRow, err := iter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read child chart IDs for dashboard %s: %w", dashboardId, err)
 		}
-		chart, err := data.ChartRowToProto(dcRow, nil)
-		if err != nil {
-			return nil, err
+		var chartID string
+		if err := dcRow.ColumnByName("ChartId", &chartID); err != nil {
+			return nil, fmt.Errorf("failed to decode ChartId: %w", err)
 		}
-		charts = append(charts, chart)
+		chartIDs = append(chartIDs, chartID)
 	}
 
-	return data.DashboardRowToProto(row, charts)
+	return data.DashboardRowToProto(row, chartIDs)
 }

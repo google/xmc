@@ -65,3 +65,13 @@ func TestGetChart_NotFound(t *testing.T) {
 		t.Errorf("GetChart for non-existent chart succeeded, want error")
 	}
 }
+
+func TestGetChart_EmptyID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	_, err := repo.GetChart(ctx, "")
+	if err == nil {
+		t.Errorf("GetChart for empty chartId succeeded, want error")
+	}
+}

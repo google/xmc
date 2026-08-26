@@ -16,8 +16,8 @@
 """Helper script to update Pull Request body/description on GitHub."""
 
 import argparse
-import os
 import re
+from pathlib import Path
 
 from github_utils import (
     GithubAPIError,
@@ -56,13 +56,13 @@ def update_pr_description(args):
 
     body_content = ""
     if args.body_file:
-        if not os.path.isfile(args.body_file):
+        body_path = Path(args.body_file)
+        if not body_path.is_file():
             raise HandledError(
                 f"Body file not found or is not a regular file: '{args.body_file}'",
                 "Ensure the specified body markdown file exists and is a regular file.",
             )
-        with open(args.body_file, encoding="utf-8") as f:
-            body_content = f.read()
+        body_content = body_path.read_text(encoding="utf-8")
     elif args.body:
         body_content = args.body
     else:

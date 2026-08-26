@@ -16,6 +16,7 @@ package dataengine
 
 import (
 	"bufio"
+	"cmp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,9 +25,7 @@ import (
 // LoadEnvFile reads KEY=VALUE declarations from a file and sets them in os.Environ
 // if they are not already set.
 func LoadEnvFile(filename string) error {
-	if filename == "" {
-		filename = ".env"
-	}
+	filename = cmp.Or(filename, ".env")
 
 	// Try relative or root candidate paths if direct file is not found
 	targetPath := filename
@@ -57,12 +56,12 @@ func LoadEnvFile(filename string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		rawKey, rawVal, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+		key := strings.TrimSpace(rawKey)
+		val := strings.Trim(strings.TrimSpace(rawVal), "\"'")
 		if _, exists := os.LookupEnv(key); !exists {
 			_ = os.Setenv(key, val)
 		}

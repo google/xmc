@@ -199,8 +199,7 @@ export class WorkUnitsTable implements OnInit {
 
   getWorkUnitId(name: string): string {
     // The name is in the format of experiments/{xid}/workUnits/{wid}
-    const parts = name.split('/');
-    return parts[parts.length - 1];
+    return name.split('/').at(-1) ?? '';
   }
 
   protected isValidTime(time: string): boolean {

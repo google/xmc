@@ -1,5 +1,5 @@
 # Copyright 2026 Google LLC
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,8 +8,15 @@ compat_go_library(
     srcs = ["tlsutil.go"],
     importpath = "xmanager_cloud/internal/security/tlsutil",
     deps = [
+        "//internal/logging",
         "//internal/security/keyreloader",
         "@org_golang_google_grpc//credentials:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
     ],
+)
+
+compat_go_test(
+    name = "tlsutil_test",
+    srcs = ["tlsutil_test.go"],
+    embed = [":tlsutil"],
 )

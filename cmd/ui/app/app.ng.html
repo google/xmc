@@ -13,6 +13,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
+@if (isNonProdAuth()) {
+  <div class="non-prod-auth-banner" role="alert">
+    <span class="warning-icon" aria-hidden="true">⚠️</span>
+    <span class="warning-text"
+      ><strong>NON-PRODUCTION AUTHENTICATION ACTIVE:</strong> Connected to Local IdP / Dex</span
+    >
+  </div>
+}
 @if (user()?.email) {
   <xmc-side-panel>
     <xmc-header class="header" (menuToggle)="toggleSidenav()" />

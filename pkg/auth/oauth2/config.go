@@ -15,11 +15,13 @@
 package oauth2
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strings"
+
+	"xmanager_cloud/logging/logging"
 )
 
 // devOnlyJWTSecret is a well-known, non-secret value used to sign session tokens
@@ -66,7 +68,7 @@ func LoadConfig() (*Config, error) {
 	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
 
 	if mockAuth || disableAuth {
-		log.Printf("WARNING: Non-production auth mode enabled (MOCK_AUTH=%t, DISABLE_AUTHENTICATION=%t)", mockAuth, disableAuth)
+		logging.Warn(context.Background(), "Non-production auth mode enabled", "mock_auth", mockAuth, "disable_authentication", disableAuth)
 	}
 
 	clientSecret, err := loadClientSecret()
@@ -131,7 +133,7 @@ func loadClientSecret() (string, error) {
 		return "", fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
 	}
 	if clientSecret == "" {
-		log.Println("WARNING: Neither CLIENT_SECRET nor OIDC_CLIENT_SECRET is set; OAuth2 code exchange may fail if required by IdP")
+		logging.Warn(context.Background(), "Neither CLIENT_SECRET nor OIDC_CLIENT_SECRET is set; OAuth2 code exchange may fail if required by IdP")
 	}
 	return clientSecret, nil
 }
@@ -143,7 +145,7 @@ func loadJWTSecret(mockAuth, disableAuth bool) (string, error) {
 	}
 	if jwtSecret == "" {
 		if mockAuth || disableAuth {
-			log.Printf("WARNING: Non-production auth active (mockAuth=%t, disableAuth=%t): using ephemeral dev-only JWT secret", mockAuth, disableAuth)
+			logging.Warn(context.Background(), "Non-production auth active: using ephemeral dev-only JWT secret", "mock_auth", mockAuth, "disable_authentication", disableAuth)
 			return devOnlyJWTSecret, nil
 		}
 		return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")

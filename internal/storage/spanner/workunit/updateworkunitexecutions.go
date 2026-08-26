@@ -29,6 +29,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
@@ -48,7 +49,9 @@ var getUpdatingCurrentWorkUnitExecutionSQL = safesql.New(`
 		ExecutionUpdateTime AS UpdateTime,
 		ExecutionCompleteTime AS CompleteTime,
 		ExecutionMetadata,
-		WorkUnitStatus
+		WorkUnitStatus,
+		QueueName,
+		Executable
 	FROM
 		WorkUnits
 	WHERE
@@ -92,6 +95,8 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 
 		// 1.1. Process the rows and build a map of WorkUnitExecutions keyed by WorkUnitId.
 		updatedExecutions = make(map[int64]*essmsgpb.WorkUnitExecution)
+		queueNames := make(map[int64]string)
+		executables := make(map[int64]*essmsgpb.Executable)
 		if err := iter.Do(func(row *spanner.Row) error {
 			workUnitExecution, err := spannerdata.WorkUnitExecutionRowToProto(row)
 			if err != nil {
@@ -102,6 +107,20 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			if err != nil {
 				return fmt.Errorf("failed to validate WorkUnitExecution name %q: %w", workUnitExecution.GetName(), err)
 			}
+
+			var qName string
+			if err := row.ColumnByName("QueueName", &qName); err != nil {
+				logging.Error(ctx, "failed to scan QueueName column from WorkUnits table", "work_unit_id", wid, "error", err)
+				return fmt.Errorf("failed to scan QueueName column: %w", err)
+			}
+			queueNames[wid] = qName
+
+			var exec essmsgpb.Executable
+			if err := row.ColumnByName("Executable", &exec); err != nil {
+				logging.Error(ctx, "failed to scan Executable column from WorkUnits table", "work_unit_id", wid, "error", err)
+				return fmt.Errorf("failed to scan Executable column: %w", err)
+			}
+			executables[wid] = &exec
 
 			updatedExecutions[wid] = workUnitExecution
 			return nil
@@ -168,6 +187,22 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 
 			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage(), txn)
 			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage(), txn)
+
+			qName := queueNames[update.WID]
+			resMap := statushistory.ExtractAllResourcesFromExecutable(executables[update.WID])
+			var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
+			if updatedExecutions[update.WID].GetStatus() != nil {
+				prevState = updatedExecutions[update.WID].Status.State.Enum()
+			}
+			var newState *essmsgpb.WorkUnitStatus_WorkUnitState
+			var stateTime time.Time
+			if updatedExecution.GetStatus() != nil {
+				newState = updatedExecution.Status.State.Enum()
+				if updatedExecution.Status.GetUpdateTime() != nil {
+					stateTime = updatedExecution.Status.GetUpdateTime().AsTime()
+				}
+			}
+			statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, stateTime, txn)
 
 			updatedExecutions[update.WID] = updatedExecution
 		}

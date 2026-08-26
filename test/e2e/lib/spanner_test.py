@@ -92,12 +92,23 @@ class TestSpannerManager(unittest.TestCase):
 
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_setup_creates_dbs_and_runs_migrations(self, mock_run, mock_cleanup):
+    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(self, mock_run, mock_cleanup):
         self.mgr.setup()
 
         mock_cleanup.assert_called_once()
 
-        # Check DB creation calls
+        # Check proto descriptors build call
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "build",
+                "//api/protos/experiment:experiment_messages_descriptor",
+                "//api/protos/xid:xid_messages_descriptor",
+            ],
+            cwd="/workspace",
+        )
+
+        # Check DB creation calls with --ddl-file and --proto-descriptors-file
         mock_run.assert_any_call(
             [
                 "gcloud",
@@ -107,7 +118,10 @@ class TestSpannerManager(unittest.TestCase):
                 "e2e-ess-1000-abcdef",
                 "--instance=test-inst",
                 "--project=test-proj",
-            ]
+                "--ddl-file=/workspace/internal/storage/spanner/schema/ess-schema.sql",
+                "--proto-descriptors-file=/workspace/bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
+            ],
+            capture_output=True,
         )
         mock_run.assert_any_call(
             [
@@ -118,10 +132,13 @@ class TestSpannerManager(unittest.TestCase):
                 "e2e-xid-1000-abcdef",
                 "--instance=test-inst",
                 "--project=test-proj",
-            ]
+                "--ddl-file=/workspace/internal/storage/spanner/schema/xid-schema.sql",
+                "--proto-descriptors-file=/workspace/bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
+            ],
+            capture_output=True,
         )
 
-        # Check Bazel migration calls
+        # Check migration version initialization calls (-command=init)
         mock_run.assert_any_call(
             [
                 "bazel",
@@ -132,10 +149,41 @@ class TestSpannerManager(unittest.TestCase):
                 "-instance=test-inst",
                 "-database=e2e-ess-1000-abcdef",
                 "-migrations_dir=ess",
-                "-command=up",
+                "-command=init",
             ],
             cwd="/workspace",
         )
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                "-project=test-proj",
+                "-instance=test-inst",
+                "-database=e2e-xid-1000-abcdef",
+                "-migrations_dir=xid",
+                "-command=init",
+            ],
+            cwd="/workspace",
+        )
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["gcloud", "spanner", "databases", "create"],
+                stderr="status: RESOURCE_EXHAUSTED, maximum database limit (20) reached",
+            ),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+
+        self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once_with(15)
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):

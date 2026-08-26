@@ -15,6 +15,7 @@
 """Background flusher thread for XMC metrics collection."""
 
 import atexit
+import contextlib
 import logging
 import threading
 import time
@@ -469,10 +470,8 @@ class MetricsFlusher:
             self._shutdown_event.set()
 
             if self._atexit_handler is not None:
-                try:
+                with contextlib.suppress(Exception):
                     atexit.unregister(self._atexit_handler)
-                except Exception:
-                    pass
                 self._atexit_handler = None
 
         with self._condition:
