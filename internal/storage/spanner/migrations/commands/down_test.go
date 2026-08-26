@@ -41,6 +41,22 @@ func (s *customSourceStub) ReadDown(v uint) (io.ReadCloser, string, error) {
 	return io.NopCloser(strings.NewReader(m.Raw)), m.Identifier, nil
 }
 
+const testLicenseHeader = `-- Copyright 2025 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--	http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+`
+
 func setupSourceStub() *stubs.Stub {
 	s := &stubs.Stub{Migrations: source.NewMigrations()}
 	for i := 1; i <= 3; i++ {
@@ -49,7 +65,7 @@ func setupSourceStub() *stubs.Stub {
 			Version:    v,
 			Identifier: fmt.Sprintf("%d.down.stub", v),
 			Direction:  source.Down,
-			Raw:        fmt.Sprintf("DROP TABLE FOO%d;", v),
+			Raw:        fmt.Sprintf("%sDROP TABLE FOO%d;", testLicenseHeader, v),
 		})
 	}
 	return s
@@ -155,8 +171,13 @@ func TestDown(t *testing.T) {
 				}
 			}
 
-			if !tc.wantErr && !strings.Contains(out.String(), tc.wantOutput) {
-				t.Errorf("Down() output = %q, want contains %q", out.String(), tc.wantOutput)
+			if !tc.wantErr {
+				if !strings.Contains(out.String(), tc.wantOutput) {
+					t.Errorf("Down() output = %q, want contains %q", out.String(), tc.wantOutput)
+				}
+				if strings.Contains(out.String(), "Copyright") || strings.Contains(out.String(), "Licensed under") {
+					t.Errorf("Down() preview output contains license header, got %q", out.String())
+				}
 			}
 		})
 	}
@@ -176,5 +197,85 @@ func TestReadMigrationPreviews(t *testing.T) {
 
 	if diff := cmp.Diff(want, previews, cmp.AllowUnexported(migrationPreview{})); diff != "" {
 		t.Errorf("readMigrationPreviews() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestStripLeadingLicense(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "StandardLicenseHeader",
+			input: `-- Copyright 2025 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--	http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+DROP TABLE Users;
+DROP TABLE Orders;`,
+			want: "DROP TABLE Users;\nDROP TABLE Orders;",
+		},
+		{
+			name:  "NoComments",
+			input: "DROP TABLE Customers;",
+			want:  "DROP TABLE Customers;",
+		},
+		{
+			name: "LeadingEmptyLinesBeforeComments",
+			input: `
+
+-- Copyright 2025 Google LLC
+-- Licensed under Apache
+
+DROP TABLE Products;`,
+			want: "DROP TABLE Products;",
+		},
+		{
+			name: "PreservesInternalComments",
+			input: `-- Copyright 2025 Google LLC
+-- Licensed under Apache
+
+DROP TABLE TableA;
+
+-- Internal comment about TableB
+DROP TABLE TableB;`,
+			want: "DROP TABLE TableA;\n\n-- Internal comment about TableB\nDROP TABLE TableB;",
+		},
+		{
+			name:  "EmptyContent",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "WhitespaceOnly",
+			input: "   \n\t\n  ",
+			want:  "",
+		},
+		{
+			name: "OnlyComments",
+			input: `-- Copyright 2025 Google LLC
+-- Licensed under Apache`,
+			want: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripLeadingLicense(tc.input)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("stripLeadingLicense() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
