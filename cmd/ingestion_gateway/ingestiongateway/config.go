@@ -69,7 +69,10 @@ type Flags struct {
 func RegisterFlags(fs *flag.FlagSet) *Flags {
 	f := &Flags{}
 	fs.StringVar(&f.Port, "port", "8080", "The HTTP server port to listen on.")
-	fs.StringVar(&f.MessageBus, "message_bus", MessageBusRedpanda, "Message bus backend to publish metrics to: redpanda or pubsub.")
+	// Defaulted to empty rather than to MessageBusRedpanda so that LoadConfig can tell "unset" from
+	// "explicitly redpanda" and let an explicit flag win over MESSAGE_BUS. The effective default is
+	// applied in LoadConfig, after the environment has had its turn.
+	fs.StringVar(&f.MessageBus, "message_bus", "", "Message bus backend to publish metrics to: redpanda or pubsub (default redpanda).")
 	fs.StringVar(&f.RedpandaBrokers, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses. Ignored when message_bus is pubsub.")
 	fs.StringVar(&f.TopicName, "topic_name", "xmc-metrics", "The metrics topic name: a Redpanda topic, or a Pub/Sub topic ID when message_bus is pubsub.")
 	fs.IntVar(&f.MinPartitions, "min_partitions", 128, "Minimum required partition count for topic topology assertion. Ignored when message_bus is pubsub.")
@@ -98,9 +101,6 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	if f.Port == "" {
 		f.Port = "8080"
 	}
-	if f.MessageBus == "" {
-		f.MessageBus = MessageBusRedpanda
-	}
 	if f.RedpandaBrokers == "" {
 		f.RedpandaBrokers = "localhost:9092"
 	}
@@ -109,7 +109,14 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	}
 
 	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
-	effectiveMessageBus := getEnvOrDefault(f.MessageBus, MessageBusRedpanda, "MESSAGE_BUS")
+	// Passing "" as the default keeps the flag's own value distinguishable from its absence, so the
+	// precedence is flag, then environment, then the built-in default applied below. Passing
+	// MessageBusRedpanda here instead would make -message_bus=redpanda look unset and let
+	// MESSAGE_BUS=pubsub silently redirect an explicitly configured gateway.
+	effectiveMessageBus := getEnvOrDefault(f.MessageBus, "", "MESSAGE_BUS")
+	if strings.TrimSpace(effectiveMessageBus) == "" {
+		effectiveMessageBus = MessageBusRedpanda
+	}
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
 

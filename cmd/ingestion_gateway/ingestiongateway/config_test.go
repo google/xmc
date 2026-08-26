@@ -271,8 +271,19 @@ func TestRegisterFlags_MessageBusDefault(t *testing.T) {
 	if err := fs.Parse(nil); err != nil {
 		t.Fatalf("failed to parse an empty flag set: %v", err)
 	}
-	if f.MessageBus != MessageBusRedpanda {
-		t.Errorf("default -message_bus = %q, want %q", f.MessageBus, MessageBusRedpanda)
+	// The flag default is empty on purpose: LoadConfig needs to tell "unset" from "explicitly
+	// redpanda" to give an explicit flag precedence over MESSAGE_BUS. The redpanda default is
+	// applied in LoadConfig, which TestLoadConfig_MessageBus covers.
+	if f.MessageBus != "" {
+		t.Errorf("default -message_bus = %q, want %q", f.MessageBus, "")
+	}
+
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig() unexpected error: %v", err)
+	}
+	if cfg.MessageBus != MessageBusRedpanda {
+		t.Errorf("effective message bus with no flag and no environment = %q, want %q", cfg.MessageBus, MessageBusRedpanda)
 	}
 }
 
@@ -305,18 +316,25 @@ func TestLoadConfig_MessageBus(t *testing.T) {
 			want:  MessageBusPubSub,
 		},
 		{
-			// getEnvOrDefault cannot tell an explicitly passed default from an unset flag, so the
-			// environment still wins here. Matches how every other flag in this config behaves.
-			name:  "Environment wins over a flag left at the default",
+			// The whole reason -message_bus defaults to "" rather than to redpanda: an operator who
+			// spells out the default must not be silently redirected to another bus by the
+			// environment. Publishing to the wrong destination is not a recoverable misconfiguration.
+			name:  "Explicit redpanda flag wins over MESSAGE_BUS",
 			flags: &Flags{MessageBus: MessageBusRedpanda, ProjectID: "my-project"},
 			env:   map[string]string{"MESSAGE_BUS": MessageBusPubSub},
-			want:  MessageBusPubSub,
+			want:  MessageBusRedpanda,
 		},
 		{
-			name:  "Non-default flag wins over the environment",
+			name:  "Explicit pubsub flag wins over MESSAGE_BUS",
 			flags: &Flags{MessageBus: MessageBusPubSub, ProjectID: "my-project"},
 			env:   map[string]string{"MESSAGE_BUS": "rabbitmq"},
 			want:  MessageBusPubSub,
+		},
+		{
+			name:  "Blank MESSAGE_BUS falls through to the default",
+			flags: &Flags{ProjectID: "my-project"},
+			env:   map[string]string{"MESSAGE_BUS": "   "},
+			want:  MessageBusRedpanda,
 		},
 	}
 

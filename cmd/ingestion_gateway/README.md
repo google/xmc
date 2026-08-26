@@ -140,7 +140,7 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 | Flag | Type | Default Value | Description |
 | :--- | :--- | :--- | :--- |
 | `-port` | `string` | `8080` | HTTP server listening port. |
-| `-message_bus` | `string` | `redpanda` | Message bus backend: `redpanda` or `pubsub`. |
+| `-message_bus` | `string` | `redpanda` (applied after `MESSAGE_BUS`) | Message bus backend: `redpanda` or `pubsub`. |
 | `-topic_name` | `string` | `xmc-metrics` | Destination topic: a Redpanda topic, or a Pub/Sub topic ID when `-message_bus=pubsub`. |
 | `-project_id` | `string` | `""` | GCP project ID for logging. **Required** when `-message_bus=pubsub`, where it is also the Pub/Sub project. |
 | `-redpanda_brokers` | `string` | `localhost:9092` | Comma-separated broker bootstrap addresses. Redpanda only. |
@@ -159,14 +159,22 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 
 ### Environment Variables
 
-Each of these is consulted only when the corresponding flag is left at its default value:
+| Variable | Flag | Precedence |
+| :--- | :--- | :--- |
+| `PORT` | `-port` | Consulted whenever the flag holds its default value |
+| `MESSAGE_BUS` | `-message_bus` | Consulted only when the flag is not passed |
+| `REDPANDA_BROKERS`, `REDPANDA_BROKER` | `-redpanda_brokers` | Consulted whenever the flag holds its default value |
+| `TOPIC_NAME`, `REDPANDA_TOPIC` | `-topic_name` | Consulted whenever the flag holds its default value |
 
-| Variable | Flag |
-| :--- | :--- |
-| `PORT` | `-port` |
-| `MESSAGE_BUS` | `-message_bus` |
-| `REDPANDA_BROKERS`, `REDPANDA_BROKER` | `-redpanda_brokers` |
-| `TOPIC_NAME`, `REDPANDA_TOPIC` | `-topic_name` |
+`-message_bus` is the strict case: it has no flag-level default, so passing `-message_bus=redpanda`
+explicitly beats `MESSAGE_BUS=pubsub` rather than being mistaken for an unset flag. The default is
+applied after the environment is consulted.
+
+> [!NOTE]
+> The other three rows behave differently, and it is a latent footgun rather than a design choice:
+> they cannot distinguish a flag left alone from one explicitly set to the documented default, so
+> `-port=8080` with `PORT=9090` in the environment listens on 9090. Aligning them with
+> `-message_bus` means changing three flags' published defaults and is left to a follow-up.
 
 ### Operational Health Probes
 
