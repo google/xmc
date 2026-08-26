@@ -139,6 +139,17 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name: "active 1P without deletion protection still attaches finalizer",
+			cms:  &mockCMS{},
+			wm:   &mockWM{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: false, DeletionProtection: false, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
+		},
+		{
 			name: "active 1P with nil prober defaults to healthy",
 			cms:  &mockCMS{},
 			wm:   &mockWM{},
@@ -313,6 +324,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			}
 			if tt.name == "intent application CMS error" && tt.wm != nil && !tt.wm.active {
 				t.Errorf("expected 1P workload to remain active on transient CMS intent failure")
+			}
+			if (tt.name == "deletion 1P workload delete failure" || tt.name == "deletion CMS failure") && len(res.Conditions) == 0 {
+				t.Errorf("expected conditions to be populated on deletion failure, got empty conditions")
 			}
 		})
 	}

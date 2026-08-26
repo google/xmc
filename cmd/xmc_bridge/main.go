@@ -286,10 +286,14 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 			break
 		}
 	}
+	ns := item.GetNamespace()
+	if ns == "" {
+		ns = c.namespace
+	}
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
-		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+		return c.dynamicClient.Resource(componentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
 	}
 	if res.RemoveFinalizer && hasFin {
 		var updated []string
@@ -300,7 +304,7 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 		}
 		item.SetFinalizers(updated)
 		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
-		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
+		return c.dynamicClient.Resource(componentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
 	}
 	return item, nil
 }
@@ -309,9 +313,13 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 // via the Kubernetes dynamic client UpdateStatus API. It uses a deep copy to avoid local
 // object mutation if the API server update fails.
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	ns := item.GetNamespace()
+	if ns == "" {
+		ns = c.namespace
+	}
 	itemCopy := item.DeepCopy()
 	itemCopy.Object["status"] = BuildStatusMap(res)
-	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
+	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
