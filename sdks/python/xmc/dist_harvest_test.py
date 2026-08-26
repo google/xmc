@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 
 from xmc.client import Client
 from xmc.dist_harvest import (
-    GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
     harvest_client_metadata,
 )
@@ -78,9 +77,6 @@ if __name__ == "__main__":
 
 class TestDistHarvest(unittest.TestCase):
     """Test suite for get_replica_id_and_silence_status and 3-stage sequence."""
-
-    def test_alias_equivalence(self) -> None:
-        self.assertIs(GetReplicaIDAndSilenceStatus, get_replica_id_and_silence_status)
 
     # --- Stage 1: Strict Framework Ranks ---
 

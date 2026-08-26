@@ -22,7 +22,6 @@ import {
   calculateResourceVelocity,
   formatRate,
   getPendingJobsCount,
-  getVelocityHours,
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
@@ -63,17 +62,6 @@ describe('Resource Velocity Utilities', () => {
       expect(formatRate(5)).toBe('5');
       expect(formatRate(2.33333)).toBe('2.33');
       expect(formatRate(8.5)).toBe('8.5');
-    });
-  });
-
-  describe('getVelocityHours', () => {
-    it('should return hours for 1h, 24h, 7d periods', () => {
-      expect(getVelocityHours('1h')).toBe(1);
-      expect(getVelocityHours('1 hour')).toBe(1);
-      expect(getVelocityHours('24h')).toBe(24);
-      expect(getVelocityHours('1 day')).toBe(24);
-      expect(getVelocityHours('7d')).toBe(168);
-      expect(getVelocityHours('7 days')).toBe(168);
     });
   });
 

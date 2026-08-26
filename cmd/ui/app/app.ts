@@ -47,7 +47,6 @@ import { SidePanel } from './side_panel/side_panel';
   ],
 })
 export class App {
-  title = 'xmc';
   readonly isSidenavOpened = signal(true);
 
   private readonly authService = inject(AuthService);

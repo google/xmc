@@ -51,7 +51,6 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
 import { matchesResourceFilter } from './utils/resource_filter';
 import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
@@ -92,7 +91,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
-  protected readonly termTooltips = ROD_TERM_TOOLTIPS;
 
   private readonly fetchTrigger$ = new Subject<void>();
 
