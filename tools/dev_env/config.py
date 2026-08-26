@@ -52,6 +52,14 @@ class LocalDevConfig:
             )
 
 
+def _clean_str(val: Any) -> str | None:
+    """Returns stripped string if val is non-empty, else None."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s if s else None
+
+
 def resolve_config_path(
     explicit_path: str | Path | None = None,
     repo_root: Path | None = None,
@@ -75,13 +83,15 @@ def resolve_config_path(
         FileNotFoundError: If explicit_path is provided but does not exist.
     """
     root = repo_root or _REPO_ROOT
-    if explicit_path:
-        p = Path(explicit_path)
-        if not p.is_absolute() and (root / p).is_file():
-            return (root / p).resolve()
-        if p.is_file():
-            return p.resolve()
-        raise FileNotFoundError(f"Configuration file '{explicit_path}' not found.")
+    if explicit_path is not None:
+        clean_path = _clean_str(explicit_path)
+        if clean_path:
+            p = Path(clean_path)
+            if not p.is_absolute() and (root / p).is_file():
+                return (root / p).resolve()
+            if p.is_file():
+                return p.resolve()
+            raise FileNotFoundError(f"Configuration file '{clean_path}' not found.")
 
     for candidate in DEFAULT_CONFIG_LOCATIONS:
         if (root / candidate).is_file():
@@ -118,22 +128,24 @@ def load_config(
         yaml_vars = parse_yaml_vars(resolved_path)
 
     project_id = (
-        (getattr(args, "project_id", None) if args else None)
-        or os.environ.get("PROJECT_ID")
-        or os.environ.get("GCP_PROJECT_ID")
-        or yaml_vars.get("project_id", "")
+        _clean_str(getattr(args, "project_id", None) if args else None)
+        or _clean_str(os.environ.get("PROJECT_ID"))
+        or _clean_str(os.environ.get("GCP_PROJECT_ID"))
+        or _clean_str(yaml_vars.get("project_id"))
+        or ""
     )
 
     environment = (
-        (getattr(args, "environment", None) if args else None)
-        or os.environ.get("XMANAGER_ENV")
-        or os.environ.get("ENVIRONMENT")
-        or yaml_vars.get("environment", "dev")
+        _clean_str(getattr(args, "environment", None) if args else None)
+        or _clean_str(os.environ.get("XMANAGER_ENV"))
+        or _clean_str(os.environ.get("ENVIRONMENT"))
+        or _clean_str(yaml_vars.get("environment"))
+        or "dev"
     )
 
     cfg = LocalDevConfig(
-        project_id=str(project_id).strip(),
-        environment=str(environment).strip(),
+        project_id=project_id,
+        environment=environment,
         config_path=resolved_path,
     )
     _LOGGER.debug(

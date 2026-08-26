@@ -72,6 +72,21 @@ class ConfigResolutionTest(unittest.TestCase):
         resolved = config.resolve_config_path(repo_root=self.root)
         self.assertIsNone(resolved)
 
+    def test_resolve_config_path_empty_or_whitespace_string_fallback(self) -> None:
+        """Verifies empty or whitespace config_path falls back to default locations."""
+        ctk_cfg = self.root / "deploy" / "ctk_v2" / "xmanager-cloud-deployment.yaml"
+        ctk_cfg.parent.mkdir(parents=True, exist_ok=True)
+        ctk_cfg.write_text("vars:\n  project_id: ctk-p\n", encoding="utf-8")
+
+        self.assertEqual(
+            config.resolve_config_path("", repo_root=self.root),
+            ctk_cfg.resolve(),
+        )
+        self.assertEqual(
+            config.resolve_config_path("   ", repo_root=self.root),
+            ctk_cfg.resolve(),
+        )
+
     @patch.dict("os.environ", {}, clear=True)
     def test_load_config_precedence_cli(self) -> None:
         """Verifies CLI arguments take highest precedence over Env and YAML."""
@@ -136,6 +151,21 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.project_id, "my-proj")
         self.assertEqual(cfg.environment, "dev")
         self.assertIsNone(cfg.config_path)
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_load_config_empty_strings_fallback_properly(self) -> None:
+        """Verifies empty or whitespace values fallback cleanly without producing literal 'None'."""
+        cfg_file = self.root / "config.yaml"
+        cfg_file.write_text("vars:\n  project_id: fallback-p\n", encoding="utf-8")
+
+        args = argparse.Namespace(
+            config=str(cfg_file),
+            project_id="   ",
+            environment="",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(cfg.project_id, "fallback-p")
+        self.assertEqual(cfg.environment, "dev")
 
     @patch.dict("os.environ", {}, clear=True)
     def test_load_config_missing_project_id_raises_error(self) -> None:

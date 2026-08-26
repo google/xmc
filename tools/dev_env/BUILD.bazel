@@ -74,6 +74,7 @@ py_test(
     srcs = ["dev_env_test.py"],
     imports = ["../.."],
     deps = [
+        ":config_lib",
         ":dev_env_lib",
         "//tools/common:tool_utils",
     ],
