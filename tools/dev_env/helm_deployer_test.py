@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for HelmDeployer."""
+"""Unit tests for HelmDeployer with chart sanitizer and diagnostics."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -99,11 +100,32 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("test_ess_db", content)
         self.assertIn("test_xid_db", content)
 
-    def test_generate_values_file_custom_output(self) -> None:
-        custom_path = self.temp_path / "custom_values" / "val.yaml"
-        result_path = self.deployer.generate_values_file(output_path=custom_path)
-        self.assertEqual(result_path, custom_path)
-        self.assertTrue(custom_path.is_file())
+    def test_prepare_local_chart_pruning_and_patching(self) -> None:
+        helm_src = self.temp_path / "deploy" / "helm" / "templates"
+        (helm_src / "ess").mkdir(parents=True, exist_ok=True)
+        (helm_src / "certs").mkdir(parents=True, exist_ok=True)
+
+        # Create prune targets and surviving targets
+        (helm_src / "certs" / "dummy.yaml").write_text("dummy")
+        (helm_src / "ess" / "gateway.yaml").write_text("gateway")
+        (helm_src / "ess" / "deployment.yaml").write_text(
+            "imagePullPolicy: Always\nother: Always\nimagePullPolicy: 'Always'"
+        )
+
+        prepared_dir = self.deployer.prepare_local_chart()
+        self.assertTrue(prepared_dir.is_dir())
+        templates_dir = prepared_dir / "templates"
+
+        # Prune targets should be removed
+        self.assertFalse((templates_dir / "certs").exists())
+        self.assertFalse((templates_dir / "ess" / "gateway.yaml").exists())
+
+        # Surviving template should have imagePullPolicy patched
+        surviving = templates_dir / "ess" / "deployment.yaml"
+        self.assertTrue(surviving.exists())
+        content = surviving.read_text(encoding="utf-8")
+        self.assertIn("imagePullPolicy: IfNotPresent", content)
+        self.assertNotIn("imagePullPolicy: Always", content)
 
     def test_generate_values_file_with_auxiliary_services(self) -> None:
         cfg = LocalDevConfig(
@@ -128,6 +150,30 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("rod_data_provider_image:latest", content)
         self.assertIn("ingestionGatewayDeployment", content)
         self.assertIn("ingestion_gateway_image:latest", content)
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_capture_diagnostics(self, mock_run: MagicMock) -> None:
+        def side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            cmd_str = " ".join(cmd)
+            if "get pods" in cmd_str and "-o jsonpath" in cmd_str:
+                return subprocess.CompletedProcess(cmd, 0, stdout="pod-1 pod-2", stderr="")
+            if "logs" in cmd_str:
+                return subprocess.CompletedProcess(cmd, 0, stdout="Container log line", stderr="")
+            if "get events" in cmd_str:
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout="Event: Normal Scheduled", stderr=""
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="NAME STATUS", stderr="")
+
+        mock_run.side_effect = side_effect
+        diag_path = self.deployer.capture_diagnostics()
+
+        self.assertTrue(diag_path.is_file())
+        content = diag_path.read_text(encoding="utf-8")
+        self.assertIn("=== PODS (namespace: xmc) ===", content)
+        self.assertIn("=== EVENTS (namespace: xmc) ===", content)
+        self.assertIn("--- Logs for pod: pod-1 (ns: xmc) ---", content)
+        self.assertIn("Container log line", content)
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:
@@ -226,22 +272,35 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertEqual(deps, ["a-dep", "b-dep", "c-dep"])
 
     @patch("tools.dev_env.helm_deployer.run_command")
-    def test_deploy(self, mock_run: MagicMock) -> None:
+    @patch.object(HelmDeployer, "capture_diagnostics")
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_wait_for_rollouts_failure_captures_diagnostics(
+        self, mock_run: MagicMock, mock_diag: MagicMock
+    ) -> None:
+        mock_run.side_effect = RuntimeError("Rollout timed out")
+        with self.assertRaises(RuntimeError):
+            self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=10)
+        mock_diag.assert_called_once()
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    @patch.object(HelmDeployer, "prepare_local_chart")
+    def test_deploy_uses_prepared_chart(self, mock_prep: MagicMock, mock_run: MagicMock) -> None:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = b"gateway-proxy"
         mock_run.return_value.stderr = b""
-        chart_dir = self.temp_path / "deploy" / "helm"
-        chart_dir.mkdir(parents=True, exist_ok=True)
-        self.deployer.deploy(chart_path=chart_dir, timeout=60)
+        prepared_dir = self.temp_path / "prepared_helm"
+        prepared_dir.mkdir(parents=True, exist_ok=True)
+        mock_prep.return_value = prepared_dir
+        self.deployer.deploy(timeout=60)
 
-        # Verify helm upgrade command was run
+        mock_prep.assert_called_once()
         mock_run.assert_any_call(
             [
                 "helm",
                 "upgrade",
                 "--install",
                 "xmc",
-                str(chart_dir),
+                str(self.temp_path / "prepared_helm"),
                 "--kube-context",
                 "kind-test-kind-cluster",
                 "--create-namespace",

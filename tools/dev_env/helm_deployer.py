@@ -12,21 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helm chart values generation and deployment manager for local KinD dev."""
+"""Helm chart values generation, sanitization, and diagnostics for local dev."""
 
 import getpass
 import json
 import logging
 import os
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import log_info, log_success, run_command
+from tools.common.tool_utils import log_error, log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.helm_deployer")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+_PRUNE_TARGETS: tuple[str, ...] = (
+    "certs",
+    "kueue",
+    "kueue-dev",
+    "wpc",
+    "ess/gateway.yaml",
+    "ess/httproute.yaml",
+    "ess/grpc-backend-config.yaml",
+    "ess/grpc-healthcheck-policy.yaml",
+    "ess/managed-certificate.yaml",
+    "ess/bootstrap-tls.yaml",
+    "ess/secretproviderclass.yaml",
+    "ess/hpa.yaml",
+    "xid/hpa.yaml",
+    "actuator/vpa.yaml",
+    "reconciler/vpa.yaml",
+)
 
 
 try:
@@ -81,7 +101,7 @@ def service_to_image_key(service: str) -> str:
 
 
 class HelmDeployer:
-    """Manages Helm release values generation and deployment on KinD."""
+    """Manages Helm release sanitization, values generation, and deployment."""
 
     def __init__(
         self,
@@ -103,12 +123,52 @@ class HelmDeployer:
         self.temp_dir = (
             temp_dir or self.repo_root / ".xmc_dev" / f"{username}_{config.cluster_name}"
         )
+        self.helm_dir = self.temp_dir / "helm"
         self.values_file = self.temp_dir / "values.yaml"
 
     @property
     def kube_context(self) -> str:
         """Returns the kubectl context name for this KinD cluster."""
         return f"kind-{self.config.cluster_name}"
+
+    def prepare_local_chart(self) -> Path:
+        """Copies Helm chart to temp dir and prunes cloud-only GKE resources.
+
+        Removes GKE-specific resources (Cloud Armor, BackendConfig, ManagedCertificates,
+        GCP SecretProviderClass, external Kueue/WPC definitions) and patches
+        imagePullPolicy from Always to IfNotPresent so KinD uses locally loaded images.
+
+        Returns:
+            Path to the sanitized temporary Helm chart directory.
+        """
+        if self.helm_dir.exists():
+            shutil.rmtree(self.helm_dir)
+        source_chart = self.repo_root / "deploy" / "helm"
+        shutil.copytree(source_chart, self.helm_dir)
+
+        templates_dir = self.helm_dir / "templates"
+        for prune in _PRUNE_TARGETS:
+            target = templates_dir / prune
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.is_file():
+                target.unlink()
+
+        self._patch_image_pull_policy()
+        return self.helm_dir
+
+    def _patch_image_pull_policy(self) -> None:
+        """Replaces imagePullPolicy Always with IfNotPresent in local templates."""
+        for path in self.helm_dir.rglob("*.yaml"):
+            text = path.read_text(encoding="utf-8")
+            patched, count = re.subn(
+                r'imagePullPolicy:\s*["\']?Always["\']?',
+                "imagePullPolicy: IfNotPresent",
+                text,
+            )
+            if count > 0:
+                path.chmod(path.stat().st_mode | 0o200)
+                path.write_text(patched, encoding="utf-8")
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
@@ -167,19 +227,107 @@ class HelmDeployer:
         log_info(f"Generated Helm values file: '{target_path}'")
         return target_path
 
+    def _capture_pods(self, ctx: str, ns: str) -> list[str]:
+        """Captures wide pod listing in a given namespace."""
+        lines = [f"=== PODS (namespace: {ns}) ==="]
+        res = run_command(
+            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "pods", "-n", ns, "-o", "wide"],
+            capture_output=True,
+            check=False,
+            log_cmd=False,
+        )
+        lines.append(res.stdout or res.stderr or "")
+        return lines
+
+    def _capture_pod_descriptions(self, ctx: str, ns: str) -> list[str]:
+        """Captures detailed pod descriptions in a given namespace."""
+        lines = [f"=== POD DESCRIPTIONS (namespace: {ns}) ==="]
+        desc_res = run_command(
+            ["kubectl", "--context", ctx, "--request-timeout=10s", "describe", "pods", "-n", ns],
+            capture_output=True,
+            check=False,
+            log_cmd=False,
+        )
+        lines.append(desc_res.stdout or desc_res.stderr or "")
+        return lines
+
+    def _capture_events(self, ctx: str, ns: str) -> list[str]:
+        """Captures recent Kubernetes events in a given namespace."""
+        lines = [f"=== EVENTS (namespace: {ns}) ==="]
+        ev_res = run_command(
+            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "events", "-n", ns, "--sort-by=.metadata.creationTimestamp"],
+            capture_output=True,
+            check=False,
+            log_cmd=False,
+        )
+        lines.append(ev_res.stdout or ev_res.stderr or "")
+        return lines
+
+    def _capture_pod_logs(self, ctx: str, ns: str) -> list[str]:
+        """Captures tail logs for all containers in each pod in a namespace."""
+        lines: list[str] = []
+        pods_res = run_command(
+            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "pods", "-n", ns, "-o", "jsonpath={.items[*].metadata.name}"],
+            capture_output=True,
+            check=False,
+            log_cmd=False,
+        )
+        if pods_res.returncode == 0:
+            for pod in (pods_res.stdout or "").split():
+                lines.append(f"--- Logs for pod: {pod} (ns: {ns}) ---")
+                log_res = run_command(
+                    ["kubectl", "--context", ctx, "--request-timeout=10s", "logs", "-n", ns, pod, "--all-containers=true", "--tail=100"],
+                    capture_output=True,
+                    check=False,
+                    log_cmd=False,
+                )
+                lines.append(log_res.stdout or log_res.stderr or "")
+        return lines
+
+    def capture_diagnostics(self, namespace: str = "xmc") -> Path:
+        """Captures pod descriptions, cluster events, and container logs on rollout failure.
+
+        Saves detailed cluster diagnostics across 'dex' and the target XMC namespace to
+        `k8s_diagnostics.log` for troubleshooting failed deployments.
+
+        Args:
+            namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
+
+        Returns:
+            Path to the generated diagnostic log file.
+        """
+        log_error("Rollout failure detected. Capturing diagnostic telemetry...")
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        diag_file = self.temp_dir / "k8s_diagnostics.log"
+
+        if not shutil.which("kubectl"):
+            log_error("kubectl CLI not found. Skipping diagnostic capture.")
+            diag_file.write_text(
+                "kubectl CLI not found. Diagnostics could not be captured.", encoding="utf-8"
+            )
+            return diag_file
+
+        lines: list[str] = []
+        ctx = self.kube_context
+        namespaces = (namespace, "dex") if namespace != "dex" else ("dex",)
+
+        for ns in namespaces:
+            lines.extend(self._capture_pods(ctx, ns))
+            lines.extend(self._capture_pod_descriptions(ctx, ns))
+            lines.extend(self._capture_events(ctx, ns))
+            lines.extend(self._capture_pod_logs(ctx, ns))
+
+        diag_file.write_text("\n".join(lines), encoding="utf-8")
+        log_info(f"Diagnostic logs saved to: '{diag_file}'")
+        return diag_file
+
     def _check_dex_rollout(self, ctx: str, timeout_flag: str) -> None:
         """Checks rollout status for Dex in the 'dex' namespace if present."""
-        check_dex_cmd = [
-            "kubectl",
-            "--context",
-            ctx,
-            "get",
-            "deployment/dex",
-            "-n",
-            "dex",
-        ]
+        check_dex_cmd = ["kubectl", "--context", ctx, "get", "deployment/dex", "-n", "dex"]
         if (
-            run_command(check_dex_cmd, check=False, capture_output=True, log_cmd=False).returncode
+            run_command(
+                check_dex_cmd, check=False, capture_output=True, log_cmd=False
+            ).returncode
             == 0
         ):
             _LOGGER.debug("Checking rollout status for deployment/dex in namespace dex")
@@ -238,33 +386,42 @@ class HelmDeployer:
         1. Dex deployment in the 'dex' namespace.
         2. Core XMC workloads in the target namespace.
 
+        If any deployment rollout fails or times out, automatically captures
+        cluster diagnostics before propagating the error.
+
         Args:
             namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
             timeout_seconds: Maximum seconds to wait for each individual deployment rollout.
         """
         log_info(f"Waiting for rollout in namespace '{namespace}' ({timeout_seconds}s)...")
         ctx, timeout_flag = self.kube_context, f"--timeout={timeout_seconds}s"
-        self._check_dex_rollout(ctx, timeout_flag)
-
-        deployments = self._discover_namespace_deployments(ctx, namespace)
-        for dep in deployments:
-            _LOGGER.debug(
-                "Checking rollout status for deployment/%s in namespace %s", dep, namespace
-            )
-            run_command(
-                [
-                    "kubectl",
-                    "--context",
-                    ctx,
-                    "rollout",
-                    "status",
-                    f"deployment/{dep}",
-                    "-n",
-                    namespace,
-                    timeout_flag,
-                ]
-            )
-        log_success("All core deployments rolled out successfully.")
+        try:
+            self._check_dex_rollout(ctx, timeout_flag)
+            deployments = self._discover_namespace_deployments(ctx, namespace)
+            for dep in deployments:
+                _LOGGER.debug(
+                    "Checking rollout status for deployment/%s in namespace %s", dep, namespace
+                )
+                run_command(
+                    [
+                        "kubectl",
+                        "--context",
+                        ctx,
+                        "rollout",
+                        "status",
+                        f"deployment/{dep}",
+                        "-n",
+                        namespace,
+                        timeout_flag,
+                    ]
+                )
+            log_success("All core deployments rolled out successfully.")
+        except Exception:
+            try:
+                self.capture_diagnostics(namespace=namespace)
+            except Exception as e:
+                log_error(f"Failed to capture diagnostics: {e}")
+            raise
 
     def deploy(
         self,
@@ -273,13 +430,13 @@ class HelmDeployer:
         namespace: str = "xmc",
         timeout: int = 180,
     ) -> None:
-        """Executes Helm release upgrade/install and waits for rollout confirmation.
+        """Executes sanitized Helm release upgrade/install and waits for rollout confirmation.
 
-        Runs `helm upgrade --install xmc <chart_dir> -f <values_file>`, restarts
-        gateway-proxy to bind to new backends, and waits for deployment rollouts.
+        Sanitizes chart templates for local KinD execution, runs `helm upgrade --install`,
+        restarts gateway-proxy, and verifies deployment rollouts.
 
         Args:
-            chart_path: Optional Path to the Helm chart directory; defaults to deploy/helm.
+            chart_path: Optional Path to the Helm chart directory; sanitized if omitted.
             values_path: Optional Path to custom values YAML file; generated if omitted.
             namespace: Target Kubernetes namespace (default: 'xmc').
             timeout: Maximum rollout wait timeout in seconds (default: 180).
@@ -287,7 +444,7 @@ class HelmDeployer:
         Raises:
             FileNotFoundError: If the specified Helm chart directory does not exist.
         """
-        chart_dir = chart_path or (self.repo_root / "deploy" / "helm")
+        chart_dir = chart_path or self.prepare_local_chart()
         if not chart_dir.is_dir():
             raise FileNotFoundError(f"Helm chart directory not found at '{chart_dir}'")
         if values_path:
