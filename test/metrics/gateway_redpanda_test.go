@@ -54,17 +54,17 @@ func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	rp, brokers, err := infra.StartRedpanda(ctx, nil)
+	node, err := infra.StartRedpanda(ctx, nil)
 	if err != nil {
 		fmt.Printf("failed to start shared Redpanda container: %v\n", err)
 		os.Exit(1)
 	}
-	sharedRedpanda = rp
-	sharedBrokers = brokers
+	sharedRedpanda = node.Container
+	sharedBrokers = node.Brokers
 
 	code := m.Run()
 
-	_ = rp.Terminate(context.Background())
+	_ = node.Container.Terminate(context.Background())
 	os.Exit(code)
 }
 
