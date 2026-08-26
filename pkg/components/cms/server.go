@@ -139,8 +139,13 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 	if err != nil {
 		return nil, err
 	}
-	if dt := req.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() < 0 {
-		return nil, status.Error(codes.InvalidArgument, "draining timeout cannot be negative")
+	if dt := req.GetDrainingTimeout(); dt != nil {
+		if err := dt.CheckValid(); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid draining timeout: %v", err)
+		}
+		if dt.AsDuration() < 0 {
+			return nil, status.Error(codes.InvalidArgument, "draining timeout cannot be negative")
+		}
 	}
 
 	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce())
@@ -152,8 +157,8 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 	}
 
 	drainSec := res.RecommendedDrainSec
-	if dt := req.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() > 0 {
-		drainSec = int32(dt.AsDuration() / time.Second)
+	if dt := req.GetDrainingTimeout(); dt != nil && dt.AsDuration() > 0 {
+		drainSec = int32((dt.AsDuration() + time.Second - 1) / time.Second)
 	}
 
 	msg := fmt.Sprintf("Component %s deactivation prepared successfully (drain: %ds)", canonicalName, drainSec)
@@ -163,7 +168,7 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 
 	return &componentspb.PrepareDeactivationResponse{
 		State:                 componentspb.ComponentState_COMPONENT_STATE_DISABLING,
-		DeactivationStartTime: timestamppb.New(time.Now().UTC()),
+		DeactivationStartTime: timestamppb.Now(),
 		Message:               msg,
 	}, nil
 }
@@ -175,13 +180,13 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 		return nil, err
 	}
 
-	if err := s.store.CompleteDeactivation(ctx, canonicalName); err != nil {
+	if err := s.store.CompleteDeactivation(ctx, canonicalName, req.GetForce()); err != nil {
 		return nil, err
 	}
 
 	return &componentspb.CompleteDeactivationResponse{
 		State:          componentspb.ComponentState_COMPONENT_STATE_DISABLED,
-		CompletionTime: timestamppb.New(time.Now().UTC()),
+		CompletionTime: timestamppb.Now(),
 		Message:        fmt.Sprintf("Component %s deactivation completed successfully", canonicalName),
 	}, nil
 }

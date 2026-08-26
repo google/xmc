@@ -303,7 +303,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) error {
+func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
 		return err
@@ -324,9 +324,11 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) err
 		return ErrInvalidStateTransition
 	}
 
-	activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
-	if len(activeDependents) > 0 {
-		return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
+	if !force {
+		activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
+		if len(activeDependents) > 0 {
+			return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
+		}
 	}
 
 	now := time.Now().UTC()

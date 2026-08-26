@@ -54,7 +54,7 @@ func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, reques
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) CompleteDeactivation(ctx context.Context, name string) error {
+func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -766,7 +766,20 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 		t.Errorf("GetMessage() = %q, want drain: 120s", respTimeout.GetMessage())
 	}
 
-	// 4. Prepare with negative draining timeout -> InvalidArgument
+	// 4. Prepare with sub-second draining timeout (rounds up to 1s)
+	respSubSec, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		Force:           true,
+		DrainingTimeout: durationpb.New(500 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with subsecond timeout failed: %v", err)
+	}
+	if respSubSec.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 1s)" {
+		t.Errorf("GetMessage() = %q, want drain: 1s", respSubSec.GetMessage())
+	}
+
+	// 5. Prepare with negative draining timeout -> InvalidArgument
 	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
 		Name:            "components/cms-root",
 		DrainingTimeout: durationpb.New(-10 * time.Second),
@@ -775,7 +788,19 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 		t.Errorf("PrepareDeactivation(negative timeout) got code %v, want InvalidArgument", status.Code(err))
 	}
 
-	// 5. Nonexistent component -> NotFound
+	// 6. Prepare with malformed draining timeout (invalid nanos) -> InvalidArgument
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/cms-root",
+		DrainingTimeout: &durationpb.Duration{
+			Seconds: 10,
+			Nanos:   -1,
+		},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("PrepareDeactivation(malformed timeout) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 7. Nonexistent component -> NotFound
 	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
 		Name: "components/nonexistent",
 	})
@@ -830,7 +855,56 @@ func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 		t.Error("GetCompletionTime() is nil, want timestamp")
 	}
 
-	// 4. Nonexistent component -> NotFound
+	// 4. Test CompleteDeactivation with active dependent and force flag
+	specParent := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Parent",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-force-parent",
+		Spec: specParent,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(parent) failed: %v", err)
+	}
+	specChild := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-force-parent",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-force-child",
+		Spec: specChild,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(child) failed: %v", err)
+	}
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: true,
+	}); err != nil {
+		t.Fatalf("PrepareDeactivation(parent) failed: %v", err)
+	}
+	// Complete without force while child is active -> FailedPrecondition
+	_, err = server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(parent without force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+	// Complete with force=true -> succeeds
+	respForce, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: true,
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeactivation(parent with force) unexpected error: %v", err)
+	}
+	if respForce.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("GetState() = %v, want DISABLED", respForce.GetState())
+	}
+
+	// 5. Nonexistent component -> NotFound
 	_, err = server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
 		Name: "components/nonexistent",
 	})
