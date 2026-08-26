@@ -17,6 +17,7 @@ syntax = "proto3";
 package cloud.xmanager.v1;
 
 import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "xmanager_cloud/api/protos/health";
@@ -46,7 +47,7 @@ service HealthService {
 }
 
 message GetHealthStatusRequest {
-  bool force_refresh = 1;
+  bool force_refresh = 1 [(google.api.field_behavior) = OPTIONAL];
 }
 
 enum ComponentType {
@@ -63,42 +64,42 @@ enum HealthState {
 }
 
 message SystemInfo {
-  string app_version = 1;
-  string ess_db_schema_version = 2;
-  string xid_db_schema_version = 3;
-  string observability_url = 4;
-  bool is_scheduling_paused = 5;
-  string build_version = 6;
+  string app_version = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string ess_db_schema_version = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string xid_db_schema_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string observability_url = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  bool is_scheduling_paused = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string build_version = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message ComponentHealth {
-  string name = 1;
-  ComponentType type = 2;
-  HealthState health_state = 3;
-  string error_message = 4;
+  string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  ComponentType type = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  HealthState health_state = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string error_message = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message HealthStatusResponse {
-  SystemInfo system_info = 1;
-  HealthState health_state = 2;
-  repeated ComponentHealth components = 3;
-  google.protobuf.Timestamp health_check_time = 4;
+  SystemInfo system_info = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  HealthState health_state = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated ComponentHealth components = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp health_check_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message ListConfigEntriesRequest {}
 
 message ConfigInfo {
-  string key = 1;
-  string value = 2;
+  string key = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string value = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message ConfigGroup {
-  string display_name = 1;
-  repeated ConfigInfo configs = 2;
+  string display_name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated ConfigInfo configs = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message ListConfigEntriesResponse {
-  repeated ConfigGroup config_groups = 1;
+  repeated ConfigGroup config_groups = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message GetUserInfoRequest {}
@@ -109,6 +110,6 @@ enum Privilege {
 }
 
 message UserInfoResponse {
-  string user_email = 1;
-  repeated Privilege privileges = 2;
+  string user_email = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated Privilege privileges = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

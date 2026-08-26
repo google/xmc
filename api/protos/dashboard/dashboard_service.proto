@@ -148,9 +148,9 @@ message GetDashboardRequest {
 }
 
 message ListDashboardsRequest {
-  int32 page_size = 1;
-  string page_token = 2;
-  string filter = 3;
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message ListDashboardsResponse {
@@ -212,8 +212,8 @@ message ListChartsRequest {
       child_type: "cloud.xmanager.googleapis.com/Chart"
     }
   ];
-  int32 page_size = 2;
-  string page_token = 3;
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message ListChartsResponse {

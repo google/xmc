@@ -16,18 +16,20 @@ syntax = "proto3";
 
 package cloud.xmanager.v1;
 
+import "google/api/field_behavior.proto";
+
 option go_package = "xmanager_cloud/api/protos/metrics;metrics";
 option java_multiple_files = true;
 
 // Metric represents a single numeric measurement logged in XMC.
 message Metric {
-  int64 xid = 1;
-  int64 work_unit_id = 2;
-  int64 execution_id = 3;
-  string job_name = 4;
-  string replica_id = 5;
-  string metric_name = 6;
-  double metric_value = 7;
-  int64 step = 8;
-  int64 timestamp = 9; // Timestamp in microseconds
+  int64 xid = 1 [(google.api.field_behavior) = REQUIRED];
+  int64 work_unit_id = 2 [(google.api.field_behavior) = REQUIRED];
+  int64 execution_id = 3 [(google.api.field_behavior) = REQUIRED];
+  string job_name = 4 [(google.api.field_behavior) = OPTIONAL];
+  string replica_id = 5 [(google.api.field_behavior) = OPTIONAL];
+  string metric_name = 6 [(google.api.field_behavior) = REQUIRED];
+  double metric_value = 7 [(google.api.field_behavior) = REQUIRED];
+  int64 step = 8 [(google.api.field_behavior) = REQUIRED];
+  int64 timestamp = 9 [(google.api.field_behavior) = REQUIRED]; // Timestamp in microseconds
 }

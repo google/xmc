@@ -17,6 +17,7 @@ syntax = "proto3";
 package cloud.xmanager.v1;
 
 import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
 import "google/protobuf/timestamp.proto";
 import "third_party/xmanager_cloud/experiment_state_server/proto/status.proto";
 
@@ -67,28 +68,28 @@ enum RangePreset {
 // Resource represents requested or available compute resources.
 message Resource {
   // Type of resource, e.g., "cpu", "memory", "nvidia.com/gpu", "google.com/tpu".
-  string resource_type = 1;
-  double count = 2;
+  string resource_type = 1 [(google.api.field_behavior) = REQUIRED];
+  double count = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // ResourceVelocity represents velocity rate for a specific resource type.
 message ResourceVelocity {
-  string resource_type = 1;
-  double velocity = 2;
+  string resource_type = 1 [(google.api.field_behavior) = REQUIRED];
+  double velocity = 2 [(google.api.field_behavior) = REQUIRED];
 }
 
 // QueueResourceCapacity represents resource capacities for a queue.
 message QueueResourceCapacity {
-  string resource_type = 1;
-  double total_capacity = 2;
-  double free_capacity = 3;
-  double free_capacity_with_borrowing = 4;
+  string resource_type = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  double total_capacity = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  double free_capacity = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  double free_capacity_with_borrowing = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // QueueOverview provides an overview of the queue and its resources.
 message QueueOverview {
-  string queue_name = 1;
-  repeated QueueResourceCapacity queue_capacity = 2;
+  string queue_name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated QueueResourceCapacity queue_capacity = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // ListClusterQueuesRequest represents parameters for retrieving ClusterQueues.
@@ -96,70 +97,70 @@ message ListClusterQueuesRequest {}
 
 // QueuePredictability contains predictability metrics for a queue over a time range.
 message QueuePredictability {
-  Resource pending_resource_requests = 1;
-  ResourceVelocity resource_velocity = 2;
-  int64 pending_jobs = 3;
-  double job_velocity = 4;
-  RangePreset velocity_range = 5;
+  Resource pending_resource_requests = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  ResourceVelocity resource_velocity = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 pending_jobs = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  double job_velocity = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  RangePreset velocity_range = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // ClusterQueueSecondaryMetrics represents secondary predictability data for a cluster queue.
 message ClusterQueueSecondaryMetrics {
-  repeated QueuePredictability queue_predictability = 1;
+  repeated QueuePredictability queue_predictability = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // ListClusterQueuesResponse contains the list of ClusterQueues.
 message ListClusterQueuesResponse {
-  repeated QueueOverview queues = 1;
+  repeated QueueOverview queues = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // GetRunningAndPendingJobsRequest represents query parameters for fetching active jobs of a queue.
 message GetRunningAndPendingJobsRequest {
-  string queue_name = 1;
-  int32 page_size = 2;
-  string page_token = 3;
-  string order_by = 4;
+  string queue_name = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  string order_by = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // DashboardJob represents a pending or running job in a cluster queue.
 message DashboardJob {
-  int64 xid = 1;
-  int64 work_unit_id = 2;
-  string user = 3;
-  int64 priority = 4;
-  WorkUnitStatus.WorkUnitState status = 5;
-  int64 time_in_queue_seconds = 6;
-  repeated Resource requested_resources = 7;
-  int64 position_in_queue = 8;
-  google.protobuf.Timestamp create_time = 9;
-  repeated string tags = 10;
+  int64 xid = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 work_unit_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string user = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 priority = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  WorkUnitStatus.WorkUnitState status = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 time_in_queue_seconds = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated Resource requested_resources = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 position_in_queue = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp create_time = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated string tags = 10 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
 message GetRunningAndPendingJobsResponse {
-  repeated DashboardJob jobs = 1;
-  string next_page_token = 2;
-  int64 total_queue_size = 3;
+  repeated DashboardJob jobs = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string next_page_token = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int64 total_queue_size = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // GetSubmitQueueRequest represents query parameters for fetching the target submission queue.
 message GetSubmitQueueRequest {
-  string queue_name = 1;
+  string queue_name = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
 // GetSubmitQueueResponse contains the target submit queue name.
 message GetSubmitQueueResponse {
-  string submit_queue = 1;
+  string submit_queue = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // BatchGetQueueSecondaryDataRequest represents parameters for requesting secondary queue metrics.
 message BatchGetQueueSecondaryDataRequest {
-  repeated string queue_names = 1;
-  RangePreset range = 2;
+  repeated string queue_names = 1 [(google.api.field_behavior) = REQUIRED];
+  RangePreset range = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // BatchGetQueueSecondaryDataResponse contains secondary metrics mapped by queue name.
 message BatchGetQueueSecondaryDataResponse {
-  map<string, ClusterQueueSecondaryMetrics> queue_predictability = 1;
+  map<string, ClusterQueueSecondaryMetrics> queue_predictability = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
