@@ -32,9 +32,14 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-type mockCMS struct{}
+type mockCMS struct {
+	setErr error
+}
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
+	if m.setErr != nil {
+		return nil, m.setErr
+	}
 	return &componentspb.SetComponentIntentResponse{
 		Component: &componentspb.Component{
 			Name: in.Name,
@@ -241,3 +246,60 @@ func TestParseConfig_EnvVars(t *testing.T) {
 		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)
 	}
 }
+
+func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		componentGVR: "ComponentList",
+	})
+
+	compObj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
+			"metadata": map[string]any{
+				"name":       "err-comp",
+				"namespace":  "xmc",
+				"generation": int64(3),
+			},
+			"spec": map[string]any{
+				"enabled": true,
+			},
+		},
+	}
+
+	_, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Create(ctx, compObj, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create test resource: %v", err)
+	}
+
+	cmsErr := errors.New("cms connection failure")
+	r, err := bridge.NewReconciler(&mockCMS{setErr: cmsErr}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+
+	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+	if err := ctrl.RunReconcilePass(ctx); err != nil {
+		t.Fatalf("RunReconcilePass failed: %v", err)
+	}
+
+	updated, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Get(ctx, "err-comp", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to fetch updated resource: %v", err)
+	}
+
+	status, ok := updated.Object["status"].(map[string]any)
+	if !ok || status == nil {
+		t.Fatal("expected status on updated resource even when reconciliation encounters an error")
+	}
+	if status["state"] != "COMPONENT_STATE_PENDING_RECONCILIATION" {
+		t.Errorf("expected state COMPONENT_STATE_PENDING_RECONCILIATION, got %v", status["state"])
+	}
+	conds, ok := status["conditions"].([]any)
+	if !ok || len(conds) == 0 {
+		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
+	}
+}
+

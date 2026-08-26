@@ -140,9 +140,6 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-			_ = r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name)
-		}
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "IntentApplicationFailed", err.Error())
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "IntentApplicationFailed", err.Error())
 		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
@@ -317,9 +314,21 @@ func parseWrapperRef(m map[string]any) *componentspb.WrapperRef {
 		return nil
 	}
 	return &componentspb.WrapperRef{
-		CrdGroup: extractStr(wr, "group"), CrdVersion: extractStr(wr, "version"),
-		CrdKind: extractStr(wr, "kind"), TargetName: extractStr(wr, "name"), TargetNamespace: extractStr(wr, "namespace"),
+		CrdGroup:        firstNonEmpty(extractStr(wr, "crdGroup"), extractStr(wr, "group")),
+		CrdVersion:      firstNonEmpty(extractStr(wr, "crdVersion"), extractStr(wr, "version")),
+		CrdKind:         firstNonEmpty(extractStr(wr, "crdKind"), extractStr(wr, "kind")),
+		TargetName:      firstNonEmpty(extractStr(wr, "targetName"), extractStr(wr, "name")),
+		TargetNamespace: firstNonEmpty(extractStr(wr, "targetNamespace"), extractStr(wr, "namespace")),
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ParseConditionsFromUnstructured parses unstructured conditions.

@@ -253,6 +253,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 					t.Errorf("got state %v, want %v", res.State, tt.wantState)
 				}
 			}
+			if tt.name == "intent application CMS error" && tt.wm != nil && !tt.wm.active {
+				t.Errorf("expected 1P workload to remain active on transient CMS intent failure")
+			}
 		})
 	}
 }
@@ -348,6 +351,20 @@ func TestParseHelpers(t *testing.T) {
 	spec, dp, en = ParseSpecFromUnstructured(raw)
 	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" || len(spec.GetManifests()) != 2 {
 		t.Errorf("unexpected parsed spec: %+v", spec)
+	}
+
+	rawCamel := map[string]any{
+		"enabled":       true,
+		"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+		"wrapperRef": map[string]any{
+			"crdGroup": "clickhouse.altinity.com", "crdVersion": "v1", "crdKind": "ClickHouseInstallation",
+			"targetName": "chi-cluster", "targetNamespace": "clickhouse-ns",
+		},
+	}
+	specCamel, _, _ := ParseSpecFromUnstructured(rawCamel)
+	wr := specCamel.GetWrapperRef()
+	if wr == nil || wr.GetCrdGroup() != "clickhouse.altinity.com" || wr.GetCrdVersion() != "v1" || wr.GetCrdKind() != "ClickHouseInstallation" || wr.GetTargetName() != "chi-cluster" || wr.GetTargetNamespace() != "clickhouse-ns" {
+		t.Errorf("unexpected parsed camelCase wrapperRef: %+v", wr)
 	}
 
 	rawDelete := map[string]any{

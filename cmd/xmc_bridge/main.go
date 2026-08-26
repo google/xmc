@@ -184,12 +184,14 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 	defer cancel()
 
 	res, err := c.reconciler.Reconcile(reconcileCtx, item)
+	if res != nil {
+		if syncErr := c.syncStatus(ctx, item, res); syncErr != nil {
+			logging.Error(ctx, "Error syncing status for component", "name", name, "error", syncErr)
+		}
+	}
 	if err != nil {
 		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
 		return
-	}
-	if err := c.syncStatus(ctx, item, res); err != nil {
-		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
 	}
 	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 }
