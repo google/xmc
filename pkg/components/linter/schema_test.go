@@ -66,6 +66,20 @@ metadata:
 			wantRules: []string{"REQUIRED_FIELD"},
 		},
 		{
+			name:  "missing metadata.name in component manifest only triggers REQUIRED_FIELD",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+spec:
+  version: "1.0.0"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"REQUIRED_FIELD"},
+		},
+		{
 			name:  "invalid component name with prefix slash rejected",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
