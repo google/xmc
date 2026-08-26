@@ -109,7 +109,7 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	}
 
 	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
-	effectiveMessageBus := getEnvOrDefault(f.MessageBus, MessageBusRedpanda, "MESSAGE_BUS", "XMC_MESSAGE_BUS")
+	effectiveMessageBus := getEnvOrDefault(f.MessageBus, MessageBusRedpanda, "MESSAGE_BUS")
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
 

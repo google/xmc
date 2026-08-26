@@ -164,7 +164,7 @@ Each of these is consulted only when the corresponding flag is left at its defau
 | Variable | Flag |
 | :--- | :--- |
 | `PORT` | `-port` |
-| `MESSAGE_BUS`, `XMC_MESSAGE_BUS` | `-message_bus` |
+| `MESSAGE_BUS` | `-message_bus` |
 | `REDPANDA_BROKERS`, `REDPANDA_BROKER` | `-redpanda_brokers` |
 | `TOPIC_NAME`, `REDPANDA_TOPIC` | `-topic_name` |
 

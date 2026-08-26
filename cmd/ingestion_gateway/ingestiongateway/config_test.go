@@ -305,12 +305,6 @@ func TestLoadConfig_MessageBus(t *testing.T) {
 			want:  MessageBusPubSub,
 		},
 		{
-			name:  "XMC_MESSAGE_BUS overrides the default",
-			flags: &Flags{ProjectID: "my-project"},
-			env:   map[string]string{"XMC_MESSAGE_BUS": MessageBusPubSub},
-			want:  MessageBusPubSub,
-		},
-		{
 			// getEnvOrDefault cannot tell an explicitly passed default from an unset flag, so the
 			// environment still wins here. Matches how every other flag in this config behaves.
 			name:  "Environment wins over a flag left at the default",
