@@ -63,9 +63,7 @@ func (c *LazySpannerHealthClient) Initialize(ctx context.Context) error {
 	if c.dbPath == "" {
 		return nil
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.ensureClientLocked(ctx)
+	return c.ensureClient(ctx)
 }
 
 // QuerySchemaVersion queries the SchemaMigrations table, initializing lazily if necessary.
@@ -74,16 +72,11 @@ func (c *LazySpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 		return 0, false, fmt.Errorf("spanner database path is not configured")
 	}
 
-	c.mu.Lock()
-	err := c.ensureClientLocked(ctx)
-	healthCl := c.healthCl
-	c.mu.Unlock()
-
-	if err != nil {
+	if err := c.ensureClient(ctx); err != nil {
 		return 0, false, fmt.Errorf("spanner client not available: %w", err)
 	}
 
-	return healthCl.QuerySchemaVersion(ctx)
+	return c.healthCl.QuerySchemaVersion(ctx)
 }
 
 // Close closes the underlying Spanner client connection.
@@ -98,7 +91,9 @@ func (c *LazySpannerHealthClient) Close() error {
 	return err
 }
 
-func (c *LazySpannerHealthClient) ensureClientLocked(ctx context.Context) error {
+func (c *LazySpannerHealthClient) ensureClient(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.healthCl != nil {
 		return nil
 	}
