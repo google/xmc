@@ -180,7 +180,7 @@ Each of these is consulted only when the corresponding flag is left at its defau
 | :--- | :--- |
 | `xmc_ingestion_produce_records_total` | Both |
 | `xmc_ingestion_produce_errors_total` | Both |
-| `xmc_ingestion_produce_batch_size_bytes` | Both |
+| `xmc_ingestion_produce_record_size_bytes` | Both |
 | `franz_go_brokers_connections` | Redpanda only — reads `0` in Pub/Sub mode, which has no broker connection concept |
 
 ---

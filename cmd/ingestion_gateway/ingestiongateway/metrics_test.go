@@ -25,8 +25,20 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+// histogramSampleCount reads the number of observations recorded by h. testutil.ToFloat64 only
+// handles single-value metrics, so histograms have to be read through the protobuf form.
+func histogramSampleCount(t *testing.T, h prometheus.Histogram) uint64 {
+	t.Helper()
+	var pb dto.Metric
+	if err := h.Write(&pb); err != nil {
+		t.Fatalf("failed to read histogram: %v", err)
+	}
+	return pb.GetHistogram().GetSampleCount()
+}
 
 func TestNewGatewayMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
@@ -136,7 +148,7 @@ func TestMetricsEndpoint(t *testing.T) {
 		"xmc_ingestion_active_connections",
 		"xmc_ingestion_dropped_payloads_total",
 		"franz_go_brokers_connections",
-		"xmc_ingestion_produce_batch_size_bytes",
+		"xmc_ingestion_produce_record_size_bytes",
 		"xmc_ingestion_produce_records_total",
 		"xmc_ingestion_produce_errors_total",
 		"go_goroutines",
@@ -191,14 +203,21 @@ func TestRecordProducedRecord(t *testing.T) {
 	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 0.0 {
 		t.Errorf("expected ProduceErrorsTotal to be 0.0, got %f", errorsCount)
 	}
+	if samples := histogramSampleCount(t, m.ProduceRecordSizeBytes); samples != 1 {
+		t.Errorf("expected ProduceRecordSizeBytes to have 1 observation, got %d", samples)
+	}
 
-	// A failed publish counts as an error only; it must not also count as a produced record.
+	// A failed publish counts as an error only; it must not also count as a produced record, nor
+	// contribute a size observation that ProduceRecordsTotal has no matching increment for.
 	m.RecordProducedRecord(64, errors.New("publish failed"))
 	if records := testutil.ToFloat64(m.ProduceRecordsTotal); records != 1.0 {
 		t.Errorf("expected ProduceRecordsTotal to stay 1.0 after a failure, got %f", records)
 	}
 	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 1.0 {
 		t.Errorf("expected ProduceErrorsTotal to be 1.0, got %f", errorsCount)
+	}
+	if samples := histogramSampleCount(t, m.ProduceRecordSizeBytes); samples != 1 {
+		t.Errorf("expected ProduceRecordSizeBytes to stay at 1 observation after a failure, got %d", samples)
 	}
 }
 
