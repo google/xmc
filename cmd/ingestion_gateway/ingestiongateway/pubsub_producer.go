@@ -184,9 +184,19 @@ func classifyPubSubError(err error) error {
 	if errors.Is(err, pubsub.ErrTopicStopped) {
 		return newPublishError(PublishErrorCongestion, err)
 	}
+	// PublishResult.Get returns the bare context error when the wait is cut short, and a bare context
+	// error carries no gRPC status — status.Code reports Unknown for it. The publish was abandoned
+	// rather than rejected, so it is transient, not a server fault.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return newPublishError(PublishErrorCongestion, err)
+	}
 
 	switch status.Code(err) {
-	case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+	// Canceled is transient: the server or an intermediary tore the RPC down, and the record can be
+	// republished. It is the counterpart of DeadlineExceeded, not a permanent server fault. A publish
+	// abandoned because the HTTP caller went away does not reach here — the handler checks ctx.Err()
+	// before it looks at the publish error.
+	case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted, codes.Canceled:
 		return newPublishError(PublishErrorCongestion, err)
 	case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
 		return newPublishError(PublishErrorClient, err)

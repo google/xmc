@@ -123,7 +123,7 @@ Each backend maps its own errors onto one of three neutral kinds, which determin
 | Kind | HTTP | Redpanda | Pub/Sub (gRPC code) |
 | :--- | :---: | :--- | :--- |
 | Client | `400` | `kerr` errors attributable to the record (e.g. `MessageTooLarge`) | `InvalidArgument`, `FailedPrecondition`, `OutOfRange`, oversized message |
-| Congestion | `503` | Buffer/queue saturation, broker unreachable, client closed | `ResourceExhausted`, `Unavailable`, `DeadlineExceeded`, `Aborted`, topic stopped |
+| Congestion | `503` | Buffer/queue saturation, broker unreachable, client closed | `ResourceExhausted`, `Unavailable`, `DeadlineExceeded`, `Aborted`, `Canceled`, topic stopped, abandoned wait |
 | Unknown | `500` | Everything else | `NotFound`, `PermissionDenied`, `Unauthenticated`, everything else |
 
 `NotFound` and the auth codes are deliberately `500`: a missing topic or a misgranted service account
