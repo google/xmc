@@ -177,3 +177,7 @@ def harvest_client_metadata(
         )
 
     return raw_xid, raw_wu, raw_exec, raw_job_name, replica_id, is_silenced
+
+
+# Alias matching CamelCase specification for backward compatibility.
+GetReplicaIDAndSilenceStatus = get_replica_id_and_silence_status

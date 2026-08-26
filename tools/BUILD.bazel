@@ -342,25 +342,3 @@ py_test(
         ":tool_utils",
     ],
 )
-
-py_library(
-    name = "verify_pr_comment_resolution_lib",
-    srcs = ["verify_pr_comment_resolution.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "verify_pr_comment_resolution_test",
-    srcs = ["verify_pr_comment_resolution_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-        ":verify_pr_comment_resolution_lib",
-    ],
-)

@@ -18,6 +18,7 @@ from xmc.autolog import autolog
 from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 from xmc.dist_harvest import (
+    GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
 )
 from xmc.flusher import MetricsFlusher
@@ -44,6 +45,7 @@ __all__ = [
     "XMCAPIError",
     "validate_metric",
     "get_replica_id_and_silence_status",
+    "GetReplicaIDAndSilenceStatus",
     "__version__",
 ]
 
