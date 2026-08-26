@@ -217,6 +217,16 @@ func TestValidateDeletionSafety(t *testing.T) {
 			Dependencies: []string{"comp-with-protected-dep"},
 			Labels:       map[string]string{"xmc.dev/deletion-protection": "true"},
 		},
+		"comp-with-disabled-protected-dep": {
+			Name:  "comp-with-disabled-protected-dep",
+			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		"dep-disabled-protected-child": {
+			Name:         "dep-disabled-protected-child",
+			State:        componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+			Dependencies: []string{"comp-with-disabled-protected-dep"},
+			Labels:       map[string]string{"xmc.dev/deletion-protection": "true"},
+		},
 		"nil-entry": nil,
 	}
 
@@ -253,12 +263,18 @@ func TestValidateDeletionSafety(t *testing.T) {
 		t.Errorf("ValidateDeletionSafety(cascading with protected dependent, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
-	// 7. Cascading deletion of protected dependent with force -> success
+	// 7. Cascading deletion when a DISABLED dependent is deletion-protected -> ErrDeletionProtected
+	err = ValidateDeletionSafety(components, "comp-with-disabled-protected-dep", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ValidateDeletionSafety(cascading with disabled protected dependent, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 8. Cascading deletion of protected dependent with force -> success
 	if err := ValidateDeletionSafety(components, "comp-with-protected-dep", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
 		t.Errorf("ValidateDeletionSafety(cascading with protected dependent, force=true) unexpected error: %v", err)
 	}
 
-	// 8. Component with active dependents with force -> success
+	// 9. Component with active dependents with force -> success
 	if err := ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
 		t.Errorf("ValidateDeletionSafety(with-dep, force=true) unexpected error: %v", err)
 	}

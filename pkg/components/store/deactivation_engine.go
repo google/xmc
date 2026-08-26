@@ -128,6 +128,29 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 	return activeNames, activeRecords
 }
 
+// findAllDependents collects names and records of all transitive dependents (both active and disabled).
+func findAllDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
+	records := make([]*ComponentRecord, 0, len(components))
+	for _, r := range components {
+		records = append(records, r)
+	}
+
+	dependentsGraph := BuildDependentsGraph(records)
+	transitive := FindTransitiveDependents(dependentsGraph, rootCanonical)
+
+	var names []string
+	var recs []*ComponentRecord
+	for _, depName := range transitive {
+		depRec, ok := components[depName]
+		if !ok || depRec == nil || isDeletedRecord(depRec) {
+			continue
+		}
+		names = append(names, depName)
+		recs = append(recs, depRec)
+	}
+	return names, recs
+}
+
 // ValidateDeletionSafety checks if a component can be deleted without violating protection or dependency constraints.
 func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, policy componentspb.DeletionPolicy, force bool) error {
 	canonicalName := CanonicalComponentName(targetName)
@@ -142,9 +165,9 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 		return ErrDeletionProtected
 	}
 
-	activeDependents, activeRecords := findActiveDependents(components, canonicalName)
-	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
-		for _, depRec := range activeRecords {
+	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
+		_, allRecords := findAllDependents(components, canonicalName)
+		for _, depRec := range allRecords {
 			if IsDeletionProtected(depRec) {
 				return ErrDeletionProtected
 			}
@@ -152,6 +175,7 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 		return nil
 	}
 
+	activeDependents, _ := findActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 {
 		return ErrHasActiveDependents
 	}

@@ -361,9 +361,9 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		rec.Spec.DeletionPolicy = policy
 	}
 
-	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE {
-		activeDependents, _ := findActiveDependents(m.componentsByName, canonicalName)
-		for _, depName := range activeDependents {
+	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
+		allDependents, _ := findAllDependents(m.componentsByName, canonicalName)
+		for _, depName := range allDependents {
 			if depRec, ok := m.componentsByName[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
 				transitionToDeleted(depRec, now)
 			}
@@ -373,6 +373,9 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 }
 
 func transitionToDisabling(rec *ComponentRecord, now time.Time) {
+	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		return
+	}
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
 	if rec.Status == nil {
 		rec.Status = &componentspb.ComponentAccessStatus{}

@@ -600,6 +600,23 @@ func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 		t.Errorf("dependent-comp State = %v, want DISABLING", recDep.State)
 	}
 
+	// 3. Repeated PrepareDeactivation is idempotent and preserves UpdateTime and Etag
+	origEtag := recRoot.Etag
+	origUpdateTime := recRoot.UpdateTime
+	if _, err := ms.PrepareDeactivation(ctx, "root-comp", true); err != nil {
+		t.Fatalf("PrepareDeactivation(root, second call) unexpected error: %v", err)
+	}
+	recRoot2, err := ms.GetComponent(ctx, "root-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(root-comp) failed: %v", err)
+	}
+	if recRoot2.Etag != origEtag {
+		t.Errorf("root-comp Etag changed on second PrepareDeactivation: got %s, want %s", recRoot2.Etag, origEtag)
+	}
+	if !recRoot2.UpdateTime.Equal(origUpdateTime) {
+		t.Errorf("root-comp UpdateTime changed on second PrepareDeactivation: got %v, want %v", recRoot2.UpdateTime, origUpdateTime)
+	}
+
 	// 3. Nonexistent component
 	_, err = ms.PrepareDeactivation(ctx, "nonexistent", false)
 	if status.Code(err) != codes.NotFound {
@@ -757,6 +774,37 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 	if _, err := ms.GetComponent(ctx, "child-prot"); status.Code(err) != codes.NotFound {
 		t.Errorf("GetComponent(child-prot) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Component 4: Cascading deletion with disabled dependent
+	specRoot4 := sampleSpec("Root 4")
+	if _, err := ms.SetComponentIntent(ctx, "root-4", specRoot4, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-4) failed: %v", err)
+	}
+	specChild4 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-4",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "child-4", specChild4, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(child-4) failed: %v", err)
+	}
+	// Disable child-4
+	if _, err := ms.PrepareDeactivation(ctx, "child-4", false); err != nil {
+		t.Fatalf("PrepareDeactivation(child-4) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "child-4"); err != nil {
+		t.Fatalf("CompleteDeactivation(child-4) failed: %v", err)
+	}
+	// Cascading deletion of root-4 should delete disabled child-4 too
+	if err := ms.ExecuteDeletion(ctx, "root-4", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion(root-4) failed: %v", err)
+	}
+	if _, err := ms.GetComponent(ctx, "root-4"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(root-4) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "child-4"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(child-4) got code %v, want NotFound", status.Code(err))
 	}
 
 	// Nonexistent deletion
