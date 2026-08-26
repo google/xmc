@@ -23,10 +23,32 @@ exports_files([
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
+    "image_builder.py",
     "kind_manager.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "image_builder_lib",
+    srcs = ["image_builder.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "image_builder_test",
+    srcs = ["image_builder_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":image_builder_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "kind_manager_lib",
@@ -98,6 +120,7 @@ py_library(
     deps = [
         ":config_lib",
         ":deploy_dev_env_lib",
+        ":image_builder_lib",
         ":kind_manager_lib",
         ":spanner_manager_lib",
         ":upgrade_dev_env_lib",

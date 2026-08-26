@@ -160,3 +160,59 @@ kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
 kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
   "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, created_at) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
 ```
+---
+
+## 5. Local KinD Development Environment Configuration
+
+When spinning up a local KinD development cluster via `python3 tools/dev_env/dev_env.py up`, configuration values are resolved using the following order of precedence:
+
+1. **CLI Arguments** (`--project-id / -p`, `--environment / -e`, `--cluster-name`, `--spanner-instance`, `--ess-db`, `--xid-db`, `--auto-migrate / --no-auto-migrate`, `--config / -c`)
+2. **Environment Variables** (`PROJECT_ID` / `GCP_PROJECT_ID`, `XMANAGER_ENV`, `CLUSTER_NAME` / `KIND_CLUSTER_NAME`, `SPANNER_INSTANCE`, `ESS_DATABASE`, `XID_DATABASE`, `AUTO_MIGRATE`)
+3. **YAML Configuration File**:
+   - Explicit path via `--config <path>` / `-c <path>` (must exist if passed)
+   - `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (if present)
+   - `deploy/local/xmanager-cloud-local.yaml` (if present)
+4. **Built-in Defaults**:
+   - `environment`: `dev`
+   - `cluster_name`: `xmc-dev`
+   - `spanner_instance`: `xmc-{environment}`
+   - `ess_database`: `dev-{environment}-local-ess`
+   - `xid_database`: `dev-{environment}-local-xid`
+   - `auto_migrate`: `true`
+   - `enabled_services`: Base microservices (`actuator`, `experiment_state_server`, `log_monitor`, `reconciler`, `ui`, `xid_service`, `health_service`, `dashboard_service`), plus conditional feature services.
+
+### Local KinD Commands
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| **`build-images`** | `python3 tools/dev_env/dev_env.py build-images [services...] [--load-kind]` | Builds Bazel OCI container images in parallel and loads into Docker (and optionally into KinD nodes). |
+| **`down`** | `python3 tools/dev_env/dev_env.py down [--drop-db]` | Destroys the local KinD cluster and cleans up temporary state. With `--drop-db`, also deletes local Cloud Spanner databases. |
+| **`status`** | `python3 tools/dev_env/dev_env.py status` | Inspects KinD cluster health, pod statuses, and UI/Dex endpoint responsiveness. |
+| **`logs`** | `python3 tools/dev_env/dev_env.py logs [service] [-f]` | Views or live tails container logs from local service pods. |
+
+### Cloud Spanner Database Management
+
+Manage Cloud Spanner development databases directly using `dev_env.py spanner`:
+
+```bash
+# Provision databases if missing (uses fast DDL & proto descriptor batch schema init)
+python3 tools/dev_env/dev_env.py spanner ensure
+
+# Apply pending schema migrations
+python3 tools/dev_env/dev_env.py spanner migrate
+
+# Drop development databases
+python3 tools/dev_env/dev_env.py spanner drop
+```
+
+### OCI Image Compilation & Loading
+
+Compile and load microservice container images into Docker or KinD:
+
+```bash
+# Build all enabled microservice images in parallel
+python3 tools/dev_env/dev_env.py build-images
+
+# Build specific services and load into local KinD cluster
+python3 tools/dev_env/dev_env.py build-images reconciler ui --load-kind
+```

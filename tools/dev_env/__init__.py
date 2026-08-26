@@ -13,3 +13,9 @@
 # limitations under the License.
 
 """Development environment deployment and upgrade tools."""
+
+from tools.dev_env.image_builder import ImageBuilder
+from tools.dev_env.kind_manager import KindManager
+from tools.dev_env.spanner_manager import SpannerManager
+
+__all__ = ["ImageBuilder", "KindManager", "SpannerManager"]
