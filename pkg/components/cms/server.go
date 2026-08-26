@@ -139,15 +139,26 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 	if err != nil {
 		return nil, err
 	}
+	if dt := req.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "draining timeout cannot be negative")
+	}
 
 	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce())
 	if err != nil {
 		return nil, err
 	}
+	if res == nil {
+		return nil, status.Error(codes.Internal, "store returned nil result without error")
+	}
 
-	msg := fmt.Sprintf("Component %s deactivation prepared successfully (drain: %ds)", canonicalName, res.RecommendedDrainSec)
+	drainSec := res.RecommendedDrainSec
+	if dt := req.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() > 0 {
+		drainSec = int32(dt.AsDuration() / time.Second)
+	}
+
+	msg := fmt.Sprintf("Component %s deactivation prepared successfully (drain: %ds)", canonicalName, drainSec)
 	if len(res.CascadedDeactivations) > 0 {
-		msg = fmt.Sprintf("Component %s and %d dependent(s) deactivation prepared successfully (drain: %ds)", canonicalName, len(res.CascadedDeactivations), res.RecommendedDrainSec)
+		msg = fmt.Sprintf("Component %s and %d dependent(s) deactivation prepared successfully (drain: %ds)", canonicalName, len(res.CascadedDeactivations), drainSec)
 	}
 
 	return &componentspb.PrepareDeactivationResponse{
@@ -204,7 +215,12 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 		return nil, err
 	}
 
-	if err := s.store.ExecuteDeletion(ctx, canonicalName, req.GetDeletionPolicy(), req.GetForce()); err != nil {
+	policy := req.GetDeletionPolicy()
+	if policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
+		policy = componentspb.DeletionPolicy_DELETION_POLICY_DELETE
+	}
+
+	if err := s.store.ExecuteDeletion(ctx, canonicalName, policy, req.GetForce()); err != nil {
 		return nil, err
 	}
 

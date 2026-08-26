@@ -17,12 +17,14 @@ package cms
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -751,7 +753,29 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 		t.Error("GetMessage() is empty, want informative message")
 	}
 
-	// 3. Nonexistent component -> NotFound
+	// 3. Prepare with custom draining timeout
+	respTimeout, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		Force:           true,
+		DrainingTimeout: durationpb.New(120 * time.Second),
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with timeout failed: %v", err)
+	}
+	if respTimeout.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 120s)" {
+		t.Errorf("GetMessage() = %q, want drain: 120s", respTimeout.GetMessage())
+	}
+
+	// 4. Prepare with negative draining timeout -> InvalidArgument
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		DrainingTimeout: durationpb.New(-10 * time.Second),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("PrepareDeactivation(negative timeout) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 5. Nonexistent component -> NotFound
 	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
 		Name: "components/nonexistent",
 	})
@@ -892,6 +916,33 @@ func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 	}
 	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
 		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
+	}
+
+	// 3c. Delete with DELETION_POLICY_UNSPECIFIED -> defaults to cascading delete
+	if _, err := ms.SetComponentIntent(ctx, "cms-root-unspec", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	specDepUnspec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root-unspec",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-dep-unspec", specDepUnspec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	respUnspec, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root-unspec",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED,
+		Force:          false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(unspecified policy) unexpected error: %v", err)
+	}
+	if respUnspec.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", respUnspec.GetState())
+	}
+	if _, err := ms.GetComponent(ctx, "cms-dep-unspec"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(cms-dep-unspec) got code %v, want NotFound", status.Code(err))
 	}
 
 	// 4. Nonexistent component -> NotFound
