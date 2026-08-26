@@ -18,6 +18,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/kubernetes/common/constants"
 )
 
 const bytesPerGiB = 1024 * 1024 * 1024
@@ -30,7 +31,7 @@ func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueu
 	}
 	if rfMap != nil {
 		if rf := rfMap[flavorName]; rf != nil {
-			for _, labelKey := range resourceaccumulator.AcceleratorLabelKeys {
+			for _, labelKey := range constants.AcceleratorLabelKeys {
 				if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
 					return acc
 				}

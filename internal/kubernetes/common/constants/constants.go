@@ -153,3 +153,36 @@ const (
 	// ResourceTypeTPU represents the standard TPU resource identifier.
 	ResourceTypeTPU = "tpu"
 )
+
+var (
+	// AcceleratorLabelKeys lists the Kubernetes node label keys used to identify accelerator types.
+	AcceleratorLabelKeys = []string{
+		"cloud.google.com/gke-accelerator",
+		"cloud.google.com/gke-gpu-type",
+		"cloud.google.com/gke-tpu-accelerator",
+		"kueue.x-k8s.io/gpack-gpu",
+		"gpu.nvidia.com/class",
+	}
+
+	// LongAcceleratorKeywords contains substring keywords identifying specific accelerator models.
+	LongAcceleratorKeywords = []string{
+		"h100", "a100", "v100", "p100", "b200", "gb200", "h200", "b40", "rtx",
+		"v5e", "v5p", "gpack", "tesla",
+	}
+
+	// ShortAcceleratorKeywords contains short model designations requiring word-boundary or structured matching.
+	ShortAcceleratorKeywords = []string{
+		"l4", "v4", "v5", "v6", "t4", "p4",
+	}
+
+	// GenericKeywords contains keywords indicating non-specific or generic resource flavor names.
+	GenericKeywords = []string{
+		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
+	}
+
+	// GenericResourceNames contains standard generic compute resource identifiers.
+	GenericResourceNames = []string{
+		"gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
+		"cpu", "memory", "storage",
+	}
+)

@@ -18,7 +18,6 @@ compat_go_library(
     name = "resourceaccumulator",
     srcs = [
         "classifier.go",
-        "constants.go",
         "resourceaccumulator.go",
     ],
     importpath = "xmanager_cloud/internal/common/resourceaccumulator",
@@ -33,7 +32,10 @@ compat_go_library(
 
 compat_go_test(
     name = "resourceaccumulator_test",
-    srcs = ["resourceaccumulator_test.go"],
+    srcs = [
+        "classifier_test.go",
+        "resourceaccumulator_test.go",
+    ],
     embed = [":resourceaccumulator"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

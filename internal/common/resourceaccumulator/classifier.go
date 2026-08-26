@@ -16,11 +16,13 @@ package resourceaccumulator
 
 import (
 	"strings"
+
+	"xmanager_cloud/kubernetes/common/constants"
 )
 
 var (
-	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, LongAcceleratorKeywords...)
-	shortGPUKeywords = ShortAcceleratorKeywords
+	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, constants.LongAcceleratorKeywords...)
+	shortGPUKeywords = constants.ShortAcceleratorKeywords
 
 	tpuKeywords = []string{
 		"v5p", "v5e", "tpu-v4", "tpu-v5", "tpu-v6", "tpu-",
@@ -39,13 +41,8 @@ func IsSpecificAcceleratorName(name string) bool {
 	if IsSpecificGPUKey(lower) || IsSpecificTPUKey(lower) {
 		return true
 	}
-	for _, kw := range LongAcceleratorKeywords {
+	for _, kw := range constants.LongAcceleratorKeywords {
 		if strings.Contains(lower, kw) {
-			return true
-		}
-	}
-	for _, kw := range ShortAcceleratorKeywords {
-		if MatchesShortAcceleratorKeyword(lower, kw) {
 			return true
 		}
 	}
@@ -54,12 +51,12 @@ func IsSpecificAcceleratorName(name string) bool {
 
 // IsGenericAcceleratorFlavor returns true if lower matches generic compute names or flavor keywords.
 func IsGenericAcceleratorFlavor(lower string) bool {
-	for _, exact := range GenericResourceNames {
+	for _, exact := range constants.GenericResourceNames {
 		if lower == exact {
 			return true
 		}
 	}
-	for _, kw := range GenericKeywords {
+	for _, kw := range constants.GenericKeywords {
 		if strings.Contains(lower, kw) {
 			return true
 		}

@@ -43,6 +43,7 @@ compat_go_library(
         "//internal/compat/google",
         "//internal/configutil",
         "//internal/domain/workunit",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage/spanner/statushistory",
         "//internal/storage/spanner/workunit",
