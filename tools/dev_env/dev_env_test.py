@@ -502,7 +502,7 @@ class DevEnvCliTest(unittest.TestCase):
             lines=50,
             namespace="custom-ns",
         )
->>>>>>> d7196ea2 (feat(dev_env): add local support manifests, cluster status, and log streaming)
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
