@@ -64,7 +64,7 @@ describe('DashboardService', () => {
       name: 'dashboards/vcc-tune-comparison',
       title: 'VCC baseline tune comparison',
       owner: 'user@google.com',
-      charts: [],
+      chartIds: [],
       chartLayout: { type: LayoutType.SIDE_BY_SIDE },
     };
 
@@ -118,7 +118,7 @@ describe('DashboardService', () => {
         {
           name: 'dashboards/1',
           title: 'Dashboard 1',
-          charts: [],
+          chartIds: [],
         },
       ],
       nextPageToken: 'token_2',
@@ -174,7 +174,7 @@ describe('DashboardService', () => {
   describe('createDashboard', () => {
     const newDash: Dashboard = {
       title: 'New Comparison',
-      charts: [],
+      chartIds: [],
     };
 
     it('should create dashboard via POST', async () => {
@@ -226,7 +226,7 @@ describe('DashboardService', () => {
     const updateDash: Dashboard = {
       name: 'dashboards/dash-1',
       title: 'Updated Title',
-      charts: [],
+      chartIds: [],
     };
 
     it('should update dashboard via PATCH', async () => {

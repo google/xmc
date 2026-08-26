@@ -30,6 +30,7 @@ import {
 } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
 import { Chart, LayoutType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { extractChartId } from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
@@ -134,21 +135,41 @@ export class DashboardsPage implements OnInit {
 
     dialogRef.afterClosed().subscribe((result?: AddExperimentDialogResult) => {
       if (!result) return;
-
-      const templatePlots = this.charts()[0]?.plots ? structuredClone(this.charts()[0].plots) : [];
-      const newChart: Chart = {
-        name: `experiments/${result.xid}/charts/custom_${Date.now()}`,
-        title: result.title || `Experiment ${result.xid}`,
-        xid: result.xid,
-        wid: result.wid ?? 1,
-        plotLayout: { type: LayoutType.GRID },
-        plots: templatePlots,
-      };
-
-      this.charts.update((c) => [...c, newChart]);
-      this.triggerAutosave();
-      this.snackbar?.open?.(`Added experiment ${result.xid} to comparison`);
+      this.addComparisonChart(result);
     });
+  }
+
+  /**
+   * Persists a new comparison chart and appends it to the dashboard.
+   *
+   * The chart has to exist before the dashboard can link it: DashboardCharts.ChartId is a foreign
+   * key onto Charts, so autosaving a locally-invented ID is rejected at commit time. The chart the
+   * server returns carries the canonical name, which is what the autosave then derives its ID from.
+   */
+  private addComparisonChart(result: AddExperimentDialogResult): void {
+    const wid = result.wid ?? 1;
+    const templatePlots = this.charts()[0]?.plots ? structuredClone(this.charts()[0].plots) : [];
+    const newChart: Chart = {
+      title: result.title || `Experiment ${result.xid}`,
+      xid: result.xid,
+      wid,
+      plotLayout: { type: LayoutType.GRID },
+      plots: templatePlots,
+    };
+
+    this.dashboardService
+      .createChart({ parent: `experiments/${result.xid}/workUnits/${wid}`, chart: newChart })
+      .subscribe({
+        next: (chart) => {
+          this.charts.update((c) => [...c, chart]);
+          this.triggerAutosave();
+          this.snackbar?.open?.(`Added experiment ${result.xid} to comparison`);
+        },
+        error: (err) => {
+          this.snackbar?.open?.(`Failed to add experiment ${result.xid}`);
+          console.error('Failed to create comparison chart:', err);
+        },
+      });
   }
 
   onRemoveChart(chartName: string): void {
@@ -163,11 +184,13 @@ export class DashboardsPage implements OnInit {
 
     this.dashboardService
       .updateDashboard({
+        // Scoped to chart_ids. An unmasked update overwrites title, description and chart_layout
+        // wholesale, and this page never loads the latter two, so it would blank them out.
+        updateMask: 'chart_ids',
         dashboard: {
           name: this.currentDashboardName,
-          title: this.dashboardTitle(),
           chartIds: this.charts()
-            .map((chart) => chart.name?.split('/').pop() ?? '')
+            .map((chart) => extractChartId(chart.name))
             .filter((chartId) => chartId !== ''),
         },
       })

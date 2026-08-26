@@ -31,9 +31,17 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { Router, RouterLink } from '@angular/router';
+import { forkJoin, map, Observable, of, switchMap } from 'rxjs';
 
-import { CreateDashboardDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
-import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import {
+  CreateDashboardDialogComponent,
+  CreateDashboardDialogResult,
+} from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import {
+  extractChartId,
+  extractDashboardId,
+} from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
@@ -43,14 +51,6 @@ import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service'
  * server-side default, which would silently truncate the list.
  */
 const DASHBOARDS_PAGE_SIZE = 100;
-
-/**
- * Strips 'dashboards/' prefix to obtain a clean dashboard ID for routing.
- */
-export function extractDashboardId(name?: string): string {
-  if (!name) return '';
-  return name.startsWith('dashboards/') ? name.replace('dashboards/', '') : name;
-}
 
 /**
  * Component displaying the list of available metrics dashboards.
@@ -128,28 +128,64 @@ export class DashboardsListPage implements OnInit {
       disableClose: false,
     });
 
-    dialogRef.afterClosed().subscribe((dashboard?: Dashboard) => {
-      if (!dashboard) return;
-      this.createDashboard(dashboard);
+    dialogRef.afterClosed().subscribe((result?: CreateDashboardDialogResult) => {
+      if (!result) return;
+      this.createDashboard(result);
     });
   }
 
-  createDashboard(dashboard: Dashboard): void {
+  /**
+   * Provisions the dialog's charts and then creates the dashboard that links them.
+   *
+   * Charts are a sibling resource, so they have to be created through CreateChart before the
+   * dashboard can reference them: DashboardCharts.ChartId carries a foreign key onto Charts, and a
+   * dashboard whose `chart_ids` name rows that do not exist yet is rejected at commit time. Passing
+   * the resulting IDs to CreateDashboard writes the dashboard and its links in one server call.
+   */
+  createDashboard(result: CreateDashboardDialogResult): void {
     this.isLoading.set(true);
-    this.dashboardService.createDashboard({ dashboard }).subscribe({
-      next: (created) => {
-        this.isLoading.set(false);
-        const id = extractDashboardId(created.name);
-        if (id) {
-          this.router.navigate(['/dashboards', id]);
-          return;
-        }
-        this.loadDashboards();
-      },
-      error: () => {
-        this.isLoading.set(false);
-        this.loadDashboards();
-      },
-    });
+    this.provisionCharts(result.charts)
+      .pipe(
+        switchMap((chartIds) =>
+          this.dashboardService.createDashboard({
+            dashboard: { ...result.dashboard, chartIds },
+          }),
+        ),
+      )
+      .subscribe({
+        next: (created) => {
+          this.isLoading.set(false);
+          const id = extractDashboardId(created.name);
+          if (id) {
+            this.router.navigate(['/dashboards', id]);
+            return;
+          }
+          this.loadDashboards();
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          this.snackbar?.open?.('Failed to create dashboard');
+          console.error('Error creating dashboard:', err);
+          this.loadDashboards();
+        },
+      });
+  }
+
+  /**
+   * Creates every chart of a new dashboard and returns their server-assigned IDs.
+   */
+  private provisionCharts(charts: Chart[]): Observable<string[]> {
+    if (charts.length === 0) return of([]);
+
+    return forkJoin(
+      charts.map((chart) =>
+        this.dashboardService.createChart({
+          parent: `experiments/${chart.xid}/workUnits/${chart.wid}`,
+          chart,
+        }),
+      ),
+    ).pipe(
+      map((created) => created.map((chart) => extractChartId(chart.name)).filter((id) => !!id)),
+    );
   }
 }

@@ -19,11 +19,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { Dashboard, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
 import {
-  buildDashboardResourceName,
   CreateDashboardDialogComponent,
+  CreateDashboardDialogResult,
   getDefaultPlotSpecs,
 } from './create_dashboard_dialog';
 import { CreateDashboardDialogHarness } from './create_dashboard_dialog_harness';
@@ -191,7 +191,7 @@ describe('CreateDashboardDialogComponent', () => {
     expect(component.form.invalid).toBeTrue();
   });
 
-  it('should build and return Dashboard object on submit', async () => {
+  it('should return the dashboard draft and the charts to provision on submit', async () => {
     component.form.patchValue({
       title: 'Custom Evaluation Benchmark',
       description: 'Benchmark dashboard comparing tuning iterations',
@@ -212,43 +212,42 @@ describe('CreateDashboardDialogComponent', () => {
     await harness.clickSubmit();
 
     expect(dialogRefSpy.close).toHaveBeenCalledTimes(1);
-    const resultDashboard = dialogRefSpy.close.calls.mostRecent().args[0] as Dashboard;
+    const result = dialogRefSpy.close.calls.mostRecent().args[0] as CreateDashboardDialogResult;
 
-    expect(resultDashboard.title).toBe('Custom Evaluation Benchmark');
-    expect(resultDashboard.description).toBe('Benchmark dashboard comparing tuning iterations');
-    expect(resultDashboard.chartLayout).toEqual({ type: LayoutType.SIDE_BY_SIDE });
-    expect(resultDashboard.charts?.length).toBe(2);
+    expect(result.dashboard.title).toBe('Custom Evaluation Benchmark');
+    expect(result.dashboard.description).toBe('Benchmark dashboard comparing tuning iterations');
+    expect(result.dashboard.chartLayout).toEqual({ type: LayoutType.SIDE_BY_SIDE });
+    expect(result.charts.length).toBe(2);
 
-    const baseChart = resultDashboard.charts![0];
+    const baseChart = result.charts[0];
     expect(baseChart.xid).toBe(234911122);
     expect(baseChart.wid).toBe(1);
     expect(baseChart.title).toBe('VCC Baseline');
     expect(baseChart.plots?.length).toBe(4);
 
-    const compChart = resultDashboard.charts![1];
+    const compChart = result.charts[1];
     expect(compChart.xid).toBe(234911123);
+    expect(compChart.wid).toBe(1);
     expect(compChart.title).toBe('VCC tuned_v1');
+  });
+
+  it('should leave resource names unset so the server assigns them', async () => {
+    component.form.patchValue({
+      title: 'Custom Evaluation Benchmark',
+      baseXid: 234911122,
+      baseWid: 1,
+    });
+
+    await harness.clickSubmit();
+
+    const result = dialogRefSpy.close.calls.mostRecent().args[0] as CreateDashboardDialogResult;
+    expect(result.dashboard.name).toBeUndefined();
+    expect(result.dashboard.chartIds).toBeUndefined();
+    expect(result.charts.every((chart) => chart.name === undefined)).toBeTrue();
   });
 
   it('should close without value on cancel', async () => {
     await harness.clickCancel();
     expect(dialogRefSpy.close).toHaveBeenCalledWith();
-  });
-});
-
-describe('buildDashboardResourceName', () => {
-  it('should convert standard titles to lowercase underscored resource names', () => {
-    expect(buildDashboardResourceName('My Benchmark Run')).toBe('dashboards/my_benchmark_run');
-  });
-
-  it('should replace special characters and trim leading/trailing underscores', () => {
-    expect(buildDashboardResourceName('  --#1 Performance (v2)!!  ')).toBe(
-      'dashboards/1_performance_v2',
-    );
-  });
-
-  it('should fallback to default dash timestamp when title sanitizes to empty string', () => {
-    const resourceName = buildDashboardResourceName('---###');
-    expect(resourceName).toMatch(/^dashboards\/dash_\d+$/);
   });
 });
