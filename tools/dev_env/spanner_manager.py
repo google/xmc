@@ -100,18 +100,20 @@ class SpannerManager:
             f"--instance={instance}",
             f"--project={self.config.project_id}",
         ]
-        if ddl_file and proto_desc_file:
+        log_msg = f"Creating Spanner database '{db_name}'"
+        if ddl_file:
             ddl_path = self.repo_root / ddl_file
+            if not ddl_path.exists():
+                raise FileNotFoundError(f"DDL schema file not found: {ddl_path}")
+            cmd.append(f"--ddl-file={ddl_path}")
+            log_msg += f" with schema '{ddl_file}'"
+        if proto_desc_file:
             proto_path = self.repo_root / proto_desc_file
-            if ddl_path.exists() and proto_path.exists():
-                log_info(
-                    f"Creating Spanner database '{db_name}' with schema '{ddl_file}' and descriptors '{proto_desc_file}'..."
-                )
-                cmd.extend([f"--ddl-file={ddl_path}", f"--proto-descriptors-file={proto_path}"])
-            else:
-                log_info(f"Creating Spanner database '{db_name}'...")
-        else:
-            log_info(f"Creating Spanner database '{db_name}'...")
+            if not proto_path.exists():
+                raise FileNotFoundError(f"Protobuf descriptor file not found: {proto_path}")
+            cmd.append(f"--proto-descriptors-file={proto_path}")
+            log_msg += f" and descriptors '{proto_desc_file}'"
+        log_info(f"{log_msg}...")
         run_command(cmd)
 
     def ensure_databases_exist(
@@ -135,12 +137,8 @@ class SpannerManager:
 
         missing_names = [t[0] for t in missing_targets]
         log_info(f"Provisioning missing Spanner databases: {', '.join(missing_names)}...")
-        try:
+        if any(t[2] for t in missing_targets):
             self._build_protobuf_descriptors()
-        except Exception as e:
-            log_info(
-                f"Protobuf descriptor build warning: {e}. Falling back to standard database creation."
-            )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(missing_targets)) as executor:
             futures = [

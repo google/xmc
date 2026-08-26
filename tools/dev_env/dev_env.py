@@ -32,7 +32,7 @@ from tools.common.tool_utils import (  # noqa: E402
     ensure_venv,
     log_error,
 )
-from tools.dev_env import deploy_dev_env, upgrade_dev_env  # noqa: E402
+from tools.dev_env import config, deploy_dev_env, upgrade_dev_env  # noqa: E402
 
 _LOGGER = logging.getLogger("xmc.dev_env")
 

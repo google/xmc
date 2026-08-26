@@ -80,10 +80,9 @@ class SpannerManagerTest(unittest.TestCase):
         mock_run.assert_not_called()
         self.assertEqual(newly_created, set())
 
-    @mock.patch.object(Path, "exists", return_value=True)
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_ensure_databases_exist_descriptor_build_failure(
-        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+        self, mock_run: mock.MagicMock
     ) -> None:
         with mock.patch.object(self.manager, "list_databases", return_value=[]):
             with mock.patch.object(
@@ -91,10 +90,83 @@ class SpannerManagerTest(unittest.TestCase):
                 "_build_protobuf_descriptors",
                 side_effect=RuntimeError("bazel error"),
             ):
-                newly_created = self.manager.ensure_databases_exist()
+                with self.assertRaises(RuntimeError):
+                    self.manager.ensure_databases_exist()
 
-        self.assertEqual(newly_created, {"test-ess-db", "test-xid-db"})
-        self.assertEqual(mock_run.call_count, 2)
+    @mock.patch.object(Path, "exists", return_value=True)
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_create_database_with_ddl_and_descriptors(
+        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+    ) -> None:
+        self.manager._create_database(
+            instance="inst",
+            db_name="db",
+            ddl_file="schema.sql",
+            proto_desc_file="desc.pb",
+        )
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("gcloud", cmd)
+        self.assertIn("create", cmd)
+        self.assertIn("db", cmd)
+        self.assertTrue(any(arg.startswith("--ddl-file=") for arg in cmd))
+        self.assertTrue(any(arg.startswith("--proto-descriptors-file=") for arg in cmd))
+
+    @mock.patch.object(Path, "exists", return_value=True)
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_create_database_with_ddl_only(
+        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+    ) -> None:
+        self.manager._create_database(
+            instance="inst",
+            db_name="db",
+            ddl_file="schema.sql",
+            proto_desc_file=None,
+        )
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertTrue(any(arg.startswith("--ddl-file=") for arg in cmd))
+        self.assertFalse(any(arg.startswith("--proto-descriptors-file=") for arg in cmd))
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_create_database_without_schema_or_descriptors(self, mock_run: mock.MagicMock) -> None:
+        self.manager._create_database(
+            instance="inst",
+            db_name="db",
+            ddl_file=None,
+            proto_desc_file=None,
+        )
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertFalse(any(arg.startswith("--ddl-file=") for arg in cmd))
+        self.assertFalse(any(arg.startswith("--proto-descriptors-file=") for arg in cmd))
+
+    @mock.patch.object(Path, "exists", return_value=False)
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_create_database_missing_ddl_file_raises_error(
+        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+    ) -> None:
+        with self.assertRaises(FileNotFoundError):
+            self.manager._create_database(
+                instance="inst",
+                db_name="db",
+                ddl_file="missing_schema.sql",
+            )
+        mock_run.assert_not_called()
+
+    @mock.patch.object(Path, "exists", side_effect=[True, False])
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_create_database_missing_proto_desc_file_raises_error(
+        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+    ) -> None:
+        with self.assertRaises(FileNotFoundError):
+            self.manager._create_database(
+                instance="inst",
+                db_name="db",
+                ddl_file="schema.sql",
+                proto_desc_file="missing_desc.pb",
+            )
+        mock_run.assert_not_called()
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_drop_databases(self, mock_run: mock.MagicMock) -> None:
