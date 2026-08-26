@@ -80,6 +80,41 @@ class ImageBuilderTest(unittest.TestCase):
         self.assertTrue(mock_run.called)
 
     @mock.patch("tools.dev_env.image_builder.run_command")
+    def test_build_images_empty_specs(self, mock_run: mock.MagicMock) -> None:
+        images = self.builder.build_images(services=[])
+        self.assertEqual(images, [])
+        mock_run.assert_not_called()
+
+    @mock.patch("tools.dev_env.image_builder.run_command")
+    def test_build_images_bytes_stdout(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=["bazel", "build"], returncode=0),
+            subprocess.CompletedProcess(
+                args=["bazel", "info"],
+                returncode=0,
+                stdout=b"/path/to/bazel-bin\n",
+            ),
+            subprocess.CompletedProcess(args=["docker", "load"], returncode=0),
+            subprocess.CompletedProcess(args=["docker", "load"], returncode=0),
+            subprocess.CompletedProcess(args=["docker", "load"], returncode=0),
+        ]
+        images = self.builder.build_images(skip_build=False)
+        self.assertEqual(len(images), 3)
+
+    @mock.patch("tools.dev_env.image_builder.run_command")
+    def test_build_images_empty_bazel_bin(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=["bazel", "build"], returncode=0),
+            subprocess.CompletedProcess(
+                args=["bazel", "info"],
+                returncode=0,
+                stdout="",
+            ),
+        ]
+        with self.assertRaises(RuntimeError):
+            self.builder.build_images(skip_build=False)
+
+    @mock.patch("tools.dev_env.image_builder.run_command")
     def test_load_images_into_kind(self, mock_run: mock.MagicMock) -> None:
         self.builder.load_images_into_kind(["img1:latest", "img2:latest"])
         mock_run.assert_called_once_with(
@@ -93,6 +128,11 @@ class ImageBuilderTest(unittest.TestCase):
                 "test-kind",
             ]
         )
+
+    @mock.patch("tools.dev_env.image_builder.run_command")
+    def test_load_images_into_kind_empty(self, mock_run: mock.MagicMock) -> None:
+        self.builder.load_images_into_kind([])
+        mock_run.assert_not_called()
 
 
 if __name__ == "__main__":
