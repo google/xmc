@@ -109,7 +109,9 @@ func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetNa
 func findActiveDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
 	records := make([]*ComponentRecord, 0, len(components))
 	for _, r := range components {
-		records = append(records, r)
+		if !isDeletedRecord(r) {
+			records = append(records, r)
+		}
 	}
 
 	dependentsGraph := BuildDependentsGraph(records)
@@ -132,7 +134,9 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 func findAllDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
 	records := make([]*ComponentRecord, 0, len(components))
 	for _, r := range components {
-		records = append(records, r)
+		if !isDeletedRecord(r) {
+			records = append(records, r)
+		}
 	}
 
 	dependentsGraph := BuildDependentsGraph(records)
