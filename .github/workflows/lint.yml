@@ -22,13 +22,17 @@ on:
   merge_group:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
   python-lint:
     name: 'PEP 8 Lint (Ruff)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
@@ -46,7 +50,7 @@ jobs:
 
   go-lint:
     name: 'Go Formatting (gofmt)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
@@ -89,7 +93,7 @@ jobs:
 
   bazel-lint:
     name: 'Bazel Linting (Buildifier)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
@@ -115,7 +119,7 @@ jobs:
 
   ui-lint:
     name: 'UI Lint & Format (Prettier & ESLint)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
@@ -143,7 +147,7 @@ jobs:
 
   license-check:
     name: 'License Headers (addlicense)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2

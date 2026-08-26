@@ -6,7 +6,9 @@ This document outlines the XMC continuous integration infrastructure, the in-clu
 
 ## 1. Current Architecture: Self-Hosted ARC Runners & In-Cluster Remote Cache
 
-XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE.
+XMC CI employs a hybrid runner architecture:
+- **Heavy Build & Test Workloads (`unit-tests.yml`, `headless-e2e.yml`)**: Execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE to leverage the low-latency 10Gbps in-cluster Bazel Remote Cache and local container daemons.
+- **Lightweight Linters & Code Quality (`lint.yml`, `terraform-lint.yml`)**: Execute on GitHub-hosted `ubuntu-latest` runners to utilize free, highly parallel cloud concurrency without consuming GKE cluster runner capacity.
 
 ### Infrastructure Overview
 
