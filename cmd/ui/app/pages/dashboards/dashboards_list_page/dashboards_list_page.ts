@@ -38,6 +38,13 @@ import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_servic
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /**
+ * Page size requested when listing dashboards. This page renders the whole response at once and
+ * filters it client-side, so it asks for the server maximum rather than relying on the smaller
+ * server-side default, which would silently truncate the list.
+ */
+const DASHBOARDS_PAGE_SIZE = 100;
+
+/**
  * Strips 'dashboards/' prefix to obtain a clean dashboard ID for routing.
  */
 export function extractDashboardId(name?: string): string {
@@ -97,7 +104,7 @@ export class DashboardsListPage implements OnInit {
 
   loadDashboards(): void {
     this.isLoading.set(true);
-    this.dashboardService.listDashboards().subscribe({
+    this.dashboardService.listDashboards({ pageSize: DASHBOARDS_PAGE_SIZE }).subscribe({
       next: (res) => {
         this.dashboards.set(res.dashboards ?? []);
         this.isLoading.set(false);

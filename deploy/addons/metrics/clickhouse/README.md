@@ -122,17 +122,47 @@ curl "http://localhost:8123/?query=SELECT%20version()"
 
 ### 3. Connect from XMC Backend
 
-The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables. When running workloads inside the cluster, configure:
+The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables.
+
+#### In-Cluster Deployments (Helm)
+
+In-cluster services get these variables from the chart. Set `metrics.enabled` to `true` and override the `metrics.clickhouse` block in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to match this addon:
+
+```yaml
+metrics:
+  enabled: true
+  clickhouse:
+    host: "clickhouse.xmc-metrics.svc.cluster.local"
+    port: "9000"
+    database: "default"
+    user: "default"
+    password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
+```
+
+Read the addon-generated password to populate `metrics.clickhouse.password`:
 
 ```bash
-export CLICKHOUSE_HOST="clickhouse.xmc-metrics.svc.cluster.local"
+kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode
+```
+
+Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
+
+> [!IMPORTANT]
+> The dashboard service builds its chart data engine at startup from these variables. If they are absent or wrong, the pod still starts and serves dashboard CRUD, but every `GetChartData` request fails with `FailedPrecondition: data engine is not configured`.
+
+#### Local Tooling & Port-Forwarded Sessions
+
+For local CLI use (for example [`tools/xmc-diag`](../../../../tools/xmc-diag)) against a port-forwarded instance, export the variables directly:
+
+```bash
+export CLICKHOUSE_HOST="127.0.0.1"
 export CLICKHOUSE_PORT="9000"
 export CLICKHOUSE_DATABASE="default"
 export CLICKHOUSE_USER="default"
 export CLICKHOUSE_PASSWORD=$(kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode)
 ```
 
-Or connect via DSN:
+Or connect via DSN, which takes precedence over the individual variables:
 
 ```bash
 export CLICKHOUSE_DSN="clickhouse://default:@clickhouse.xmc-metrics.svc.cluster.local:9000/default"

@@ -24,6 +24,13 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
+const (
+	// defaultDashboardPageSize is the page size applied when the caller omits page_size (AIP-158).
+	defaultDashboardPageSize int32 = 10
+	// maxDashboardPageSize caps the page size a caller may request (AIP-158).
+	maxDashboardPageSize int32 = 100
+)
+
 // ListDashboards retrieves a paginated list of dashboards without post-query owner pruning (AIP-132).
 func (s *Server) ListDashboards(ctx context.Context, req *spb.ListDashboardsRequest) (*spb.ListDashboardsResponse, error) {
 	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
@@ -35,7 +42,8 @@ func (s *Server) ListDashboards(ctx context.Context, req *spb.ListDashboardsRequ
 		return nil, status.Errorf(codes.InvalidArgument, "invalid list dashboards request: %v", err)
 	}
 
-	dashboards, nextPageToken, err := s.repo.ListDashboards(ctx, req.GetPageSize(), req.GetPageToken(), req.GetFilter(), "", 0)
+	pageSize := clampPageSize(req.GetPageSize(), defaultDashboardPageSize, maxDashboardPageSize)
+	dashboards, nextPageToken, err := s.repo.ListDashboards(ctx, pageSize, req.GetPageToken(), req.GetFilter(), "", 0)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list dashboards: %v", err)
 	}
