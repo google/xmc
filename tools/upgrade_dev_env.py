@@ -316,13 +316,6 @@ def step_app(config: UpgradeConfig) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
 
-    ctk_dir = Path(f"ctk-out/{config.deployment_name}")
-    if not ctk_dir.is_dir():
-        error_exit(
-            f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
-            " has been deployed first."
-        )
-
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
     run_command(
         [
@@ -339,6 +332,13 @@ def step_app(config: UpgradeConfig) -> None:
             "--force",
         ]
     )
+
+    ctk_dir = Path(f"ctk-out/{config.deployment_name}")
+    if not ctk_dir.is_dir():
+        error_exit(
+            f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
+            " has been deployed first."
+        )
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():

@@ -12,7 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, input, OnInit, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+  OnInit,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -42,6 +50,10 @@ function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
 export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
+
+  protected readonly sortedResourceTypes = computed<string[]>(() => {
+    return [...this.availableResourceTypes()].sort((a, b) => a.localeCompare(b));
+  });
 
   protected readonly rows = signal<ResourceRequirementRow[]>([createRow(1, '')]);
 

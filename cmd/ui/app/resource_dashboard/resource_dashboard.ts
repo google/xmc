@@ -145,7 +145,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
           .map((cap) => cap.resourceType)
           .filter((type): type is string => Boolean(type)),
       ),
-    ].sort();
+    ].sort((a, b) => a.localeCompare(b));
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {
