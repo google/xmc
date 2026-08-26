@@ -139,13 +139,12 @@ class SpannerManager:
                 "-command=init",
             ],
             cwd=str(self.repo_root),
-            check=False,
         )
 
     def ensure_databases_exist(
         self,
         instance: str | None = None,
-        databases: list[tuple[str, str, str, str]] | None = None,
+        databases: list[tuple[str, str, str] | tuple[str, str, str, str]] | None = None,
     ) -> set[str]:
         """Ensures databases exist, provisioning missing ones with schema in a single batch."""
         target_instance = instance or self.config.spanner_instance
@@ -156,7 +155,13 @@ class SpannerManager:
             for key, (ddl, proto, mig) in _SCHEMA_DEFINITIONS.items()
             if getattr(self.config, f"{key}_database", None)
         ]
-        missing_targets = [t for t in db_targets if t[0] not in existing_dbs]
+        normalized_targets: list[tuple[str, str, str, str]] = []
+        for target in db_targets:
+            if len(target) == 3:
+                normalized_targets.append((target[0], target[1], target[2], ""))
+            else:
+                normalized_targets.append(target)
+        missing_targets = [t for t in normalized_targets if t[0] not in existing_dbs]
         if not missing_targets:
             _LOGGER.debug("Required Spanner databases already exist: %s", existing_dbs)
             return set()
@@ -175,7 +180,8 @@ class SpannerManager:
                 future.result()
 
         for db_name, _, _, mig_dir in missing_targets:
-            self._init_migration_version(target_instance, db_name, mig_dir)
+            if mig_dir:
+                self._init_migration_version(target_instance, db_name, mig_dir)
 
         log_success(f"Spanner databases created: {', '.join(missing_names)}")
         return set(missing_names)
@@ -185,7 +191,7 @@ class SpannerManager:
         instance: str | None = None,
         database: str = "",
         migrations_dir: str = "",
-    ) -> tuple[int, int]:
+    ) -> tuple[int, bool]:
         """Inspects current database schema migration version."""
         target_instance = instance or self.config.spanner_instance
         res = run_command(
@@ -205,9 +211,11 @@ class SpannerManager:
             check=False,
         )
         output = (res.stdout or "") + (res.stderr or "")
-        ver_match = re.search(r"Version:\s*([0-9]+)", output)
+        ver_match = re.search(r"Version:\s*([0-9]+)", output, re.IGNORECASE)
         current_version = int(ver_match.group(1)) if ver_match else 0
-        return current_version, 0
+        dirty_match = re.search(r"Dirty:\s*(true|false)", output, re.IGNORECASE)
+        is_dirty = dirty_match.group(1).lower() == "true" if dirty_match else False
+        return current_version, is_dirty
 
     def _apply_database_migration(
         self, instance: str, db_name: str, mig_dir: str, max_attempts: int = 3
@@ -249,21 +257,32 @@ class SpannerManager:
         newly_created: set[str] | None = None,
     ) -> None:
         """Executes database schema migrations for configured databases."""
-        if not self.config.auto_migrate:
-            _LOGGER.debug("Skipping schema migrations (auto_migrate is disabled).")
-            return
-
-        target_instance = instance or self.config.spanner_instance
-        newly_created_set = newly_created or set()
-
-        if database and migrations_dir:
+        if database:
+            if not migrations_dir:
+                for key, (_, _, m_dir) in _SCHEMA_DEFINITIONS.items():
+                    if getattr(self.config, f"{key}_database", None) == database:
+                        migrations_dir = m_dir
+                        break
+            if not migrations_dir:
+                raise ValueError(
+                    f"Could not resolve migrations directory for database '{database}'"
+                )
             targets = [(database, migrations_dir)]
+        elif migrations_dir:
+            raise ValueError("database must be specified if migrations_dir is specified")
         else:
             targets = [
                 (getattr(self.config, f"{key}_database"), mig_dir)
                 for key, (_, _, mig_dir) in _SCHEMA_DEFINITIONS.items()
                 if getattr(self.config, f"{key}_database", None)
             ]
+
+        if not self.config.auto_migrate:
+            _LOGGER.debug("Skipping schema migrations (auto_migrate is disabled).")
+            return
+
+        target_instance = instance or self.config.spanner_instance
+        newly_created_set = newly_created or set()
 
         pending = [t for t in targets if t[0] and t[0] not in newly_created_set]
         if not pending:

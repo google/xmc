@@ -81,6 +81,19 @@ class SpannerManagerTest(unittest.TestCase):
         mock_run.assert_not_called()
         self.assertEqual(newly_created, set())
 
+    @mock.patch.object(Path, "exists", return_value=True)
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_ensure_databases_exist_legacy_3_tuples(
+        self, mock_run: mock.MagicMock, mock_exists: mock.MagicMock
+    ) -> None:
+        with mock.patch.object(self.manager, "list_databases", return_value=[]):
+            newly_created = self.manager.ensure_databases_exist(
+                databases=[("legacy-db", "schema.sql", "desc.pb")]
+            )
+        # 1 build descriptors, 1 create database, 0 init migration version (empty mig_dir)
+        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(newly_created, {"legacy-db"})
+
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_ensure_databases_exist_descriptor_build_failure(
         self, mock_run: mock.MagicMock
@@ -169,14 +182,38 @@ class SpannerManagerTest(unittest.TestCase):
             )
         mock_run.assert_not_called()
 
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_get_migration_version(self, mock_run: mock.MagicMock) -> None:
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
             returncode=0,
             stdout="Version: 42\nDirty: false\n",
         )
-        ver, _ = self.manager.get_migration_version(database="test-db", migrations_dir="ess")
+        ver, dirty = self.manager.get_migration_version(database="test-db", migrations_dir="ess")
         self.assertEqual(ver, 42)
+        self.assertFalse(dirty)
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_get_migration_version_dirty_true(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Version: 15\nDirty: true\n",
+        )
+        ver, dirty = self.manager.get_migration_version(database="test-db", migrations_dir="ess")
+        self.assertEqual(ver, 15)
+        self.assertTrue(dirty)
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_get_migration_version_unmatched_output(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="unexpected output",
+        )
+        ver, dirty = self.manager.get_migration_version(database="test-db", migrations_dir="ess")
+        self.assertEqual(ver, 0)
+        self.assertFalse(dirty)
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_apply_migrations_auto_migrate_true(self, mock_run: mock.MagicMock) -> None:
@@ -190,6 +227,25 @@ class SpannerManagerTest(unittest.TestCase):
         self.assertIn("-database=test-xid-db", cmd2)
         self.assertIn("-migrations_dir=xid", cmd2)
         self.assertIn("-command=up", cmd2)
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_resolve_migrations_dir(self, mock_run: mock.MagicMock) -> None:
+        self.manager.apply_migrations(database="test-ess-db")
+        self.assertEqual(mock_run.call_count, 1)
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("-database=test-ess-db", cmd)
+        self.assertIn("-migrations_dir=ess", cmd)
+        self.assertIn("-command=up", cmd)
+
+    def test_apply_migrations_unresolvable_database_raises(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            self.manager.apply_migrations(database="nonexistent-db")
+        self.assertIn("Could not resolve migrations directory", str(cm.exception))
+
+    def test_apply_migrations_migrations_dir_without_database_raises(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            self.manager.apply_migrations(migrations_dir="ess")
+        self.assertIn("database must be specified", str(cm.exception))
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_apply_migrations_skips_newly_created(self, mock_run: mock.MagicMock) -> None:
