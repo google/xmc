@@ -26,8 +26,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kadm"
-
 	google "go/google"
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/logging/logging"
@@ -51,19 +49,16 @@ func main() {
 
 	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
 
-	kClient, err := ingestiongateway.NewKafkaProducer(cfg, gMetrics)
+	// NewMetricProducer also asserts the destination topic is present and usable, so a
+	// misconfigured message bus fails at startup rather than on the first ingestion request.
+	producer, err := ingestiongateway.NewMetricProducer(ctx, cfg, gMetrics)
 	if err != nil {
-		logging.Fatal(ctx, "failed to create franz-go client", "error", err)
+		logging.Fatal(ctx, "failed to create metric producer", "error", err)
 	}
-	defer kClient.Close()
-
-	adminClient := kadm.NewClient(kClient)
-	if err := ingestiongateway.ValidateTopicTopology(ctx, adminClient, cfg.TopicName, cfg.MinPartitions, cfg.MinReplicas); err != nil {
-		logging.Fatal(ctx, "topic topology validation failed", "error", err)
-	}
+	defer producer.Close()
 	logging.Info(ctx, "Topic topology validation passed", "topic", cfg.TopicName, "min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
 
-	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, gMetrics, kClient)
+	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, gMetrics, producer)
 	awaitShutdown(ctx, server)
 }
 

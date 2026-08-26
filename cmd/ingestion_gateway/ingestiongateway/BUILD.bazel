@@ -21,8 +21,9 @@ compat_go_library(
     srcs = [
         "config.go",
         "handler.go",
+        "kafka_producer.go",
+        "metric_producer.go",
         "metrics.go",
-        "producer.go",
         "server.go",
         "tls.go",
         "validation.go",
@@ -56,8 +57,9 @@ compat_go_test(
     srcs = [
         "config_test.go",
         "handler_test.go",
+        "kafka_producer_test.go",
+        "metric_producer_test.go",
         "metrics_test.go",
-        "producer_test.go",
         "server_test.go",
         "tls_test.go",
         "validation_test.go",
