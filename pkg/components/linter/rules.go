@@ -26,15 +26,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// StaticChecksConfig specifies toggles and limits for Pass 1 structural and security checks.
+// StaticChecksConfig specifies toggles and limits for schema and security scope checks.
 type StaticChecksConfig struct {
 	EnforceDeletionProtection bool `yaml:"enforceDeletionProtection" json:"enforceDeletionProtection"`
 	MaxDrainTimeoutSeconds    int  `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
 }
 
-// RulesConfig is the top-level structure loaded from rules.yaml.
+// DependencyRequirement defines a required dependency and its SemVer constraint.
+type DependencyRequirement struct {
+	Component string `yaml:"component" json:"component"`
+	Version   string `yaml:"version" json:"version"`
+	Optional  bool   `yaml:"optional,omitempty" json:"optional,omitempty"`
+	Reason    string `yaml:"reason,omitempty" json:"reason,omitempty"`
+}
+
+// ComponentDependencyRule specifies version requirements for a component's dependencies.
+type ComponentDependencyRule struct {
+	Component        string                  `yaml:"component" json:"component"`
+	ComponentVersion string                  `yaml:"componentVersion,omitempty" json:"componentVersion,omitempty"`
+	Requires         []DependencyRequirement `yaml:"requires" json:"requires"`
+}
+
+// CompatibilityMatrixConfig holds matrix rules for component dependencies.
+type CompatibilityMatrixConfig struct {
+	ComponentDependencies []ComponentDependencyRule `yaml:"componentDependencies" json:"componentDependencies"`
+}
+
+// RulesConfig is the top-level configuration for the static linter engine.
 type RulesConfig struct {
-	StaticChecks StaticChecksConfig `yaml:"staticChecks" json:"staticChecks"`
+	StaticChecks        StaticChecksConfig        `yaml:"staticChecks" json:"staticChecks"`
+	CompatibilityMatrix CompatibilityMatrixConfig `yaml:"compatibilityMatrix" json:"compatibilityMatrix"`
 }
 
 // LoadRules loads and parses a rules configuration YAML file from the given file path.

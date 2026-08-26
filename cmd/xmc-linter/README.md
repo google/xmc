@@ -211,11 +211,13 @@ flowchart LR
 
 ---
 
-## 8. SemVer 2.0.0 Constraint Algebra Engine (`constraints.go`, `matrix.go`)
+## 8. Version Compatibility Matrix & SemVer Algebra (`matrix.go`, `constraints.go`)
 
-The version validation layer (`pkg/components/linter/constraints.go`, `matrix.go`) validates manifest-level dependency constraints (`spec.dependencies[].version`) using a full SemVer 2.0.0 constraint algebra engine.
+The matrix validation layer (`pkg/components/linter/matrix.go`, `constraints.go`) validates manifest-level dependency constraints (`spec.dependencies[].version`) and asserts profile-level version compatibility matrices configured in `rules.yaml`.
 
-### Supported Constraint Operators
+### SemVer 2.0.0 Constraint Algebra
+
+`xmc-linter` includes a full SemVer 2.0.0 constraint parser supporting standard npm/Go constraint operators:
 
 | Operator | Notation Example | Meaning / Evaluation Rule |
 | :--- | :--- | :--- |
@@ -226,19 +228,80 @@ The version validation layer (`pkg/components/linter/constraints.go`, `matrix.go
 | **Wildcards** | `1.2.x`, `1.*`, `*` | Matches any version within the specified prefix or any version overall. |
 | **Disjunction (`\|\|`)** | `^1.0.0 \|\| ^2.0.0` | Logical OR across multiple constraint clauses. |
 
+### Compatibility Matrix Configuration (`rules.yaml`)
+
+Profile authors configure cross-component version matrix rules and platform compatibility in `rules.yaml`:
+
+```yaml
+staticChecks:
+  enforceNamespaceScope: true
+  enforceDeletionProtection: false
+  maxDrainTimeoutSeconds: 3600
+
+compatibilityMatrix:
+  # Cross-component version compatibility assertions
+  componentDependencies:
+    - component: storage-controller
+      requires:
+        - component: storage-driver
+          version: ">=2.0.0 <3.0.0"
+```
+
+- **Disabled Component Handling**: If a component declared in `rules.yaml` is present but marked `spec.enabled: false`, it is ignored to prevent false-positive validation errors during gradual rollouts or deprecations.
+
 ---
 
-## 9. Running Tests
+## 9. Multi-Pass Static Validation Pipeline
 
-Run all unit and integration tests across the CLI binary and linter packages:
+When `xmc-linter` executes, it coordinates all verification validators in a linear pipeline:
+
+```mermaid
+flowchart TD
+    Scan["Multi-Document YAML Stream Decoding\n(pkg/components/linter/manifest.go)"] --> P1["Schema & Security Scope Validation\n(pkg/components/linter/schema.go)\n• CRD Schema Bounds\n• 23 Cluster-Scoped Kinds Check\n• DNS-1123 RFC-1123 Names"]
+    P1 -->|Pass| P2["Dependency DAG & Cycle Validation\n(pkg/components/linter/dag.go)\n• 3-State DFS Cycle Search\n• Enabled-State Completeness\n• Duplicate Name Detection"]
+    P1 -->|Fail| Diag["Structured Diagnostic Aggregator\n(pkg/components/linter/diagnostic.go)"]
+    P2 -->|Pass| P3["SemVer Matrix & Platform Validation\n(pkg/components/linter/matrix.go)\n• SemVer 2.0.0 Constraint Algebra\n• rules.yaml Compatibility Matrix\n• Platform Requirements"]
+    P2 -->|Fail| Diag
+    P3 --> Diag
+    Diag --> Report["Report Generator\n(Console Text or JSON)"]
+```
+
+### End-to-End Example: Detecting Multi-Pass Failures
 
 ```bash
-# Run all linter tests
+$ bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/test/ --rules-config=deploy/profiles/test/rules.yaml --output=text
+[ERROR] cluster-scoped kind "ClusterRole" is forbidden when namespace scope is enforced
+[ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
+[ERROR] component "storage-driver" (version 1.0.0) does not satisfy dependency constraint "^2.0.0" required by "storage-controller"
+[ERROR] component "storage-controller" requires "storage-driver" version ">=2.0.0", but found version "1.0.0"
+```
+
+---
+
+## 10. Running Tests & Measuring Coverage
+
+### Bazel Test Matrix
+
+```bash
+# Run all unit tests across CLI and linter packages
 bazel test //cmd/xmc-linter/... //pkg/components/linter/...
 
-# Run tests with detailed testlog output
+# Run tests with error verbosity
 bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
 ```
+
+### Code Coverage Measurement
+
+Measure test coverage using Bazel LCOV reports:
+
+```bash
+# Run coverage across all linter targets
+bazel coverage //cmd/xmc-linter/... //pkg/components/linter/... --combined_report=lcov
+
+# Inspect coverage percentage
+genhtml bazel-out/_coverage/_coverage_report.dat -o coverage_html/
+```
+
 
 
 
