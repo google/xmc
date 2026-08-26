@@ -30,14 +30,16 @@ import (
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
-	"google.golang.org/api/cloudidentity/v1beta1"
-	"google.golang.org/api/option"
 	health "xmanager_cloud/common/health"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/security/tlsutil"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/task_queue_redis/redisclient"
+
+	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
 
 	run "google.golang.org/api/run/v2"
 
@@ -176,11 +178,13 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
-		Config:          cfg,
-		EssHealthClient: essSpannerClient,
-		XidHealthClient: xidSpannerClient,
-		RedisClient:     redisPingClient,
-		CloudRunService: cloudRunService,
+		Config:                   cfg,
+		EssHealthClient:          essSpannerClient,
+		XidHealthClient:          xidSpannerClient,
+		RedisClient:              redisPingClient,
+		CloudRunService:          cloudRunService,
+		EssExpectedSchemaVersion: version.EssExpectedSchemaVersion(),
+		XidExpectedSchemaVersion: version.XidExpectedSchemaVersion(),
 	})
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
