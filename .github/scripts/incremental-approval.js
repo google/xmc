@@ -17,8 +17,13 @@ const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
 
+// Maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
 const MAX_OWNER_GRACE_LINES = 10;
+
+// Maximum execution duration (60s) for git child processes (range-diff, fetch) before timing out to prevent hanging runner jobs.
 const GIT_EXEC_TIMEOUT_MS = 60000;
+
+// Maximum stdout buffer size (10MB) for git range-diff to accommodate large multi-commit diffs without memory exhaustion.
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
 const SHA_REGEX = /^[0-9a-f]{7,40}$/i;
