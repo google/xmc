@@ -192,8 +192,12 @@ func TestPubSubProducer_ProduceResumesPublishAfterFailure(t *testing.T) {
 // ordering-key wedge. A client that disconnects mid-request cancels the context the promise waits
 // on, so the producer learns of a cancellation while the publish is still in flight. Resuming on
 // that alone is a no-op, and the failure that arrives afterwards would suspend the key for good.
+//
+// The telemetry assertions cover the same split: the cancellation is not an outcome, so it must not
+// land on the produce counters; the failure that arrives later is, and must land exactly once.
 func TestPubSubProducer_ProduceResumesPublishAfterCallerCancels(t *testing.T) {
-	producer, srv := newFakePubSubProducer(context.Background(), t, testTopicID, nil)
+	gMetrics := NewGatewayMetrics(nil)
+	producer, srv := newFakePubSubProducer(context.Background(), t, testTopicID, gMetrics)
 
 	// Every response is queued explicitly. Leaving the fake on auto-response would let it answer
 	// the in-flight publish successfully before the injected failure is queued, and the ordering
@@ -217,6 +221,16 @@ func TestPubSubProducer_ProduceResumesPublishAfterCallerCancels(t *testing.T) {
 		t.Fatalf("timed out waiting for the publish promise")
 	}
 
+	// The publish is still in flight, so there is no outcome to report yet. Charging the caller's
+	// cancellation to the error counter here would make every client disconnect look like a publish
+	// failure, and the real outcome would never be counted at all.
+	if got := testutil.ToFloat64(gMetrics.ProduceErrorsTotal); got != 0 {
+		t.Errorf("ProduceErrorsTotal = %v after the caller cancelled, want 0", got)
+	}
+	if got := testutil.ToFloat64(gMetrics.ProduceRecordsTotal); got != 0 {
+		t.Errorf("ProduceRecordsTotal = %v after the caller cancelled, want 0", got)
+	}
+
 	// Only now does the in-flight publish fail, suspending the ordering key. InvalidArgument is
 	// outside the publisher's retry set, so it consumes exactly this one response and the success
 	// queued behind it is left for the first probe that finds the key resumed.
@@ -224,6 +238,16 @@ func TestPubSubProducer_ProduceResumesPublishAfterCallerCancels(t *testing.T) {
 	srv.AddPublishResponse(&pubsubpb.PublishResponse{MessageIds: []string{"resumed"}}, nil)
 
 	waitUntilOrderingKeyPublishable(t, producer, key)
+
+	// The detached wait records before it resumes, so a resumed key means the outcome has landed.
+	// The probe publishes through topic.Publish, which bypasses the producer, so these counts come
+	// from the cancelled record alone.
+	if got := testutil.ToFloat64(gMetrics.ProduceErrorsTotal); got != 1 {
+		t.Errorf("ProduceErrorsTotal = %v after the detached wait observed the failure, want 1", got)
+	}
+	if got := testutil.ToFloat64(gMetrics.ProduceRecordsTotal); got != 0 {
+		t.Errorf("ProduceRecordsTotal = %v after the detached wait observed the failure, want 0", got)
+	}
 }
 
 // waitUntilOrderingKeyPublishable polls until key accepts a publish again. The resume runs on a

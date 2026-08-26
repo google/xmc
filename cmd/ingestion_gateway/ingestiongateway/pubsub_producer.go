@@ -120,36 +120,42 @@ func (p *PubSubProducer) Produce(ctx context.Context, rec *MetricRecord, promise
 
 	go func() {
 		_, err := result.Get(ctx)
-		p.resumeOnPublishFailure(ctx, orderingKey, result, err)
-		p.metrics.RecordProducedRecord(len(rec.Value), err)
+		p.settlePublish(ctx, orderingKey, result, len(rec.Value), err)
 		promise(rec, classifyPubSubError(err))
 	}()
 }
 
-// resumeOnPublishFailure lifts the suspension Pub/Sub applies to an ordering key after a failed
-// publish, so a single transient error cannot black-hole one work unit's metrics for the lifetime
-// of the process, invisibly to aggregate error rates.
+// settlePublish records the outcome of a publish and lifts the suspension Pub/Sub applies to an
+// ordering key after a failure, so a single transient error cannot black-hole one work unit's
+// metrics for the lifetime of the process, invisibly to aggregate error rates.
 //
 // getErr is not necessarily the publish outcome. PublishResult.Get abandons its wait as soon as
 // ctx is done, while the message is still in the client's batcher and the RPC still in flight on a
-// context the caller does not control. Resuming on a cancellation would target a key that is not
-// suspended yet, and the suspension that lands moments later would never be lifted. So when the
-// caller's context ended the wait, repeat it detached from ctx and decide on the real outcome.
+// context the caller does not control. Counting a cancellation as a publish error would charge
+// xmc_ingestion_produce_errors_total for every client disconnect and never record what actually
+// happened; resuming on one would target a key that is not suspended yet, leaving the suspension
+// that lands moments later never lifted. So when the caller's context ended the wait, repeat it
+// detached from ctx and settle both decisions on the real outcome.
 //
-// The detached wait is bounded by the topic's publish timeout, not by the request.
-func (p *PubSubProducer) resumeOnPublishFailure(ctx context.Context, orderingKey string, result *pubsub.PublishResult, getErr error) {
-	if getErr == nil {
+// The detached wait is bounded by the topic's publish timeout, not by the request. It outlives the
+// HTTP response, which is the point: the caller is already gone and only the counters still care.
+func (p *PubSubProducer) settlePublish(ctx context.Context, orderingKey string, result *pubsub.PublishResult, valueBytes int, getErr error) {
+	if getErr != nil && ctx.Err() != nil {
+		go func() {
+			_, err := result.Get(context.Background())
+			p.settleOutcome(orderingKey, valueBytes, err)
+		}()
 		return
 	}
-	if ctx.Err() == nil {
+	p.settleOutcome(orderingKey, valueBytes, getErr)
+}
+
+// settleOutcome records a publish outcome and resumes the ordering key if it failed.
+func (p *PubSubProducer) settleOutcome(orderingKey string, valueBytes int, err error) {
+	p.metrics.RecordProducedRecord(valueBytes, err)
+	if err != nil {
 		p.topic.ResumePublish(orderingKey)
-		return
 	}
-	go func() {
-		if _, err := result.Get(context.Background()); err != nil {
-			p.topic.ResumePublish(orderingKey)
-		}
-	}()
 }
 
 // Close flushes buffered publishes and releases the underlying client.
