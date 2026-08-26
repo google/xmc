@@ -42,6 +42,7 @@ type (
 	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
+	listChartsFunc      = func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
 	deleteChartFunc     = func(ctx context.Context, chartId string) error
 	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 )
@@ -54,6 +55,7 @@ type mockRepository struct {
 	deleteDashboardFn deleteDashboardFunc
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
+	listChartsFn      listChartsFunc
 	deleteChartFn     deleteChartFunc
 	updateChartFn     updateChartFunc
 }
@@ -105,6 +107,13 @@ func (m *mockRepository) GetChart(ctx context.Context, chartId string) (*dpb.Cha
 		return m.getChartFn(ctx, chartId)
 	}
 	return nil, status.Error(codes.NotFound, "not found")
+}
+
+func (m *mockRepository) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+	if m.listChartsFn != nil {
+		return m.listChartsFn(ctx, parent, pageSize, pageToken, filter, orderBy, staleness)
+	}
+	return nil, "", nil
 }
 
 func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error {
@@ -626,19 +635,6 @@ func TestPropagateAuthContext(t *testing.T) {
 			t.Errorf("Expected no outgoing metadata when all relevant incoming headers are empty")
 		}
 	})
-}
-
-func TestListCharts(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
-	if err != nil {
-		t.Fatalf("ListCharts failed: %v", err)
-	}
-	if len(resp.GetCharts()) == 0 {
-		t.Fatal("ListCharts returned 0 charts, want at least 1")
-	}
 }
 
 func TestCheckDashboardAuthorization(t *testing.T) {

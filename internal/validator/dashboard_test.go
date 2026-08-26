@@ -1121,9 +1121,38 @@ func TestValidateListChartsRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "valid_work_unit_parent",
+			req: &spb.ListChartsRequest{
+				Parent:   "experiments/42/workUnits/7",
+				PageSize: 10,
+			},
+			wantErr: nil,
+		},
+		{
 			name: "invalid_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "invalid-dash",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_parent_without_work_unit",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/42",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "work_unit_parent_with_non_numeric_xid",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/abc/workUnits/7",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "chart_name_is_not_a_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "dashboards/dash-1/charts/chart-1",
 			},
 			wantErr: status.ErrInvalidArgument,
 		},

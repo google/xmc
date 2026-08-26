@@ -17,12 +17,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "server",
     srcs = [
+        "chartacl.go",
         "createchart.go",
         "createdashboard.go",
         "deletechart.go",
         "deletedashboard.go",
         "getchart.go",
         "getdashboard.go",
+        "listcharts.go",
         "listdashboards.go",
         "server.go",
         "updatechart.go",
@@ -53,12 +55,14 @@ go_library(
 go_test(
     name = "server_test",
     srcs = [
+        "chartacl_test.go",
         "createchart_test.go",
         "createdashboard_test.go",
         "deletechart_test.go",
         "deletedashboard_test.go",
         "getchart_test.go",
         "getdashboard_test.go",
+        "listcharts_test.go",
         "listdashboards_test.go",
         "server_test.go",
         "updatechart_test.go",

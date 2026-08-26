@@ -96,6 +96,9 @@ service DashboardService {
   rpc ListCharts(ListChartsRequest) returns (ListChartsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=dashboards/*}/charts"
+      additional_bindings {
+        get: "/v1/{parent=experiments/*/workUnits/*}/charts"
+      }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -202,10 +205,11 @@ message GetChartDataRequest {
 }
 
 message ListChartsRequest {
+  // Either "dashboards/{dashboard_id}" or "experiments/{xid}/workUnits/{wid}".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloud.xmanager.googleapis.com/Dashboard"
+      child_type: "cloud.xmanager.googleapis.com/Chart"
     }
   ];
   int32 page_size = 2;

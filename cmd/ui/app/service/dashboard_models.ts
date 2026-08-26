@@ -90,6 +90,8 @@ export type UpdateDashboardRequest = ProtoUpdateDashboardRequest;
 export type ListDashboardsRequest = ProtoListDashboardsRequest;
 export type ListDashboardsResponse = ProtoListDashboardsResponse;
 export type CreateChartRequest = ProtoCreateChartRequest;
+export type ListChartsRequest = ProtoListChartsRequest;
+export type ListChartsResponse = ProtoListChartsResponse;
 export type GetChartDataRequest = ProtoGetChartDataRequest;
 
 // Consolidated Legacy DTO & RPC Aliases
