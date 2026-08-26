@@ -52,6 +52,7 @@ import {
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
 import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
+import { matchesResourceFilter } from './utils/resource_filter';
 import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
 /**
@@ -145,7 +146,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
           .map((cap) => cap.resourceType)
           .filter((type): type is string => Boolean(type)),
       ),
-    ].sort((a, b) => a.localeCompare(b));
+    ].sort();
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {
@@ -226,7 +227,7 @@ function matchesRequirementRow(
   row: ResourceRequirementRow,
 ): boolean {
   if (!capacities) return false;
-  const filter = (row.resourceType || '').trim().toLowerCase();
+  const filter = (row.resourceType || '').trim();
   const reqAmount = row.amount;
 
   return capacities.some((cap) => {
@@ -234,7 +235,6 @@ function matchesRequirementRow(
     if (free < reqAmount) return false;
     if (!filter) return true;
 
-    const rName = (cap.resourceType || '').toLowerCase();
-    return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
+    return matchesResourceFilter(cap.resourceType || '', filter);
   });
 }
