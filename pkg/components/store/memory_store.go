@@ -317,6 +317,9 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) err
 		return ErrComponentNotFound
 	}
 
+	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		return nil
+	}
 	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 		return ErrInvalidStateTransition
 	}

@@ -705,7 +705,12 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 		t.Errorf("State after PrepareDeactivation on DISABLED component = %v, want DISABLED", recAfter.State)
 	}
 
-	// 8. Nonexistent component
+	// 8. CompleteDeactivation on already DISABLED component is idempotent and succeeds
+	if err := ms.CompleteDeactivation(ctx, "comp-deact"); err != nil {
+		t.Errorf("CompleteDeactivation(already DISABLED) unexpected error: %v", err)
+	}
+
+	// 9. Nonexistent component
 	err = ms.CompleteDeactivation(ctx, "nonexistent")
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))

@@ -43,7 +43,7 @@ func IsDeletionProtected(rec *ComponentRecord) bool {
 
 // CalculateDrainTimeout determines the required drain duration from overrides, spec configs, and minimum defaults.
 func CalculateDrainTimeout(rec *ComponentRecord, cascaded []*ComponentRecord, reqTimeout *durationpb.Duration) time.Duration {
-	if reqTimeout != nil && reqTimeout.IsValid() && reqTimeout.AsDuration() > 0 {
+	if reqTimeout != nil && reqTimeout.CheckValid() == nil && reqTimeout.AsDuration() > 0 {
 		return reqTimeout.AsDuration()
 	}
 
@@ -67,10 +67,10 @@ func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 	}
 	lc := rec.Spec.GetLifecycleControl()
 	var d time.Duration
-	if dt := lc.GetDrainingTimeout(); dt != nil && dt.IsValid() && dt.AsDuration() > 0 {
+	if dt := lc.GetDrainingTimeout(); dt != nil && dt.CheckValid() == nil && dt.AsDuration() > 0 {
 		d = dt.AsDuration()
 	}
-	if gp := lc.GetGracePeriod(); gp != nil && gp.IsValid() && gp.AsDuration() > d {
+	if gp := lc.GetGracePeriod(); gp != nil && gp.CheckValid() == nil && gp.AsDuration() > d {
 		d = gp.AsDuration()
 	}
 	return d
