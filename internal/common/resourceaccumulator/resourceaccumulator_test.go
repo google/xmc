@@ -183,3 +183,65 @@ func TestAccumulateExecutable(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeGenericAccelerators(t *testing.T) {
+	t.Run("normalize generic GPU when specific GPU is present", func(t *testing.T) {
+		acc := New()
+		acc.AccumulateResourceSet(&essmsgpb.ResourceSet{
+			Resources: &essmsgpb.ResourceSet_GpuResources{
+				GpuResources: &essmsgpb.GpuResources{
+					Type:  "nvidia-tesla-h100",
+					Count: 8,
+				},
+			},
+		})
+		acc.Add("nvidia.com/gpu", 4)
+
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"nvidia-tesla-h100": 12.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+
+		order := acc.Order()
+		wantOrder := []string{"nvidia-tesla-h100"}
+		if diff := cmp.Diff(wantOrder, order); diff != "" {
+			t.Errorf("Order() diff (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("normalize generic TPU when specific TPU is present", func(t *testing.T) {
+		acc := New()
+		acc.AccumulateResourceSet(&essmsgpb.ResourceSet{
+			Resources: &essmsgpb.ResourceSet_TpuResources{
+				TpuResources: &essmsgpb.TpuResources{
+					Type:     "v5p-8",
+					Topology: "2x2x2",
+				},
+			},
+		})
+		acc.Add("google.com/tpu", 8)
+
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"v5p-8": 16.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("generic GPU unchanged when no specific GPU is present", func(t *testing.T) {
+		acc := New()
+		acc.Add("nvidia.com/gpu", 4)
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"nvidia.com/gpu": 4.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+	})
+}

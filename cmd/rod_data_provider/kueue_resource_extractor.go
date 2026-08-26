@@ -21,25 +21,66 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-const (
-	gkeAcceleratorLabel = "cloud.google.com/gke-accelerator"
-	bytesPerGiB         = 1024 * 1024 * 1024
-)
+const bytesPerGiB = 1024 * 1024 * 1024
+
+var acceleratorLabelKeys = []string{
+	"cloud.google.com/gke-accelerator",
+	"cloud.google.com/gke-gpu-type",
+	"cloud.google.com/gke-tpu-accelerator",
+	"cloud.google.com/gke-tpu-topology",
+	"kueue.x-k8s.io/gpack-gpu",
+	"gpu.nvidia.com/class",
+}
 
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
 // using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
 func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
-	if !isAcceleratorResource(resourceName) || rfMap == nil {
+	if !isAcceleratorResource(resourceName) {
 		return resourceName
 	}
-	rf := rfMap[flavorName]
-	if rf == nil {
-		return resourceName
+	if rfMap != nil {
+		if rf := rfMap[flavorName]; rf != nil {
+			for _, labelKey := range acceleratorLabelKeys {
+				if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
+					return acc
+				}
+			}
+		}
 	}
-	if acc := rf.Spec.NodeLabels[gkeAcceleratorLabel]; acc != "" {
-		return acc
+	if isSpecificAcceleratorName(flavorName) {
+		return flavorName
 	}
 	return resourceName
+}
+
+func isSpecificAcceleratorName(name string) bool {
+	if name == "" {
+		return false
+	}
+	lower := strings.ToLower(name)
+	switch lower {
+	case "gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
+		"default", "spot", "ondemand", "standard", "fallback", "generic",
+		"flavor-spot", "flavor-ondemand", "cpu", "memory", "storage":
+		return false
+	}
+
+	acceleratorKeywords := []string{
+		"h100", "a100", "l4", "v100", "p100", "p4", "t4", "b200", "gb200",
+		"h200", "b40", "rtx", "v4", "v5", "v6", "gpack", "tesla",
+	}
+	for _, kw := range acceleratorKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+
+	if (strings.Contains(lower, "gpu") || strings.Contains(lower, "tpu") || strings.Contains(lower, "nvidia") || strings.Contains(lower, "accelerator")) &&
+		!strings.Contains(lower, "spot") && !strings.Contains(lower, "ondemand") && !strings.Contains(lower, "default") {
+		return true
+	}
+
+	return false
 }
 
 func isAcceleratorResource(resName string) bool {

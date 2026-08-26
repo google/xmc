@@ -124,10 +124,109 @@ func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
 	for _, rs := range resourceSets {
 		a.AccumulateResourceSet(rs)
 	}
+	a.Normalize()
+}
+
+// Normalize merges generic GPU ("nvidia.com/gpu", "gpu") or TPU ("google.com/tpu", "tpu") counts
+// into specific accelerator types if specific accelerator types exist in the accumulator.
+func (a *Accumulator) Normalize() {
+	if a == nil || len(a.totals) == 0 {
+		return
+	}
+	specificGPU, specificTPU := a.findSpecificAccelerators()
+	a.normalizeGenericGPU(specificGPU)
+	a.normalizeGenericTPU(specificTPU)
+}
+
+func (a *Accumulator) findSpecificAccelerators() (string, string) {
+	var specificGPU, specificTPU string
+	for _, key := range a.order {
+		if key == ResourceTypeCPU || key == ResourceTypeMemory {
+			continue
+		}
+		if isGenericGPU(key) || isGenericTPU(key) {
+			continue
+		}
+		if specificGPU == "" && isSpecificGPUKey(key) {
+			specificGPU = key
+		} else if specificTPU == "" && isSpecificTPUKey(key) {
+			specificTPU = key
+		}
+	}
+	return specificGPU, specificTPU
+}
+
+func isSpecificGPUKey(key string) bool {
+	gpuKeywords := []string{
+		"gpu", "nvidia", "h100", "a100", "l4", "v100", "p100", "p4", "t4",
+		"b200", "gb200", "rtx", "gpack", "tesla",
+	}
+	for _, kw := range gpuKeywords {
+		if strings.Contains(key, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSpecificTPUKey(key string) bool {
+	tpuKeywords := []string{"tpu", "v4", "v5", "v6"}
+	for _, kw := range tpuKeywords {
+		if strings.Contains(key, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Accumulator) normalizeGenericGPU(specificGPU string) {
+	if specificGPU == "" {
+		return
+	}
+	for _, genericKey := range []string{"nvidia.com/gpu", "gpu"} {
+		if count, exists := a.totals[genericKey]; exists {
+			a.totals[specificGPU] += count
+			delete(a.totals, genericKey)
+			a.removeFromOrder(genericKey)
+		}
+	}
+}
+
+func (a *Accumulator) normalizeGenericTPU(specificTPU string) {
+	if specificTPU == "" {
+		return
+	}
+	for _, genericKey := range []string{"google.com/tpu", "tpu"} {
+		if count, exists := a.totals[genericKey]; exists {
+			a.totals[specificTPU] += count
+			delete(a.totals, genericKey)
+			a.removeFromOrder(genericKey)
+		}
+	}
+}
+
+func isGenericGPU(resType string) bool {
+	lower := strings.ToLower(resType)
+	return lower == "gpu" || lower == "nvidia.com/gpu"
+}
+
+func isGenericTPU(resType string) bool {
+	lower := strings.ToLower(resType)
+	return lower == "tpu" || lower == "google.com/tpu"
+}
+
+func (a *Accumulator) removeFromOrder(key string) {
+	for i, k := range a.order {
+		if k == key {
+			a.order = append(a.order[:i], a.order[i+1:]...)
+			break
+		}
+	}
 }
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
 func (a *Accumulator) Totals() map[string]float64 {
+	a.Normalize()
 	result := make(map[string]float64, len(a.totals))
 	for k, v := range a.totals {
 		result[k] = v
@@ -140,6 +239,7 @@ func (a *Accumulator) Totals() map[string]float64 {
 // converts CPU Cores to int64 Millicores (e.g. 4000) for integer storage requirements.
 // All other resource types (memory, gpu, tpu) retain identical units across both methods.
 func (a *Accumulator) IntTotals() map[string]int64 {
+	a.Normalize()
 	result := make(map[string]int64, len(a.totals))
 	for k, v := range a.totals {
 		if k == ResourceTypeCPU {
@@ -154,5 +254,6 @@ func (a *Accumulator) IntTotals() map[string]int64 {
 // Order returns the slice of resource type keys in insertion order.
 // Returns a non-nil empty slice []string{} when no keys have been added.
 func (a *Accumulator) Order() []string {
+	a.Normalize()
 	return append([]string{}, a.order...)
 }
