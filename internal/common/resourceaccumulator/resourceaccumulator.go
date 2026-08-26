@@ -145,108 +145,17 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 		if key == ResourceTypeCPU || key == ResourceTypeMemory {
 			continue
 		}
-		if isGenericGPU(key) || isGenericTPU(key) {
+		if IsGenericGPU(key) || IsGenericTPU(key) {
 			continue
 		}
-		if specificGPU == "" && isSpecificGPUKey(key) {
+		if specificGPU == "" && IsSpecificGPUKey(key) {
 			specificGPU = key
 		}
-		if specificTPU == "" && isSpecificTPUKey(key) {
+		if specificTPU == "" && IsSpecificTPUKey(key) {
 			specificTPU = key
 		}
 	}
 	return specificGPU, specificTPU
-}
-
-var (
-	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, LongAcceleratorKeywords...)
-	shortGPUKeywords = ShortAcceleratorKeywords
-
-	tpuKeywords = []string{
-		"v5p", "v5e", "tpu-v4", "tpu-v5", "tpu-v6", "tpu-",
-	}
-
-	genericKeywords = GenericKeywords
-)
-
-func isSpecificGPUKey(key string) bool {
-	if isGenericFlavor(key) || isSpecificTPUKey(key) {
-		return false
-	}
-	for _, kw := range gpuKeywords {
-		if strings.Contains(key, kw) {
-			return true
-		}
-	}
-	for _, kw := range shortGPUKeywords {
-		if isStructuredShortGPU(key, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func isStructuredShortGPU(key, kw string) bool {
-	if key == kw || strings.HasPrefix(key, kw+"-") {
-		return true
-	}
-	return matchesShortAcceleratorKeyword(key, kw) && (strings.Contains(key, "nvidia") || strings.Contains(key, "gpu"))
-}
-
-func isSpecificTPUKey(key string) bool {
-	if isGenericFlavor(key) {
-		return false
-	}
-	for _, kw := range tpuKeywords {
-		if strings.Contains(key, kw) {
-			return true
-		}
-	}
-	tpuPrefixes := []string{"v4-", "v5-", "v6-"}
-	for _, pfx := range tpuPrefixes {
-		if strings.HasPrefix(key, pfx) {
-			return true
-		}
-	}
-	if key == "v4" || key == "v5" || key == "v6" {
-		return true
-	}
-	return false
-}
-
-func isGenericFlavor(lower string) bool {
-	for _, kw := range genericKeywords {
-		if strings.Contains(lower, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesShortAcceleratorKeyword(s, kw string) bool {
-	idx := 0
-	for {
-		i := strings.Index(s[idx:], kw)
-		if i == -1 {
-			return false
-		}
-		pos := idx + i
-		prevOK := (pos == 0) || !isASCIILetter(s[pos-1])
-		nextPos := pos + len(kw)
-		nextOK := (nextPos == len(s)) || !isASCIIAlphanumeric(s[nextPos])
-		if prevOK && nextOK {
-			return true
-		}
-		idx = pos + 1
-	}
-}
-
-func isASCIILetter(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isASCIIAlphanumeric(c byte) bool {
-	return isASCIILetter(c) || (c >= '0' && c <= '9')
 }
 
 func (a *Accumulator) normalizeGenericGPU(specificGPU string) {
@@ -279,16 +188,6 @@ func (a *Accumulator) normalizeGenericTPU(specificTPU string) {
 		delete(a.totals, "tpu")
 		a.removeFromOrder("tpu")
 	}
-}
-
-func isGenericGPU(resType string) bool {
-	lower := strings.ToLower(resType)
-	return lower == "gpu" || lower == "nvidia.com/gpu"
-}
-
-func isGenericTPU(resType string) bool {
-	lower := strings.ToLower(resType)
-	return lower == "tpu" || lower == "google.com/tpu"
 }
 
 func (a *Accumulator) removeFromOrder(key string) {

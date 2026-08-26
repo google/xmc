@@ -17,6 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 compat_go_library(
     name = "resourceaccumulator",
     srcs = [
+        "classifier.go",
         "constants.go",
         "resourceaccumulator.go",
     ],

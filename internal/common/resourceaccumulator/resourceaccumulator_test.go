@@ -368,13 +368,13 @@ func TestAccumulator_FalsePositivesAndExclusions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			gotGPU := isSpecificGPUKey(tt.key)
+			gotGPU := IsSpecificGPUKey(tt.key)
 			if gotGPU != tt.wantGPU {
-				t.Errorf("isSpecificGPUKey(%q) = %v, want %v", tt.key, gotGPU, tt.wantGPU)
+				t.Errorf("IsSpecificGPUKey(%q) = %v, want %v", tt.key, gotGPU, tt.wantGPU)
 			}
-			gotTPU := isSpecificTPUKey(tt.key)
+			gotTPU := IsSpecificTPUKey(tt.key)
 			if gotTPU != tt.wantTPU {
-				t.Errorf("isSpecificTPUKey(%q) = %v, want %v", tt.key, gotTPU, tt.wantTPU)
+				t.Errorf("IsSpecificTPUKey(%q) = %v, want %v", tt.key, gotTPU, tt.wantTPU)
 			}
 		})
 	}

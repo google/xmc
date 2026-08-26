@@ -22,7 +22,6 @@ compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "config.go",
-        "constants.go",
         "jobs.go",
         "kueue_resource_extractor.go",
         "main.go",
@@ -120,6 +119,7 @@ compat_go_test(
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
+        "//internal/common/resourceaccumulator",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",

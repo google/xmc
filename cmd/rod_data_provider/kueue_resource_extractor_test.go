@@ -20,6 +20,7 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/internal/common/resourceaccumulator"
 )
 
 func TestParseK8sResourceQuantity_MemoryNormalization(t *testing.T) {
@@ -330,9 +331,9 @@ func TestIsSpecificAcceleratorName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSpecificAcceleratorName(tt.flavorName)
+			got := resourceaccumulator.IsSpecificAcceleratorName(tt.flavorName)
 			if got != tt.want {
-				t.Errorf("isSpecificAcceleratorName(%q) = %v, want %v", tt.flavorName, got, tt.want)
+				t.Errorf("IsSpecificAcceleratorName(%q) = %v, want %v", tt.flavorName, got, tt.want)
 			}
 		})
 	}
