@@ -800,7 +800,23 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 		t.Errorf("PrepareDeactivation(malformed timeout) got code %v, want InvalidArgument", status.Code(err))
 	}
 
-	// 7. Nonexistent component -> NotFound
+	// 7. Prepare with huge draining timeout -> capped at MaxInt32 (2147483647s)
+	respHuge, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: true,
+		DrainingTimeout: &durationpb.Duration{
+			Seconds: 5000000000,
+			Nanos:   500000000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with huge timeout failed: %v", err)
+	}
+	if respHuge.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 2147483647s)" {
+		t.Errorf("GetMessage() = %q, want drain: 2147483647s", respHuge.GetMessage())
+	}
+
+	// 8. Nonexistent component -> NotFound
 	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
 		Name: "components/nonexistent",
 	})

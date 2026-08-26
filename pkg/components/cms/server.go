@@ -18,7 +18,7 @@ package cms
 import (
 	"context"
 	"fmt"
-	"time"
+	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -156,10 +156,7 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 		return nil, status.Error(codes.Internal, "store returned nil result without error")
 	}
 
-	drainSec := res.RecommendedDrainSec
-	if dt := req.GetDrainingTimeout(); dt != nil && dt.AsDuration() > 0 {
-		drainSec = int32((dt.AsDuration() + time.Second - 1) / time.Second)
-	}
+	drainSec := calculateEffectiveDrainSeconds(res.RecommendedDrainSec, req.GetDrainingTimeout())
 
 	msg := fmt.Sprintf("Component %s deactivation prepared successfully (drain: %ds)", canonicalName, drainSec)
 	if len(res.CascadedDeactivations) > 0 {
@@ -171,6 +168,22 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 		DeactivationStartTime: timestamppb.Now(),
 		Message:               msg,
 	}, nil
+}
+
+// calculateEffectiveDrainSeconds computes the drain timeout in seconds from an optional durationpb.Duration,
+// rounding up sub-second durations and capping at math.MaxInt32 to prevent integer overflow.
+func calculateEffectiveDrainSeconds(defaultSec int32, dt *durationpb.Duration) int32 {
+	if dt == nil || (dt.Seconds <= 0 && dt.Nanos <= 0) {
+		return defaultSec
+	}
+	secs := dt.Seconds
+	if dt.Nanos > 0 {
+		secs++
+	}
+	if secs > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(secs)
 }
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
