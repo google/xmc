@@ -26,30 +26,28 @@ func (l *Linter) validateMatrix(compManifests []*ComponentManifest, compMap map[
 	validateManifestDependencies(compManifests, compMap, res)
 }
 
+// validateComponentVersions parses and validates all declared Component.spec.version strings
+// across manifests using store.Parse, recording INVALID_VERSION diagnostics for malformed strings.
 func validateComponentVersions(compManifests []*ComponentManifest, res *ValidationResult) {
 	for _, c := range compManifests {
 		if c == nil || c.Spec.Version == "" {
 			continue
 		}
-		line := c.Line
-		if line <= 0 {
-			line = 1
-		}
+		line := max(c.Line, 1)
 		if _, err := store.Parse(c.Spec.Version); err != nil {
 			res.AddError(c.FilePath, line, "INVALID_VERSION", fmt.Sprintf("invalid semver version %q for component %q: %v", c.Spec.Version, c.Metadata.Name, err))
 		}
 	}
 }
 
+// validateManifestDependencies iterates over all enabled components and validates that each declared
+// dependency in spec.dependencies satisfies version constraints against the target component in the manifest set.
 func validateManifestDependencies(compManifests []*ComponentManifest, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	for _, c := range compManifests {
 		if c == nil || !c.IsEnabled() {
 			continue
 		}
-		line := c.Line
-		if line <= 0 {
-			line = 1
-		}
+		line := max(c.Line, 1)
 		cName := store.CanonicalComponentName(c.Metadata.Name)
 		for _, dep := range c.Spec.Dependencies {
 			validateSingleDependency(c, line, cName, dep, compMap, res)
@@ -57,6 +55,9 @@ func validateManifestDependencies(compManifests []*ComponentManifest, compMap ma
 	}
 }
 
+// validateSingleDependency evaluates a single manifest dependency constraint against the resolved
+// target dependency component, recording INVALID_VERSION_CONSTRAINT or VERSION_INCOMPATIBILITY
+// diagnostics while safely skipping unversioned or disabled target dependencies.
 func validateSingleDependency(c *ComponentManifest, line int, cName string, dep ComponentDependencyRef, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	if dep.Version == "" {
 		return

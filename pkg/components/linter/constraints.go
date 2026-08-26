@@ -27,12 +27,10 @@ func MatchConstraint(versionStr, constraintStr string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("invalid candidate version %q: %w", versionStr, err)
 	}
-
 	trimmed := strings.TrimSpace(constraintStr)
 	if isWildcardTerm(trimmed) {
 		return true, nil
 	}
-
 	disjunctions := strings.Split(trimmed, "||")
 	anyMatches := false
 	for _, disj := range disjunctions {
@@ -51,11 +49,11 @@ func MatchConstraint(versionStr, constraintStr string) (bool, error) {
 	return anyMatches, nil
 }
 
+// matchConjunction evaluates a conjunction clause where all space/comma-separated terms must match.
 func matchConjunction(v *store.Version, conj string) (bool, error) {
 	if strings.Contains(conj, " - ") {
 		return matchHyphenRange(v, conj)
 	}
-
 	terms := tokenizeConstraintTerms(conj)
 	matched := true
 	for _, term := range terms {
@@ -70,6 +68,7 @@ func matchConjunction(v *store.Version, conj string) (bool, error) {
 	return matched, nil
 }
 
+// matchHyphenRange evaluates an inclusive SemVer hyphen range expression (e.g. "1.0.0 - 2.0.0").
 func matchHyphenRange(v *store.Version, conj string) (bool, error) {
 	parts := strings.Split(conj, " - ")
 	if len(parts) != 2 {
@@ -86,6 +85,7 @@ func matchHyphenRange(v *store.Version, conj string) (bool, error) {
 	return !v.LessThan(vMin) && !v.GreaterThan(vMax), nil
 }
 
+// tokenizeConstraintTerms splits a conjunction clause into terms and recombines separated operators.
 func tokenizeConstraintTerms(s string) []string {
 	rawTerms := strings.Fields(strings.ReplaceAll(s, ",", " "))
 	var terms []string
@@ -101,6 +101,7 @@ func tokenizeConstraintTerms(s string) []string {
 	return terms
 }
 
+// isOperator reports whether s is a standalone comparison or range operator token.
 func isOperator(s string) bool {
 	switch s {
 	case "==", ">=", "<=", ">", "<", "^", "~", "=":
@@ -109,6 +110,7 @@ func isOperator(s string) bool {
 	return false
 }
 
+// matchSingleTerm evaluates a single constraint term against candidate version v.
 func matchSingleTerm(v *store.Version, term string) (bool, error) {
 	term = strings.TrimSpace(term)
 	if isWildcardTerm(term) {
@@ -132,14 +134,17 @@ func matchSingleTerm(v *store.Version, term string) (bool, error) {
 	return matchEqualityConstraint(v, term)
 }
 
+// isWildcardTerm reports whether term represents a wildcard ("*", "x", "X", or empty).
 func isWildcardTerm(term string) bool {
 	return term == "" || term == "*" || strings.EqualFold(term, "x")
 }
 
+// isRelationalOperator reports whether term begins with a comparison operator (">=", ">", "<=", "<").
 func isRelationalOperator(term string) bool {
 	return strings.HasPrefix(term, ">=") || strings.HasPrefix(term, ">") || strings.HasPrefix(term, "<=") || strings.HasPrefix(term, "<")
 }
 
+// matchEqualityConstraint evaluates whether candidate version v is mathematically equal to term.
 func matchEqualityConstraint(v *store.Version, term string) (bool, error) {
 	base, err := parseConstraintVersion(term)
 	if err != nil {
@@ -148,35 +153,30 @@ func matchEqualityConstraint(v *store.Version, term string) (bool, error) {
 	return v.Equal(base), nil
 }
 
+// matchRelationalConstraint evaluates comparison operators (">=", ">", "<=", "<") against version v.
 func matchRelationalConstraint(v *store.Version, term string) (bool, error) {
-	if strings.HasPrefix(term, ">=") {
-		base, err := parseConstraintVersion(strings.TrimPrefix(term, ">="))
-		if err != nil {
-			return false, err
+	for _, op := range []string{">=", "<=", ">", "<"} {
+		if strings.HasPrefix(term, op) {
+			base, err := parseConstraintVersion(strings.TrimPrefix(term, op))
+			if err != nil {
+				return false, err
+			}
+			switch op {
+			case ">=":
+				return !v.LessThan(base), nil
+			case "<=":
+				return !v.GreaterThan(base), nil
+			case ">":
+				return v.GreaterThan(base), nil
+			case "<":
+				return v.LessThan(base), nil
+			}
 		}
-		return !v.LessThan(base), nil
 	}
-	if strings.HasPrefix(term, ">") {
-		base, err := parseConstraintVersion(strings.TrimPrefix(term, ">"))
-		if err != nil {
-			return false, err
-		}
-		return v.GreaterThan(base), nil
-	}
-	if strings.HasPrefix(term, "<=") {
-		base, err := parseConstraintVersion(strings.TrimPrefix(term, "<="))
-		if err != nil {
-			return false, err
-		}
-		return !v.GreaterThan(base), nil
-	}
-	base, err := parseConstraintVersion(strings.TrimPrefix(term, "<"))
-	if err != nil {
-		return false, err
-	}
-	return v.LessThan(base), nil
+	return false, fmt.Errorf("invalid relational constraint term %q", term)
 }
 
+// matchCaretConstraint evaluates SemVer caret (^) compatibility preserving the leftmost non-zero digit.
 func matchCaretConstraint(v *store.Version, term string) (bool, error) {
 	constraintStr := strings.TrimPrefix(term, "^")
 	base, err := parseConstraintVersion(constraintStr)
@@ -192,6 +192,7 @@ func matchCaretConstraint(v *store.Version, term string) (bool, error) {
 	return matchZeroMajorCaret(v, base, constraintStr), nil
 }
 
+// matchZeroMajorCaret handles caret range matching when base.Major is 0.
 func matchZeroMajorCaret(v, base *store.Version, constraintStr string) bool {
 	parts := getCoreVersionParts(constraintStr)
 	if len(parts) == 1 {
@@ -203,6 +204,7 @@ func matchZeroMajorCaret(v, base *store.Version, constraintStr string) bool {
 	return v.Major == 0 && v.Minor == 0 && v.Patch == base.Patch
 }
 
+// matchTildeConstraint evaluates SemVer tilde (~) patch-level range constraints.
 func matchTildeConstraint(v *store.Version, term string) (bool, error) {
 	constraintStr := strings.TrimPrefix(term, "~")
 	base, err := parseConstraintVersion(constraintStr)
@@ -212,8 +214,6 @@ func matchTildeConstraint(v *store.Version, term string) (bool, error) {
 	if v.LessThan(base) {
 		return false, nil
 	}
-
-	// Determine original precision of constraint string to handle `~1` vs `~1.2` correctly.
 	parts := getCoreVersionParts(constraintStr)
 	if len(parts) == 1 {
 		return v.Major == base.Major, nil
@@ -221,6 +221,7 @@ func matchTildeConstraint(v *store.Version, term string) (bool, error) {
 	return v.Major == base.Major && v.Minor == base.Minor, nil
 }
 
+// getCoreVersionParts extracts the dot-separated numeric segments, stripping 'v' and suffixes.
 func getCoreVersionParts(versionStr string) []string {
 	s := strings.TrimSpace(versionStr)
 	s = strings.TrimPrefix(s, "v")
@@ -232,6 +233,7 @@ func getCoreVersionParts(versionStr string) []string {
 	return strings.Split(core, ".")
 }
 
+// matchWildcard evaluates wildcard prefix matching (e.g., "1.*", "1.2.*", "1.x", "1.2.x").
 func matchWildcard(v *store.Version, term string) (bool, error) {
 	clean := strings.TrimPrefix(term, "v")
 	clean = strings.TrimPrefix(clean, "V")
@@ -300,6 +302,7 @@ func normalizeConstraintVersion(s string) string {
 	return core + rest
 }
 
+// parseConstraintVersion normalizes and parses a constraint version string into a *store.Version.
 func parseConstraintVersion(s string) (*store.Version, error) {
 	norm := normalizeConstraintVersion(s)
 	if norm == "" {
