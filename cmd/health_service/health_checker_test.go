@@ -25,6 +25,7 @@ import (
 
 	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	"google.golang.org/api/option"
 	run "google.golang.org/api/run/v2"
@@ -185,36 +186,55 @@ func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 
 func TestCheckSpannerComponent(t *testing.T) {
 	tests := []struct {
-		name          string
-		client        commonhealth.SpannerHealthClient
-		expectedState spb.HealthState
-		expectedVers  string
-		expectErr     bool
+		name            string
+		client          commonhealth.SpannerHealthClient
+		expectedVersion int64
+		expectedState   spb.HealthState
+		expectedVers    string
+		expectErr       bool
+		expectedErrMsg  string
 	}{
 		{
-			name:          "Success",
-			client:        &mockSpannerHealthClient{version: 42, dirty: false},
-			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			expectedVers:  "42",
+			name:            "Success",
+			client:          &mockSpannerHealthClient{version: 42, dirty: false},
+			expectedVersion: 42,
+			expectedState:   spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedVers:    "42",
 		},
 		{
-			name:          "Dirty",
-			client:        &mockSpannerHealthClient{version: 42, dirty: true},
-			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			expectedVers:  "42 (dirty)",
+			name:            "Dirty",
+			client:          &mockSpannerHealthClient{version: 42, dirty: true},
+			expectedVersion: 42,
+			expectedState:   spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedVers:    "42 (dirty)",
+			expectErr:       true,
+			expectedErrMsg:  "schema migration is in a dirty state at version 42",
 		},
 		{
-			name:          "Error",
-			client:        &mockSpannerHealthClient{err: fmt.Errorf("connection failed")},
-			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			expectErr:     true,
+			name:            "Version Mismatch",
+			client:          &mockSpannerHealthClient{version: 41, dirty: false},
+			expectedVersion: 42,
+			expectedState:   spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedVers:    "41",
+			expectErr:       true,
+			expectedErrMsg:  "schema version 41 does not match expected version 42",
 		},
 		{
-			name:          "Nil Client",
-			client:        nil,
-			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			expectedVers:  "",
-			expectErr:     true,
+			name:            "Error",
+			client:          &mockSpannerHealthClient{err: fmt.Errorf("connection failed")},
+			expectedVersion: 42,
+			expectedState:   spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectErr:       true,
+			expectedErrMsg:  "database check failed: connection failed",
+		},
+		{
+			name:            "Nil Client",
+			client:          nil,
+			expectedVersion: 42,
+			expectedState:   spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedVers:    "",
+			expectErr:       true,
+			expectedErrMsg:  "spanner client not initialized",
 		},
 	}
 
@@ -222,18 +242,21 @@ func TestCheckSpannerComponent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			comp, version := checker.checkSpannerComponent(context.Background(), "Spanner ESS", tt.client)
+			comp, vers := checker.checkSpannerComponent(context.Background(), "Spanner ESS", tt.client, tt.expectedVersion)
 			if comp.HealthState != tt.expectedState {
 				t.Errorf("expected state %v, got %v", tt.expectedState, comp.HealthState)
 			}
-			if version != tt.expectedVers {
-				t.Errorf("expected version %q, got %q", tt.expectedVers, version)
+			if vers != tt.expectedVers {
+				t.Errorf("expected version %q, got %q", tt.expectedVers, vers)
 			}
 			if tt.expectErr && comp.ErrorMessage == "" {
 				t.Error("expected non-empty error message, got empty")
 			}
 			if !tt.expectErr && comp.ErrorMessage != "" {
 				t.Errorf("unexpected error message: %q", comp.ErrorMessage)
+			}
+			if tt.expectedErrMsg != "" && comp.ErrorMessage != tt.expectedErrMsg {
+				t.Errorf("expected error message %q, got %q", tt.expectedErrMsg, comp.ErrorMessage)
 			}
 		})
 	}
@@ -481,8 +504,10 @@ func TestRunChecks(t *testing.T) {
 		crState         string
 		crReason        string
 		crMessage       string
+		essVersion      int64
 		essSpannerErr   error
 		essSpannerDirty bool
+		xidVersion      int64
 		xidSpannerErr   error
 		xidSpannerDirty bool
 		redisErr        error
@@ -495,6 +520,8 @@ func TestRunChecks(t *testing.T) {
 			httpStatus: http.StatusOK,
 			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
 			crState:    "CONDITION_SUCCEEDED",
+			essVersion: version.EssExpectedSchemaVersion(),
+			xidVersion: version.XidExpectedSchemaVersion(),
 			expectedStates: map[string]spb.HealthState{
 				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
 				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
@@ -505,8 +532,8 @@ func TestRunChecks(t *testing.T) {
 				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
 				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
-			expectedEssVer: "5",
-			expectedXidVer: "10",
+			expectedEssVer: fmt.Sprintf("%d", version.EssExpectedSchemaVersion()),
+			expectedXidVer: fmt.Sprintf("%d", version.XidExpectedSchemaVersion()),
 		},
 		{
 			name:          "AllUnhealthy",
@@ -515,7 +542,9 @@ func TestRunChecks(t *testing.T) {
 			crState:       "CONDITION_FAILED",
 			crReason:      "UNHEALTHY",
 			crMessage:     "test error",
+			essVersion:    version.EssExpectedSchemaVersion(),
 			essSpannerErr: fmt.Errorf("spanner error"),
+			xidVersion:    version.XidExpectedSchemaVersion(),
 			xidSpannerErr: fmt.Errorf("spanner error"),
 			redisErr:      fmt.Errorf("redis failed"),
 			expectedStates: map[string]spb.HealthState{
@@ -530,6 +559,26 @@ func TestRunChecks(t *testing.T) {
 			},
 			expectedEssVer: "",
 			expectedXidVer: "",
+		},
+		{
+			name:       "SpannerVersionMismatch",
+			httpStatus: http.StatusOK,
+			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
+			crState:    "CONDITION_SUCCEEDED",
+			essVersion: version.EssExpectedSchemaVersion() - 1,
+			xidVersion: version.XidExpectedSchemaVersion() + 1,
+			expectedStates: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+			expectedEssVer: fmt.Sprintf("%d", version.EssExpectedSchemaVersion()-1),
+			expectedXidVer: fmt.Sprintf("%d", version.XidExpectedSchemaVersion()+1),
 		},
 	}
 
@@ -574,8 +623,8 @@ func TestRunChecks(t *testing.T) {
 					ReconcilerURL:          httpServer.URL,
 					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 				},
-				EssHealthClient: &mockSpannerHealthClient{version: 5, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
-				XidHealthClient: &mockSpannerHealthClient{version: 10, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
+				EssHealthClient: &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
+				XidHealthClient: &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
 				RedisClient:     &mockRedisClient{err: tc.redisErr},
 				CloudRunService: cloudRunService,
 			})
