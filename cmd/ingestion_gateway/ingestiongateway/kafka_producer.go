@@ -103,6 +103,11 @@ func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, err
 			opts = append(opts, kgo.SASL(scram.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsSha512Mechanism()))
 		case "PLAIN":
 			opts = append(opts, kgo.SASL(plain.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsMechanism()))
+		default:
+			// Config.Validate rejects this first in the normal startup path, but this function is
+			// exported and reachable without it. Falling through would attach no SASL mechanism and
+			// connect unauthenticated, which is a silent auth downgrade rather than a visible failure.
+			return nil, fmt.Errorf("unsupported sasl_mechanism %q: must be one of SCRAM-SHA-256, SCRAM-SHA-512, PLAIN", cfg.SASLMechanism)
 		}
 	}
 
