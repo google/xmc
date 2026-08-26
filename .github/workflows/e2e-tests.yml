@@ -43,8 +43,13 @@ jobs:
           persist-credentials: false
 
       - name: 'Validate CI Secrets Configuration'
+        env:
+          GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
+          GCP_E2E_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_E2E_SERVICE_ACCOUNT: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
+          GCP_E2E_SPANNER_INSTANCE: ${{ secrets.GCP_E2E_SPANNER_INSTANCE }}
         run: |
-          if [ -z "${{ secrets.GCP_E2E_PROJECT_ID }}" ] || [ -z "${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}" ] || [ -z "${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.GCP_E2E_SPANNER_INSTANCE }}" ]; then
+          if [ -z "${GCP_E2E_PROJECT_ID}" ] || [ -z "${GCP_E2E_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_E2E_SERVICE_ACCOUNT}" ] || [ -z "${GCP_E2E_SPANNER_INSTANCE}" ]; then
             echo "::error::Required GitHub Secrets (GCP_E2E_PROJECT_ID, GCP_E2E_WORKLOAD_IDENTITY_PROVIDER, GCP_E2E_SERVICE_ACCOUNT, GCP_E2E_SPANNER_INSTANCE) are not configured."
             exit 1
           fi
