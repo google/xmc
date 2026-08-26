@@ -131,3 +131,62 @@ jobs:
       - name: 'Run ESLint'
         run: npm run lint
         working-directory: 'cmd/ui'
+
+      # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
+      - name: 'Check for Terraform Changes'
+        uses: 'dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36' # v3.0.2
+        id: 'tf-changes'
+        with:
+          filters: |
+            terraform:
+              - 'deploy/**/*.tf'
+              - 'deploy/**/*.tfvars'
+              - '.github/workflows/lint.yml'
+
+      - name: 'Set up Terraform'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        uses: 'hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd' # v3.1.2
+        with:
+          terraform_version: '1.8.5'
+
+      - name: 'Verify Terraform Formatting'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        run: 'terraform fmt -check -recursive deploy/'
+
+      - name: 'Set up TFLint'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        uses: 'terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987' # v4.0.0
+        with:
+          tflint_version: 'v0.50.0'
+
+      - name: 'Init TFLint'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        run: 'tflint --init'
+
+      - name: 'Run TFLint'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        run: 'tflint --recursive'
+
+      # zizmor: ignore[impostor-commit]
+      - name: 'Run Trivy IaC Scanner (deploy/terraform)'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
+        with:
+          scan-type: 'config'
+          hide-progress: true
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          scan-ref: 'deploy/terraform'
+
+      # zizmor: ignore[impostor-commit]
+      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
+        if: steps.tf-changes.outputs.terraform == 'true'
+        uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
+        with:
+          scan-type: 'config'
+          hide-progress: true
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          scan-ref: 'deploy/ctk_v2/modules'
