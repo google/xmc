@@ -288,6 +288,100 @@ class KindManagerTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 self.manager._resolve_adc_file()
 
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_apply_manifests(self, mock_run: mock.MagicMock) -> None:
+        manifests_dir = Path(self.temp_dir.name)
+        for mf in ["dummy_crds.yaml", "redis.yaml", "dex.yaml", "gateway_proxy.yaml"]:
+            (manifests_dir / mf).write_text("apiVersion: v1\n")
+
+        with mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir):
+            self.manager.apply_manifests()
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("kubectl", cmd)
+        self.assertIn("apply", cmd)
+
+    def test_apply_manifests_missing_file_raises(self) -> None:
+        manifests_dir = Path(self.temp_dir.name)
+        with mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir):
+            with self.assertRaises(FileNotFoundError):
+                self.manager.apply_manifests()
+
+    @mock.patch("urllib.request.urlopen")
+    def test_check_endpoint_health(self, mock_urlopen: mock.MagicMock) -> None:
+        mock_resp = mock.MagicMock()
+        mock_resp.status = 200
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        self.assertTrue(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
+
+    @mock.patch("urllib.request.urlopen")
+    def test_check_endpoint_health_failure(self, mock_urlopen: mock.MagicMock) -> None:
+        mock_urlopen.side_effect = OSError("Connection refused")
+        self.assertFalse(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_get_status_running(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl", "get", "pods"],
+            returncode=0,
+            stdout="pod-1 Running\n",
+        )
+        with (
+            mock.patch.object(self.manager, "cluster_exists", return_value=True),
+            mock.patch.object(self.manager, "check_endpoint_health", return_value=True),
+        ):
+            status = self.manager.get_status()
+
+        self.assertTrue(status["running"])
+        self.assertTrue(status["health"]["ui"])
+        self.assertTrue(status["health"]["dex"])
+
+    def test_get_status_not_running(self) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=False):
+            status = self.manager.get_status()
+        self.assertFalse(status["running"])
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_get_status_pod_failure_handled(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl", "get", "pods"],
+            returncode=1,
+            stdout="",
+            stderr="error: context not found\n",
+        )
+        with (
+            mock.patch.object(self.manager, "cluster_exists", return_value=True),
+            mock.patch.object(self.manager, "check_endpoint_health", return_value=False),
+        ):
+            status = self.manager.get_status()
+
+        self.assertTrue(status["running"])
+        self.assertFalse(status["health"]["ui"])
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="reconciler", follow=True)
+
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("app=reconciler", cmd)
+        self.assertIn("-f", cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_all_services(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name=None, lines=50)
+
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--tail=50", cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_cluster_not_running(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=False):
+            self.manager.stream_logs(service_name="reconciler")
+        mock_run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

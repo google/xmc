@@ -44,6 +44,8 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertIn("deploy", output)
         self.assertIn("upgrade", output)
         self.assertIn("cluster", output)
+        self.assertIn("status", output)
+        self.assertIn("logs", output)
         self.assertIn("--verbose", output)
         self.assertIn("--quiet", output)
         self.assertIn("--version", output)
@@ -469,6 +471,39 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once()
 
+    @patch("tools.dev_env.kind_manager.KindManager.get_status")
+    @patch("tools.dev_env.config.load_config")
+    def test_status_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_get_status: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env status' dispatches to KindManager.get_status."""
+        args = self.parser.parse_args(["status", "--cluster-name", "my-kind"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_get_status.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.stream_logs")
+    @patch("tools.dev_env.config.load_config")
+    def test_logs_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_stream_logs: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env logs' dispatches to KindManager.stream_logs."""
+        args = self.parser.parse_args(
+            ["logs", "reconciler", "--follow", "--tail", "50", "-n", "custom-ns"]
+        )
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_stream_logs.assert_called_once_with(
+            service_name="reconciler",
+            follow=True,
+            lines=50,
+            namespace="custom-ns",
+        )
+>>>>>>> d7196ea2 (feat(dev_env): add local support manifests, cluster status, and log streaming)
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(

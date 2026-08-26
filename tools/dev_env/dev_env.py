@@ -115,6 +115,37 @@ def handle_cluster(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def handle_status(args: argparse.Namespace) -> None:
+    """Handler for cluster status inspection.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.kind_manager import KindManager
+
+    cfg = config.load_config(args)
+    mgr = KindManager(cfg)
+    mgr.get_status()
+
+
+def handle_logs(args: argparse.Namespace) -> None:
+    """Handler for streaming pod and service logs.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.kind_manager import KindManager
+
+    cfg = config.load_config(args)
+    mgr = KindManager(cfg)
+    mgr.stream_logs(
+        service_name=getattr(args, "service", None),
+        follow=getattr(args, "follow", False),
+        lines=getattr(args, "tail", None),
+        namespace=getattr(args, "namespace", "xmc"),
+    )
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -277,6 +308,44 @@ def _add_cluster_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_cluster)
 
 
+def _add_status_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'status' subcommand parser for cluster inspection."""
+    p = subparsers.add_parser(
+        "status",
+        help="Inspect KinD cluster, pod health, and local endpoints.",
+        description="Checks cluster status, namespace pods, and endpoint reachability.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_status)
+
+
+def _add_logs_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'logs' subcommand parser for pod log streaming."""
+    p = subparsers.add_parser(
+        "logs",
+        help="Stream logs from local development services.",
+        description="Streams or tails container logs for XMC services.",
+    )
+    p.add_argument(
+        "service",
+        nargs="?",
+        default=None,
+        help="Service name to stream logs for (e.g., actuator, reconciler, ess, xid).",
+    )
+    p.add_argument("-f", "--follow", action="store_true", help="Stream logs continuously.")
+    p.add_argument(
+        "--tail",
+        type=int,
+        default=100,
+        help="Lines of recent log history to show (default: 100).",
+    )
+    p.add_argument("-n", "--namespace", default="xmc", help="Target namespace (default: xmc).")
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_logs)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -289,6 +358,8 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
   python3 tools/dev_env/dev_env.py cluster create --cluster-name my-kind
   python3 tools/dev_env/dev_env.py cluster delete --cluster-name my-kind
+  python3 tools/dev_env/dev_env.py status --cluster-name my-kind
+  python3 tools/dev_env/dev_env.py logs reconciler --follow
   python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner migrate --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
@@ -344,6 +415,8 @@ def create_parser() -> argparse.ArgumentParser:
     upgrade_p.set_defaults(func=handle_upgrade)
 
     _add_cluster_parser(subparsers)
+    _add_status_parser(subparsers)
+    _add_logs_parser(subparsers)
     _add_spanner_parser(subparsers)
 
     return parser

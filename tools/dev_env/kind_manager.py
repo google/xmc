@@ -25,9 +25,12 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
+from typing import Any
 
-from tools.common.tool_utils import log_info, log_success, run_command
+from tools.common.tool_utils import log_error, log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.kind")
@@ -325,6 +328,117 @@ class KindManager:
                 raise RuntimeError(
                     f"Failed to create secret '{name}' in namespace '{ns}'"
                 ) from None
+
+    def apply_manifests(self, cluster_name: str | None = None) -> None:
+        """Applies dummy CRDs, Redis, Dex OIDC, and Gateway Proxy manifests."""
+        name = cluster_name or self.config.cluster_name
+        ctx = f"kind-{name}"
+        log_info("=== [KinD] Applying supporting infrastructure manifests ===")
+        manifests_dir = self._resolve_manifests_dir()
+        manifest_files = [
+            "dummy_crds.yaml",
+            "redis.yaml",
+            "dex.yaml",
+            "gateway_proxy.yaml",
+        ]
+        cmd = ["kubectl", "--context", ctx, "apply"]
+        for mf in manifest_files:
+            file_path = manifests_dir / mf
+            if not file_path.is_file():
+                raise FileNotFoundError(f"Required manifest '{mf}' not found in '{manifests_dir}'")
+            cmd.extend(["-f", str(file_path)])
+
+        run_command(cmd)
+        log_success("Supporting manifests applied.")
+
+    def check_endpoint_health(self, url: str) -> bool:
+        """Pings an HTTP health check endpoint."""
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "XMC-DevEnv"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                return bool(resp.status == 200)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return False
+
+    def get_status(self, cluster_name: str | None = None) -> dict[str, Any]:
+        """Inspects and displays KinD cluster status, pods, and endpoint health."""
+        name = cluster_name or self.config.cluster_name
+        ctx = f"kind-{name}"
+        cluster_exists = self.cluster_exists(name)
+        log_info(f"=== [Status] KinD Cluster: '{name}' ===")
+        if not cluster_exists:
+            log_info(f"Cluster Status: NOT RUNNING (cluster '{name}' not found)")
+            return {"cluster_name": name, "running": False, "pods": {}, "health": {}}
+
+        log_info("Cluster Status: RUNNING")
+        pods_info: dict[str, str] = {}
+        for ns in ["xmc", "dex"]:
+            log_info(f"--- Pods in namespace '{ns}' ---")
+            res = run_command(
+                ["kubectl", "--context", ctx, "get", "pods", "-n", ns, "-o", "wide"],
+                capture_output=True,
+                check=False,
+            )
+            output = (
+                res.stdout
+                if res.returncode == 0 and res.stdout.strip()
+                else (res.stderr if res.stderr else "No pods found.")
+            )
+            print(output)
+            pods_info[ns] = res.stdout
+
+        ui_health = self.check_endpoint_health("http://localhost:8080/healthz")
+        dex_health = self.check_endpoint_health("http://localhost:5556/dex/healthz")
+        log_info("--- Local Endpoint Health ---")
+        log_info(
+            f"  • Gateway / UI (http://localhost:8080): {'HEALTHY' if ui_health else 'UNREACHABLE'}"
+        )
+        log_info(
+            f"  • Dex OIDC (http://localhost:5556):     {'HEALTHY' if dex_health else 'UNREACHABLE'}"
+        )
+
+        return {
+            "cluster_name": name,
+            "running": True,
+            "pods": pods_info,
+            "health": {"ui": ui_health, "dex": dex_health},
+        }
+
+    def stream_logs(
+        self,
+        service_name: str | None = None,
+        cluster_name: str | None = None,
+        lines: int | None = None,
+        follow: bool = False,
+        namespace: str = "xmc",
+    ) -> None:
+        """Streams or prints logs for a specific service or all pods."""
+        name = cluster_name or self.config.cluster_name
+        if not self.cluster_exists(name):
+            log_error(f"Cluster '{name}' is not running.")
+            return
+
+        ctx = f"kind-{name}"
+        cmd = ["kubectl", "--context", ctx, "logs", "-n", namespace]
+        if service_name:
+            svc_label = service_name.replace("_", "-")
+            if svc_label == "ess":
+                svc_label = "experiment-state-server"
+            elif svc_label == "xid":
+                svc_label = "xid-service"
+            cmd.extend(["-l", f"app={svc_label}", "--all-containers=true"])
+        else:
+            cmd.extend(["--all-containers=true", "-l", "app"])
+
+        if follow:
+            cmd.append("-f")
+        else:
+            cmd.append(f"--tail={lines or 100}")
+
+        log_info(
+            f"Streaming logs {'for ' + service_name if service_name else 'all services'} (namespace: '{namespace}')..."
+        )
+        run_command(cmd, check=False)
 
     def delete_cluster(self, cluster_name: str | None = None) -> None:
         """Deletes the local KinD development cluster."""

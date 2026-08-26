@@ -53,3 +53,213 @@ spec:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: jobsets.jobset.x-k8s.io
+spec:
+  group: jobset.x-k8s.io
+  names:
+    kind: JobSet
+    listKind: JobSetList
+    plural: jobsets
+    singular: jobset
+  scope: Namespaced
+  versions:
+  - name: v1alpha2
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: workloads.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: Workload
+    listKind: WorkloadList
+    plural: workloads
+    singular: workload
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: localqueues.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: LocalQueue
+    listKind: LocalQueueList
+    plural: localqueues
+    singular: localqueue
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterqueues.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: ClusterQueue
+    listKind: ClusterQueueList
+    plural: clusterqueues
+    singular: clusterqueue
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: resourceflavors.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: ResourceFlavor
+    listKind: ResourceFlavorList
+    plural: resourceflavors
+    singular: resourceflavor
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: workloadpriorityclasses.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: WorkloadPriorityClass
+    listKind: WorkloadPriorityClassList
+    plural: workloadpriorityclasses
+    singular: workloadpriorityclass
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: multikueueclusters.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: MultiKueueCluster
+    listKind: MultiKueueClusterList
+    plural: multikueueclusters
+    singular: multikueuecluster
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: multikueueconfigs.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: MultiKueueConfig
+    listKind: MultiKueueConfigList
+    plural: multikueueconfigs
+    singular: multikueueconfig
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: admissionchecks.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: AdmissionCheck
+    listKind: AdmissionCheckList
+    plural: admissionchecks
+    singular: admissioncheck
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: provisioningrequestconfigs.kueue.x-k8s.io
+spec:
+  group: kueue.x-k8s.io
+  names:
+    kind: ProvisioningRequestConfig
+    listKind: ProvisioningRequestConfigList
+    plural: provisioningrequestconfigs
+    singular: provisioningrequestconfig
+  scope: Cluster
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
