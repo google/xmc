@@ -37,7 +37,7 @@ xmc_bridge_custom_image: ""
 
 componentsDeployment:
   enabled: false
-  cmsAddress: "experiment-state-server-grpc:50051"
+  cmsAddress: "grpc-service:50051"
   probeInterval: "5s"
   probeTimeout: "2s"
 

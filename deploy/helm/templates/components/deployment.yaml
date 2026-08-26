@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: xmc-bridge
-        image: {{ .Values.xmc_bridge_custom_image | quote }}
+        image: {{ .Values.xmc_bridge_custom_image | default (printf "us-docker.pkg.dev/%s/xmc/xmc-bridge-%s:%s" .Values.projectId .Values.environment (.Values.imageTag | default "latest")) | quote }}
         imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
@@ -51,7 +51,7 @@ spec:
             drop:
             - ALL
         args:
-        - "--cms-address={{ .Values.componentsDeployment.cmsAddress | default "experiment-state-server-grpc:50051" }}"
+        - "--cms-address={{ .Values.componentsDeployment.cmsAddress | default "grpc-service:50051" }}"
         - "--namespace={{ .Release.Namespace }}"
         - "--probe-interval={{ .Values.componentsDeployment.probeInterval | default "5s" }}"
         - "--probe-timeout={{ .Values.componentsDeployment.probeTimeout | default "2s" }}"
