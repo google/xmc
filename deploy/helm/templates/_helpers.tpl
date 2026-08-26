@@ -180,7 +180,7 @@ Consumed by pkg/clickhouse.GetOptions. The password is sourced from the clickhou
 Secret rendered by templates/metrics/clickhouse-secret.yaml.
 */}}
 {{- define "xmanager-cloud.clickhouseEnv" -}}
-{{- $clickhouse := (default dict .Values.metrics.clickhouse) -}}
+{{- $clickhouse := (default (dict) .Values.metrics.clickhouse) -}}
 - name: CLICKHOUSE_HOST
   value: {{ $clickhouse.host | default "clickhouse.xmc-metrics.svc.cluster.local" | quote }}
 - name: CLICKHOUSE_PORT

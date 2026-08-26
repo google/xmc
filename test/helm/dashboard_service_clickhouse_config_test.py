@@ -57,12 +57,19 @@ def find_chart_dir() -> str:
 def render_template(show_only: str, values: dict[str, str]) -> str:
     """Renders a single chart template and returns the raw manifest text."""
     overrides = [arg for key, value in values.items() for arg in ("--set", f"{key}={value}")]
-    result = subprocess.run(
-        ["helm", "template", "xmc", find_chart_dir(), "--show-only", show_only, *overrides],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            ["helm", "template", "xmc", find_chart_dir(), "--show-only", show_only, *overrides],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        # CalledProcessError omits captured output, which hides the template error that
+        # explains the failure.
+        raise RuntimeError(
+            f"rendering {show_only} failed:\nstdout: {error.stdout}\nstderr: {error.stderr}"
+        ) from error
     return result.stdout
 
 
@@ -141,6 +148,34 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
 
         self.assertIn("name: clickhouse-secret", manifest)
         self.assertIn('clickhouse-password: "s3cret"', manifest)
+
+    def test_clickhouse_vars_fall_back_when_block_is_undefined(self) -> None:
+        """An operator enabling metrics without a clickhouse block must still get a usable chart."""
+        manifest = render_template(
+            DASHBOARD_DEPLOYMENT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "metrics.enabled": "true",
+                "metrics.clickhouse": "null",
+            },
+        )
+
+        missing = REQUIRED_CLICKHOUSE_ENV_VARS - rendered_clickhouse_env_vars(manifest)
+
+        self.assertEqual(missing, set(), f"fallback path dropped ClickHouse config: {missing}")
+        self.assertIn(
+            '- name: CLICKHOUSE_HOST\n          value: "clickhouse.xmc-metrics.svc.cluster.local"',
+            manifest,
+        )
+
+    def test_clickhouse_secret_renders_when_block_is_undefined(self) -> None:
+        """The Secret the deployment references must exist even with no clickhouse block."""
+        manifest = render_template(
+            CLICKHOUSE_SECRET, {"metrics.enabled": "true", "metrics.clickhouse": "null"}
+        )
+
+        self.assertIn("name: clickhouse-secret", manifest)
+        self.assertIn('clickhouse-password: ""', manifest)
 
     def test_clickhouse_config_is_omitted_when_metrics_disabled(self) -> None:
         """ClickHouse is optional BYO infrastructure, so nothing renders when metrics are off."""
