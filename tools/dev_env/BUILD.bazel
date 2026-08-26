@@ -20,10 +20,29 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__init__.py",
+    "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "config_lib",
+    srcs = ["config.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+    ],
+)
 
 py_library(
     name = "dev_env_lib",
@@ -33,6 +52,7 @@ py_library(
     ],
     imports = ["../.."],
     deps = [
+        ":config_lib",
         ":deploy_dev_env_lib",
         ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",

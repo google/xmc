@@ -16,7 +16,7 @@
 """XMC Unified Development Environment CLI Tool.
 
 Consolidates environment lifecycle operations for GKE deployment and upgrade
-pipelines into a unified CLI entrypoint.
+pipelines into a unified command-line entrypoint with configurable settings.
 """
 
 import argparse
@@ -76,6 +76,8 @@ def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     if not is_gke:
         p.add_argument("-t", "--target", choices=["gke"], default="gke", help="Deployment target.")
     p.add_argument("-c", "--config", required=is_gke, help="Path to deployment YAML config.")
+    p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
+    p.add_argument("-e", "--environment", help="Target environment override.")
     p.add_argument("--dns-project", required=is_gke, help="GCP Project ID hosting DNS zone.")
     p.add_argument("--dns-zone", required=is_gke, help="Cloud DNS Managed Zone name.")
     group = p.add_mutually_exclusive_group()
@@ -88,6 +90,8 @@ def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     if not is_gke:
         p.add_argument("-t", "--target", choices=["gke"], default="gke", help="Upgrade target.")
     p.add_argument("-c", "--config", default=upgrade_dev_env.DEFAULT_CONFIG, help="Config path.")
+    p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
+    p.add_argument("-e", "--environment", help="Target environment override.")
     p.add_argument("--run-migrations", action="store_true", help="Run pending migrations.")
     group = p.add_mutually_exclusive_group()
     group.add_argument("-s", "--start-from", choices=upgrade_dev_env.STEPS, help="Start from step.")
@@ -186,10 +190,14 @@ def main(argv: list[str] | None = None) -> None:
 
     _LOGGER.debug("Executing dev_env subcommand: %s", getattr(args, "command", None))
 
-    if hasattr(args, "func"):
-        args.func(args)
-    else:
-        parser.print_help()
+    try:
+        if hasattr(args, "func"):
+            args.func(args)
+        else:
+            parser.print_help()
+    except (ValueError, FileNotFoundError) as e:
+        log_error(str(e))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
