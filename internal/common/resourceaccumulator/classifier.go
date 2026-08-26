@@ -108,31 +108,17 @@ func IsSpecificTPUKey(key string) bool {
 	return key == "v4" || key == "v5" || key == "v6"
 }
 
-// MatchesShortAcceleratorKeyword checks if kw occurs in s bounded by non-alphanumeric delimiters.
+// MatchesShortAcceleratorKeyword checks if kw matches any delimited token in s.
 func MatchesShortAcceleratorKeyword(s, kw string) bool {
-	idx := 0
-	for {
-		i := strings.Index(s[idx:], kw)
-		if i == -1 {
-			return false
-		}
-		pos := idx + i
-		prevOK := (pos == 0) || !isASCIILetter(s[pos-1])
-		nextPos := pos + len(kw)
-		nextOK := (nextPos == len(s)) || !isASCIIAlphanumeric(s[nextPos])
-		if prevOK && nextOK {
+	normalized := strings.ReplaceAll(s, "_", "-")
+	normalized = strings.ReplaceAll(normalized, "/", "-")
+	normalized = strings.ReplaceAll(normalized, ".", "-")
+	for _, token := range strings.Split(normalized, "-") {
+		if strings.EqualFold(token, kw) {
 			return true
 		}
-		idx = pos + 1
 	}
-}
-
-func isASCIILetter(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isASCIIAlphanumeric(c byte) bool {
-	return isASCIILetter(c) || (c >= '0' && c <= '9')
+	return false
 }
 
 // IsAcceleratorResource returns true if resName represents an accelerator resource type.
