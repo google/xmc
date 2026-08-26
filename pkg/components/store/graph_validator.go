@@ -31,7 +31,26 @@ const (
 // BuildDependencyGraph constructs an adjacency map of component -> list of its dependencies.
 // Soft-deleted and deleted components are excluded from the graph.
 func BuildDependencyGraph(records []*ComponentRecord) map[string][]string {
-	graph := make(map[string][]string)
+	graph := make(map[string][]string, len(records))
+	for _, rec := range records {
+		if rec == nil || isDeletedRecord(rec) {
+			continue
+		}
+		canonical := CanonicalComponentName(rec.Name)
+		if canonical == "" {
+			continue
+		}
+		deps := make([]string, len(rec.Dependencies))
+		copy(deps, rec.Dependencies)
+		graph[canonical] = deps
+	}
+	return graph
+}
+
+// BuildDependencyGraphFromMap constructs an adjacency map of component -> list of its dependencies directly from a component record map.
+// Soft-deleted and deleted components are excluded from the graph.
+func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) map[string][]string {
+	graph := make(map[string][]string, len(records))
 	for _, rec := range records {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
@@ -170,15 +189,31 @@ func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName str
 		return status.Error(codes.InvalidArgument, "target component name is required")
 	}
 
-	// Normalize first to ensure we clean and split any raw dependency strings.
-	normalized := NormalizeDependencies(newDeps, "")
+	normalized := NormalizeDependencies(newDeps)
+	graph := BuildDependencyGraph(existing)
+	return validateProspectiveGraph(graph, canonicalTarget, normalized)
+}
+
+// ValidateProspectiveDependenciesFromMap validates prospective dependencies directly from a component record map
+// avoiding intermediate slice allocations.
+func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord, targetName string, newDeps []string) error {
+	canonicalTarget := CanonicalComponentName(targetName)
+	if canonicalTarget == "" {
+		return status.Error(codes.InvalidArgument, "target component name is required")
+	}
+
+	normalized := NormalizeDependencies(newDeps)
+	graph := BuildDependencyGraphFromMap(existing)
+	return validateProspectiveGraph(graph, canonicalTarget, normalized)
+}
+
+func validateProspectiveGraph(graph map[string][]string, canonicalTarget string, normalized []string) error {
 	for _, dep := range normalized {
 		if dep == canonicalTarget {
 			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s -> %s", canonicalTarget, canonicalTarget)
 		}
 	}
 
-	graph := BuildDependencyGraph(existing)
 	graph[canonicalTarget] = normalized
 
 	if cycle, found := DetectCycles(graph); found {

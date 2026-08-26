@@ -58,20 +58,14 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 		return nil, err
 	}
 
-	deps := ExtractDependencies(spec, labels, "")
+	deps := ExtractDependencies(spec, labels)
 	now := time.Now().UTC()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Prospective dependency cycle validation.
-	var existingRecords []*ComponentRecord
-	for _, r := range m.componentsByName {
-		if !isDeletedRecord(r) {
-			existingRecords = append(existingRecords, r)
-		}
-	}
-	if err := ValidateProspectiveDependencies(existingRecords, canonicalName, deps); err != nil {
+	// Prospective dependency cycle validation directly against the map.
+	if err := ValidateProspectiveDependenciesFromMap(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
 

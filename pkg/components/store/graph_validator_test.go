@@ -64,6 +64,46 @@ func TestBuildDependencyGraph(t *testing.T) {
 	}
 }
 
+func TestBuildDependencyGraphFromMap(t *testing.T) {
+	now := time.Now().UTC()
+	recordMap := map[string]*ComponentRecord{
+		"comp-a": {
+			Name:         "components/comp-a",
+			Dependencies: []string{"comp-b", "comp-c"},
+		},
+		"comp-b": {
+			Name:         "comp-b",
+			Dependencies: []string{"comp-c"},
+		},
+		"comp-c": {
+			Name:         "comp-c",
+			Dependencies: nil,
+		},
+		"comp-deleted": {
+			Name:         "comp-deleted",
+			Dependencies: []string{"comp-a"},
+			DeleteTime:   &now,
+		},
+		"comp-state-deleted": {
+			Name:         "comp-state-deleted",
+			Dependencies: []string{"comp-a"},
+			State:        componentspb.ComponentState_COMPONENT_STATE_DELETED,
+		},
+		"nil-rec": nil,
+	}
+
+	got := BuildDependencyGraphFromMap(recordMap)
+	want := map[string][]string{
+		"comp-a": {"comp-b", "comp-c"},
+		"comp-b": {"comp-c"},
+		"comp-c": {},
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("BuildDependencyGraphFromMap mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestBuildDependentsGraph(t *testing.T) {
 	records := []*ComponentRecord{
 		{
@@ -214,6 +254,51 @@ func TestValidateProspectiveDependencies(t *testing.T) {
 
 	// 4. Invalid target name
 	err = ValidateProspectiveDependencies(existing, "", []string{"comp-a"})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("Empty target name got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestValidateProspectiveDependenciesFromMap(t *testing.T) {
+	existingMap := map[string]*ComponentRecord{
+		"comp-a": {
+			Name:         "comp-a",
+			Dependencies: []string{"comp-b"},
+		},
+		"comp-b": {
+			Name:         "comp-b",
+			Dependencies: []string{"comp-c"},
+		},
+		"comp-c": {
+			Name:         "comp-c",
+			Dependencies: nil,
+		},
+	}
+
+	// 1. Direct self-cycle (normalized and raw)
+	err := ValidateProspectiveDependenciesFromMap(existingMap, "comp-d", []string{"comp-d"})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("Direct self cycle got code %v, want FailedPrecondition", status.Code(err))
+	}
+	err = ValidateProspectiveDependenciesFromMap(existingMap, "comp-d", []string{"comp-e,comp-d"})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("Raw self cycle got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Transitive cycle (comp-c depending on comp-a)
+	err = ValidateProspectiveDependenciesFromMap(existingMap, "comp-c", []string{"comp-a"})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("Transitive cycle got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 3. Valid new dependency (comp-d depending on comp-a)
+	err = ValidateProspectiveDependenciesFromMap(existingMap, "comp-d", []string{"comp-a"})
+	if err != nil {
+		t.Errorf("Valid prospective dependencies returned unexpected error: %v", err)
+	}
+
+	// 4. Invalid target name
+	err = ValidateProspectiveDependenciesFromMap(existingMap, "", []string{"comp-a"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("Empty target name got code %v, want InvalidArgument", status.Code(err))
 	}
