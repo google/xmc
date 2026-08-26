@@ -81,6 +81,42 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 	return merged, nil
 }
 
+// MergeCharts merges an updated Chart proto message into a current Chart proto message based on an update mask.
+// Note: xid and wid are immutable chart ownership fields and cannot be updated.
+func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+	if current == nil {
+		return nil, fmt.Errorf("current chart is nil: %w", status.ErrInvalidArgument)
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("updated chart is nil: %w", status.ErrInvalidArgument)
+	}
+
+	merged := proto.Clone(current).(*dpb.Chart)
+	if updateMask == nil || len(updateMask.GetPaths()) == 0 {
+		merged.Title = updated.GetTitle()
+		merged.Description = updated.GetDescription()
+		merged.Plots = updated.GetPlots()
+		merged.PlotLayout = updated.GetPlotLayout()
+		return merged, nil
+	}
+
+	for _, path := range updateMask.GetPaths() {
+		switch path {
+		case "title":
+			merged.Title = updated.GetTitle()
+		case "description":
+			merged.Description = updated.GetDescription()
+		case "plots":
+			merged.Plots = updated.GetPlots()
+		case "plot_layout", "plotLayout":
+			merged.PlotLayout = updated.GetPlotLayout()
+		default:
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		}
+	}
+	return merged, nil
+}
+
 // buildPositionsMap encodes grid positions from the chart layout keyed by ItemId.
 func buildPositionsMap(layout *dpb.LayoutSpec) (map[string][]byte, error) {
 	if layout == nil {

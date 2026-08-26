@@ -89,16 +89,19 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []*essmsgpb.WorkUnit {
-	return []*essmsgpb.WorkUnit{
-		proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-			wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-		}),
+func newTestWorkUnits(now time.Time) []workunit.WorkUnitWithAuthor {
+	return []workunit.WorkUnitWithAuthor{
+		{
+			WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+			}),
+			Author: "alice@example.com",
+		},
 	}
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []*essmsgpb.WorkUnit
+	workUnits      []workunit.WorkUnitWithAuthor
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -116,7 +119,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []*essmsgpb.WorkUnit{},
+			WorkUnits: []workunit.WorkUnitWithAuthor{},
 		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
@@ -148,7 +151,14 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits:      newTestWorkUnits(now),
+				workUnits: []workunit.WorkUnitWithAuthor{
+					{
+						WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+						}),
+						Author: "alice@example.com",
+					},
+				},
 				totalQueueSize: 1,
 			},
 			wantCode:           codes.OK,
@@ -325,7 +335,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantJob := &spb.DashboardJob{
 				Xid:             100,
 				WorkUnitId:      1,
-				User:            "",
+				User:            "alice@example.com",
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,
@@ -394,7 +404,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		}
 	})
 
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, "", now)
 	if job == nil {
 		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
 	}

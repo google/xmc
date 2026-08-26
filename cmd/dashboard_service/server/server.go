@@ -44,6 +44,7 @@ type DashboardRepository interface {
 	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
 	ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
+	UpdateChart(ctx context.Context, chart *dpb.Chart) error
 	DeleteChart(ctx context.Context, chartId string) error
 }
 
@@ -311,9 +312,4 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)
-}
-
-// UpdateChart updates a chart stub.
-func (s *Server) UpdateChart(ctx context.Context, req *spb.UpdateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
 }
