@@ -95,29 +95,33 @@ class DevEnvCliTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.parser.parse_args(["gke-deploy", "--config", "test.yaml"])
 
+    def test_missing_subcommand_with_global_flags_fails(self) -> None:
+        """Verifies parsing fails with non-zero exit code when subcommand is missing."""
+        with patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as cm:
+                self.parser.parse_args(["--verbose"])
+            self.assertEqual(cm.exception.code, 2)
+
     def test_gke_deploy_mutually_exclusive_flags(self) -> None:
         """Verifies gke-deploy exits if --start-from and --only are both set."""
-        args = self.parser.parse_args(
-            [
-                "gke-deploy",
-                "--config",
-                "test.yaml",
-                "--dns-project",
-                "p",
-                "--dns-zone",
-                "z",
-                "--start-from",
-                "apis",
-                "--only",
-                "primary",
-            ]
-        )
-        with patch("tools.dev_env.dev_env.log_error") as mock_log:
+        with patch("sys.stderr", new_callable=io.StringIO):
             with self.assertRaises(SystemExit) as cm:
-                dev_env.handle_gke_deploy(args)
-            self.assertEqual(cm.exception.code, 1)
-            mock_log.assert_called_once()
-            self.assertIn("mutually exclusive", mock_log.call_args[0][0])
+                self.parser.parse_args(
+                    [
+                        "gke-deploy",
+                        "--config",
+                        "test.yaml",
+                        "--dns-project",
+                        "p",
+                        "--dns-zone",
+                        "z",
+                        "--start-from",
+                        "apis",
+                        "--only",
+                        "primary",
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
 
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
     def test_gke_upgrade_valid_args(self, mock_run: MagicMock) -> None:
@@ -141,21 +145,18 @@ class DevEnvCliTest(unittest.TestCase):
 
     def test_gke_upgrade_mutually_exclusive_flags(self) -> None:
         """Verifies gke-upgrade exits if --start-from and --only are both set."""
-        args = self.parser.parse_args(
-            [
-                "gke-upgrade",
-                "--start-from",
-                "migrate",
-                "--only",
-                "images",
-            ]
-        )
-        with patch("tools.dev_env.dev_env.log_error") as mock_log:
+        with patch("sys.stderr", new_callable=io.StringIO):
             with self.assertRaises(SystemExit) as cm:
-                dev_env.handle_gke_upgrade(args)
-            self.assertEqual(cm.exception.code, 1)
-            mock_log.assert_called_once()
-            self.assertIn("mutually exclusive", mock_log.call_args[0][0])
+                self.parser.parse_args(
+                    [
+                        "gke-upgrade",
+                        "--start-from",
+                        "migrate",
+                        "--only",
+                        "images",
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
 
     @patch("tools.dev_env.dev_env.handle_gke_deploy")
     def test_deploy_target_gke_success(self, mock_handle_gke: MagicMock) -> None:
@@ -235,6 +236,21 @@ class DevEnvCliTest(unittest.TestCase):
             mock_log.assert_called_once()
             self.assertIn("Unsupported deployment target", mock_log.call_args[0][0])
 
+    def test_deploy_mutually_exclusive_flags(self) -> None:
+        """Verifies deploy exits if --start-from and --only are both set."""
+        with patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as cm:
+                self.parser.parse_args(
+                    [
+                        "deploy",
+                        "--start-from",
+                        "apis",
+                        "--only",
+                        "primary",
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
+
     @patch("tools.dev_env.dev_env.handle_gke_upgrade")
     def test_upgrade_target_gke(self, mock_handle_gke: MagicMock) -> None:
         """Verifies generic upgrade with target=gke forwards to handle_gke_upgrade."""
@@ -252,6 +268,33 @@ class DevEnvCliTest(unittest.TestCase):
             self.assertEqual(cm.exception.code, 1)
             mock_log.assert_called_once()
             self.assertIn("Unsupported upgrade target", mock_log.call_args[0][0])
+
+    def test_upgrade_mutually_exclusive_flags(self) -> None:
+        """Verifies upgrade exits if --start-from and --only are both set."""
+        with patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as cm:
+                self.parser.parse_args(
+                    [
+                        "upgrade",
+                        "--start-from",
+                        "migrate",
+                        "--only",
+                        "images",
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
+
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
+    @patch("logging.basicConfig")
+    def test_main_dispatch_default_logging(
+        self, mock_logging: MagicMock, mock_upgrade: MagicMock, mock_venv: MagicMock
+    ) -> None:
+        """Verifies main() configures INFO logging by default."""
+        dev_env.main(["gke-upgrade"])
+        mock_venv.assert_called_once()
+        mock_logging.assert_called_once_with(level=logging.INFO)
+        mock_upgrade.assert_called_once()
 
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")

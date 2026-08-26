@@ -35,22 +35,13 @@ from tools.common.tool_utils import (  # noqa: E402
 from tools.dev_env import deploy_dev_env, upgrade_dev_env  # noqa: E402
 
 
-def _validate_step_args(args: argparse.Namespace) -> None:
-    """Validates mutual exclusivity of step-selection flags."""
-    if getattr(args, "start_from", None) and getattr(args, "only", None):
-        log_error("Arguments --start-from and --only are mutually exclusive.")
-        sys.exit(1)
-
-
 def handle_gke_deploy(args: argparse.Namespace) -> None:
     """Handler for GKE deployment workflow."""
-    _validate_step_args(args)
     deploy_dev_env.run_deployment(args)
 
 
 def handle_gke_upgrade(args: argparse.Namespace) -> None:
     """Handler for GKE upgrade workflow."""
-    _validate_step_args(args)
     upgrade_dev_env.run_upgrade(args)
 
 
@@ -85,8 +76,9 @@ def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     p.add_argument("-c", "--config", required=is_gke, help="Path to deployment YAML config.")
     p.add_argument("--dns-project", required=is_gke, help="GCP Project ID hosting DNS zone.")
     p.add_argument("--dns-zone", required=is_gke, help="Cloud DNS Managed Zone name.")
-    p.add_argument("-s", "--start-from", choices=deploy_dev_env.STEPS, help="Start from step.")
-    p.add_argument("--only", choices=deploy_dev_env.STEPS, help="Execute only step.")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("-s", "--start-from", choices=deploy_dev_env.STEPS, help="Start from step.")
+    group.add_argument("--only", choices=deploy_dev_env.STEPS, help="Execute only step.")
 
 
 def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
@@ -95,8 +87,9 @@ def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
         p.add_argument("-t", "--target", choices=["gke"], default="gke", help="Upgrade target.")
     p.add_argument("-c", "--config", default=upgrade_dev_env.DEFAULT_CONFIG, help="Config path.")
     p.add_argument("--run-migrations", action="store_true", help="Run pending migrations.")
-    p.add_argument("-s", "--start-from", choices=upgrade_dev_env.STEPS, help="Start from step.")
-    p.add_argument("--only", choices=upgrade_dev_env.STEPS, help="Execute only step.")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("-s", "--start-from", choices=upgrade_dev_env.STEPS, help="Start from step.")
+    group.add_argument("--only", choices=upgrade_dev_env.STEPS, help="Execute only step.")
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -129,6 +122,7 @@ def create_parser() -> argparse.ArgumentParser:
         dest="command",
         title="Available Commands",
         metavar="<command>",
+        required=True,
     )
 
     gke_deploy_p = subparsers.add_parser(
@@ -176,6 +170,8 @@ def main(argv: list[str] | None = None) -> None:
         logging.basicConfig(level=logging.DEBUG)
     elif getattr(args, "quiet", False):
         logging.basicConfig(level=logging.ERROR)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
     if hasattr(args, "func"):
         args.func(args)
