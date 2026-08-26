@@ -28,6 +28,9 @@ const (
 	colorBlack = 2 // visited / completely processed
 )
 
+// TODO(b/549523881): Extract pure 3-color DFS cycle detection and DAG traversal into a shared
+// pkg/components/graph package to eliminate code duplication with pkg/components/linter (PR #514).
+
 // BuildDependencyGraph constructs an adjacency map of component -> list of its dependencies.
 // Soft-deleted and deleted components are excluded from the graph.
 func BuildDependencyGraph(records []*ComponentRecord) map[string][]string {
