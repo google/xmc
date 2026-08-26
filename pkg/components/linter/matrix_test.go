@@ -902,6 +902,78 @@ spec:
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
 		},
+		{
+			name: "invalid requiredCRD segment exceeding 63 characters",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 64 'a' characters in first segment
+								RequiredCRDs: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.k8s.io"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "invalid requiredCRD total length exceeding 253 characters",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 4 segments of 63 'a' characters separated by dots = 255 characters total
+								RequiredCRDs: []string{
+									"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "valid requiredCRD with maximum allowed RFC-1123 lengths",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 3 segments of 63 chars + 1 segment of 61 chars separated by 3 dots = exactly 253 characters
+								RequiredCRDs: []string{
+									"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {

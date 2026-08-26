@@ -252,12 +252,20 @@ func validateSingleRequiredCRD(filePath string, line int, compName, crd string, 
 		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("empty requiredCRD in platform rule for component %q", compName))
 		return
 	}
+	if len(trimmed) > 253 {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: total length cannot exceed 253 characters", trimmed, compName))
+		return
+	}
 	parts := strings.Split(trimmed, ".")
 	if len(parts) < 2 {
 		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must be in <plural>.<group> format", trimmed, compName))
 		return
 	}
 	for _, part := range parts {
+		if len(part) > 63 {
+			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segment %q exceeds 63 characters", trimmed, compName, part))
+			return
+		}
 		if part == "" || strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
 			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segments must be non-empty and cannot start or end with '-'", trimmed, compName))
 			return
