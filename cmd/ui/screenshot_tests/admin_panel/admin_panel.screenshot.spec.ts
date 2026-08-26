@@ -80,10 +80,10 @@ const MOCK_USER_INFO = {
   privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
-test.use({ viewport: { width: 1600, height: 900 } });
-
 test.describe('Admin Panel Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1350 });
+
     // Mock generic auth/config
     await setupMockRoutes(page);
 
@@ -116,6 +116,19 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
     await page.goto('/admin');
     await page.waitForSelector('xmc-admin-panel');
     await setupScreenshotEnvironment(page);
+
+    // Ensure fixed container height for deterministic cross-environment visual bounding box capture
+    await page.addStyleTag({
+      content: `
+        xmc-admin-panel {
+          display: block !important;
+          box-sizing: border-box !important;
+          height: 1300px !important;
+          min-height: 1300px !important;
+          overflow: hidden !important;
+        }
+      `,
+    });
   });
 
   test('should match baseline screenshot for the entire Admin Panel page', async ({ page }) => {
@@ -124,6 +137,10 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
 
     const footer = page.locator('.admin-panel-footer');
     await expect(footer).toContainText('Build Version: v1.5.1-build.42');
+
+    // Wait for asynchronous config entries card and its table rows to render fully
+    const configRow = page.locator('xmc-config-entries-card .config-row').first();
+    await expect(configRow).toBeVisible();
 
     // Take screenshot of the entire admin panel page
     await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
