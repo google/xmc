@@ -64,6 +64,7 @@ func (a *Accumulator) Add(resType string, count float64) {
 		a.order = append(a.order, key)
 	}
 	a.totals[key] += count
+	a.Normalize()
 }
 
 // AccumulateResourceSet extracts and adds CPU, GPU, and TPU resources from a ResourceSet.
@@ -156,11 +157,15 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 	return specificGPU, specificTPU
 }
 
-func isSpecificGPUKey(key string) bool {
-	gpuKeywords := []string{
+var (
+	gpuKeywords = []string{
 		"gpu", "nvidia", "h100", "a100", "l4", "v100", "p100", "p4", "t4",
 		"b200", "gb200", "rtx", "gpack", "tesla",
 	}
+	tpuKeywords = []string{"tpu", "v4", "v5", "v6"}
+)
+
+func isSpecificGPUKey(key string) bool {
 	for _, kw := range gpuKeywords {
 		if strings.Contains(key, kw) {
 			return true
@@ -170,7 +175,6 @@ func isSpecificGPUKey(key string) bool {
 }
 
 func isSpecificTPUKey(key string) bool {
-	tpuKeywords := []string{"tpu", "v4", "v5", "v6"}
 	for _, kw := range tpuKeywords {
 		if strings.Contains(key, kw) {
 			return true
@@ -183,12 +187,15 @@ func (a *Accumulator) normalizeGenericGPU(specificGPU string) {
 	if specificGPU == "" {
 		return
 	}
-	for _, genericKey := range []string{"nvidia.com/gpu", "gpu"} {
-		if count, exists := a.totals[genericKey]; exists {
-			a.totals[specificGPU] += count
-			delete(a.totals, genericKey)
-			a.removeFromOrder(genericKey)
-		}
+	if count, exists := a.totals["nvidia.com/gpu"]; exists {
+		a.totals[specificGPU] += count
+		delete(a.totals, "nvidia.com/gpu")
+		a.removeFromOrder("nvidia.com/gpu")
+	}
+	if count, exists := a.totals["gpu"]; exists {
+		a.totals[specificGPU] += count
+		delete(a.totals, "gpu")
+		a.removeFromOrder("gpu")
 	}
 }
 
@@ -196,12 +203,15 @@ func (a *Accumulator) normalizeGenericTPU(specificTPU string) {
 	if specificTPU == "" {
 		return
 	}
-	for _, genericKey := range []string{"google.com/tpu", "tpu"} {
-		if count, exists := a.totals[genericKey]; exists {
-			a.totals[specificTPU] += count
-			delete(a.totals, genericKey)
-			a.removeFromOrder(genericKey)
-		}
+	if count, exists := a.totals["google.com/tpu"]; exists {
+		a.totals[specificTPU] += count
+		delete(a.totals, "google.com/tpu")
+		a.removeFromOrder("google.com/tpu")
+	}
+	if count, exists := a.totals["tpu"]; exists {
+		a.totals[specificTPU] += count
+		delete(a.totals, "tpu")
+		a.removeFromOrder("tpu")
 	}
 }
 
@@ -226,7 +236,6 @@ func (a *Accumulator) removeFromOrder(key string) {
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
 func (a *Accumulator) Totals() map[string]float64 {
-	a.Normalize()
 	result := make(map[string]float64, len(a.totals))
 	for k, v := range a.totals {
 		result[k] = v
@@ -239,7 +248,6 @@ func (a *Accumulator) Totals() map[string]float64 {
 // converts CPU Cores to int64 Millicores (e.g. 4000) for integer storage requirements.
 // All other resource types (memory, gpu, tpu) retain identical units across both methods.
 func (a *Accumulator) IntTotals() map[string]int64 {
-	a.Normalize()
 	result := make(map[string]int64, len(a.totals))
 	for k, v := range a.totals {
 		if k == ResourceTypeCPU {
@@ -254,6 +262,5 @@ func (a *Accumulator) IntTotals() map[string]int64 {
 // Order returns the slice of resource type keys in insertion order.
 // Returns a non-nil empty slice []string{} when no keys have been added.
 func (a *Accumulator) Order() []string {
-	a.Normalize()
 	return append([]string{}, a.order...)
 }

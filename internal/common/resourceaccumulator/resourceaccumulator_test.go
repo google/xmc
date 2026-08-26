@@ -15,6 +15,7 @@
 package resourceaccumulator
 
 import (
+	"sync"
 	"testing"
 
 	"golang/cmp/cmp"
@@ -212,6 +213,54 @@ func TestNormalizeGenericAccelerators(t *testing.T) {
 		}
 	})
 
+	t.Run("generic GPU added before specific GPU", func(t *testing.T) {
+		acc := New()
+		acc.Add("nvidia.com/gpu", 4)
+		acc.AccumulateResourceSet(&essmsgpb.ResourceSet{
+			Resources: &essmsgpb.ResourceSet_GpuResources{
+				GpuResources: &essmsgpb.GpuResources{
+					Type:  "nvidia-tesla-h100",
+					Count: 8,
+				},
+			},
+		})
+
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"nvidia-tesla-h100": 12.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+
+		order := acc.Order()
+		wantOrder := []string{"nvidia-tesla-h100"}
+		if diff := cmp.Diff(wantOrder, order); diff != "" {
+			t.Errorf("Order() diff (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("multiple generic GPUs merged into specific GPU", func(t *testing.T) {
+		acc := New()
+		acc.Add("nvidia.com/gpu", 4)
+		acc.Add("gpu", 2)
+		acc.Add("nvidia-tesla-h100", 8)
+
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"nvidia-tesla-h100": 14.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+
+		order := acc.Order()
+		wantOrder := []string{"nvidia-tesla-h100"}
+		if diff := cmp.Diff(wantOrder, order); diff != "" {
+			t.Errorf("Order() diff (-want +got):\n%s", diff)
+		}
+	})
+
 	t.Run("normalize generic TPU when specific TPU is present", func(t *testing.T) {
 		acc := New()
 		acc.AccumulateResourceSet(&essmsgpb.ResourceSet{
@@ -233,6 +282,28 @@ func TestNormalizeGenericAccelerators(t *testing.T) {
 		}
 	})
 
+	t.Run("generic TPU added before specific TPU and multiple generic TPUs merged", func(t *testing.T) {
+		acc := New()
+		acc.Add("google.com/tpu", 4)
+		acc.Add("tpu", 2)
+		acc.AccumulateResourceSet(&essmsgpb.ResourceSet{
+			Resources: &essmsgpb.ResourceSet_TpuResources{
+				TpuResources: &essmsgpb.TpuResources{
+					Type:     "v5p-8",
+					Topology: "2x2x2",
+				},
+			},
+		})
+
+		totals := acc.Totals()
+		wantTotals := map[string]float64{
+			"v5p-8": 14.0,
+		}
+		if diff := cmp.Diff(wantTotals, totals); diff != "" {
+			t.Errorf("Totals() diff (-want +got):\n%s", diff)
+		}
+	})
+
 	t.Run("generic GPU unchanged when no specific GPU is present", func(t *testing.T) {
 		acc := New()
 		acc.Add("nvidia.com/gpu", 4)
@@ -244,4 +315,29 @@ func TestNormalizeGenericAccelerators(t *testing.T) {
 			t.Errorf("Totals() diff (-want +got):\n%s", diff)
 		}
 	})
+}
+
+func TestConcurrentGetters(t *testing.T) {
+	acc := New()
+	acc.Add("cpu", 4.0)
+	acc.Add("nvidia-tesla-h100", 8.0)
+	acc.Add("nvidia.com/gpu", 2.0)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_ = acc.Totals()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = acc.IntTotals()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = acc.Order()
+		}()
+	}
+	wg.Wait()
 }

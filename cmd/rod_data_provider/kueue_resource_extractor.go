@@ -32,6 +32,11 @@ var acceleratorLabelKeys = []string{
 	"gpu.nvidia.com/class",
 }
 
+var acceleratorKeywords = []string{
+	"h100", "a100", "l4", "v100", "p100", "p4", "t4", "b200", "gb200",
+	"h200", "b40", "rtx", "v4", "v5", "v6", "gpack", "tesla",
+}
+
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
 // using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
 func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
@@ -65,10 +70,6 @@ func isSpecificAcceleratorName(name string) bool {
 		return false
 	}
 
-	acceleratorKeywords := []string{
-		"h100", "a100", "l4", "v100", "p100", "p4", "t4", "b200", "gb200",
-		"h200", "b40", "rtx", "v4", "v5", "v6", "gpack", "tesla",
-	}
 	for _, kw := range acceleratorKeywords {
 		if strings.Contains(lower, kw) {
 			return true
