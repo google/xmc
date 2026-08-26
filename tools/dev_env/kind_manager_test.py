@@ -186,10 +186,27 @@ class KindManagerTest(unittest.TestCase):
         self.manager._apply_secret_generic(
             "test-secret",
             ["xmc"],
-            ["jwt-secret=complex=base64=value=="],
+            literals=["jwt-secret=complex=base64=value=="],
         )
         create_cmd = mock_run.call_args[0][0]
         self.assertIn("--from-literal=jwt-secret=complex=base64=value==", create_cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_apply_secret_generic_with_files_and_literals(self, mock_run: mock.MagicMock) -> None:
+        self.manager._apply_secret_generic(
+            "test-secret",
+            ["xmc"],
+            files=["key.json=/path/to/key.json"],
+            literals=["client-secret=my-secret"],
+        )
+        create_cmd = mock_run.call_args[0][0]
+        self.assertIn("--from-file=key.json=/path/to/key.json", create_cmd)
+        self.assertIn("--from-literal=client-secret=my-secret", create_cmd)
+
+    @mock.patch("getpass.getuser", return_value="alice")
+    def test_default_temp_dir_contains_username(self, mock_user: mock.MagicMock) -> None:
+        km = KindManager(config=self.config)
+        self.assertIn("xmc_dev_alice_test-kind", str(km.temp_dir))
 
     def test_resolve_adc_file_from_env(self) -> None:
         adc_file = Path(self.temp_dir.name) / "custom_adc.json"

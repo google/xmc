@@ -20,6 +20,7 @@ injection, self-signed TLS certificate generation, and lifecycle management for
 local XMC KinD clusters.
 """
 
+import getpass
 import os
 import shutil
 import tempfile
@@ -66,7 +67,10 @@ class KindManager:
         """Initializes KindManager with configuration and directory paths."""
         self.config = config
         self.repo_root = repo_root or _REPO_ROOT
-        self.temp_dir = temp_dir or Path(tempfile.gettempdir()) / f"xmc_dev_{config.cluster_name}"
+        self.temp_dir = (
+            temp_dir
+            or Path(tempfile.gettempdir()) / f"xmc_dev_{getpass.getuser()}_{config.cluster_name}"
+        )
 
     @property
     def kube_context(self) -> str:
@@ -141,6 +145,7 @@ class KindManager:
             return default_adc.resolve()
         if "SPANNER_EMULATOR_HOST" in os.environ:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
+            self.temp_dir.chmod(0o700)
             dummy_path = self.temp_dir / "dummy-credentials.json"
             if not dummy_path.exists():
                 dummy_path.write_text('{"type": "service_account", "project_id": "dummy"}')
@@ -156,19 +161,25 @@ class KindManager:
         ctx = f"kind-{name}"
         log_info("=== [KinD] Configuring Kubernetes secrets in 'xmc' namespace ===")
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.chmod(0o700)
         adc_file = self._resolve_adc_file()
 
         log_info("Creating GCP SA credentials secret 'gcp-sa-key'...")
-        self._apply_secret_generic("gcp-sa-key", ["xmc"], [f"key.json={adc_file}"], ctx=ctx)
+        self._apply_secret_generic(
+            "gcp-sa-key",
+            ["xmc"],
+            files=[f"key.json={adc_file}"],
+            ctx=ctx,
+        )
 
         log_info("Creating backend OAuth secrets 'backend-oauth-secrets'...")
         self._apply_secret_generic(
             "backend-oauth-secrets",
             ["xmc"],
-            [
+            files=[f"key.json={adc_file}"],
+            literals=[
                 "jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
                 "client-secret=xmc-client-secret",
-                f"key.json={adc_file}",
             ],
             ctx=ctx,
         )
@@ -211,12 +222,12 @@ class KindManager:
         self._apply_secret_generic(
             "validation-secret",
             ["xmc"],
-            [f"tls.key={tls_key}", f"tls.crt={tls_crt}"],
+            files=[f"tls.key={tls_key}", f"tls.crt={tls_crt}"],
             ctx=ctx,
         )
 
         log_info("Creating Redis secret 'redis-secret'...")
-        self._apply_secret_generic("redis-secret", ["xmc"], ["redis-password="], ctx=ctx)
+        self._apply_secret_generic("redis-secret", ["xmc"], literals=["redis-password="], ctx=ctx)
         log_success("Kubernetes secrets successfully configured.")
 
     def create_secrets(self, cluster_name: str | None = None) -> None:
@@ -227,7 +238,8 @@ class KindManager:
         self,
         name: str,
         namespaces: list[str],
-        items: list[str],
+        files: list[str] | None = None,
+        literals: list[str] | None = None,
         ctx: str | None = None,
     ) -> None:
         """Applies generic secret across namespaces idempotently."""
@@ -259,11 +271,12 @@ class KindManager:
                 "-n",
                 ns,
             ]
-            for item in items:
-                if "=" in item and Path(item.split("=", 1)[1]).is_file():
-                    create_cmd.append(f"--from-file={item}")
-                else:
-                    create_cmd.append(f"--from-literal={item}")
+            if files:
+                for f in files:
+                    create_cmd.append(f"--from-file={f}")
+            if literals:
+                for lit in literals:
+                    create_cmd.append(f"--from-literal={lit}")
             run_command(create_cmd, check=True)
 
     def delete_cluster(self, cluster_name: str | None = None) -> None:
