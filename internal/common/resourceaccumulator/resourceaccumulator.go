@@ -53,7 +53,7 @@ func New() *Accumulator {
 
 // Add adds count units for the given resType, converting all keys to lowercase.
 func (a *Accumulator) Add(resType string, count float64) {
-	if count <= 0 || resType == "" {
+	if a == nil || count <= 0 || resType == "" {
 		return
 	}
 	if a.totals == nil {
@@ -69,7 +69,7 @@ func (a *Accumulator) Add(resType string, count float64) {
 
 // AccumulateResourceSet extracts and adds CPU, GPU, and TPU resources from a ResourceSet.
 func (a *Accumulator) AccumulateResourceSet(rs *essmsgpb.ResourceSet) {
-	if rs == nil {
+	if a == nil || rs == nil {
 		return
 	}
 	if cpu := rs.GetCpuResources(); cpu != nil {
@@ -118,7 +118,7 @@ func (a *Accumulator) accumulateTPU(tpu *essmsgpb.TpuResources) {
 
 // AccumulateExecutable extracts domain ResourceSets from an Executable via workunit.GetWorkUnitResources and accumulates them.
 func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
-	if exec == nil {
+	if a == nil || exec == nil {
 		return
 	}
 	resourceSets := workunit.GetWorkUnitResources(&essmsgpb.WorkUnit{Executable: exec})
@@ -150,7 +150,8 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 		}
 		if specificGPU == "" && isSpecificGPUKey(key) {
 			specificGPU = key
-		} else if specificTPU == "" && isSpecificTPUKey(key) {
+		}
+		if specificTPU == "" && isSpecificTPUKey(key) {
 			specificTPU = key
 		}
 	}
@@ -158,13 +159,14 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 }
 
 var (
-	longGPUKeywords = []string{
-		"h100", "a100", "v100", "p100", "b200", "gb200", "rtx", "gpack", "tesla",
+	gpuKeywords = []string{
+		"nvidia-", "tesla-", "h100", "a100", "v100", "p100", "b200", "gb200", "rtx", "gpack", "tesla",
 	}
 	shortGPUKeywords = []string{"l4", "p4", "t4"}
 
-	longTPUKeywords  = []string{"v5e", "v5p"}
-	shortTPUKeywords = []string{"v4", "v5", "v6"}
+	tpuKeywords = []string{
+		"v5p", "v5e", "tpu-v4", "tpu-v5", "tpu-v6", "tpu-",
+	}
 
 	genericKeywords = []string{
 		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
@@ -175,34 +177,45 @@ func isSpecificGPUKey(key string) bool {
 	if isGenericFlavor(key) {
 		return false
 	}
-	for _, kw := range longGPUKeywords {
+	for _, kw := range gpuKeywords {
 		if strings.Contains(key, kw) {
 			return true
 		}
 	}
 	for _, kw := range shortGPUKeywords {
-		if matchesShortAcceleratorKeyword(key, kw) {
+		if isStructuredShortGPU(key, kw) {
 			return true
 		}
 	}
-	return strings.Contains(key, "gpu") || strings.Contains(key, "nvidia")
+	return false
+}
+
+func isStructuredShortGPU(key, kw string) bool {
+	if key == kw || strings.HasPrefix(key, kw+"-") {
+		return true
+	}
+	return matchesShortAcceleratorKeyword(key, kw) && (strings.Contains(key, "nvidia") || strings.Contains(key, "gpu"))
 }
 
 func isSpecificTPUKey(key string) bool {
 	if isGenericFlavor(key) {
 		return false
 	}
-	for _, kw := range longTPUKeywords {
+	for _, kw := range tpuKeywords {
 		if strings.Contains(key, kw) {
 			return true
 		}
 	}
-	for _, kw := range shortTPUKeywords {
-		if matchesShortAcceleratorKeyword(key, kw) {
+	tpuPrefixes := []string{"v4-", "v5-", "v6-"}
+	for _, pfx := range tpuPrefixes {
+		if strings.HasPrefix(key, pfx) {
 			return true
 		}
 	}
-	return strings.Contains(key, "tpu")
+	if key == "v4" || key == "v5" || key == "v6" {
+		return true
+	}
+	return false
 }
 
 func isGenericFlavor(lower string) bool {
@@ -293,6 +306,9 @@ func (a *Accumulator) removeFromOrder(key string) {
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
 func (a *Accumulator) Totals() map[string]float64 {
+	if a == nil {
+		return make(map[string]float64)
+	}
 	result := make(map[string]float64, len(a.totals))
 	for k, v := range a.totals {
 		result[k] = v
@@ -305,6 +321,9 @@ func (a *Accumulator) Totals() map[string]float64 {
 // converts CPU Cores to int64 Millicores (e.g. 4000) for integer storage requirements.
 // All other resource types (memory, gpu, tpu) retain identical units across both methods.
 func (a *Accumulator) IntTotals() map[string]int64 {
+	if a == nil {
+		return make(map[string]int64)
+	}
 	result := make(map[string]int64, len(a.totals))
 	for k, v := range a.totals {
 		if k == ResourceTypeCPU {
@@ -319,5 +338,8 @@ func (a *Accumulator) IntTotals() map[string]int64 {
 // Order returns the slice of resource type keys in insertion order.
 // Returns a non-nil empty slice []string{} when no keys have been added.
 func (a *Accumulator) Order() []string {
+	if a == nil {
+		return []string{}
+	}
 	return append([]string{}, a.order...)
 }

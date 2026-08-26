@@ -353,9 +353,14 @@ func TestAccumulator_FalsePositivesAndExclusions(t *testing.T) {
 		{key: "level4", wantGPU: false, wantTPU: false},
 		{key: "step4", wantGPU: false, wantTPU: false},
 		{key: "server6", wantGPU: false, wantTPU: false},
+		{key: "http4", wantGPU: false, wantTPU: false},
+		{key: "backup4", wantGPU: false, wantTPU: false},
+		{key: "env-v5", wantGPU: false, wantTPU: false},
+		{key: "dev-v4", wantGPU: false, wantTPU: false},
 		{key: "generic-gpu", wantGPU: false, wantTPU: false},
 		{key: "standard-gpu", wantGPU: false, wantTPU: false},
 		{key: "nvidia-l4", wantGPU: true, wantTPU: false},
+		{key: "nvidia-tesla-h100", wantGPU: true, wantTPU: false},
 		{key: "tpu-v4", wantGPU: false, wantTPU: true},
 		{key: "tpu-v5p", wantGPU: false, wantTPU: true},
 		{key: "v5e-8", wantGPU: false, wantTPU: true},
@@ -372,5 +377,60 @@ func TestAccumulator_FalsePositivesAndExclusions(t *testing.T) {
 				t.Errorf("isSpecificTPUKey(%q) = %v, want %v", tt.key, gotTPU, tt.wantTPU)
 			}
 		})
+	}
+}
+
+func TestNilAccumulatorReceiverSafety(t *testing.T) {
+	var acc *Accumulator
+
+	t.Run("Totals on nil accumulator", func(t *testing.T) {
+		totals := acc.Totals()
+		if totals == nil {
+			t.Errorf("acc.Totals() on nil returned nil, want non-nil empty map")
+		}
+		if len(totals) != 0 {
+			t.Errorf("acc.Totals() len = %d, want 0", len(totals))
+		}
+	})
+
+	t.Run("IntTotals on nil accumulator", func(t *testing.T) {
+		intTotals := acc.IntTotals()
+		if intTotals == nil {
+			t.Errorf("acc.IntTotals() on nil returned nil, want non-nil empty map")
+		}
+		if len(intTotals) != 0 {
+			t.Errorf("acc.IntTotals() len = %d, want 0", len(intTotals))
+		}
+	})
+
+	t.Run("Order on nil accumulator", func(t *testing.T) {
+		order := acc.Order()
+		if order == nil {
+			t.Errorf("acc.Order() on nil returned nil, want non-nil empty slice")
+		}
+		if len(order) != 0 {
+			t.Errorf("acc.Order() len = %d, want 0", len(order))
+		}
+	})
+
+	t.Run("mutator methods on nil accumulator do not panic", func(t *testing.T) {
+		acc.Add("cpu", 1.0)
+		acc.AccumulateResourceSet(nil)
+		acc.AccumulateExecutable(nil)
+		acc.Normalize()
+	})
+}
+
+func TestFindSpecificAccelerators_IndependentChecks(t *testing.T) {
+	acc := New()
+	acc.Add("nvidia-tesla-h100", 8)
+	acc.Add("v5p-8", 4)
+
+	gpu, tpu := acc.findSpecificAccelerators()
+	if gpu != "nvidia-tesla-h100" {
+		t.Errorf("findSpecificAccelerators() gpu = %q, want %q", gpu, "nvidia-tesla-h100")
+	}
+	if tpu != "v5p-8" {
+		t.Errorf("findSpecificAccelerators() tpu = %q, want %q", tpu, "v5p-8")
 	}
 }
