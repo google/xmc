@@ -194,6 +194,13 @@ func TestController_RunReconcilePass(t *testing.T) {
 	if !hasFin {
 		t.Errorf("expected finalizer %s on resource, got %v", bridge.FinalizerDeletionProtection, updated.GetFinalizers())
 	}
+	status, ok := updated.Object["status"].(map[string]any)
+	if !ok || status == nil {
+		t.Fatal("expected status on updated resource")
+	}
+	if status["state"] != "COMPONENT_STATE_ENABLED" {
+		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", status["state"])
+	}
 }
 
 func TestBuildStatus(t *testing.T) {
@@ -377,3 +384,27 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
 	}
 }
+func TestController_SyncFinalizers_NilResult(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
+	ctrl := NewController(fakeDynamic, nil, "xmc", time.Second, time.Second)
+
+	item := &unstructured.Unstructured{
+		Object: map[string]any{
+			"metadata": map[string]any{
+				"name":      "test-item",
+				"namespace": "xmc",
+			},
+		},
+	}
+
+	got, err := ctrl.syncFinalizers(ctx, item, nil)
+	if err != nil {
+		t.Fatalf("syncFinalizers returned unexpected error: %v", err)
+	}
+	if got != item {
+		t.Errorf("expected original item returned on nil res, got %v", got)
+	}
+}
+

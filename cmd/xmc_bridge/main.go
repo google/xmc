@@ -278,7 +278,8 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
 		return c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).Update(ctx, item, metav1.UpdateOptions{})
-	} else if res.RemoveFinalizer && hasFin {
+	}
+	if res.RemoveFinalizer && hasFin {
 		var updated []string
 		for _, f := range item.GetFinalizers() {
 			if f != bridge.FinalizerDeletionProtection {

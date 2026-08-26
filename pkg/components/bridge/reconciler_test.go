@@ -297,6 +297,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ReconcileComponent() error = %v, wantErr %v", err, tt.wantErr)
 			}
+			if res == nil {
+				t.Fatal("expected non-nil ReconcileResult")
+			}
 			if err == nil {
 				if res.State != tt.wantState {
 					t.Errorf("got state %v, want %v", res.State, tt.wantState)
