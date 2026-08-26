@@ -362,6 +362,39 @@ class DevEnvCliTest(unittest.TestCase):
         )
         mock_upgrade.assert_called_once()
 
+    @patch("tools.dev_env.spanner_manager.SpannerManager.ensure_databases_exist")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_create_action(
+        self, mock_load_config: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """Verifies 'dev_env spanner create' dispatches to SpannerManager.ensure_databases_exist."""
+        args = self.parser.parse_args(["spanner", "create", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_ensure.assert_called_once()
+
+    @patch("tools.dev_env.spanner_manager.SpannerManager.drop_databases")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_drop_action(self, mock_load_config: MagicMock, mock_drop: MagicMock) -> None:
+        """Verifies 'dev_env spanner drop' dispatches to SpannerManager.drop_databases."""
+        args = self.parser.parse_args(["spanner", "drop", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_drop.assert_called_once()
+
+    @patch("tools.dev_env.config.load_config")
+    @patch("tools.dev_env.dev_env.log_error")
+    def test_spanner_unknown_action(
+        self, mock_log_error: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Verifies unknown spanner action exits with error code 1."""
+        args = self.parser.parse_args(["spanner"])
+        args.spanner_action = "invalid"
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.handle_spanner(args)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once()
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(

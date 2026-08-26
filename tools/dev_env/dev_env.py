@@ -71,6 +71,26 @@ def handle_upgrade(args: argparse.Namespace) -> None:
     handle_gke_upgrade(args)
 
 
+def handle_spanner(args: argparse.Namespace) -> None:
+    """Handler for Cloud Spanner database operations.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.spanner_manager import SpannerManager
+
+    cfg = config.load_config(args)
+    mgr = SpannerManager(cfg)
+    action = getattr(args, "spanner_action", "create")
+    if action in ("create", "ensure"):
+        mgr.ensure_databases_exist()
+    elif action == "drop":
+        mgr.drop_databases()
+    else:
+        log_error(f"Unknown spanner action: {action}")
+        sys.exit(1)
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -190,6 +210,25 @@ def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     group.add_argument("--only", choices=upgrade_dev_env.STEPS, help="Execute only step.")
 
 
+def _add_spanner_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'spanner' subcommand parser for database management."""
+    p = subparsers.add_parser(
+        "spanner",
+        help="Manage Cloud Spanner databases (create, drop).",
+        description="Creates or drops Cloud Spanner databases for XMC.",
+    )
+    p.add_argument(
+        "spanner_action",
+        nargs="?",
+        default="create",
+        choices=["create", "ensure", "drop"],
+        help="Action to perform on Cloud Spanner databases (default: create).",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_spanner)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -200,6 +239,8 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
+  python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
+  python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
 """,
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
@@ -250,6 +291,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     _add_upgrade_flags(upgrade_p, is_gke=False)
     upgrade_p.set_defaults(func=handle_upgrade)
+
+    _add_spanner_parser(subparsers)
 
     return parser
 
