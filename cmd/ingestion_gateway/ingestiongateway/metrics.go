@@ -96,22 +96,22 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 
 		ProduceBatchSizeBytes: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
-				Name:    "franz_go_produce_batch_size_bytes",
-				Help:    "Size of produce batches in bytes.",
+				Name:    "xmc_ingestion_produce_batch_size_bytes",
+				Help:    "Size of produced metric records in bytes.",
 				Buckets: prometheus.ExponentialBuckets(1024, 2, 12),
 			},
 		),
 
 		ProduceRecordsTotal: prometheus.NewCounter(
 			prometheus.CounterOpts{
-				Name: "franz_go_produce_records_total",
-				Help: "Total number of records produced to Kafka.",
+				Name: "xmc_ingestion_produce_records_total",
+				Help: "Total number of records produced to the message bus.",
 			},
 		),
 
 		ProduceErrorsTotal: prometheus.NewCounter(
 			prometheus.CounterOpts{
-				Name: "franz_go_produce_errors_total",
+				Name: "xmc_ingestion_produce_errors_total",
 				Help: "Total number of produce errors.",
 			},
 		),
@@ -143,6 +143,24 @@ func (m *GatewayMetrics) RecordHTTPRequest(status int, path, method string, dura
 // RecordDroppedPayload increments dropped payloads counter with a specific reason.
 func (m *GatewayMetrics) RecordDroppedPayload(reason string) {
 	m.DroppedPayloadsTotal.WithLabelValues(reason).Inc()
+}
+
+// RecordProducedRecord records the payload size and outcome of a single publish attempt.
+//
+// Both message bus backends report through here so the produce series stay comparable across them.
+// A nil receiver is a no-op, since metrics are optional throughout the gateway.
+func (m *GatewayMetrics) RecordProducedRecord(valueBytes int, err error) {
+	if m == nil {
+		return
+	}
+	if valueBytes > 0 {
+		m.ProduceBatchSizeBytes.Observe(float64(valueBytes))
+	}
+	if err != nil {
+		m.ProduceErrorsTotal.Inc()
+		return
+	}
+	m.ProduceRecordsTotal.Inc()
 }
 
 // sanitizePath normalizes dynamic or unknown URL paths to prevent cardinality explosion in Prometheus.
@@ -229,17 +247,14 @@ func (h *FranzGoMetricsHook) OnBrokerDisconnect(meta kgo.BrokerMetadata, conn ne
 
 // OnProduceRecordUnbuffered implements kgo.HookProduceRecordUnbuffered.
 func (h *FranzGoMetricsHook) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
-	if h == nil || h.metrics == nil {
+	if h == nil {
 		return
 	}
-	if r != nil && len(r.Value) > 0 {
-		h.metrics.ProduceBatchSizeBytes.Observe(float64(len(r.Value)))
+	valueBytes := 0
+	if r != nil {
+		valueBytes = len(r.Value)
 	}
-	if err != nil {
-		h.metrics.ProduceErrorsTotal.Inc()
-	} else {
-		h.metrics.ProduceRecordsTotal.Inc()
-	}
+	h.metrics.RecordProducedRecord(valueBytes, err)
 }
 
 var (
