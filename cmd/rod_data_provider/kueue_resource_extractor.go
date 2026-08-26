@@ -15,6 +15,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/internal/common/resourceaccumulator"
@@ -23,8 +26,17 @@ import (
 
 const bytesPerGiB = 1024 * 1024 * 1024
 
-// resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
-// using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
+// formatCompoundAccelerator combines the base resource name with the specific accelerator model.
+func formatCompoundAccelerator(resourceName, model string) string {
+	if strings.HasPrefix(model, resourceName+": ") || strings.HasPrefix(model, resourceName+"/") {
+		return model
+	}
+	return fmt.Sprintf("%s: %s", resourceName, model)
+}
+
+// resolveResourceType resolves generic resource names like "nvidia.com/gpu" to compound accelerator names
+// (e.g. "nvidia.com/gpu: nvidia-tesla-h100") using the ResourceFlavor's nodeLabels if present.
+// Non-accelerator resources (like "cpu" or "memory") remain unchanged.
 func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
 	if !resourceaccumulator.IsAcceleratorResource(resourceName) {
 		return resourceName
@@ -33,13 +45,13 @@ func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueu
 		if rf := rfMap[flavorName]; rf != nil {
 			for _, labelKey := range constants.AcceleratorLabelKeys {
 				if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
-					return acc
+					return formatCompoundAccelerator(resourceName, acc)
 				}
 			}
 		}
 	}
 	if resourceaccumulator.IsSpecificAcceleratorName(flavorName) {
-		return flavorName
+		return formatCompoundAccelerator(resourceName, flavorName)
 	}
 	return resourceName
 }
