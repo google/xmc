@@ -342,9 +342,7 @@ def run_command(
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}")
 
-    proc_env = os.environ.copy()
-    if env:
-        proc_env.update({str(k): str(v) for k, v in env.items()})
+    proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
 
     try:
         return subprocess.run(

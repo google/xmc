@@ -15,6 +15,7 @@
 """Tool for parsing and comparing subagent trajectories and outcomes from transcript.jsonl files."""
 
 import argparse
+import collections
 import json
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
     total_steps = 0
     turns = 0
     error_count = 0
-    tool_counts: dict[str, int] = {}
+    tool_counts: collections.Counter[str] = collections.Counter()
     last_response = ""
     modified_files: list[str] = []
 
@@ -75,7 +76,7 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
                     for tc in tool_calls:
                         if isinstance(tc, dict):
                             name = tc.get("name") or tc.get("tool_name") or "unknown_tool"
-                            tool_counts[name] = tool_counts.get(name, 0) + 1
+                            tool_counts[name] += 1
                             mutating_tools = {
                                 "write_to_file",
                                 "replace_file_content",
@@ -217,8 +218,7 @@ def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.output:
         try:
-            with open(args.output, "w", encoding="utf-8") as f:
-                f.write(report)
+            Path(args.output).write_text(report, encoding="utf-8")
         except OSError as e:
             raise HandledError(
                 f"Failed to write output report to '{args.output}': {e}",

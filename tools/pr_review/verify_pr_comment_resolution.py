@@ -48,8 +48,7 @@ def verify_resolution(args):
         )
 
     try:
-        with open(checklist_path, encoding="utf-8") as f:
-            content = f.read()
+        content = Path(checklist_path).read_text(encoding="utf-8")
     except Exception as e:
         raise HandledError(
             f"Failed to read checklist file '{checklist_path}': {e}",

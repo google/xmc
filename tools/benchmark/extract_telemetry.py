@@ -88,8 +88,7 @@ def extract_telemetry(args):
     records = _parse_telemetry(comments)
     if args.output:
         try:
-            with open(args.output, "w") as f:
-                json.dump(records, f, indent=2)
+            Path(args.output).write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
             return f"Successfully wrote {len(records)} records to {args.output}"
         except OSError as e:
             raise HandledError(

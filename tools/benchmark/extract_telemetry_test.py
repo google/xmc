@@ -161,9 +161,8 @@ class TestExtractTelemetry(unittest.TestCase):
         mock_parse.assert_called_once_with([{"id": 1}])
 
     @patch("tools.benchmark.extract_telemetry._fetch_comments")
-    @patch("builtins.open", new_callable=MagicMock)
-    @patch("tools.benchmark.extract_telemetry.json.dump")
-    def test_extract_telemetry_write_file(self, mock_dump, mock_open, mock_fetch):
+    @patch("pathlib.Path.write_text")
+    def test_extract_telemetry_write_file(self, mock_write, mock_fetch):
         """Test extract_telemetry writing results to file when requested."""
         args = MagicMock()
         args.owner = "google"
@@ -184,8 +183,7 @@ class TestExtractTelemetry(unittest.TestCase):
 
         res = extract_telemetry(args)
         self.assertEqual(res, "Successfully wrote 1 records to output.json")
-        mock_open.assert_called_once_with("output.json", "w")
-        mock_dump.assert_called_once()
+        mock_write.assert_called_once()
 
 
 if __name__ == "__main__":
