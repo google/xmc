@@ -36,20 +36,84 @@ export class FreeTotalDisplayPipe implements PipeTransform {
   }
 }
 
+export interface CohortStateInfo {
+  state: 'BALANCED' | 'SQUEEZED' | 'BORROWING';
+  label: string;
+  badgeClass: string;
+  icon: string;
+  delta: number;
+}
+
+const EPSILON = 1e-5;
+
+const BALANCED_STATE: CohortStateInfo = {
+  state: 'BALANCED',
+  label: 'Balanced',
+  badgeClass: 'balanced',
+  icon: 'check_circle',
+  delta: 0,
+};
+
 /**
- * Pure Angular pipe to compute max workload display text for a queue resource capacity.
+ * Derives cohort sharing state info (BALANCED, SQUEEZED, BORROWING) from a QueueResourceCapacity.
+ */
+export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): CohortStateInfo {
+  if (!capacity) return BALANCED_STATE;
+
+  const freeNominal = capacity.freeCapacity ?? 0;
+  const schedulable = capacity.freeCapacityWithBorrowing ?? freeNominal;
+  const delta = schedulable - freeNominal;
+
+  if (delta < -EPSILON) {
+    return {
+      state: 'SQUEEZED',
+      label: 'Squeezed by cohort',
+      badgeClass: 'squeezed',
+      icon: 'warning',
+      delta: Math.abs(delta),
+    };
+  }
+
+  if (delta > EPSILON) {
+    return {
+      state: 'BORROWING',
+      label: 'Borrowing available',
+      badgeClass: 'borrowing',
+      icon: 'bolt',
+      delta,
+    };
+  }
+
+  return BALANCED_STATE;
+}
+
+/**
+ * Pure Angular pipe to compute max schedulable display text for a queue resource capacity.
  */
 @Pipe({
-  name: 'maxWorkloadDisplay',
+  name: 'maxSchedulableDisplay',
   standalone: true,
   pure: true,
 })
-export class MaxWorkloadDisplayPipe implements PipeTransform {
+export class MaxSchedulableDisplayPipe implements PipeTransform {
   transform(capacity?: QueueResourceCapacity | null): string {
     if (!capacity) return '-';
-    const free = capacity.freeCapacity ?? 0;
-    const total = capacity.totalCapacity ?? 0;
-    return `${free} → ${total}`;
+    const schedulable = capacity.freeCapacityWithBorrowing ?? capacity.freeCapacity ?? 0;
+    return `${schedulable}`;
+  }
+}
+
+/**
+ * Pure Angular pipe to compute cohort state info for capacity headers and contextual banners.
+ */
+@Pipe({
+  name: 'cohortStateInfo',
+  standalone: true,
+  pure: true,
+})
+export class CohortStateInfoPipe implements PipeTransform {
+  transform(capacity?: QueueResourceCapacity | null): CohortStateInfo {
+    return getCohortStateInfo(capacity);
   }
 }
 

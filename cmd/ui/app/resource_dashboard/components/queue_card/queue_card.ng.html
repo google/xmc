@@ -66,39 +66,67 @@
 
       <div class="capacity-boxes-stack">
         @for (cap of capacities(); track cap.resourceType) {
-          <div class="capacity-box table-row">
+          @let cohortInfo = cap | cohortStateInfo;
+          <div
+            class="capacity-box table-row"
+            [class.squeezed-box]="cohortInfo.state === 'SQUEEZED'"
+            [class.borrowing-box]="cohortInfo.state === 'BORROWING'"
+          >
             <div class="capacity-box-header">
-              <span class="flavor-main-name">{{ cap.resourceType }}</span>
+              <div class="flavor-header-group">
+                <span class="flavor-main-name">{{ cap.resourceType }}</span>
+                @if (cohortInfo.state === 'SQUEEZED') {
+                  <span
+                    class="cohort-badge squeezed-badge"
+                    matTooltip="Peers in your cohort are currently using shared capacity"
+                  >
+                    <mat-icon class="badge-mini-icon">warning</mat-icon>
+                    Squeezed by cohort
+                  </span>
+                } @else if (cohortInfo.state === 'BORROWING') {
+                  <span
+                    class="cohort-badge borrowing-badge"
+                    matTooltip="Idle capacity is available in your cohort to borrow"
+                  >
+                    <mat-icon class="badge-mini-icon">bolt</mat-icon>
+                    Borrowing available
+                  </span>
+                }
+              </div>
               <mat-icon
                 class="flavor-status-icon"
-                [class.flavor-check-icon]="isQueueHealthy()"
-                [class.flavor-warn-icon]="!isQueueHealthy()"
+                [class.flavor-check-icon]="isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'"
+                [class.flavor-warn-icon]="!isQueueHealthy() || cohortInfo.state === 'SQUEEZED'"
               >
-                {{ isQueueHealthy() ? 'check_circle' : 'warning_amber' }}
+                {{
+                  isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'
+                    ? 'check_circle'
+                    : 'warning_amber'
+                }}
               </mat-icon>
             </div>
             <div class="capacity-stats-grid">
               <div class="stat-cell">
                 <div class="cell-label">
-                  Max workload size
+                  Max schedulable now
                   <mat-icon
                     class="help-tip-icon"
                     matTooltipClass="rod-term-tooltip"
-                    [matTooltip]="termTooltips.maxWorkloadSize"
+                    [matTooltip]="termTooltips.maxSchedulableNow"
                     >help_outline</mat-icon
                   >
                 </div>
                 <div
                   class="cell-value bold-metric"
-                  [class.green-text]="isQueueHealthy()"
-                  [class.amber-text]="!isQueueHealthy()"
+                  [class.green-text]="isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'"
+                  [class.amber-text]="!isQueueHealthy() || cohortInfo.state === 'SQUEEZED'"
                 >
-                  {{ cap | maxWorkloadDisplay }}
+                  {{ cap | maxSchedulableDisplay }}
                 </div>
               </div>
               <div class="stat-cell">
                 <div class="cell-label">
-                  Free / Total
+                  Nominal Quota
                   <mat-icon
                     class="help-tip-icon"
                     matTooltipClass="rod-term-tooltip"
@@ -111,6 +139,25 @@
                 </div>
               </div>
             </div>
+
+            @if (cohortInfo.state === 'SQUEEZED') {
+              <div class="cohort-banner squeezed-banner">
+                <mat-icon class="banner-mini-icon">info</mat-icon>
+                <span
+                  ><strong>{{ cohortInfo.delta | number: '1.0-1' }}</strong> nominal quota is
+                  temporarily held by cohort peers.</span
+                >
+              </div>
+            } @else if (cohortInfo.state === 'BORROWING') {
+              <div class="cohort-banner borrowing-banner">
+                <mat-icon class="banner-mini-icon">auto_awesome</mat-icon>
+                <span
+                  >Can borrow up to
+                  <strong>+{{ cohortInfo.delta | number: '1.0-1' }}</strong> beyond nominal quota
+                  from cohort.</span
+                >
+              </div>
+            }
           </div>
         } @empty {
           <div class="no-resource-flavor">No capacity data for selected resource.</div>

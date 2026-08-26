@@ -96,6 +96,50 @@ describe('QueueCardComponent', () => {
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
     expect(rowText).toContain('56 / 64');
+    expect(rowText).toContain('Max schedulable now');
+    expect(rowText).toContain('56');
+  });
+
+  it('should render Squeezed by cohort badge and contextual banner when cohort capacity is squeezed', async () => {
+    hostInstance.queue.set({
+      queueName: 'squeezed-queue',
+      queueCapacity: [
+        {
+          resourceType: 'cpu',
+          totalCapacity: 100,
+          freeCapacity: 60,
+          freeCapacityWithBorrowing: 30,
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const rowText = await harness.getFlavorRowText(0);
+    expect(rowText).toContain('Squeezed by cohort');
+    expect(rowText).toContain('30');
+    expect(rowText).toContain('60 / 100');
+    expect(rowText).toContain('30 nominal quota is temporarily held by cohort peers.');
+  });
+
+  it('should render Borrowing available badge and contextual banner when cohort capacity can be borrowed', async () => {
+    hostInstance.queue.set({
+      queueName: 'borrowing-queue',
+      queueCapacity: [
+        {
+          resourceType: 'cpu',
+          totalCapacity: 100,
+          freeCapacity: 60,
+          freeCapacityWithBorrowing: 80,
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const rowText = await harness.getFlavorRowText(0);
+    expect(rowText).toContain('Borrowing available');
+    expect(rowText).toContain('80');
+    expect(rowText).toContain('60 / 100');
+    expect(rowText).toContain('Can borrow up to +20 beyond nominal quota from cohort.');
   });
 
   it('should filter flavor capacity sub-cards when activeResourceFilters are set', async () => {

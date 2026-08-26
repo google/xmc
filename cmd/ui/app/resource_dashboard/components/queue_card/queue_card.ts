@@ -35,8 +35,9 @@ import {
 import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
+  CohortStateInfoPipe,
   FreeTotalDisplayPipe,
-  MaxWorkloadDisplayPipe,
+  MaxSchedulableDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
 import { matchesResourceFilter } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_filter';
@@ -66,7 +67,8 @@ export interface PredictabilityViewModel {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    MaxWorkloadDisplayPipe,
+    MaxSchedulableDisplayPipe,
+    CohortStateInfoPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
     WipBannerComponent,

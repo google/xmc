@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'jasmine';
-
 import {
   QueueOverview,
   QueueResourceCapacity,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
+  CohortStateInfoPipe,
   FreeTotalDisplayPipe,
-  MaxWorkloadDisplayPipe,
+  MaxSchedulableDisplayPipe,
   PredictabilityMessagePipe,
   QueueStatusBadgePipe,
 } from './resource_dashboard_pipes';
@@ -53,24 +52,84 @@ describe('Resource Dashboard Pipes', () => {
     });
   });
 
-  describe('MaxWorkloadDisplayPipe', () => {
-    let pipe: MaxWorkloadDisplayPipe;
+  describe('MaxSchedulableDisplayPipe', () => {
+    let pipe: MaxSchedulableDisplayPipe;
 
     beforeEach(() => {
-      pipe = new MaxWorkloadDisplayPipe();
+      pipe = new MaxSchedulableDisplayPipe();
     });
 
     it('should return "-" when capacity is undefined', () => {
       expect(pipe.transform(undefined)).toBe('-');
     });
 
-    it('should compute slot from freeCapacity and totalCapacity', () => {
+    it('should return freeCapacityWithBorrowing when available', () => {
       const cap: QueueResourceCapacity = {
         resourceType: 'nvidia-tesla-h100',
         freeCapacity: 32,
         totalCapacity: 64,
+        freeCapacityWithBorrowing: 24,
       };
-      expect(pipe.transform(cap)).toBe('32 → 64');
+      expect(pipe.transform(cap)).toBe('24');
+    });
+
+    it('should fall back to freeCapacity when freeCapacityWithBorrowing is not set', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        freeCapacity: 128,
+        totalCapacity: 256,
+      };
+      expect(pipe.transform(cap)).toBe('128');
+    });
+  });
+
+  describe('CohortStateInfoPipe & getCohortStateInfo', () => {
+    let pipe: CohortStateInfoPipe;
+
+    beforeEach(() => {
+      pipe = new CohortStateInfoPipe();
+    });
+
+    it('should identify SQUEEZED state when freeCapacityWithBorrowing < freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 30,
+      };
+      const info = pipe.transform(cap);
+      expect(info.state).toBe('SQUEEZED');
+      expect(info.delta).toBe(30);
+      expect(info.badgeClass).toBe('squeezed');
+      expect(info.label).toBe('Squeezed by cohort');
+    });
+
+    it('should identify BORROWING state when freeCapacityWithBorrowing > freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 80,
+      };
+      const info = pipe.transform(cap);
+      expect(info.state).toBe('BORROWING');
+      expect(info.delta).toBe(20);
+      expect(info.badgeClass).toBe('borrowing');
+      expect(info.label).toBe('Borrowing available');
+    });
+
+    it('should identify BALANCED state when freeCapacityWithBorrowing == freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 60,
+      };
+      const info = pipe.transform(cap);
+      expect(info.state).toBe('BALANCED');
+      expect(info.delta).toBe(0);
+      expect(info.badgeClass).toBe('balanced');
+      expect(info.label).toBe('Balanced');
     });
   });
 
