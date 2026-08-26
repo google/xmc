@@ -83,10 +83,13 @@ func validateSingleDependency(c *ComponentManifest, line int, cName string, dep 
 	}
 }
 
+// evaluateMatrixRules evaluates profile-level compatibility matrix rules configured in rules.yaml.
 func (l *Linter) evaluateMatrixRules(compMap map[string]*ComponentManifest, res *ValidationResult) {
 	l.evaluateComponentDependencies(compMap, res)
 }
 
+// evaluateComponentDependencies iterates through all ComponentDependencies rules defined in rules.yaml,
+// applying each rule to enabled target components that match the rule's version filter.
 func (l *Linter) evaluateComponentDependencies(compMap map[string]*ComponentManifest, res *ValidationResult) {
 	for _, rule := range l.rules.CompatibilityMatrix.ComponentDependencies {
 		ruleCompName := store.CanonicalComponentName(rule.Component)
@@ -107,6 +110,8 @@ func (l *Linter) evaluateComponentDependencies(compMap map[string]*ComponentMani
 	}
 }
 
+// shouldEvaluateRule reports whether a compatibility rule applies to the given component,
+// evaluating the optional rule.ComponentVersion SemVer constraint filter against comp.Spec.Version.
 func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDependencyRule, ruleCompName string, res *ValidationResult) bool {
 	if rule.ComponentVersion == "" {
 		return true
@@ -125,6 +130,8 @@ func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDepende
 	return match
 }
 
+// evaluateDependencyRequirement validates a single dependency requirement against the component map,
+// asserting presence (unless optional: true), enabled status, and SemVer compatibility.
 func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompName string, req DependencyRequirement, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	reqCompName := store.CanonicalComponentName(req.Component)
 	reqComp, reqExists := compMap[reqCompName]
