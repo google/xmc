@@ -91,3 +91,54 @@ Components cannot be deactivated or deleted arbitrarily if other active componen
   - Blocks deletion if the component is deletion-protected or has active dependents unless `force = true`.
   - With `DELETION_POLICY_DELETE` or `DELETION_POLICY_UNSPECIFIED`, automatically cascades deletion across all dependents.
 
+---
+
+### 4. Component Manager Service (CMS) Lifecycle Handlers (`pkg/components/cms/server.go`)
+
+The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for external control planes (e.g., GitOps bridge, CLI, ESS UI).
+
+#### RPC Endpoints
+- `PrepareDeactivation(ctx, req *PrepareDeactivationRequest) (*PrepareDeactivationResponse, error)`:
+  - Validates named request resource paths (`components/{name}`).
+  - Validates `draining_timeout` via `dt.CheckValid()`.
+  - Computes drain duration via `calculateEffectiveDrainSeconds` with sub-second ceiling rounding and `math.MaxInt32` overflow protection.
+  - Initiates draining and transitions target and cascaded dependents to `COMPONENT_STATE_DISABLING`.
+- `CompleteDeactivation(ctx, req *CompleteDeactivationRequest) (*CompleteDeactivationResponse, error)`:
+  - Finalizes deactivation, transitioning component from `COMPONENT_STATE_DISABLING` to `COMPONENT_STATE_DISABLED`.
+  - Idempotent: returns success (`nil`) if component is already in `DISABLED` state.
+  - Supports `force = true` to override remaining active dependent checks.
+- `ExecuteDeletion(ctx, req *ExecuteDeletionRequest) (*ExecuteDeletionResponse, error)`:
+  - Enforces deletion protection labels and active dependent safety.
+  - Transitions component to `COMPONENT_STATE_DELETED` and records deletion timestamp.
+
+---
+
+## Component Lifecycle State Machine
+
+```
+              ┌────────────────────────┐
+              │ COMPONENT_STATE_ACTIVE │
+              └───────────┬────────────┘
+                          │ PrepareDeactivation (safe or force=true)
+                          ▼
+            ┌───────────────────────────┐
+            │ COMPONENT_STATE_DISABLING │
+            └─────────────┬─────────────┘
+                          │ CompleteDeactivation (draining finished)
+                          ▼
+            ┌───────────────────────────┐
+            │ COMPONENT_STATE_DISABLED  │
+            └─────────────┬─────────────┘
+                          │ ExecuteDeletion (safe or force=true)
+                          ▼
+            ┌───────────────────────────┐
+            │  COMPONENT_STATE_DELETED  │
+            └───────────────────────────┘
+```
+
+### State Machine Guarantees
+1. **Monotonic Progression**: States move strictly forward (`ACTIVE` ➔ `DISABLING` ➔ `DISABLED` ➔ `DELETED`).
+2. **Idempotency**: Deactivation operations are idempotent and will not error if called repeatedly on terminal/stable states.
+3. **Transition Timestamps**: Every state transition updates `rec.Status.LastTransitionTime` and regenerates the record `Etag`.
+
+
