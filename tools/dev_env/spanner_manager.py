@@ -12,35 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cloud Spanner database lifecycle and provisioning manager for local dev."""
+"""Cloud Spanner database lifecycle and schema migration manager for local dev."""
 
 from __future__ import annotations
 
 import concurrent.futures
 import logging
+import re
+import time
 from pathlib import Path
 
-from tools.common.tool_utils import log_info, log_success, run_command
+from tools.common.tool_utils import log_error, log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.spanner")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-_SCHEMA_DEFINITIONS: dict[str, tuple[str, str]] = {
+_SCHEMA_DEFINITIONS: dict[str, tuple[str, str, str]] = {
     "ess": (
         "internal/storage/spanner/schema/ess-schema.sql",
         "bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
+        "ess",
     ),
     "xid": (
         "internal/storage/spanner/schema/xid-schema.sql",
         "bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
+        "xid",
     ),
 }
 
 
 class SpannerManager:
-    """Manages Cloud Spanner database provisioning and teardown."""
+    """Manages Cloud Spanner database provisioning, migrations, and teardown."""
 
     def __init__(self, config: LocalDevConfig, repo_root: Path | None = None) -> None:
         """Initializes SpannerManager with development configuration."""
@@ -119,18 +123,37 @@ class SpannerManager:
         log_info(f"{log_msg}...")
         run_command(cmd)
 
+    def _init_migration_version(self, instance: str, db_name: str, mig_dir: str) -> None:
+        """Initializes SchemaMigrations version tracking table for newly created database."""
+        log_info(f"Initializing migration version tracking for '{db_name}' (dir: '{mig_dir}')...")
+        run_command(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                f"-project={self.config.project_id}",
+                f"-instance={instance}",
+                f"-database={db_name}",
+                f"-migrations_dir={mig_dir}",
+                "-command=init",
+            ],
+            cwd=str(self.repo_root),
+            check=False,
+        )
+
     def ensure_databases_exist(
         self,
         instance: str | None = None,
-        databases: list[tuple[str, str, str]] | None = None,
+        databases: list[tuple[str, str, str, str]] | None = None,
     ) -> set[str]:
         """Ensures databases exist, provisioning missing ones with schema in a single batch."""
         target_instance = instance or self.config.spanner_instance
         existing_dbs = set(self.list_databases(instance=target_instance))
 
         db_targets = databases or [
-            (getattr(self.config, f"{key}_database"), ddl, proto)
-            for key, (ddl, proto) in _SCHEMA_DEFINITIONS.items()
+            (getattr(self.config, f"{key}_database"), ddl, proto, mig)
+            for key, (ddl, proto, mig) in _SCHEMA_DEFINITIONS.items()
             if getattr(self.config, f"{key}_database", None)
         ]
         missing_targets = [t for t in db_targets if t[0] not in existing_dbs]
@@ -146,13 +169,119 @@ class SpannerManager:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(missing_targets)) as executor:
             futures = [
                 executor.submit(self._create_database, target_instance, db_name, ddl, proto)
-                for db_name, ddl, proto in missing_targets
+                for db_name, ddl, proto, _ in missing_targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
 
+        for db_name, _, _, mig_dir in missing_targets:
+            self._init_migration_version(target_instance, db_name, mig_dir)
+
         log_success(f"Spanner databases created: {', '.join(missing_names)}")
         return set(missing_names)
+
+    def get_migration_version(
+        self,
+        instance: str | None = None,
+        database: str = "",
+        migrations_dir: str = "",
+    ) -> tuple[int, int]:
+        """Inspects current database schema migration version."""
+        target_instance = instance or self.config.spanner_instance
+        res = run_command(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                f"-project={self.config.project_id}",
+                f"-instance={target_instance}",
+                f"-database={database}",
+                f"-migrations_dir={migrations_dir}",
+                "-command=version",
+            ],
+            cwd=str(self.repo_root),
+            capture_output=True,
+            check=False,
+        )
+        output = (res.stdout or "") + (res.stderr or "")
+        ver_match = re.search(r"Version:\s*([0-9]+)", output)
+        current_version = int(ver_match.group(1)) if ver_match else 0
+        return current_version, 0
+
+    def _apply_database_migration(
+        self, instance: str, db_name: str, mig_dir: str, max_attempts: int = 3
+    ) -> None:
+        """Applies schema migrations for a single database with retries."""
+        log_info(f"Applying schema migrations for '{db_name}' (dir: '{mig_dir}')...")
+        for attempt in range(1, max_attempts + 1):
+            try:
+                run_command(
+                    [
+                        "bazel",
+                        "run",
+                        "//internal/storage/spanner/migrations:migrations",
+                        "--",
+                        f"-project={self.config.project_id}",
+                        f"-instance={instance}",
+                        f"-database={db_name}",
+                        f"-migrations_dir={mig_dir}",
+                        "-command=up",
+                    ],
+                    cwd=str(self.repo_root),
+                    log_on_error=(attempt == max_attempts),
+                )
+                return
+            except Exception as e:
+                if attempt == max_attempts:
+                    log_error(
+                        f"Migration failed for '{db_name}' after {max_attempts} attempts: {e}"
+                    )
+                    raise
+                log_info(f"Migration attempt {attempt} failed, retrying in 5s...")
+                time.sleep(5)
+
+    def apply_migrations(
+        self,
+        instance: str | None = None,
+        database: str | None = None,
+        migrations_dir: str | None = None,
+        newly_created: set[str] | None = None,
+    ) -> None:
+        """Executes database schema migrations for configured databases."""
+        if not self.config.auto_migrate:
+            _LOGGER.debug("Skipping schema migrations (auto_migrate is disabled).")
+            return
+
+        target_instance = instance or self.config.spanner_instance
+        newly_created_set = newly_created or set()
+
+        if database and migrations_dir:
+            targets = [(database, migrations_dir)]
+        else:
+            targets = [
+                (getattr(self.config, f"{key}_database"), mig_dir)
+                for key, (_, _, mig_dir) in _SCHEMA_DEFINITIONS.items()
+                if getattr(self.config, f"{key}_database", None)
+            ]
+
+        pending = [t for t in targets if t[0] and t[0] not in newly_created_set]
+        if not pending:
+            _LOGGER.debug("All Spanner databases are up to date (no pending migrations).")
+            return
+
+        log_info("Running Spanner schema migrations for existing databases...")
+        for db_name, mig_dir in pending:
+            self._apply_database_migration(target_instance, db_name, mig_dir)
+        log_success("All Spanner schema migrations applied successfully.")
+
+    def setup(self) -> None:
+        """Executes full Spanner setup: database creation and schema migrations."""
+        log_info(
+            f"=== [Spanner] Setting up databases on instance '{self.config.spanner_instance}' ==="
+        )
+        newly_created = self.ensure_databases_exist()
+        self.apply_migrations(newly_created=newly_created)
 
     def _drop_database(self, instance: str, db_name: str) -> None:
         """Safely drops a single Spanner database."""

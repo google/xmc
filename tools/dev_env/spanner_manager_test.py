@@ -33,6 +33,7 @@ class SpannerManagerTest(unittest.TestCase):
             spanner_instance="test-instance",
             ess_database="test-ess-db",
             xid_database="test-xid-db",
+            auto_migrate=True,
         )
         self.manager = SpannerManager(config=self.config)
 
@@ -64,7 +65,8 @@ class SpannerManagerTest(unittest.TestCase):
         with mock.patch.object(self.manager, "list_databases", return_value=["existing-db"]):
             newly_created = self.manager.ensure_databases_exist()
 
-        self.assertEqual(mock_run.call_count, 3)
+        # Build descriptors (1), create 2 databases (2), and init 2 migration versions (2)
+        self.assertEqual(mock_run.call_count, 5)
         self.assertEqual(newly_created, {"test-ess-db", "test-xid-db"})
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
@@ -166,6 +168,64 @@ class SpannerManagerTest(unittest.TestCase):
                 proto_desc_file="missing_desc.pb",
             )
         mock_run.assert_not_called()
+
+    def test_get_migration_version(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Version: 42\nDirty: false\n",
+        )
+        ver, _ = self.manager.get_migration_version(database="test-db", migrations_dir="ess")
+        self.assertEqual(ver, 42)
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_auto_migrate_true(self, mock_run: mock.MagicMock) -> None:
+        self.manager.apply_migrations()
+        self.assertEqual(mock_run.call_count, 2)
+        cmd1 = mock_run.call_args_list[0][0][0]
+        self.assertIn("-database=test-ess-db", cmd1)
+        self.assertIn("-migrations_dir=ess", cmd1)
+        self.assertIn("-command=up", cmd1)
+        cmd2 = mock_run.call_args_list[1][0][0]
+        self.assertIn("-database=test-xid-db", cmd2)
+        self.assertIn("-migrations_dir=xid", cmd2)
+        self.assertIn("-command=up", cmd2)
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_skips_newly_created(self, mock_run: mock.MagicMock) -> None:
+        self.manager.apply_migrations(newly_created={"test-ess-db", "test-xid-db"})
+        mock_run.assert_not_called()
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_auto_migrate_false(self, mock_run: mock.MagicMock) -> None:
+        self.config.auto_migrate = False
+        self.manager.apply_migrations()
+        mock_run.assert_not_called()
+
+    @mock.patch("tools.dev_env.spanner_manager.time.sleep")
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_retries_on_failure(
+        self, mock_run: mock.MagicMock, mock_sleep: mock.MagicMock
+    ) -> None:
+        mock_run.side_effect = [
+            RuntimeError("transient lock"),
+            subprocess.CompletedProcess(args=[], returncode=0),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+        self.manager.apply_migrations()
+        self.assertEqual(mock_run.call_count, 3)
+        mock_sleep.assert_called_once_with(5)
+
+    def test_setup_orchestration(self) -> None:
+        with (
+            mock.patch.object(
+                self.manager, "ensure_databases_exist", return_value={"test-ess-db"}
+            ) as mock_ensure,
+            mock.patch.object(self.manager, "apply_migrations") as mock_migrate,
+        ):
+            self.manager.setup()
+            mock_ensure.assert_called_once()
+            mock_migrate.assert_called_once_with(newly_created={"test-ess-db"})
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_drop_databases(self, mock_run: mock.MagicMock) -> None:

@@ -84,6 +84,8 @@ def handle_spanner(args: argparse.Namespace) -> None:
     action = getattr(args, "spanner_action", "create")
     if action in ("create", "ensure"):
         mgr.ensure_databases_exist()
+    elif action == "migrate":
+        mgr.apply_migrations()
     elif action == "drop":
         mgr.drop_databases()
     else:
@@ -214,14 +216,14 @@ def _add_spanner_parser(subparsers: argparse._SubParsersAction) -> None:
     """Adds the 'spanner' subcommand parser for database management."""
     p = subparsers.add_parser(
         "spanner",
-        help="Manage Cloud Spanner databases (create, drop).",
-        description="Creates or drops Cloud Spanner databases for XMC.",
+        help="Manage Cloud Spanner databases (create, migrate, drop).",
+        description="Creates, migrates, or drops Cloud Spanner databases for XMC.",
     )
     p.add_argument(
         "spanner_action",
         nargs="?",
         default="create",
-        choices=["create", "ensure", "drop"],
+        choices=["create", "ensure", "migrate", "drop"],
         help="Action to perform on Cloud Spanner databases (default: create).",
     )
     _add_common_config_flags(p)
@@ -240,6 +242,7 @@ def create_parser() -> argparse.ArgumentParser:
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
   python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
+  python3 tools/dev_env/dev_env.py spanner migrate --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
 """,
     )

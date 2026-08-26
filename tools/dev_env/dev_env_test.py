@@ -373,6 +373,17 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config.assert_called_once_with(args)
         mock_ensure.assert_called_once()
 
+    @patch("tools.dev_env.spanner_manager.SpannerManager.apply_migrations")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_migrate_action(
+        self, mock_load_config: MagicMock, mock_migrate: MagicMock
+    ) -> None:
+        """Verifies 'dev_env spanner migrate' dispatches to SpannerManager.apply_migrations."""
+        args = self.parser.parse_args(["spanner", "migrate", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_migrate.assert_called_once()
+
     @patch("tools.dev_env.spanner_manager.SpannerManager.drop_databases")
     @patch("tools.dev_env.config.load_config")
     def test_spanner_drop_action(self, mock_load_config: MagicMock, mock_drop: MagicMock) -> None:
