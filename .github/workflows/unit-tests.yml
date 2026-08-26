@@ -218,7 +218,7 @@ jobs:
     name: 'Run Unit Tests'
     needs: [resolve-scope, run-backend-tests, run-ui-tests]
     runs-on: 'arc-runner-set'
-    if: always()
+    if: '!cancelled()'
     steps:
       - name: 'Verify All Unit Tests Passed'
         env:
