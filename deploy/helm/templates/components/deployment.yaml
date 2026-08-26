@@ -50,11 +50,9 @@ spec:
           capabilities:
             drop:
             - ALL
-        args:
-        - "--cms-address={{ .Values.componentsDeployment.cmsAddress | default "grpc-service:50051" }}"
-        - "--namespace={{ .Release.Namespace }}"
-        - "--probe-interval={{ .Values.componentsDeployment.probeInterval | default "5s" }}"
-        - "--probe-timeout={{ .Values.componentsDeployment.probeTimeout | default "2s" }}"
+        envFrom:
+        - configMapRef:
+            name: xmc-bridge-config
         resources:
           requests:
             cpu: 100m

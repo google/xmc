@@ -53,12 +53,34 @@ type Config struct {
 
 // ParseConfig parses command line flags into a validated Config object.
 func ParseConfig(args []string) (*Config, error) {
+	defaultCMS := os.Getenv("CMS_ADDRESS")
+	if defaultCMS == "" {
+		defaultCMS = "localhost:50051"
+	}
+	defaultNS := os.Getenv("NAMESPACE")
+	if defaultNS == "" {
+		defaultNS = "xmc"
+	}
+	defaultProbeInterval := 5 * time.Second
+	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			defaultProbeInterval = d
+		}
+	}
+	defaultProbeTimeout := 2 * time.Second
+	if val := os.Getenv("PROBE_TIMEOUT"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			defaultProbeTimeout = d
+		}
+	}
+	defaultKubeconfig := os.Getenv("KUBECONFIG")
+
 	fs := flag.NewFlagSet("xmc-bridge", flag.ContinueOnError)
-	cmsAddress := fs.String("cms-address", "localhost:50051", "CMS gRPC server address")
-	namespace := fs.String("namespace", "xmc", "Kubernetes namespace to watch for Component resources")
-	probeInterval := fs.Duration("probe-interval", 5*time.Second, "Interval duration between dynamic reconciliation sweeps")
-	probeTimeout := fs.Duration("probe-timeout", 2*time.Second, "Timeout duration for individual component probe passes")
-	kubeconfig := fs.String("kubeconfig", "", "Path to kubeconfig file")
+	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
+	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
+	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
+	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe passes")
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)

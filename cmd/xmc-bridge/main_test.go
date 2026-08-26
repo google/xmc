@@ -46,6 +46,11 @@ func TestParseConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "environment variable fallback",
+			args:    []string{},
+			wantErr: false,
+		},
+		{
 			name:        "help flag returns ErrHelp",
 			args:        []string{"--help"},
 			wantErr:     true,
@@ -148,5 +153,33 @@ func TestController_Run_ContextCancel(t *testing.T) {
 	err := <-done
 	if err == nil || err != context.Canceled {
 		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+func TestParseConfig_EnvVars(t *testing.T) {
+	t.Setenv("CMS_ADDRESS", "custom-cms:50051")
+	t.Setenv("NAMESPACE", "custom-ns")
+	t.Setenv("PROBE_INTERVAL", "15s")
+	t.Setenv("PROBE_TIMEOUT", "8s")
+	t.Setenv("KUBECONFIG", "/custom/kubeconfig")
+
+	cfg, err := ParseConfig([]string{})
+	if err != nil {
+		t.Fatalf("ParseConfig() unexpected error: %v", err)
+	}
+	if cfg.CMSAddress != "custom-cms:50051" {
+		t.Errorf("cfg.CMSAddress = %q, want custom-cms:50051", cfg.CMSAddress)
+	}
+	if cfg.Namespace != "custom-ns" {
+		t.Errorf("cfg.Namespace = %q, want custom-ns", cfg.Namespace)
+	}
+	if cfg.ProbeInterval != 15*time.Second {
+		t.Errorf("cfg.ProbeInterval = %v, want 15s", cfg.ProbeInterval)
+	}
+	if cfg.ProbeTimeout != 8*time.Second {
+		t.Errorf("cfg.ProbeTimeout = %v, want 8s", cfg.ProbeTimeout)
+	}
+	if cfg.Kubeconfig != "/custom/kubeconfig" {
+		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)
 	}
 }

@@ -11,9 +11,11 @@ graph TD
     subgraph Helm["Helm Deployment (deploy/helm)"]
         CRD["Component CRD<br>(xmc.dev/v1alpha1)"]
         Deploy["xmc-bridge Deployment<br>(controller daemon)"]
+        CM["ConfigMap<br>(xmc-bridge-config)"]
         RBAC["ClusterRole & Binding<br>(least-privilege RBAC)"]
         SA["ServiceAccount<br>(xmc-bridge)"]
     end
+    Deploy -.->|"envFrom"| CM
 
     Deploy -->|"Watches & Reconciles"| CRD
     Deploy -->|"gRPC Client"| CMS["Component Manager Service (CMS)<br>(grpc-service:50051)"]
