@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -331,6 +332,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string) err
 		rec.Status = &componentspb.ComponentAccessStatus{}
 	}
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
+	rec.Status.LastTransitionTime = timestamppb.New(now)
 	rec.UpdateTime = now
 	rec.Etag = generateEtag(rec)
 	return nil
@@ -373,7 +375,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 }
 
 func transitionToDisabling(rec *ComponentRecord, now time.Time) {
-	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLING || rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 		return
 	}
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
@@ -381,6 +383,7 @@ func transitionToDisabling(rec *ComponentRecord, now time.Time) {
 		rec.Status = &componentspb.ComponentAccessStatus{}
 	}
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
+	rec.Status.LastTransitionTime = timestamppb.New(now)
 	rec.UpdateTime = now
 	rec.Etag = generateEtag(rec)
 }
@@ -391,6 +394,7 @@ func transitionToDeleted(rec *ComponentRecord, now time.Time) {
 		rec.Status = &componentspb.ComponentAccessStatus{}
 	}
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+	rec.Status.LastTransitionTime = timestamppb.New(now)
 	rec.DeleteTime = &now
 	rec.UpdateTime = now
 	rec.Etag = generateEtag(rec)

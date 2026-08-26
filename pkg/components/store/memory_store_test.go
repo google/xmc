@@ -591,6 +591,9 @@ func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 	if recRoot.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 		t.Errorf("root-comp State = %v, want DISABLING", recRoot.State)
 	}
+	if recRoot.Status.GetLastTransitionTime() == nil {
+		t.Error("root-comp Status.LastTransitionTime is nil, want non-nil timestamp")
+	}
 
 	recDep, err := ms.GetComponent(ctx, "dependent-comp")
 	if err != nil {
@@ -598,6 +601,9 @@ func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 	}
 	if recDep.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 		t.Errorf("dependent-comp State = %v, want DISABLING", recDep.State)
+	}
+	if recDep.Status.GetLastTransitionTime() == nil {
+		t.Error("dependent-comp Status.LastTransitionTime is nil, want non-nil timestamp")
 	}
 
 	// 3. Repeated PrepareDeactivation is idempotent and preserves UpdateTime and Etag
@@ -683,8 +689,23 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 	if rec.Status.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 		t.Errorf("Status.State = %v, want DISABLED", rec.Status.GetState())
 	}
+	if rec.Status.GetLastTransitionTime() == nil {
+		t.Error("Status.LastTransitionTime is nil, want non-nil timestamp")
+	}
 
-	// 7. Nonexistent component
+	// 7. PrepareDeactivation on already DISABLED component is a no-op and preserves DISABLED state
+	if _, err := ms.PrepareDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Fatalf("PrepareDeactivation(already DISABLED) failed: %v", err)
+	}
+	recAfter, err := ms.GetComponent(ctx, "comp-deact")
+	if err != nil {
+		t.Fatalf("GetComponent failed: %v", err)
+	}
+	if recAfter.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("State after PrepareDeactivation on DISABLED component = %v, want DISABLED", recAfter.State)
+	}
+
+	// 8. Nonexistent component
 	err = ms.CompleteDeactivation(ctx, "nonexistent")
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
