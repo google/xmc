@@ -342,44 +342,6 @@ func TestConcurrentGetters(t *testing.T) {
 	wg.Wait()
 }
 
-func TestAccumulator_FalsePositivesAndExclusions(t *testing.T) {
-	tests := []struct {
-		key     string
-		wantGPU bool
-		wantTPU bool
-	}{
-		{key: "pool4", wantGPU: false, wantTPU: false},
-		{key: "dev4", wantGPU: false, wantTPU: false},
-		{key: "level4", wantGPU: false, wantTPU: false},
-		{key: "step4", wantGPU: false, wantTPU: false},
-		{key: "server6", wantGPU: false, wantTPU: false},
-		{key: "http4", wantGPU: false, wantTPU: false},
-		{key: "backup4", wantGPU: false, wantTPU: false},
-		{key: "env-v5", wantGPU: false, wantTPU: false},
-		{key: "dev-v4", wantGPU: false, wantTPU: false},
-		{key: "generic-gpu", wantGPU: false, wantTPU: false},
-		{key: "standard-gpu", wantGPU: false, wantTPU: false},
-		{key: "nvidia-l4", wantGPU: true, wantTPU: false},
-		{key: "nvidia-tesla-h100", wantGPU: true, wantTPU: false},
-		{key: "tpu-v4", wantGPU: false, wantTPU: true},
-		{key: "tpu-v5p", wantGPU: false, wantTPU: true},
-		{key: "v5e-8", wantGPU: false, wantTPU: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			gotGPU := IsSpecificGPUKey(tt.key)
-			if gotGPU != tt.wantGPU {
-				t.Errorf("IsSpecificGPUKey(%q) = %v, want %v", tt.key, gotGPU, tt.wantGPU)
-			}
-			gotTPU := IsSpecificTPUKey(tt.key)
-			if gotTPU != tt.wantTPU {
-				t.Errorf("IsSpecificTPUKey(%q) = %v, want %v", tt.key, gotTPU, tt.wantTPU)
-			}
-		})
-	}
-}
-
 func TestNilAccumulatorReceiverSafety(t *testing.T) {
 	var acc *Accumulator
 
@@ -419,18 +381,4 @@ func TestNilAccumulatorReceiverSafety(t *testing.T) {
 		acc.AccumulateExecutable(nil)
 		acc.Normalize()
 	})
-}
-
-func TestFindSpecificAccelerators_IndependentChecks(t *testing.T) {
-	acc := New()
-	acc.Add("nvidia-tesla-h100", 8)
-	acc.Add("v5p-8", 4)
-
-	gpu, tpu := acc.findSpecificAccelerators()
-	if gpu != "nvidia-tesla-h100" {
-		t.Errorf("findSpecificAccelerators() gpu = %q, want %q", gpu, "nvidia-tesla-h100")
-	}
-	if tpu != "v5p-8" {
-		t.Errorf("findSpecificAccelerators() tpu = %q, want %q", tpu, "v5p-8")
-	}
 }

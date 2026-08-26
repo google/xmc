@@ -134,69 +134,37 @@ func (a *Accumulator) Normalize() {
 	if a == nil || len(a.totals) == 0 {
 		return
 	}
-	specificGPU, specificTPU := a.findSpecificAccelerators()
-	a.normalizeGenericGPU(specificGPU)
-	a.normalizeGenericTPU(specificTPU)
-}
-
-func (a *Accumulator) findSpecificAccelerators() (string, string) {
 	var specificGPU, specificTPU string
-	for _, key := range a.order {
-		if key == ResourceTypeCPU || key == ResourceTypeMemory {
-			continue
+	for _, k := range a.order {
+		if specificGPU == "" && IsSpecificGPUKey(k) {
+			specificGPU = k
 		}
-		if IsGenericGPU(key) || IsGenericTPU(key) {
-			continue
-		}
-		if specificGPU == "" && IsSpecificGPUKey(key) {
-			specificGPU = key
-		}
-		if specificTPU == "" && IsSpecificTPUKey(key) {
-			specificTPU = key
+		if specificTPU == "" && IsSpecificTPUKey(k) {
+			specificTPU = k
 		}
 	}
-	return specificGPU, specificTPU
-}
-
-func (a *Accumulator) normalizeGenericGPU(specificGPU string) {
-	if specificGPU == "" {
-		return
-	}
-	if count, exists := a.totals["nvidia.com/gpu"]; exists {
-		a.totals[specificGPU] += count
-		delete(a.totals, "nvidia.com/gpu")
-		a.removeFromOrder("nvidia.com/gpu")
-	}
-	if count, exists := a.totals["gpu"]; exists {
-		a.totals[specificGPU] += count
-		delete(a.totals, "gpu")
-		a.removeFromOrder("gpu")
-	}
-}
-
-func (a *Accumulator) normalizeGenericTPU(specificTPU string) {
-	if specificTPU == "" {
-		return
-	}
-	if count, exists := a.totals["google.com/tpu"]; exists {
-		a.totals[specificTPU] += count
-		delete(a.totals, "google.com/tpu")
-		a.removeFromOrder("google.com/tpu")
-	}
-	if count, exists := a.totals["tpu"]; exists {
-		a.totals[specificTPU] += count
-		delete(a.totals, "tpu")
-		a.removeFromOrder("tpu")
-	}
-}
-
-func (a *Accumulator) removeFromOrder(key string) {
-	for i, k := range a.order {
-		if k == key {
-			a.order = append(a.order[:i], a.order[i+1:]...)
-			break
+	mergeGeneric := func(target string, genericKeys ...string) {
+		if target == "" {
+			return
+		}
+		for _, k := range genericKeys {
+			if count, exists := a.totals[k]; exists {
+				a.totals[target] += count
+				delete(a.totals, k)
+			}
 		}
 	}
+	mergeGeneric(specificGPU, "nvidia.com/gpu", "gpu")
+	mergeGeneric(specificTPU, "google.com/tpu", "tpu")
+	// Single-pass in-place compaction (0 allocations)
+	n := 0
+	for _, k := range a.order {
+		if _, exists := a.totals[k]; exists {
+			a.order[n] = k
+			n++
+		}
+	}
+	a.order = a.order[:n]
 }
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).

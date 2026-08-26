@@ -12,40 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-function isGenericPrefixMatch(resource: string, filter: string): boolean {
-  if (resource.startsWith(filter + ':') || resource.startsWith(filter + '/')) {
+export function matchesResourceFilter(resourceType: string, filter: string): boolean {
+  const r = resourceType?.trim().toLowerCase();
+  const f = filter?.trim().toLowerCase();
+  if (!r || !f) {
+    return false;
+  }
+  if (r === f) {
     return true;
   }
-  return (filter === 'gpu' || filter === 'tpu') && resource.includes(filter);
-}
-
-function isModelSubstringMatch(resource: string, filter: string): boolean {
-  if (filter.includes(':') || filter.includes('/')) {
-    return false;
+  if (f.includes(':') || f.includes('/')) {
+    return r.startsWith(`${f}:`) || r.startsWith(`${f}/`);
   }
-  return resource.includes(filter);
-}
-
-/**
- * Checks if a queue resource type name matches a given user resource filter.
- *
- * Matching behavior:
- * 1. Exact match (case-insensitive).
- * 2. Generic filter (e.g. "nvidia.com/gpu", "gpu", "google.com/tpu", "tpu"):
- *    Matches both generic and specific resources under that domain (e.g. "nvidia.com/gpu: nvidia-tesla-a100").
- * 3. Specific model filter (e.g. "nvidia.com/gpu: nvidia-tesla-a100"):
- *    Matches only that specific model and does NOT match generic queues (e.g. "nvidia.com/gpu").
- */
-export function matchesResourceFilter(resourceType: string, filter: string): boolean {
-  if (!resourceType || !filter) {
-    return false;
-  }
-  const lowerResource = resourceType.trim().toLowerCase();
-  const lowerFilter = filter.trim().toLowerCase();
-
-  return (
-    lowerResource === lowerFilter ||
-    isGenericPrefixMatch(lowerResource, lowerFilter) ||
-    isModelSubstringMatch(lowerResource, lowerFilter)
-  );
+  return r.includes(f);
 }

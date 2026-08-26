@@ -16,13 +16,26 @@ package resourceaccumulator
 
 import (
 	"strings"
-
-	"xmanager_cloud/kubernetes/common/constants"
 )
 
 var (
-	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, constants.LongAcceleratorKeywords...)
-	shortGPUKeywords = constants.ShortAcceleratorKeywords
+	longAcceleratorKeywords = []string{
+		"h100", "a100", "v100", "p100", "b200", "gb200", "h200", "b40", "rtx",
+		"v5e", "v5p", "gpack", "tesla",
+	}
+	shortAcceleratorKeywords = []string{
+		"l4", "v4", "v5", "v6", "t4", "p4",
+	}
+	genericKeywords = []string{
+		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
+	}
+	genericResourceNames = []string{
+		"gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
+		"cpu", "memory", "storage",
+	}
+
+	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, longAcceleratorKeywords...)
+	shortGPUKeywords = shortAcceleratorKeywords
 
 	tpuKeywords = []string{
 		"v5p", "v5e", "tpu-v4", "tpu-v5", "tpu-v6", "tpu-",
@@ -41,7 +54,7 @@ func IsSpecificAcceleratorName(name string) bool {
 	if IsSpecificGPUKey(lower) || IsSpecificTPUKey(lower) {
 		return true
 	}
-	for _, kw := range constants.LongAcceleratorKeywords {
+	for _, kw := range longAcceleratorKeywords {
 		if strings.Contains(lower, kw) {
 			return true
 		}
@@ -51,12 +64,12 @@ func IsSpecificAcceleratorName(name string) bool {
 
 // IsGenericAcceleratorFlavor returns true if lower matches generic compute names or flavor keywords.
 func IsGenericAcceleratorFlavor(lower string) bool {
-	for _, exact := range constants.GenericResourceNames {
+	for _, exact := range genericResourceNames {
 		if lower == exact {
 			return true
 		}
 	}
-	for _, kw := range constants.GenericKeywords {
+	for _, kw := range genericKeywords {
 		if strings.Contains(lower, kw) {
 			return true
 		}
@@ -108,17 +121,25 @@ func IsSpecificTPUKey(key string) bool {
 	return key == "v4" || key == "v5" || key == "v6"
 }
 
-// MatchesShortAcceleratorKeyword checks if kw matches any delimited token in s.
+// MatchesShortAcceleratorKeyword checks if kw matches any delimited token in s (0 heap allocations).
 func MatchesShortAcceleratorKeyword(s, kw string) bool {
-	normalized := strings.ReplaceAll(s, "_", "-")
-	normalized = strings.ReplaceAll(normalized, "/", "-")
-	normalized = strings.ReplaceAll(normalized, ".", "-")
-	for _, token := range strings.Split(normalized, "-") {
-		if strings.EqualFold(token, kw) {
-			return true
+	if s == "" || kw == "" {
+		return false
+	}
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || isDelimiter(s[i]) {
+			if strings.EqualFold(s[start:i], kw) {
+				return true
+			}
+			start = i + 1
 		}
 	}
 	return false
+}
+
+func isDelimiter(b byte) bool {
+	return b == '-' || b == '_' || b == '/' || b == '.'
 }
 
 // IsAcceleratorResource returns true if resName represents an accelerator resource type.
