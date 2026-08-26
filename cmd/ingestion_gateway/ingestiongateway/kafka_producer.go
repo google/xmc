@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
@@ -73,21 +72,6 @@ func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicNa
 	return nil
 }
 
-// MetricProducer defines the interface for producing metric records asynchronously to Kafka/Redpanda.
-type MetricProducer interface {
-	Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error))
-	Close()
-}
-
-// FormatCompositeKey formats the composite partitioning key (xid, work_unit_id).
-func FormatCompositeKey(xid, workUnitID int64) []byte {
-	buf := make([]byte, 0, 32)
-	buf = strconv.AppendInt(buf, xid, 10)
-	buf = append(buf, ':')
-	buf = strconv.AppendInt(buf, workUnitID, 10)
-	return buf
-}
-
 // BuildProducerOptions returns the kgo options required for metrics ingestion:
 // - Partitioning: Key-based sticky key partitioner using 32-bit MurmurHash2
 // - Compression: Zstd compression
@@ -135,14 +119,77 @@ func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, err
 	return opts, nil
 }
 
-// NewKafkaProducer constructs a kgo.Client with default producer configuration plus any optional extra kgo.Opt overrides.
-func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics, extraOpts ...kgo.Opt) (*kgo.Client, error) {
+// KafkaProducer adapts a franz-go client to the backend-neutral MetricProducer interface.
+//
+// Per-record ordering is provided by kgo.StickyKeyPartitioner (see BuildProducerOptions): every
+// record sharing a MetricRecord.Key lands on the same partition and is therefore consumed FIFO.
+type KafkaProducer struct {
+	client *kgo.Client
+}
+
+var _ MetricProducer = (*KafkaProducer)(nil)
+
+// NewKafkaProducer constructs a Kafka/Redpanda backed producer with default producer configuration
+// plus any optional extra kgo.Opt overrides.
+//
+// It does not contact the cluster; NewMetricProducer performs the topology check separately so that
+// tests can build a producer without a reachable broker.
+func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics, extraOpts ...kgo.Opt) (*KafkaProducer, error) {
 	opts, err := BuildProducerOptions(cfg, gMetrics)
 	if err != nil {
 		return nil, err
 	}
 	opts = append(opts, extraOpts...)
-	return kgo.NewClient(opts...)
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &KafkaProducer{client: client}, nil
+}
+
+// newValidatedKafkaProducer builds a Kafka producer and asserts the destination topic topology
+// before it is handed any traffic.
+func newValidatedKafkaProducer(ctx context.Context, cfg *Config, gMetrics *GatewayMetrics) (*KafkaProducer, error) {
+	producer, err := NewKafkaProducer(cfg, gMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create franz-go client: %w", err)
+	}
+	if err := ValidateTopicTopology(ctx, kadm.NewClient(producer.client), cfg.TopicName, cfg.MinPartitions, cfg.MinReplicas); err != nil {
+		producer.Close()
+		return nil, fmt.Errorf("topic topology validation failed: %w", err)
+	}
+	return producer, nil
+}
+
+// Produce publishes rec asynchronously, invoking promise with a classified *PublishError on failure.
+func (p *KafkaProducer) Produce(ctx context.Context, rec *MetricRecord, promise func(*MetricRecord, error)) {
+	kRecord := &kgo.Record{
+		Topic: rec.Topic,
+		Key:   rec.Key,
+		Value: rec.Value,
+	}
+	p.client.Produce(ctx, kRecord, func(_ *kgo.Record, err error) {
+		promise(rec, classifyKafkaError(err))
+	})
+}
+
+// Close flushes buffered records and shuts the underlying franz-go client down.
+func (p *KafkaProducer) Close() {
+	p.client.Close()
+}
+
+// classifyKafkaError tags a franz-go produce error with its backend-neutral kind.
+func classifyKafkaError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsClientProduceError(err) {
+		return newPublishError(PublishErrorClient, err)
+	}
+	if IsCongestionError(err) {
+		return newPublishError(PublishErrorCongestion, err)
+	}
+	return newPublishError(PublishErrorUnknown, err)
 }
 
 var congestionErrorSubstrings = []string{
