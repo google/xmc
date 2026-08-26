@@ -302,4 +302,3 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
 	}
 }
-
