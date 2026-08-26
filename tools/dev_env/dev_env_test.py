@@ -534,7 +534,7 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config.assert_called_once_with(args)
         mock_build.assert_called_once_with(services=["reconciler"], skip_build=False)
         mock_load_kind.assert_called_once_with(["reconciler_image:latest"])
->>>>>>> 4985abc3 (feat(dev_env): introduce ImageBuilder for parallel OCI image compilation and loading)
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
