@@ -23,32 +23,6 @@ import (
 
 const bytesPerGiB = 1024 * 1024 * 1024
 
-var acceleratorLabelKeys = []string{
-	"cloud.google.com/gke-accelerator",
-	"cloud.google.com/gke-gpu-type",
-	"cloud.google.com/gke-tpu-accelerator",
-	"kueue.x-k8s.io/gpack-gpu",
-	"gpu.nvidia.com/class",
-}
-
-var longAcceleratorKeywords = []string{
-	"h100", "a100", "v100", "p100", "b200", "gb200", "h200", "b40", "rtx",
-	"v5e", "v5p", "gpack", "tesla",
-}
-
-var shortAcceleratorKeywords = []string{
-	"l4", "v4", "v5", "v6", "t4", "p4",
-}
-
-var genericKeywords = []string{
-	"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
-}
-
-var genericResourceNames = []string{
-	"gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
-	"cpu", "memory", "storage",
-}
-
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
 // using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
 func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {

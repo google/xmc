@@ -159,22 +159,18 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 }
 
 var (
-	gpuKeywords = []string{
-		"nvidia-", "tesla-", "h100", "a100", "v100", "p100", "b200", "gb200", "rtx", "gpack", "tesla",
-	}
-	shortGPUKeywords = []string{"l4", "p4", "t4"}
+	gpuKeywords      = append([]string{"nvidia-", "tesla-"}, LongAcceleratorKeywords...)
+	shortGPUKeywords = ShortAcceleratorKeywords
 
 	tpuKeywords = []string{
 		"v5p", "v5e", "tpu-v4", "tpu-v5", "tpu-v6", "tpu-",
 	}
 
-	genericKeywords = []string{
-		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
-	}
+	genericKeywords = GenericKeywords
 )
 
 func isSpecificGPUKey(key string) bool {
-	if isGenericFlavor(key) {
+	if isGenericFlavor(key) || isSpecificTPUKey(key) {
 		return false
 	}
 	for _, kw := range gpuKeywords {

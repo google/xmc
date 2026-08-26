@@ -16,7 +16,10 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
     name = "resourceaccumulator",
-    srcs = ["resourceaccumulator.go"],
+    srcs = [
+        "constants.go",
+        "resourceaccumulator.go",
+    ],
     importpath = "xmanager_cloud/internal/common/resourceaccumulator",
     visibility = ["//:__subpackages__"],
     deps = [
