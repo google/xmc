@@ -30,7 +30,7 @@ func TestUpdateDashboard_Success(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	dash := blankDashboardProto("dashboards/test-update-1")
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestUpdateDashboard_WithFieldMask(t *testing.T) {
 	dash := blankDashboardProto("dashboards/test-update-mask-1")
 	dash.Title = "Initial Title"
 	dash.Description = "Initial Description"
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestUpdateDashboard_WithChartIDs(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-update-charts-1")
 	dash.ChartIds = []string{chartID1}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestUpdateDashboard_ClearChartIDs(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-update-clear-1")
 	dash.ChartIds = []string{chartID1}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestUpdateDashboard_NoOp(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	dash := blankDashboardProto("dashboards/test-update-noop-1")
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestUpdateDashboard_ReorderedChartIDs(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-update-reorder-1")
 	dash.ChartIds = []string{chartID1, chartID2}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestUpdateDashboard_CamelCaseChartIdsMask(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-update-camel-1")
 	dash.ChartIds = []string{chartID1}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestUpdateDashboard_NonExistentChartID(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-update-fk-1")
 	dash.ChartIds = []string{chartID1}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 

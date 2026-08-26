@@ -27,7 +27,7 @@ func TestDeleteDashboard_Success(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	dash := blankDashboardProto("dashboards/test-delete-1")
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-delete-cascade-1")
 	dash.ChartIds = []string{chartID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 

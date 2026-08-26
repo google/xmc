@@ -31,7 +31,7 @@ func TestGetDashboard_Success(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-get-1")
 	dash.ChartIds = []string{chartID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -66,7 +66,7 @@ func TestGetDashboard_NoCharts(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-get-no-charts")
 	dash.ChartIds = nil
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 

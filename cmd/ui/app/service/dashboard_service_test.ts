@@ -177,20 +177,33 @@ describe('DashboardService', () => {
       chartIds: [],
     };
 
-    it('should create dashboard via POST', async () => {
+    it('should create dashboard via POST with the whole request as the body', async () => {
       const request: CreateDashboardRequest = {
         dashboard: newDash,
         dashboardId: 'custom-id',
       };
       const responsePromise = firstValueFrom(state.service.createDashboard(request));
 
-      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards?dashboardId=custom-id`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual(newDash);
+      expect(req.request.body).toEqual(request);
       req.flush({ ...newDash, name: 'dashboards/custom-id' });
 
       const response = (await responsePromise) as Dashboard;
       expect(response.name).toBe('dashboards/custom-id');
+    });
+
+    it('should send the charts to create with the dashboard', async () => {
+      const charts: Chart[] = [{ title: 'Baseline', xid: 4321, wid: 1 }];
+      const request: CreateDashboardRequest = { dashboard: newDash, charts };
+      const responsePromise = firstValueFrom(state.service.createDashboard(request));
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards`);
+      expect(req.request.body.charts).toEqual(charts);
+      req.flush({ ...newDash, name: 'dashboards/generated-id', chartIds: ['chart-uuid-1'] });
+
+      const response = (await responsePromise) as Dashboard;
+      expect(response.chartIds).toEqual(['chart-uuid-1']);
     });
 
     it('should return error when dashboard payload is missing', async () => {

@@ -35,7 +35,7 @@ import (
 )
 
 type (
-	createDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard) error
+	createDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
 	getDashboardFunc    = func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
 	listDashboardsFunc  = func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	updateDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
@@ -67,9 +67,9 @@ func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) erro
 	return nil
 }
 
-func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error {
+func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
 	if m.createDashboardFn != nil {
-		return m.createDashboardFn(ctx, dashboard)
+		return m.createDashboardFn(ctx, dashboard, charts)
 	}
 	return nil
 }

@@ -49,7 +49,7 @@ func TestDeleteChart_WithDashboardLink(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/test-delete-parent-dash")
 	dash.ChartIds = []string{chartID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 

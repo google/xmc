@@ -164,3 +164,96 @@ func TestFilterAuthorizedCharts(t *testing.T) {
 		}
 	})
 }
+
+func TestAuthorizeChartExperimentWrites(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("passes when the user can write every experiment", func(t *testing.T) {
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		charts := []*dpb.Chart{chartWithXid("", 11), chartWithXid("", 22)}
+		if err := s.authorizeChartExperimentWrites(ctx, "user@example.com", charts); err != nil {
+			t.Errorf("authorizeChartExperimentWrites failed: %v", err)
+		}
+	})
+
+	t.Run("a single denied experiment aborts the whole request", func(t *testing.T) {
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetName() == "xids/11")}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		charts := []*dpb.Chart{chartWithXid("", 11), chartWithXid("", 22)}
+		err := s.authorizeChartExperimentWrites(ctx, "user@example.com", charts)
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("Expected code PermissionDenied, got %v", status.Code(err))
+		}
+	})
+
+	t.Run("checks each distinct experiment only once", func(t *testing.T) {
+		var checked []string
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				checked = append(checked, in.GetName())
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		charts := []*dpb.Chart{chartWithXid("", 7), chartWithXid("", 7), chartWithXid("", 8), chartWithXid("", 7)}
+		if err := s.authorizeChartExperimentWrites(ctx, "user@example.com", charts); err != nil {
+			t.Fatalf("authorizeChartExperimentWrites failed: %v", err)
+		}
+		if len(checked) != 2 {
+			t.Errorf("XID service called %d times (%v), want 2 (one per distinct xid)", len(checked), checked)
+		}
+	})
+
+	t.Run("XID service failure is propagated", func(t *testing.T) {
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return nil, errors.New("xid service unreachable")
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		err := s.authorizeChartExperimentWrites(ctx, "user@example.com", []*dpb.Chart{chartWithXid("", 5)})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("Expected code Internal, got %v", status.Code(err))
+		}
+	})
+
+	t.Run("empty input passes without consulting the XID service", func(t *testing.T) {
+		called := false
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				called = true
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		if err := s.authorizeChartExperimentWrites(ctx, "user@example.com", nil); err != nil {
+			t.Errorf("authorizeChartExperimentWrites failed: %v", err)
+		}
+		if called {
+			t.Errorf("XID service consulted for an empty chart list")
+		}
+	})
+
+	t.Run("nil XID client returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{auth: &mockAuthorizer{}, repo: &mockRepository{}}
+
+		err := s.authorizeChartExperimentWrites(ctx, "user@example.com", []*dpb.Chart{chartWithXid("", 5)})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
+		}
+	})
+}

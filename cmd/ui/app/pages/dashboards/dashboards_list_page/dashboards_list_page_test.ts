@@ -37,7 +37,7 @@ import { DashboardsListPage } from './dashboards_list_page';
 const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
 const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
 
-/** Baseline dialog result: one chart to provision under a single work unit. */
+/** Baseline dialog result: one chart to create alongside the dashboard. */
 function createDialogResult(charts: Chart[] = [{ title: 'Baseline', xid: 4321, wid: 1 }]) {
   return { dashboard: { title: 'New Evaluation' }, charts };
 }
@@ -47,14 +47,10 @@ describe('DashboardsListPage', () => {
     const dashboardServiceSpy = jasmine.createSpyObj<DashboardService>('DashboardService', [
       'listDashboards',
       'createDashboard',
-      'createChart',
     ]);
     const snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
     dashboardServiceSpy.listDashboards.and.returnValue(
       of({ dashboards: createMockDashboardList() }),
-    );
-    dashboardServiceSpy.createChart.and.returnValue(
-      of({ name: 'experiments/4321/workUnits/1/charts/chart-uuid-1', title: 'Baseline' }),
     );
 
     setupModule({
@@ -128,11 +124,14 @@ describe('DashboardsListPage', () => {
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
   });
 
-  it('should create each chart under its work unit before creating the dashboard', () => {
+  it('should send the dialog charts alongside the dashboard in a single create call', () => {
     const component = bootstrap(DashboardsListPage);
+    const router = get(Router);
+    spyOn(router, 'navigate');
     const createdDashboard: Dashboard = {
       name: 'dashboards/new_evaluation',
       title: 'New Evaluation',
+      chartIds: ['chart-uuid-1', 'chart-uuid-2'],
     };
     state.dashboardServiceSpy.createDashboard.and.returnValue(of(createdDashboard));
 
@@ -143,47 +142,19 @@ describe('DashboardsListPage', () => {
       ]),
     );
 
-    expect(state.dashboardServiceSpy.createChart).toHaveBeenCalledTimes(2);
-    expect(state.dashboardServiceSpy.createChart).toHaveBeenCalledWith({
-      parent: 'experiments/4321/workUnits/1',
-      chart: { title: 'Baseline', xid: 4321, wid: 1 },
-    });
-    expect(state.dashboardServiceSpy.createChart).toHaveBeenCalledWith({
-      parent: 'experiments/8765/workUnits/2',
-      chart: { title: 'Tuned', xid: 8765, wid: 2 },
-    });
-  });
-
-  it('should link the server-assigned chart IDs onto the created dashboard', () => {
-    const component = bootstrap(DashboardsListPage);
-    const router = get(Router);
-    spyOn(router, 'navigate');
-    state.dashboardServiceSpy.createChart.and.returnValues(
-      of({ name: 'experiments/4321/workUnits/1/charts/chart-uuid-1', title: 'Baseline' }),
-      of({ name: 'experiments/8765/workUnits/2/charts/chart-uuid-2', title: 'Tuned' }),
-    );
-    state.dashboardServiceSpy.createDashboard.and.returnValue(
-      of({ name: 'dashboards/new_evaluation', title: 'New Evaluation' }),
-    );
-
-    component.createDashboard(
-      createDialogResult([
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledTimes(1);
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({
+      dashboard: { title: 'New Evaluation' },
+      charts: [
         { title: 'Baseline', xid: 4321, wid: 1 },
         { title: 'Tuned', xid: 8765, wid: 2 },
-      ]),
-    );
-
-    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({
-      dashboard: {
-        title: 'New Evaluation',
-        chartIds: ['chart-uuid-1', 'chart-uuid-2'],
-      },
+      ],
     });
     expect(router.navigate).toHaveBeenCalledWith(['/dashboards', 'new_evaluation']);
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(1);
   });
 
-  it('should create a dashboard with no chart IDs when the dialog returned no charts', () => {
+  it('should create a dashboard with no charts when the dialog returned none', () => {
     const component = bootstrap(DashboardsListPage);
     state.dashboardServiceSpy.createDashboard.and.returnValue(
       of({ name: 'dashboards/empty', title: 'New Evaluation' }),
@@ -191,9 +162,9 @@ describe('DashboardsListPage', () => {
 
     component.createDashboard(createDialogResult([]));
 
-    expect(state.dashboardServiceSpy.createChart).not.toHaveBeenCalled();
     expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({
-      dashboard: { title: 'New Evaluation', chartIds: [] },
+      dashboard: { title: 'New Evaluation' },
+      charts: [],
     });
   });
 
@@ -209,23 +180,6 @@ describe('DashboardsListPage', () => {
 
     expect(router.navigate).not.toHaveBeenCalled();
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
-  });
-
-  it('should surface an error and skip the dashboard write when chart creation fails', () => {
-    const component = bootstrap(DashboardsListPage);
-    const router = get(Router);
-    spyOn(router, 'navigate');
-    state.dashboardServiceSpy.createChart.and.returnValue(
-      throwError(() => new Error('Chart creation failed')),
-    );
-
-    component.createDashboard(createDialogResult());
-
-    expect(state.dashboardServiceSpy.createDashboard).not.toHaveBeenCalled();
-    expect(router.navigate).not.toHaveBeenCalled();
-    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to create dashboard');
-    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
-    expect(component.isLoading()).toBeFalse();
   });
 
   it('should reload dashboards when createDashboard fails', () => {

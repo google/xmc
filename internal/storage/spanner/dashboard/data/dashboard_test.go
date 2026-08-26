@@ -58,6 +58,77 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 	}
 }
 
+func TestDashboardWithChartsToInsertMutations_Success(t *testing.T) {
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	dash := &dpb.Dashboard{
+		Name:     "dashboards/test-data-with-charts",
+		Title:    "Test Dashboard Title",
+		Owner:    "user@example.com",
+		ChartIds: []string{chartID},
+	}
+	chart := &dpb.Chart{
+		Name:  "experiments/100/workUnits/1/charts/" + chartID,
+		Title: "Test Chart Title",
+		Xid:   100,
+		Wid:   1,
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "plot-1",
+				Title:  "Loss",
+				Type:   dpb.PlotType_SCATTER,
+			},
+		},
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart})
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 4 {
+		t.Errorf("Expected 4 mutations (chart + plot spec + dashboard + chart link), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NoCharts(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-no-charts",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, nil)
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (dashboard only), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_InvalidChart(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-invalid-chart",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+	chart := &dpb.Chart{
+		Name:  "invalid-chart-name",
+		Title: "Invalid Name Chart",
+	}
+
+	if _, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart}); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with an invalid chart expected error, got nil")
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NilDashboard(t *testing.T) {
+	if _, err := DashboardWithChartsToInsertMutations(nil, nil); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with nil dashboard expected error, got nil")
+	}
+}
+
 func TestChartProtoToInsertMutations_Success(t *testing.T) {
 	chart := &dpb.Chart{
 		Name:        "experiments/100/workUnits/1/charts/test-chart-data-1",

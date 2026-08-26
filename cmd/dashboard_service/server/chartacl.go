@@ -54,6 +54,32 @@ func (s *Server) filterAuthorizedCharts(ctx context.Context, user string, charts
 	return authorized, nil
 }
 
+// authorizeChartExperimentWrites requires WRITER on every experiment the given charts belong to.
+// Unlike a read, a partial result is not an option here: a caller who cannot write one of the
+// experiments must not have the dashboard created at all, so the first denial aborts the request.
+// Each distinct xid is checked once, bounding the XID service round trips by the number of
+// experiments rather than the number of charts.
+func (s *Server) authorizeChartExperimentWrites(ctx context.Context, user string, charts []*dpb.Chart) error {
+	if len(charts) == 0 {
+		return nil
+	}
+	if s.xidClient == nil {
+		return status.Error(codes.FailedPrecondition, "xid client is not configured")
+	}
+
+	checked := make(map[int64]bool, len(charts))
+	for _, chart := range charts {
+		if checked[chart.GetXid()] {
+			continue
+		}
+		checked[chart.GetXid()] = true
+		if err := s.authorizeExperimentWrite(ctx, user, chart.GetXid()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // isChartReadable reports whether the user holds READER on the chart's experiment. A denial is a
 // decision rather than an error, but any other failure is propagated so that an unreachable XID
 // service is never mistaken for an empty result.

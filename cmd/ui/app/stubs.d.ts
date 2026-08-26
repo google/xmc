@@ -605,6 +605,7 @@ declare module 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_
     dashboard?: any;
     dashboardId?: string;
     dashboard_id?: string;
+    charts?: any[];
     [key: string]: any;
   }
 

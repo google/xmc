@@ -31,17 +31,13 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, map, Observable, of, switchMap } from 'rxjs';
 
 import {
   CreateDashboardDialogComponent,
   CreateDashboardDialogResult,
 } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
-import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import {
-  extractChartId,
-  extractDashboardId,
-} from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
+import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { extractDashboardId } from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
@@ -135,23 +131,16 @@ export class DashboardsListPage implements OnInit {
   }
 
   /**
-   * Provisions the dialog's charts and then creates the dashboard that links them.
+   * Creates the dashboard and the charts the dialog configured for it.
    *
-   * Charts are a sibling resource, so they have to be created through CreateChart before the
-   * dashboard can reference them: DashboardCharts.ChartId carries a foreign key onto Charts, and a
-   * dashboard whose `chart_ids` name rows that do not exist yet is rejected at commit time. Passing
-   * the resulting IDs to CreateDashboard writes the dashboard and its links in one server call.
+   * Both go out in one CreateDashboard call: the server assigns the chart IDs, links them and
+   * commits everything in a single transaction, so a partial failure cannot leave behind a
+   * dashboard that renders empty or charts that nothing points at.
    */
   createDashboard(result: CreateDashboardDialogResult): void {
     this.isLoading.set(true);
-    this.provisionCharts(result.charts)
-      .pipe(
-        switchMap((chartIds) =>
-          this.dashboardService.createDashboard({
-            dashboard: { ...result.dashboard, chartIds },
-          }),
-        ),
-      )
+    this.dashboardService
+      .createDashboard({ dashboard: result.dashboard, charts: result.charts })
       .subscribe({
         next: (created) => {
           this.isLoading.set(false);
@@ -169,23 +158,5 @@ export class DashboardsListPage implements OnInit {
           this.loadDashboards();
         },
       });
-  }
-
-  /**
-   * Creates every chart of a new dashboard and returns their server-assigned IDs.
-   */
-  private provisionCharts(charts: Chart[]): Observable<string[]> {
-    if (charts.length === 0) return of([]);
-
-    return forkJoin(
-      charts.map((chart) =>
-        this.dashboardService.createChart({
-          parent: `experiments/${chart.xid}/workUnits/${chart.wid}`,
-          chart,
-        }),
-      ),
-    ).pipe(
-      map((created) => created.map((chart) => extractChartId(chart.name)).filter((id) => !!id)),
-    );
   }
 }
