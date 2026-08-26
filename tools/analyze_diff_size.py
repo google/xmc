@@ -20,7 +20,10 @@ import re
 import subprocess
 from typing import Any
 
-from tool_utils import HandledError, run_tool
+try:
+    from tools.common.tool_utils import HandledError, run_tool
+except ImportError:
+    from tool_utils import HandledError, run_tool
 
 # Mandatory sizing thresholds (lines added / modified)
 PROD_THRESHOLD = 400
