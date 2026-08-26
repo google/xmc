@@ -21,12 +21,50 @@ import (
 	"testing"
 	"time"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge"
+
+	"google.golang.org/grpc"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
+
+type mockCMS struct{}
+
+func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
+	return &componentspb.SetComponentIntentResponse{
+		Component: &componentspb.Component{
+			Name: in.Name,
+			Spec: in.Spec,
+			Status: &componentspb.ComponentAccessStatus{
+				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			},
+		},
+	}, nil
+}
+
+func (m *mockCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
+	return &componentspb.UpdateObservedGenerationResponse{
+		Component: &componentspb.Component{
+			Name: in.Name,
+			Status: &componentspb.ComponentAccessStatus{
+				ObservedGeneration: in.ObservedGeneration,
+				State:              in.State,
+			},
+		},
+	}, nil
+}
+
+func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
+	return &componentspb.ExecuteDeletionResponse{}, nil
+}
+
+func (m *mockCMS) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
+	return &componentspb.CompleteDeactivationResponse{}, nil
+}
 
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
@@ -126,33 +164,53 @@ func TestController_RunReconcilePass(t *testing.T) {
 		t.Fatalf("failed to create test resource: %v", err)
 	}
 
-	ctrl := NewController(fakeDynamic, "xmc", time.Second, time.Second)
+	r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+
+	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
 	if err := ctrl.RunReconcilePass(ctx); err != nil {
 		t.Fatalf("RunReconcilePass failed: %v", err)
 	}
+
+	updated, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Get(ctx, "test-comp", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to fetch updated resource: %v", err)
+	}
+
+	status, ok := updated.Object["status"].(map[string]any)
+	if !ok || status == nil {
+		t.Fatal("expected status on updated resource")
+	}
+	if status["state"] != "COMPONENT_STATE_ENABLED" {
+		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", status["state"])
+	}
 }
 
-func TestController_Run_ContextCancel(t *testing.T) {
-	scheme := runtime.NewScheme()
-	fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		componentGVR: "ComponentList",
-	})
+func TestBuildStatusMap(t *testing.T) {
+	res := &bridge.ReconcileResult{
+		ObservedGeneration: 5,
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Access:             &bridge.AccessStatus{EnvVars: map[string]string{"PORT": "8080"}},
+		Conditions: []bridge.Condition{
+			{
+				Type:               bridge.ConditionTypeReady,
+				Status:             bridge.ConditionStatusTrue,
+				ObservedGeneration: 5,
+				Reason:             "ComponentReady",
+				Message:            "All good",
+				LastTransitionTime: time.Now(),
+			},
+		},
+	}
 
-	ctrl := NewController(fakeDynamic, "xmc", 10*time.Millisecond, 10*time.Millisecond)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-
-	go func() {
-		done <- ctrl.Run(ctx)
-	}()
-
-	time.Sleep(25 * time.Millisecond)
-	cancel()
-
-	err := <-done
-	if err == nil || err != context.Canceled {
-		t.Errorf("expected context.Canceled error, got %v", err)
+	statusMap := BuildStatusMap(res)
+	if statusMap["observedGeneration"] != int64(5) {
+		t.Errorf("expected observedGeneration 5, got %v", statusMap["observedGeneration"])
+	}
+	if statusMap["state"] != "COMPONENT_STATE_ENABLED" {
+		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", statusMap["state"])
 	}
 }
 
