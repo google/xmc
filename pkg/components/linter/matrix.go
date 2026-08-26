@@ -246,6 +246,8 @@ func validateRequiredCRDs(filePath string, line int, compName string, requiredCR
 	}
 }
 
+// validateSingleRequiredCRD enforces Kubernetes RFC-1123 DNS subdomain label format (<plural>.<group>)
+// and length limits (<= 253 chars total, <= 63 chars per segment) on a required CRD string.
 func validateSingleRequiredCRD(filePath string, line int, compName, crd string, res *ValidationResult) {
 	trimmed := strings.TrimSpace(crd)
 	if trimmed == "" {
