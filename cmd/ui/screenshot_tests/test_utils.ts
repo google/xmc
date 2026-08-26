@@ -15,13 +15,15 @@
 import type { Page, Route } from '@playwright/test';
 
 export const MOCK_USER = {
-  userEmail: 'admin@google.com',
   email: 'admin@google.com',
   name: 'Test User',
   pictureUrl: '',
   sessionExpiresAt: 9999999999,
   allowedDomains: ['google.com'],
-  roles: ['admin', 'operator'],
+};
+
+export const MOCK_USER_INFO = {
+  userEmail: 'test@google.com',
   privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
@@ -51,6 +53,14 @@ export async function handleUserAuthRoute(route: Route) {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(MOCK_USER),
+  });
+}
+
+export async function handleUserInfoRoute(route: Route) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(MOCK_USER_INFO),
   });
 }
 
@@ -163,7 +173,7 @@ export async function handleSecondaryDataRoute(route: Route) {
  */
 export async function setupMockRoutes(page: Page) {
   await page.route(/\/api\/user/, handleUserAuthRoute);
-  await page.route(/\/health\/userinfo/, handleUserAuthRoute);
+  await page.route(/\/health\/userinfo/, handleUserInfoRoute);
   await page.route(/\/config\.js/, handleConfigRoute);
   await page.route(/\/clusterqueues$/, handleClusterQueuesRoute);
   await page.route(/\/clusterqueues\/.*\/jobs/, handleQueueJobsRoute);
