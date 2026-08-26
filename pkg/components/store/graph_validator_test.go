@@ -190,10 +190,14 @@ func TestValidateProspectiveDependencies(t *testing.T) {
 		},
 	}
 
-	// 1. Direct self-cycle
+	// 1. Direct self-cycle (normalized and raw)
 	err := ValidateProspectiveDependencies(existing, "comp-d", []string{"comp-d"})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("Direct self cycle got code %v, want FailedPrecondition", status.Code(err))
+	}
+	err = ValidateProspectiveDependencies(existing, "comp-d", []string{"comp-e,comp-d"})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("Raw self cycle got code %v, want FailedPrecondition", status.Code(err))
 	}
 
 	// 2. Transitive cycle (comp-c depending on comp-a)

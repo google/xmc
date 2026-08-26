@@ -148,6 +148,9 @@ func collectAllNodes(graph map[string][]string) []string {
 
 // getSortedNeighbors returns a sorted copy of neighbor nodes for deterministic traversal.
 func getSortedNeighbors(neighbors []string) []string {
+	if len(neighbors) == 0 {
+		return nil
+	}
 	cp := make([]string, len(neighbors))
 	copy(cp, neighbors)
 	sort.Strings(cp)
@@ -167,14 +170,16 @@ func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName str
 		return status.Error(codes.InvalidArgument, "target component name is required")
 	}
 
-	for _, dep := range newDeps {
-		if CanonicalComponentName(dep) == canonicalTarget {
+	// Normalize first to ensure we clean and split any raw dependency strings.
+	normalized := NormalizeDependencies(newDeps, "")
+	for _, dep := range normalized {
+		if dep == canonicalTarget {
 			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s -> %s", canonicalTarget, canonicalTarget)
 		}
 	}
 
 	graph := BuildDependencyGraph(existing)
-	graph[canonicalTarget] = NormalizeDependencies(newDeps, canonicalTarget)
+	graph[canonicalTarget] = normalized
 
 	if cycle, found := DetectCycles(graph); found {
 		return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", formatCycle(cycle))
