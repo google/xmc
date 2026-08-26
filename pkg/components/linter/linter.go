@@ -161,7 +161,7 @@ func decodeRawDocumentNode(path string, node *yaml.Node, res *ValidationResult) 
 }
 
 func (l *Linter) buildComponentMap(compManifests []*ComponentManifest, res *ValidationResult) map[string]*ComponentManifest {
-	compMap := make(map[string]*ComponentManifest)
+	compMap := make(map[string]*ComponentManifest, len(compManifests))
 	for _, c := range compManifests {
 		canonical := store.CanonicalComponentName(c.Metadata.Name)
 		if canonical == "" {

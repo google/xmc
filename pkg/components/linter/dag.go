@@ -70,10 +70,14 @@ func detectCycles(compMap map[string]*ComponentManifest, res *ValidationResult) 
 }
 
 func buildDependencyGraph(compMap map[string]*ComponentManifest) map[string][]string {
-	adj := make(map[string][]string)
+	adj := make(map[string][]string, len(compMap))
 	for name, comp := range compMap {
-		var deps []string
-		seen := make(map[string]bool)
+		numDeps := len(comp.Spec.Dependencies)
+		if numDeps == 0 {
+			continue
+		}
+		deps := make([]string, 0, numDeps)
+		seen := make(map[string]bool, numDeps)
 		for _, dep := range comp.Spec.Dependencies {
 			dName := store.CanonicalComponentName(dep.Name)
 			if dName != "" && !seen[dName] {
@@ -88,13 +92,13 @@ func buildDependencyGraph(compMap map[string]*ComponentManifest) map[string][]st
 
 func findDependencyCycles(nodes []string, adj map[string][]string, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	const (
-		unvisited = 0
-		visiting  = 1
-		visited   = 2
+		unvisited = iota
+		visiting
+		visited
 	)
 
-	state := make(map[string]int)
-	var path []string
+	state := make(map[string]int, len(nodes))
+	path := make([]string, 0, len(nodes))
 	reported := make(map[string]bool)
 
 	var dfs func(u string)
@@ -153,7 +157,8 @@ func formatCyclePath(path []string, v string) string {
 	if cycleStart == -1 {
 		return ""
 	}
-	cycleNodes := append([]string(nil), path[cycleStart:]...)
+	cycleNodes := make([]string, 0, len(path)-cycleStart+1)
+	cycleNodes = append(cycleNodes, path[cycleStart:]...)
 	cycleNodes = append(cycleNodes, v)
 	return strings.Join(cycleNodes, " -> ")
 }
