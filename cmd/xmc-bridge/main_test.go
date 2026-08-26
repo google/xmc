@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"testing"
 	"time"
 
@@ -28,9 +30,10 @@ import (
 
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
+		name        string
+		args        []string
+		wantErr     bool
+		wantHelpErr bool
 	}{
 		{
 			name:    "default values",
@@ -41,6 +44,12 @@ func TestParseConfig(t *testing.T) {
 			name:    "custom values",
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--probe-interval=10s", "--probe-timeout=5s"},
 			wantErr: false,
+		},
+		{
+			name:        "help flag returns ErrHelp",
+			args:        []string{"--help"},
+			wantErr:     true,
+			wantHelpErr: true,
 		},
 		{
 			name:    "invalid probe interval",
@@ -60,6 +69,9 @@ func TestParseConfig(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ParseConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
+			if tt.wantHelpErr && !errors.Is(err, flag.ErrHelp) {
+				t.Errorf("ParseConfig() error = %v, want errors.Is(flag.ErrHelp)", err)
+			}
 			if err == nil && cfg == nil {
 				t.Fatal("expected non-nil Config")
 			}
@@ -68,10 +80,17 @@ func TestParseConfig(t *testing.T) {
 }
 
 func TestBuildKubeConfig(t *testing.T) {
-	_, err := BuildKubeConfig("/nonexistent/kubeconfig/path")
-	if err == nil {
-		t.Error("expected error for nonexistent kubeconfig path")
-	}
+	t.Run("explicit invalid path fails immediately", func(t *testing.T) {
+		_, err := BuildKubeConfig("/nonexistent/kubeconfig/path")
+		if err == nil {
+			t.Error("expected error for nonexistent kubeconfig path")
+		}
+	})
+
+	t.Run("empty path falls back without panicking", func(t *testing.T) {
+		// Outside of cluster, this will return an error or default config, but should not panic.
+		_, _ = BuildKubeConfig("")
+	})
 }
 
 func TestController_RunReconcilePass(t *testing.T) {

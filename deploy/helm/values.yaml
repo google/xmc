@@ -50,9 +50,6 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
-componentsDeployment:
-  enabled: false
-
 metrics:
   enabled: false
   # ClickHouse is Bring-Your-Own (BYO) infrastructure deployed out-of-band via

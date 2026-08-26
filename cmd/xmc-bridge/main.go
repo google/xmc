@@ -80,18 +80,16 @@ func ParseConfig(args []string) (*Config, error) {
 
 // BuildKubeConfig builds a Kubernetes client config from a path or in-cluster environment.
 func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	loadingRules.ExplicitPath = kubeconfigPath
-	configOverrides := &clientcmd.ConfigOverrides{}
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
+	if kubeconfigPath != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	}
+	cfg, err := rest.InClusterConfig()
 	if err == nil {
 		return cfg, nil
 	}
-	cfg, err = rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
-	}
-	return cfg, nil
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
 }
 
 // Controller orchestrates dynamic polling and reconciliation sweeps for Component resources.
@@ -143,7 +141,8 @@ func (c *Controller) RunReconcilePass(ctx context.Context) error {
 	}
 
 	logging.Info(ctx, "Discovered Component resources during polling sweep", "count", len(list.Items), "namespace", c.namespace)
-	for _, item := range list.Items {
+	for i := range list.Items {
+		item := &list.Items[i]
 		logging.Debug(ctx, "Discovered Component resource", "name", item.GetName(), "generation", item.GetGeneration())
 	}
 	return nil
@@ -172,6 +171,9 @@ func main() {
 	ctx = logging.WithLogger(ctx, logger)
 
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		logging.Fatal(ctx, "Invalid configuration", "error", err)
 	}
 
