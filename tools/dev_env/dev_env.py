@@ -108,6 +108,7 @@ def handle_cluster(args: argparse.Namespace) -> None:
         mgr.check_prerequisites()
         mgr.create_cluster(recreate=getattr(args, "recreate", False))
         mgr.ensure_secrets()
+        mgr.apply_manifests()
     elif action == "delete":
         mgr.delete_cluster()
     else:
@@ -337,8 +338,8 @@ def _add_logs_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--tail",
         type=int,
-        default=100,
-        help="Lines of recent log history to show (default: 100).",
+        default=None,
+        help="Lines of recent log history to show (default: 100 when not following).",
     )
     p.add_argument("-n", "--namespace", default="xmc", help="Target namespace (default: xmc).")
     _add_common_config_flags(p)

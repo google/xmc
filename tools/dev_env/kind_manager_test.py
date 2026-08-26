@@ -317,7 +317,7 @@ class KindManagerTest(unittest.TestCase):
 
     @mock.patch("urllib.request.urlopen")
     def test_check_endpoint_health_failure(self, mock_urlopen: mock.MagicMock) -> None:
-        mock_urlopen.side_effect = OSError("Connection refused")
+        mock_urlopen.side_effect = Exception("Malformed HTTP or connection refused")
         self.assertFalse(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
@@ -336,6 +336,8 @@ class KindManagerTest(unittest.TestCase):
         self.assertTrue(status["running"])
         self.assertTrue(status["health"]["ui"])
         self.assertTrue(status["health"]["dex"])
+        self.assertEqual(status["pods"]["xmc"], "pod-1 Running\n")
+        self.assertEqual(mock_run.call_args[1].get("log_cmd"), False)
 
     def test_get_status_not_running(self) -> None:
         with mock.patch.object(self.manager, "cluster_exists", return_value=False):
@@ -358,6 +360,8 @@ class KindManagerTest(unittest.TestCase):
 
         self.assertTrue(status["running"])
         self.assertFalse(status["health"]["ui"])
+        self.assertEqual(status["pods"]["xmc"], "error: context not found\n")
+        self.assertEqual(mock_run.call_args[1].get("log_cmd"), False)
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
     def test_stream_logs(self, mock_run: mock.MagicMock) -> None:
@@ -367,6 +371,25 @@ class KindManagerTest(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("app=reconciler", cmd)
         self.assertIn("-f", cmd)
+        self.assertNotIn("--tail", " ".join(cmd))
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_follow_with_tail(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="reconciler", follow=True, lines=50)
+
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("app=reconciler", cmd)
+        self.assertIn("-f", cmd)
+        self.assertIn("--tail=50", cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_zero_lines(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="ess", lines=0)
+
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--tail=0", cmd)
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
     def test_stream_logs_all_services(self, mock_run: mock.MagicMock) -> None:
@@ -375,6 +398,12 @@ class KindManagerTest(unittest.TestCase):
 
         cmd = mock_run.call_args[0][0]
         self.assertIn("--tail=50", cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_keyboard_interrupt(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = KeyboardInterrupt()
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="reconciler", follow=True)
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
     def test_stream_logs_cluster_not_running(self, mock_run: mock.MagicMock) -> None:

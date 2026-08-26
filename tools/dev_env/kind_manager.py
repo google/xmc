@@ -357,7 +357,7 @@ class KindManager:
             req = urllib.request.Request(url, headers={"User-Agent": "XMC-DevEnv"})
             with urllib.request.urlopen(req, timeout=3) as resp:
                 return bool(resp.status == 200)
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except Exception:
             return False
 
     def get_status(self, cluster_name: str | None = None) -> dict[str, Any]:
@@ -378,6 +378,7 @@ class KindManager:
                 ["kubectl", "--context", ctx, "get", "pods", "-n", ns, "-o", "wide"],
                 capture_output=True,
                 check=False,
+                log_cmd=False,
             )
             output = (
                 res.stdout
@@ -385,7 +386,7 @@ class KindManager:
                 else (res.stderr if res.stderr else "No pods found.")
             )
             print(output)
-            pods_info[ns] = res.stdout
+            pods_info[ns] = output
 
         ui_health = self.check_endpoint_health("http://localhost:8080/healthz")
         dex_health = self.check_endpoint_health("http://localhost:5556/dex/healthz")
@@ -430,15 +431,21 @@ class KindManager:
         else:
             cmd.extend(["--all-containers=true", "-l", "app"])
 
+        if lines is not None:
+            cmd.append(f"--tail={lines}")
+        elif not follow:
+            cmd.append("--tail=100")
+
         if follow:
             cmd.append("-f")
-        else:
-            cmd.append(f"--tail={lines or 100}")
 
         log_info(
             f"Streaming logs {'for ' + service_name if service_name else 'all services'} (namespace: '{namespace}')..."
         )
-        run_command(cmd, check=False)
+        try:
+            run_command(cmd, check=False)
+        except KeyboardInterrupt:
+            log_info("Log streaming stopped by user.")
 
     def delete_cluster(self, cluster_name: str | None = None) -> None:
         """Deletes the local KinD development cluster."""

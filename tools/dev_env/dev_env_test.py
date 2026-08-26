@@ -410,6 +410,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once()
 
+    @patch("tools.dev_env.kind_manager.KindManager.apply_manifests")
     @patch("tools.dev_env.kind_manager.KindManager.ensure_secrets")
     @patch("tools.dev_env.kind_manager.KindManager.create_cluster")
     @patch("tools.dev_env.kind_manager.KindManager.check_prerequisites")
@@ -420,12 +421,9 @@ class DevEnvCliTest(unittest.TestCase):
         mock_check_pre: MagicMock,
         mock_create: MagicMock,
         mock_ensure: MagicMock,
+        mock_apply: MagicMock,
     ) -> None:
-        """Verifies 'dev_env cluster create' executes preflight, cluster creation, and secrets."""
-        mock_load_config.return_value = LocalDevConfig(
-            project_id="test-p",
-            cluster_name="my-kind",
-        )
+        """Verifies 'dev_env cluster create' executes preflight, cluster creation, secrets, and manifests."""
         args = self.parser.parse_args(
             ["cluster", "create", "--cluster-name", "my-kind", "--recreate"]
         )
@@ -434,6 +432,7 @@ class DevEnvCliTest(unittest.TestCase):
         mock_check_pre.assert_called_once()
         mock_create.assert_called_once_with(recreate=True)
         mock_ensure.assert_called_once()
+        mock_apply.assert_called_once()
 
     @patch("tools.dev_env.kind_manager.KindManager.delete_cluster")
     @patch("tools.dev_env.config.load_config")
