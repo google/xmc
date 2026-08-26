@@ -25,7 +25,6 @@ import (
 
 	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	"google.golang.org/api/option"
 	run "google.golang.org/api/run/v2"
@@ -262,6 +261,11 @@ func TestCheckSpannerComponent(t *testing.T) {
 	}
 }
 
+const (
+	mockEssExpectedVersion = int64(5)
+	mockXidExpectedVersion = int64(1)
+)
+
 func TestRunChecks_SpannerMetadata(t *testing.T) {
 	checker := &HealthChecker{
 		cfg: &Config{
@@ -274,9 +278,11 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
-		xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: true},
-		redisClient:     &mockRedisClient{},
+		essHealthClient:          &mockSpannerHealthClient{version: 6, dirty: false},
+		xidHealthClient:          &mockSpannerHealthClient{version: 1, dirty: true},
+		redisClient:              &mockRedisClient{},
+		essExpectedSchemaVersion: 6,
+		xidExpectedSchemaVersion: 1,
 	}
 
 	res := checker.RunChecks(context.Background())
@@ -447,9 +453,11 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
-		xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: false},
-		redisClient:     &mockRedisClient{},
+		essHealthClient:          &mockSpannerHealthClient{version: 6, dirty: false},
+		xidHealthClient:          &mockSpannerHealthClient{version: 1, dirty: false},
+		redisClient:              &mockRedisClient{},
+		essExpectedSchemaVersion: 6,
+		xidExpectedSchemaVersion: 1,
 	}
 
 	res := checker.RunChecks(context.Background())
@@ -520,8 +528,8 @@ func TestRunChecks(t *testing.T) {
 			httpStatus: http.StatusOK,
 			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
 			crState:    "CONDITION_SUCCEEDED",
-			essVersion: version.EssExpectedSchemaVersion(),
-			xidVersion: version.XidExpectedSchemaVersion(),
+			essVersion: mockEssExpectedVersion,
+			xidVersion: mockXidExpectedVersion,
 			wantStates: map[string]spb.HealthState{
 				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
 				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
@@ -532,8 +540,8 @@ func TestRunChecks(t *testing.T) {
 				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
 				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
-			wantEssDbSchemaVersion: fmt.Sprintf("%d", version.EssExpectedSchemaVersion()),
-			wantXidDbSchemaVersion: fmt.Sprintf("%d", version.XidExpectedSchemaVersion()),
+			wantEssDbSchemaVersion: "5",
+			wantXidDbSchemaVersion: "1",
 		},
 		{
 			name:          "AllUnhealthy",
@@ -542,9 +550,9 @@ func TestRunChecks(t *testing.T) {
 			crState:       "CONDITION_FAILED",
 			crReason:      "UNHEALTHY",
 			crMessage:     "test error",
-			essVersion:    version.EssExpectedSchemaVersion(),
+			essVersion:    mockEssExpectedVersion,
 			essSpannerErr: fmt.Errorf("spanner error"),
-			xidVersion:    version.XidExpectedSchemaVersion(),
+			xidVersion:    mockXidExpectedVersion,
 			xidSpannerErr: fmt.Errorf("spanner error"),
 			redisErr:      fmt.Errorf("redis failed"),
 			wantStates: map[string]spb.HealthState{
@@ -565,8 +573,8 @@ func TestRunChecks(t *testing.T) {
 			httpStatus: http.StatusOK,
 			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
 			crState:    "CONDITION_SUCCEEDED",
-			essVersion: version.EssExpectedSchemaVersion() - 1,
-			xidVersion: version.XidExpectedSchemaVersion() + 1,
+			essVersion: mockEssExpectedVersion - 1,
+			xidVersion: mockXidExpectedVersion + 1,
 			wantStates: map[string]spb.HealthState{
 				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
 				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
@@ -577,8 +585,8 @@ func TestRunChecks(t *testing.T) {
 				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
 				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
-			wantEssDbSchemaVersion: fmt.Sprintf("%d", version.EssExpectedSchemaVersion()-1),
-			wantXidDbSchemaVersion: fmt.Sprintf("%d", version.XidExpectedSchemaVersion()+1),
+			wantEssDbSchemaVersion: "4",
+			wantXidDbSchemaVersion: "2",
 		},
 	}
 
@@ -623,10 +631,12 @@ func TestRunChecks(t *testing.T) {
 					ReconcilerURL:          httpServer.URL,
 					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 				},
-				EssHealthClient: &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
-				XidHealthClient: &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
-				RedisClient:     &mockRedisClient{err: tc.redisErr},
-				CloudRunService: cloudRunService,
+				EssHealthClient:          &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
+				XidHealthClient:          &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
+				RedisClient:              &mockRedisClient{err: tc.redisErr},
+				CloudRunService:          cloudRunService,
+				EssExpectedSchemaVersion: mockEssExpectedVersion,
+				XidExpectedSchemaVersion: mockXidExpectedVersion,
 			})
 			if err != nil {
 				t.Fatalf("failed to create health checker: %v", err)

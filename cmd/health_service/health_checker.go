@@ -23,7 +23,6 @@ import (
 
 	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
@@ -36,21 +35,25 @@ type RedisPingClient interface {
 }
 
 type HealthCheckerParams struct {
-	Config          *Config
-	EssHealthClient health.SpannerHealthClient
-	XidHealthClient health.SpannerHealthClient
-	RedisClient     RedisPingClient
-	CloudRunService *run.Service
+	Config                   *Config
+	EssHealthClient          health.SpannerHealthClient
+	XidHealthClient          health.SpannerHealthClient
+	RedisClient              RedisPingClient
+	CloudRunService          *run.Service
+	EssExpectedSchemaVersion int64
+	XidExpectedSchemaVersion int64
 }
 
 type HealthChecker struct {
-	cfg             *Config
-	httpClient      *http.Client
-	xidConn         *grpc.ClientConn
-	essHealthClient health.SpannerHealthClient
-	xidHealthClient health.SpannerHealthClient
-	redisClient     RedisPingClient
-	cloudRunService *run.Service
+	cfg                      *Config
+	httpClient               *http.Client
+	xidConn                  *grpc.ClientConn
+	essHealthClient          health.SpannerHealthClient
+	xidHealthClient          health.SpannerHealthClient
+	redisClient              RedisPingClient
+	cloudRunService          *run.Service
+	essExpectedSchemaVersion int64
+	xidExpectedSchemaVersion int64
 }
 
 func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
@@ -70,11 +73,13 @@ func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		xidConn:         conn,
-		essHealthClient: params.EssHealthClient,
-		xidHealthClient: params.XidHealthClient,
-		redisClient:     params.RedisClient,
-		cloudRunService: params.CloudRunService,
+		xidConn:                  conn,
+		essHealthClient:          params.EssHealthClient,
+		xidHealthClient:          params.XidHealthClient,
+		redisClient:              params.RedisClient,
+		cloudRunService:          params.CloudRunService,
+		essExpectedSchemaVersion: params.EssExpectedSchemaVersion,
+		xidExpectedSchemaVersion: params.XidExpectedSchemaVersion,
 	}, nil
 }
 
@@ -177,11 +182,11 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 }
 
 func (c *HealthChecker) CheckSpannerESS(ctx context.Context) (*spb.ComponentHealth, string) {
-	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient, version.EssExpectedSchemaVersion())
+	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient, c.essExpectedSchemaVersion)
 }
 
 func (c *HealthChecker) CheckSpannerXID(ctx context.Context) (*spb.ComponentHealth, string) {
-	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient, version.XidExpectedSchemaVersion())
+	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient, c.xidExpectedSchemaVersion)
 }
 
 func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, baseURL string, path string) *spb.ComponentHealth {
