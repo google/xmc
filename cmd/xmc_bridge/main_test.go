@@ -433,4 +433,3 @@ func TestController_ReconcileItem(t *testing.T) {
 	// Should safely reconcile without panicking
 	ctrl.reconcileItem(ctx, item)
 }
-
