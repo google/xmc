@@ -23,6 +23,7 @@ import (
 
 	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
@@ -176,11 +177,11 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 }
 
 func (c *HealthChecker) CheckSpannerESS(ctx context.Context) (*spb.ComponentHealth, string) {
-	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient)
+	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient, version.EssExpectedSchemaVersion())
 }
 
 func (c *HealthChecker) CheckSpannerXID(ctx context.Context) (*spb.ComponentHealth, string) {
-	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient)
+	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient, version.XidExpectedSchemaVersion())
 }
 
 func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, baseURL string, path string) *spb.ComponentHealth {
@@ -259,7 +260,7 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 	}
 }
 
-func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, client health.SpannerHealthClient) (*spb.ComponentHealth, string) {
+func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, client health.SpannerHealthClient, expectedVersion int64) (*spb.ComponentHealth, string) {
 	if client == nil {
 		return &spb.ComponentHealth{
 			Name:         name,
@@ -282,6 +283,24 @@ func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, 
 	versionStr := fmt.Sprintf("%d", versionVal)
 	if dirty {
 		versionStr += " (dirty)"
+	}
+
+	if dirty {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("schema migration is in a dirty state at version %d", versionVal),
+		}, versionStr
+	}
+
+	if versionVal != expectedVersion {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("schema version %d does not match expected version %d", versionVal, expectedVersion),
+		}, versionStr
 	}
 
 	return &spb.ComponentHealth{
