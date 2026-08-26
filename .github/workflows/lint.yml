@@ -83,8 +83,8 @@ jobs:
         run: |
           GOPATH_BIN="$(go env GOPATH)/bin"
           if [ ! -f "$GOPATH_BIN/golangci-lint" ]; then
-            echo "--> Downloading golangci-lint (v1.64.6)..."
-            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$GOPATH_BIN" v1.64.6
+            echo "--> Installing golangci-lint (v1.64.6)..."
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
           fi
           "$GOPATH_BIN/golangci-lint" run --timeout=5m
 
