@@ -62,7 +62,7 @@ func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*s
 		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
 	}
 
-	pageSize := clampChartPageSize(req.GetPageSize())
+	pageSize := clampPageSize(req.GetPageSize(), defaultChartPageSize, maxChartPageSize)
 	charts, nextPageToken, err := s.repo.ListCharts(ctx, req.GetParent(), pageSize, req.GetPageToken(), "", "", 0)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list charts: %v", err)
@@ -101,15 +101,4 @@ func (s *Server) authorizeListedCharts(ctx context.Context, user string, kind ch
 		return charts, nil
 	}
 	return s.filterAuthorizedCharts(ctx, user, charts)
-}
-
-// clampChartPageSize applies the AIP-158 default and maximum page size bounds.
-func clampChartPageSize(pageSize int32) int32 {
-	if pageSize <= 0 {
-		return defaultChartPageSize
-	}
-	if pageSize > maxChartPageSize {
-		return maxChartPageSize
-	}
-	return pageSize
 }

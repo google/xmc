@@ -99,6 +99,38 @@ func TestListDashboards(t *testing.T) {
 		}
 	})
 
+	t.Run("page size is bounded before reaching the repository", func(t *testing.T) {
+		testCases := []struct {
+			name      string
+			requested int32
+			want      int32
+		}{
+			{name: "unset defaults to 10", requested: 0, want: defaultDashboardPageSize},
+			{name: "below cap is preserved", requested: 25, want: 25},
+			{name: "at cap is preserved", requested: maxDashboardPageSize, want: maxDashboardPageSize},
+			{name: "above cap is clamped to 100", requested: 5000, want: maxDashboardPageSize},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				var gotPageSize int32
+				repo := &mockRepository{
+					listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
+						gotPageSize = pageSize
+						return nil, "", nil
+					},
+				}
+				s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+				if _, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{PageSize: tc.requested}); err != nil {
+					t.Fatalf("ListDashboards failed: %v", err)
+				}
+				if gotPageSize != tc.want {
+					t.Errorf("Expected repository page size %d, got %d", tc.want, gotPageSize)
+				}
+			})
+		}
+	})
+
 	t.Run("repo error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
 			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {

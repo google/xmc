@@ -74,6 +74,11 @@ describe('DashboardsListPage', () => {
     expect(component.filteredDashboards().length).toBe(2);
   });
 
+  it('should request an explicit page size when loading dashboards', () => {
+    bootstrap(DashboardsListPage);
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({ pageSize: 100 });
+  });
+
   it('should filter dashboards by search query', () => {
     const component = bootstrap(DashboardsListPage);
     component.searchQuery.set('vcc');
