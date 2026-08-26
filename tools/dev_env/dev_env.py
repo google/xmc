@@ -16,7 +16,7 @@
 """XMC Unified Development Environment CLI Tool.
 
 Consolidates environment lifecycle operations for GKE deployment and upgrade
-pipelines into a unified command-line entrypoint.
+pipelines into a unified CLI entrypoint.
 """
 
 import argparse
