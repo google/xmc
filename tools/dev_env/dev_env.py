@@ -147,6 +147,23 @@ def handle_logs(args: argparse.Namespace) -> None:
     )
 
 
+def handle_build_images(args: argparse.Namespace) -> None:
+    """Handler for compiling and loading local OCI images.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.image_builder import ImageBuilder
+
+    cfg = config.load_config(args)
+    builder = ImageBuilder(cfg)
+    services = getattr(args, "services", None)
+    skip_build = getattr(args, "skip_build", False)
+    image_tags = builder.build_images(services=services, skip_build=skip_build)
+    if getattr(args, "load_kind", False):
+        builder.load_images_into_kind(image_tags)
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -347,6 +364,34 @@ def _add_logs_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_logs)
 
 
+def _add_build_images_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'build-images' subcommand parser for local image compilation."""
+    p = subparsers.add_parser(
+        "build-images",
+        help="Build Bazel OCI container images and load into Docker / KinD.",
+        description="Compiles OCI container images in parallel for enabled microservices.",
+    )
+    p.add_argument(
+        "services",
+        nargs="*",
+        default=None,
+        help="Specific microservices to compile (e.g. reconciler ui). Default is all enabled.",
+    )
+    p.add_argument(
+        "--load-kind",
+        action="store_true",
+        help="Also load compiled container images into the local KinD cluster.",
+    )
+    p.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Skip compilation step and only load existing local Docker images.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_build_images)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -361,6 +406,7 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py cluster delete --cluster-name my-kind
   python3 tools/dev_env/dev_env.py status --cluster-name my-kind
   python3 tools/dev_env/dev_env.py logs reconciler --follow
+  python3 tools/dev_env/dev_env.py build-images reconciler ui --load-kind
   python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner migrate --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
@@ -418,6 +464,7 @@ def create_parser() -> argparse.ArgumentParser:
     _add_cluster_parser(subparsers)
     _add_status_parser(subparsers)
     _add_logs_parser(subparsers)
+    _add_build_images_parser(subparsers)
     _add_spanner_parser(subparsers)
 
     return parser
