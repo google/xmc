@@ -341,3 +341,36 @@ func TestConcurrentGetters(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestAccumulator_FalsePositivesAndExclusions(t *testing.T) {
+	tests := []struct {
+		key     string
+		wantGPU bool
+		wantTPU bool
+	}{
+		{key: "pool4", wantGPU: false, wantTPU: false},
+		{key: "dev4", wantGPU: false, wantTPU: false},
+		{key: "level4", wantGPU: false, wantTPU: false},
+		{key: "step4", wantGPU: false, wantTPU: false},
+		{key: "server6", wantGPU: false, wantTPU: false},
+		{key: "generic-gpu", wantGPU: false, wantTPU: false},
+		{key: "standard-gpu", wantGPU: false, wantTPU: false},
+		{key: "nvidia-l4", wantGPU: true, wantTPU: false},
+		{key: "tpu-v4", wantGPU: false, wantTPU: true},
+		{key: "tpu-v5p", wantGPU: false, wantTPU: true},
+		{key: "v5e-8", wantGPU: false, wantTPU: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			gotGPU := isSpecificGPUKey(tt.key)
+			if gotGPU != tt.wantGPU {
+				t.Errorf("isSpecificGPUKey(%q) = %v, want %v", tt.key, gotGPU, tt.wantGPU)
+			}
+			gotTPU := isSpecificTPUKey(tt.key)
+			if gotTPU != tt.wantTPU {
+				t.Errorf("isSpecificTPUKey(%q) = %v, want %v", tt.key, gotTPU, tt.wantTPU)
+			}
+		})
+	}
+}

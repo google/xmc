@@ -261,6 +261,21 @@ func TestResolveResourceType(t *testing.T) {
 			rfMap:        nil,
 			want:         "nvidia.com/gpu",
 		},
+		{
+			name:         "TPU topology label cloud.google.com/gke-tpu-topology is ignored during accelerator resolution",
+			resourceName: "google.com/tpu",
+			flavorName:   "flavor-tpu",
+			rfMap: map[string]*kueuev1beta1.ResourceFlavor{
+				"flavor-tpu": {
+					Spec: kueuev1beta1.ResourceFlavorSpec{
+						NodeLabels: map[string]string{
+							"cloud.google.com/gke-tpu-topology": "2x2x1",
+						},
+					},
+				},
+			},
+			want: "google.com/tpu",
+		},
 	}
 
 	for _, tt := range tests {
@@ -268,6 +283,56 @@ func TestResolveResourceType(t *testing.T) {
 			got := resolveResourceType(tt.resourceName, tt.flavorName, tt.rfMap)
 			if got != tt.want {
 				t.Errorf("resolveResourceType(%q, %q, ...) = %q, want %q", tt.resourceName, tt.flavorName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSpecificAcceleratorName(t *testing.T) {
+	tests := []struct {
+		name       string
+		flavorName string
+		want       bool
+	}{
+		// Valid accelerator names
+		{name: "nvidia-tesla-h100", flavorName: "nvidia-tesla-h100", want: true},
+		{name: "nvidia-l4", flavorName: "nvidia-l4", want: true},
+		{name: "tpu-v4", flavorName: "tpu-v4", want: true},
+		{name: "tpu-v5p", flavorName: "tpu-v5p", want: true},
+		{name: "v5e-8", flavorName: "v5e-8", want: true},
+		{name: "nvidia-t4", flavorName: "nvidia-t4", want: true},
+		{name: "tpu-v5", flavorName: "tpu-v5", want: true},
+		{name: "v4-8", flavorName: "v4-8", want: true},
+		{name: "v5p-8", flavorName: "v5p-8", want: true},
+		{name: "gpack-gpu", flavorName: "gpack-gpu", want: true},
+
+		// Keyword false positives (short 2-character keywords embedded in words)
+		{name: "pool4", flavorName: "pool4", want: false},
+		{name: "dev4", flavorName: "dev4", want: false},
+		{name: "level4", flavorName: "level4", want: false},
+		{name: "step4", flavorName: "step4", want: false},
+		{name: "server6", flavorName: "server6", want: false},
+
+		// Generic flavor names
+		{name: "generic-gpu", flavorName: "generic-gpu", want: false},
+		{name: "standard-gpu", flavorName: "standard-gpu", want: false},
+		{name: "fallback", flavorName: "fallback", want: false},
+		{name: "spot", flavorName: "spot", want: false},
+		{name: "ondemand", flavorName: "ondemand", want: false},
+		{name: "default", flavorName: "default", want: false},
+		{name: "shared", flavorName: "shared", want: false},
+		{name: "custom", flavorName: "custom", want: false},
+
+		// TPU Topology geometry strings
+		{name: "2x2x1", flavorName: "2x2x1", want: false},
+		{name: "2x4", flavorName: "2x4", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isSpecificAcceleratorName(tt.flavorName)
+			if got != tt.want {
+				t.Errorf("isSpecificAcceleratorName(%q) = %v, want %v", tt.flavorName, got, tt.want)
 			}
 		})
 	}

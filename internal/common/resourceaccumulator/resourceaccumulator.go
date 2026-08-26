@@ -158,29 +158,86 @@ func (a *Accumulator) findSpecificAccelerators() (string, string) {
 }
 
 var (
-	gpuKeywords = []string{
-		"gpu", "nvidia", "h100", "a100", "l4", "v100", "p100", "p4", "t4",
-		"b200", "gb200", "rtx", "gpack", "tesla",
+	longGPUKeywords = []string{
+		"h100", "a100", "v100", "p100", "b200", "gb200", "rtx", "gpack", "tesla",
 	}
-	tpuKeywords = []string{"tpu", "v4", "v5", "v6"}
+	shortGPUKeywords = []string{"l4", "p4", "t4"}
+
+	longTPUKeywords  = []string{"v5e", "v5p"}
+	shortTPUKeywords = []string{"v4", "v5", "v6"}
+
+	genericKeywords = []string{
+		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
+	}
 )
 
 func isSpecificGPUKey(key string) bool {
-	for _, kw := range gpuKeywords {
+	if isGenericFlavor(key) {
+		return false
+	}
+	for _, kw := range longGPUKeywords {
 		if strings.Contains(key, kw) {
+			return true
+		}
+	}
+	for _, kw := range shortGPUKeywords {
+		if matchesShortAcceleratorKeyword(key, kw) {
+			return true
+		}
+	}
+	return strings.Contains(key, "gpu") || strings.Contains(key, "nvidia")
+}
+
+func isSpecificTPUKey(key string) bool {
+	if isGenericFlavor(key) {
+		return false
+	}
+	for _, kw := range longTPUKeywords {
+		if strings.Contains(key, kw) {
+			return true
+		}
+	}
+	for _, kw := range shortTPUKeywords {
+		if matchesShortAcceleratorKeyword(key, kw) {
+			return true
+		}
+	}
+	return strings.Contains(key, "tpu")
+}
+
+func isGenericFlavor(lower string) bool {
+	for _, kw := range genericKeywords {
+		if strings.Contains(lower, kw) {
 			return true
 		}
 	}
 	return false
 }
 
-func isSpecificTPUKey(key string) bool {
-	for _, kw := range tpuKeywords {
-		if strings.Contains(key, kw) {
+func matchesShortAcceleratorKeyword(s, kw string) bool {
+	idx := 0
+	for {
+		i := strings.Index(s[idx:], kw)
+		if i == -1 {
+			return false
+		}
+		pos := idx + i
+		prevOK := (pos == 0) || !isASCIILetter(s[pos-1])
+		nextPos := pos + len(kw)
+		nextOK := (nextPos == len(s)) || !isASCIIAlphanumeric(s[nextPos])
+		if prevOK && nextOK {
 			return true
 		}
+		idx = pos + 1
 	}
-	return false
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isASCIIAlphanumeric(c byte) bool {
+	return isASCIILetter(c) || (c >= '0' && c <= '9')
 }
 
 func (a *Accumulator) normalizeGenericGPU(specificGPU string) {

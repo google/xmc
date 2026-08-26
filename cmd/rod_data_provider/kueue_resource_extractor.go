@@ -27,14 +27,26 @@ var acceleratorLabelKeys = []string{
 	"cloud.google.com/gke-accelerator",
 	"cloud.google.com/gke-gpu-type",
 	"cloud.google.com/gke-tpu-accelerator",
-	"cloud.google.com/gke-tpu-topology",
 	"kueue.x-k8s.io/gpack-gpu",
 	"gpu.nvidia.com/class",
 }
 
-var acceleratorKeywords = []string{
-	"h100", "a100", "l4", "v100", "p100", "p4", "t4", "b200", "gb200",
-	"h200", "b40", "rtx", "v4", "v5", "v6", "gpack", "tesla",
+var longAcceleratorKeywords = []string{
+	"h100", "a100", "v100", "p100", "b200", "gb200", "h200", "b40", "rtx",
+	"v5e", "v5p", "gpack", "tesla",
+}
+
+var shortAcceleratorKeywords = []string{
+	"l4", "v4", "v5", "v6", "t4", "p4",
+}
+
+var genericKeywords = []string{
+	"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
+}
+
+var genericResourceNames = []string{
+	"gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
+	"cpu", "memory", "storage",
 }
 
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
@@ -63,25 +75,68 @@ func isSpecificAcceleratorName(name string) bool {
 		return false
 	}
 	lower := strings.ToLower(name)
-	switch lower {
-	case "gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
-		"default", "spot", "ondemand", "standard", "fallback", "generic",
-		"flavor-spot", "flavor-ondemand", "cpu", "memory", "storage":
+
+	if isGenericAcceleratorFlavor(lower) {
 		return false
 	}
 
-	for _, kw := range acceleratorKeywords {
+	for _, kw := range longAcceleratorKeywords {
 		if strings.Contains(lower, kw) {
 			return true
 		}
 	}
 
-	if (strings.Contains(lower, "gpu") || strings.Contains(lower, "tpu") || strings.Contains(lower, "nvidia") || strings.Contains(lower, "accelerator")) &&
-		!strings.Contains(lower, "spot") && !strings.Contains(lower, "ondemand") && !strings.Contains(lower, "default") {
+	for _, kw := range shortAcceleratorKeywords {
+		if matchesShortAcceleratorKeyword(lower, kw) {
+			return true
+		}
+	}
+
+	if strings.Contains(lower, "gpu") || strings.Contains(lower, "tpu") || strings.Contains(lower, "nvidia") || strings.Contains(lower, "accelerator") {
 		return true
 	}
 
 	return false
+}
+
+func isGenericAcceleratorFlavor(lower string) bool {
+	for _, exact := range genericResourceNames {
+		if lower == exact {
+			return true
+		}
+	}
+	for _, kw := range genericKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesShortAcceleratorKeyword(s, kw string) bool {
+	idx := 0
+	for {
+		i := strings.Index(s[idx:], kw)
+		if i == -1 {
+			return false
+		}
+		pos := idx + i
+		prevOK := (pos == 0) || !isASCIILetter(s[pos-1])
+		nextPos := pos + len(kw)
+		nextOK := (nextPos == len(s)) || !isASCIIAlphanumeric(s[nextPos])
+		if prevOK && nextOK {
+			return true
+		}
+		idx = pos + 1
+	}
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isASCIIAlphanumeric(c byte) bool {
+	return isASCIILetter(c) || (c >= '0' && c <= '9')
 }
 
 func isAcceleratorResource(resName string) bool {
