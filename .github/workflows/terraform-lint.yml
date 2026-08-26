@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 jobs:
-  terraform-fmt:
-    name: 'Terraform Format Check'
+  terraform-lint:
+    name: 'Terraform Formatting, Linting & Security'
     runs-on: 'arc-runner-set'
     steps:
       - name: 'Checkout code'
@@ -54,15 +54,6 @@ jobs:
       - name: 'Verify Terraform Formatting'
         run: 'terraform fmt -check -recursive deploy/'
 
-  tflint:
-    name: 'Terraform Linter (TFLint)'
-    runs-on: 'arc-runner-set'
-    steps:
-      - name: 'Checkout code'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-
       - name: 'Set up TFLint'
         uses: 'terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987' # v4.0.0
         with:
@@ -74,20 +65,8 @@ jobs:
       - name: 'Run TFLint'
         run: 'tflint --recursive'
 
-  trivy-iac:
-    name: 'IaC Security Scan (Trivy)'
-    runs-on: 'arc-runner-set'
-    strategy:
-      matrix:
-        target: ['deploy/terraform', 'deploy/ctk_v2/modules']
-    steps:
-      - name: 'Checkout code'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-
       # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy IaC Scanner'
+      - name: 'Run Trivy IaC Scanner (deploy/terraform)'
         uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
         with:
           scan-type: 'config'
@@ -95,4 +74,15 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: '${{ matrix.target }}'
+          scan-ref: 'deploy/terraform'
+
+      # zizmor: ignore[impostor-commit]
+      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
+        uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
+        with:
+          scan-type: 'config'
+          hide-progress: true
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          scan-ref: 'deploy/ctk_v2/modules'
