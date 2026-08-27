@@ -293,7 +293,7 @@ class DevEnvCliTest(unittest.TestCase):
         """Verifies main() configures INFO logging by default."""
         dev_env.main(["gke-upgrade"])
         mock_venv.assert_called_once()
-        mock_logging.assert_called_once_with(level=logging.INFO)
+        mock_logging.assert_called_once_with(level=logging.INFO, format="%(message)s")
         mock_upgrade.assert_called_once()
 
     @patch("tools.dev_env.dev_env.ensure_venv")
@@ -305,7 +305,10 @@ class DevEnvCliTest(unittest.TestCase):
         """Verifies main() configures DEBUG logging on --verbose."""
         dev_env.main(["-v", "gke-upgrade"])
         mock_venv.assert_called_once()
-        mock_logging.assert_called_once_with(level=logging.DEBUG)
+        mock_logging.assert_called_once_with(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
         mock_upgrade.assert_called_once()
 
     @patch("tools.dev_env.dev_env.ensure_venv")
@@ -317,7 +320,10 @@ class DevEnvCliTest(unittest.TestCase):
         """Verifies main() configures ERROR logging on --quiet."""
         dev_env.main(["-q", "gke-upgrade"])
         mock_venv.assert_called_once()
-        mock_logging.assert_called_once_with(level=logging.ERROR)
+        mock_logging.assert_called_once_with(
+            level=logging.ERROR,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
         mock_upgrade.assert_called_once()
 
 

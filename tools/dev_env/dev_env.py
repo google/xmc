@@ -34,6 +34,8 @@ from tools.common.tool_utils import (  # noqa: E402
 )
 from tools.dev_env import deploy_dev_env, upgrade_dev_env  # noqa: E402
 
+_LOGGER = logging.getLogger("xmc.dev_env")
+
 
 def handle_gke_deploy(args: argparse.Namespace) -> None:
     """Handler for GKE deployment workflow."""
@@ -167,11 +169,22 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0)
     args = parser.parse_args(argv)
     if getattr(args, "verbose", False):
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
     elif getattr(args, "quiet", False):
-        logging.basicConfig(level=logging.ERROR)
+        logging.basicConfig(
+            level=logging.ERROR,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(message)s",
+        )
+
+    _LOGGER.debug("Executing dev_env subcommand: %s", getattr(args, "command", None))
 
     if hasattr(args, "func"):
         args.func(args)

@@ -19,6 +19,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "__init__.py",
     "deploy_dev_env.py",
     "dev_env.py",
     "upgrade_dev_env.py",
@@ -26,7 +27,10 @@ exports_files([
 
 py_library(
     name = "dev_env_lib",
-    srcs = ["dev_env.py"],
+    srcs = [
+        "__init__.py",
+        "dev_env.py",
+    ],
     imports = ["../.."],
     deps = [
         ":deploy_dev_env_lib",
