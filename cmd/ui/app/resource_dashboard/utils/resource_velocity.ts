@@ -51,15 +51,34 @@ export function mapPeriodToRangePreset(period: string): RangePreset {
 }
 
 /**
- * Find QueuePredictability matching the given timeframe period.
+ * Find QueuePredictability matching the given timeframe period and optional dominant resource type.
  */
 export function findQueuePredictability(
   queue: ClusterQueueSecondaryMetrics,
   period: string,
+  dominantResource?: string | null,
 ): QueuePredictability | undefined {
   const targetRange = mapPeriodToRangePreset(period);
   const predictabilities = queue?.queuePredictability ?? [];
-  return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
+
+  if (!dominantResource) {
+    return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
+  }
+
+  const normDominant = dominantResource.trim().toLowerCase();
+  const exactMatch = predictabilities.find(
+    (p) =>
+      p.velocityRange === targetRange &&
+      (p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
+        p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant),
+  );
+  if (exactMatch) return exactMatch;
+
+  return predictabilities.find(
+    (p) =>
+      p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
+      p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant,
+  );
 }
 
 /**
@@ -75,18 +94,23 @@ export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number
 export function calculateResourceVelocity(
   queue: ClusterQueueSecondaryMetrics,
   period: string,
+  dominantResource?: string | null,
 ): string {
-  const match = findQueuePredictability(queue, period);
+  const match = findQueuePredictability(queue, period, dominantResource);
   const vel = match?.resourceVelocity?.velocity ?? 0;
-  const resType = match?.resourceVelocity?.resourceType ?? 'units';
+  const resType = match?.resourceVelocity?.resourceType ?? dominantResource ?? 'units';
   return `~${formatRate(vel)} ${resType}/hr`;
 }
 
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
-export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period: string): string {
-  const match = findQueuePredictability(queue, period);
+export function calculateJobVelocity(
+  queue: ClusterQueueSecondaryMetrics,
+  period: string,
+  dominantResource?: string | null,
+): string {
+  const match = findQueuePredictability(queue, period, dominantResource);
   const vel = match?.jobVelocity ?? 0;
   return `${formatRate(vel)} jobs/hr`;
 }
@@ -94,8 +118,11 @@ export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period
 /**
  * Calculate pending resource requests display text for a cluster queue.
  */
-export function calculatePendingRequestsDisplay(queue: ClusterQueueSecondaryMetrics): string {
-  const match = queue?.queuePredictability?.find((p) => p.pendingResourceRequests?.count != null);
+export function calculatePendingRequestsDisplay(
+  queue: ClusterQueueSecondaryMetrics,
+  dominantResource?: string | null,
+): string {
+  const match = findQueuePredictability(queue, '1h', dominantResource);
   return match?.pendingResourceRequests?.count != null
     ? formatRate(match.pendingResourceRequests.count)
     : '0';

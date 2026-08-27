@@ -32,10 +32,16 @@
       </div>
 
       <div class="query-input-group">
-        <label class="query-label" [for]="'resource-type-select-' + row.id">Resource type *</label>
+        <label class="query-label" [for]="'resource-type-select-' + row.id">
+          Resource type *
+          @if ($index === 0 && row.resourceType) {
+            <span class="dominant-badge">Dominant</span>
+          }
+        </label>
         <div class="select-with-remove-box">
           <select
             class="query-select-box"
+            [class.dominant-select-box]="$index === 0 && row.resourceType"
             [id]="'resource-type-select-' + row.id"
             [ngModel]="row.resourceType"
             (ngModelChange)="updateRowResourceType($index, $event)"

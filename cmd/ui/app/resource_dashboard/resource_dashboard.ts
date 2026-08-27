@@ -159,6 +159,15 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     ];
   });
 
+  protected readonly dominantResource = computed<string | null>(() => {
+    const query = this.activeQuery();
+    if (!query || !query.requirements || query.requirements.length === 0) {
+      return null;
+    }
+    const first = query.requirements[0]?.resourceType?.trim();
+    return first ? first : null;
+  });
+
   protected readonly filteredQueues = computed<QueueOverview[]>(() => {
     const allQueues = this.queues();
     if (this.activeTab() !== TAB_SMART_FINDER) {

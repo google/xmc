@@ -71,6 +71,20 @@
   gap: 4px;
 }
 
+.dominant-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background-color: #fce8e6;
+  color: #d93025;
+  border: 1px solid #fad2cf;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .query-select-box {
   border: 1px solid #dadce0;
   border-radius: 4px;
@@ -82,6 +96,14 @@
 
   &:focus {
     border-color: #1a73e8;
+  }
+
+  &.dominant-select-box {
+    border: 2px solid #d93025 !important;
+
+    &:focus {
+      border-color: #d93025 !important;
+    }
   }
 }
 
