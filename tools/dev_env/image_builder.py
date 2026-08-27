@@ -43,7 +43,7 @@ _SERVICE_TARGET_MAP: dict[str, tuple[str, str, str]] = {
         "reconciler_image_tarball",
         "reconciler_image:latest",
     ),
-    "ui": ("cmd/ui", "ui_image_tarball", "ui-image:latest"),
+    "ui": ("cmd/ui", "ui_image_tarball", "ui_image:latest"),
     "xid_service": (
         "cmd/xid_service",
         "xid_service_image_tarball",
@@ -179,14 +179,15 @@ class ImageBuilder:
             f"=== [KinD] Loading {len(image_tags)} container images into cluster "
             f"'{self.config.cluster_name}' ==="
         )
-        run_command(
-            [
-                "kind",
-                "load",
-                "docker-image",
-                *image_tags,
-                "--name",
-                self.config.cluster_name,
-            ]
-        )
+        for tag in image_tags:
+            run_command(
+                [
+                    "kind",
+                    "load",
+                    "docker-image",
+                    tag,
+                    "--name",
+                    self.config.cluster_name,
+                ]
+            )
         log_success("Container images loaded into KinD cluster.")
