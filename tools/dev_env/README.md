@@ -346,6 +346,29 @@ python3 tools/dev_env/dev_env.py \
 
 ---
 
+## Helm Chart Sanitization & Deployment Diagnostics
+
+When deploying to local KinD clusters, `HelmDeployer` prepares an isolated, sanitized copy of the production Helm chart:
+
+### 1. Cloud-Only Resource Pruning
+The sanitizer dynamically removes Google Cloud-specific resources that require GKE or external cloud controllers:
+- **Gateway API CRDs & HTTPRoutes**: Stripped in favor of the lightweight local NGINX Gateway Proxy (`deploy/local/gateway-proxy.yaml`).
+- **Google ManagedCertificates**: Replaced with local self-signed TLS secrets.
+- **BackendConfig & Cloud Armor**: Omitted on local KinD environments.
+- **Horizontal & Vertical Pod Autoscalers (HPA / VPA)**: Removed to avoid local CPU metric contention.
+
+### 2. Local Pod Optimizations
+- **Image Pull Policy**: Automatically patched from `Always` to `IfNotPresent` across all deployment templates, ensuring locally built images loaded via `kind load docker-image` are reused instantly without registry pull failures.
+- **Probe Delays & Timeouts**: Adjusted for developer machine CPU concurrency.
+
+### 3. Automated Rollout Failure Diagnostics
+If a deployment fails or times out during `dev_env up` or Helm upgrade:
+- Automatically captures failing pod descriptions (`kubectl describe pod`).
+- Fetches recent pod container stdout/stderr log snippets (`kubectl logs --tail=50`).
+- Dumps Kubernetes namespace events (`kubectl get events --sort-by=.metadata.creationTimestamp`) to aid immediate troubleshooting.
+
+---
+
 ## Testing
 
 Run unit tests for the `tools/dev_env` package with Bazel:

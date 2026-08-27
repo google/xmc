@@ -141,6 +141,7 @@ class HelmDeployer:
         Returns:
             Path to the sanitized temporary Helm chart directory.
         """
+        _LOGGER.debug("Preparing local Helm chart copy at %s", self.helm_dir)
         if self.helm_dir.exists():
             shutil.rmtree(self.helm_dir)
         source_chart = self.repo_root / "deploy" / "helm"
@@ -150,8 +151,10 @@ class HelmDeployer:
         for prune in _PRUNE_TARGETS:
             target = templates_dir / prune
             if target.is_dir():
+                _LOGGER.debug("Pruning cloud-only directory: %s", prune)
                 shutil.rmtree(target)
             elif target.is_file():
+                _LOGGER.debug("Pruning cloud-only file: %s", prune)
                 target.unlink()
 
         self._patch_image_pull_policy()
@@ -159,6 +162,7 @@ class HelmDeployer:
 
     def _patch_image_pull_policy(self) -> None:
         """Replaces imagePullPolicy Always with IfNotPresent in local templates."""
+        total_patched = 0
         for path in self.helm_dir.rglob("*.yaml"):
             text = path.read_text(encoding="utf-8")
             patched, count = re.subn(
@@ -167,11 +171,13 @@ class HelmDeployer:
                 text,
             )
             if count > 0:
+                total_patched += count
                 try:
                     path.chmod(path.stat().st_mode | 0o200)
                 except OSError:
                     pass
                 path.write_text(patched, encoding="utf-8")
+        _LOGGER.debug("Patched imagePullPolicy: IfNotPresent across %d locations", total_patched)
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
