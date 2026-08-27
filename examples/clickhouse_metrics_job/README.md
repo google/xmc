@@ -12,20 +12,20 @@ This example demonstrates an end-to-end workflow for:
 
 ```mermaid
 flowchart TD
-    subgraph "Local Workstation"
+    subgraph Local Workstation
         A[install_venv.sh] -->|Initializes| B[Python .venv]
         B -->|Executes| C[launch.py]
     end
 
-    subgraph "XMC Platform"
-        C -->|1. Create Experiment| D["Experiment State Server (XID)"]
-        C -->|2. Create WorkUnit| E["JobSet / WorkUnit Controller (WID)"]
-        C -->|"4. Register Dashboard & Charts"| F["Dashboard Service (xdash)"]
+    subgraph XMC Platform
+        C -->|1. Create Experiment| D[Experiment State Server (XID)]
+        C -->|2. Create WorkUnit| E[JobSet / WorkUnit Controller (WID)]
+        C -->|4. Register Dashboard & Charts| F[Dashboard Service (xdash)]
     end
 
-    subgraph "GKE Cluster"
-        E -->|Launches Pod| G["Worker Container: worker.py"]
-        G -->|3. Batch Insert xmc_metrics| H[("ClickHouse Database")]
+    subgraph GKE Cluster
+        E -->|Launches Pod| G[Worker Container: worker.py]
+        G -->|3. Batch Insert xmc_metrics| H[(ClickHouse Database)]
     end
 
     H -.->|Queried on Demand| F
@@ -51,13 +51,6 @@ flowchart TD
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
 4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
-5. **A route to the Dashboard Service**: `launch.py` speaks gRPC to `XMC_DASHBOARD_ENDPOINT`, which
-   defaults to `localhost:50051`. Running from a workstation against a remote cluster, forward the
-   port first:
-
-   ```bash
-   kubectl port-forward -n xmc svc/dashboard-service 50051:50051
-   ```
 
 ---
 
@@ -70,9 +63,9 @@ The example includes a pre-configured [`worker.env`](worker.env) file containing
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `PROJECT_ID` | GCP project ID hosting Artifact Registry and GKE cluster. | `xmc-test-project-6` |
-| `IMAGE_PATH` | Full container image path for the worker container. | `us-docker.pkg.dev/${PROJECT_ID}/xmc/clickhouse-metrics-job:latest` |
-| `QUEUE_NAME` | Target Kueue / WorkUnit queue name in GKE. | `cpu-queue` |
-| `XMC_DASHBOARD_ENDPOINT` | gRPC address of the Dashboard Service. | `localhost:50051` (or GKE service endpoint) |
+| `XMANAGER_ENDPOINT` | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.xmanageriso.dev`). | Loaded from `.env` |
+| `XMANAGER_UI_URL` | Base URL of XMC UI and REST gateway (`https://xmcv2.dev.xmanageriso.dev`). | Loaded from `.env` |
+| `XMC_DASHBOARD_ENDPOINT` | Optional override for Dashboard REST/gRPC endpoint. | Derived from `XMANAGER_ENDPOINT`/`XMANAGER_UI_URL` (`https://<domain>/v1/dashboards`) |
 | `CREATE_DASHBOARD` | Whether to automatically register dashboard and charts. | `true` |
 
 ### In-Cluster ClickHouse Connection (Passed to WorkUnit / from `worker.env`)
@@ -124,18 +117,16 @@ Example output:
 ==================================================
 Worker Image       : us-docker.pkg.dev/my-project/xmc/clickhouse-metrics-job:latest
 Queue Name         : cpu-queue
-ClickHouse Host    : clickhouse.xmc-metrics.svc.cluster.local:8123
+ClickHouse Host    : my-clickstack-clickhouse.xmc-metrics.svc.cluster.local:8123
 ClickHouse Database: default
-Dashboard Endpoint : localhost:50051
+Dashboard Endpoint : localhost:8080
 ==================================================
 
 [1/3] Created Experiment successfully: experiments/234911125 (XID: 234911125)
 [2/3] Created WorkUnit successfully: experiments/234911125/workUnits/1 (WID: 1)
 
 [3/3] Creating Dashboard and Chart for generated metrics...
---> Connecting to Dashboard Service at localhost:50051...
---> Creating Chart 'experiments/234911125/workUnits/1/charts/model_training_metrics'...
---> Created Chart successfully: experiments/234911125/workUnits/1/charts/model_training_metrics
+--> Connecting to Dashboard Service at localhost:8080...
 --> Creating Dashboard 'Experiment 234911125 - Training & Metrics Overview' (ID: exp_234911125_training_overview)...
 --> Created Dashboard successfully: dashboards/exp_234911125_training_overview
 
@@ -172,13 +163,10 @@ perf/step_time_ms   100    105.32    134.18
 You can retrieve the created dashboard and verify chart hydration via the `xdash` CLI or Python client:
 
 ```bash
-python3 -m xdash get dashboards/exp_[XID]_training_overview
+python3 -m xdash get-dashboard exp_[XID]_training_overview
 ```
 
 Or query chart data directly:
 ```bash
-python3 -m xdash get-data experiments/[XID]/workUnits/1/charts/model_training_metrics
+python3 -m xdash get-chart-data experiments/[XID]/workUnits/1/charts/model_training_metrics --width 800
 ```
-
-Both take the Dashboard Service address from `XMC_DASHBOARD_ENDPOINT`, or from `--endpoint`. TLS is
-the default for anything but a local address, so add `--insecure` when port-forwarding.
