@@ -48,7 +48,7 @@ ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [Click
 *   **`clickhouse_port`**: ClickHouse native protocol port (default: `9000`).
 *   **`clickhouse_database`**: Database holding the metrics tables (default: `default`).
 *   **`clickhouse_user`**: ClickHouse username (default: `default`).
-*   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap.
+*   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap. The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that do enable it should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
 
 ---
 

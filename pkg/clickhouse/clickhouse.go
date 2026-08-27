@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -62,7 +63,10 @@ func GetOptions() (*clickhouse.Options, error) {
 		username = "default"
 	}
 
-	password := os.Getenv("CLICKHOUSE_PASSWORD")
+	password, err := getPassword()
+	if err != nil {
+		return nil, err
+	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
@@ -77,6 +81,27 @@ func GetOptions() (*clickhouse.Options, error) {
 	}
 
 	return opts, nil
+}
+
+// getPassword reads the ClickHouse password, preferring the file CLICKHOUSE_PASSWORD_FILE names.
+//
+// The file form mirrors JWT_SECRET_FILE and CLIENT_SECRET_FILE: it lets the deployment mount the
+// credential from Secret Manager through the CSI driver instead of carrying it as a Helm value.
+// An unreadable file is an error rather than a fall back to CLICKHOUSE_PASSWORD, because falling
+// back would connect with the wrong credential and surface as an authentication failure instead.
+func getPassword() (string, error) {
+	path := os.Getenv("CLICKHOUSE_PASSWORD_FILE")
+	if path == "" {
+		return os.Getenv("CLICKHOUSE_PASSWORD"), nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read CLICKHOUSE_PASSWORD_FILE %q: %w", path, err)
+	}
+
+	// Secret Manager payloads routinely carry a trailing newline, which is not part of the password.
+	return strings.TrimSpace(string(content)), nil
 }
 
 // Connect establishes a connection to ClickHouse using options loaded from environment variables.
