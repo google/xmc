@@ -64,7 +64,6 @@ func (a *Accumulator) Add(resType string, count float64) {
 		a.order = append(a.order, key)
 	}
 	a.totals[key] += count
-	a.Normalize()
 }
 
 // AccumulateResourceSet extracts and adds CPU, GPU, and TPU resources from a ResourceSet.
@@ -125,46 +124,6 @@ func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
 	for _, rs := range resourceSets {
 		a.AccumulateResourceSet(rs)
 	}
-	a.Normalize()
-}
-
-// Normalize merges generic GPU ("nvidia.com/gpu", "gpu") or TPU ("google.com/tpu", "tpu") counts
-// into specific accelerator types if specific accelerator types exist in the accumulator.
-func (a *Accumulator) Normalize() {
-	if a == nil || len(a.totals) == 0 {
-		return
-	}
-	var specificGPU, specificTPU string
-	for _, k := range a.order {
-		if specificGPU == "" && IsSpecificGPUKey(k) {
-			specificGPU = k
-		}
-		if specificTPU == "" && IsSpecificTPUKey(k) {
-			specificTPU = k
-		}
-	}
-	mergeGeneric := func(target string, genericKeys ...string) {
-		if target == "" {
-			return
-		}
-		for _, k := range genericKeys {
-			if count, exists := a.totals[k]; exists {
-				a.totals[target] += count
-				delete(a.totals, k)
-			}
-		}
-	}
-	mergeGeneric(specificGPU, "nvidia.com/gpu", "gpu")
-	mergeGeneric(specificTPU, "google.com/tpu", "tpu")
-	// Single-pass in-place compaction (0 allocations)
-	n := 0
-	for _, k := range a.order {
-		if _, exists := a.totals[k]; exists {
-			a.order[n] = k
-			n++
-		}
-	}
-	a.order = a.order[:n]
 }
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
