@@ -53,7 +53,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 	}
 
 	got := BuildDependencyGraph(records)
-	want := map[string][]string{
+	want := DependencyGraph{
 		"comp-a": {"comp-b", "comp-c"},
 		"comp-b": {"comp-c"},
 		"comp-c": {},
@@ -93,7 +93,7 @@ func TestBuildDependencyGraphFromMap(t *testing.T) {
 	}
 
 	got := BuildDependencyGraphFromMap(recordMap)
-	want := map[string][]string{
+	want := DependencyGraph{
 		"comp-a": {"comp-b", "comp-c"},
 		"comp-b": {"comp-c"},
 		"comp-c": {},
@@ -121,7 +121,7 @@ func TestBuildDependentsGraph(t *testing.T) {
 	}
 
 	got := BuildDependentsGraph(records)
-	want := map[string][]string{
+	want := DependencyGraph{
 		"comp-a": nil,
 		"comp-b": {"comp-a"},
 		"comp-c": {"comp-a", "comp-b"},
@@ -135,13 +135,13 @@ func TestBuildDependentsGraph(t *testing.T) {
 func TestDetectCycles(t *testing.T) {
 	tests := []struct {
 		name      string
-		graph     map[string][]string
+		graph     DependencyGraph
 		wantCycle bool
 		wantNodes []string
 	}{
 		{
 			name: "NoCycles_LinearDAG",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"a": {"b"},
 				"b": {"c"},
 				"c": {},
@@ -150,7 +150,7 @@ func TestDetectCycles(t *testing.T) {
 		},
 		{
 			name: "NoCycles_DiamondDAG",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"a": {"b", "c"},
 				"b": {"d"},
 				"c": {"d"},
@@ -160,7 +160,7 @@ func TestDetectCycles(t *testing.T) {
 		},
 		{
 			name: "Cycle_SelfLoop",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"a": {"a"},
 			},
 			wantCycle: true,
@@ -168,7 +168,7 @@ func TestDetectCycles(t *testing.T) {
 		},
 		{
 			name: "Cycle_TwoNodes",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"a": {"b"},
 				"b": {"a"},
 			},
@@ -177,7 +177,7 @@ func TestDetectCycles(t *testing.T) {
 		},
 		{
 			name: "Cycle_ThreeNodes",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"a": {"b"},
 				"b": {"c"},
 				"c": {"a"},
@@ -187,7 +187,7 @@ func TestDetectCycles(t *testing.T) {
 		},
 		{
 			name: "Cycle_DisconnectedSubgraph",
-			graph: map[string][]string{
+			graph: DependencyGraph{
 				"ok1": {"ok2"},
 				"ok2": {},
 				"a":   {"b"},

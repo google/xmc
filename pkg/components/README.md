@@ -1,6 +1,6 @@
-# XMC AI Components Subsystem
+# XMC Components Subsystem
 
-The **XMC AI Components Subsystem** provides lifecycle management, dependency resolution, versioning, and validation for reusable AI software modules and configurations in XManager on Cloud (XMC).
+The **XMC Components Subsystem** provides lifecycle management, dependency resolution, versioning, and validation for reusable AI software modules and configurations in XManager on Cloud (XMC).
 
 ---
 

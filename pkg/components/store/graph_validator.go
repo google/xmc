@@ -31,10 +31,13 @@ const (
 // TODO(b/549523881): Extract pure 3-color DFS cycle detection and DAG traversal into a shared
 // pkg/components/graph package to eliminate code duplication with pkg/components/linter (PR #514).
 
+// DependencyGraph represents an adjacency mapping of component names to their dependencies or dependents.
+type DependencyGraph map[string][]string
+
 // BuildDependencyGraph constructs an adjacency map of component -> list of its dependencies.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependencyGraph(records []*ComponentRecord) map[string][]string {
-	graph := make(map[string][]string, len(records))
+func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
+	graph := make(DependencyGraph, len(records))
 	for _, rec := range records {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
@@ -52,8 +55,8 @@ func BuildDependencyGraph(records []*ComponentRecord) map[string][]string {
 
 // BuildDependencyGraphFromMap constructs an adjacency map of component -> list of its dependencies directly from a component record map.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) map[string][]string {
-	graph := make(map[string][]string, len(records))
+func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) DependencyGraph {
+	graph := make(DependencyGraph, len(records))
 	for _, rec := range records {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
@@ -71,8 +74,8 @@ func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) map[string
 
 // BuildDependentsGraph constructs an inverted adjacency map of component -> list of its dependents.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependentsGraph(records []*ComponentRecord) map[string][]string {
-	dependents := make(map[string][]string)
+func BuildDependentsGraph(records []*ComponentRecord) DependencyGraph {
+	dependents := make(DependencyGraph)
 	for _, rec := range records {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
@@ -99,7 +102,7 @@ func BuildDependentsGraph(records []*ComponentRecord) map[string][]string {
 
 // DetectCycles performs a 3-color DFS to detect cycles in a directed dependency graph.
 // Returns the cycle path (e.g. ["a", "b", "a"]) and true if a cycle is found, or nil and false otherwise.
-func DetectCycles(graph map[string][]string) ([]string, bool) {
+func DetectCycles(graph DependencyGraph) ([]string, bool) {
 	nodes := collectAllNodes(graph)
 	colors := make(map[string]int)
 	var path []string
@@ -115,7 +118,7 @@ func DetectCycles(graph map[string][]string) ([]string, bool) {
 }
 
 // dfsVisit recursively visits nodes tracking current DFS stack for cycle detection.
-func dfsVisit(node string, graph map[string][]string, colors map[string]int, path *[]string) ([]string, bool) {
+func dfsVisit(node string, graph DependencyGraph, colors map[string]int, path *[]string) ([]string, bool) {
 	colors[node] = colorGray
 	*path = append(*path, node)
 
@@ -152,7 +155,7 @@ func extractCyclePath(path []string, closingNode string) []string {
 }
 
 // collectAllNodes gathers and alphabetically sorts all unique nodes in graph keys and edge targets.
-func collectAllNodes(graph map[string][]string) []string {
+func collectAllNodes(graph DependencyGraph) []string {
 	nodeSet := make(map[string]bool)
 	for k, deps := range graph {
 		nodeSet[k] = true
@@ -210,7 +213,7 @@ func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord
 	return validateProspectiveGraph(graph, canonicalTarget, normalized)
 }
 
-func validateProspectiveGraph(graph map[string][]string, canonicalTarget string, normalized []string) error {
+func validateProspectiveGraph(graph DependencyGraph, canonicalTarget string, normalized []string) error {
 	for _, dep := range normalized {
 		if dep == canonicalTarget {
 			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s -> %s", canonicalTarget, canonicalTarget)
@@ -227,7 +230,7 @@ func validateProspectiveGraph(graph map[string][]string, canonicalTarget string,
 
 // FindTransitiveDependents returns all components that transitively depend on root.
 // The result is deduplicated, sorted, and excludes the root itself.
-func FindTransitiveDependents(dependentsGraph map[string][]string, root string) []string {
+func FindTransitiveDependents(dependentsGraph DependencyGraph, root string) []string {
 	canonicalRoot := CanonicalComponentName(root)
 	if canonicalRoot == "" {
 		return nil
