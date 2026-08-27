@@ -30,6 +30,14 @@ import (
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
+// existingChartFn answers GetChart with a chart belonging to the given experiment, so that chart
+// IDs a request links by ID pass the reference authorization.
+func existingChartFn(xid int64) getChartFunc {
+	return func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+		return chartWithXid("charts/"+chartId, xid), nil
+	}
+}
+
 func TestCreateDashboard(t *testing.T) {
 	ctx := context.Background()
 
@@ -77,6 +85,7 @@ func TestCreateDashboard(t *testing.T) {
 				savedDash = dashboard
 				return nil
 			},
+			getChartFn: existingChartFn(4321),
 		}
 		authMock := &mockAuthorizer{
 			authenticateFn: func(ctx context.Context) (string, string, error) {
@@ -155,7 +164,7 @@ func TestCreateDashboard(t *testing.T) {
 	})
 
 	t.Run("inline charts are appended after pre-existing chart IDs", func(t *testing.T) {
-		repo := &mockRepository{}
+		repo := &mockRepository{getChartFn: existingChartFn(4321)}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		req := &spb.CreateDashboardRequest{
@@ -207,6 +216,64 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		if called {
 			t.Error("Expected no dashboard to be written when an experiment is not writable")
+		}
+	})
+
+	t.Run("a chart ID from an unreadable experiment aborts the creation", func(t *testing.T) {
+		called := false
+		repo := &mockRepository{
+			getChartFn: existingChartFn(8765),
+			createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
+				called = true
+				return nil
+			},
+		}
+		xidClient := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetName() != "xids/8765")}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidClient, nil)
+
+		req := &spb.CreateDashboardRequest{
+			Dashboard: &dpb.Dashboard{
+				Title:    "Comparison",
+				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+			},
+		}
+
+		_, err := s.CreateDashboard(ctx, req)
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("Expected code PermissionDenied, got %v", status.Code(err))
+		}
+		if called {
+			t.Error("Expected no dashboard to be written when a referenced chart is not readable")
+		}
+	})
+
+	t.Run("a chart ID that names no chart is rejected as InvalidArgument", func(t *testing.T) {
+		called := false
+		repo := &mockRepository{
+			createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
+				called = true
+				return nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+		req := &spb.CreateDashboardRequest{
+			Dashboard: &dpb.Dashboard{
+				Title:    "Comparison",
+				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+			},
+		}
+
+		_, err := s.CreateDashboard(ctx, req)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("Expected code InvalidArgument, got %v", status.Code(err))
+		}
+		if called {
+			t.Error("Expected no dashboard to be written when a referenced chart does not exist")
 		}
 	})
 

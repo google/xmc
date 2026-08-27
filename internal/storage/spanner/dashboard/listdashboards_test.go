@@ -23,6 +23,7 @@ import (
 
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 )
 
 func TestListDashboards_Empty(t *testing.T) {
@@ -226,12 +227,11 @@ func TestListDashboards_HydratesChartIDs(t *testing.T) {
 		t.Fatalf("got %d dashboards, want 2", len(dashboards))
 	}
 
-	gotChartIDs := slices.Clone(dashboards[0].GetChartIds())
-	slices.Sort(gotChartIDs)
-	wantChartIDs := slices.Clone(chartIDs)
-	slices.Sort(wantChartIDs)
-	if !slices.Equal(gotChartIDs, wantChartIDs) {
-		t.Errorf("ChartIds for %q = %v, want %v", dashboards[0].GetName(), gotChartIDs, wantChartIDs)
+	// The IDs are created out of order on purpose: a listing must serve them in the same canonical
+	// order GetDashboard does, not in whatever order the chart links came back from Spanner.
+	wantChartIDs := data.SortChartIDs(chartIDs)
+	if !slices.Equal(dashboards[0].GetChartIds(), wantChartIDs) {
+		t.Errorf("ChartIds for %q = %v, want %v", dashboards[0].GetName(), dashboards[0].GetChartIds(), wantChartIDs)
 	}
 	if len(dashboards[1].GetChartIds()) != 0 {
 		t.Errorf("ChartIds for %q = %v, want none", dashboards[1].GetName(), dashboards[1].GetChartIds())

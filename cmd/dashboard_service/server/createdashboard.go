@@ -57,6 +57,11 @@ func (s *Server) CreateDashboard(ctx context.Context, req *spb.CreateDashboardRe
 	if err := s.authorizeChartExperimentWrites(ctx, user, charts); err != nil {
 		return nil, err
 	}
+	// Charts the request links by ID already exist and may belong to somebody else's experiment, so
+	// they are authorized separately from the ones created inline.
+	if err := s.authorizeChartReferences(ctx, user, req.GetDashboard().GetChartIds()); err != nil {
+		return nil, err
+	}
 
 	dashID := req.GetDashboardId()
 	if dashID == "" {
