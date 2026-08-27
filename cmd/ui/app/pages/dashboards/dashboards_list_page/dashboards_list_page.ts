@@ -36,8 +36,8 @@ import {
   CreateDashboardDialogComponent,
   CreateDashboardDialogResult,
 } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import { extractDashboardId } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { extractDashboardId } from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
