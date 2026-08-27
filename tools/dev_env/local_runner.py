@@ -169,6 +169,7 @@ class LocalRunner:
                 sig[f] = (st.st_mtime_ns, st.st_size)
             except OSError:
                 sig[f] = (0, 0)
+        _LOGGER.debug("Scanned %d modified files for workspace signature", len(sig))
         return sig
 
     def _watch_loop(
@@ -208,6 +209,7 @@ class LocalRunner:
                     delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
                     deleted_files = [f for f in last_sig if f not in current_sig]
                     changed_delta = sorted(set(delta_files + deleted_files))
+                    _LOGGER.debug("Watch detected file delta: %s", changed_delta)
                     try:
                         self._reload_once(services=services, changed_files=changed_delta)
                     except Exception as e:

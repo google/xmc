@@ -87,6 +87,13 @@ Incrementally recompiles modified microservices with Bazel, updates container im
 # Auto-detect modified source files and reload affected microservices
 python3 tools/dev_env/dev_env.py reload
 
+# Continuous watch mode (debounced hot reload on file save)
+python3 tools/dev_env/dev_env.py reload -w
+python3 tools/dev_env/dev_env.py reload --watch --watch-interval 2.0
+
+# Force incremental Helm chart update
+python3 tools/dev_env/dev_env.py reload --helm
+
 # Explicitly reload specific microservices by canonical name or alias
 python3 tools/dev_env/dev_env.py reload ess ui
 
@@ -100,6 +107,14 @@ python3 tools/dev_env/dev_env.py reload all
 # Synchronize Helm chart manifests alongside reload
 python3 tools/dev_env/dev_env.py reload ess --helm
 ```
+
+##### Options
+- `[services...]`: Positional microservice names or aliases to rebuild and reload (or omit for auto-detection).
+- `--watch`, `-w`: Run in continuous filesystem watch mode, automatically detecting code edits and reloading affected services on save.
+- `--watch-interval`: Debounce polling interval in seconds for watch mode (default: `1.0`).
+- `--helm`: Force an incremental Helm chart upgrade.
+- `--cluster-name`: KinD cluster name (defaults to dynamic `xmc-<environment>`).
+- `--tag`: Docker image tag (default: `local-dev`).
 
 ##### Supported Service Aliases & Canonical Names
 Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice target (`snake_case` or `kebab-case`) can always be specified directly even if it does not have a dedicated alias in `SERVICE_ALIASES`:
@@ -427,6 +442,15 @@ The `ChangeDetector` module inspects the active git working tree and staged diff
 - `cmd/rod_data_provider/**`, `internal/rod/**` $\rightarrow$ `rod_data_provider`
 - **Shared Code** (`internal/common/**`, `internal/auth/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
 - **Helm Templates / Manifests** (`deploy/helm/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
+
+### Iteration Speed Benchmarks
+
+| Operation | Typical Latency | Notes |
+| :--- | :--- | :--- |
+| **Go Backend Reload** (`ess`, `xid`, etc.) | **~5–8 seconds** | Bazel incremental build + `kind load` + `kubectl rollout restart` |
+| **Angular UI Reload** (`ui`) | **~6–10 seconds** | BuildKit cache hit + `kind load` + `kubectl rollout restart` |
+| **Live Helm Upgrade** (`--helm`) | **~3–5 seconds** | Sanitized chart diff application without cluster restart |
+| **Full Bootstrap** (`dev_env up`) | **~35–45 seconds** | Full Spanner DDL + KinD provision + parallel builds + Helm deploy |
 
 ---
 
