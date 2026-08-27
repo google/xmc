@@ -187,6 +187,7 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertTrue(diag_path.is_file())
         content = diag_path.read_text(encoding="utf-8")
         self.assertIn("=== PODS (namespace: xmc) ===", content)
+        self.assertIn("=== POD DESCRIPTIONS (namespace: xmc) ===", content)
         self.assertIn("=== EVENTS (namespace: xmc) ===", content)
         self.assertIn("--- Logs for pod: pod-1 (ns: xmc) ---", content)
         self.assertIn("Container log line", content)

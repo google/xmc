@@ -150,12 +150,15 @@ class HelmDeployer:
         templates_dir = self.helm_dir / "templates"
         for prune in _PRUNE_TARGETS:
             target = templates_dir / prune
-            if target.is_dir():
-                _LOGGER.debug("Pruning cloud-only directory: %s", prune)
-                shutil.rmtree(target)
-            elif target.is_file():
-                _LOGGER.debug("Pruning cloud-only file: %s", prune)
-                target.unlink()
+            try:
+                if target.is_dir():
+                    _LOGGER.debug("Pruning cloud-only directory: %s", prune)
+                    shutil.rmtree(target)
+                elif target.is_file():
+                    _LOGGER.debug("Pruning cloud-only file: %s", prune)
+                    target.unlink()
+            except OSError as e:
+                _LOGGER.warning("Failed to prune %s: %s", prune, e)
 
         self._patch_image_pull_policy()
         return self.helm_dir
@@ -174,9 +177,9 @@ class HelmDeployer:
                 total_patched += count
                 try:
                     path.chmod(path.stat().st_mode | 0o200)
-                except OSError:
-                    pass
-                path.write_text(patched, encoding="utf-8")
+                    path.write_text(patched, encoding="utf-8")
+                except OSError as e:
+                    _LOGGER.warning("Failed to write patched file %s: %s", path, e)
         _LOGGER.debug("Patched imagePullPolicy: IfNotPresent across %d locations", total_patched)
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
