@@ -503,17 +503,19 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
     return execute();
   } catch (initialError) {
     try {
-      const fetchArgs = [];
+      const fetchArgs = ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha];
+      const fetchEnv = { ...process.env };
       const token = process.env.GITHUB_TOKEN;
       if (token) {
-        const authHeader = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
-        fetchArgs.push('-c', `http.extraheader=${authHeader}`);
+        const authHeader = `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+        fetchEnv.GIT_CONFIG_COUNT = '1';
+        fetchEnv.GIT_CONFIG_KEY_0 = 'http.extraheader';
+        fetchEnv.GIT_CONFIG_VALUE_0 = authHeader;
       }
-      fetchArgs.push('fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha);
       execFileSync(
         'git',
         fetchArgs,
-        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: GIT_EXEC_TIMEOUT_MS }
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: GIT_EXEC_TIMEOUT_MS, env: fetchEnv }
       );
       return execute();
     } catch (fallbackError) {
