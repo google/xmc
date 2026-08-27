@@ -199,6 +199,14 @@ func TestFakeHelmManager(t *testing.T) {
 	if err := mgr.Delete1PComponent(ctx, "xmc", "ingestion-gateway"); err == nil {
 		t.Fatal("expected error on DeleteErr injection")
 	}
+	if err := mgr.Orphan1PComponent(ctx, "xmc", "ingestion-gateway"); err == nil {
+		t.Fatal("expected error on Orphan1PComponent with DeleteErr injection")
+	}
+
+	mgr.DeleteErr = nil
+	if err := mgr.Orphan1PComponent(ctx, "xmc", "ingestion-gateway"); err != nil {
+		t.Fatalf("Orphan1PComponent failed: %v", err)
+	}
 
 	// Test nil receiver
 	var nilMgr *FakeHelmManager
@@ -208,7 +216,58 @@ func TestFakeHelmManager(t *testing.T) {
 	if err := nilMgr.Delete1PComponent(ctx, "xmc", "ingestion-gateway"); err != nil {
 		t.Errorf("expected nil error on nil receiver, got %v", err)
 	}
+	if err := nilMgr.Orphan1PComponent(ctx, "xmc", "ingestion-gateway"); err != nil {
+		t.Errorf("expected nil error on nil receiver Orphan1PComponent, got %v", err)
+	}
 	if nilMgr.IsComponentActive("ingestion-gateway") {
 		t.Error("expected false on nil receiver IsComponentActive")
+	}
+}
+
+func TestResolveImage(t *testing.T) {
+	tests := []struct {
+		name       string
+		component  string
+		imageTag   string
+		parameters map[string]string
+		wantImage  string
+	}{
+		{
+			name:       "full image parameter override (tier 1)",
+			component:  "ingestion-gateway",
+			imageTag:   "v1.0.0",
+			parameters: map[string]string{"image": "custom.registry.io/custom-image:custom-tag"},
+			wantImage:  "custom.registry.io/custom-image:custom-tag",
+		},
+		{
+			name:       "custom imageRepository + tag (tier 2)",
+			component:  "ingestion-gateway",
+			imageTag:   "v1.2.0",
+			parameters: map[string]string{"imageRepository": "custom.registry.io/repo"},
+			wantImage:  "custom.registry.io/repo:v1.2.0",
+		},
+		{
+			name:       "default repository + tag override (tier 3)",
+			component:  "ingestion-gateway",
+			imageTag:   "v3.0.0",
+			parameters: nil,
+			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway:v3.0.0",
+		},
+		{
+			name:       "default repository + latest (tier 4)",
+			component:  "rod",
+			imageTag:   "",
+			parameters: nil,
+			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider:latest",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolveImage(tt.component, tt.imageTag, tt.parameters)
+			if got != tt.wantImage {
+				t.Errorf("ResolveImage(%q, %q, %+v) = %q, want %q", tt.component, tt.imageTag, tt.parameters, got, tt.wantImage)
+			}
+		})
 	}
 }

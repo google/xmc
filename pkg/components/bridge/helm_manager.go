@@ -110,6 +110,21 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, namespace string
 	return nil
 }
 
+// Orphan1PComponent detaches component management without disabling values in Helm.
+func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, namespace string, componentName string) error {
+	if m == nil {
+		return nil
+	}
+	if componentName == "" {
+		return errors.New("component name must not be empty")
+	}
+	m.mu.Lock()
+	delete(m.activeState, componentName)
+	m.mu.Unlock()
+	logging.Info(ctx, "Orphaned 1P component Helm values", "name", componentName, "namespace", namespace)
+	return nil
+}
+
 // IsComponentActive returns true if the component is recorded as enabled.
 func (m *K8sHelmManager) IsComponentActive(componentName string) bool {
 	if m == nil {

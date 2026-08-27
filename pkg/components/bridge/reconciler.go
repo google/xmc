@@ -203,12 +203,8 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager != nil {
-		if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to delete 1P Helm component: %w", err)
-		}
+	if err := r.teardown1PComponent(ctx, in, res); err != nil {
+		return res, err
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
@@ -219,6 +215,26 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT || r.helmManager == nil {
+		return nil
+	}
+	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
+		if err := r.helmManager.Orphan1PComponent(ctx, in.Namespace, in.Name); err != nil {
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmOrphanFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmOrphanFailed", err.Error())
+			return fmt.Errorf("failed to orphan 1P Helm component: %w", err)
+		}
+		return nil
+	}
+	if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
+	}
+	return nil
 }
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
