@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
@@ -46,8 +47,14 @@ type Provider struct {
 	connect       Connector
 	retryInterval time.Duration
 
-	mu          sync.RWMutex
-	engine      *DataEngine
+	// engine is read on every call and that read must never block. A reader lock would not do:
+	// it queues behind an in-flight dial, which is precisely the wait Engine promises callers it
+	// will not make them take.
+	engine atomic.Pointer[DataEngine]
+
+	// mu guards the dial itself along with the fields recording its outcome. It is only ever
+	// taken with TryLock, so holding it never blocks another caller.
+	mu          sync.Mutex
 	lastErr     error
 	lastAttempt time.Time
 }
@@ -79,10 +86,10 @@ func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 
 // Engine returns the data engine, building it when the Provider does not hold one yet.
 func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
-	// Once an engine exists there is nothing left to build, so the steady state is served under a
-	// read lock. Taking the dial lock here instead would make two concurrent requests fail each
-	// other with errAttemptInProgress long after ClickHouse came up.
-	if engine := p.cachedEngine(); engine != nil {
+	// Once an engine exists there is nothing left to build, so the steady state never touches the
+	// dial lock. Reaching for it here would make two concurrent requests fail each other with
+	// errAttemptInProgress long after ClickHouse came up.
+	if engine := p.engine.Load(); engine != nil {
 		return engine, nil
 	}
 
@@ -93,20 +100,14 @@ func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
 	}
 	defer p.mu.Unlock()
 
-	if p.engine != nil {
-		return p.engine, nil
+	// A dial may have finished between the load above and the lock being taken.
+	if engine := p.engine.Load(); engine != nil {
+		return engine, nil
 	}
 	if !p.attemptDue() {
 		return nil, p.lastErr
 	}
 	return p.build(ctx)
-}
-
-// cachedEngine returns the engine the Provider already holds, or nil when it has yet to build one.
-func (p *Provider) cachedEngine() *DataEngine {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.engine
 }
 
 // attemptDue reports whether enough time has passed since the last attempt to make another.
@@ -129,7 +130,8 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 		return nil, p.lastErr
 	}
 
-	p.engine, p.lastErr = engine, nil
+	p.engine.Store(engine)
+	p.lastErr = nil
 	return engine, nil
 }
 
