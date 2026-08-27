@@ -18,7 +18,7 @@
 import argparse
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,14 @@ DEFAULT_CONFIG_LOCATIONS: list[Path] = [
     Path("deploy/local/xmanager-cloud-local.yaml"),
 ]
 
+BASE_SERVICES: list[str] = [
+    "experiment_state_server",
+    "xid_service",
+    "actuator",
+    "reconciler",
+    "ui",
+]
+
 
 @dataclass
 class LocalDevConfig:
@@ -40,16 +48,55 @@ class LocalDevConfig:
 
     project_id: str
     environment: str = "dev"
+    spanner_instance: str = ""
+    ess_database: str = ""
+    xid_database: str = ""
+    cluster_name: str = "xmc-dev"
+    auto_migrate: bool = True
+    enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
 
     def __post_init__(self) -> None:
-        """Validates required configuration fields."""
+        """Applies dynamic defaults and validates required configuration fields."""
         if not self.project_id or not self.project_id.strip():
             raise ValueError(
                 "Missing required configuration field: 'project_id'. "
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
             )
+        if not self.spanner_instance:
+            self.spanner_instance = f"xmc-{self.environment}"
+        if not self.ess_database:
+            self.ess_database = f"dev-{self.environment}-local-ess"
+        if not self.xid_database:
+            self.xid_database = f"dev-{self.environment}-local-xid"
+
+
+def _parse_bool(val: Any) -> bool:
+    """Parses a boolean value from bool, numeric, or string representations."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "y", "t", "on")
+    return False
+
+
+def _resolve_bool_flag(
+    cli_val: Any,
+    env_val: Any,
+    yaml_val: Any,
+    default: bool = False,
+) -> bool:
+    """Resolves a boolean flag applying precedence: CLI > Env > YAML > Default."""
+    if cli_val is not None:
+        return _parse_bool(cli_val)
+    if env_val is not None:
+        return _parse_bool(env_val)
+    if yaml_val is not None:
+        return _parse_bool(yaml_val)
+    return default
 
 
 def _clean_str(val: Any) -> str | None:
@@ -58,6 +105,20 @@ def _clean_str(val: Any) -> str | None:
         return None
     s = str(val).strip()
     return s if s else None
+
+
+def _resolve_str_flag(
+    cli_val: Any,
+    env_val: Any,
+    yaml_val: Any,
+    default: str = "",
+) -> str:
+    """Resolves a string flag applying precedence: CLI > Env > YAML > Default."""
+    for val in (cli_val, env_val, yaml_val):
+        cleaned = _clean_str(val)
+        if cleaned is not None:
+            return cleaned
+    return default
 
 
 def resolve_config_path(
@@ -99,6 +160,43 @@ def resolve_config_path(
     return None
 
 
+def _resolve_enabled_services(
+    args: argparse.Namespace | None,
+    yaml_vars: dict[str, Any],
+) -> list[str]:
+    """Computes enabled services from base services and conditional feature flags."""
+    services = list(BASE_SERVICES)
+
+    enable_metrics = _resolve_bool_flag(
+        getattr(args, "enable_metrics", None) if args else None,
+        os.environ.get("ENABLE_METRICS"),
+        yaml_vars.get("enable_metrics"),
+        default=False,
+    )
+    if enable_metrics and "ingestion_gateway" not in services:
+        services.append("ingestion_gateway")
+
+    enable_components = _resolve_bool_flag(
+        getattr(args, "enable_components", None) if args else None,
+        os.environ.get("ENABLE_COMPONENTS"),
+        yaml_vars.get("enable_components"),
+        default=False,
+    )
+    if enable_components and "components" not in services:
+        services.append("components")
+
+    rod_enabled = _resolve_bool_flag(
+        getattr(args, "rod_deployment_enabled", None) if args else None,
+        os.environ.get("ROD_DEPLOYMENT_ENABLED"),
+        yaml_vars.get("rod_deployment_enabled"),
+        default=False,
+    )
+    if rod_enabled and "rod_data_provider" not in services:
+        services.append("rod_data_provider")
+
+    return services
+
+
 def load_config(
     args: argparse.Namespace | None = None,
     config_path: str | Path | None = None,
@@ -127,31 +225,74 @@ def load_config(
     if resolved_path:
         yaml_vars = parse_yaml_vars(resolved_path)
 
-    project_id = (
-        _clean_str(getattr(args, "project_id", None) if args else None)
-        or _clean_str(os.environ.get("PROJECT_ID"))
-        or _clean_str(os.environ.get("GCP_PROJECT_ID"))
-        or _clean_str(yaml_vars.get("project_id"))
-        or ""
+    project_id = _resolve_str_flag(
+        getattr(args, "project_id", None) if args else None,
+        os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID"),
+        yaml_vars.get("project_id"),
+        default="",
     )
 
-    environment = (
-        _clean_str(getattr(args, "environment", None) if args else None)
-        or _clean_str(os.environ.get("XMANAGER_ENV"))
-        or _clean_str(os.environ.get("ENVIRONMENT"))
-        or _clean_str(yaml_vars.get("environment"))
-        or "dev"
+    environment = _resolve_str_flag(
+        getattr(args, "environment", None) if args else None,
+        os.environ.get("XMANAGER_ENV") or os.environ.get("ENVIRONMENT"),
+        yaml_vars.get("environment"),
+        default="dev",
     )
+
+    spanner_instance = _resolve_str_flag(
+        getattr(args, "spanner_instance", None) if args else None,
+        os.environ.get("SPANNER_INSTANCE"),
+        yaml_vars.get("spanner_instance"),
+        default="",
+    )
+
+    ess_database = _resolve_str_flag(
+        getattr(args, "ess_database", None) if args else None,
+        os.environ.get("ESS_DATABASE"),
+        yaml_vars.get("ess_database"),
+        default="",
+    )
+
+    xid_database = _resolve_str_flag(
+        getattr(args, "xid_database", None) if args else None,
+        os.environ.get("XID_DATABASE"),
+        yaml_vars.get("xid_database"),
+        default="",
+    )
+
+    cluster_name = _resolve_str_flag(
+        getattr(args, "cluster_name", None) if args else None,
+        os.environ.get("CLUSTER_NAME"),
+        yaml_vars.get("cluster_name"),
+        default="xmc-dev",
+    )
+
+    auto_migrate = _resolve_bool_flag(
+        getattr(args, "auto_migrate", None) if args else None,
+        os.environ.get("AUTO_MIGRATE"),
+        yaml_vars.get("auto_migrate"),
+        default=True,
+    )
+
+    enabled_services = _resolve_enabled_services(args, yaml_vars)
 
     cfg = LocalDevConfig(
         project_id=project_id,
         environment=environment,
+        spanner_instance=spanner_instance,
+        ess_database=ess_database,
+        xid_database=xid_database,
+        cluster_name=cluster_name,
+        auto_migrate=auto_migrate,
+        enabled_services=enabled_services,
         config_path=resolved_path,
     )
     _LOGGER.debug(
-        "Resolved LocalDevConfig: project_id=%s, environment=%s, config_path=%s",
+        "Resolved LocalDevConfig: project_id=%s, environment=%s, spanner_instance=%s, cluster_name=%s, config_path=%s",
         cfg.project_id,
         cfg.environment,
+        cfg.spanner_instance,
+        cfg.cluster_name,
         cfg.config_path,
     )
     return cfg

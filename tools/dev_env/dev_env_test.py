@@ -76,6 +76,16 @@ class DevEnvCliTest(unittest.TestCase):
             "test-p",
             "--environment",
             "staging",
+            "--spanner-instance",
+            "test-sp",
+            "--ess-db",
+            "test-ess",
+            "--xid-db",
+            "test-xid",
+            "--cluster-name",
+            "test-cluster",
+            "--auto-migrate",
+            "--enable-metrics",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -90,6 +100,12 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
         self.assertEqual(called_args.project_id, "test-p")
         self.assertEqual(called_args.environment, "staging")
+        self.assertEqual(called_args.spanner_instance, "test-sp")
+        self.assertEqual(called_args.ess_database, "test-ess")
+        self.assertEqual(called_args.xid_database, "test-xid")
+        self.assertEqual(called_args.cluster_name, "test-cluster")
+        self.assertTrue(called_args.auto_migrate)
+        self.assertTrue(called_args.enable_metrics)
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")
@@ -131,7 +147,7 @@ class DevEnvCliTest(unittest.TestCase):
 
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
     def test_gke_upgrade_valid_args(self, mock_run: MagicMock) -> None:
-        """Verifies gke-upgrade dispatches with valid arguments."""
+        """Verifies gke-upgrade dispatches with valid arguments and override flags."""
         args = [
             "gke-upgrade",
             "--config",
@@ -140,6 +156,7 @@ class DevEnvCliTest(unittest.TestCase):
             "test-p",
             "--environment",
             "staging",
+            "--no-auto-migrate",
             "--run-migrations",
             "--only",
             "images",
@@ -151,6 +168,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
         self.assertEqual(called_args.project_id, "test-p")
         self.assertEqual(called_args.environment, "staging")
+        self.assertFalse(called_args.auto_migrate)
         self.assertTrue(called_args.run_migrations)
         self.assertEqual(called_args.only, "images")
         self.assertIsNone(called_args.start_from)
@@ -343,6 +361,21 @@ class DevEnvCliTest(unittest.TestCase):
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
         mock_upgrade.assert_called_once()
+
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    @patch("tools.dev_env.dev_env.log_error")
+    @patch(
+        "tools.dev_env.upgrade_dev_env.run_upgrade",
+        side_effect=ValueError("Invalid config parameter"),
+    )
+    def test_main_handles_value_error(
+        self, mock_upgrade: MagicMock, mock_log_error: MagicMock, mock_venv: MagicMock
+    ) -> None:
+        """Verifies main() handles ValueError gracefully and exits with code 1."""
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.main(["gke-upgrade"])
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Invalid config parameter")
 
 
 if __name__ == "__main__":

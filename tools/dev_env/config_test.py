@@ -105,10 +105,12 @@ class ConfigResolutionTest(unittest.TestCase):
                 config=str(cfg_file),
                 project_id="cli-p",
                 environment="cli-env",
+                spanner_instance="cli-sp",
             )
             cfg = config.load_config(args, repo_root=self.root)
             self.assertEqual(cfg.project_id, "cli-p")
             self.assertEqual(cfg.environment, "cli-env")
+            self.assertEqual(cfg.spanner_instance, "cli-sp")
             self.assertEqual(cfg.config_path, cfg_file.resolve())
 
     def test_load_config_precedence_env(self) -> None:
@@ -134,7 +136,7 @@ class ConfigResolutionTest(unittest.TestCase):
         """Verifies YAML values are used when CLI and Env variables are unset."""
         cfg_file = self.root / "config.yaml"
         cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  environment: yaml-env\n",
+            "vars:\n  project_id: yaml-p\n  environment: yaml-env\n  cluster_name: custom-k8s\n",
             encoding="utf-8",
         )
 
@@ -142,6 +144,7 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg = config.load_config(args, repo_root=self.root)
         self.assertEqual(cfg.project_id, "yaml-p")
         self.assertEqual(cfg.environment, "yaml-env")
+        self.assertEqual(cfg.cluster_name, "custom-k8s")
 
     @patch.dict("os.environ", {}, clear=True)
     def test_load_config_defaults(self) -> None:
@@ -150,6 +153,12 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg = config.load_config(args, repo_root=self.root)
         self.assertEqual(cfg.project_id, "my-proj")
         self.assertEqual(cfg.environment, "dev")
+        self.assertEqual(cfg.spanner_instance, "xmc-dev")
+        self.assertEqual(cfg.ess_database, "dev-dev-local-ess")
+        self.assertEqual(cfg.xid_database, "dev-dev-local-xid")
+        self.assertEqual(cfg.cluster_name, "xmc-dev")
+        self.assertTrue(cfg.auto_migrate)
+        self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
         self.assertIsNone(cfg.config_path)
 
     @patch.dict("os.environ", {}, clear=True)
@@ -175,15 +184,59 @@ class ConfigResolutionTest(unittest.TestCase):
             config.load_config(args, repo_root=self.root)
         self.assertIn("Missing required configuration field: 'project_id'", str(cm.exception))
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_feature_flag_service_mappings(self) -> None:
+        """Verifies feature flags conditionally expand enabled services."""
+        args = argparse.Namespace(
+            project_id="my-proj",
+            enable_metrics=True,
+            enable_components=True,
+            rod_deployment_enabled=True,
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertIn("ingestion_gateway", cfg.enabled_services)
+        self.assertIn("components", cfg.enabled_services)
+        self.assertIn("rod_data_provider", cfg.enabled_services)
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_feature_flag_yaml_and_env_mappings(self) -> None:
+        """Verifies feature flags resolved from YAML and environment variables."""
+        cfg_file = self.root / "config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict("os.environ", {"ENABLE_COMPONENTS": "true"}, clear=True):
+            args = argparse.Namespace(config=str(cfg_file))
+            cfg = config.load_config(args, repo_root=self.root)
+            self.assertIn("ingestion_gateway", cfg.enabled_services)
+            self.assertIn("components", cfg.enabled_services)
+            self.assertNotIn("rod_data_provider", cfg.enabled_services)
+
 
 class LocalDevConfigDataClassTest(unittest.TestCase):
-    """Test cases for LocalDevConfig dataclass validation."""
+    """Test cases for LocalDevConfig dataclass validation and dynamic naming."""
 
-    def test_valid_config(self) -> None:
-        """Verifies instantiation with valid required fields."""
+    def test_dynamic_naming_rules(self) -> None:
+        """Verifies dynamic naming derives from environment string."""
         cfg = config.LocalDevConfig(project_id="test-proj", environment="staging")
-        self.assertEqual(cfg.project_id, "test-proj")
-        self.assertEqual(cfg.environment, "staging")
+        self.assertEqual(cfg.spanner_instance, "xmc-staging")
+        self.assertEqual(cfg.ess_database, "dev-staging-local-ess")
+        self.assertEqual(cfg.xid_database, "dev-staging-local-xid")
+        self.assertEqual(cfg.cluster_name, "xmc-dev")
+        self.assertTrue(cfg.auto_migrate)
+
+    def test_enabled_services_empty_list_preserved(self) -> None:
+        """Verifies explicitly passing an empty list of services is preserved."""
+        cfg = config.LocalDevConfig(project_id="test-proj", enabled_services=[])
+        self.assertEqual(cfg.enabled_services, [])
+
+    def test_enabled_services_default_factory(self) -> None:
+        """Verifies default enabled_services returns a fresh copy of BASE_SERVICES."""
+        cfg = config.LocalDevConfig(project_id="test-proj")
+        self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
+        self.assertIsNot(cfg.enabled_services, config.BASE_SERVICES)
 
     def test_empty_project_id_raises_value_error(self) -> None:
         """Verifies whitespace or empty project_id raises ValueError."""
@@ -191,6 +244,28 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
             config.LocalDevConfig(project_id="")
         with self.assertRaises(ValueError):
             config.LocalDevConfig(project_id="   ")
+
+
+class ResolveFlagsTest(unittest.TestCase):
+    """Test cases for flag resolution helpers."""
+
+    def test_resolve_str_flag_precedence(self) -> None:
+        """Verifies string resolution precedence: CLI > Env > YAML > Default."""
+        self.assertEqual(config._resolve_str_flag("cli", "env", "yaml", "def"), "cli")
+        self.assertEqual(config._resolve_str_flag(None, "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag("", "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag("  ", "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag(None, None, "yaml", "def"), "yaml")
+        self.assertEqual(config._resolve_str_flag(None, "", "yaml", "def"), "yaml")
+        self.assertEqual(config._resolve_str_flag(None, None, None, "def"), "def")
+        self.assertEqual(config._resolve_str_flag(None, None, "", "def"), "def")
+
+    def test_resolve_bool_flag_precedence(self) -> None:
+        """Verifies bool resolution precedence: CLI > Env > YAML > Default."""
+        self.assertTrue(config._resolve_bool_flag(True, False, False, False))
+        self.assertFalse(config._resolve_bool_flag(None, False, True, True))
+        self.assertTrue(config._resolve_bool_flag(None, None, True, False))
+        self.assertTrue(config._resolve_bool_flag(None, None, None, True))
 
 
 if __name__ == "__main__":
