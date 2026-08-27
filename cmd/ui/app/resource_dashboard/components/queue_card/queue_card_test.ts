@@ -95,7 +95,7 @@ describe('QueueCardComponent', () => {
     expect(await harness.getFlavorRowCount()).toBe(1);
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
-    expect(rowText).toContain('Nominal Queue Quota');
+    expect(rowText).toContain('Nominal Queue Quota (Free / Total)');
     expect(rowText).toContain('56 / 64');
     expect(rowText).toContain('Max schedulable now (Cohort quota)');
     expect(rowText).toContain('56');
