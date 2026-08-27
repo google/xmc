@@ -109,9 +109,39 @@ func TestK8sHelmManager_Guards(t *testing.T) {
 
 	mgr := NewK8sHelmManager(nil, "", "")
 	if err := mgr.Ensure1PComponent(ctx, "", "", HelmComponentOptions{}); err == nil {
-		t.Error("expected error on empty componentName")
+		t.Error("expected error on empty componentName for Ensure1PComponent")
 	}
 	if err := mgr.Delete1PComponent(ctx, "", ""); err == nil {
-		t.Error("expected error on empty componentName")
+		t.Error("expected error on empty componentName for Delete1PComponent")
+	}
+	if err := mgr.Orphan1PComponent(ctx, "", ""); err == nil {
+		t.Error("expected error on empty componentName for Orphan1PComponent")
+	}
+	if err := nilMgr.Orphan1PComponent(ctx, "xmc", "test"); err != nil {
+		t.Errorf("expected nil error on nil receiver Orphan1PComponent, got %v", err)
+	}
+}
+
+func TestK8sHelmManager_Orphan(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+
+	opts := HelmComponentOptions{
+		ComponentName: "rod",
+		Namespace:     "xmc",
+		Enabled:       true,
+	}
+
+	if err := mgr.Ensure1PComponent(ctx, "xmc", "rod", opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	if err := mgr.Orphan1PComponent(ctx, "xmc", "rod"); err != nil {
+		t.Fatalf("Orphan1PComponent failed: %v", err)
+	}
+
+	if mgr.IsComponentActive("rod") {
+		t.Error("expected rod to be inactive after orphaning")
 	}
 }

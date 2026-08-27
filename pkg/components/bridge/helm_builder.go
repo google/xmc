@@ -51,6 +51,8 @@ type HelmManager interface {
 	Ensure1PComponent(ctx context.Context, namespace string, componentName string, opts HelmComponentOptions) error
 	// Delete1PComponent sets the component's enablement flag to false in the Helm release and triggers an upgrade.
 	Delete1PComponent(ctx context.Context, namespace string, componentName string) error
+	// Orphan1PComponent retains the component values while detaching bridge ownership.
+	Orphan1PComponent(ctx context.Context, namespace string, componentName string) error
 	// IsComponentActive checks if the component is currently marked enabled in the Helm release.
 	IsComponentActive(componentName string) bool
 }
@@ -73,6 +75,13 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 		}
 	}
 
+	if opts.ImageTag != "" || len(opts.Parameters) > 0 {
+		compValues["image"] = ResolveImage(opts.ComponentName, opts.ImageTag, opts.Parameters)
+	}
+	if opts.DrainTimeoutSeconds > 0 {
+		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + 5
+	}
+
 	for k, v := range opts.Parameters {
 		compValues[k] = parseParamValue(v)
 	}
@@ -83,6 +92,40 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 
 	values[deploymentKey] = compValues
 	return values
+}
+
+// DefaultComponentRepository returns standard default image repository for known components.
+func DefaultComponentRepository(componentName string) string {
+	switch componentName {
+	case "ingestion-gateway", "ingestion_gateway":
+		return "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway"
+	case "rod", "rod-data-provider":
+		return "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider"
+	case "health-service", "health_service":
+		return "us-docker.pkg.dev/xmc-prod/xmc/health-service"
+	default:
+		return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", componentName)
+	}
+}
+
+// ResolveImage resolves the container image following 4-tier precedence:
+// 1. Full image override (parameters["image"])
+// 2. Custom repository (parameters["imageRepository"]) + tag
+// 3. Default repository + tag override (imageTag)
+// 4. Default repository + ":latest"
+func ResolveImage(componentName string, imageTag string, parameters map[string]string) string {
+	if img, ok := parameters["image"]; ok && img != "" {
+		return img
+	}
+	repo := parameters["imageRepository"]
+	if repo == "" {
+		repo = DefaultComponentRepository(componentName)
+	}
+	tag := imageTag
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s:%s", repo, tag)
 }
 
 // ComponentNameToHelmKey maps a component name to its standard Helm values deployment section key.
@@ -271,6 +314,22 @@ func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, namespace strin
 	}
 	if f.AppliedValues != nil {
 		delete(f.AppliedValues, componentName)
+	}
+	return nil
+}
+
+// Orphan1PComponent detaches tracking without removing values.
+func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, namespace string, componentName string) error {
+	if f == nil {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.DeleteErr != nil {
+		return f.DeleteErr
+	}
+	if f.ActiveComponents != nil {
+		delete(f.ActiveComponents, componentName)
 	}
 	return nil
 }
