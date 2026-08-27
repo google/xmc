@@ -119,7 +119,9 @@ describe('QueueCardComponent', () => {
     expect(rowText).toContain('Squeezed by cohort');
     expect(rowText).toContain('30');
     expect(rowText).toContain('60 / 100');
-    expect(rowText).toContain('30 nominal quota is temporarily held by cohort peers.');
+    expect(rowText).toContain(
+      'Shared cohort pool depleted: Immediate headroom (30) is lower than nominal free quota (60) due to cohort-wide workload demand.',
+    );
   });
 
   it('should render Borrowing available badge and contextual banner when cohort capacity can be borrowed', async () => {
