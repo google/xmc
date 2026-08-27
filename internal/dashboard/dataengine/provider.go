@@ -46,7 +46,7 @@ type Provider struct {
 	connect       Connector
 	retryInterval time.Duration
 
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	engine      *DataEngine
 	lastErr     error
 	lastAttempt time.Time
@@ -79,6 +79,13 @@ func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 
 // Engine returns the data engine, building it when the Provider does not hold one yet.
 func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
+	// Once an engine exists there is nothing left to build, so the steady state is served under a
+	// read lock. Taking the dial lock here instead would make two concurrent requests fail each
+	// other with errAttemptInProgress long after ClickHouse came up.
+	if engine := p.cachedEngine(); engine != nil {
+		return engine, nil
+	}
+
 	if !p.mu.TryLock() {
 		// Another caller is dialing. Readiness probes and chart requests are both frequent, and
 		// queueing them behind that dial would spread one slow ClickHouse across all of them.
@@ -93,6 +100,13 @@ func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
 		return nil, p.lastErr
 	}
 	return p.build(ctx)
+}
+
+// cachedEngine returns the engine the Provider already holds, or nil when it has yet to build one.
+func (p *Provider) cachedEngine() *DataEngine {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.engine
 }
 
 // attemptDue reports whether enough time has passed since the last attempt to make another.

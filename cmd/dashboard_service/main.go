@@ -58,6 +58,14 @@ import (
 // an unexplained probe timeout.
 const readinessTimeout = 5 * time.Second
 
+// dataEngineStartupTimeout bounds the optional first ClickHouse dial made during startup.
+//
+// The startup context has no deadline of its own, so an unreachable ClickHouse that accepts the
+// connection and then stalls would hang the whole process before it ever binds a port. The dial is
+// only an optimisation — the provider retries on demand — so it is given a short budget and the
+// service comes up regardless.
+const dataEngineStartupTimeout = 10 * time.Second
+
 func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, readinessCheck func(context.Context) error) http.Handler {
 	mux := http.NewServeMux()
 
@@ -120,7 +128,9 @@ func initDataEngine(ctx context.Context) *dataengine.Provider {
 		return nil
 	}
 	provider := dataengine.NewProvider(connectClickHouse)
-	if _, err := provider.Engine(ctx); err != nil {
+	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
+	defer cancel()
+	if _, err := provider.Engine(dialCtx); err != nil {
 		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
 	}
 	return provider
