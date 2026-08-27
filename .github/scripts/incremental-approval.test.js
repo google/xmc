@@ -17,11 +17,14 @@ const assert = require('node:assert');
 const {
   validateGitRefs,
   isBotUser,
+  extractDismissalContext,
+  parseTimelineReviewEvent,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
+  resolveCommitRanges,
   MAX_OWNER_GRACE_LINES
 } = require('./incremental-approval');
 
@@ -49,6 +52,93 @@ test('isBotUser identifies bot usernames correctly', () => {
   assert.strictEqual(isBotUser('alice'), false);
   assert.strictEqual(isBotUser(''), false);
   assert.strictEqual(isBotUser(null), false);
+});
+
+test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
+  const events = [
+    { event: 'dismissed_review', review_id: 101 },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      review: { databaseId: 202 }
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'CHANGES_REQUESTED',
+      review: { databaseId: 303 }
+    }
+  ];
+  const ctx = extractDismissalContext(events);
+  assert.strictEqual(ctx.manualDismissalIds.has(101), true);
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
+});
+
+test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
+  const context = {
+    authorLower: 'author1',
+    manualDismissalIds: new Set([101]),
+    dismissedReviewPreviousStates: new Map([[202, 'APPROVED'], [303, 'CHANGES_REQUESTED']])
+  };
+
+  // Valid review
+  const valid = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 100,
+    user: { login: 'reviewer1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context);
+  assert.deepStrictEqual(valid, {
+    approver: 'reviewer1',
+    state: 'APPROVED',
+    approvedSha: 'sha1',
+    submittedAt: undefined
+  });
+
+  // Manually dismissed review
+  const manualDismissed = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 101,
+    user: { login: 'reviewer1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(manualDismissed, null);
+
+  // Stale dismissed with APPROVED previous state
+  const staleApproved = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 202,
+    user: { login: 'reviewer1' },
+    state: 'dismissed',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(staleApproved.state, 'APPROVED');
+
+  // Stale dismissed with CHANGES_REQUESTED previous state
+  const staleChanges = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 303,
+    user: { login: 'reviewer1' },
+    state: 'dismissed',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
+
+  // Ignored bot review and PR author self-review
+  assert.strictEqual(parseTimelineReviewEvent({
+    event: 'reviewed',
+    user: { login: 'bot[bot]' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context), null);
+  assert.strictEqual(parseTimelineReviewEvent({
+    event: 'reviewed',
+    user: { login: 'author1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context), null);
 });
 
 test('findLatestApproval ignores approvals from bot users', () => {
@@ -111,7 +201,7 @@ test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () =
   });
 });
 
-test('findLatestApproval finds prior approval when review was DISMISSED by stale approval policy', () => {
+test('findLatestApproval rejects DISMISSED reviews when no timeline context is provided', () => {
   const reviews = [
     {
       id: 1,
@@ -122,11 +212,73 @@ test('findLatestApproval finds prior approval when review was DISMISSED by stale
     }
   ];
   const result = findLatestApproval(reviews, 'charlie');
+  assert.strictEqual(result, null);
+});
+
+test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy with APPROVED previous state', () => {
+  const reviews = [
+    {
+      id: 5032149088,
+      user: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+      submitted_at: '2026-08-26T15:12:24Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 5032149088,
+      author: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
+      submittedAt: '2026-08-26T15:12:24Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      review: {
+        databaseId: 5032149088
+      }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
   assert.deepStrictEqual(result, {
-    approver: 'alice',
-    approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z'
+    approver: 'andrzejfudro',
+    approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+    submittedAt: '2026-08-26T15:12:24Z'
   });
+});
+
+test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_REQUESTED previous state', () => {
+  const reviews = [
+    {
+      id: 5032149088,
+      user: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+      submitted_at: '2026-08-26T15:12:24Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 5032149088,
+      author: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
+      submittedAt: '2026-08-26T15:12:24Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'CHANGES_REQUESTED',
+      review: {
+        databaseId: 5032149088
+      }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
+  assert.strictEqual(result, null);
 });
 
 test('findLatestApproval ignores manually dismissed reviews in timeline', () => {
@@ -389,4 +541,94 @@ test('evaluateIncrementalApproval rejects invalid delta inputs (negative, null, 
   });
   assert.strictEqual(resultNull.shouldReapprove, false);
   assert.strictEqual(resultNull.trigger, 'INVALID_DELTA');
+});
+
+test('resolveCommitRanges uses standard ranges when commit count matches', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
+      return '3\n';
+    }
+    if (args[0] === 'rev-parse') {
+      return 'head1~3\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
+      return '3\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/main..head2');
+    assert.strictEqual(res.approvedRange, 'origin/main..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('resolveCommitRanges scopes approved range when parent branch was rebased in stacked PRs', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head2') {
+      return '6\n';
+    }
+    if (args[0] === 'rev-parse' && args[2] === 'head1~6') {
+      return 'ok\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head1') {
+      return '17\n'; // 11 rebased base commits + 6 PR commits
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('feat/base', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/feat/base..head2');
+    assert.strictEqual(res.approvedRange, 'head1~6..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('resolveCommitRanges preserves standard range when developer adds new commits to regular PR', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
+      return '4\n'; // PR now has 4 commits
+    }
+    if (args[0] === 'rev-parse' && args[2] === 'head1~4') {
+      return 'ok\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
+      return '3\n'; // PR previously had 3 commits (approvedBaseCount < prCommitCount)
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/main..head2');
+    assert.strictEqual(res.approvedRange, 'origin/main..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
 });
