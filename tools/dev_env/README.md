@@ -142,7 +142,7 @@ python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
 #### Output Sections
 - **Cluster & Node Readiness**: KinD cluster control-plane and worker node readiness.
 - **Support & Service Pods**: Pod status table for core services and dependencies (`dex`, `redis`, `gateway-proxy`, `experiment_state_server`, `ui`, etc.).
-- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080`) and Dex OIDC (`http://localhost:5556/dex/.well-known/openid-configuration`).
+- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080/healthz`) and Dex OIDC (`http://localhost:5556/dex/healthz`).
 
 ---
 

@@ -315,6 +315,24 @@ class KindManagerTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 self.manager.apply_manifests()
 
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_apply_manifests_command_error_raises_value_error(
+        self, mock_run: mock.MagicMock
+    ) -> None:
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["kubectl", "apply"])
+        manifests_dir = Path(self.temp_dir.name) / "manifests"
+        manifests_dir.mkdir(parents=True, exist_ok=True)
+        for mf in ["dummy_crds.yaml", "redis.yaml", "dex.yaml", "gateway_proxy.yaml"]:
+            (manifests_dir / mf).write_text("apiVersion: v1\n")
+
+        with (
+            mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir),
+            mock.patch.object(self.manager, "repo_root", Path(self.temp_dir.name)),
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                self.manager.apply_manifests()
+            self.assertIn("Failed to apply supporting manifests", str(ctx.exception))
+
     @mock.patch("urllib.request.urlopen")
     def test_check_endpoint_health(self, mock_urlopen: mock.MagicMock) -> None:
         mock_resp = mock.MagicMock()

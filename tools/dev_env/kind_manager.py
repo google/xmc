@@ -335,11 +335,15 @@ class KindManager:
         ctx = f"kind-{name}"
         log_info("=== [KinD] Applying supporting infrastructure manifests ===")
         manifests_dir = self._resolve_manifests_dir()
-        candidate_dirs = [
-            manifests_dir,
-            self.repo_root / "test" / "e2e" / "manifests",
-            self.repo_root / "deploy" / "local" / "manifests",
-        ]
+        candidate_dirs = list(
+            dict.fromkeys(
+                [
+                    manifests_dir,
+                    self.repo_root / "test" / "e2e" / "manifests",
+                    self.repo_root / "deploy" / "local" / "manifests",
+                ]
+            )
+        )
         manifest_files = [
             "dummy_crds.yaml",
             "redis.yaml",
@@ -360,7 +364,10 @@ class KindManager:
                 )
             cmd.extend(["-f", str(file_path)])
 
-        run_command(cmd)
+        try:
+            run_command(cmd)
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"Failed to apply supporting manifests: {e}") from None
         log_success("Supporting manifests applied.")
 
     def check_endpoint_health(self, url: str) -> bool:
