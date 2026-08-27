@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
@@ -104,6 +106,25 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 	}
 	if got, want := spanner.MessageSeverityCountInState(t, exp, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("Experiment message severity count for INFO is %d, want %d", got, want)
+	}
+
+	// Verify WorkUnitStatusHistory records were added for restarted executions.
+	stmt := googlespanner.Statement{
+		SQL:    "SELECT COUNT(1) FROM WorkUnitStatusHistory WHERE Xid = @xid",
+		Params: map[string]any{"xid": xid},
+	}
+	iter := essClient.Single().Query(ctx, stmt)
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		t.Fatalf("failed to query WorkUnitStatusHistory: %v", err)
+	}
+	var historyCount int64
+	if err := row.Column(0, &historyCount); err != nil {
+		t.Fatalf("failed to parse WorkUnitStatusHistory count: %v", err)
+	}
+	if historyCount == 0 {
+		t.Errorf("expected WorkUnitStatusHistory records to be added for restarted work unit executions, got 0")
 	}
 }
 

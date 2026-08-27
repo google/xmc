@@ -30,16 +30,16 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 
 ## Tools & Scripts Virtual Environment
 
-All automation tools and verification scripts under `./tools` and `./deploy` require a Python virtual environment with external dependencies (`tools/requirements.txt`). Virtual environments must be explicitly created using **Python 3.13.14**:
+All automation tools and verification scripts under `./tools` and `./deploy` require a Python virtual environment with external dependencies (`tools/common/requirements.txt`). Virtual environments must be explicitly created using **Python 3.13.14**:
 
 ```bash
 python3.13 -m venv ./tools/venv
 source ./tools/venv/bin/activate
 pip install --upgrade pip
-pip install -r ./tools/requirements.txt
+pip install -r ./tools/common/requirements.txt
 ```
 
 Alternatively, you can bootstrap the virtual environment directly:
 ```bash
-python3 ./tools/setup_venv.py --venv-dir ./tools/venv --requirements ./tools/requirements.txt
+python3 ./tools/common/setup_venv.py --venv-dir ./tools/venv --requirements ./tools/common/requirements.txt
 ```

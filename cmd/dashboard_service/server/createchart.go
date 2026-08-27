@@ -52,11 +52,7 @@ func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (
 
 	chartID := req.GetChartId()
 	if chartID == "" {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to generate chart ID: %v", err)
-		}
-		chartID = id.String()
+		chartID = uuid.New().String()
 	}
 
 	chart := req.GetChart()

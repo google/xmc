@@ -33,6 +33,13 @@ health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-s
 dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
+xmc_bridge_custom_image: ""
+
+componentsDeployment:
+  enabled: false
+  cmsAddress: "grpc-service:50051"
+  probeInterval: "5s"
+  probeTimeout: "2s"
 
 essDeployment:
   enabled: true
@@ -43,11 +50,18 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
-componentsDeployment:
-  enabled: false
-
 metrics:
   enabled: false
+  # ClickHouse is Bring-Your-Own (BYO) infrastructure deployed out-of-band via
+  # deploy/addons/metrics/clickhouse. The dashboard service chart data engine reads these
+  # settings to serve GetChartData; without them it starts with no data engine and every
+  # chart data request fails with FailedPrecondition.
+  clickhouse:
+    host: "clickhouse.xmc-metrics.svc.cluster.local"
+    port: "9000"
+    database: "default"
+    user: "default"
+    password: ""
 
 ingestionGatewayDeployment:
   enabled: false

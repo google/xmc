@@ -22,6 +22,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -99,10 +101,10 @@ type Store interface {
 	PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error)
 
 	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-	CompleteDeactivation(ctx context.Context, name string) error
+	CompleteDeactivation(ctx context.Context, name string, force bool) error
 
-	// UpdateObservedGeneration synchronizes actual component access and state.
-	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) error
+	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
+	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
 
 	// ExecuteDeletion deletes a component using the specified deletion policy.
 	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error
@@ -115,4 +117,78 @@ type Store interface {
 
 	// GetPlatformHealth retrieves overall system component health metrics and status.
 	GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error)
+}
+
+// ToProtoComponent converts a ComponentRecord to a public Component protobuf message.
+func ToProtoComponent(r *ComponentRecord) *componentspb.Component {
+	if r == nil {
+		return nil
+	}
+	comp := &componentspb.Component{
+		Name: FullComponentName(r.Name),
+		Etag: r.Etag,
+	}
+	if r.Spec != nil {
+		comp.Spec = proto.Clone(r.Spec).(*componentspb.ComponentSpec)
+	}
+	comp.Status = buildProtoStatus(r)
+	populateProtoTimestamps(comp, r)
+	if len(r.Labels) > 0 {
+		comp.Labels = copyMap(r.Labels)
+	}
+	return comp
+}
+
+// buildProtoStatus constructs the ComponentAccessStatus proto from a record.
+func buildProtoStatus(r *ComponentRecord) *componentspb.ComponentAccessStatus {
+	if r.Status != nil {
+		return mergeExistingStatus(r)
+	}
+	if r.State == componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED && r.ObservedGeneration == nil {
+		return nil
+	}
+	status := &componentspb.ComponentAccessStatus{
+		State: r.State,
+	}
+	if r.ObservedGeneration != nil {
+		status.ObservedGeneration = *r.ObservedGeneration
+	}
+	return status
+}
+
+// mergeExistingStatus clones and merges top-level record state/generation into status.
+func mergeExistingStatus(r *ComponentRecord) *componentspb.ComponentAccessStatus {
+	status := proto.Clone(r.Status).(*componentspb.ComponentAccessStatus)
+	if r.State != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED && status.GetState() == componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		status.State = r.State
+	}
+	if r.ObservedGeneration != nil && status.GetObservedGeneration() == 0 {
+		status.ObservedGeneration = *r.ObservedGeneration
+	}
+	return status
+}
+
+// populateProtoTimestamps copies non-zero record timestamps to the component proto.
+func populateProtoTimestamps(comp *componentspb.Component, r *ComponentRecord) {
+	if !r.CreateTime.IsZero() {
+		comp.CreateTime = timestamppb.New(r.CreateTime)
+	}
+	if !r.UpdateTime.IsZero() {
+		comp.UpdateTime = timestamppb.New(r.UpdateTime)
+	}
+	if r.DeleteTime != nil && !r.DeleteTime.IsZero() {
+		comp.DeleteTime = timestamppb.New(*r.DeleteTime)
+	}
+}
+
+// copyMap creates a shallow copy of a string key-value map.
+func copyMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

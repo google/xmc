@@ -24,7 +24,6 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
-	"googlesql/safesql/go/safesql"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	"xmanager_cloud/logging/logging"
@@ -36,16 +35,6 @@ import (
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
-
-var getXidSQL = safesql.New(`
-SELECT
-  *
-FROM
-  Xids
-WHERE
-  BitReversedXid = @bitReversedXid
-LIMIT 1;
-`)
 
 // UpdateXidEntry updates an XidEntry with the given update mask.
 // TODO(b/517479143): Refactor UpdateXidEntry to move parent iteration and entry merging out of the repository layer.

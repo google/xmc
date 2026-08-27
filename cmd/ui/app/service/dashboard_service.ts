@@ -30,6 +30,8 @@ import {
   CreateDashboardRequest,
   Dashboard,
   GetChartDataRequest,
+  ListChartsRequest,
+  ListChartsResponse,
   ListDashboardsRequest,
   ListDashboardsResponse,
   UpdateDashboardRequest,
@@ -78,12 +80,11 @@ export class DashboardService {
       .get<{
         dashboards?: RawDashboard[];
         nextPageToken?: string;
-        next_page_token?: string;
       }>(`${XMC_API_DOMAIN}/dashboards`, { params, withCredentials: true })
       .pipe(
         map((res) => ({
           dashboards: (res?.dashboards ?? []).map(normalizeDashboard),
-          nextPageToken: res?.nextPageToken ?? res?.next_page_token,
+          nextPageToken: res?.nextPageToken,
         })),
         catchError((error) => {
           console.error('Failed to list dashboards:', error);
@@ -204,6 +205,38 @@ export class DashboardService {
         map(normalizeChart),
         catchError((error) => {
           console.error(`Failed to fetch chart ${name}:`, error);
+          return throwError(() => error);
+        }),
+      );
+  }
+
+  /**
+   * Lists the charts under a dashboard or work unit parent with optional pagination.
+   */
+  listCharts(request: ListChartsRequest): Observable<ListChartsResponse> {
+    if (!request.parent) {
+      return throwError(() => new Error('Parent resource name is required'));
+    }
+    const paramsMap: Record<string, string> = {};
+    if (request.pageSize) {
+      paramsMap['pageSize'] = request.pageSize.toString();
+    }
+    if (request.pageToken) {
+      paramsMap['pageToken'] = request.pageToken;
+    }
+    const params = new HttpParams({ fromObject: paramsMap });
+    return this.http
+      .get<{
+        charts?: RawChart[];
+        nextPageToken?: string;
+      }>(`${XMC_API_DOMAIN}/${request.parent}/charts`, { params, withCredentials: true })
+      .pipe(
+        map((res) => ({
+          charts: (res?.charts ?? []).map(normalizeChart),
+          nextPageToken: res?.nextPageToken,
+        })),
+        catchError((error) => {
+          console.error(`Failed to list charts under parent ${request.parent}:`, error);
           return throwError(() => error);
         }),
       );

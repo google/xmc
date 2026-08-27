@@ -118,6 +118,53 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("successful partial update with chart_ids and chartIds field masks", func(t *testing.T) {
+		repo := &mockRepository{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name:     "dashboards/" + dashboardId,
+					Title:    "Original",
+					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+					Owner:    "user@example.com",
+				}, nil
+			},
+			updateDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name:     dashboard.GetName(),
+					Title:    "Original",
+					ChartIds: dashboard.GetChartIds(),
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "u-1", nil
+			},
+			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+				return true, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+
+		req := &spb.UpdateDashboardRequest{
+			Dashboard: &dpb.Dashboard{
+				Name:     "dashboards/dash-123",
+				ChartIds: []string{"c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"chart_ids"},
+			},
+		}
+
+		resp, err := s.UpdateDashboard(ctx, req)
+		if err != nil {
+			t.Fatalf("UpdateDashboard failed: %v", err)
+		}
+		if len(resp.GetChartIds()) != 1 || resp.GetChartIds()[0] != "c9a646d3-9c61-4cd7-bf10-8e96dc638210" {
+			t.Errorf("Expected updated chart_ids, got %v", resp.GetChartIds())
+		}
+	})
+
 	t.Run("prevents unauthorized ownership modification during update", func(t *testing.T) {
 		var updatedDash *dpb.Dashboard
 		repo := &mockRepository{
@@ -193,6 +240,26 @@ func TestUpdateDashboard(t *testing.T) {
 			{name: "invalid update mask path", req: &spb.UpdateDashboardRequest{
 				Dashboard:  &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"owner"}},
+			}},
+			{name: "legacy charts update mask path", req: &spb.UpdateDashboardRequest{
+				Dashboard:  &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"charts"}},
+			}},
+			{name: "duplicate chart IDs in update mask", req: &spb.UpdateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Name:     "dashboards/1",
+					Title:    "Title",
+					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"chart_ids"}},
+			}},
+			{name: "resource name in chart_ids update mask rejected", req: &spb.UpdateDashboardRequest{
+				Dashboard: &dpb.Dashboard{
+					Name:     "dashboards/1",
+					Title:    "Title",
+					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
+				},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"chart_ids"}},
 			}},
 		}
 

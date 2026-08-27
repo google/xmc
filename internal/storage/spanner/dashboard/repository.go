@@ -55,7 +55,10 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 		return nil, fmt.Errorf("failed to create dashboard charts query generator: %w", err)
 	}
 
-	chartPlotsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ChartPlotsTables, nil, nil, nil, querytools.DeduplicateSelects(true))
+	// Plots are read for a whole page of charts at once, so this generator opts into disjunction
+	// optimization: the per-chart chart_id equalities collapse into one IN UNNEST clause instead of
+	// one OR term per chart. Order-by optimization stays off to keep the existing sort semantics.
+	chartPlotsQueryGen, err := querytools.NewOptimizableGenerator(dashboardschema.ChartPlotsTables, nil, nil, nil, true, false, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chart plots query generator: %w", err)
 	}

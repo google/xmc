@@ -23,7 +23,6 @@ import (
 
 const (
 	keyOperationGCP = "logging.googleapis.com/operation"
-	keyOperationID  = "operation_id"
 	requestIDHeader = "x-request-id"
 )
 

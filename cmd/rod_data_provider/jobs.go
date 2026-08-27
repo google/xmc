@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -37,19 +38,33 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 
 	targetQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
 
-	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
+	pageSize := req.GetPageSize()
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	pageSize = min(pageSize, 100)
+
+	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
+		if errors.Is(err, workunit.ErrInvalidPageToken) {
+			return nil, status.Error(codes.InvalidArgument, "invalid page_token")
+		}
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
 	}
 
 	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
+	var totalQueueSize int64
+	if result != nil {
+		totalQueueSize = result.TotalQueueSize
+	}
+
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
-		TotalQueueSize: int64(len(workUnits)),
+		TotalQueueSize: totalQueueSize,
 	}, nil
 }
 
@@ -69,17 +84,17 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []workunit.WorkUnitWithAuthor, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}
 	return result.WorkUnits, result.NextPageToken
 }
 
-func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []*essmsgpb.WorkUnit, now time.Time) []*spb.DashboardJob {
+func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []workunit.WorkUnitWithAuthor, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
-	for _, wu := range workUnits {
-		if job := mapWorkUnitToDashboardJob(ctx, wu, now); job != nil {
+	for _, item := range workUnits {
+		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
@@ -87,7 +102,7 @@ func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []*essmsgpb.Work
 }
 
 // mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
-func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now time.Time) *spb.DashboardJob {
+func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user string, now time.Time) *spb.DashboardJob {
 	if wu == nil {
 		return nil
 	}
@@ -99,7 +114,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 	return &spb.DashboardJob{
 		Xid:                xid,
 		WorkUnitId:         wid,
-		User:               "", // TODO(#186): Properly populate user field
+		User:               user,
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),

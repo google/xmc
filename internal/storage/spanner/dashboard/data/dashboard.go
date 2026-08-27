@@ -16,7 +16,6 @@
 package data
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 	"time"
@@ -32,25 +31,19 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// SortCharts returns a new slice with charts sorted alphabetically by Name.
-func SortCharts(charts []*dpb.Chart) []*dpb.Chart {
-	if len(charts) <= 1 {
-		return slices.Clone(charts)
+// SortChartIDs returns a new cloned and sorted slice of chart IDs, removing duplicates.
+func SortChartIDs(chartIDs []string) []string {
+	if len(chartIDs) == 0 {
+		return nil
 	}
-	sorted := slices.Clone(charts)
-	slices.SortFunc(sorted, func(a, b *dpb.Chart) int {
-		if a == nil && b == nil {
-			return 0
-		}
-		if a == nil {
-			return -1
-		}
-		if b == nil {
-			return 1
-		}
-		return cmp.Compare(a.GetName(), b.GetName())
-	})
-	return sorted
+	sorted := slices.Clone(chartIDs)
+	slices.Sort(sorted)
+	return slices.Compact(sorted)
+}
+
+// ChartIDsEqual reports whether two sorted chart ID slices are equal.
+func ChartIDsEqual(a, b []string) bool {
+	return slices.Equal(a, b)
 }
 
 // MergeDashboards merges an updated Dashboard proto message into a current Dashboard proto message based on an update mask.
@@ -67,7 +60,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		merged.Title = updated.GetTitle()
 		merged.Description = updated.GetDescription()
 		merged.ChartLayout = updated.GetChartLayout()
-		merged.Charts = updated.GetCharts()
+		merged.ChartIds = updated.GetChartIds()
 		return merged, nil
 	}
 
@@ -79,8 +72,44 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 			merged.Description = updated.GetDescription()
 		case "chart_layout", "chartLayout":
 			merged.ChartLayout = updated.GetChartLayout()
-		case "charts":
-			merged.Charts = updated.GetCharts()
+		case "chart_ids", "chartIds":
+			merged.ChartIds = updated.GetChartIds()
+		default:
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		}
+	}
+	return merged, nil
+}
+
+// MergeCharts merges an updated Chart proto message into a current Chart proto message based on an update mask.
+// Note: xid and wid are immutable chart ownership fields and cannot be updated.
+func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+	if current == nil {
+		return nil, fmt.Errorf("current chart is nil: %w", status.ErrInvalidArgument)
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("updated chart is nil: %w", status.ErrInvalidArgument)
+	}
+
+	merged := proto.Clone(current).(*dpb.Chart)
+	if updateMask == nil || len(updateMask.GetPaths()) == 0 {
+		merged.Title = updated.GetTitle()
+		merged.Description = updated.GetDescription()
+		merged.Plots = updated.GetPlots()
+		merged.PlotLayout = updated.GetPlotLayout()
+		return merged, nil
+	}
+
+	for _, path := range updateMask.GetPaths() {
+		switch path {
+		case "title":
+			merged.Title = updated.GetTitle()
+		case "description":
+			merged.Description = updated.GetDescription()
+		case "plots":
+			merged.Plots = updated.GetPlots()
+		case "plot_layout", "plotLayout":
+			merged.PlotLayout = updated.GetPlotLayout()
 		default:
 			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
 		}
@@ -114,23 +143,19 @@ func buildDashboardChartMutations(dashID string, dashboard *dpb.Dashboard) ([]*s
 		return nil, err
 	}
 
+	seen := make(map[string]bool, len(dashboard.GetChartIds()))
 	var mutations []*spanner.Mutation
-	for _, chart := range dashboard.GetCharts() {
-		if chart == nil {
-			return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
-		}
-		if chart.GetName() == "" {
-			return nil, fmt.Errorf("chart name must not be empty: %w", status.ErrInvalidArgument)
-		}
-		_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+	for _, rawID := range dashboard.GetChartIds() {
+		chartID, err := validator.ValidateChartID(rawID)
 		if err != nil {
-			return nil, fmt.Errorf("invalid chart name %q: %w", chart.GetName(), err)
+			return nil, fmt.Errorf("invalid chart ID %q: %w", rawID, err)
 		}
+		if seen[chartID] {
+			continue
+		}
+		seen[chartID] = true
 
-		gridPos := positionsMap[chart.GetName()]
-		if gridPos == nil {
-			gridPos = positionsMap[chartID]
-		}
+		gridPos := positionsMap[chartID]
 
 		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
@@ -177,7 +202,7 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 }
 
 // DashboardProtoToUpdateMutations creates Spanner mutations to update a Dashboard and optionally its child DashboardCharts.
-func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool) ([]*spanner.Mutation, error) {
+func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateChartIDs bool) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
 		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
 	}
@@ -207,7 +232,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 	})
 	mutations := []*spanner.Mutation{m}
 
-	if updateCharts {
+	if updateChartIDs {
 		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashID}.AsPrefix())
 		chartMutations, err := buildDashboardChartMutations(dashID, dashboard)
 		if err != nil {
@@ -255,7 +280,7 @@ type dashboardChartRow struct {
 }
 
 // DashboardRowToProto converts a Spanner Row into a Dashboard protobuf message.
-func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard, error) {
+func DashboardRowToProto(row *spanner.Row, chartIDs []string) (*dpb.Dashboard, error) {
 	if row == nil {
 		return nil, fmt.Errorf("spanner row must not be nil")
 	}
@@ -311,7 +336,7 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 		Title:       data.Title,
 		Description: data.Description,
 		Owner:       data.Owner,
-		Charts:      SortCharts(charts),
+		ChartIds:    SortChartIDs(chartIDs),
 		ChartLayout: layout,
 		CreateTime:  timestamppb.New(data.CreatedAt),
 		UpdateTime:  timestamppb.New(data.UpdatedAt),

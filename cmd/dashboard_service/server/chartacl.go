@@ -1,0 +1,73 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package server
+
+import (
+	"context"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/logging/logging"
+)
+
+// filterAuthorizedCharts drops the charts whose experiment the caller cannot read. A dashboard may
+// reference charts from several experiments, so its chart set has to be pruned per chart rather
+// than authorized as a whole. Each distinct xid is checked once, which bounds the XID service round
+// trips by the number of experiments in the result rather than the number of charts.
+func (s *Server) filterAuthorizedCharts(ctx context.Context, user string, charts []*dpb.Chart) ([]*dpb.Chart, error) {
+	authorized := make([]*dpb.Chart, 0, len(charts))
+	if len(charts) == 0 {
+		return authorized, nil
+	}
+	if s.xidClient == nil {
+		return nil, status.Error(codes.FailedPrecondition, "xid client is not configured")
+	}
+
+	readable := map[int64]bool{}
+	for _, chart := range charts {
+		allowed, checked := readable[chart.GetXid()]
+		if !checked {
+			var err error
+			if allowed, err = s.isChartReadable(ctx, user, chart); err != nil {
+				return nil, err
+			}
+			readable[chart.GetXid()] = allowed
+		}
+		if allowed {
+			authorized = append(authorized, chart)
+		}
+	}
+	return authorized, nil
+}
+
+// isChartReadable reports whether the user holds READER on the chart's experiment. A denial is a
+// decision rather than an error, but any other failure is propagated so that an unreachable XID
+// service is never mistaken for an empty result.
+func (s *Server) isChartReadable(ctx context.Context, user string, chart *dpb.Chart) (bool, error) {
+	if chart.GetXid() <= 0 {
+		logging.Warn(ctx, "dropping chart without a valid experiment XID", "chart", chart.GetName(), "xid", chart.GetXid())
+		return false, nil
+	}
+	err := s.authorizeExperimentRead(ctx, user, chart.GetXid())
+	if err == nil {
+		return true, nil
+	}
+	if status.Code(err) == codes.PermissionDenied {
+		return false, nil
+	}
+	return false, err
+}

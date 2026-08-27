@@ -18,46 +18,17 @@ import {
   RangePreset,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-/**
- * Velocity period options for queue resource calculations.
- */
-export interface VelocityPeriodOption {
-  readonly value: string;
-  readonly label: string;
-}
-
-export const VELOCITY_PERIOD_OPTIONS: readonly VelocityPeriodOption[] = [
-  { value: '1h', label: '1 hour' },
-  { value: '24h', label: '1 day' },
-  { value: '7d', label: '7 days' },
-];
+const rateFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 
 /**
  * Format numerical velocity rate cleanly.
  */
 export function formatRate(val: number): string {
   if (val === 0) return '0';
-  if (Number.isInteger(val)) return `${val}`;
-  return parseFloat(val.toFixed(2)).toString();
-}
-
-/**
- * Convert velocity period string to numeric hours.
- */
-export function getVelocityHours(period: string): number {
-  switch (period) {
-    case '1h':
-    case '1 hour':
-      return 1;
-    case '24h':
-    case '1 day':
-      return 24;
-    case '7d':
-    case '7 days':
-      return 168;
-    default:
-      return 168;
-  }
+  return rateFormatter.format(val);
 }
 
 /**
@@ -95,13 +66,7 @@ export function findQueuePredictability(
  * Calculate pending jobs count for a cluster queue.
  */
 export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number {
-  const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (p.pendingJobs !== undefined && p.pendingJobs !== null) {
-      return p.pendingJobs;
-    }
-  }
-  return 0;
+  return queue?.queuePredictability?.find((p) => p.pendingJobs != null)?.pendingJobs ?? 0;
 }
 
 /**
@@ -130,14 +95,8 @@ export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period
  * Calculate pending resource requests display text for a cluster queue.
  */
 export function calculatePendingRequestsDisplay(queue: ClusterQueueSecondaryMetrics): string {
-  const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (
-      p.pendingResourceRequests?.count !== undefined &&
-      p.pendingResourceRequests?.count !== null
-    ) {
-      return formatRate(p.pendingResourceRequests.count);
-    }
-  }
-  return '0';
+  const match = queue?.queuePredictability?.find((p) => p.pendingResourceRequests?.count != null);
+  return match?.pendingResourceRequests?.count != null
+    ? formatRate(match.pendingResourceRequests.count)
+    : '0';
 }

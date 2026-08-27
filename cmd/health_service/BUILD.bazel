@@ -22,6 +22,7 @@ compat_go_library(
         "admin_role_guard.go",
         "config.go",
         "health_checker.go",
+        "lazy_spanner_client.go",
         "list_configs.go",
         "main.go",
         "server.go",
@@ -36,6 +37,7 @@ compat_go_library(
         "//internal/configutil",
         "//internal/logging",
         "//internal/security/tlsutil",
+        "//internal/storage/spanner/migrations/version",
         "//internal/task_queue_redis/redisclient",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
@@ -77,6 +79,7 @@ compat_go_test(
     srcs = [
         "admin_role_guard_test.go",
         "health_checker_test.go",
+        "lazy_spanner_client_test.go",
         "list_configs_test.go",
         "server_test.go",
     ],
@@ -84,6 +87,7 @@ compat_go_test(
     deps = [
         "//api/protos/xid:messages_go_proto",
         "//internal/auth",
+        "//internal/common/health",
         "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_google_cloud_go_iam//apiv1/iampb:go_default_library",

@@ -23,12 +23,14 @@ from collections.abc import Sequence
 from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
+    chart_id_from_name,
     scatter_plot,
     summary_kpi_plot,
 )
 from xdash.client import DashboardClient, XDashError
 from xdash.presets import (
     create_standard_experiment_chart,
+    create_vcc_comparison_charts,
     create_vcc_comparison_dashboard,
 )
 
@@ -128,14 +130,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _handle_create_preset(client: DashboardClient, args: argparse.Namespace) -> int:
-    """Handles the create-preset subcommand."""
+    """Handles the create-preset subcommand.
+
+    Charts are created first and the dashboard then references the IDs the server
+    assigned, because a Dashboard only stores chart IDs and never creates the charts.
+    """
+    created_charts = client.create_charts(create_vcc_comparison_charts())
+    chart_ids = [chart_id_from_name(chart.name) for chart in created_charts]
     dashboard = create_vcc_comparison_dashboard(
         dashboard_id=args.dashboard_id,
         title=args.title,
+        chart_ids=chart_ids,
     )
     created = client.create_dashboard(dashboard, dashboard_id=args.dashboard_id)
     sys.stdout.write(
-        f"Created VCC preset dashboard: {created.name} ({len(created.charts)} charts)\n"
+        f"Created VCC preset dashboard: {created.name} ({len(created.chart_ids)} charts)\n"
     )
     return 0
 
@@ -148,6 +157,7 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
     if args.description:
         builder.set_description(args.description)
 
+    charts = []
     if args.xids:
         for xid_str in args.xids.split(","):
             xid_str = xid_str.strip()
@@ -159,8 +169,13 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
                 raise ValueError(f"--xids must be a comma-separated list of integers: {xid_str}")
             # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
             # with a clear message, rather than the dashboard silently losing a chart.
-            chart = create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
-            builder.add_chart(chart)
+            charts.append(
+                create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
+            )
+
+    # Charts must exist before the dashboard can reference them by ID.
+    for created_chart in client.create_charts(charts):
+        builder.add_chart_id(chart_id_from_name(created_chart.name))
 
     created = client.create_dashboard(builder.build(), dashboard_id=dash_id or None)
     sys.stdout.write(f"Created dashboard: {created.name} (title: {created.title})\n")
@@ -238,7 +253,7 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
             f"Dashboard: {dash.name}\n"
             f"Title:       {dash.title}\n"
             f"Description: {dash.description}\n"
-            f"Charts:      {len(dash.charts)}\n"
+            f"Charts:      {len(dash.chart_ids)}\n"
         )
         return 0
 

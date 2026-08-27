@@ -6,7 +6,8 @@ This example demonstrates how to use the **`xdash`** Python SDK to programmatica
 
 - **`create_dashboard.py`**: Python script showing how to:
   - Build custom 4-plot experiment charts (`val/loss` and `train/accuracy` KPI & scatter plots).
-  - Assemble a multi-chart dashboard using `DashboardBuilder`.
+  - Create those charts first, then assemble a dashboard that references them by ID using
+    `DashboardBuilder` — `CreateDashboard` stores chart IDs and never creates the charts itself.
   - Connect to the XMC Dashboard Service via `DashboardClient`.
   - Inspect evaluated chart metrics data from the DataEngine.
 - **`install_venv.sh`**: Shell script that compiles the required Python protobuf modules via Bazel, creates a local Python virtual environment (`.venv`), installs runtime dependencies (`grpcio`, `protobuf`), and installs `xdash` in editable mode.

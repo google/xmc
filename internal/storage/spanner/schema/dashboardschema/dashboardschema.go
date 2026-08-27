@@ -241,12 +241,15 @@ var (
 		NameClause: safesql.New("ChartPlots cp"),
 		Cost:       10,
 		Fields: map[querytools.TableField]querytools.Member{
+			// Plots are fetched for a whole page of charts at once, so the chart_id disjunction is
+			// collapsed into a single IN UNNEST clause instead of one OR term per chart.
 			ChartIDTableField: {
-				Name:         ChartIDTableField,
-				QueryLiteral: safesql.New("cp.ChartId"),
-				Type:         filtervisitor.String,
-				Selectable:   true,
-				Indexed:      true,
+				Name:                   ChartIDTableField,
+				QueryLiteral:           safesql.New("cp.ChartId"),
+				Type:                   filtervisitor.String,
+				Selectable:             true,
+				Indexed:                true,
+				DisjunctionOptimizable: true,
 			},
 			PlotIDTableField: {
 				Name:         PlotIDTableField,
@@ -429,7 +432,7 @@ var (
 	ChartTables = []querytools.TableView{chartsTableView, dashboardChartsJoinedTableView}
 
 	// DashboardChartsTables is the list of TableViews for DashboardCharts queries.
-	DashboardChartsTables = []querytools.TableView{dashboardChartsJoinedTableView}
+	DashboardChartsTables = []querytools.TableView{dashboardChartsTableView}
 
 	// ChartPlotsTables is the list of TableViews for ChartPlots queries.
 	ChartPlotsTables = []querytools.TableView{chartPlotsTableView}

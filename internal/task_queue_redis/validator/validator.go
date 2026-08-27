@@ -311,7 +311,7 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 
 	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return stats, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, errors.Join(validationErrors...)
 	}
 	return stats, nil
 }
@@ -426,7 +426,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 
 	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return stats, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, errors.Join(validationErrors...)
 	}
 
 	return stats, nil
@@ -545,7 +545,7 @@ func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, pu
 
 	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return stats, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, errors.Join(validationErrors...)
 	}
 
 	return stats, nil

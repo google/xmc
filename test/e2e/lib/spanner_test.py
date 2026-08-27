@@ -120,7 +120,8 @@ class TestSpannerManager(unittest.TestCase):
                 "--project=test-proj",
                 "--ddl-file=/workspace/internal/storage/spanner/schema/ess-schema.sql",
                 "--proto-descriptors-file=/workspace/bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
-            ]
+            ],
+            capture_output=True,
         )
         mock_run.assert_any_call(
             [
@@ -133,7 +134,8 @@ class TestSpannerManager(unittest.TestCase):
                 "--project=test-proj",
                 "--ddl-file=/workspace/internal/storage/spanner/schema/xid-schema.sql",
                 "--proto-descriptors-file=/workspace/bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
-            ]
+            ],
+            capture_output=True,
         )
 
         # Check migration version initialization calls (-command=init)
@@ -165,6 +167,23 @@ class TestSpannerManager(unittest.TestCase):
             ],
             cwd="/workspace",
         )
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["gcloud", "spanner", "databases", "create"],
+                stderr="status: RESOURCE_EXHAUSTED, maximum database limit (20) reached",
+            ),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+
+        self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once_with(15)
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):

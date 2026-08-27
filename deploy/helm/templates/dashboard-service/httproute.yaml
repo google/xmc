@@ -34,7 +34,7 @@ spec:
             value: /v1/charts
         - path:
             type: RegularExpression
-            value: ^/v1/experiments/[^/]+/workUnits/[^/]+/charts(/.*)?$
+            value: ^/v1/experiments/[a-zA-Z0-9_-]+/workUnits/[a-zA-Z0-9_-]+/charts.*
       backendRefs:
         - name: dashboard-service
           port: 8080

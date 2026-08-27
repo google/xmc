@@ -18,6 +18,7 @@ package experiment
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"golang/protobuf/v2/proto/proto"
@@ -88,13 +89,7 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 }
 
 func equalResourceSets(a, b []*essmsgpb.ResourceSet) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !proto.Equal(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
+	return slices.EqualFunc(a, b, func(x, y *essmsgpb.ResourceSet) bool {
+		return proto.Equal(x, y)
+	})
 }

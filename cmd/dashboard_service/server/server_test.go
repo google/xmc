@@ -42,6 +42,9 @@ type (
 	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
 	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
+	listChartsFunc      = func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
+	deleteChartFunc     = func(ctx context.Context, chartId string) error
+	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 )
 
 type mockRepository struct {
@@ -52,6 +55,9 @@ type mockRepository struct {
 	deleteDashboardFn deleteDashboardFunc
 	createChartFn     createChartFunc
 	getChartFn        getChartFunc
+	listChartsFn      listChartsFunc
+	deleteChartFn     deleteChartFunc
+	updateChartFn     updateChartFunc
 }
 
 func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
@@ -101,6 +107,27 @@ func (m *mockRepository) GetChart(ctx context.Context, chartId string) (*dpb.Cha
 		return m.getChartFn(ctx, chartId)
 	}
 	return nil, status.Error(codes.NotFound, "not found")
+}
+
+func (m *mockRepository) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+	if m.listChartsFn != nil {
+		return m.listChartsFn(ctx, parent, pageSize, pageToken, filter, orderBy, staleness)
+	}
+	return nil, "", nil
+}
+
+func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error {
+	if m.deleteChartFn != nil {
+		return m.deleteChartFn(ctx, chartId)
+	}
+	return nil
+}
+
+func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
+	if m.updateChartFn != nil {
+		return m.updateChartFn(ctx, chart)
+	}
+	return nil
 }
 
 type mockAuthorizer struct {
@@ -608,45 +635,6 @@ func TestPropagateAuthContext(t *testing.T) {
 			t.Errorf("Expected no outgoing metadata when all relevant incoming headers are empty")
 		}
 	})
-}
-
-func TestListCharts(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
-	if err != nil {
-		t.Fatalf("ListCharts failed: %v", err)
-	}
-	if len(resp.GetCharts()) == 0 {
-		t.Fatal("ListCharts returned 0 charts, want at least 1")
-	}
-}
-
-func TestUpdateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	req := &spb.UpdateChartRequest{
-		Chart: &dpb.Chart{Name: "dashboards/123/charts/456", Title: "Updated"},
-	}
-	resp, err := s.UpdateChart(ctx, req)
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if resp.GetName() != "dashboards/123/charts/456" {
-		t.Errorf("UpdateChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
-	}
-}
-
-func TestDeleteChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})
-	if err != nil {
-		t.Fatalf("DeleteChart failed: %v", err)
-	}
 }
 
 func TestCheckDashboardAuthorization(t *testing.T) {

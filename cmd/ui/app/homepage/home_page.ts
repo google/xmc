@@ -14,8 +14,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-
-import { windowOpen } from '../safevalues_helper';
+import { safeWindow } from 'safevalues/dom';
 
 /**
  * Home page for the XMC UI.
@@ -52,6 +51,6 @@ export class HomePage {
   });
 
   login() {
-    windowOpen(window, '/api/login', '_self');
+    safeWindow.open(window, '/api/login', '_self');
   }
 }

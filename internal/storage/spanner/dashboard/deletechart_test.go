@@ -17,8 +17,6 @@ package dashboard
 import (
 	"context"
 	"testing"
-
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
 func TestDeleteChart_Success(t *testing.T) {
@@ -43,22 +41,23 @@ func TestDeleteChart_WithDashboardLink(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("test-delete-linked-chart", 100, 1)
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	chart := blankChartProto(chartID, 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-delete-parent-dash")
-	dash.Charts = []*dpb.Chart{{Name: chart.GetName()}}
+	dash.ChartIds = []string{chartID}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
-	if err := repo.DeleteChart(ctx, "test-delete-linked-chart"); err != nil {
+	if err := repo.DeleteChart(ctx, chartID); err != nil {
 		t.Fatalf("DeleteChart failed: %v", err)
 	}
 
-	if _, err := repo.GetChart(ctx, "test-delete-linked-chart"); err == nil {
+	if _, err := repo.GetChart(ctx, chartID); err == nil {
 		t.Errorf("GetChart after DeleteChart succeeded, want error")
 	}
 }

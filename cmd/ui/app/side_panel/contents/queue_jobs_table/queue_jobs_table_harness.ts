@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { MatPaginatorHarness } from '@angular/material/paginator/testing';
 
 /** Harness for interacting with individual rows inside <xmc-queue-jobs-table>. */
 export class QueueJobsTableRowHarness extends ComponentHarness {
@@ -72,8 +73,12 @@ export class QueueJobsTableHarness extends ComponentHarness {
 
   private readonly headerCells = this.locatorForAll('th.mat-mdc-header-cell');
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
+  private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
 
-  // TODO(#186): Add pagination locators and helpers when table pagination is implemented.
+  /** Gets the MatPaginatorHarness for the table if present. */
+  async getPaginator(): Promise<MatPaginatorHarness | null> {
+    return this.paginator();
+  }
 
   /** Gets an array of header cell texts. */
   async getHeaderCellTexts(): Promise<string[]> {

@@ -53,7 +53,7 @@ func New() *Accumulator {
 
 // Add adds count units for the given resType, converting all keys to lowercase.
 func (a *Accumulator) Add(resType string, count float64) {
-	if count <= 0 || resType == "" {
+	if a == nil || count <= 0 || resType == "" {
 		return
 	}
 	if a.totals == nil {
@@ -68,7 +68,7 @@ func (a *Accumulator) Add(resType string, count float64) {
 
 // AccumulateResourceSet extracts and adds CPU, GPU, and TPU resources from a ResourceSet.
 func (a *Accumulator) AccumulateResourceSet(rs *essmsgpb.ResourceSet) {
-	if rs == nil {
+	if a == nil || rs == nil {
 		return
 	}
 	if cpu := rs.GetCpuResources(); cpu != nil {
@@ -117,7 +117,7 @@ func (a *Accumulator) accumulateTPU(tpu *essmsgpb.TpuResources) {
 
 // AccumulateExecutable extracts domain ResourceSets from an Executable via workunit.GetWorkUnitResources and accumulates them.
 func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
-	if exec == nil {
+	if a == nil || exec == nil {
 		return
 	}
 	resourceSets := workunit.GetWorkUnitResources(&essmsgpb.WorkUnit{Executable: exec})
@@ -128,6 +128,9 @@ func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
 
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
 func (a *Accumulator) Totals() map[string]float64 {
+	if a == nil {
+		return make(map[string]float64)
+	}
 	result := make(map[string]float64, len(a.totals))
 	for k, v := range a.totals {
 		result[k] = v
@@ -140,6 +143,9 @@ func (a *Accumulator) Totals() map[string]float64 {
 // converts CPU Cores to int64 Millicores (e.g. 4000) for integer storage requirements.
 // All other resource types (memory, gpu, tpu) retain identical units across both methods.
 func (a *Accumulator) IntTotals() map[string]int64 {
+	if a == nil {
+		return make(map[string]int64)
+	}
 	result := make(map[string]int64, len(a.totals))
 	for k, v := range a.totals {
 		if k == ResourceTypeCPU {
@@ -154,5 +160,8 @@ func (a *Accumulator) IntTotals() map[string]int64 {
 // Order returns the slice of resource type keys in insertion order.
 // Returns a non-nil empty slice []string{} when no keys have been added.
 func (a *Accumulator) Order() []string {
+	if a == nil {
+		return []string{}
+	}
 	return append([]string{}, a.order...)
 }

@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-v2-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -62,7 +62,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
         run: |
           BASE_REF="${PR_BASE_SHA:-origin/main}"
-          python3 tools/resolve_test_scope.py \
+          python3 tools/benchmark/resolve_test_scope.py \
             --base "${BASE_REF}" \
             --head "${GITHUB_SHA}" \
             --event "${EVENT_NAME}" \
@@ -202,11 +202,23 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
         working-directory: cmd/ui
 
+      - name: 'Install Playwright Browsers'
+        run: npx playwright install --with-deps chromium
+        working-directory: cmd/ui
+
+      - name: 'Build Angular Application'
+        run: npm run build
+        working-directory: cmd/ui
+
+      - name: 'Run Playwright Visual Screenshot Tests'
+        run: npm run test:screenshot
+        working-directory: cmd/ui
+
   run-tests:
     name: 'Run Unit Tests'
     needs: [resolve-scope, run-backend-tests, run-ui-tests]
     runs-on: 'arc-runner-set'
-    if: always()
+    if: '!cancelled()'
     steps:
       - name: 'Verify All Unit Tests Passed'
         env:
