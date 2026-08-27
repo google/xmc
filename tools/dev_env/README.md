@@ -106,7 +106,32 @@ python3 tools/dev_env/dev_env.py spanner drop \
 
 ---
 
-### 4. Generic Aliases (`deploy` / `upgrade`)
+### 4. `cluster` (Local KinD Cluster Management)
+Manages the lifecycle of the local Kubernetes-in-Docker (KinD) cluster, verifies pre-flight dependencies, configures port mappings, and injects host authentication credentials and TLS certificates.
+
+```bash
+# Verify prerequisites and create the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster create --cluster-name xmc-local
+
+# Tear down the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
+```
+
+#### Actions
+- `create`:
+  1. Validates host prerequisites (`docker`, `kind`, `kubectl`, `helm`, `openssl`, `gcloud`, `bazel`).
+  2. Provisions a KinD cluster configured with extra port mappings:
+     - `8080` (Local HTTP Gateway Proxy)
+     - `5556` (Dex OIDC Identity Provider)
+  3. Injects Kubernetes secrets from the host environment:
+     - `gcp-sa-key`: Extracted from active `gcloud auth application-default` ADC credentials.
+     - `backend-oauth-secrets`: Shared OIDC client credentials for Dex authentication.
+     - `dex-tls-secret`: Self-signed SAN TLS certificate for secure local token issuance.
+- `delete`: Safely deletes the local KinD cluster and its underlying containers.
+
+---
+
+### 5. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash

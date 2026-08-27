@@ -21,6 +21,7 @@ local XMC KinD clusters.
 """
 
 import getpass
+import logging
 import os
 import shutil
 import tempfile
@@ -28,6 +29,8 @@ from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
+
+_LOGGER = logging.getLogger("xmc.dev_env.kind")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -52,6 +55,7 @@ def check_preflight_tools(required_tools: list[str] | None = None) -> None:
             "Please ensure Docker, KinD, kubectl, Helm, OpenSSL, gcloud, and Bazel "
             "are installed and available in your PATH."
         )
+    _LOGGER.debug("Pre-flight check passed: %s", tools)
     log_success("Pre-flight check passed: all required developer tools are installed.")
 
 
@@ -97,7 +101,11 @@ class KindManager:
         if res.returncode != 0:
             return False
         clusters = [c.strip() for c in res.stdout.splitlines() if c.strip()]
-        return target_name in clusters
+        exists = target_name in clusters
+        _LOGGER.debug(
+            "Checked KinD cluster '%s' existence: %s (all: %s)", target_name, exists, clusters
+        )
+        return exists
 
     def _resolve_manifests_dir(self) -> Path:
         """Locates the test/e2e manifests directory containing KinD configs."""
@@ -106,8 +114,11 @@ class KindManager:
             self.repo_root / "deploy" / "local" / "manifests",
         ]:
             if c.is_dir():
+                _LOGGER.debug("Resolved manifests dir: %s", c)
                 return c
-        return self.repo_root / "test" / "e2e" / "manifests"
+        res = self.repo_root / "test" / "e2e" / "manifests"
+        _LOGGER.debug("Defaulted manifests dir: %s", res)
+        return res
 
     def create_cluster(self, cluster_name: str | None = None, recreate: bool = False) -> None:
         """Creates the KinD cluster with NodePort port-mappings if not already running."""
@@ -117,6 +128,7 @@ class KindManager:
                 log_info(f"Cluster '{name}' already exists, deleting for recreate...")
                 self.delete_cluster(name)
             else:
+                _LOGGER.debug("KinD cluster '%s' already exists. Reusing cluster context.", name)
                 log_info(f"KinD cluster '{name}' already exists. Reusing cluster.")
                 run_command(["kubectl", "config", "use-context", f"kind-{name}"])
                 return
@@ -139,9 +151,11 @@ class KindManager:
         """Resolves path to valid Google Application Default Credentials JSON file."""
         adc_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         if adc_path and Path(adc_path).is_file():
+            _LOGGER.debug("Resolved ADC from GOOGLE_APPLICATION_CREDENTIALS: %s", adc_path)
             return Path(adc_path).resolve()
         default_adc = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
         if default_adc.is_file():
+            _LOGGER.debug("Resolved ADC from default gcloud path: %s", default_adc)
             return default_adc.resolve()
         if "SPANNER_EMULATOR_HOST" in os.environ:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -149,6 +163,7 @@ class KindManager:
             dummy_path = self.temp_dir / "dummy-credentials.json"
             if not dummy_path.exists():
                 dummy_path.write_text('{"type": "service_account", "project_id": "dummy"}')
+            _LOGGER.debug("Resolved dummy ADC for emulator: %s", dummy_path)
             return dummy_path
         raise FileNotFoundError(
             "GCP Application Default Credentials (ADC) file not found. "
