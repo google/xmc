@@ -154,8 +154,8 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.project_id, "my-proj")
         self.assertEqual(cfg.environment, "dev")
         self.assertEqual(cfg.spanner_instance, "xmc-dev")
-        self.assertEqual(cfg.ess_database, "dev-dev-local-ess")
-        self.assertEqual(cfg.xid_database, "dev-dev-local-xid")
+        self.assertEqual(cfg.ess_database, "ess-dev")
+        self.assertEqual(cfg.xid_database, "xid-dev")
         self.assertEqual(cfg.cluster_name, "xmc-dev")
         self.assertTrue(cfg.auto_migrate)
         self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
@@ -222,9 +222,9 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
         """Verifies dynamic naming derives from environment string."""
         cfg = config.LocalDevConfig(project_id="test-proj", environment="staging")
         self.assertEqual(cfg.spanner_instance, "xmc-staging")
-        self.assertEqual(cfg.ess_database, "dev-staging-local-ess")
-        self.assertEqual(cfg.xid_database, "dev-staging-local-xid")
-        self.assertEqual(cfg.cluster_name, "xmc-dev")
+        self.assertEqual(cfg.ess_database, "ess-staging")
+        self.assertEqual(cfg.xid_database, "xid-staging")
+        self.assertEqual(cfg.cluster_name, "xmc-staging")
         self.assertTrue(cfg.auto_migrate)
 
     def test_enabled_services_empty_list_preserved(self) -> None:

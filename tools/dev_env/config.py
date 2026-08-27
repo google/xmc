@@ -51,7 +51,7 @@ class LocalDevConfig:
     spanner_instance: str = ""
     ess_database: str = ""
     xid_database: str = ""
-    cluster_name: str = "xmc-dev"
+    cluster_name: str = ""
     auto_migrate: bool = True
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
@@ -67,9 +67,11 @@ class LocalDevConfig:
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
-            self.ess_database = f"dev-{self.environment}-local-ess"
+            self.ess_database = f"ess-{self.environment}"
         if not self.xid_database:
-            self.xid_database = f"dev-{self.environment}-local-xid"
+            self.xid_database = f"xid-{self.environment}"
+        if not self.cluster_name:
+            self.cluster_name = f"xmc-{self.environment}"
 
 
 def _parse_bool(val: Any) -> bool:
@@ -264,7 +266,7 @@ def load_config(
         getattr(args, "cluster_name", None) if args else None,
         os.environ.get("CLUSTER_NAME"),
         yaml_vars.get("cluster_name"),
-        default="xmc-dev",
+        default="",
     )
 
     auto_migrate = _resolve_bool_flag(
