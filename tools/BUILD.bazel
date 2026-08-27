@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,399 +12,315 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
+package(default_visibility = ["//visibility:public"])
+
 exports_files([
-    "build_oci.py",
-    "requirements.txt",
-    "setup_venv.py",
+    "BUILD.bazel",
+    "README.md",
 ])
 
-py_library(
+# Aliases to subpackages for backwards compatibility
+
+# Common
+alias(
     name = "tool_utils",
-    srcs = ["tool_utils.py"],
-    data = [
-        "requirements.txt",
-        "setup_venv.py",
-    ],
-    imports = ["."],
-    visibility = ["//visibility:public"],
+    actual = "//tools/common:tool_utils",
 )
 
-py_library(
-    name = "build_oci_lib",
-    srcs = ["build_oci.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "build_oci_test",
-    srcs = ["build_oci_test.py"],
-    imports = ["."],
-    deps = [
-        ":build_oci_lib",
-        ":tool_utils",
-    ],
-)
-
-py_test(
+alias(
     name = "tool_utils_test",
-    srcs = ["tool_utils_test.py"],
-    imports = ["."],
-    deps = [
-        ":tool_utils",
-    ],
+    actual = "//tools/common:tool_utils_test",
 )
 
-py_library(
-    name = "github_utils_lib",
-    srcs = ["github_utils.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
+alias(
+    name = "build_oci_lib",
+    actual = "//tools/common:build_oci_lib",
 )
 
-py_test(
-    name = "github_utils_test",
-    srcs = ["github_utils_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-    ],
+alias(
+    name = "build_oci",
+    actual = "//tools/common:build_oci",
 )
 
-py_library(
-    name = "fetch_pr_comment_lib",
-    srcs = ["fetch_pr_comment.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+alias(
+    name = "build_oci_test",
+    actual = "//tools/common:build_oci_test",
 )
 
-py_test(
-    name = "fetch_pr_comment_test",
-    srcs = ["fetch_pr_comment_test.py"],
-    imports = ["."],
-    deps = [
-        ":fetch_pr_comment_lib",
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "reply_pr_comment_lib",
-    srcs = ["reply_pr_comment.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "reply_pr_comment_test",
-    srcs = ["reply_pr_comment_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-        ":reply_pr_comment_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "extract_telemetry_lib",
-    srcs = ["extract_telemetry.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "extract_telemetry_test",
-    srcs = ["extract_telemetry_test.py"],
-    imports = ["."],
-    deps = [
-        ":extract_telemetry_lib",
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "deploy_dev_env_lib",
-    srcs = ["deploy_dev_env.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "deploy_dev_env_test",
-    srcs = ["deploy_dev_env_test.py"],
-    imports = ["."],
-    deps = [
-        ":deploy_dev_env_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "upgrade_dev_env_lib",
-    srcs = ["upgrade_dev_env.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "upgrade_dev_env_test",
-    srcs = ["upgrade_dev_env_test.py"],
-    imports = ["."],
-    deps = [
-        ":tool_utils",
-        ":upgrade_dev_env_lib",
-    ],
-)
-
-py_library(
+alias(
     name = "setup_venv_lib",
-    srcs = ["setup_venv.py"],
-    data = ["requirements.txt"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
+    actual = "//tools/common:setup_venv_lib",
 )
 
-py_test(
+alias(
+    name = "setup_venv",
+    actual = "//tools/common:setup_venv",
+)
+
+alias(
     name = "setup_venv_test",
-    srcs = ["setup_venv_test.py"],
-    imports = ["."],
-    deps = [
-        ":setup_venv_lib",
-    ],
+    actual = "//tools/common:setup_venv_test",
 )
 
-py_library(
-    name = "update_pr_description_lib",
-    srcs = ["update_pr_description.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+alias(
+    name = "workspace_status",
+    actual = "//tools/common:workspace_status",
 )
 
-py_library(
-    name = "resolve_test_scope_lib",
-    srcs = ["resolve_test_scope.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
+# Dev Env
+alias(
+    name = "deploy_dev_env_lib",
+    actual = "//tools/dev_env:deploy_dev_env_lib",
 )
 
-py_test(
-    name = "resolve_test_scope_test",
-    srcs = ["resolve_test_scope_test.py"],
-    imports = ["."],
-    deps = [
-        ":resolve_test_scope_lib",
-    ],
+alias(
+    name = "deploy_dev_env",
+    actual = "//tools/dev_env:deploy_dev_env",
 )
 
-py_library(
+alias(
+    name = "deploy_dev_env_test",
+    actual = "//tools/dev_env:deploy_dev_env_test",
+)
+
+alias(
+    name = "upgrade_dev_env_lib",
+    actual = "//tools/dev_env:upgrade_dev_env_lib",
+)
+
+alias(
+    name = "upgrade_dev_env",
+    actual = "//tools/dev_env:upgrade_dev_env",
+)
+
+alias(
+    name = "upgrade_dev_env_test",
+    actual = "//tools/dev_env:upgrade_dev_env_test",
+)
+
+# PR Review
+alias(
+    name = "github_utils_lib",
+    actual = "//tools/pr_review:github_utils",
+)
+
+alias(
+    name = "github_utils",
+    actual = "//tools/pr_review:github_utils",
+)
+
+alias(
+    name = "github_utils_test",
+    actual = "//tools/pr_review:github_utils_test",
+)
+
+alias(
+    name = "fetch_pr_comment_lib",
+    actual = "//tools/pr_review:fetch_pr_comment_lib",
+)
+
+alias(
+    name = "fetch_pr_comment",
+    actual = "//tools/pr_review:fetch_pr_comment",
+)
+
+alias(
+    name = "fetch_pr_comment_test",
+    actual = "//tools/pr_review:fetch_pr_comment_test",
+)
+
+alias(
+    name = "reply_pr_comment_lib",
+    actual = "//tools/pr_review:reply_pr_comment_lib",
+)
+
+alias(
+    name = "reply_pr_comment",
+    actual = "//tools/pr_review:reply_pr_comment",
+)
+
+alias(
+    name = "reply_pr_comment_test",
+    actual = "//tools/pr_review:reply_pr_comment_test",
+)
+
+alias(
     name = "generate_review_checklist_lib",
-    srcs = ["generate_review_checklist.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:generate_review_checklist_lib",
 )
 
-py_test(
+alias(
+    name = "generate_review_checklist",
+    actual = "//tools/pr_review:generate_review_checklist",
+)
+
+alias(
     name = "generate_review_checklist_test",
-    srcs = ["generate_review_checklist_test.py"],
-    imports = ["."],
-    deps = [
-        ":generate_review_checklist_lib",
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:generate_review_checklist_test",
 )
 
-py_library(
-    name = "analyze_diff_and_synthesize_lib",
-    srcs = ["analyze_diff_and_synthesize.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "analyze_diff_and_synthesize_test",
-    srcs = ["analyze_diff_and_synthesize_test.py"],
-    imports = ["."],
-    deps = [
-        ":analyze_diff_and_synthesize_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "compare_trajectories_lib",
-    srcs = ["compare_trajectories.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "compare_trajectories_test",
-    srcs = ["compare_trajectories_test.py"],
-    imports = ["."],
-    deps = [
-        ":compare_trajectories_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "teardown_benchmark_lib",
-    srcs = ["teardown_benchmark.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
-)
-
-py_test(
-    name = "teardown_benchmark_test",
-    srcs = ["teardown_benchmark_test.py"],
-    imports = ["."],
-    deps = [
-        ":teardown_benchmark_lib",
-        ":tool_utils",
-    ],
-)
-
-py_library(
+alias(
     name = "review_pr_generate_audit_lib",
-    srcs = ["review_pr_generate_audit.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_generate_audit_lib",
 )
 
-py_test(
+alias(
+    name = "review_pr_generate_audit",
+    actual = "//tools/pr_review:review_pr_generate_audit",
+)
+
+alias(
     name = "review_pr_generate_audit_test",
-    srcs = ["review_pr_generate_audit_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-        ":review_pr_generate_audit_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_generate_audit_test",
 )
 
-py_library(
+alias(
     name = "review_pr_post_inline_comment_lib",
-    srcs = ["review_pr_post_inline_comment.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_post_inline_comment_lib",
 )
 
-py_test(
+alias(
+    name = "review_pr_post_inline_comment",
+    actual = "//tools/pr_review:review_pr_post_inline_comment",
+)
+
+alias(
     name = "review_pr_post_inline_comment_test",
-    srcs = ["review_pr_post_inline_comment_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-        ":review_pr_post_inline_comment_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_post_inline_comment_test",
 )
 
-py_library(
+alias(
     name = "review_pr_verify_posted_lib",
-    srcs = ["review_pr_verify_posted.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":github_utils_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_verify_posted_lib",
 )
 
-py_test(
+alias(
+    name = "review_pr_verify_posted",
+    actual = "//tools/pr_review:review_pr_verify_posted",
+)
+
+alias(
     name = "review_pr_verify_posted_test",
-    srcs = ["review_pr_verify_posted_test.py"],
-    imports = ["."],
-    deps = [
-        ":github_utils_lib",
-        ":review_pr_verify_posted_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/pr_review:review_pr_verify_posted_test",
 )
 
-py_library(
+alias(
+    name = "verify_pr_comment_resolution_lib",
+    actual = "//tools/pr_review:verify_pr_comment_resolution_lib",
+)
+
+alias(
+    name = "verify_pr_comment_resolution",
+    actual = "//tools/pr_review:verify_pr_comment_resolution",
+)
+
+alias(
+    name = "verify_pr_comment_resolution_test",
+    actual = "//tools/pr_review:verify_pr_comment_resolution_test",
+)
+
+alias(
+    name = "update_pr_description_lib",
+    actual = "//tools/pr_review:update_pr_description_lib",
+)
+
+alias(
+    name = "update_pr_description",
+    actual = "//tools/pr_review:update_pr_description",
+)
+
+# Benchmark
+alias(
+    name = "compare_trajectories_lib",
+    actual = "//tools/benchmark:compare_trajectories_lib",
+)
+
+alias(
+    name = "compare_trajectories",
+    actual = "//tools/benchmark:compare_trajectories",
+)
+
+alias(
+    name = "compare_trajectories_test",
+    actual = "//tools/benchmark:compare_trajectories_test",
+)
+
+alias(
+    name = "analyze_diff_and_synthesize_lib",
+    actual = "//tools/benchmark:analyze_diff_and_synthesize_lib",
+)
+
+alias(
+    name = "analyze_diff_and_synthesize",
+    actual = "//tools/benchmark:analyze_diff_and_synthesize",
+)
+
+alias(
+    name = "analyze_diff_and_synthesize_test",
+    actual = "//tools/benchmark:analyze_diff_and_synthesize_test",
+)
+
+alias(
+    name = "extract_telemetry_lib",
+    actual = "//tools/benchmark:extract_telemetry_lib",
+)
+
+alias(
+    name = "extract_telemetry",
+    actual = "//tools/benchmark:extract_telemetry",
+)
+
+alias(
+    name = "extract_telemetry_test",
+    actual = "//tools/benchmark:extract_telemetry_test",
+)
+
+alias(
+    name = "resolve_test_scope_lib",
+    actual = "//tools/benchmark:resolve_test_scope_lib",
+)
+
+alias(
+    name = "resolve_test_scope",
+    actual = "//tools/benchmark:resolve_test_scope",
+)
+
+alias(
+    name = "resolve_test_scope_test",
+    actual = "//tools/benchmark:resolve_test_scope_test",
+)
+
+alias(
+    name = "teardown_benchmark_lib",
+    actual = "//tools/benchmark:teardown_benchmark_lib",
+)
+
+alias(
+    name = "teardown_benchmark",
+    actual = "//tools/benchmark:teardown_benchmark",
+)
+
+alias(
+    name = "teardown_benchmark_test",
+    actual = "//tools/benchmark:teardown_benchmark_test",
+)
+
+alias(
     name = "analyze_ci_performance_lib",
-    srcs = ["analyze_ci_performance.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":tool_utils",
-    ],
+    actual = "//tools/benchmark:analyze_ci_performance_lib",
 )
 
-py_binary(
+alias(
     name = "analyze_ci_performance",
-    srcs = ["analyze_ci_performance.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":analyze_ci_performance_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/benchmark:analyze_ci_performance",
 )
 
-py_test(
+alias(
     name = "analyze_ci_performance_test",
-    srcs = ["analyze_ci_performance_test.py"],
-    imports = ["."],
-    deps = [
-        ":analyze_ci_performance_lib",
-        ":tool_utils",
-    ],
+    actual = "//tools/benchmark:analyze_ci_performance_test",
 )
 
 py_library(
