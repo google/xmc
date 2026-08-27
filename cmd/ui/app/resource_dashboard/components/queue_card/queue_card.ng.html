@@ -121,7 +121,17 @@
                   [class.green-text]="isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'"
                   [class.amber-text]="!isQueueHealthy() || cohortInfo.state === 'SQUEEZED'"
                 >
-                  {{ cap | maxSchedulableDisplay }}
+                  <span>{{ cap | maxSchedulableDisplay }}</span>
+                  @if (cohortInfo.tooltip) {
+                    <mat-icon
+                      class="cohort-value-tip-icon"
+                      matTooltipClass="rod-term-tooltip"
+                      [class.squeezed-tip-icon]="cohortInfo.state === 'SQUEEZED'"
+                      [class.borrowing-tip-icon]="cohortInfo.state === 'BORROWING'"
+                      [matTooltip]="cohortInfo.tooltip"
+                      >info_outline</mat-icon
+                    >
+                  }
                 </div>
               </div>
               <div class="stat-cell">
@@ -139,30 +149,6 @@
                 </div>
               </div>
             </div>
-
-            @if (cohortInfo.state === 'SQUEEZED') {
-              <div class="cohort-banner squeezed-banner">
-                <mat-icon class="banner-mini-icon">info</mat-icon>
-                <span
-                  ><strong>Shared cohort pool depleted:</strong> Immediate headroom (<strong>{{
-                    cap | maxSchedulableDisplay
-                  }}</strong
-                  >) is lower than nominal free quota (<strong>{{
-                    cap.freeCapacity | number: '1.0-1'
-                  }}</strong
-                  >) due to cohort-wide workload demand.</span
-                >
-              </div>
-            } @else if (cohortInfo.state === 'BORROWING') {
-              <div class="cohort-banner borrowing-banner">
-                <mat-icon class="banner-mini-icon">auto_awesome</mat-icon>
-                <span
-                  >Can borrow up to
-                  <strong>+{{ cohortInfo.delta | number: '1.0-1' }}</strong> beyond nominal quota
-                  from cohort.</span
-                >
-              </div>
-            }
           </div>
         } @empty {
           <div class="no-resource-flavor">No capacity data for selected resource.</div>

@@ -42,6 +42,7 @@ export interface CohortStateInfo {
   badgeClass: string;
   icon: string;
   delta: number;
+  tooltip?: string;
 }
 
 const EPSILON = 1e-5;
@@ -71,6 +72,7 @@ export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): Coh
       badgeClass: 'squeezed',
       icon: 'warning',
       delta: Math.abs(delta),
+      tooltip: `Shared cohort pool depleted: Immediate headroom (${schedulable}) is lower than nominal free quota (${freeNominal}) due to cohort-wide workload demand.`,
     };
   }
 
@@ -81,6 +83,7 @@ export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): Coh
       badgeClass: 'borrowing',
       icon: 'bolt',
       delta,
+      tooltip: `Can borrow up to +${delta} beyond nominal quota from cohort.`,
     };
   }
 

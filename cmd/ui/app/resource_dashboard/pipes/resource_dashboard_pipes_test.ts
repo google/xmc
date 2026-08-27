@@ -102,6 +102,9 @@ describe('Resource Dashboard Pipes', () => {
       expect(info.delta).toBe(30);
       expect(info.badgeClass).toBe('squeezed');
       expect(info.label).toBe('Squeezed by cohort');
+      expect(info.tooltip).toBe(
+        'Shared cohort pool depleted: Immediate headroom (30) is lower than nominal free quota (60) due to cohort-wide workload demand.',
+      );
     });
 
     it('should identify BORROWING state when freeCapacityWithBorrowing > freeCapacity', () => {
@@ -116,6 +119,7 @@ describe('Resource Dashboard Pipes', () => {
       expect(info.delta).toBe(20);
       expect(info.badgeClass).toBe('borrowing');
       expect(info.label).toBe('Borrowing available');
+      expect(info.tooltip).toBe('Can borrow up to +20 beyond nominal quota from cohort.');
     });
 
     it('should identify BALANCED state when freeCapacityWithBorrowing == freeCapacity', () => {
@@ -130,6 +134,7 @@ describe('Resource Dashboard Pipes', () => {
       expect(info.delta).toBe(0);
       expect(info.badgeClass).toBe('balanced');
       expect(info.label).toBe('Balanced');
+      expect(info.tooltip).toBeUndefined();
     });
   });
 
