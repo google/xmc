@@ -16,12 +16,12 @@ package dataengine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
@@ -32,8 +32,9 @@ import (
 // struggling ClickHouse into a dial flood from every dashboard service pod at once.
 const defaultRetryInterval = 15 * time.Second
 
-// errAttemptInProgress reports that another caller already holds the connection attempt.
-var errAttemptInProgress = errors.New("a clickhouse connection attempt is already in progress")
+// dialKey names the shared connection attempt. A Provider dials one destination, so every caller
+// waiting for an engine waits on the same key.
+const dialKey = "clickhouse"
 
 // Connector opens the ClickHouse connection a DataEngine runs its queries through.
 type Connector func(ctx context.Context) (ClickHouseConn, error)
@@ -52,8 +53,12 @@ type Provider struct {
 	// will not make them take.
 	engine atomic.Pointer[DataEngine]
 
-	// mu guards the dial itself along with the fields recording its outcome. It is only ever
-	// taken with TryLock, so holding it never blocks another caller.
+	// group collapses concurrent dials into one shared attempt whose result every caller receives.
+	group singleflight.Group
+
+	// mu guards the bookkeeping the retry interval is computed from. Only the goroutine running
+	// the shared attempt touches these, so the lock is uncontended; it is kept because relying on
+	// singleflight's internal ordering for that guarantee would be an easy thing to break later.
 	mu          sync.Mutex
 	lastErr     error
 	lastAttempt time.Time
@@ -86,53 +91,115 @@ func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 
 // Engine returns the data engine, building it when the Provider does not hold one yet.
 func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
-	// Once an engine exists there is nothing left to build, so the steady state never touches the
-	// dial lock. Reaching for it here would make two concurrent requests fail each other with
-	// errAttemptInProgress long after ClickHouse came up.
+	// Once an engine exists there is nothing left to build, so the steady state never coordinates
+	// at all -- an atomic load and nothing more.
 	if engine := p.engine.Load(); engine != nil {
 		return engine, nil
 	}
 
-	if !p.mu.TryLock() {
-		// Another caller is dialing. Readiness probes and chart requests are both frequent, and
-		// queueing them behind that dial would spread one slow ClickHouse across all of them.
-		return nil, errAttemptInProgress
-	}
-	defer p.mu.Unlock()
+	// Concurrent callers share one dial instead of racing it, and all of them receive its result.
+	// Failing the losers outright would surface as an error on a user's chart request even when
+	// the attempt it was waiting behind went on to succeed a moment later.
+	shared := p.group.DoChan(dialKey, func() (any, error) { return p.build(ctx) })
 
-	// A dial may have finished between the load above and the lock being taken.
-	if engine := p.engine.Load(); engine != nil {
-		return engine, nil
+	select {
+	case <-ctx.Done():
+		// Only this caller gives up; the shared dial runs on for whoever is still waiting.
+		// Readiness probes run on a short deadline and must not be held open by a slow ClickHouse.
+		return nil, ctx.Err()
+	case result := <-shared:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(*DataEngine), nil
 	}
-	if !p.attemptDue() {
-		return nil, p.lastErr
+}
+
+// Ping reports whether the Provider can currently serve chart data.
+//
+// Holding an engine is not the same as ClickHouse being reachable: the engine is built once and
+// cached, so after ClickHouse goes away every subsequent Engine call still succeeds. Readiness has
+// to ask the connection itself, which is what this does. It deliberately does not discard the
+// cached engine on failure -- the driver's connection is a pool that redials on its own, so the
+// engine stays valid and recovers without a rebuild, and tearing it down here would fail the
+// queries already running on it.
+func (p *Provider) Ping(ctx context.Context) error {
+	engine, err := p.Engine(ctx)
+	if err != nil {
+		return err
 	}
-	return p.build(ctx)
+	return engine.Ping(ctx)
 }
 
 // attemptDue reports whether enough time has passed since the last attempt to make another.
+//
+// Callers must hold mu.
 func (p *Provider) attemptDue() bool {
 	return p.lastAttempt.IsZero() || time.Since(p.lastAttempt) >= p.retryInterval
 }
 
 // build dials ClickHouse and caches either the resulting engine or the reason there is none.
+//
+// It runs as the shared singleflight attempt, so at most one instance is ever in flight.
 func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
-	p.lastAttempt = time.Now()
+	// An attempt may have completed between the caller's load and this one starting.
+	if engine := p.engine.Load(); engine != nil {
+		return engine, nil
+	}
 
-	conn, err := p.connect(ctx)
+	if due, lastErr := p.beginAttempt(); !due {
+		return nil, lastErr
+	}
+
+	// Detached from the caller's cancellation and bounded on its own: this attempt is shared, so
+	// letting whichever request happened to start it cancel the dial would abort it for every
+	// other waiter -- and a readiness probe's short deadline alone would then be enough to keep
+	// the engine from ever being built. The bound matches the retry interval so that at most one
+	// attempt is outstanding per interval.
+	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.dialTimeout())
+	defer cancel()
+
+	conn, err := p.connect(dialCtx)
 	if err != nil {
-		p.lastErr = fmt.Errorf("failed to connect to clickhouse: %w", err)
-		return nil, p.lastErr
+		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: %w", err))
 	}
 	engine, err := New(conn)
 	if err != nil {
-		p.lastErr = fmt.Errorf("failed to initialize data engine: %w", err)
-		return nil, p.lastErr
+		return nil, p.recordAttempt(fmt.Errorf("failed to initialize data engine: %w", err))
 	}
 
 	p.engine.Store(engine)
-	p.lastErr = nil
-	return engine, nil
+	return engine, p.recordAttempt(nil)
+}
+
+// beginAttempt reports whether a fresh attempt is due, and if not, why the last one failed.
+func (p *Provider) beginAttempt() (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.attemptDue() {
+		return false, p.lastErr
+	}
+	p.lastAttempt = time.Now()
+	return true, nil
+}
+
+// recordAttempt remembers how an attempt ended and passes its error back for the caller to return.
+func (p *Provider) recordAttempt(err error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastErr = err
+	return err
+}
+
+// dialTimeout bounds a single connection attempt.
+//
+// WithRetryInterval(0) is how tests ask for "retry immediately", which is not a request for a
+// zero-length dial, so the default stands in for it.
+func (p *Provider) dialTimeout() time.Duration {
+	if p.retryInterval <= 0 {
+		return defaultRetryInterval
+	}
+	return p.retryInterval
 }
 
 // FetchChartData serves the request from the current engine, building one first when needed.
