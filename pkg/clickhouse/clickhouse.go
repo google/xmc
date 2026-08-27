@@ -28,6 +28,16 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
+// Configured reports whether the environment points at a ClickHouse instance.
+//
+// GetOptions falls back to a localhost address so that local development needs no configuration,
+// which means a failed connection alone cannot tell "ClickHouse is down" apart from "this
+// deployment does not run the metrics pipeline". The helm chart injects these variables only when
+// metrics are enabled, so their presence is what marks ClickHouse as expected to be reachable.
+func Configured() bool {
+	return os.Getenv("CLICKHOUSE_DSN") != "" || os.Getenv("CLICKHOUSE_HOST") != ""
+}
+
 // GetOptions loads configuration from environment variables and returns clickhouse.Options.
 func GetOptions() (*clickhouse.Options, error) {
 	if dsn := os.Getenv("CLICKHOUSE_DSN"); dsn != "" {

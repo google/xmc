@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -204,15 +205,53 @@ func TestIncomingHeaderMatcher_Propagation(t *testing.T) {
 	}
 }
 
-func TestInitDataEngine_GracefulFallback(t *testing.T) {
-	// In test environments without ClickHouse running, initDataEngine should gracefully
-	// return nil without panicking or failing fatally.
-	ctx := context.Background()
-	_ = initDataEngine(ctx)
+// stubClickHouseConn stands in for a reachable ClickHouse; the engine is never queried through it.
+type stubClickHouseConn struct{}
+
+func (stubClickHouseConn) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+	return nil, errors.New("Query not implemented in stub")
 }
 
-func TestChartDataEngine_NilEngineStaysNilInterface(t *testing.T) {
-	// A nil *DataEngine must not become a non-nil interface holding a nil pointer: the server's
+func (stubClickHouseConn) QueryRow(ctx context.Context, query string, args ...any) driver.Row {
+	return nil
+}
+
+func (stubClickHouseConn) Ping(ctx context.Context) error { return nil }
+
+// connectorReturning builds a connector that always reports the given outcome.
+func connectorReturning(conn dataengine.ClickHouseConn, err error) dataengine.Connector {
+	return func(ctx context.Context) (dataengine.ClickHouseConn, error) {
+		return conn, err
+	}
+}
+
+func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
+	// Most deployments run without the metrics pipeline. They must not acquire a provider, or
+	// readiness would hold every one of their pods out of the service endpoints.
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("CLICKHOUSE_HOST", "")
+
+	if provider := initDataEngine(context.Background()); provider != nil {
+		t.Errorf("initDataEngine() = %v, want nil when ClickHouse is not configured", provider)
+	}
+}
+
+func TestInitDataEngine_SurvivesUnreachableClickHouse(t *testing.T) {
+	// Port 1 refuses the connection immediately, standing in for a ClickHouse that the deployment
+	// configured but that is not up yet. Startup must continue rather than fail fatally.
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+	t.Setenv("CLICKHOUSE_PORT", "1")
+
+	provider := initDataEngine(context.Background())
+
+	if provider == nil {
+		t.Fatal("initDataEngine() = nil, want a provider that keeps retrying")
+	}
+}
+
+func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
+	// A nil *Provider must not become a non-nil interface holding a nil pointer: the server's
 	// "data engine is not configured" guard compares against nil, and would let the request through.
 	// The variable is typed explicitly so that the comparison is the one the server actually makes.
 	var got server.ChartDataEngine = chartDataEngine(nil)
@@ -222,13 +261,40 @@ func TestChartDataEngine_NilEngineStaysNilInterface(t *testing.T) {
 	}
 }
 
-func TestChartDataEngine_WrapsEngine(t *testing.T) {
-	engine := &dataengine.DataEngine{}
+func TestChartDataEngine_WrapsProvider(t *testing.T) {
+	provider := dataengine.NewProvider(connectClickHouse)
 
-	got := chartDataEngine(engine)
+	got := chartDataEngine(provider)
 
-	if got != engine {
-		t.Errorf("chartDataEngine(engine) = %v, want the engine itself", got)
+	if got != provider {
+		t.Errorf("chartDataEngine(provider) = %v, want the provider itself", got)
+	}
+}
+
+func TestNewReadinessCheck_OmittedWithoutDependencies(t *testing.T) {
+	if check := newReadinessCheck(nil, nil); check != nil {
+		t.Error("newReadinessCheck(nil, nil) returned a check, want none")
+	}
+}
+
+func TestNewReadinessCheck_FailsWhileTheDataEngineIsUnavailable(t *testing.T) {
+	provider := dataengine.NewProvider(connectorReturning(nil, errors.New("clickhouse is down")))
+
+	err := newReadinessCheck(nil, provider)(context.Background())
+
+	if err == nil {
+		t.Fatal("readiness check passed with an unavailable data engine, want an error")
+	}
+	if !strings.Contains(err.Error(), "chart data engine is unavailable") {
+		t.Errorf("readiness check reported %q, want it to name the chart data engine", err)
+	}
+}
+
+func TestNewReadinessCheck_PassesOnceTheDataEngineIsBuilt(t *testing.T) {
+	provider := dataengine.NewProvider(connectorReturning(stubClickHouseConn{}, nil))
+
+	if err := newReadinessCheck(nil, provider)(context.Background()); err != nil {
+		t.Errorf("readiness check with a reachable ClickHouse returned %v, want nil", err)
 	}
 }
 

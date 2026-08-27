@@ -19,6 +19,7 @@ compat_go_library(
     srcs = [
         "engine.go",
         "predicate.go",
+        "provider.go",
         "querier.go",
         "series.go",
         "summary_box.go",
@@ -39,6 +40,7 @@ compat_go_test(
         "engine_test.go",
         "mock_test.go",
         "predicate_test.go",
+        "provider_test.go",
         "series_test.go",
         "summary_box_test.go",
     ],

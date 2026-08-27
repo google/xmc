@@ -51,6 +51,13 @@ import (
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
+// readinessTimeout bounds one /readyz evaluation.
+//
+// The kubelet probe allows slightly longer (see the dashboard service deployment), so a dependency
+// that is merely slow is reported by the handler with the reason attached, rather than recorded as
+// an unexplained probe timeout.
+const readinessTimeout = 5 * time.Second
+
 func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, readinessCheck func(context.Context) error) http.Handler {
 	mux := http.NewServeMux()
 
@@ -98,30 +105,66 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
-func initDataEngine(ctx context.Context) *dataengine.DataEngine {
-	clickhouseConn, err := clickhouse.Connect(ctx)
-	if err != nil {
-		logging.Warn(ctx, "ClickHouse connection not available at startup, initializing without data engine", "error", err)
-		return nil
-	}
-	de, err := dataengine.New(clickhouseConn)
-	if err != nil {
-		logging.Warn(ctx, "Failed to initialize DataEngine", "error", err)
-		return nil
-	}
-	return de
+// connectClickHouse adapts the shared ClickHouse client to the connector the provider expects.
+func connectClickHouse(ctx context.Context) (dataengine.ClickHouseConn, error) {
+	return clickhouse.Connect(ctx)
 }
 
-// chartDataEngine converts the concrete engine into the interface the server consumes.
+// initDataEngine prepares the chart data engine, for deployments that configure ClickHouse.
 //
-// The conversion cannot be left implicit: assigning a nil *DataEngine straight into the interface
-// yields a non-nil interface holding a nil pointer, which passes the server's "data engine is not
-// configured" guard and then dereferences nil on the first method call.
-func chartDataEngine(de *dataengine.DataEngine) server.ChartDataEngine {
-	if de == nil {
+// A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
+// pod out of the service endpoints until one of those attempts succeeds.
+func initDataEngine(ctx context.Context) *dataengine.Provider {
+	if !clickhouse.Configured() {
+		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	return de
+	provider := dataengine.NewProvider(connectClickHouse)
+	if _, err := provider.Engine(ctx); err != nil {
+		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
+	}
+	return provider
+}
+
+// chartDataEngine converts the engine provider into the interface the server consumes.
+//
+// The conversion cannot be left implicit: assigning a nil *Provider straight into the interface
+// yields a non-nil interface holding a nil pointer, which passes the server's "data engine is not
+// configured" guard and then dereferences nil on the first method call.
+func chartDataEngine(provider *dataengine.Provider) server.ChartDataEngine {
+	if provider == nil {
+		return nil
+	}
+	return provider
+}
+
+// newReadinessCheck builds the /readyz check over the dependencies this deployment configured.
+//
+// Failing it removes the pod from the service endpoints, so only dependencies the pod cannot
+// usefully serve without belong here. A release that configures ClickHouse expects chart data to
+// work, which makes an unbuildable data engine disqualifying; a release without ClickHouse passes
+// no provider and is unaffected.
+func newReadinessCheck(sc *spanner.Client, provider *dataengine.Provider) func(context.Context) error {
+	if sc == nil && provider == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		checkCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
+		defer cancel()
+
+		if sc != nil {
+			if err := commonhealth.CheckSpanner(checkCtx, sc); err != nil {
+				return err
+			}
+		}
+		if provider == nil {
+			return nil
+		}
+		if _, err := provider.Engine(checkCtx); err != nil {
+			return fmt.Errorf("chart data engine is unavailable: %w", err)
+		}
+		return nil
+	}
 }
 
 func initSpannerClient(ctx context.Context, databaseName string, projectID string) (*spanner.Client, error) {
@@ -183,7 +226,7 @@ func initXidClient(addr string) (xidapipb.XidServiceClient, *grpc.ClientConn, er
 	return xidapipb.NewXidServiceClient(conn), conn, nil
 }
 
-func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener, error) {
+func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.Provider, errChan chan<- error) (*grpc.Server, net.Listener, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to listen on gRPC port: %w", err)
@@ -207,7 +250,7 @@ func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.Dashboa
 	return grpcServer, lis, nil
 }
 
-func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, errChan chan<- error) (*http.Server, error) {
+func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, de *dataengine.Provider, errChan chan<- error) (*http.Server, error) {
 	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -217,16 +260,7 @@ func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oaut
 		return nil, fmt.Errorf("failed to register gateway: %w", err)
 	}
 
-	var readinessCheck func(context.Context) error
-	if sc != nil {
-		readinessCheck = func(ctx context.Context) error {
-			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			defer cancel()
-			return commonhealth.CheckSpanner(checkCtx, sc)
-		}
-	}
-
-	handler := setupHTTPHandler(authenticator, gwmux, readinessCheck)
+	handler := setupHTTPHandler(authenticator, gwmux, newReadinessCheck(sc, de))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	httpServer := &http.Server{
@@ -326,7 +360,7 @@ func run() int {
 	}
 	defer lis.Close()
 
-	httpServer, err := initHTTPServer(ctx, cfg, authenticator, sc, errChan)
+	httpServer, err := initHTTPServer(ctx, cfg, authenticator, sc, de, errChan)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize HTTP server", "error", err)
 		return 1

@@ -177,3 +177,40 @@ func TestGetOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigured(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want bool
+	}{
+		{
+			name: "no clickhouse variables",
+			env:  map[string]string{"CLICKHOUSE_DSN": "", "CLICKHOUSE_HOST": ""},
+			want: false,
+		},
+		{
+			// The host is what the helm chart renders, and only when metrics are enabled.
+			name: "host configured",
+			env:  map[string]string{"CLICKHOUSE_DSN": "", "CLICKHOUSE_HOST": "ch.example.internal"},
+			want: true,
+		},
+		{
+			name: "dsn configured",
+			env:  map[string]string{"CLICKHOUSE_DSN": "clickhouse://ch:9000", "CLICKHOUSE_HOST": ""},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			if got := Configured(); got != tt.want {
+				t.Errorf("Configured() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
