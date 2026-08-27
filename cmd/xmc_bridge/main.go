@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -61,6 +62,29 @@ type Config struct {
 	Kubeconfig string
 }
 
+// ComponentStatus defines the structured representation of .status in the Component CRD.
+type ComponentStatus struct {
+	ObservedGeneration int64                `json:"observedGeneration"`
+	State              string               `json:"state"`
+	Access             *ComponentAccess     `json:"access,omitempty"`
+	Conditions         []ComponentCondition `json:"conditions,omitempty"`
+}
+
+// ComponentAccess defines the access configuration in .status.access.
+type ComponentAccess struct {
+	EnvVars map[string]string `json:"envVars,omitempty"`
+}
+
+// ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
+type ComponentCondition struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	ObservedGeneration int64  `json:"observedGeneration"`
+	Reason             string `json:"reason"`
+	Message            string `json:"message"`
+	LastTransitionTime string `json:"lastTransitionTime"`
+}
+
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
 // variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, KUBECONFIG) if flags are omitted.
@@ -76,19 +100,23 @@ func ParseConfig(args []string) (*Config, error) {
 	}
 	defaultProbeInterval := 5 * time.Second
 	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			defaultProbeInterval = d
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PROBE_INTERVAL %q: %w", val, err)
 		}
+		defaultProbeInterval = d
 	}
 	defaultProbeTimeout := 2 * time.Second
 	if val := os.Getenv("PROBE_TIMEOUT"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			defaultProbeTimeout = d
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PROBE_TIMEOUT %q: %w", val, err)
 		}
+		defaultProbeTimeout = d
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
 
-	fs := flag.NewFlagSet("xmc-bridge", flag.ContinueOnError)
+	fs := flag.NewFlagSet("xmc_bridge", flag.ContinueOnError)
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
@@ -219,41 +247,51 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 }
 
 // syncStatus serializes the ReconcileResult into the .status map of item and persists it
-// via the Kubernetes dynamic client UpdateStatus API.
+// via the Kubernetes dynamic client UpdateStatus API. It uses a deep copy to avoid local
+// object mutation if the API server update fails.
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
-	item.Object["status"] = BuildStatusMap(res)
-	_, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, item, metav1.UpdateOptions{})
-	if err == nil {
-		logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	itemCopy := item.DeepCopy()
+	itemCopy.Object["status"] = BuildStatusMap(res)
+	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
+	if err != nil {
+		return err
 	}
-	return err
+	item.Object = updated.Object
+	logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	return nil
 }
 
 // BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema,
 // including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
 func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
-	statusMap := map[string]any{
-		"observedGeneration": res.ObservedGeneration,
-		"state":              res.State.String(),
+	status := ComponentStatus{
+		ObservedGeneration: res.ObservedGeneration,
+		State:              res.State.String(),
 	}
 	if res.Access != nil && len(res.Access.EnvVars) > 0 {
-		statusMap["access"] = map[string]any{"envVars": res.Access.EnvVars}
+		status.Access = &ComponentAccess{EnvVars: res.Access.EnvVars}
 	}
 	if len(res.Conditions) > 0 {
-		var conds []any
+		status.Conditions = make([]ComponentCondition, 0, len(res.Conditions))
 		for _, c := range res.Conditions {
-			conds = append(conds, map[string]any{
-				"type":               c.Type,
-				"status":             string(c.Status),
-				"observedGeneration": c.ObservedGeneration,
-				"reason":             c.Reason,
-				"message":            c.Message,
-				"lastTransitionTime": c.LastTransitionTime.Format(time.RFC3339),
+			status.Conditions = append(status.Conditions, ComponentCondition{
+				Type:               c.Type,
+				Status:             string(c.Status),
+				ObservedGeneration: c.ObservedGeneration,
+				Reason:             c.Reason,
+				Message:            c.Message,
+				LastTransitionTime: c.LastTransitionTime.Format(time.RFC3339),
 			})
 		}
-		statusMap["conditions"] = conds
 	}
-	return statusMap
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
+	if err != nil {
+		return map[string]any{
+			"observedGeneration": res.ObservedGeneration,
+			"state":              res.State.String(),
+		}
+	}
+	return m
 }
 
 // RunBridge initializes all dependencies (CMS gRPC client, Kubernetes dynamic client,

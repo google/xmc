@@ -217,6 +217,24 @@ func TestBuildStatusMap(t *testing.T) {
 	if statusMap["state"] != "COMPONENT_STATE_ENABLED" {
 		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", statusMap["state"])
 	}
+
+	accessMap, ok := statusMap["access"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected access map in status, got %v", statusMap["access"])
+	}
+	envVars, ok := accessMap["envVars"].(map[string]any)
+	if !ok || envVars["PORT"] != "8080" {
+		t.Errorf("expected envVars[PORT]=8080, got %v", accessMap["envVars"])
+	}
+
+	conds, ok := statusMap["conditions"].([]any)
+	if !ok || len(conds) != 1 {
+		t.Fatalf("expected 1 condition in status, got %v", statusMap["conditions"])
+	}
+	condMap, ok := conds[0].(map[string]any)
+	if !ok || condMap["type"] != bridge.ConditionTypeReady || condMap["status"] != string(bridge.ConditionStatusTrue) {
+		t.Errorf("unexpected condition content: %+v", condMap)
+	}
 }
 
 func TestParseConfig_EnvVars(t *testing.T) {
@@ -245,6 +263,24 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	if cfg.Kubeconfig != "/custom/kubeconfig" {
 		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)
 	}
+}
+
+func TestParseConfig_InvalidEnvDuration(t *testing.T) {
+	t.Run("invalid PROBE_INTERVAL", func(t *testing.T) {
+		t.Setenv("PROBE_INTERVAL", "invalid-duration")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for invalid PROBE_INTERVAL, got nil")
+		}
+	})
+
+	t.Run("invalid PROBE_TIMEOUT", func(t *testing.T) {
+		t.Setenv("PROBE_TIMEOUT", "not-a-duration")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for invalid PROBE_TIMEOUT, got nil")
+		}
+	})
 }
 
 func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {

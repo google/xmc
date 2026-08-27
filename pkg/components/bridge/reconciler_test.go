@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -85,14 +86,6 @@ func (m *mockWM) Delete1PWorkload(ctx context.Context, ns, name string) error {
 		m.active = false
 	}
 	return m.deleteErr
-}
-
-type testStringer struct {
-	val string
-}
-
-func (s testStringer) String() string {
-	return s.val
 }
 
 func TestNewReconciler(t *testing.T) {
@@ -349,8 +342,22 @@ func TestParseHelpers(t *testing.T) {
 		"manifests": []any{"yaml-1", 123, "yaml-2"},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
-	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" || len(spec.GetManifests()) != 2 {
-		t.Errorf("unexpected parsed spec: %+v", spec)
+	wantSpec := &componentspb.ComponentSpec{
+		Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		Version:        "1.2.3",
+		Description:    "desc",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+		WrapperRef: &componentspb.WrapperRef{
+			CrdGroup:        "g",
+			CrdVersion:      "v",
+			CrdKind:         "k",
+			TargetName:      "n",
+			TargetNamespace: "ns",
+		},
+		Manifests: []string{"yaml-1", "yaml-2"},
+	}
+	if dp || !en || !proto.Equal(spec, wantSpec) {
+		t.Errorf("ParseSpecFromUnstructured() = %+v (dp=%v, en=%v), want %+v (dp=false, en=true)", spec, dp, en, wantSpec)
 	}
 
 	rawCamel := map[string]any{
@@ -363,8 +370,15 @@ func TestParseHelpers(t *testing.T) {
 	}
 	specCamel, _, _ := ParseSpecFromUnstructured(rawCamel)
 	wr := specCamel.GetWrapperRef()
-	if wr == nil || wr.GetCrdGroup() != "clickhouse.altinity.com" || wr.GetCrdVersion() != "v1" || wr.GetCrdKind() != "ClickHouseInstallation" || wr.GetTargetName() != "chi-cluster" || wr.GetTargetNamespace() != "clickhouse-ns" {
-		t.Errorf("unexpected parsed camelCase wrapperRef: %+v", wr)
+	wantWrapperRef := &componentspb.WrapperRef{
+		CrdGroup:        "clickhouse.altinity.com",
+		CrdVersion:      "v1",
+		CrdKind:         "ClickHouseInstallation",
+		TargetName:      "chi-cluster",
+		TargetNamespace: "clickhouse-ns",
+	}
+	if !proto.Equal(wr, wantWrapperRef) {
+		t.Errorf("ParseSpecFromUnstructured() wrapperRef = %+v, want %+v", wr, wantWrapperRef)
 	}
 
 	rawDelete := map[string]any{
@@ -393,18 +407,15 @@ func TestParseHelpers(t *testing.T) {
 
 func TestExtractHelpers(t *testing.T) {
 	m := map[string]any{
-		"int64":         int64(42),
-		"int":           int(100),
-		"float64":       float64(200.5),
-		"stringInt":     "300",
-		"stringBad":     "bad",
-		"stringerInt":   testStringer{val: "400"},
-		"stringerFloat": testStringer{val: "500.5"},
-		"stringerBad":   testStringer{val: "not_a_number"},
-		"boolVal":       true,
-		"strVal":        "hello",
-		"emptyWrapper":  "not-a-map",
-		"emptyList":     "not-a-list",
+		"int64":        int64(42),
+		"int":          int(100),
+		"float64":      float64(200.5),
+		"stringInt":    "300",
+		"stringBad":    "bad",
+		"boolVal":      true,
+		"strVal":       "hello",
+		"emptyWrapper": "not-a-map",
+		"emptyList":    "not-a-list",
 	}
 
 	if extractInt(m, "int64") != 42 {
@@ -421,15 +432,6 @@ func TestExtractHelpers(t *testing.T) {
 	}
 	if extractInt(m, "stringBad") != 0 {
 		t.Errorf("extractInt stringBad failed")
-	}
-	if extractInt(m, "stringerInt") != 400 {
-		t.Errorf("extractInt stringerInt failed")
-	}
-	if extractInt(m, "stringerFloat") != 500 {
-		t.Errorf("extractInt stringerFloat failed")
-	}
-	if extractInt(m, "stringerBad") != 0 {
-		t.Errorf("extractInt stringerBad failed")
 	}
 	if extractInt(m, "boolVal") != 0 {
 		t.Errorf("extractInt boolVal failed")

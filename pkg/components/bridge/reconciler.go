@@ -193,12 +193,9 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 // sets state to COMPONENT_STATE_DISABLED, sets conditions to Ready=False, Degraded=False,
 // and updates the observed generation in CMS.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
-			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to delete 1P workload: %w", err)
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		if err := r.deleteDisabledWorkload(ctx, in, res); err != nil {
+			return res, err
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
@@ -211,10 +208,28 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	return res, nil
 }
 
+func (r *Reconciler) deleteDisabledWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+	if r.workloadManager == nil {
+		logging.Warn(ctx, "WorkloadManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
+		return nil
+	}
+	if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
+		return fmt.Errorf("failed to delete 1P workload: %w", err)
+	}
+	return nil
+}
+
 // ensureWorkload provisions or updates 1P child Kubernetes workloads (Deployment/Service)
 // via WorkloadManager.Ensure1PWorkload.
 func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		if r.workloadManager == nil {
+			logging.Warn(ctx, "WorkloadManager is nil; skipping 1P child workload provisioning", "name", in.Name, "namespace", in.Namespace)
+			return nil
+		}
 		if err := r.workloadManager.Ensure1PWorkload(ctx, in.Namespace, in.Name, in.Spec); err != nil {
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadProvisionFailed", err.Error())
@@ -226,8 +241,9 @@ func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentIn
 	return nil
 }
 
-// evaluateHealth probes the runtime health of the component, sets the Ready and Degraded
+// evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and Degraded
 // conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
+// Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, healthMsg := true, "Component is active"
 	if r.prober != nil {
@@ -248,7 +264,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
-	logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "healthy", isHealthy, "state", res.State.String(), "statusMsg", healthMsg)
+	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
 	return res, nil
 }
 
@@ -318,7 +334,8 @@ func extractStr(m map[string]any, k string) string {
 	return ""
 }
 
-// extractInt extracts an int64 integer key from map m, handling int64, int, float64, and string representations.
+// extractInt extracts an int64 integer key from map m. Handles standard Go integers (int64, int),
+// float64 (produced by encoding/json unmarshaling in unstructured maps), and numeric strings.
 func extractInt(m map[string]any, k string) int64 {
 	v, ok := m[k]
 	if !ok {
@@ -334,14 +351,6 @@ func extractInt(m map[string]any, k string) int64 {
 	case string:
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
 			return i
-		}
-	}
-	if s, ok := v.(interface{ String() string }); ok {
-		if i, err := strconv.ParseInt(s.String(), 10, 64); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(s.String(), 64); err == nil {
-			return int64(f)
 		}
 	}
 	return 0
