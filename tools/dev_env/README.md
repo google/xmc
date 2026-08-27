@@ -86,6 +86,12 @@ python3 tools/dev_env/dev_env.py spanner create \
   --ess-db ess-local \
   --xid-db xid-local
 
+# Run SDL schema migrations against existing Spanner databases
+python3 tools/dev_env/dev_env.py spanner migrate \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+
 # Drop/delete Spanner databases during local environment cleanup
 python3 tools/dev_env/dev_env.py spanner drop \
   --spanner-instance xmc-local \
@@ -95,6 +101,7 @@ python3 tools/dev_env/dev_env.py spanner drop \
 
 #### Actions
 - `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_messages_descriptor`, `//api/protos/xid:xid_messages_descriptor`), and creates databases with single-batch DDL in parallel.
+- `migrate`: Executes idempotent SDL database schema migrations against existing Cloud Spanner databases. Automatically skips schema migrations if a database was newly created (as initial DDL already contains full schema).
 - `drop`: Drops the specified databases from the Cloud Spanner instance.
 
 ---
