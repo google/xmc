@@ -382,7 +382,7 @@ class DevEnvCliTest(unittest.TestCase):
         args = self.parser.parse_args(["spanner", "migrate", "--project-id", "my-p"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
-        mock_migrate.assert_called_once()
+        mock_migrate.assert_called_once_with(force=True)
 
     @patch("tools.dev_env.spanner_manager.SpannerManager.drop_databases")
     @patch("tools.dev_env.config.load_config")

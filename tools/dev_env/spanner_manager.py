@@ -22,7 +22,7 @@ import re
 import time
 from pathlib import Path
 
-from tools.common.tool_utils import log_error, log_info, log_success, run_command
+from tools.common.tool_utils import log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.spanner")
@@ -193,6 +193,11 @@ class SpannerManager:
         migrations_dir: str = "",
     ) -> tuple[int, bool]:
         """Inspects current database schema migration version."""
+        if not database:
+            raise ValueError("database must be specified")
+        if not migrations_dir:
+            raise ValueError("migrations_dir must be specified")
+
         target_instance = instance or self.config.spanner_instance
         res = run_command(
             [
@@ -211,6 +216,11 @@ class SpannerManager:
             check=False,
         )
         output = (res.stdout or "") + (res.stderr or "")
+        if res.returncode != 0:
+            raise ValueError(
+                f"Failed to get migration version for database '{database}': {output.strip()}"
+            )
+
         ver_match = re.search(r"Version:\s*([0-9]+)", output, re.IGNORECASE)
         current_version = int(ver_match.group(1)) if ver_match else 0
         dirty_match = re.search(r"Dirty:\s*(true|false)", output, re.IGNORECASE)
@@ -242,10 +252,9 @@ class SpannerManager:
                 return
             except Exception as e:
                 if attempt == max_attempts:
-                    log_error(
+                    raise ValueError(
                         f"Migration failed for '{db_name}' after {max_attempts} attempts: {e}"
-                    )
-                    raise
+                    ) from e
                 log_info(f"Migration attempt {attempt} failed, retrying in 5s...")
                 time.sleep(5)
 
@@ -255,6 +264,7 @@ class SpannerManager:
         database: str | None = None,
         migrations_dir: str | None = None,
         newly_created: set[str] | None = None,
+        force: bool = False,
     ) -> None:
         """Executes database schema migrations for configured databases."""
         if database:
@@ -277,7 +287,7 @@ class SpannerManager:
                 if getattr(self.config, f"{key}_database", None)
             ]
 
-        if not self.config.auto_migrate:
+        if not force and not self.config.auto_migrate:
             _LOGGER.debug("Skipping schema migrations (auto_migrate is disabled).")
             return
 

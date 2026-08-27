@@ -215,6 +215,28 @@ class SpannerManagerTest(unittest.TestCase):
         self.assertEqual(ver, 0)
         self.assertFalse(dirty)
 
+    def test_get_migration_version_missing_database_raises(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            self.manager.get_migration_version(database="", migrations_dir="ess")
+        self.assertIn("database must be specified", str(cm.exception))
+
+    def test_get_migration_version_missing_migrations_dir_raises(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            self.manager.get_migration_version(database="test-db", migrations_dir="")
+        self.assertIn("migrations_dir must be specified", str(cm.exception))
+
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_get_migration_version_command_failure_raises(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="Spanner connection refused",
+        )
+        with self.assertRaises(ValueError) as cm:
+            self.manager.get_migration_version(database="test-db", migrations_dir="ess")
+        self.assertIn("Failed to get migration version", str(cm.exception))
+
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_apply_migrations_auto_migrate_true(self, mock_run: mock.MagicMock) -> None:
         self.manager.apply_migrations()
@@ -258,6 +280,14 @@ class SpannerManagerTest(unittest.TestCase):
         self.manager.apply_migrations()
         mock_run.assert_not_called()
 
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_auto_migrate_false_with_force_true(
+        self, mock_run: mock.MagicMock
+    ) -> None:
+        self.config.auto_migrate = False
+        self.manager.apply_migrations(force=True)
+        self.assertEqual(mock_run.call_count, 2)
+
     @mock.patch("tools.dev_env.spanner_manager.time.sleep")
     @mock.patch("tools.dev_env.spanner_manager.run_command")
     def test_apply_migrations_retries_on_failure(
@@ -271,6 +301,18 @@ class SpannerManagerTest(unittest.TestCase):
         self.manager.apply_migrations()
         self.assertEqual(mock_run.call_count, 3)
         mock_sleep.assert_called_once_with(5)
+
+    @mock.patch("tools.dev_env.spanner_manager.time.sleep")
+    @mock.patch("tools.dev_env.spanner_manager.run_command")
+    def test_apply_migrations_retries_exhausted_raises_value_error(
+        self, mock_run: mock.MagicMock, mock_sleep: mock.MagicMock
+    ) -> None:
+        mock_run.side_effect = RuntimeError("persistent failure")
+        with self.assertRaises(ValueError) as cm:
+            self.manager.apply_migrations()
+        self.assertIn("Migration failed for 'test-ess-db' after 3 attempts", str(cm.exception))
+        self.assertEqual(mock_run.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
 
     def test_setup_orchestration(self) -> None:
         with (

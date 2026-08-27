@@ -85,7 +85,7 @@ def handle_spanner(args: argparse.Namespace) -> None:
     if action in ("create", "ensure"):
         mgr.ensure_databases_exist()
     elif action == "migrate":
-        mgr.apply_migrations()
+        mgr.apply_migrations(force=True)
     elif action == "drop":
         mgr.drop_databases()
     else:
