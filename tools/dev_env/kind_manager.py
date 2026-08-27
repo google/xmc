@@ -20,11 +20,11 @@ injection, self-signed TLS certificate generation, and lifecycle management for
 local XMC KinD clusters.
 """
 
-import getpass
 import logging
 import os
+import re
 import shutil
-import tempfile
+import subprocess
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
@@ -69,11 +69,16 @@ class KindManager:
         temp_dir: Path | None = None,
     ) -> None:
         """Initializes KindManager with configuration and directory paths."""
+        cluster_name = config.cluster_name
+        if isinstance(cluster_name, str) and not re.match(r"^[a-zA-Z0-9_-]+$", cluster_name):
+            raise ValueError(
+                f"Invalid cluster name '{cluster_name}'. "
+                "Only alphanumeric characters, hyphens, and underscores are allowed."
+            )
         self.config = config
         self.repo_root = repo_root or _REPO_ROOT
-        self.temp_dir = (
-            temp_dir
-            or Path(tempfile.gettempdir()) / f"xmc_dev_{getpass.getuser()}_{config.cluster_name}"
+        self.temp_dir = temp_dir or Path.home() / ".xmc" / "dev" / (
+            cluster_name if isinstance(cluster_name, str) else "default"
         )
 
     @property
@@ -141,10 +146,13 @@ class KindManager:
         run_command(["kind", "create", "cluster", "--name", name, f"--config={kind_config}"])
         run_command(["kubectl", "config", "use-context", f"kind-{name}"])
         log_info("Ensuring Kubernetes namespace 'xmc' exists...")
-        run_command(
-            ["kubectl", "--context", f"kind-{name}", "create", "namespace", "xmc"],
+        res = run_command(
+            ["kubectl", "--context", f"kind-{name}", "get", "namespace", "xmc"],
             check=False,
+            capture_output=True,
         )
+        if res.returncode != 0:
+            run_command(["kubectl", "--context", f"kind-{name}", "create", "namespace", "xmc"])
         log_success(f"KinD cluster '{name}' is ready.")
 
     def _resolve_adc_file(self) -> Path:
@@ -217,6 +225,8 @@ class KindManager:
                     "rsa_keygen_bits:2048",
                 ]
             )
+            if tls_key.exists():
+                tls_key.chmod(0o600)
             run_command(
                 [
                     "openssl",
@@ -292,7 +302,12 @@ class KindManager:
             if literals:
                 for lit in literals:
                     create_cmd.append(f"--from-literal={lit}")
-            run_command(create_cmd, check=True)
+            try:
+                run_command(create_cmd, check=True, log_cmd=False, log_on_error=False)
+            except subprocess.CalledProcessError:
+                raise RuntimeError(
+                    f"Failed to create secret '{name}' in namespace '{ns}'"
+                ) from None
 
     def delete_cluster(self, cluster_name: str | None = None) -> None:
         """Deletes the local KinD development cluster."""

@@ -21,6 +21,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.dev_env import dev_env
+from tools.dev_env.config import LocalDevConfig
 
 
 class DevEnvCliTest(unittest.TestCase):
@@ -419,6 +420,10 @@ class DevEnvCliTest(unittest.TestCase):
         mock_ensure: MagicMock,
     ) -> None:
         """Verifies 'dev_env cluster create' executes preflight, cluster creation, and secrets."""
+        mock_load_config.return_value = LocalDevConfig(
+            project_id="test-p",
+            cluster_name="my-kind",
+        )
         args = self.parser.parse_args(
             ["cluster", "create", "--cluster-name", "my-kind", "--recreate"]
         )
@@ -436,6 +441,10 @@ class DevEnvCliTest(unittest.TestCase):
         mock_delete: MagicMock,
     ) -> None:
         """Verifies 'dev_env cluster delete' dispatches to KindManager.delete_cluster."""
+        mock_load_config.return_value = LocalDevConfig(
+            project_id="test-p",
+            cluster_name="my-kind",
+        )
         args = self.parser.parse_args(["cluster", "delete", "--cluster-name", "my-kind"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
@@ -449,6 +458,10 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config: MagicMock,
     ) -> None:
         """Verifies unknown cluster action exits with error code 1."""
+        mock_load_config.return_value = LocalDevConfig(
+            project_id="test-p",
+            cluster_name="my-kind",
+        )
         args = self.parser.parse_args(["cluster"])
         args.cluster_action = "invalid"
         with self.assertRaises(SystemExit) as cm:

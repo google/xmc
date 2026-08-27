@@ -203,10 +203,49 @@ class KindManagerTest(unittest.TestCase):
         self.assertIn("--from-file=key.json=/path/to/key.json", create_cmd)
         self.assertIn("--from-literal=client-secret=my-secret", create_cmd)
 
-    @mock.patch("getpass.getuser", return_value="alice")
-    def test_default_temp_dir_contains_username(self, mock_user: mock.MagicMock) -> None:
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_apply_secret_generic_failure_raises_runtime_error(
+        self, mock_run: mock.MagicMock
+    ) -> None:
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0),
+            subprocess.CalledProcessError(returncode=1, cmd=["kubectl"]),
+        ]
+        with self.assertRaises(RuntimeError) as ctx:
+            self.manager._apply_secret_generic("test-secret", ["xmc"], literals=["a=b"])
+        self.assertIn(
+            "Failed to create secret 'test-secret' in namespace 'xmc'", str(ctx.exception)
+        )
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_ensure_secrets_restricts_tls_key_permissions(self, mock_run: mock.MagicMock) -> None:
+        adc_file = Path(self.temp_dir.name) / "adc.json"
+        adc_file.write_text("{}")
+        tls_key = Path(self.temp_dir.name) / "dev-validation.key"
+
+        def create_key_side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            if "genpkey" in cmd:
+                tls_key.write_text("dummy-key")
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        mock_run.side_effect = create_key_side_effect
+        with mock.patch.object(self.manager, "_resolve_adc_file", return_value=adc_file):
+            self.manager.ensure_secrets()
+
+        self.assertEqual(oct(tls_key.stat().st_mode & 0o777), oct(0o600))
+
+    def test_default_temp_dir_under_home(self) -> None:
         km = KindManager(config=self.config)
-        self.assertIn("xmc_dev_alice_test-kind", str(km.temp_dir))
+        self.assertEqual(km.temp_dir, Path.home() / ".xmc" / "dev" / "test-kind")
+
+    def test_invalid_cluster_name_raises_error(self) -> None:
+        invalid_config = LocalDevConfig(
+            project_id="test-project",
+            cluster_name="../invalid-name",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            KindManager(config=invalid_config)
+        self.assertIn("Invalid cluster name", str(ctx.exception))
 
     def test_resolve_adc_file_from_env(self) -> None:
         adc_file = Path(self.temp_dir.name) / "custom_adc.json"
