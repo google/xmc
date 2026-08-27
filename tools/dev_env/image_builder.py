@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
+
+_LOGGER = logging.getLogger("xmc.dev_env.image_builder")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -144,10 +147,12 @@ class ImageBuilder:
         if not raw_bazel_bin:
             raise RuntimeError("Failed to resolve bazel-bin path from Bazel.")
         bazel_bin = Path(raw_bazel_bin)
+        _LOGGER.debug("Resolved bazel-bin directory: %s", bazel_bin)
 
         log_info("Loading built image tarballs into Docker daemon...")
         for pkg, target, _ in specs:
             tar_path = bazel_bin / pkg / f"{target}.tar"
+            _LOGGER.debug("Loading image tarball into Docker: %s", tar_path)
             run_command(["docker", "load", "-i", str(tar_path)])
 
         log_success(f"Successfully built and loaded {len(image_tags)} container images.")
@@ -160,7 +165,15 @@ class ImageBuilder:
             image_tags: List of Docker image tags to load into KinD.
         """
         if not image_tags:
+            _LOGGER.debug("No container image tags provided to load into KinD.")
             return
+
+        _LOGGER.debug(
+            "Loading %d images into KinD cluster '%s': %s",
+            len(image_tags),
+            self.config.cluster_name,
+            image_tags,
+        )
 
         log_info(
             f"=== [KinD] Loading {len(image_tags)} container images into cluster "

@@ -159,7 +159,29 @@ python3 tools/dev_env/dev_env.py logs ui -f
 
 ---
 
-### 7. Generic Aliases (`deploy` / `upgrade`)
+### 7. `build-images` (Parallel OCI Container Builds & KinD Side-Loading)
+Compiles Bazel OCI image tarballs in parallel and side-loads them directly into the local KinD cluster nodes without remote container registry pushes.
+
+```bash
+# Build and load all enabled microservice images into KinD
+python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local
+
+# Build and load specific microservices
+python3 tools/dev_env/dev_env.py build-images \
+  --services experiment_state_server ui \
+  --cluster-name xmc-local
+```
+
+#### Options
+- `--services`, `-s`: Specific microservice images to build (defaults to all enabled services).
+- `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
+- `--tag`: Image tag applied to local container images (defaults to `local-dev`).
+- `--push`: Push built container images to remote Artifact Registry (used for GKE deployments).
+- `--no-load-kind`: Skip loading built container images into KinD nodes.
+
+---
+
+### 8. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash
