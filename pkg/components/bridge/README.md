@@ -8,7 +8,7 @@ The **GitOps Bridge** provides bi-directional synchronization between Kubernetes
 
 ```mermaid
 graph TD
-    CR["Kubernetes Component CR<br>(xmc.dev/v1alpha1)"] <-->|"Dynamic Informer / Status Patch"| Bridge["xmc-bridge Controller<br>(cmd/xmc-bridge)"]
+    CR["Kubernetes Component CR<br>(xmc.dev/v1alpha1)"] <-->|"Dynamic Informer / Status Patch"| Bridge["xmc-bridge Controller<br>(cmd/xmc_bridge)"]
     Bridge -->|"Reconcile Loop"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
     Reconciler <-->|"gRPC Intent & Status Sync"| CMS["Component Manager Service<br>(ESS)"]
     Reconciler <-->|"Workload Orchestration"| Workloads["1P Deployments & Services / 3P Dynamic Probers"]
