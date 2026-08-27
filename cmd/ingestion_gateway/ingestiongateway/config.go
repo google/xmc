@@ -237,7 +237,7 @@ func (c *Config) Validate() error {
 	if c.messageBusOrDefault() == MessageBusRedpanda {
 		return c.validateRedpanda()
 	}
-	return fmt.Errorf("unsupported message_bus %q: must be one of %q, %q", c.MessageBus, MessageBusRedpanda, MessageBusPubSub)
+	return errUnsupportedMessageBus(c.MessageBus)
 }
 
 // messageBusOrDefault resolves the selected backend, treating an unset value as the default.

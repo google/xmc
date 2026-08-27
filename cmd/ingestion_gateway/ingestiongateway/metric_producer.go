@@ -29,6 +29,14 @@ const (
 	MessageBusPubSub = "pubsub"
 )
 
+// errUnsupportedMessageBus reports a backend that is neither supported message bus.
+//
+// Config validation and producer construction both reject one, and an operator reading either
+// message should be told the same thing.
+func errUnsupportedMessageBus(bus string) error {
+	return fmt.Errorf("unsupported message_bus %q: must be one of %q, %q", bus, MessageBusRedpanda, MessageBusPubSub)
+}
+
 // MetricRecord is a backend-neutral metrics message.
 //
 // Key carries the composite (xid, work_unit_id) identifier that both backends use to preserve
@@ -132,5 +140,5 @@ func NewMetricProducer(ctx context.Context, cfg *Config, gMetrics *GatewayMetric
 		}
 		return producer, nil
 	}
-	return nil, fmt.Errorf("unsupported message_bus %q: must be one of %q, %q", cfg.MessageBus, MessageBusRedpanda, MessageBusPubSub)
+	return nil, errUnsupportedMessageBus(cfg.MessageBus)
 }
