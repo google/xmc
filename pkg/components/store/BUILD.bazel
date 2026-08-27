@@ -21,6 +21,7 @@ go_library(
     srcs = [
         "dependency_parser.go",
         "field_mask.go",
+        "graph_validator.go",
         "memory_store.go",
         "resource_names.go",
         "semver.go",
@@ -43,6 +44,7 @@ go_test(
     srcs = [
         "dependency_parser_test.go",
         "field_mask_test.go",
+        "graph_validator_test.go",
         "memory_store_test.go",
         "resource_names_test.go",
         "semver_test.go",
