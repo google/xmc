@@ -17,6 +17,8 @@ const assert = require('node:assert');
 const {
   validateGitRefs,
   isBotUser,
+  extractDismissalContext,
+  parseTimelineReviewEvent,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
@@ -50,6 +52,93 @@ test('isBotUser identifies bot usernames correctly', () => {
   assert.strictEqual(isBotUser('alice'), false);
   assert.strictEqual(isBotUser(''), false);
   assert.strictEqual(isBotUser(null), false);
+});
+
+test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
+  const events = [
+    { event: 'dismissed_review', review_id: 101 },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      review: { databaseId: 202 }
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'CHANGES_REQUESTED',
+      review: { databaseId: 303 }
+    }
+  ];
+  const ctx = extractDismissalContext(events);
+  assert.strictEqual(ctx.manualDismissalIds.has(101), true);
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
+});
+
+test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
+  const context = {
+    authorLower: 'author1',
+    manualDismissalIds: new Set([101]),
+    dismissedReviewPreviousStates: new Map([[202, 'APPROVED'], [303, 'CHANGES_REQUESTED']])
+  };
+
+  // Valid review
+  const valid = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 100,
+    user: { login: 'reviewer1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context);
+  assert.deepStrictEqual(valid, {
+    approver: 'reviewer1',
+    state: 'APPROVED',
+    approvedSha: 'sha1',
+    submittedAt: undefined
+  });
+
+  // Manually dismissed review
+  const manualDismissed = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 101,
+    user: { login: 'reviewer1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(manualDismissed, null);
+
+  // Stale dismissed with APPROVED previous state
+  const staleApproved = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 202,
+    user: { login: 'reviewer1' },
+    state: 'dismissed',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(staleApproved.state, 'APPROVED');
+
+  // Stale dismissed with CHANGES_REQUESTED previous state
+  const staleChanges = parseTimelineReviewEvent({
+    event: 'reviewed',
+    id: 303,
+    user: { login: 'reviewer1' },
+    state: 'dismissed',
+    commit_id: 'sha1'
+  }, context);
+  assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
+
+  // Ignored bot review and PR author self-review
+  assert.strictEqual(parseTimelineReviewEvent({
+    event: 'reviewed',
+    user: { login: 'bot[bot]' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context), null);
+  assert.strictEqual(parseTimelineReviewEvent({
+    event: 'reviewed',
+    user: { login: 'author1' },
+    state: 'approved',
+    commit_id: 'sha1'
+  }, context), null);
 });
 
 test('findLatestApproval ignores approvals from bot users', () => {

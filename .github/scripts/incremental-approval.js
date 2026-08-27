@@ -61,24 +61,11 @@ function isBotUser(username) {
 }
 
 /**
- * Pure function: Reconstructs latest active approval from timeline events.
- * Honors dismissed reviews and checks for active blocking CHANGES_REQUESTED.
- * @param {Array<Object>} timelineEvents - List of timeline events from GitHub API.
- * @param {string} [prAuthor=''] - Username of the PR author.
- * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ * Pure function: Extracts manual dismissal IDs and pre-dismissal review states from timeline events.
+ * @param {Array<Object>} sortedEvents - Chronologically sorted timeline events.
+ * @returns {{ manualDismissalIds: Set<string|number>, dismissedReviewPreviousStates: Map<string|number, string> }}
  */
-function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
-  if (!Array.isArray(timelineEvents) || timelineEvents.length === 0) {
-    return null;
-  }
-
-  const authorLower = (prAuthor || '').toLowerCase();
-  const sortedEvents = [...timelineEvents].sort(
-    (a, b) => new Date(a.submitted_at || a.created_at || a.submittedAt || a.createdAt || 0) -
-              new Date(b.submitted_at || b.created_at || b.submittedAt || b.createdAt || 0)
-  );
-
-  const latestByReviewer = new Map();
+function extractDismissalContext(sortedEvents) {
   const dismissedReviewPreviousStates = new Map();
   const manualDismissalIds = new Set();
 
@@ -98,46 +85,86 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
     }
   }
 
+  return { manualDismissalIds, dismissedReviewPreviousStates };
+}
+
+/**
+ * Pure function: Extracts and normalizes a review record from an individual timeline event.
+ * @param {Object} event - Individual timeline event from REST or GraphQL.
+ * @param {Object} context - Metadata context for filtering and state resolution.
+ * @param {string} context.authorLower - Lowercased PR author username.
+ * @param {Set<string|number>} context.manualDismissalIds - Manually dismissed review IDs.
+ * @param {Map<string|number, string>} context.dismissedReviewPreviousStates - Pre-dismissal state map.
+ * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string } | null}
+ */
+function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dismissedReviewPreviousStates }) {
+  const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
+  if (!isReview) {
+    return null;
+  }
+
+  const reviewer = (event.user && event.user.login) || (event.author && event.author.login);
+  const commitSha = event.commit_id || (event.commit && event.commit.oid);
+  if (!reviewer || !commitSha || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
+    return null;
+  }
+
+  let state = (event.state || '').toUpperCase();
+  if (state === 'COMMENTED') {
+    return null;
+  }
+
+  const reviewId = event.databaseId || event.id || event.review_id;
+  if (reviewId && manualDismissalIds.has(reviewId)) {
+    return null;
+  }
+
+  if (state === 'DISMISSED') {
+    const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
+    if (prevState === 'APPROVED') {
+      state = 'APPROVED';
+    } else if (prevState === 'CHANGES_REQUESTED') {
+      state = 'CHANGES_REQUESTED';
+    } else {
+      return null;
+    }
+  }
+
+  return {
+    approver: reviewer,
+    state,
+    approvedSha: commitSha,
+    submittedAt: event.submitted_at || event.submittedAt || event.created_at
+  };
+}
+
+/**
+ * Pure function: Reconstructs latest active approval from timeline events.
+ * Honors dismissed reviews and checks for active blocking CHANGES_REQUESTED.
+ * @param {Array<Object>} timelineEvents - List of timeline events from GitHub API.
+ * @param {string} [prAuthor=''] - Username of the PR author.
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ */
+function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
+  if (!Array.isArray(timelineEvents) || timelineEvents.length === 0) {
+    return null;
+  }
+
+  const authorLower = (prAuthor || '').toLowerCase();
+  const sortedEvents = [...timelineEvents].sort(
+    (a, b) => new Date(a.submitted_at || a.created_at || a.submittedAt || a.createdAt || 0) -
+              new Date(b.submitted_at || b.created_at || b.submittedAt || b.createdAt || 0)
+  );
+
+  const dismissalContext = extractDismissalContext(sortedEvents);
+  const reviewContext = { authorLower, ...dismissalContext };
+  const latestByReviewer = new Map();
+
   for (const event of sortedEvents) {
-    const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
-    if (!isReview) {
-      continue;
+    const reviewRecord = parseTimelineReviewEvent(event, reviewContext);
+    if (reviewRecord) {
+      latestByReviewer.set(reviewRecord.approver.toLowerCase(), reviewRecord);
     }
-
-    const reviewer = (event.user && event.user.login) || (event.author && event.author.login);
-    const commitSha = event.commit_id || (event.commit && event.commit.oid);
-    if (!reviewer || !commitSha || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
-      continue;
-    }
-
-    let state = (event.state || '').toUpperCase();
-    if (state === 'COMMENTED') {
-      continue;
-    }
-
-    const reviewId = event.databaseId || event.id || event.review_id;
-    if (reviewId && manualDismissalIds.has(reviewId)) {
-      continue;
-    }
-
-    if (state === 'DISMISSED') {
-      const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
-      if (prevState === 'APPROVED') {
-        state = 'APPROVED';
-      } else if (prevState === 'CHANGES_REQUESTED') {
-        state = 'CHANGES_REQUESTED';
-      } else {
-        // Without confirmed pre-dismissal approval status, never assume approval
-        continue;
-      }
-    }
-
-    latestByReviewer.set(reviewer.toLowerCase(), {
-      approver: reviewer,
-      state,
-      approvedSha: commitSha,
-      submittedAt: event.submitted_at || event.submittedAt || event.created_at
-    });
   }
 
   const activeReviews = Array.from(latestByReviewer.values());
@@ -631,6 +658,8 @@ module.exports = {
   MAX_OWNER_GRACE_LINES,
   validateGitRefs,
   isBotUser,
+  extractDismissalContext,
+  parseTimelineReviewEvent,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
