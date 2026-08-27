@@ -51,6 +51,18 @@ class ImageBuilderTest(unittest.TestCase):
             ("cmd/custom_svc", "custom_svc_image_tarball", "custom_svc_image:latest"),
         )
 
+    def test_get_service_specs_deduplicates(self) -> None:
+        specs = self.builder.get_service_specs(services=["ui", "ui", "actuator"])
+        self.assertEqual(len(specs), 2)
+        self.assertEqual(specs[0], ("cmd/ui", "ui_image_tarball", "ui_image:latest"))
+        self.assertEqual(
+            specs[1], ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest")
+        )
+
+    def test_get_service_specs_invalid_name(self) -> None:
+        with self.assertRaises(ValueError):
+            self.builder.get_service_specs(services=["../invalid_path"])
+
     def test_build_images_skip_build(self) -> None:
         images = self.builder.build_images(skip_build=True)
         self.assertEqual(
