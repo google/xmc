@@ -45,7 +45,7 @@ func TestIsDeletionProtected(t *testing.T) {
 		{
 			name:   "StandardLabel_One",
 			labels: map[string]string{"xmc.dev/deletion-protection": "1"},
-			want:   true,
+			want:   false,
 		},
 		{
 			name:   "StandardLabel_Uppercase",

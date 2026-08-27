@@ -34,7 +34,7 @@ func IsDeletionProtected(rec *ComponentRecord) bool {
 		return false
 	}
 	val := strings.ToLower(strings.TrimSpace(rec.Labels[labelDeletionProtection]))
-	return val == "true" || val == "1"
+	return val == "true"
 }
 
 // CalculateDrainTimeout determines the required drain duration from overrides, spec configs, and minimum defaults.
