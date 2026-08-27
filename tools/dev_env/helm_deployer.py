@@ -172,7 +172,7 @@ class HelmDeployer:
             try:
                 text = path.read_text(encoding="utf-8")
                 patched, count = re.subn(
-                    r'imagePullPolicy:\s*["\']?Always["\']?',
+                    r'\bimagePullPolicy:\s*["\']?Always\b["\']?',
                     "imagePullPolicy: IfNotPresent",
                     text,
                 )
