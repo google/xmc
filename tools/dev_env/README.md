@@ -119,6 +119,41 @@ A sample local configuration template is provided at [`deploy/local/xmanager-clo
 cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-local.yaml
 ```
 
+### Feature Flags & Enabled Services
+
+`LocalDevConfig` dynamically evaluates feature flags from YAML configuration to compute the list of enabled microservices (`enabled_services`):
+
+| Feature Flag in YAML | Enabled Microservice Target | Default |
+| :--- | :--- | :--- |
+| `enable_metrics: true` | `ingestion_gateway` | `true` |
+| `enable_components: true` | `components` | `false` |
+| `rod_deployment_enabled: true` | `rod_data_provider` | `false` |
+
+*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `dashboard_service`, `health_service`) are enabled by default.
+
+### Dynamic Resource Naming Rules
+
+When resource names are omitted from the YAML configuration, `LocalDevConfig` automatically derives dynamic naming conventions from the active `environment`:
+
+- **Cloud Spanner Instance**: `xmc-<environment>` (e.g. `xmc-local`)
+- **ESS Database**: `ess-<environment>` (e.g. `ess-local`)
+- **XID Database**: `xid-<environment>` (e.g. `xid-local`)
+- **KinD Cluster Name**: `xmc-<environment>` (e.g. `xmc-local`)
+
+### CLI Configuration Overrides
+
+Override configuration settings for local development directly from the command line:
+
+```bash
+# Override Spanner instance, databases, and cluster name
+python3 tools/dev_env/dev_env.py \
+  --spanner-instance custom-instance \
+  --ess-db custom-ess-db \
+  --xid-db custom-xid-db \
+  --cluster-name custom-kind-cluster \
+  --auto-migrate
+```
+
 ---
 
 ## Testing
