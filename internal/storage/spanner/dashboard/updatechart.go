@@ -88,12 +88,9 @@ func mergeChartInTransaction(ctx context.Context, txn *spanner.ReadWriteTransact
 
 // fetchChartInTransaction reads a chart and its plot specifications inside a ReadWriteTransaction.
 func fetchChartInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, chartID string) (*dpb.Chart, error) {
-	row, err := txn.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartID}, dashboardschema.FetchedChartColumns)
+	row, err := readRowInTransaction(ctx, txn, dashboardschema.ChartsTableName, "chart", chartID, dashboardschema.FetchedChartColumns)
 	if err != nil {
-		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("chart %s not found: %w", chartID, status.ErrNotFound)
-		}
-		return nil, fmt.Errorf("failed to read chart %s: %w", chartID, err)
+		return nil, err
 	}
 
 	plots, err := fetchChartPlotsInTransaction(ctx, txn, chartID)
