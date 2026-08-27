@@ -114,6 +114,13 @@ def create_experiment_dashboard(
             .build()
         )
 
+        # A Dashboard references charts by ID and never creates them, so the chart has to exist
+        # first. The server's copy is what the dashboard references: its name carries the
+        # authoritative chart ID, which need not match the one requested here.
+        print(f"--> Creating Chart '{chart_name}'...")
+        created_chart = client.create_charts([chart])[0]
+        print(f"--> Created Chart successfully: {created_chart.name}")
+
         dashboard_id = f"exp_{xid}_training_overview"
         dashboard = (
             DashboardBuilder(name=f"dashboards/{dashboard_id}")
@@ -122,7 +129,7 @@ def create_experiment_dashboard(
                 f"Automated monitoring dashboard for Experiment {xid} (WorkUnit {wid})."
             )
             .set_grid_layout(columns=1)
-            .add_chart(chart)
+            .add_chart(created_chart)
             .build()
         )
 
