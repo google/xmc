@@ -129,29 +129,15 @@ class ImageBuilderTest(unittest.TestCase):
     @mock.patch("tools.dev_env.image_builder.run_command")
     def test_load_images_into_kind(self, mock_run: mock.MagicMock) -> None:
         self.builder.load_images_into_kind(["img1:latest", "img2:latest"])
-        self.assertEqual(mock_run.call_count, 2)
-        mock_run.assert_has_calls(
+        mock_run.assert_called_once_with(
             [
-                mock.call(
-                    [
-                        "kind",
-                        "load",
-                        "docker-image",
-                        "img1:latest",
-                        "--name",
-                        "test-kind",
-                    ]
-                ),
-                mock.call(
-                    [
-                        "kind",
-                        "load",
-                        "docker-image",
-                        "img2:latest",
-                        "--name",
-                        "test-kind",
-                    ]
-                ),
+                "kind",
+                "load",
+                "docker-image",
+                "img1:latest",
+                "img2:latest",
+                "--name",
+                "test-kind",
             ]
         )
 

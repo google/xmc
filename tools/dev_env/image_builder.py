@@ -185,15 +185,14 @@ class ImageBuilder:
             f"=== [KinD] Loading {len(image_tags)} container images into cluster "
             f"'{self.config.cluster_name}' ==="
         )
-        for tag in image_tags:
-            run_command(
-                [
-                    "kind",
-                    "load",
-                    "docker-image",
-                    tag,
-                    "--name",
-                    self.config.cluster_name,
-                ]
-            )
+        run_command(
+            [
+                "kind",
+                "load",
+                "docker-image",
+                *image_tags,
+                "--name",
+                self.config.cluster_name,
+            ]
+        )
         log_success("Container images loaded into KinD cluster.")
