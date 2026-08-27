@@ -341,6 +341,7 @@ class KindManager:
             "dex.yaml",
             "gateway_proxy.yaml",
         ]
+        _LOGGER.debug("Applying support manifests from %s: %s", manifests_dir, manifest_files)
         cmd = ["kubectl", "--context", ctx, "apply"]
         for mf in manifest_files:
             file_path = manifests_dir / mf
@@ -356,8 +357,11 @@ class KindManager:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "XMC-DevEnv"})
             with urllib.request.urlopen(req, timeout=3) as resp:
-                return bool(resp.status == 200)
-        except Exception:
+                is_healthy = bool(resp.status == 200)
+                _LOGGER.debug("Pinging health endpoint '%s' -> %s", url, is_healthy)
+                return is_healthy
+        except Exception as e:
+            _LOGGER.debug("Health endpoint '%s' check failed: %s", url, e)
             return False
 
     def get_status(self, cluster_name: str | None = None) -> dict[str, Any]:
