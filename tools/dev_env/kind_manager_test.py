@@ -18,6 +18,7 @@
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -345,7 +346,7 @@ class KindManagerTest(unittest.TestCase):
 
     @mock.patch("urllib.request.urlopen")
     def test_check_endpoint_health_failure(self, mock_urlopen: mock.MagicMock) -> None:
-        mock_urlopen.side_effect = Exception("Malformed HTTP or connection refused")
+        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
         self.assertFalse(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
 
     @mock.patch("tools.dev_env.kind_manager.run_command")

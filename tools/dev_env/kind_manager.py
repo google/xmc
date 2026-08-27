@@ -118,16 +118,21 @@ class KindManager:
         )
         return exists
 
-    def _resolve_manifests_dir(self) -> Path:
-        """Locates the test/e2e manifests directory containing KinD configs."""
-        for c in [
+    @property
+    def manifest_candidate_dirs(self) -> list[Path]:
+        """Returns candidate directories containing local manifests in priority order."""
+        return [
             self.repo_root / "test" / "e2e" / "manifests",
             self.repo_root / "deploy" / "local" / "manifests",
-        ]:
+        ]
+
+    def _resolve_manifests_dir(self) -> Path:
+        """Locates the test/e2e manifests directory containing KinD configs."""
+        for c in self.manifest_candidate_dirs:
             if c.is_dir():
                 _LOGGER.debug("Resolved manifests dir: %s", c)
                 return c
-        res = self.repo_root / "test" / "e2e" / "manifests"
+        res = self.manifest_candidate_dirs[0]
         _LOGGER.debug("Defaulted manifests dir: %s", res)
         return res
 
@@ -335,15 +340,7 @@ class KindManager:
         ctx = f"kind-{name}"
         log_info("=== [KinD] Applying supporting infrastructure manifests ===")
         manifests_dir = self._resolve_manifests_dir()
-        candidate_dirs = list(
-            dict.fromkeys(
-                [
-                    manifests_dir,
-                    self.repo_root / "test" / "e2e" / "manifests",
-                    self.repo_root / "deploy" / "local" / "manifests",
-                ]
-            )
-        )
+        candidate_dirs = list(dict.fromkeys([manifests_dir, *self.manifest_candidate_dirs]))
         manifest_files = [
             "dummy_crds.yaml",
             "redis.yaml",
@@ -378,7 +375,7 @@ class KindManager:
                 is_healthy = bool(200 <= resp.status < 300)
                 _LOGGER.debug("Pinging health endpoint '%s' -> %s", url, is_healthy)
                 return is_healthy
-        except Exception as e:
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
             _LOGGER.debug("Health endpoint '%s' check failed: %s", url, e)
             return False
 
