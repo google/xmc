@@ -66,6 +66,7 @@ CODE_EXTENSIONS: tuple[str, ...] = (
     ".proto",
     ".bzl",
     ".sql",
+    ".sh",
 )
 
 BUILD_FILE_NAMES: set[str] = {
@@ -309,7 +310,7 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         return []
 
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    backend_universe = "//... - //cmd/ui/..."
+    backend_universe = "//... except //cmd/ui/..."
     query_expr = (
         f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
         f"in $t except attr('tags', 'manual', $t)"
