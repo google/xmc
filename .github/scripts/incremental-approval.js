@@ -74,39 +74,69 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
 
   const authorLower = (prAuthor || '').toLowerCase();
   const sortedEvents = [...timelineEvents].sort(
-    (a, b) => new Date(a.submitted_at || a.created_at || 0) - new Date(b.submitted_at || b.created_at || 0)
+    (a, b) => new Date(a.submitted_at || a.created_at || a.submittedAt || a.createdAt || 0) -
+              new Date(b.submitted_at || b.created_at || b.submittedAt || b.createdAt || 0)
   );
 
   const latestByReviewer = new Map();
-  const dismissedReviewIds = new Set();
+  const dismissedReviewPreviousStates = new Map();
+  const manualDismissalIds = new Set();
 
   for (const event of sortedEvents) {
-    if (event.event === 'dismissed_review' && (event.review_id || event.id)) {
-      dismissedReviewIds.add(event.review_id || event.id);
+    if (event.event === 'dismissed_review') {
+      const reviewId = event.review_id || event.id;
+      if (reviewId) {
+        manualDismissalIds.add(reviewId);
+      }
+    }
+    // GraphQL ReviewDismissedEvent: records pre-dismissal state (APPROVED vs CHANGES_REQUESTED)
+    if (event.__typename === 'ReviewDismissedEvent' || event.previousReviewState) {
+      const reviewId = (event.review && (event.review.databaseId || event.review.id)) || event.review_id;
+      if (reviewId && event.previousReviewState) {
+        dismissedReviewPreviousStates.set(reviewId, event.previousReviewState.toUpperCase());
+      }
     }
   }
 
   for (const event of sortedEvents) {
-    if (event.event !== 'reviewed' || !event.user || !event.commit_id) {
+    const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
+    if (!isReview) {
       continue;
     }
-    const reviewer = event.user.login;
-    if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
+
+    const reviewer = (event.user && event.user.login) || (event.author && event.author.login);
+    const commitSha = event.commit_id || (event.commit && event.commit.oid);
+    if (!reviewer || !commitSha || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
       continue;
     }
-    const state = (event.state || '').toUpperCase();
+
+    let state = (event.state || '').toUpperCase();
     if (state === 'COMMENTED') {
       continue;
     }
-    const reviewId = event.id || event.review_id;
-    if (reviewId && dismissedReviewIds.has(reviewId)) {
+
+    const reviewId = event.databaseId || event.id || event.review_id;
+    if (reviewId && manualDismissalIds.has(reviewId)) {
       continue;
     }
+
+    if (state === 'DISMISSED') {
+      const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
+      if (prevState === 'APPROVED') {
+        state = 'APPROVED';
+      } else if (prevState === 'CHANGES_REQUESTED') {
+        state = 'CHANGES_REQUESTED';
+      } else {
+        // Without confirmed pre-dismissal approval status, never assume approval
+        continue;
+      }
+    }
+
     latestByReviewer.set(reviewer.toLowerCase(), {
       approver: reviewer,
       state,
-      approvedSha: event.commit_id,
-      submittedAt: event.submitted_at
+      approvedSha: commitSha,
+      submittedAt: event.submitted_at || event.submittedAt || event.created_at
     });
   }
 
@@ -116,9 +146,7 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
     return null;
   }
 
-  const approvals = activeReviews.filter(
-    r => (r.state === 'APPROVED' || r.state === 'DISMISSED') && r.approvedSha
-  );
+  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
   if (approvals.length === 0) {
     return null;
   }
@@ -145,20 +173,29 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
 
   const authorLower = (prAuthor || '').toLowerCase();
   const sortedReviews = [...reviews].sort(
-    (a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0)
+    (a, b) => new Date(a.submitted_at || a.created_at || 0) - new Date(b.submitted_at || b.created_at || 0)
   );
 
   const latestByReviewer = new Map();
 
   for (const review of sortedReviews) {
-    const reviewer = review.user ? review.user.login : '';
+    if (!review.user || !review.commit_id) {
+      continue;
+    }
+    const reviewer = review.user.login;
     if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
       continue;
     }
-    if (review.state === 'COMMENTED') {
+    const state = (review.state || '').toUpperCase();
+    if (state === 'COMMENTED' || state === 'DISMISSED') {
       continue;
     }
-    latestByReviewer.set(reviewer.toLowerCase(), review);
+    latestByReviewer.set(reviewer.toLowerCase(), {
+      approver: reviewer,
+      state,
+      approvedSha: review.commit_id,
+      submittedAt: review.submitted_at || review.created_at
+    });
   }
 
   const activeReviews = Array.from(latestByReviewer.values());
@@ -167,20 +204,16 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
     return null;
   }
 
-  const approvals = activeReviews.filter(
-    r => (r.state === 'APPROVED' || (r.state === 'DISMISSED' && r.commit_id)) && r.commit_id
-  );
+  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
   if (approvals.length === 0) {
     return null;
   }
 
-  approvals.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-  const latest = approvals[0];
-
+  approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   return {
-    approver: latest.user.login,
-    approvedSha: latest.commit_id,
-    submittedAt: latest.submitted_at
+    approver: approvals[0].approver,
+    approvedSha: approvals[0].approvedSha,
+    submittedAt: approvals[0].submittedAt
   };
 }
 
@@ -399,7 +432,7 @@ function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
 
       // If approved range contains extra commits from a rebased parent branch in /gh-stack,
       // scope the approved range to the PR layer commit count.
-      if (approvedBaseCount !== prCommitCount) {
+      if (approvedBaseCount > prCommitCount) {
         approvedRange = `${approvedSha}~${prCommitCount}..${approvedSha}`;
       }
     }
@@ -491,14 +524,45 @@ async function run({ github, context, core }) {
 
   let timelineEvents = [];
   try {
-    timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
-      owner,
-      repo,
-      issue_number: prNumber,
-      per_page: 100
-    });
-  } catch (timelineError) {
-    core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+    const graphqlResponse = await github.graphql(
+      `query($owner: String!, $repo: String!, $prNumber: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $prNumber) {
+            timelineItems(first: 100, itemTypes: [PULL_REQUEST_REVIEW, REVIEW_DISMISSED_EVENT]) {
+              nodes {
+                __typename
+                ... on PullRequestReview {
+                  databaseId
+                  author { login }
+                  state
+                  commit { oid }
+                  submittedAt
+                }
+                ... on ReviewDismissedEvent {
+                  previousReviewState
+                  review {
+                    databaseId
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { owner, repo, prNumber }
+    );
+    timelineEvents = graphqlResponse?.repository?.pullRequest?.timelineItems?.nodes || [];
+  } catch (graphqlErr) {
+    try {
+      timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
+        owner,
+        repo,
+        issue_number: prNumber,
+        per_page: 100
+      });
+    } catch (timelineError) {
+      core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+    }
   }
 
   const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);

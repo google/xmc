@@ -112,7 +112,7 @@ test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () =
   });
 });
 
-test('findLatestApproval finds prior approval when review was DISMISSED by stale approval policy', () => {
+test('findLatestApproval rejects DISMISSED reviews when no timeline context is provided', () => {
   const reviews = [
     {
       id: 1,
@@ -123,17 +123,13 @@ test('findLatestApproval finds prior approval when review was DISMISSED by stale
     }
   ];
   const result = findLatestApproval(reviews, 'charlie');
-  assert.deepStrictEqual(result, {
-    approver: 'alice',
-    approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z'
-  });
+  assert.strictEqual(result, null);
 });
 
-test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy', () => {
+test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy with APPROVED previous state', () => {
   const reviews = [
     {
-      id: 1,
+      id: 5032149088,
       user: { login: 'andrzejfudro' },
       state: 'DISMISSED',
       commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
@@ -142,12 +138,19 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
   ];
   const timelineEvents = [
     {
-      id: 1,
-      event: 'reviewed',
-      user: { login: 'andrzejfudro' },
-      state: 'dismissed',
-      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-      submitted_at: '2026-08-26T15:12:24Z'
+      __typename: 'PullRequestReview',
+      databaseId: 5032149088,
+      author: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
+      submittedAt: '2026-08-26T15:12:24Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      review: {
+        databaseId: 5032149088
+      }
     }
   ];
   const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
@@ -156,6 +159,37 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
     approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
     submittedAt: '2026-08-26T15:12:24Z'
   });
+});
+
+test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_REQUESTED previous state', () => {
+  const reviews = [
+    {
+      id: 5032149088,
+      user: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+      submitted_at: '2026-08-26T15:12:24Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 5032149088,
+      author: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
+      submittedAt: '2026-08-26T15:12:24Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'CHANGES_REQUESTED',
+      review: {
+        databaseId: 5032149088
+      }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
+  assert.strictEqual(result, null);
 });
 
 test('findLatestApproval ignores manually dismissed reviews in timeline', () => {
@@ -474,6 +508,36 @@ test('resolveCommitRanges scopes approved range when parent branch was rebased i
     const res = mockedResolveCommitRanges('feat/base', 'head1', 'head2', {});
     assert.strictEqual(res.currentRange, 'origin/feat/base..head2');
     assert.strictEqual(res.approvedRange, 'head1~6..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('resolveCommitRanges preserves standard range when developer adds new commits to regular PR', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
+      return '4\n'; // PR now has 4 commits
+    }
+    if (args[0] === 'rev-parse' && args[2] === 'head1~4') {
+      return 'ok\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
+      return '3\n'; // PR previously had 3 commits (approvedBaseCount < prCommitCount)
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/main..head2');
+    assert.strictEqual(res.approvedRange, 'origin/main..head1');
   } finally {
     childProcess.execFileSync = originalExec;
     delete require.cache[require.resolve('./incremental-approval')];
