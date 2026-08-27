@@ -39,6 +39,16 @@ from metric_names import (
 )
 
 
+def env_value(name: str, default: str) -> str:
+    """Reads an environment variable, treating an empty value the same as an unset one.
+
+    A declared-but-blank variable -- NUM_STEPS="" in a manifest or an .env file -- reaches the
+    process as '', which int() and float() reject. Blank plainly means "no value given", so it
+    takes the default rather than crashing the worker before it logs a single metric.
+    """
+    return os.environ.get(name, default) or default
+
+
 def report_ingestion_readiness() -> bool:
     """Prints whether the SDK will actually ship metrics, and returns that verdict.
 
@@ -78,6 +88,9 @@ def run_training_loop(total_steps: int, seed: int) -> None:
         seed: Seed for the synthetic noise, so a given experiment replays identically.
     """
     rng = random.Random(seed)
+    # Read once rather than per step: the value cannot change mid-loop, and re-reading it inside
+    # the hot path only spreads the parse across every iteration.
+    step_delay = float(env_value("STEP_DELAY_SECONDS", "0.2"))
     print(f"--> Simulating {total_steps} training steps...")
 
     for step in range(1, total_steps + 1):
@@ -102,7 +115,7 @@ def run_training_loop(total_steps: int, seed: int) -> None:
                 f"{EVAL_LOSS}={eval_loss:.4f}"
             )
 
-        time.sleep(float(os.environ.get("STEP_DELAY_SECONDS", "0.2")))
+        time.sleep(step_delay)
 
 
 def main() -> None:
@@ -111,10 +124,10 @@ def main() -> None:
 
     report_ingestion_readiness()
 
-    total_steps = int(os.environ.get("NUM_STEPS", "100"))
+    total_steps = int(env_value("NUM_STEPS", "100"))
     # Seeding from the experiment keeps a rerun of the same experiment reproducible while
     # still giving separate experiments visibly different curves.
-    seed = int(os.environ.get("XMC_XID", "0") or "0")
+    seed = int(env_value("XMC_XID", "0"))
 
     try:
         run_training_loop(total_steps=total_steps, seed=seed)

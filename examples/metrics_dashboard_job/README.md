@@ -63,6 +63,16 @@ Metrics emitted: `train/loss`, `train/accuracy`, `eval/loss`, `eval/accuracy`, `
 2. **The metrics pipeline enabled** — Ingestion Gateway plus its backing Redpanda/Pub-Sub and ClickHouse.
 3. **`gcloud` and Docker** — authenticated against the project's Artifact Registry.
 4. **Bazel and Python 3.11+** — to generate the dashboard proto bindings.
+5. **A route to the Dashboard Service** — `launch.py` speaks gRPC to `XMC_DASHBOARD_ENDPOINT`,
+   which defaults to `localhost:50051`. Running from a workstation against a remote cluster,
+   forward the port first:
+
+   ```bash
+   kubectl port-forward -n xmc svc/dashboard-service 50051:50051
+   ```
+
+   Leave it running for the duration of the launch. Without it the WorkUnit still starts and
+   streams metrics — only the dashboard step fails, with the warning described below.
 
 ---
 

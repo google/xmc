@@ -28,6 +28,7 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import dotenv
 from absl import app
@@ -49,6 +50,13 @@ from xmanager_cloud.experiment_state_server.proto import (
 )
 from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
+if TYPE_CHECKING:
+    # Type-only, and taken from xdash's resolver rather than imported directly: the generated
+    # module lands under either xmanager_cloud. or third_party.xmanager_cloud. depending on how
+    # the protos were installed, and xdash already owns that fallback. `from __future__ import
+    # annotations` above keeps the reference out of the runtime path entirely.
+    from xdash._protos import messages_pb2 as dashboard_messages_pb2
+
 # Skip git push snapshot during local test launch
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
@@ -63,7 +71,7 @@ def _get_env_bool(key: str, default: bool = True) -> bool:
     return val in {"1", "true", "yes", "t", "y"}
 
 
-def build_charts(xid: int, wid: int) -> list:
+def build_charts(xid: int, wid: int) -> list[dashboard_messages_pb2.Chart]:
     """Builds the charts describing the metrics this experiment's worker emits.
 
     Two charts rather than one, so the dashboard demonstrates composition: quality
@@ -145,7 +153,9 @@ def create_experiment_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> 
         print(f"--> Created Dashboard successfully: {created.name}")
 
 
-def build_work_unit(image_path: str, queue_name: str, worker_env: list) -> work_unit_pb2.WorkUnit:
+def build_work_unit(
+    image_path: str, queue_name: str, worker_env: Sequence[work_unit_pb2.EnvVar]
+) -> work_unit_pb2.WorkUnit:
     """Builds the single-job WorkUnit that runs the metrics worker.
 
     Args:
