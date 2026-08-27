@@ -54,7 +54,7 @@ def skip_unless_required(reason: str) -> NoReturn:
     Skipping there would report a green run for tests that never executed, which is exactly the
     silent gap this suite exists to close, so XMC_REQUIRE_HELM turns the skip into a failure.
     """
-    if os.environ.get("XMC_REQUIRE_HELM") == "1":
+    if os.environ.get("XMC_REQUIRE_HELM", "").strip().lower() in ("1", "true", "yes"):
         raise RuntimeError(f"XMC_REQUIRE_HELM is set but {reason}")
     raise unittest.SkipTest(reason)
 
@@ -103,9 +103,20 @@ class SkipUnlessRequiredTest(unittest.TestCase):
                 skip_unless_required("helm binary not available")
 
     def test_raises_when_prerequisites_are_required(self) -> None:
-        with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": "1"}):
-            with self.assertRaises(RuntimeError):
-                skip_unless_required("helm binary not available")
+        # A workflow may spell the flag as a YAML boolean, which reaches the process as "true", so
+        # every common truthy spelling has to arm the guard rather than silently skip the suite.
+        for value in ("1", "true", "TRUE", "yes", " True "):
+            with self.subTest(value=value):
+                with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": value}):
+                    with self.assertRaises(RuntimeError):
+                        skip_unless_required("helm binary not available")
+
+    def test_skips_when_the_flag_is_not_truthy(self) -> None:
+        for value in ("", "0", "false", "no"):
+            with self.subTest(value=value):
+                with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": value}):
+                    with self.assertRaises(unittest.SkipTest):
+                        skip_unless_required("helm binary not available")
 
 
 class DashboardServiceClickhouseConfigTest(unittest.TestCase):
