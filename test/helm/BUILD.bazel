@@ -16,6 +16,8 @@ load("@rules_python//python:py_test.bzl", "py_test")
 
 # Tagged manual/local because rendering the chart shells out to a host-installed helm binary,
 # matching the convention used by //test/metrics/infra:infra_test for its container dependency.
+# The manual tag keeps `bazel test //...` from failing on machines without helm; CI installs helm
+# and runs this suite directly via the run-chart-tests job in .github/workflows/unit-tests.yml.
 py_test(
     name = "dashboard_service_clickhouse_config_test",
     srcs = ["dashboard_service_clickhouse_config_test.py"],

@@ -25,6 +25,8 @@ import re
 import shutil
 import subprocess
 import unittest
+from typing import NoReturn
+from unittest import mock
 
 # Environment variables read by pkg/clickhouse.GetOptions. CLICKHOUSE_DSN is deliberately
 # excluded: it is an alternative to these and the chart does not render it.
@@ -45,13 +47,25 @@ CLICKHOUSE_SECRET = "templates/metrics/clickhouse-secret.yaml"
 ENV_VAR_NAME_PATTERN = re.compile(r"^\s*- name: (CLICKHOUSE_\w+)$", re.MULTILINE)
 
 
+def skip_unless_required(reason: str) -> NoReturn:
+    """Skips the suite, unless the caller declared the prerequisites are supposed to be present.
+
+    A developer without helm installed should not be blocked, but CI installs it deliberately.
+    Skipping there would report a green run for tests that never executed, which is exactly the
+    silent gap this suite exists to close, so XMC_REQUIRE_HELM turns the skip into a failure.
+    """
+    if os.environ.get("XMC_REQUIRE_HELM") == "1":
+        raise RuntimeError(f"XMC_REQUIRE_HELM is set but {reason}")
+    raise unittest.SkipTest(reason)
+
+
 def find_chart_dir() -> str:
     """Locates deploy/helm from the working directory, supporting bazel runfiles and repo root."""
     for base in (os.curdir, *(os.path.join(*([os.pardir] * depth)) for depth in range(1, 4))):
         candidate = os.path.join(base, "deploy", "helm")
         if os.path.isfile(os.path.join(candidate, "Chart.yaml")):
             return candidate
-    raise unittest.SkipTest("deploy/helm chart not found relative to working directory")
+    skip_unless_required("deploy/helm chart not found relative to working directory")
 
 
 def render_template(show_only: str, values: dict[str, str]) -> str:
@@ -78,13 +92,29 @@ def rendered_clickhouse_env_vars(manifest: str) -> set[str]:
     return set(ENV_VAR_NAME_PATTERN.findall(manifest))
 
 
+class SkipUnlessRequiredTest(unittest.TestCase):
+    """Covers the guard that stops a missing helm binary from silently greening a CI run."""
+
+    def test_skips_when_prerequisites_are_optional(self) -> None:
+        with mock.patch.dict(os.environ):
+            os.environ.pop("XMC_REQUIRE_HELM", None)
+
+            with self.assertRaises(unittest.SkipTest):
+                skip_unless_required("helm binary not available")
+
+    def test_raises_when_prerequisites_are_required(self) -> None:
+        with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": "1"}):
+            with self.assertRaises(RuntimeError):
+                skip_unless_required("helm binary not available")
+
+
 class DashboardServiceClickhouseConfigTest(unittest.TestCase):
     """Asserts the dashboard service deployment receives complete ClickHouse configuration."""
 
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("helm") is None:
-            raise unittest.SkipTest("helm binary not available")
+            skip_unless_required("helm binary not available")
 
     def test_all_required_clickhouse_vars_are_passed_when_metrics_enabled(self) -> None:
         """Every variable pkg/clickhouse reads must reach the container."""
