@@ -79,6 +79,8 @@ def is_non_code_file(path_str: str) -> bool:
     p = Path(path_str)
     if p.name in NON_CODE_FILES or p.suffix == ".md":
         return True
+    if p.name in BUILD_FILE_NAMES or p.suffix in CODE_EXTENSIONS:
+        return False
     return any(path_str.startswith(prefix) for prefix in NON_CODE_PREFIXES)
 
 
@@ -307,9 +309,7 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         return []
 
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    backend_universe = (
-        "//cmd/... + //internal/... + //pkg/... + //sdks/... + //test/... + //tools/..."
-    )
+    backend_universe = "//... - //cmd/ui/..."
     query_expr = (
         f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
         f"in $t except attr('tags', 'manual', $t)"

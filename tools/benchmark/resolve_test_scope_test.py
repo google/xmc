@@ -43,6 +43,9 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(is_non_code_file("pkg/auth/oauth2/handlers.go"))
         self.assertFalse(is_non_code_file("cmd/ui/src/app/app.component.ts"))
         self.assertFalse(is_non_code_file("services/billing/v1/billing.go"))
+        self.assertFalse(is_non_code_file("deploy/ctk_v2/verify_xmc.py"))
+        self.assertFalse(is_non_code_file("deploy/ctk_v2/BUILD.bazel"))
+        self.assertFalse(is_non_code_file("deploy/clickhouse/schema.sql"))
 
     def test_classify_modified_files_inverted_default_safety(self):
         # Brand new unknown backend folder MUST trigger backend code flag!
@@ -415,6 +418,15 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertTrue(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "all")
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_resolve_test_scope_deploy_code_file(self, mock_rdeps):
+        mock_rdeps.return_value = ["//deploy/ctk_v2:verify_xmc_test"]
+        scope = resolve_test_scope(["deploy/ctk_v2/verify_xmc.py"], use_rdeps=True)
+        self.assertTrue(scope["run_backend"])
+        self.assertFalse(scope["run_ui"])
+        self.assertEqual(scope["backend_mode"], "rdeps")
+        self.assertEqual(scope["bazel_targets"], "//deploy/ctk_v2:verify_xmc_test")
 
 
 if __name__ == "__main__":
