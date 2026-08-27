@@ -421,21 +421,61 @@ test('evaluateIncrementalApproval rejects invalid delta inputs (negative, null, 
 });
 
 test('resolveCommitRanges uses standard ranges when commit count matches', () => {
-  const mockExec = (cmd, args) => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
     if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
       return '3\n';
     }
     if (args[0] === 'rev-parse') {
-      return 'ok\n';
+      return 'head1~3\n';
     }
     if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
       return '3\n';
     }
-    throw new Error('unexpected');
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
   };
-  const { execFileSync: originalExec } = require('child_process');
-  // Test fallback / default range returns expected strings
-  const res = resolveCommitRanges('main', 'head1', 'head2', { encoding: 'utf8' });
-  assert.strictEqual(res.currentRange, 'origin/main..head2');
-  assert.strictEqual(res.approvedRange, 'origin/main..head1');
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/main..head2');
+    assert.strictEqual(res.approvedRange, 'origin/main..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('resolveCommitRanges scopes approved range when parent branch was rebased in stacked PRs', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head2') {
+      return '6\n';
+    }
+    if (args[0] === 'rev-parse' && args[2] === 'head1~6') {
+      return 'ok\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head1') {
+      return '17\n'; // 11 rebased base commits + 6 PR commits
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
+
+  try {
+    const res = mockedResolveCommitRanges('feat/base', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/feat/base..head2');
+    assert.strictEqual(res.approvedRange, 'head1~6..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
 });

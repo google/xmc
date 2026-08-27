@@ -378,7 +378,7 @@ function evaluateIncrementalApproval({
 function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
   const currentRange = `origin/${baseRef}..${currentSha}`;
   let approvedRange = `origin/${baseRef}..${approvedSha}`;
-  const opts = { ...execOptions, stdio: ['pipe', 'pipe', 'ignore'] };
+  const opts = { encoding: 'utf8', ...execOptions, stdio: ['pipe', 'pipe', 'ignore'] };
 
   try {
     const prCommitCountStr = execFileSync(
