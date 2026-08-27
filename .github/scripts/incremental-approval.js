@@ -481,6 +481,10 @@ function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
 function runGitRangeDiff(baseRef, approvedSha, currentSha) {
   validateGitRefs(baseRef, approvedSha, currentSha);
 
+  if (approvedSha === currentSha) {
+    return '';
+  }
+
   const execOptions = {
     encoding: 'utf8',
     maxBuffer: GIT_MAX_BUFFER_BYTES,
@@ -489,6 +493,9 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
 
   const execute = () => {
     const { approvedRange, currentRange } = resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions);
+    if (approvedRange === currentRange) {
+      return '';
+    }
     return execFileSync('git', ['range-diff', '--no-color', approvedRange, currentRange], execOptions);
   };
 
@@ -496,14 +503,22 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
     return execute();
   } catch (initialError) {
     try {
+      const fetchArgs = [];
+      const token = process.env.GITHUB_TOKEN;
+      if (token) {
+        const authHeader = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+        fetchArgs.push('-c', `http.extraheader=${authHeader}`);
+      }
+      fetchArgs.push('fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha);
       execFileSync(
         'git',
-        ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha],
-        { encoding: 'utf8', stdio: 'ignore', timeout: GIT_EXEC_TIMEOUT_MS }
+        fetchArgs,
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: GIT_EXEC_TIMEOUT_MS }
       );
       return execute();
     } catch (fallbackError) {
-      throw new Error(`Failed to execute git range-diff: ${fallbackError.message}`);
+      const stderr = fallbackError.stderr ? fallbackError.stderr.toString().trim() : fallbackError.message;
+      throw new Error(`Failed to execute git range-diff: ${stderr || fallbackError.message}`);
     }
   }
 }

@@ -25,6 +25,7 @@ const {
   parseRangeDiff,
   evaluateIncrementalApproval,
   resolveCommitRanges,
+  runGitRangeDiff,
   MAX_OWNER_GRACE_LINES
 } = require('./incremental-approval');
 
@@ -631,4 +632,10 @@ test('resolveCommitRanges preserves standard range when developer adds new commi
     childProcess.execFileSync = originalExec;
     delete require.cache[require.resolve('./incremental-approval')];
   }
+});
+
+test('runGitRangeDiff executes range-diff without usage errors', () => {
+  const headSha = require('child_process').execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+  const output = runGitRangeDiff('main', headSha, headSha);
+  assert.strictEqual(typeof output, 'string');
 });
