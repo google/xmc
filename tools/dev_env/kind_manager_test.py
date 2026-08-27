@@ -290,11 +290,15 @@ class KindManagerTest(unittest.TestCase):
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
     def test_apply_manifests(self, mock_run: mock.MagicMock) -> None:
-        manifests_dir = Path(self.temp_dir.name)
+        manifests_dir = Path(self.temp_dir.name) / "manifests"
+        manifests_dir.mkdir(parents=True, exist_ok=True)
         for mf in ["dummy_crds.yaml", "redis.yaml", "dex.yaml", "gateway_proxy.yaml"]:
             (manifests_dir / mf).write_text("apiVersion: v1\n")
 
-        with mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir):
+        with (
+            mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir),
+            mock.patch.object(self.manager, "repo_root", Path(self.temp_dir.name)),
+        ):
             self.manager.apply_manifests()
 
         mock_run.assert_called_once()
@@ -303,8 +307,11 @@ class KindManagerTest(unittest.TestCase):
         self.assertIn("apply", cmd)
 
     def test_apply_manifests_missing_file_raises(self) -> None:
-        manifests_dir = Path(self.temp_dir.name)
-        with mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir):
+        manifests_dir = Path(self.temp_dir.name) / "nonexistent"
+        with (
+            mock.patch.object(self.manager, "_resolve_manifests_dir", return_value=manifests_dir),
+            mock.patch.object(self.manager, "repo_root", Path(self.temp_dir.name) / "empty"),
+        ):
             with self.assertRaises(FileNotFoundError):
                 self.manager.apply_manifests()
 
@@ -313,6 +320,9 @@ class KindManagerTest(unittest.TestCase):
         mock_resp = mock.MagicMock()
         mock_resp.status = 200
         mock_urlopen.return_value.__enter__.return_value = mock_resp
+        self.assertTrue(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
+
+        mock_resp.status = 204
         self.assertTrue(self.manager.check_endpoint_health("http://localhost:8080/healthz"))
 
     @mock.patch("urllib.request.urlopen")

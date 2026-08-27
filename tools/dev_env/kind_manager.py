@@ -335,18 +335,29 @@ class KindManager:
         ctx = f"kind-{name}"
         log_info("=== [KinD] Applying supporting infrastructure manifests ===")
         manifests_dir = self._resolve_manifests_dir()
+        candidate_dirs = [
+            manifests_dir,
+            self.repo_root / "test" / "e2e" / "manifests",
+            self.repo_root / "deploy" / "local" / "manifests",
+        ]
         manifest_files = [
             "dummy_crds.yaml",
             "redis.yaml",
             "dex.yaml",
             "gateway_proxy.yaml",
         ]
-        _LOGGER.debug("Applying support manifests from %s: %s", manifests_dir, manifest_files)
+        _LOGGER.debug("Applying support manifests: %s", manifest_files)
         cmd = ["kubectl", "--context", ctx, "apply"]
         for mf in manifest_files:
-            file_path = manifests_dir / mf
-            if not file_path.is_file():
-                raise FileNotFoundError(f"Required manifest '{mf}' not found in '{manifests_dir}'")
+            file_path = None
+            for d in candidate_dirs:
+                if (d / mf).is_file():
+                    file_path = d / mf
+                    break
+            if not file_path:
+                raise FileNotFoundError(
+                    f"Required manifest '{mf}' not found in any candidate directories: {candidate_dirs}"
+                )
             cmd.extend(["-f", str(file_path)])
 
         run_command(cmd)
@@ -357,7 +368,7 @@ class KindManager:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "XMC-DevEnv"})
             with urllib.request.urlopen(req, timeout=3) as resp:
-                is_healthy = bool(resp.status == 200)
+                is_healthy = bool(200 <= resp.status < 300)
                 _LOGGER.debug("Pinging health endpoint '%s' -> %s", url, is_healthy)
                 return is_healthy
         except Exception as e:
