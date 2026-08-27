@@ -53,16 +53,6 @@ func TestIsDeletionProtected(t *testing.T) {
 			want:   true,
 		},
 		{
-			name:   "AlternateLabel_True",
-			labels: map[string]string{"deletion_protection": "true"},
-			want:   true,
-		},
-		{
-			name:   "AlternateLabel_One",
-			labels: map[string]string{"deletion_protection": "1"},
-			want:   true,
-		},
-		{
 			name:   "StandardLabel_False",
 			labels: map[string]string{"xmc.dev/deletion-protection": "false"},
 			want:   false,
@@ -88,48 +78,74 @@ func TestIsDeletionProtected(t *testing.T) {
 }
 
 func TestCalculateDrainTimeout(t *testing.T) {
-	// 1. Explicit request override
-	reqTimeout := durationpb.New(90 * time.Second)
-	if got := CalculateDrainTimeout(nil, nil, reqTimeout); got != 90*time.Second {
-		t.Errorf("CalculateDrainTimeout(override) = %v, want 90s", got)
-	}
+	t.Parallel()
 
-	// 2. Default minimum 30s when unspecified
-	rec := &ComponentRecord{Name: "comp-a"}
-	if got := CalculateDrainTimeout(rec, nil, nil); got != 30*time.Second {
-		t.Errorf("CalculateDrainTimeout(default) = %v, want 30s", got)
-	}
-
-	// 3. Target record lifecycle draining timeout
-	recWithTimeout := &ComponentRecord{
-		Name: "comp-b",
-		Spec: &componentspb.ComponentSpec{
-			LifecycleControl: &componentspb.LifecycleControl{
-				DrainingTimeout: durationpb.New(45 * time.Second),
-			},
-		},
-	}
-	if got := CalculateDrainTimeout(recWithTimeout, nil, nil); got != 45*time.Second {
-		t.Errorf("CalculateDrainTimeout(spec draining) = %v, want 45s", got)
-	}
-
-	// 4. Cascaded dependent with higher timeout
-	cascaded := []*ComponentRecord{
+	tests := []struct {
+		name       string
+		rec        *ComponentRecord
+		cascaded   []*ComponentRecord
+		reqTimeout *durationpb.Duration
+		want       time.Duration
+	}{
 		{
-			Name: "comp-c",
-			Spec: &componentspb.ComponentSpec{
-				LifecycleControl: &componentspb.LifecycleControl{
-					GracePeriod: durationpb.New(75 * time.Second),
+			name:       "ExplicitRequestOverride",
+			reqTimeout: durationpb.New(90 * time.Second),
+			want:       90 * time.Second,
+		},
+		{
+			name: "DefaultMinimum30sWhenUnspecified",
+			rec:  &ComponentRecord{Name: "comp-a"},
+			want: 30 * time.Second,
+		},
+		{
+			name: "TargetRecordDrainingTimeout",
+			rec: &ComponentRecord{
+				Name: "comp-b",
+				Spec: &componentspb.ComponentSpec{
+					LifecycleControl: &componentspb.LifecycleControl{
+						DrainingTimeout: durationpb.New(45 * time.Second),
+					},
 				},
 			},
+			want: 45 * time.Second,
+		},
+		{
+			name: "CascadedDependentWithHigherGracePeriod",
+			rec: &ComponentRecord{
+				Name: "comp-b",
+				Spec: &componentspb.ComponentSpec{
+					LifecycleControl: &componentspb.LifecycleControl{
+						DrainingTimeout: durationpb.New(45 * time.Second),
+					},
+				},
+			},
+			cascaded: []*ComponentRecord{
+				{
+					Name: "comp-c",
+					Spec: &componentspb.ComponentSpec{
+						LifecycleControl: &componentspb.LifecycleControl{
+							GracePeriod: durationpb.New(75 * time.Second),
+						},
+					},
+				},
+			},
+			want: 75 * time.Second,
 		},
 	}
-	if got := CalculateDrainTimeout(recWithTimeout, cascaded, nil); got != 75*time.Second {
-		t.Errorf("CalculateDrainTimeout(cascaded max) = %v, want 75s", got)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateDrainTimeout(tc.rec, tc.cascaded, tc.reqTimeout)
+			if got != tc.want {
+				t.Errorf("CalculateDrainTimeout() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestEvaluateDeactivationSafety(t *testing.T) {
+	t.Parallel()
+
 	components := map[string]*ComponentRecord{
 		"root": {
 			Name:  "root",
@@ -147,43 +163,71 @@ func TestEvaluateDeactivationSafety(t *testing.T) {
 		},
 	}
 
-	// 1. Target with active dependent and requestCascade = false -> ErrHasActiveDependents
-	res, err := EvaluateDeactivationSafety(components, "root", false, 30*time.Second)
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("EvaluateDeactivationSafety(no cascade) got code %v, want FailedPrecondition", status.Code(err))
-	}
-	if res.IsSafeToDeactivate {
-		t.Error("IsSafeToDeactivate should be false when active dependents block")
-	}
-	if diff := cmp.Diff([]string{"dep-1"}, res.BlockingDependents); diff != "" {
-		t.Errorf("BlockingDependents mismatch (-want +got):\n%s", diff)
+	tests := []struct {
+		name                   string
+		target                 string
+		requestCascade         bool
+		minDrainFloor          time.Duration
+		wantErrCode            codes.Code
+		wantSafe               bool
+		wantBlockingDependents []string
+		wantCascaded           []string
+	}{
+		{
+			name:                   "TargetWithActiveDependent_NoCascade",
+			target:                 "root",
+			requestCascade:         false,
+			minDrainFloor:          30 * time.Second,
+			wantErrCode:            codes.FailedPrecondition,
+			wantSafe:               false,
+			wantBlockingDependents: []string{"dep-1"},
+		},
+		{
+			name:           "TargetWithActiveDependent_WithCascade",
+			target:         "root",
+			requestCascade: true,
+			minDrainFloor:  30 * time.Second,
+			wantErrCode:    codes.OK,
+			wantSafe:       true,
+			wantCascaded:   []string{"dep-1"},
+		},
+		{
+			name:           "LeafComponent_SafeWithoutCascade",
+			target:         "dep-1",
+			requestCascade: false,
+			minDrainFloor:  30 * time.Second,
+			wantErrCode:    codes.OK,
+			wantSafe:       true,
+		},
+		{
+			name:           "NonexistentComponent",
+			target:         "nonexistent",
+			requestCascade: false,
+			minDrainFloor:  30 * time.Second,
+			wantErrCode:    codes.NotFound,
+			wantSafe:       false,
+		},
 	}
 
-	// 2. Target with active dependent and requestCascade = true -> IsSafeToDeactivate = true
-	resCascade, err := EvaluateDeactivationSafety(components, "root", true, 30*time.Second)
-	if err != nil {
-		t.Fatalf("EvaluateDeactivationSafety(cascade) unexpected error: %v", err)
-	}
-	if !resCascade.IsSafeToDeactivate {
-		t.Error("IsSafeToDeactivate should be true when cascading")
-	}
-	if diff := cmp.Diff([]string{"dep-1"}, resCascade.CascadedDeactivations); diff != "" {
-		t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
-	}
-
-	// 3. Leaf component with no dependents -> safe without cascade
-	resLeaf, err := EvaluateDeactivationSafety(components, "dep-1", false, 30*time.Second)
-	if err != nil {
-		t.Fatalf("EvaluateDeactivationSafety(leaf) unexpected error: %v", err)
-	}
-	if !resLeaf.IsSafeToDeactivate {
-		t.Error("Leaf component should be safe to deactivate")
-	}
-
-	// 4. Nonexistent component -> NotFound
-	_, err = EvaluateDeactivationSafety(components, "nonexistent", false, 30*time.Second)
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("EvaluateDeactivationSafety(nonexistent) got code %v, want NotFound", status.Code(err))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := EvaluateDeactivationSafety(components, tc.target, tc.requestCascade, tc.minDrainFloor)
+			if status.Code(err) != tc.wantErrCode {
+				t.Fatalf("EvaluateDeactivationSafety() error code = %v, want %v (err: %v)", status.Code(err), tc.wantErrCode, err)
+			}
+			if res == nil {
+				return
+			}
+			if res.IsSafeToDeactivate != tc.wantSafe {
+				t.Errorf("res.IsSafeToDeactivate = %v, want %v", res.IsSafeToDeactivate, tc.wantSafe)
+			}
+			if diff := cmp.Diff(tc.wantBlockingDependents, res.BlockingDependents); tc.wantBlockingDependents != nil && diff != "" {
+				t.Errorf("BlockingDependents mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantCascaded, res.CascadedDeactivations); tc.wantCascaded != nil && diff != "" {
+				t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

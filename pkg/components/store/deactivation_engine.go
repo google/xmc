@@ -24,9 +24,8 @@ import (
 )
 
 const (
-	labelDeletionProtection1 = "xmc.dev/deletion-protection"
-	labelDeletionProtection2 = "deletion_protection"
-	minDrainTimeout          = 30 * time.Second
+	labelDeletionProtection = "xmc.dev/deletion-protection"
+	minDrainTimeout         = 30 * time.Second
 )
 
 // IsDeletionProtected checks if a component record is marked with deletion protection labels.
@@ -34,10 +33,7 @@ func IsDeletionProtected(rec *ComponentRecord) bool {
 	if rec == nil || rec.Labels == nil {
 		return false
 	}
-	if val := strings.ToLower(strings.TrimSpace(rec.Labels[labelDeletionProtection1])); val == "true" || val == "1" {
-		return true
-	}
-	val := strings.ToLower(strings.TrimSpace(rec.Labels[labelDeletionProtection2]))
+	val := strings.ToLower(strings.TrimSpace(rec.Labels[labelDeletionProtection]))
 	return val == "true" || val == "1"
 }
 
@@ -61,23 +57,27 @@ func CalculateDrainTimeout(rec *ComponentRecord, cascaded []*ComponentRecord, re
 }
 
 // extractRecordDrainTimeout retrieves the maximum lifecycle draining or grace period timeout for a record.
+// Note: A spec can declare both DrainingTimeout and GracePeriod simultaneously; the larger duration governs.
 func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 	if rec == nil || rec.Spec == nil || rec.Spec.GetLifecycleControl() == nil {
 		return 0
 	}
 	lc := rec.Spec.GetLifecycleControl()
-	var d time.Duration
+	var maxDuration time.Duration
 	if dt := lc.GetDrainingTimeout(); dt != nil && dt.CheckValid() == nil && dt.AsDuration() > 0 {
-		d = dt.AsDuration()
+		maxDuration = dt.AsDuration()
 	}
-	if gp := lc.GetGracePeriod(); gp != nil && gp.CheckValid() == nil && gp.AsDuration() > d {
-		d = gp.AsDuration()
+	if gp := lc.GetGracePeriod(); gp != nil && gp.CheckValid() == nil && gp.AsDuration() > maxDuration {
+		maxDuration = gp.AsDuration()
 	}
-	return d
+	return maxDuration
 }
 
 // EvaluateDeactivationSafety evaluates whether a component can safely be deactivated or if cascading is required.
-func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, defaultDrain time.Duration) (*PrepareDeactivationResult, error) {
+// Note: IsDeletionProtected is intentionally NOT checked here. Deactivation is a non-destructive draining
+// lifecycle transition (PrepareDeactivation -> CompleteDeactivation); deletion protection is strictly enforced
+// during permanent resource destruction in ValidateDeletionSafety / ExecuteDeletion.
+func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, minDrainFloor time.Duration) (*PrepareDeactivationResult, error) {
 	canonicalName := CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
 	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
@@ -94,8 +94,8 @@ func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetNa
 	}
 
 	drainTimeout := CalculateDrainTimeout(targetRec, cascadedRecs, nil)
-	if defaultDrain > drainTimeout {
-		drainTimeout = defaultDrain
+	if minDrainFloor > drainTimeout {
+		drainTimeout = minDrainFloor
 	}
 
 	return &PrepareDeactivationResult{
@@ -169,6 +169,8 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 		return ErrDeletionProtected
 	}
 
+	// Per api/protos/components/v1alpha1/components.proto (line 44), DELETION_POLICY_UNSPECIFIED
+	// defaults to DELETION_POLICY_DELETE (cascading resource deletion across dependents).
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
 		_, allRecords := findAllDependents(components, canonicalName)
 		for _, depRec := range allRecords {

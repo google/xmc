@@ -366,6 +366,8 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		rec.Spec.DeletionPolicy = policy
 	}
 
+	// Per api/protos/components/v1alpha1/components.proto (line 44), DELETION_POLICY_UNSPECIFIED
+	// defaults to DELETION_POLICY_DELETE (cascading resource deletion across dependents).
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
 		allDependents, _ := findAllDependents(m.componentsByName, canonicalName)
 		for _, depName := range allDependents {
