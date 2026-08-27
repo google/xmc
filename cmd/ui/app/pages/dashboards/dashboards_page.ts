@@ -29,8 +29,11 @@ import {
   AddExperimentDialogResult,
 } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
+import {
+  extractChartId,
+  formatWorkUnitParent,
+} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { Chart, LayoutType } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { extractChartId } from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
@@ -158,7 +161,7 @@ export class DashboardsPage implements OnInit {
     };
 
     this.dashboardService
-      .createChart({ parent: `experiments/${result.xid}/workUnits/${wid}`, chart: newChart })
+      .createChart({ parent: formatWorkUnitParent(result.xid, wid), chart: newChart })
       .subscribe({
         next: (chart) => {
           this.charts.update((c) => [...c, chart]);
