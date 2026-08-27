@@ -640,7 +640,7 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 	}
 
 	// 1. Complete deactivation on non-disabling state -> ErrInvalidStateTransition
-	err := ms.CompleteDeactivation(ctx, "comp-deact")
+	err := ms.CompleteDeactivation(ctx, "comp-deact", false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("CompleteDeactivation(not disabling) got code %v, want FailedPrecondition", status.Code(err))
 	}
@@ -661,21 +661,48 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 	}
 
 	// 4. Attempt complete deactivation while dependent is active -> FailedPrecondition
-	err = ms.CompleteDeactivation(ctx, "comp-deact")
+	err = ms.CompleteDeactivation(ctx, "comp-deact", false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("CompleteDeactivation(with active dependent) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
-	// 5. Deactivate and complete dependent first
+	// 5. Force complete deactivation on a separate component with active dependent
+	specForceTarget := sampleSpec("Force target")
+	if _, err := ms.SetComponentIntent(ctx, "comp-force", specForceTarget, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-force) failed: %v", err)
+	}
+	specForceDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-force",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-force", specForceDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-force) failed: %v", err)
+	}
+	if _, err := ms.PrepareDeactivation(ctx, "comp-force", true); err != nil {
+		t.Fatalf("PrepareDeactivation(comp-force) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "comp-force", true); err != nil {
+		t.Fatalf("CompleteDeactivation(comp-force, force=true) unexpected error: %v", err)
+	}
+	recForce, err := ms.GetComponent(ctx, "comp-force")
+	if err != nil {
+		t.Fatalf("GetComponent(comp-force) failed: %v", err)
+	}
+	if recForce.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("comp-force State = %v, want DISABLED", recForce.State)
+	}
+
+	// 6. Deactivate and complete dependent first
 	if _, err := ms.PrepareDeactivation(ctx, "dep-active", false); err != nil {
 		t.Fatalf("PrepareDeactivation(dep-active) failed: %v", err)
 	}
-	if err := ms.CompleteDeactivation(ctx, "dep-active"); err != nil {
+	if err := ms.CompleteDeactivation(ctx, "dep-active", false); err != nil {
 		t.Fatalf("CompleteDeactivation(dep-active) failed: %v", err)
 	}
 
-	// 6. Now complete deactivation on root -> succeeds
-	if err := ms.CompleteDeactivation(ctx, "comp-deact"); err != nil {
+	// 7. Now complete deactivation on root -> succeeds
+	if err := ms.CompleteDeactivation(ctx, "comp-deact", false); err != nil {
 		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
 	}
 
@@ -706,12 +733,12 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 	}
 
 	// 8. CompleteDeactivation on already DISABLED component is idempotent and succeeds
-	if err := ms.CompleteDeactivation(ctx, "comp-deact"); err != nil {
+	if err := ms.CompleteDeactivation(ctx, "comp-deact", false); err != nil {
 		t.Errorf("CompleteDeactivation(already DISABLED) unexpected error: %v", err)
 	}
 
 	// 9. Nonexistent component
-	err = ms.CompleteDeactivation(ctx, "nonexistent")
+	err = ms.CompleteDeactivation(ctx, "nonexistent", false)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
 	}
@@ -819,7 +846,7 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	if _, err := ms.PrepareDeactivation(ctx, "child-4", false); err != nil {
 		t.Fatalf("PrepareDeactivation(child-4) failed: %v", err)
 	}
-	if err := ms.CompleteDeactivation(ctx, "child-4"); err != nil {
+	if err := ms.CompleteDeactivation(ctx, "child-4", false); err != nil {
 		t.Fatalf("CompleteDeactivation(child-4) failed: %v", err)
 	}
 	// Cascading deletion of root-4 should delete disabled child-4 too
