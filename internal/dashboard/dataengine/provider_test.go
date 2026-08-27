@@ -181,6 +181,34 @@ func TestProviderEngineBuildsOnceUnderConcurrency(t *testing.T) {
 	}
 }
 
+func TestProviderEngineServesConcurrentCallersOnceBuilt(t *testing.T) {
+	provider := NewProvider((&countingConnector{results: []func() (ClickHouseConn, error){succeeds}}).connect)
+	if _, err := provider.Engine(context.Background()); err != nil {
+		t.Fatalf("Engine() failed to build: %v", err)
+	}
+
+	// Contending for the dial lock in the steady state would make callers reject each other with
+	// errAttemptInProgress even though ClickHouse is up and the engine is already cached.
+	errs := make(chan error, 32)
+	var wg sync.WaitGroup
+	for range cap(errs) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := provider.Engine(context.Background())
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Engine() on a built provider = %v, want no error", err)
+		}
+	}
+}
+
 func TestProviderFetchChartDataUsesTheEngine(t *testing.T) {
 	provider := NewProvider((&countingConnector{results: []func() (ClickHouseConn, error){succeeds}}).connect)
 	chart := &dpb.Chart{Name: "dashboards/1/charts/2"}

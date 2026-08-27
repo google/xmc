@@ -214,21 +214,23 @@ describe('CreateDashboardDialogComponent', () => {
     expect(dialogRefSpy.close).toHaveBeenCalledTimes(1);
     const result = dialogRefSpy.close.calls.mostRecent().args[0] as CreateDashboardDialogResult;
 
-    expect(result.dashboard.title).toBe('Custom Evaluation Benchmark');
-    expect(result.dashboard.description).toBe('Benchmark dashboard comparing tuning iterations');
-    expect(result.dashboard.chartLayout).toEqual({ type: LayoutType.SIDE_BY_SIDE });
-    expect(result.charts.length).toBe(2);
+    const want = {
+      dashboard: jasmine.objectContaining({
+        title: 'Custom Evaluation Benchmark',
+        description: 'Benchmark dashboard comparing tuning iterations',
+        chartLayout: { type: LayoutType.SIDE_BY_SIDE },
+      }),
+      charts: [
+        jasmine.objectContaining({ xid: 234911122, wid: 1, title: 'VCC Baseline' }),
+        jasmine.objectContaining({ xid: 234911123, wid: 1, title: 'VCC tuned_v1' }),
+      ],
+    };
 
-    const baseChart = result.charts[0];
-    expect(baseChart.xid).toBe(234911122);
-    expect(baseChart.wid).toBe(1);
-    expect(baseChart.title).toBe('VCC Baseline');
-    expect(baseChart.plots?.length).toBe(4);
-
-    const compChart = result.charts[1];
-    expect(compChart.xid).toBe(234911123);
-    expect(compChart.wid).toBe(1);
-    expect(compChart.title).toBe('VCC tuned_v1');
+    expect(result.dashboard).toEqual(want.dashboard);
+    expect(result.charts).toEqual(want.charts);
+    // Only the count is asserted here; the plot list itself is exercised by the add, remove and
+    // reset tests above.
+    expect(result.charts[0].plots?.length).toBe(4);
   });
 
   it('should leave resource names unset so the server assigns them', async () => {

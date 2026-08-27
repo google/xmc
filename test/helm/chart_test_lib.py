@@ -33,7 +33,7 @@ def skip_unless_required(reason: str) -> NoReturn:
     Skipping there would report a green run for tests that never executed, which is exactly the
     silent gap these suites exist to close, so XMC_REQUIRE_HELM turns the skip into a failure.
     """
-    if os.environ.get("XMC_REQUIRE_HELM") == "1":
+    if os.environ.get("XMC_REQUIRE_HELM", "").strip().lower() in ("1", "true", "yes"):
         raise RuntimeError(f"XMC_REQUIRE_HELM is set but {reason}")
     raise unittest.SkipTest(reason)
 
