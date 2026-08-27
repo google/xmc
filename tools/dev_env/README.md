@@ -164,20 +164,20 @@ Compiles Bazel OCI image tarballs in parallel and side-loads them directly into 
 
 ```bash
 # Build and load all enabled microservice images into KinD
-python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local
+python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local --load-kind
 
 # Build and load specific microservices
 python3 tools/dev_env/dev_env.py build-images \
-  --services experiment_state_server ui \
-  --cluster-name xmc-local
+  experiment_state_server ui \
+  --cluster-name xmc-local \
+  --load-kind
 ```
 
 #### Options
-- `--services`, `-s`: Specific microservice images to build (defaults to all enabled services).
+- `services`: Specific microservice images to build (defaults to all enabled services).
 - `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
-- `--tag`: Image tag applied to local container images (defaults to `local-dev`).
-- `--push`: Push built container images to remote Artifact Registry (used for GKE deployments).
-- `--no-load-kind`: Skip loading built container images into KinD nodes.
+- `--load-kind`: Also load compiled container images into the local KinD cluster.
+- `--skip-build`: Skip compilation step and only load existing local Docker images.
 
 ---
 

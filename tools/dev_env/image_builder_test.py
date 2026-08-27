@@ -45,7 +45,7 @@ class ImageBuilderTest(unittest.TestCase):
                 "experiment_state_server_image:latest",
             ),
         )
-        self.assertEqual(specs[1], ("cmd/ui", "ui_image_tarball", "ui-image:latest"))
+        self.assertEqual(specs[1], ("cmd/ui", "ui_image_tarball", "ui_image:latest"))
         self.assertEqual(
             specs[2],
             ("cmd/custom_svc", "custom_svc_image_tarball", "custom_svc_image:latest"),
@@ -57,7 +57,7 @@ class ImageBuilderTest(unittest.TestCase):
             images,
             [
                 "experiment_state_server_image:latest",
-                "ui-image:latest",
+                "ui_image:latest",
                 "custom_svc_image:latest",
             ],
         )
@@ -117,15 +117,29 @@ class ImageBuilderTest(unittest.TestCase):
     @mock.patch("tools.dev_env.image_builder.run_command")
     def test_load_images_into_kind(self, mock_run: mock.MagicMock) -> None:
         self.builder.load_images_into_kind(["img1:latest", "img2:latest"])
-        mock_run.assert_called_once_with(
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_has_calls(
             [
-                "kind",
-                "load",
-                "docker-image",
-                "img1:latest",
-                "img2:latest",
-                "--name",
-                "test-kind",
+                mock.call(
+                    [
+                        "kind",
+                        "load",
+                        "docker-image",
+                        "img1:latest",
+                        "--name",
+                        "test-kind",
+                    ]
+                ),
+                mock.call(
+                    [
+                        "kind",
+                        "load",
+                        "docker-image",
+                        "img2:latest",
+                        "--name",
+                        "test-kind",
+                    ]
+                ),
             ]
         )
 
