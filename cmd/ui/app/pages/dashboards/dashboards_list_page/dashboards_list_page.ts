@@ -37,11 +37,12 @@ import {
   CreateDashboardDialogComponent,
   CreateDashboardDialogResult,
 } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
-import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import {
   extractChartId,
   extractDashboardId,
-} from 'xmanager_cloud/ui/app/service/dashboard_resource_names';
+  formatWorkUnitParent,
+} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
@@ -180,7 +181,7 @@ export class DashboardsListPage implements OnInit {
     return forkJoin(
       charts.map((chart) =>
         this.dashboardService.createChart({
-          parent: `experiments/${chart.xid}/workUnits/${chart.wid}`,
+          parent: formatWorkUnitParent(chart.xid, chart.wid),
           chart,
         }),
       ),
