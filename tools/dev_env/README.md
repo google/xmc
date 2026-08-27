@@ -89,6 +89,38 @@ python3 tools/dev_env/dev_env.py upgrade --target gke --config ...
 
 ---
 
+## Configuration Architecture (`LocalDevConfig`)
+
+The `tools/dev_env/config.py` module defines `LocalDevConfig` and provides unified configuration discovery and resolution.
+
+### Resolution Precedence
+
+Configuration values are resolved using strict layered precedence:
+
+```
+CLI Flags (--project-id, --environment, --config)
+  └── Environment Variables (PROJECT_ID, XMANAGER_ENV, XMC_CONFIG_PATH)
+        └── YAML Configuration File (deploy/ctk_v2/*.yaml or deploy/local/*.yaml)
+              └── Built-in Defaults
+```
+
+### Config File Discovery
+
+When `--config` is not explicitly provided, `dev_env.py` searches candidate locations in order:
+1. `deploy/local/xmanager-cloud-local.yaml` (Developer local configuration)
+2. `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (Active deployment configuration)
+3. `deploy/ctk_v2/xmanager-cloud-deployment-staging.yaml` (Staging configuration)
+
+### Local Configuration Template
+
+A sample local configuration template is provided at [`deploy/local/xmanager-cloud-local-template.yaml`](../../deploy/local/xmanager-cloud-local-template.yaml). Copy it to create your local environment config:
+
+```bash
+cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-local.yaml
+```
+
+---
+
 ## Testing
 
 Run unit tests for the `tools/dev_env` package with Bazel:
