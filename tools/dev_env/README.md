@@ -76,7 +76,30 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 
 ---
 
-### 3. Generic Aliases (`deploy` / `upgrade`)
+### 3. `spanner` (Cloud Spanner Database Management)
+Automates verification, single-batch DDL schema creation with compiled protobuf descriptor sets, and teardown for Cloud Spanner databases used by XMC microservices.
+
+```bash
+# Create all required Spanner databases for the local environment
+python3 tools/dev_env/dev_env.py spanner create \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+
+# Drop/delete Spanner databases during local environment cleanup
+python3 tools/dev_env/dev_env.py spanner drop \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+```
+
+#### Actions
+- `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_proto_descriptor`, `//api/protos/xid:xid_proto_descriptor`), and creates databases with single-batch DDL in parallel.
+- `drop`: Drops the specified databases from the Cloud Spanner instance.
+
+---
+
+### 4. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash

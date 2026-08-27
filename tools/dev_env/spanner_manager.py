@@ -17,10 +17,13 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
 from tools.dev_env.config import LocalDevConfig
+
+_LOGGER = logging.getLogger("xmc.dev_env.spanner")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -47,9 +50,10 @@ class SpannerManager:
     def list_databases(self, instance: str | None = None) -> list[str]:
         """Lists existing database names on the configured Spanner instance."""
         target_instance = instance or self.config.spanner_instance
-        log_info(
-            f"Listing databases on Spanner instance '{target_instance}' "
-            f"(project: '{self.config.project_id}')..."
+        _LOGGER.debug(
+            "Listing databases on Spanner instance '%s' (project: '%s')",
+            target_instance,
+            self.config.project_id,
         )
         res = run_command(
             [
@@ -66,9 +70,13 @@ class SpannerManager:
             log_cmd=False,
         )
         if res.returncode != 0:
-            log_info("Could not list databases; instance may not exist or permissions are pending.")
+            _LOGGER.debug(
+                "Could not list databases; instance may not exist or permissions pending."
+            )
             return []
-        return [line.strip().split("/")[-1] for line in res.stdout.splitlines() if line.strip()]
+        dbs = [line.strip().split("/")[-1] for line in res.stdout.splitlines() if line.strip()]
+        _LOGGER.debug("Found Spanner databases on instance '%s': %s", target_instance, dbs)
+        return dbs
 
     def _build_protobuf_descriptors(self) -> None:
         """Builds protobuf descriptor sets required for Spanner PROTO BUNDLE."""
@@ -132,7 +140,7 @@ class SpannerManager:
         ]
         missing_targets = [t for t in db_targets if t[0] not in existing_dbs]
         if not missing_targets:
-            log_info("Required Spanner databases already exist.")
+            _LOGGER.debug("Required Spanner databases already exist: %s", existing_dbs)
             return set()
 
         missing_names = [t[0] for t in missing_targets]
