@@ -163,10 +163,13 @@ perf/step_time_ms   100    105.32    134.18
 You can retrieve the created dashboard and verify chart hydration via the `xdash` CLI or Python client:
 
 ```bash
-python3 -m xdash get-dashboard exp_[XID]_training_overview
+python3 -m xdash get dashboards/exp_[XID]_training_overview
 ```
 
 Or query chart data directly:
 ```bash
-python3 -m xdash get-chart-data experiments/[XID]/workUnits/1/charts/model_training_metrics --width 800
+python3 -m xdash get-data experiments/[XID]/workUnits/1/charts/model_training_metrics
 ```
+
+Both take the Dashboard Service address from `XMC_DASHBOARD_ENDPOINT`, or from `--endpoint`. TLS is
+the default for anything but a local address, so add `--insecure` when port-forwarding.
