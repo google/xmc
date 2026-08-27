@@ -161,11 +161,15 @@ class TestLocalRunner(unittest.TestCase):
         """Verifies reloading explicit services triggers targeted build, load, and rollout."""
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
-            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
         ):
             self.runner.reload(services=["reconciler"])
 
-            mock_build_load.assert_called_once_with(services=["reconciler"])
+            mock_build.assert_called_once_with(services=["reconciler"])
+            mock_load.assert_called_once_with(["reconciler_image:latest"])
             self.assertTrue(mock_run.called)
             restart_call = [
                 "kubectl",
@@ -207,13 +211,17 @@ class TestLocalRunner(unittest.TestCase):
             patch.object(
                 self.runner.change_detector, "detect_changes", return_value=mock_result
             ) as mock_detect,
-            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["ui_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
             patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
         ):
             self.runner.reload(services=None)
 
             mock_detect.assert_called_once()
-            mock_build_load.assert_called_once_with(services=["ui"])
+            mock_build.assert_called_once_with(services=["ui"])
+            mock_load.assert_called_once_with(["ui_image:latest"])
             mock_helm_deploy.assert_not_called()
             self.assertTrue(mock_run.called)
 
@@ -277,14 +285,20 @@ class TestLocalRunner(unittest.TestCase):
         """Verifies reloading 'all' rebuilds all enabled services."""
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
-            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["img1", "img2"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
             patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
             patch("tools.dev_env.local_runner.run_command"),
         ):
             self.runner.reload(services=["all"])
 
             mock_detect.assert_not_called()
-            mock_build_load.assert_called_once_with(services=self.runner.config.enabled_services)
+            mock_build.assert_called_once_with(
+                services=sorted(self.runner.change_detector.enabled_services)
+            )
+            mock_load.assert_called_once_with(["img1", "img2"])
 
     def test_reload_mixed_services_with_auto(self) -> None:
         """Verifies containing 'auto' in services triggers auto-detection."""
@@ -441,12 +455,14 @@ class TestLocalRunner(unittest.TestCase):
         """Verifies reload(helm=True) triggers HelmDeployer.deploy."""
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.kind_mgr, "apply_manifests") as mock_apply,
             patch.object(self.runner.helm_deployer, "deploy") as mock_deploy,
             patch.object(self.runner.image_builder, "build_images") as mock_build,
             patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
         ):
             self.runner.reload(services=[], helm=True)
             mock_deploy.assert_called_once()
+            mock_apply.assert_called_once()
             mock_detect.assert_not_called()
             mock_build.assert_not_called()
 
@@ -454,11 +470,13 @@ class TestLocalRunner(unittest.TestCase):
         """Verifies passing 'helm' in services triggers HelmDeployer.deploy without building image."""
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.kind_mgr, "apply_manifests") as mock_apply,
             patch.object(self.runner.helm_deployer, "deploy") as mock_deploy,
             patch.object(self.runner.image_builder, "build_images") as mock_build,
         ):
             self.runner.reload(services=["helm"])
             mock_deploy.assert_called_once()
+            mock_apply.assert_called_once()
             mock_build.assert_not_called()
 
     def test_get_workspace_signature(self) -> None:
@@ -478,13 +496,9 @@ class TestLocalRunner(unittest.TestCase):
     def test_reload_watch_mode_invalid_interval_raises_error(self) -> None:
         """Verifies reload(watch=True) raises ValueError when interval <= 0."""
         with patch.object(self.runner.kind_mgr, "exists", return_value=True):
-            with self.assertRaisesRegex(
-                ValueError, "Watch interval must be greater than 0 seconds."
-            ):
+            with self.assertRaisesRegex(ValueError, "Watch interval must be greater than 0"):
                 self.runner.reload(watch=True, interval=0)
-            with self.assertRaisesRegex(
-                ValueError, "Watch interval must be greater than 0 seconds."
-            ):
+            with self.assertRaisesRegex(ValueError, "Watch interval must be greater than 0"):
                 self.runner.reload(watch=True, interval=-1.5)
 
     def test_reload_explicit_services_with_changed_files_filters_services(self) -> None:
@@ -502,14 +516,18 @@ class TestLocalRunner(unittest.TestCase):
             patch.object(
                 self.runner.change_detector, "detect_changes", return_value=mock_result
             ) as mock_detect,
-            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
             patch("tools.dev_env.local_runner.run_command"),
         ):
             self.runner._reload_once(
                 services=["ui", "reconciler"], changed_files=["cmd/reconciler/main.go"]
             )
             mock_detect.assert_called_once_with(files=["cmd/reconciler/main.go"])
-            mock_build_load.assert_called_once_with(services=["reconciler"])
+            mock_build.assert_called_once_with(services=["reconciler"])
+            mock_load.assert_called_once_with(["reconciler_image:latest"])
 
     def test_reload_explicit_services_with_changed_files_no_match(self) -> None:
         """Verifies no reload occurs if changed_files does not affect requested explicit services."""
