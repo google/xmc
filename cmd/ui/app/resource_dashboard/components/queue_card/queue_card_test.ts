@@ -95,9 +95,10 @@ describe('QueueCardComponent', () => {
     expect(await harness.getFlavorRowCount()).toBe(1);
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
+    expect(rowText).toContain('Nominal Queue Quota');
     expect(rowText).toContain('56 / 64');
-    expect(rowText).toContain('Max schedulable now');
-    expect(rowText).toContain('56');
+    expect(rowText).toContain('Max schedulable now (Cluster quota / Cohort quota)');
+    expect(rowText).toContain('56 / 56');
   });
 
   it('should render Squeezed by cohort badge and contextual banner when cohort capacity is squeezed', async () => {
@@ -116,7 +117,7 @@ describe('QueueCardComponent', () => {
 
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('Squeezed by cohort');
-    expect(rowText).toContain('30');
+    expect(rowText).toContain('60 / 30');
     expect(rowText).toContain('60 / 100');
     expect(rowText).toContain('30 nominal quota is temporarily held by cohort peers.');
   });
@@ -137,7 +138,7 @@ describe('QueueCardComponent', () => {
 
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('Borrowing available');
-    expect(rowText).toContain('80');
+    expect(rowText).toContain('60 / 80');
     expect(rowText).toContain('60 / 100');
     expect(rowText).toContain('Can borrow up to +20 beyond nominal quota from cohort.');
   });

@@ -98,8 +98,9 @@ export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): Coh
 export class MaxSchedulableDisplayPipe implements PipeTransform {
   transform(capacity?: QueueResourceCapacity | null): string {
     if (!capacity) return '-';
-    const schedulable = capacity.freeCapacityWithBorrowing ?? capacity.freeCapacity ?? 0;
-    return `${schedulable}`;
+    const clusterQuota = capacity.freeCapacity ?? 0;
+    const cohortQuota = capacity.freeCapacityWithBorrowing ?? clusterQuota;
+    return `${clusterQuota} / ${cohortQuota}`;
   }
 }
 
