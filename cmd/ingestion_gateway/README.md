@@ -99,8 +99,10 @@ Shared by both backends:
 - **Startup Check**: the topic must already exist in `-project_id`; otherwise the process exits. The gateway never creates topics.
 - **Ordering**: `EnableMessageOrdering` is always on and the composite key is sent as the message `OrderingKey`, giving the same per-Work-Unit FIFO guarantee as the sticky-key partitioner. Note that end-to-end ordering also requires the *subscription* to have message ordering enabled — that is outside this service's control.
   - Pub/Sub suspends an ordering key after any publish failure for that key. The producer calls `ResumePublish` on every failure so a single transient error does not wedge a Work Unit for the lifetime of the process. This holds even when the HTTP caller disconnects mid-publish: the request context stops the caller waiting, but the resume decision and the produce counters are settled on the real publish outcome, awaited on a context detached from the request. A disconnect is therefore not counted as a publish error.
+  - The resume is not instantaneous, so records published under a key between the failure and the resume fail as collateral rather than on their own merits. They are classified as congestion (`503`), not as a server fault, so the client retries them.
   - Pub/Sub enforces roughly **1 MB/s per ordering key**. A single Work Unit emitting more than that will be throttled; Kafka has no equivalent per-key cap.
 - **Publish Batching**: 15ms delay threshold and 1MB byte threshold, mirroring the Redpanda linger and batch settings. Remaining settings use the client defaults.
+- **Backpressure**: the one producer setting *not* mirrored from Redpanda. The Pub/Sub client defaults to `FlowControlIgnore`, so its outstanding-message limits are not enforced and there is no equivalent of the franz-go buffered-record ceiling. The effective bound is the client's buffered-byte limit (10 × the max publish request size, ~100MB); a publish rejected for exceeding it is reported as congestion. Choosing an explicit `FlowControlSettings` bound is a capacity decision left to a follow-up.
 - **Not applicable**: `-redpanda_brokers`, `-min_partitions`, `-min_replicas`, and the SASL/TLS flags have no Pub/Sub equivalent. Setting `-sasl_enabled` or `-tls_enabled` in Pub/Sub mode is **rejected at startup** rather than silently ignored.
 
 ---
@@ -123,7 +125,7 @@ Each backend maps its own errors onto one of three neutral kinds, which determin
 | Kind | HTTP | Redpanda | Pub/Sub (gRPC code) |
 | :--- | :---: | :--- | :--- |
 | Client | `400` | `kerr` errors attributable to the record (e.g. `MessageTooLarge`) | `InvalidArgument`, `FailedPrecondition`, `OutOfRange`, oversized message |
-| Congestion | `503` | Buffer/queue saturation, broker unreachable, client closed | `ResourceExhausted`, `Unavailable`, `DeadlineExceeded`, `Aborted`, `Canceled`, topic stopped, abandoned wait |
+| Congestion | `503` | Buffer/queue saturation, broker unreachable, client closed | `ResourceExhausted`, `Unavailable`, `DeadlineExceeded`, `Aborted`, `Canceled`, topic stopped, suspended ordering key, client buffer overflow, abandoned wait |
 | Unknown | `500` | Everything else | `NotFound`, `PermissionDenied`, `Unauthenticated`, everything else |
 
 `NotFound` and the auth codes are deliberately `500`: a missing topic or a misgranted service account

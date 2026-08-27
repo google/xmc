@@ -27,6 +27,7 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/api/option"
+	"google.golang.org/api/support/bundler"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,12 +39,14 @@ const (
 	testTopicID   = "xmc-metrics"
 )
 
-// newFakePubSubProducer starts an in-process Pub/Sub fake, creates topicID on it, and returns a
-// producer wired to it.
+// newFakePubSubProducer starts an in-process Pub/Sub fake and returns a producer wired to it.
+//
+// The producer always targets testTopicID. existingTopicID decides which topic the fake is given,
+// so passing "" leaves the destination missing and exercises the startup check.
 //
 // Assertions read srv.Messages() directly rather than pulling from a subscription: the producer
 // side never needs StreamingPull, so the fake's documented cancellation quirks do not apply here.
-func newFakePubSubProducer(ctx context.Context, t *testing.T, topicID string, gMetrics *GatewayMetrics) (*PubSubProducer, *pstest.Server) {
+func newFakePubSubProducer(ctx context.Context, t *testing.T, existingTopicID string, gMetrics *GatewayMetrics) (*PubSubProducer, *pstest.Server) {
 	t.Helper()
 
 	srv := pstest.NewServer()
@@ -67,9 +70,9 @@ func newFakePubSubProducer(ctx context.Context, t *testing.T, topicID string, gM
 	t.Cleanup(producer.Close)
 
 	// Created after the producer so callers can omit it and exercise the missing-topic path.
-	if topicID != "" {
-		if _, err := producer.client.CreateTopic(ctx, topicID); err != nil {
-			t.Fatalf("failed to create topic %q on the fake: %v", topicID, err)
+	if existingTopicID != "" {
+		if _, err := producer.client.CreateTopic(ctx, existingTopicID); err != nil {
+			t.Fatalf("failed to create topic %q on the fake: %v", existingTopicID, err)
 		}
 	}
 
@@ -185,6 +188,41 @@ func TestPubSubProducer_ProduceResumesPublishAfterFailure(t *testing.T) {
 	srv.SetAutoPublishResponse(true)
 	if err := produceAndWait(t, producer, &MetricRecord{Topic: testTopicID, Key: key, Value: []byte("second")}); err != nil {
 		t.Fatalf("publishing to a previously failed ordering key must succeed after ResumePublish, got: %v", err)
+	}
+}
+
+// TestPubSubProducer_ProducePausedOrderingKeyIsCongestion covers the collateral half of a publish
+// failure. Once a key is suspended, every record behind it fails with ErrPublishingPaused, which
+// carries no gRPC status. Answering those with 500 would tell the SDK to stop retrying a batch that
+// only lost a race with another record's transient failure — and since a batch normally carries
+// many records for one work unit, the collateral errors race the real one for the status the
+// handler reports.
+func TestPubSubProducer_ProducePausedOrderingKeyIsCongestion(t *testing.T) {
+	ctx := context.Background()
+	producer, srv := newFakePubSubProducer(ctx, t, testTopicID, nil)
+
+	srv.SetAutoPublishResponse(false)
+	srv.AddPublishResponse(nil, status.Error(codes.InvalidArgument, "injected publish failure"))
+
+	// Suspend the key outside Produce: Produce resumes on every failure, which would heal the
+	// suspension before the next record could observe it.
+	key := FormatCompositeKey(101, 1)
+	first := producer.topic.Publish(ctx, &pubsub.Message{Data: []byte("first"), OrderingKey: string(key)})
+	if _, err := first.Get(ctx); err == nil {
+		t.Fatalf("expected the injected publish failure to suspend the ordering key")
+	}
+
+	// The suspension short-circuits ahead of the RPC, so no further response needs queueing.
+	err := produceAndWait(t, producer, &MetricRecord{Topic: testTopicID, Key: key, Value: []byte("second")})
+	if err == nil {
+		t.Fatalf("expected a record published under a suspended ordering key to fail")
+	}
+	var pubErr *PublishError
+	if !errors.As(err, &pubErr) {
+		t.Fatalf("expected a *PublishError, got %T: %v", err, err)
+	}
+	if pubErr.Kind != PublishErrorCongestion {
+		t.Errorf("kind = %v, want %v for a suspended ordering key", pubErr.Kind, PublishErrorCongestion)
 	}
 }
 
@@ -333,6 +371,8 @@ func TestClassifyPubSubError(t *testing.T) {
 		{name: "bare context cancellation is congestion", err: context.Canceled, wantKind: PublishErrorCongestion},
 		{name: "bare context deadline is congestion", err: context.DeadlineExceeded, wantKind: PublishErrorCongestion},
 		{name: "topic stopped is congestion", err: pubsub.ErrTopicStopped, wantKind: PublishErrorCongestion},
+		{name: "suspended ordering key is congestion", err: pubsub.ErrPublishingPaused{OrderingKey: "101:1"}, wantKind: PublishErrorCongestion},
+		{name: "client buffer overflow is congestion", err: bundler.ErrOverflow, wantKind: PublishErrorCongestion},
 		{name: "InvalidArgument is a client fault", err: status.Error(codes.InvalidArgument, "bad message"), wantKind: PublishErrorClient},
 		{name: "FailedPrecondition is a client fault", err: status.Error(codes.FailedPrecondition, "precondition"), wantKind: PublishErrorClient},
 		{name: "OutOfRange is a client fault", err: status.Error(codes.OutOfRange, "range"), wantKind: PublishErrorClient},

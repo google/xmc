@@ -22,6 +22,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"google.golang.org/api/option"
+	"google.golang.org/api/support/bundler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -109,8 +110,10 @@ func (p *PubSubProducer) ValidateTopic(ctx context.Context) error {
 // Produce publishes rec asynchronously, invoking promise with a classified *PublishError on failure.
 //
 // One goroutine is spawned per record to await the publish result, which the franz-go backend does
-// not need. The handler bounds this by waiting on all in-flight publishes before responding, so the
-// goroutine count is bounded by concurrent requests times batch size.
+// not need. The handler waits on all in-flight publishes before responding, so concurrent requests
+// times batch size bounds the waits that run inside a request. A record whose caller went away adds
+// one more goroutine that outlives the response, bounded instead by the topic's publish timeout;
+// see settlePublish.
 func (p *PubSubProducer) Produce(ctx context.Context, rec *MetricRecord, promise func(*MetricRecord, error)) {
 	orderingKey := string(rec.Key)
 	result := p.topic.Publish(ctx, &pubsub.Message{
@@ -182,6 +185,20 @@ func classifyPubSubError(err error) error {
 	// Shutdown in progress is the equivalent of kgo.ErrClientClosed, which IsCongestionError treats
 	// as transient.
 	if errors.Is(err, pubsub.ErrTopicStopped) {
+		return newPublishError(PublishErrorCongestion, err)
+	}
+	// Every record published under an ordering key that is currently suspended fails with this
+	// error, which carries no gRPC status. It is collateral from some other record's failure rather
+	// than a verdict on this payload, and settleOutcome resumes the key, so the record can be
+	// republished. errors.As takes a value target: ErrPublishingPaused implements error on the value
+	// receiver.
+	var pausedErr pubsub.ErrPublishingPaused
+	if errors.As(err, &pausedErr) {
+		return newPublishError(PublishErrorCongestion, err)
+	}
+	// The client rejects a message once its buffered-byte limit is reached. This is the equivalent of
+	// a full franz-go produce queue, which IsCongestionError treats as transient.
+	if errors.Is(err, bundler.ErrOverflow) {
 		return newPublishError(PublishErrorCongestion, err)
 	}
 	// PublishResult.Get returns the bare context error when the wait is cut short, and a bare context
