@@ -71,6 +71,44 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestPing(t *testing.T) {
+	pingErr := fmt.Errorf("connection refused")
+	tests := []struct {
+		name    string
+		engine  *DataEngine
+		wantErr bool
+	}{
+		{
+			name:   "reachable",
+			engine: &DataEngine{conn: &mockClickHouseConn{}},
+		},
+		{
+			name: "unreachable",
+			engine: &DataEngine{conn: &mockClickHouseConn{
+				pingFn: func(context.Context) error { return pingErr },
+			}},
+			wantErr: true,
+		},
+		{
+			// The engine is optional at startup, so callers can hold a nil one; readiness must
+			// hear about that rather than take down the process on a nil dereference.
+			name:    "nil engine",
+			engine:  nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.engine.Ping(context.Background())
+
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("Ping() = %v, want error presence %t", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestFetchChartData_NilEngine(t *testing.T) {
 	var engine *DataEngine
 

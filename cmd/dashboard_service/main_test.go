@@ -218,6 +218,20 @@ func (stubClickHouseConn) QueryRow(ctx context.Context, query string, args ...an
 
 func (stubClickHouseConn) Ping(ctx context.Context) error { return nil }
 
+// departingClickHouseConn answers until down is set, standing in for a ClickHouse that goes away
+// after the engine has already been built against it.
+type departingClickHouseConn struct {
+	stubClickHouseConn
+	down bool
+}
+
+func (c *departingClickHouseConn) Ping(ctx context.Context) error {
+	if c.down {
+		return errors.New("connection refused")
+	}
+	return nil
+}
+
 // connectorReturning builds a connector that always reports the given outcome.
 func connectorReturning(conn dataengine.ClickHouseConn, err error) dataengine.Connector {
 	return func(ctx context.Context) (dataengine.ClickHouseConn, error) {
@@ -295,6 +309,23 @@ func TestNewReadinessCheck_PassesOnceTheDataEngineIsBuilt(t *testing.T) {
 
 	if err := newReadinessCheck(nil, provider)(context.Background()); err != nil {
 		t.Errorf("readiness check with a reachable ClickHouse returned %v, want nil", err)
+	}
+}
+
+func TestNewReadinessCheck_FailsWhenClickHouseStopsAnswering(t *testing.T) {
+	conn := &departingClickHouseConn{}
+	check := newReadinessCheck(nil, dataengine.NewProvider(connectorReturning(conn, nil)))
+	if err := check(context.Background()); err != nil {
+		t.Fatalf("readiness check with a reachable ClickHouse returned %v, want nil", err)
+	}
+
+	// The engine is cached by that first check and is never rebuilt, so its mere existence stays
+	// true after ClickHouse goes away. Only reaching the connection can tell the difference, and
+	// without that the pod keeps reporting ready while every chart request fails.
+	conn.down = true
+
+	if err := check(context.Background()); err == nil {
+		t.Error("readiness check passed after ClickHouse stopped answering, want an error")
 	}
 }
 
