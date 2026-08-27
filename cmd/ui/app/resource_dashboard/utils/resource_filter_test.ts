@@ -38,6 +38,10 @@ describe('matchesResourceFilter', () => {
 
   it('should match specific compound resources when generic filter is selected', () => {
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-tesla-a100', 'nvidia.com/gpu')).toBeTrue();
+    expect(
+      matchesResourceFilter('nvidia.com/gpu: nvidia-tesla-a100', 'nvidia.com/gpu:'),
+    ).toBeTrue();
+    expect(matchesResourceFilter('nvidia.com/gpu/sub-resource', 'nvidia.com/gpu/')).toBeTrue();
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-l4', 'nvidia.com/gpu')).toBeTrue();
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-tesla-a100', 'gpu')).toBeTrue();
     expect(matchesResourceFilter('google.com/tpu: tpu-v5p', 'google.com/tpu')).toBeTrue();

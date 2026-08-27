@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+function matchesDelimitedPrefix(resource: string, filter: string): boolean {
+  if (!resource.startsWith(filter)) {
+    return false;
+  }
+  if (filter.endsWith(':') || filter.endsWith('/')) {
+    return true;
+  }
+  const nextChar = resource.charAt(filter.length);
+  return nextChar === ':' || nextChar === '/';
+}
+
 export function matchesResourceFilter(resourceType: string, filter: string): boolean {
   const r = resourceType?.trim().toLowerCase();
   const f = filter?.trim().toLowerCase();
@@ -22,7 +33,7 @@ export function matchesResourceFilter(resourceType: string, filter: string): boo
     return true;
   }
   if (f.includes(':') || f.includes('/')) {
-    return r.startsWith(`${f}:`) || r.startsWith(`${f}/`);
+    return matchesDelimitedPrefix(r, f);
   }
   return r.includes(f);
 }
