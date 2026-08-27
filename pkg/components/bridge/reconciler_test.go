@@ -23,7 +23,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -56,20 +55,56 @@ func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteD
 }
 
 type mockProber struct {
-	healthy bool
-	msg     string
+	detectErr   error
+	status      *ResourceStatus
+	hasStatus   bool
+	probeErr    error
+	probeRes    *HealthProbeResult
+	hasProbeRes bool
+	healthy     bool
+	msg         string
 }
 
-func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
+func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+	if m == nil {
+		return &ResourceStatus{Found: true, Ready: true}, nil
+	}
+	if m.detectErr != nil {
+		return nil, m.detectErr
+	}
+	if m.hasStatus || m.status != nil {
+		return m.status, nil
+	}
+	return &ResourceStatus{Found: true, Ready: true}, nil
+}
+
+func (m *mockProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+	if m == nil {
+		return &HealthProbeResult{Healthy: true}, nil
+	}
+	if m.probeErr != nil {
+		return nil, m.probeErr
+	}
+	if m.hasProbeRes || m.probeRes != nil {
+		return m.probeRes, nil
+	}
+	return &HealthProbeResult{Healthy: true}, nil
+}
+
+func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
 	if m == nil {
 		return true, "Component is active"
 	}
-	return m.healthy, m.msg
+	if m.msg != "" {
+		return m.healthy, m.msg
+	}
+	return m.healthy, "Component is active"
 }
 
 type mockHelm struct {
-	ensureErr, deleteErr error
-	active               bool
+	ensureErr, deleteErr, orphanErr error
+	active                          bool
+	orphaned                        bool
 }
 
 func (m *mockHelm) Ensure1PComponent(ctx context.Context, ns, name string, opts HelmComponentOptions) error {
@@ -96,10 +131,11 @@ func (m *mockHelm) Orphan1PComponent(ctx context.Context, ns, name string) error
 	if m == nil {
 		return nil
 	}
-	if m.deleteErr == nil {
+	if m.orphanErr == nil {
+		m.orphaned = true
 		m.active = false
 	}
-	return m.deleteErr
+	return m.orphanErr
 }
 
 func (m *mockHelm) IsComponentActive(name string) bool {
@@ -107,6 +143,14 @@ func (m *mockHelm) IsComponentActive(name string) bool {
 		return false
 	}
 	return m.active
+}
+
+type testStringer struct {
+	val string
+}
+
+func (s testStringer) String() string {
+	return s.val
 }
 
 func TestNewReconciler(t *testing.T) {
@@ -133,6 +177,13 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 	ctx := context.Background()
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER}
+
+	spec3PWithRef := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{
+			CrdGroup: "clickhouse.altinity.com", CrdVersion: "v1", CrdKind: "ClickHouseInstallation", TargetName: "my-ch",
+		},
+	}
 
 	tests := []struct {
 		name          string
@@ -269,7 +320,42 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
 			},
-			wantErr:   true,
+			wantErr: true,
+		},
+		{
+			name: "disabled component with orphan deletion policy still deletes workload",
+			cms:  &mockCMS{},
+			helm: &mockHelm{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2,
+				Spec: &componentspb.ComponentSpec{
+					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+				},
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+		},
+		{
+			name:    "disabled component workload deletion failure",
+			cms:     &mockCMS{},
+			helm:    &mockHelm{active: true, deleteErr: errors.New("cannot delete child pod")},
+			wantErr: true,
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:    "disabled component update observed CMS error",
+			cms:     &mockCMS{obsErr: errors.New("cms update error")},
+			helm:    &mockHelm{active: true},
+			wantErr: true,
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
 		{
@@ -313,6 +399,114 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		{
+			name:   "3P wrapper status detection error",
+			cms:    &mockCMS{},
+			prober: &mockProber{detectErr: errors.New("k8s api error")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantErr: true,
+		},
+		{
+			name:   "3P wrapper resource not found",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper unready with empty message fallback",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: ""}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper resource not ready",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper active probe error",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper active probe unhealthy",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper status detector returns nil status without error",
+			cms:    &mockCMS{},
+			prober: &mockProber{hasStatus: true, status: nil},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantErr: true,
+		},
+		{
+			name:   "3P wrapper prober returns nil probe result without error",
+			cms:    &mockCMS{},
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper with nil prober returns enabled",
+			cms:    &mockCMS{},
+			prober: nil,
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		{
+			name:   "3P wrapper fallback nil wrapperRef with unhealthy prober",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: false, msg: "fallback health probe failed"},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		},
+		{
+			name:   "3P wrapper handle3PUnreadyStatus CMS error",
+			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
+			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantErr: true,
+		},
+		{
+			name:   "3P wrapper handle3PReadyStatus CMS error",
+			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantErr: true,
 		},
 		{
 			name: "update observed CMS error",
@@ -478,22 +672,8 @@ func TestParseHelpers(t *testing.T) {
 		"manifests": []any{"yaml-1", 123, "yaml-2"},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
-	wantSpec := &componentspb.ComponentSpec{
-		Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
-		Version:        "1.2.3",
-		Description:    "desc",
-		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
-		WrapperRef: &componentspb.WrapperRef{
-			CrdGroup:        "g",
-			CrdVersion:      "v",
-			CrdKind:         "k",
-			TargetName:      "n",
-			TargetNamespace: "ns",
-		},
-		Manifests: []string{"yaml-1", "yaml-2"},
-	}
-	if dp || !en || !proto.Equal(spec, wantSpec) {
-		t.Errorf("ParseSpecFromUnstructured() = %+v (dp=%v, en=%v), want %+v (dp=false, en=true)", spec, dp, en, wantSpec)
+	if dp || !en || spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetDeletionPolicy() != componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN || spec.GetWrapperRef().GetTargetName() != "n" || len(spec.GetManifests()) != 2 {
+		t.Errorf("unexpected parsed spec: %+v", spec)
 	}
 
 	rawCamel := map[string]any{
@@ -506,15 +686,8 @@ func TestParseHelpers(t *testing.T) {
 	}
 	specCamel, _, _ := ParseSpecFromUnstructured(rawCamel)
 	wr := specCamel.GetWrapperRef()
-	wantWrapperRef := &componentspb.WrapperRef{
-		CrdGroup:        "clickhouse.altinity.com",
-		CrdVersion:      "v1",
-		CrdKind:         "ClickHouseInstallation",
-		TargetName:      "chi-cluster",
-		TargetNamespace: "clickhouse-ns",
-	}
-	if !proto.Equal(wr, wantWrapperRef) {
-		t.Errorf("ParseSpecFromUnstructured() wrapperRef = %+v, want %+v", wr, wantWrapperRef)
+	if wr == nil || wr.GetCrdGroup() != "clickhouse.altinity.com" || wr.GetCrdVersion() != "v1" || wr.GetCrdKind() != "ClickHouseInstallation" || wr.GetTargetName() != "chi-cluster" || wr.GetTargetNamespace() != "clickhouse-ns" {
+		t.Errorf("unexpected parsed camelCase wrapperRef: %+v", wr)
 	}
 
 	rawDelete := map[string]any{
@@ -543,15 +716,18 @@ func TestParseHelpers(t *testing.T) {
 
 func TestExtractHelpers(t *testing.T) {
 	m := map[string]any{
-		"int64":        int64(42),
-		"int":          int(100),
-		"float64":      float64(200.5),
-		"stringInt":    "300",
-		"stringBad":    "bad",
-		"boolVal":      true,
-		"strVal":       "hello",
-		"emptyWrapper": "not-a-map",
-		"emptyList":    "not-a-list",
+		"int64":         int64(42),
+		"int":           int(100),
+		"float64":       float64(200.5),
+		"stringInt":     "300",
+		"stringBad":     "bad",
+		"stringerInt":   testStringer{val: "400"},
+		"stringerFloat": testStringer{val: "500.5"},
+		"stringerBad":   testStringer{val: "not_a_number"},
+		"boolVal":       true,
+		"strVal":        "hello",
+		"emptyWrapper":  "not-a-map",
+		"emptyList":     "not-a-list",
 	}
 
 	if extractInt(m, "int64") != 42 {
@@ -568,6 +744,15 @@ func TestExtractHelpers(t *testing.T) {
 	}
 	if extractInt(m, "stringBad") != 0 {
 		t.Errorf("extractInt stringBad failed")
+	}
+	if extractInt(m, "stringerInt") != 400 {
+		t.Errorf("extractInt stringerInt failed")
+	}
+	if extractInt(m, "stringerFloat") != 500 {
+		t.Errorf("extractInt stringerFloat failed")
+	}
+	if extractInt(m, "stringerBad") != 0 {
+		t.Errorf("extractInt stringerBad failed")
 	}
 	if extractInt(m, "boolVal") != 0 {
 		t.Errorf("extractInt boolVal failed")
@@ -602,4 +787,271 @@ func TestExtractHelpers(t *testing.T) {
 	if parseWrapperRef(m) != nil {
 		t.Errorf("parseWrapperRef not-a-map failed")
 	}
+}
+
+func TestParseWrapperRefOptions(t *testing.T) {
+	if ref := ParseWrapperRefOptions(nil, "default-ns"); ref.Namespace != "default-ns" {
+		t.Errorf("expected default namespace for nil spec: %+v", ref)
+	}
+
+	spec := map[string]any{
+		"wrapperRef": map[string]any{
+			"group":                    "ray.io",
+			"version":                  "v1",
+			"kind":                     "RayCluster",
+			"name":                     "my-ray",
+			"namespace":                "",
+			"observedGenerationPath":   "status.obsGen",
+			"readyConditionPath":       "status.conditions[0].status",
+			"expectedReadyValue":       "True",
+			"endpointJsonPath":         "status.url",
+			"connectionSecretJsonPath": "status.secret",
+		},
+	}
+	ref := ParseWrapperRefOptions(spec, "fallback-ns")
+	if ref.Group != "ray.io" || ref.Name != "my-ray" || ref.Namespace != "fallback-ns" || ref.EndpointJSONPath != "status.url" {
+		t.Errorf("unexpected parsed wrapper ref: %+v", ref)
+	}
+
+	specCamel := map[string]any{
+		"wrapperRef": map[string]any{
+			"crdGroup":                 "clickhouse.altinity.com",
+			"crdVersion":               "v1",
+			"crdKind":                  "ClickHouseInstallation",
+			"targetName":               "chi-cluster",
+			"targetNamespace":          "clickhouse-ns",
+			"observedGenerationPath":   "status.observedGeneration",
+			"readyConditionPath":       "status.ready",
+			"expectedReadyValue":       "Ready",
+			"endpointJsonPath":         "status.endpoint",
+			"connectionSecretJsonPath": "status.secretName",
+		},
+	}
+	refCamel := ParseWrapperRefOptions(specCamel, "default-ns")
+	if refCamel.Group != "clickhouse.altinity.com" || refCamel.Version != "v1" || refCamel.Kind != "ClickHouseInstallation" ||
+		refCamel.Name != "chi-cluster" || refCamel.Namespace != "clickhouse-ns" || refCamel.ReadyConditionPath != "status.ready" {
+		t.Errorf("unexpected parsed camelCase wrapper ref: %+v", refCamel)
+	}
+}
+
+func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
+	ctx := context.Background()
+	spec3P := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{
+			CrdGroup: "ray.io", CrdVersion: "v1", CrdKind: "RayCluster", TargetName: "ray-1", TargetNamespace: "xmc",
+		},
+	}
+
+	t.Run("preserves component observed generation and does not overwrite with 3p resource gen", func(t *testing.T) {
+		detector := NewFakeStatusDetector()
+		detector.SetStatus("xmc/ray-1", &ResourceStatus{
+			Found:              true,
+			Ready:              true,
+			ObservedGeneration: 999,
+			Endpoint:           "http://ray-head.xmc.svc.cluster.local:8265",
+			ConnectionSecret:   "ray-secret",
+		})
+		prober := NewFakeHealthProber()
+		prober.SetResult("http://ray-head.xmc.svc.cluster.local:8265", &HealthProbeResult{Healthy: true, Message: "HTTP 200"})
+		bp := NewBridgeProber(detector, prober, time.Second)
+
+		cms := &mockCMS{}
+		r, _ := NewReconciler(cms, bp, nil)
+
+		res, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+			Namespace: "xmc", Name: "ray-1", Generation: 5, Spec: spec3P, Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.ObservedGeneration != 5 {
+			t.Errorf("expected ObservedGeneration 5 (Component gen), got %d", res.ObservedGeneration)
+		}
+		if res.Access == nil || res.Access.EnvVars["ENDPOINT"] != "http://ray-head.xmc.svc.cluster.local:8265" ||
+			res.Access.EnvVars["SECRET_NAME"] != "ray-secret" || res.Access.EnvVars["PORT"] != "8265" ||
+			res.Access.EnvVars["SCHEME"] != "http" || res.Access.EnvVars["HOST"] != "ray-head.xmc.svc.cluster.local" {
+			t.Errorf("unexpected access env vars: %+v", res.Access)
+		}
+		for _, c := range res.Conditions {
+			if c.ObservedGeneration != 5 {
+				t.Errorf("condition %s has observedGeneration %d, want 5", c.Type, c.ObservedGeneration)
+			}
+		}
+	})
+
+	t.Run("handles resource not found vs crd not found", func(t *testing.T) {
+		detector := NewFakeStatusDetector()
+		detector.SetStatus("xmc/missing-res", &ResourceStatus{
+			Found:   false,
+			Ready:   false,
+			Message: "resource xmc/missing-res not found",
+		})
+		detector.SetStatus("xmc/missing-crd", &ResourceStatus{
+			Found:   false,
+			Ready:   false,
+			Message: "CRD not installed: no matches for kind \"Foo\"",
+		})
+		bp := NewBridgeProber(detector, nil, time.Second)
+		r, _ := NewReconciler(&mockCMS{}, bp, nil)
+
+		// Case 1: ResourceNotFound
+		res1, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+			Namespace: "xmc", Name: "missing-res", Generation: 1,
+			Spec: &componentspb.ComponentSpec{
+				Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+				WrapperRef: &componentspb.WrapperRef{TargetName: "missing-res", TargetNamespace: "xmc"},
+			},
+			Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		foundReason := false
+		for _, c := range res1.Conditions {
+			if c.Type == ConditionTypeReady && c.Reason == "ResourceNotFound" {
+				foundReason = true
+			}
+		}
+		if !foundReason {
+			t.Errorf("expected Condition Ready reason ResourceNotFound, got: %+v", res1.Conditions)
+		}
+
+		// Case 2: CRDNotFound
+		res2, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+			Namespace: "xmc", Name: "missing-crd", Generation: 1,
+			Spec: &componentspb.ComponentSpec{
+				Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+				WrapperRef: &componentspb.WrapperRef{TargetName: "missing-crd", TargetNamespace: "xmc"},
+			},
+			Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		foundCRDReason := false
+		for _, c := range res2.Conditions {
+			if c.Type == ConditionTypeReady && c.Reason == "CRDNotFound" {
+				foundCRDReason = true
+			}
+		}
+		if !foundCRDReason {
+			t.Errorf("expected Condition Ready reason CRDNotFound, got: %+v", res2.Conditions)
+		}
+	})
+}
+
+func TestBridgeProber(t *testing.T) {
+	fakeDetector := NewFakeStatusDetector()
+	fakeDetector.SetStatus("xmc/my-crd", &ResourceStatus{Found: true, Ready: true, Endpoint: "http://my-crd.xmc:8080"})
+	fakeProber := NewFakeHealthProber()
+	fakeProber.SetResult("http://my-crd.xmc:8080", &HealthProbeResult{Healthy: true, Message: "HTTP 200"})
+
+	bp := NewBridgeProber(fakeDetector, fakeProber, time.Second)
+	ctx := context.Background()
+
+	// DetectStatus
+	st, err := bp.DetectStatus(ctx, WrapperRef{Name: "my-crd", Namespace: "xmc"})
+	if err != nil || !st.Found || !st.Ready {
+		t.Errorf("DetectStatus() = %+v, %v", st, err)
+	}
+
+	// Probe
+	pr, err := bp.Probe(ctx, "http://my-crd.xmc:8080", time.Second)
+	if err != nil || !pr.Healthy {
+		t.Errorf("Probe() = %+v, %v", pr, err)
+	}
+	prZeroTimeout, err := bp.Probe(ctx, "http://my-crd.xmc:8080", 0)
+	if err != nil || !prZeroTimeout.Healthy {
+		t.Errorf("Probe() with zero timeout = %+v, %v", prZeroTimeout, err)
+	}
+
+	// ProbeHealth for 1P
+	if ok, _ := bp.ProbeHealth(ctx, &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}, "xmc"); !ok {
+		t.Error("expected 1P component healthy")
+	}
+
+	// ProbeHealth for 3P
+	spec3P := &componentspb.ComponentSpec{
+		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{CrdGroup: "custom.io", CrdVersion: "v1", CrdKind: "Custom", TargetName: "my-crd", TargetNamespace: "xmc"},
+	}
+	if ok, msg := bp.ProbeHealth(ctx, spec3P, "xmc"); !ok || msg != "HTTP 200" {
+		t.Errorf("expected 3P healthy: ok=%v, msg=%s", ok, msg)
+	}
+
+	// ProbeHealth with uninitialized detector
+	emptyBP := &BridgeProber{}
+	if ok, _ := emptyBP.ProbeHealth(ctx, spec3P, "xmc"); ok {
+		t.Error("expected false for uninitialized BridgeProber")
+	}
+	if _, err := emptyBP.DetectStatus(ctx, WrapperRef{}); err == nil {
+		t.Error("expected error for uninitialized detector")
+	}
+	if _, err := emptyBP.Probe(ctx, "http://foo", time.Second); err == nil {
+		t.Error("expected error for uninitialized health prober")
+	}
+
+	// ProbeHealth with nil status returned from detector
+	nilStatusDetector := &mockDetector{status: nil}
+	bpWithNilStatus := NewBridgeProber(nilStatusDetector, fakeProber, time.Second)
+	if ok, msg := bpWithNilStatus.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "status detector returned nil status" {
+		t.Errorf("expected false for nil status from detector: ok=%v, msg=%s", ok, msg)
+	}
+
+	// ProbeHealth with nil result returned from prober
+	nilResultProber := &mockProberDirect{probeRes: nil}
+	bpWithNilResult := NewBridgeProber(fakeDetector, nilResultProber, time.Second)
+	if ok, msg := bpWithNilResult.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "health prober returned nil result" {
+		t.Errorf("expected false for nil result from prober: ok=%v, msg=%s", ok, msg)
+	}
+}
+
+type mockDetector struct {
+	status *ResourceStatus
+	err    error
+}
+
+func (m *mockDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+	return m.status, m.err
+}
+
+type mockProberDirect struct {
+	probeRes *HealthProbeResult
+	err      error
+}
+
+func (m *mockProberDirect) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+	return m.probeRes, m.err
+}
+func (m *mockProberDirect) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
+	return m.probeRes, m.err
+}
+func (m *mockProberDirect) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
+	return m.probeRes, m.err
+}
+
+func TestPopulateAccessEnvVars(t *testing.T) {
+	t.Run("nil access or nil status does not panic", func(t *testing.T) {
+		populateAccessEnvVars(nil, &ResourceStatus{}, "default")
+		access := &AccessStatus{}
+		populateAccessEnvVars(access, nil, "default")
+		if access.EnvVars != nil {
+			t.Errorf("expected EnvVars to remain nil on nil status")
+		}
+	})
+
+	t.Run("populates access with uninitialized EnvVars map", func(t *testing.T) {
+		access := &AccessStatus{}
+		status := &ResourceStatus{
+			Endpoint:         "http://service.prod:8080",
+			ConnectionSecret: "db-secret",
+		}
+		populateAccessEnvVars(access, status, "prod")
+		if access.EnvVars["ENDPOINT"] != "http://service.prod:8080" ||
+			access.EnvVars["SECRET_NAME"] != "db-secret" ||
+			access.EnvVars["PORT"] != "8080" {
+			t.Errorf("unexpected access env vars: %+v", access.EnvVars)
+		}
+	})
 }

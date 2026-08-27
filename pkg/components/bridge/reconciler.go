@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -50,10 +51,94 @@ type CMSClient interface {
 	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
 }
 
-// StatusDetectorHealthProber defines the health checking interface for custom resources.
+// StatusDetectorHealthProber defines the status detection and active health checking interface for 3P custom resources.
 type StatusDetectorHealthProber interface {
-	// ProbeHealth evaluates the runtime health of a component based on its spec, returning health status and message.
-	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
+	// DetectStatus queries the target 3P custom resource to determine readiness and extract access coordinates.
+	DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)
+	// Probe executes an active HTTP/TCP probe against target.
+	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
+	// ProbeHealth evaluates the runtime health of a component based on its spec and default namespace, returning health status and message.
+	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string)
+}
+
+// BridgeProber combines StatusDetector and HealthProber into StatusDetectorHealthProber.
+type BridgeProber struct {
+	detector     StatusDetector
+	healthProber HealthProber
+	probeTimeout time.Duration
+}
+
+var _ StatusDetectorHealthProber = (*BridgeProber)(nil)
+
+// NewBridgeProber creates a BridgeProber combining detector and health prober.
+func NewBridgeProber(detector StatusDetector, prober HealthProber, probeTimeout time.Duration) *BridgeProber {
+	if probeTimeout <= 0 {
+		probeTimeout = 5 * time.Second
+	}
+	return &BridgeProber{
+		detector:     detector,
+		healthProber: prober,
+		probeTimeout: probeTimeout,
+	}
+}
+
+// DetectStatus queries the target 3P resource via the underlying dynamic StatusDetector.
+func (p *BridgeProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+	if p.detector == nil {
+		return nil, errors.New("status detector is uninitialized")
+	}
+	return p.detector.DetectStatus(ctx, ref)
+}
+
+// Probe executes an active HTTP/TCP health probe against target using the configured probe timeout.
+func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+	if p.healthProber == nil {
+		return nil, errors.New("health prober is uninitialized")
+	}
+	if timeout <= 0 {
+		timeout = p.probeTimeout
+	}
+	return p.healthProber.Probe(ctx, target, timeout)
+}
+
+// ProbeHealth evaluates whether a component is healthy based on its spec and default namespace.
+// For 3P wrappers, it queries the status detector and verifies endpoint health via active probing.
+func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
+	if spec == nil {
+		return false, "spec is nil"
+	}
+	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetWrapperRef() == nil {
+		return true, "Component healthy"
+	}
+	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
+	if p.detector == nil {
+		return false, "status detector is uninitialized"
+	}
+	res, err := p.detector.DetectStatus(ctx, wRef)
+	if err != nil {
+		return false, fmt.Sprintf("status detection error: %v", err)
+	}
+	if res == nil {
+		return false, "status detector returned nil status"
+	}
+	if !res.Found || !res.Ready {
+		return false, res.Message
+	}
+	if res.Endpoint == "" {
+		return true, res.Message
+	}
+	if p.healthProber == nil {
+		return true, res.Message
+	}
+	timeout := p.probeTimeout
+	probeRes, probeErr := p.healthProber.Probe(ctx, res.Endpoint, timeout)
+	if probeErr != nil {
+		return false, fmt.Sprintf("probe error: %v", probeErr)
+	}
+	if probeRes == nil {
+		return false, "health prober returned nil result"
+	}
+	return probeRes.Healthy, probeRes.Message
 }
 
 type serverClientAdapter struct {
@@ -152,6 +237,7 @@ type ReconcileComponentInput struct {
 	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
 	HelmOpts           HelmComponentOptions
+	WrapperOpts        WrapperRef
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -161,7 +247,7 @@ type ReconcileComponentInput struct {
 // 3. Attaches deletion protection finalizer if not already present.
 // 4. Synchronizes declarative intent with CMS via applyIntent.
 // 5. If !Enabled, handles deactivation via reconcileDisabled.
-// 6. Ensures 1P child workloads via ensureWorkload.
+// 6. Ensures 1P child workloads via ensure1PComponent or 3P wrapper reconciliation.
 // 7. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
@@ -186,10 +272,149 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	if !in.Enabled {
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		return r.reconcile3PWrapper(ctx, in, canonicalName, res)
+	}
 	if err := r.ensure1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
 	return r.evaluateHealth(ctx, in, canonicalName, res)
+}
+
+// reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
+// detecting CRD status via StatusDetector, running active health probes against discovered endpoints,
+// populating access coordinates (HOST, PORT, SCHEME, ENDPOINT, SECRET_NAME), and reporting status to CMS.
+func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if r.prober == nil {
+		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+	}
+	ref := in.WrapperOpts
+	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
+		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
+	}
+	if ref.Name == "" {
+		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+	}
+
+	resStatus, err := r.prober.DetectStatus(ctx, ref)
+	if err != nil {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", err.Error())
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	if resStatus == nil {
+		errmsg := "status detector returned nil status"
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", errmsg)
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", errmsg)
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	}
+	if !resStatus.Found {
+		reason := "ResourceNotFound"
+		if strings.Contains(resStatus.Message, "CRD not installed") {
+			reason = "CRDNotFound"
+		}
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, resStatus.Message)
+	}
+	if !resStatus.Ready {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "ResourceNotReady", resStatus.Message)
+	}
+
+	if ok, reason, msg := r.verifyEndpointHealth(ctx, resStatus.Endpoint); !ok {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
+	}
+
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
+// verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
+func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
+	if endpoint == "" {
+		return true, "", ""
+	}
+	probeRes, err := r.prober.Probe(ctx, endpoint, 0)
+	if err != nil {
+		return false, "ProbeFailed", fmt.Sprintf("Health probe failed for %s: %v", endpoint, err)
+	}
+	if probeRes == nil {
+		return false, "ProbeFailed", fmt.Sprintf("Health probe returned nil result for %s", endpoint)
+	}
+	if !probeRes.Healthy {
+		msg := probeRes.Message
+		if msg == "" {
+			msg = fmt.Sprintf("Health probe unhealthy for %s", endpoint)
+		}
+		return false, "ProbeUnhealthy", msg
+	}
+	return true, "", ""
+}
+
+// reconcile3PWrapperFallback performs health evaluation when no dynamic status detector is configured.
+func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	isHealthy, healthMsg := true, "Component is active"
+	if r.prober != nil {
+		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
+	}
+	if !isHealthy {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "HealthProbeFailed", healthMsg)
+	}
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
+}
+
+// handle3PUnreadyStatus sets Ready=False and Degraded=True status conditions when 3P health or readiness fails.
+func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, message string) (*ReconcileResult, error) {
+	if message == "" {
+		message = fmt.Sprintf("3P wrapper %s is not ready: %s", in.Name, reason)
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
+}
+
+// populateAccessEnvVars extracts network coordinates and credentials from resStatus into the AccessStatus.EnvVars map.
+func populateAccessEnvVars(access *AccessStatus, resStatus *ResourceStatus, ns string) {
+	if access == nil || resStatus == nil {
+		return
+	}
+	if access.EnvVars == nil {
+		access.EnvVars = make(map[string]string)
+	}
+	if resStatus.Endpoint != "" {
+		if coords := ParseCoordinates(resStatus.Endpoint, ns); coords != nil {
+			access.EnvVars["ENDPOINT"] = resStatus.Endpoint
+			access.EnvVars["HOST"] = coords.GetHost()
+			access.EnvVars["PORT"] = strconv.FormatUint(uint64(coords.GetPort()), 10)
+			access.EnvVars["SCHEME"] = coords.GetScheme()
+		}
+	}
+	if resStatus.ConnectionSecret != "" {
+		access.EnvVars["SECRET_NAME"] = resStatus.ConnectionSecret
+	}
+}
+
+// handle3PReadyStatus transitions component state to COMPONENT_STATE_ENABLED and populates Ready=True conditions.
+func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *ResourceStatus) (*ReconcileResult, error) {
+	msg := "3P wrapper resource is operational and ready"
+	if resStatus != nil && resStatus.Message != "" {
+		msg = resStatus.Message
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+
+	populateAccessEnvVars(res.Access, resStatus, in.Namespace)
+
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, "ComponentHealthy", msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentHealthy", msg)
+
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
 }
 
 // reconcileDeletion handles component teardown when a deletionTimestamp is present.
@@ -302,13 +527,12 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	return nil
 }
 
-// evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and Degraded
+// evaluateHealth probes the runtime health of the component, sets the Ready and Degraded
 // conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
-// Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, healthMsg := true, "Component is active"
 	if r.prober != nil {
-		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec)
+		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
 	}
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
 
@@ -325,7 +549,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
-	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
+	logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "healthy", isHealthy, "state", res.State.String(), "statusMsg", healthMsg)
 	return res, nil
 }
 
@@ -344,6 +568,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 	}
 	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
 	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
+	wOpts := ParseWrapperRefOptions(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
@@ -355,7 +580,36 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 		HelmOpts:           opts,
+		WrapperOpts:        wOpts,
 	})
+}
+
+// ParseWrapperRefOptions extracts a WrapperRef with optional JSONPath queries from a custom resource spec.
+func ParseWrapperRefOptions(specObj any, defaultNamespace string) WrapperRef {
+	specMap, ok := specObj.(map[string]any)
+	if !ok || specMap == nil {
+		return WrapperRef{Namespace: defaultNamespace}
+	}
+	wr, ok := specMap["wrapperRef"].(map[string]any)
+	if !ok || wr == nil {
+		return WrapperRef{Namespace: defaultNamespace}
+	}
+	ns := firstNonEmpty(extractStr(wr, "targetNamespace"), extractStr(wr, "namespace"))
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	return WrapperRef{
+		Group:                    firstNonEmpty(extractStr(wr, "crdGroup"), extractStr(wr, "group")),
+		Version:                  firstNonEmpty(extractStr(wr, "crdVersion"), extractStr(wr, "version")),
+		Kind:                     firstNonEmpty(extractStr(wr, "crdKind"), extractStr(wr, "kind")),
+		Name:                     firstNonEmpty(extractStr(wr, "targetName"), extractStr(wr, "name")),
+		Namespace:                ns,
+		ObservedGenerationPath:   extractStr(wr, "observedGenerationPath"),
+		ReadyConditionPath:       extractStr(wr, "readyConditionPath"),
+		ExpectedReadyValue:       extractStr(wr, "expectedReadyValue"),
+		EndpointJSONPath:         extractStr(wr, "endpointJsonPath"),
+		ConnectionSecretJSONPath: extractStr(wr, "connectionSecretJsonPath"),
+	}
 }
 
 // ParseSpecFromUnstructured converts an unstructured spec map into a typed protobuf ComponentSpec,
@@ -407,8 +661,7 @@ func extractStr(m map[string]any, k string) string {
 	return ""
 }
 
-// extractInt extracts an int64 integer key from map m. Handles standard Go integers (int64, int),
-// float64 (produced by encoding/json unmarshaling in unstructured maps), and numeric strings.
+// extractInt extracts an int64 integer key from map m, handling int64, int, float64, and string representations.
 func extractInt(m map[string]any, k string) int64 {
 	v, ok := m[k]
 	if !ok {
@@ -424,6 +677,14 @@ func extractInt(m map[string]any, k string) int64 {
 	case string:
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
 			return i
+		}
+	}
+	if s, ok := v.(interface{ String() string }); ok {
+		if i, err := strconv.ParseInt(s.String(), 10, 64); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(s.String(), 64); err == nil {
+			return int64(f)
 		}
 	}
 	return 0
