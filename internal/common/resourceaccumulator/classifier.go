@@ -15,8 +15,6 @@
 package resourceaccumulator
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -123,28 +121,25 @@ func IsSpecificTPUKey(key string) bool {
 	return key == "v4" || key == "v5" || key == "v6"
 }
 
-var shortKeywordRegexes = func() map[string]*regexp.Regexp {
-	m := make(map[string]*regexp.Regexp, len(shortAcceleratorKeywords))
-	for _, kw := range shortAcceleratorKeywords {
-		m[kw] = regexp.MustCompile(fmt.Sprintf(`(?i)(?:^|[-_/.])%s(?:$|[-_/.])`, regexp.QuoteMeta(kw)))
-	}
-	return m
-}()
-
-// MatchesShortAcceleratorKeyword checks if keyword matches any delimited token in identifier.
+// MatchesShortAcceleratorKeyword checks if keyword matches any delimited token in identifier (0 heap allocations).
 func MatchesShortAcceleratorKeyword(identifier, keyword string) bool {
 	if identifier == "" || keyword == "" {
 		return false
 	}
-	if re, exists := shortKeywordRegexes[strings.ToLower(keyword)]; exists {
-		return re.MatchString(identifier)
+	start := 0
+	for i := 0; i <= len(identifier); i++ {
+		if i == len(identifier) || isDelimiter(identifier[i]) {
+			if strings.EqualFold(identifier[start:i], keyword) {
+				return true
+			}
+			start = i + 1
+		}
 	}
-	pattern := fmt.Sprintf(`(?i)(?:^|[-_/.])%s(?:$|[-_/.])`, regexp.QuoteMeta(keyword))
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return false
-	}
-	return re.MatchString(identifier)
+	return false
+}
+
+func isDelimiter(b byte) bool {
+	return b == '-' || b == '_' || b == '/' || b == '.'
 }
 
 // IsAcceleratorResource returns true if resName represents an accelerator resource type.
