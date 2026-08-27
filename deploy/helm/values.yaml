@@ -101,7 +101,9 @@ reconciler:
   monitoring:
     # Deploy a Google Managed Prometheus PodMonitoring that scrapes the
     # reconciler's /metrics endpoint (MLRun RED metrics).
-    enabled: true
+    enabled: false
+    # Port on which the reconciler serves its Prometheus metrics endpoint.
+    port: 8082
     # Scrape interval for the PodMonitoring endpoint.
     interval: 60s
 redisAddr: "YOUR_REDIS_IP:6379"

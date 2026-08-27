@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-{{- if (.Values.reconciler | default dict).monitoring | default dict | dig "enabled" true }}
+{{- if (.Values.reconciler | default dict).monitoring | default dict | dig "enabled" false }}
 # PodMonitoring is the Google Managed Prometheus (GMP) CRD
 # (monitoring.googleapis.com/v1), NOT the prometheus-operator PodMonitor. It
 # tells GKE managed collection to scrape the reconciler's /metrics endpoint.

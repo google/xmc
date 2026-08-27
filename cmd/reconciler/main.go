@@ -57,7 +57,7 @@ func run(ctx context.Context, cfg Config) error {
 	// registry via promauto) on a dedicated port for PodMonitoring to scrape;
 	// the manager's own metrics server serves only the controller-runtime
 	// registry.
-	go serveMetrics(ctx, metricsAddr)
+	go serveMetrics(ctx, fmt.Sprintf(":%d", cfg.MetricsPort))
 
 	return mgr.Start(ctx)
 }

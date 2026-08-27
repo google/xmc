@@ -24,13 +24,6 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// metricsAddr is the dedicated port for the reconciler's Prometheus scrape
-// endpoint. It is intentionally distinct from the controller-runtime manager's
-// own metrics port (":8081"): that server exposes only the controller-runtime
-// registry, whereas this endpoint exposes the global default registry, where the
-// reconciler's own metrics (registered via promauto) live. PodMonitoring scrapes
-// this port.
-const metricsAddr = ":8082"
 
 // newMetricsHandler returns an HTTP handler that exposes the union of the given
 // gatherers. It is kept separate from the server wiring so the gathering

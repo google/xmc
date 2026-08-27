@@ -30,3 +30,4 @@ data:
   kube_api_qps: "100"
   kube_api_burst: "200"
   status_message_history_enabled: {{ .Values.statusMessageHistoryEnabled | quote }}
+  metrics_port: {{ (.Values.reconciler | default dict).monitoring | default dict | dig "port" 8082 | quote }}
