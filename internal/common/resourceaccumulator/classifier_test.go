@@ -146,25 +146,25 @@ func TestIsGenericGPUAndTPU(t *testing.T) {
 
 func TestMatchesShortAcceleratorKeyword(t *testing.T) {
 	tests := []struct {
-		str  string
-		kw   string
-		want bool
+		identifier string
+		keyword    string
+		want       bool
 	}{
-		{str: "l4", kw: "l4", want: true},
-		{str: "nvidia-l4", kw: "l4", want: true},
-		{str: "l4-gpu", kw: "l4", want: true},
-		{str: "tpu-v4", kw: "v4", want: true},
-		{str: "v4-8", kw: "v4", want: true},
-		{str: "pool4", kw: "l4", want: false},
-		{str: "level4", kw: "l4", want: false},
-		{str: "server6", kw: "v6", want: false},
+		{identifier: "l4", keyword: "l4", want: true},
+		{identifier: "nvidia-l4", keyword: "l4", want: true},
+		{identifier: "l4-gpu", keyword: "l4", want: true},
+		{identifier: "tpu-v4", keyword: "v4", want: true},
+		{identifier: "v4-8", keyword: "v4", want: true},
+		{identifier: "pool4", keyword: "l4", want: false},
+		{identifier: "level4", keyword: "l4", want: false},
+		{identifier: "server6", keyword: "v6", want: false},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.str+"_"+tt.kw, func(t *testing.T) {
-			got := MatchesShortAcceleratorKeyword(tt.str, tt.kw)
+		t.Run(tt.identifier+"_"+tt.keyword, func(t *testing.T) {
+			got := MatchesShortAcceleratorKeyword(tt.identifier, tt.keyword)
 			if got != tt.want {
-				t.Errorf("MatchesShortAcceleratorKeyword(%q, %q) = %v, want %v", tt.str, tt.kw, got, tt.want)
+				t.Errorf("MatchesShortAcceleratorKeyword(%q, %q) = %v, want %v", tt.identifier, tt.keyword, got, tt.want)
 			}
 		})
 	}

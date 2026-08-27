@@ -121,15 +121,15 @@ func IsSpecificTPUKey(key string) bool {
 	return key == "v4" || key == "v5" || key == "v6"
 }
 
-// MatchesShortAcceleratorKeyword checks if kw matches any delimited token in s (0 heap allocations).
-func MatchesShortAcceleratorKeyword(s, kw string) bool {
-	if s == "" || kw == "" {
+// MatchesShortAcceleratorKeyword checks if keyword matches any delimited token in identifier (0 heap allocations).
+func MatchesShortAcceleratorKeyword(identifier, keyword string) bool {
+	if identifier == "" || keyword == "" {
 		return false
 	}
 	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || isDelimiter(s[i]) {
-			if strings.EqualFold(s[start:i], kw) {
+	for i := 0; i <= len(identifier); i++ {
+		if i == len(identifier) || isDelimiter(identifier[i]) {
+			if strings.EqualFold(identifier[start:i], keyword) {
 				return true
 			}
 			start = i + 1
