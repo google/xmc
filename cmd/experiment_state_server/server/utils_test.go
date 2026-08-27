@@ -121,12 +121,6 @@ func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 	}
 }
 
-func withArtifactObservers(observers ...ArtifactObserver) testServerOpt {
-	return func(p *Params) {
-		p.ArtifactObservers = append(p.ArtifactObservers, observers...)
-	}
-}
-
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
 	p := Params{}

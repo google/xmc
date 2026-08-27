@@ -18,20 +18,6 @@ import {
   RangePreset,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-/**
- * Velocity period options for queue resource calculations.
- */
-export interface VelocityPeriodOption {
-  readonly value: string;
-  readonly label: string;
-}
-
-export const VELOCITY_PERIOD_OPTIONS: readonly VelocityPeriodOption[] = [
-  { value: '1h', label: '1 hour' },
-  { value: '24h', label: '1 day' },
-  { value: '7d', label: '7 days' },
-];
-
 const rateFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
   useGrouping: false,
@@ -43,25 +29,6 @@ const rateFormatter = new Intl.NumberFormat('en-US', {
 export function formatRate(val: number): string {
   if (val === 0) return '0';
   return rateFormatter.format(val);
-}
-
-/**
- * Convert velocity period string to numeric hours.
- */
-export function getVelocityHours(period: string): number {
-  switch (period) {
-    case '1h':
-    case '1 hour':
-      return 1;
-    case '24h':
-    case '1 day':
-      return 24;
-    case '7d':
-    case '7 days':
-      return 168;
-    default:
-      return 168;
-  }
 }
 
 /**

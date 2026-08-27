@@ -48,7 +48,6 @@ import (
 const (
 	kueueQueueLabel         = "kueue.x-k8s.io/queue-name"
 	kueuePriorityClassLabel = "kueue.x-k8s.io/priority-class"
-	kueueWorkloadAnnotation = "kueue.x-k8s.io/workload"
 	// defaultTTLSeconds is the default time-to-live for JobSet and Jobs after finishing.
 	defaultTTLSeconds = 7 * 24 * 60 * 60 // 7 days
 )
@@ -914,10 +913,6 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 	default:
 		return nil
 	}
-}
-
-func (c *Client) generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
-	return c.generateEnvVarsForSpec(job.GetSpec())
 }
 
 func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
