@@ -38,6 +38,8 @@ jobs:
 
     permissions:
       contents: read
+      # paths-filter lists a pull request's files through the API rather than from the checkout.
+      pull-requests: read
 
     outputs:
       run_backend: ${{ steps.scope.outputs.run_backend }}
