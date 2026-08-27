@@ -133,6 +133,16 @@ func TestGetOptions(t *testing.T) {
 			}),
 		},
 		{
+			name: "password file keeps significant whitespace",
+			setup: func(t *testing.T) {
+				// A space is a legal password character, so only the line terminator may be stripped.
+				setEnv(t, "CLICKHOUSE_PASSWORD_FILE", writePasswordFile(t, " pa ss \r\n"))
+			},
+			want: modifyOptions(baseOptions, func(opt *clickhouse.Options) {
+				opt.Auth.Password = " pa ss "
+			}),
+		},
+		{
 			name: "unreadable password file",
 			setup: func(t *testing.T) {
 				setEnv(t, "CLICKHOUSE_PASSWORD_FILE", filepath.Join(t.TempDir(), "absent"))
