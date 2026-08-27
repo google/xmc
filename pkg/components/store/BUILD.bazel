@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "store",
     srcs = [
+        "deactivation_engine.go",
         "dependency_parser.go",
         "field_mask.go",
         "graph_validator.go",
@@ -34,6 +35,7 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_mod//semver",
     ],
@@ -42,6 +44,7 @@ go_library(
 go_test(
     name = "store_test",
     srcs = [
+        "deactivation_engine_test.go",
         "dependency_parser_test.go",
         "field_mask_test.go",
         "graph_validator_test.go",
@@ -59,5 +62,6 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
