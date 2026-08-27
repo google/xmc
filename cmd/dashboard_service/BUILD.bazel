@@ -73,6 +73,8 @@ compat_go_test(
     srcs = ["main_test.go"],
     embed = [":dashboard_service_lib"],
     deps = [
+        "//cmd/dashboard_service/server",
+        "//internal/dashboard/dataengine",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@org_golang_google_grpc//:go_default_library",
