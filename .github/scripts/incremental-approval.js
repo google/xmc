@@ -116,7 +116,9 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
     return null;
   }
 
-  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
+  const approvals = activeReviews.filter(
+    r => (r.state === 'APPROVED' || r.state === 'DISMISSED') && r.approvedSha
+  );
   if (approvals.length === 0) {
     return null;
   }
@@ -365,6 +367,50 @@ function evaluateIncrementalApproval({
 }
 
 /**
+ * Shell Helper: Resolves commit ranges for git range-diff.
+ * Handles stacked PRs (/gh-stack) where the base branch itself was rebased.
+ * @param {string} baseRef - Target base branch name.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ * @param {Object} execOptions - Subprocess options.
+ * @returns {{ approvedRange: string, currentRange: string }}
+ */
+function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
+  const currentRange = `origin/${baseRef}..${currentSha}`;
+  let approvedRange = `origin/${baseRef}..${approvedSha}`;
+  const opts = { ...execOptions, stdio: ['pipe', 'pipe', 'ignore'] };
+
+  try {
+    const prCommitCountStr = execFileSync(
+      'git',
+      ['rev-list', '--count', currentRange],
+      opts
+    ).trim();
+    const prCommitCount = parseInt(prCommitCountStr, 10) || 0;
+
+    if (prCommitCount > 0) {
+      execFileSync('git', ['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], opts);
+      const approvedBaseCountStr = execFileSync(
+        'git',
+        ['rev-list', '--count', approvedRange],
+        opts
+      ).trim();
+      const approvedBaseCount = parseInt(approvedBaseCountStr, 10) || 0;
+
+      // If approved range contains extra commits from a rebased parent branch in /gh-stack,
+      // scope the approved range to the PR layer commit count.
+      if (approvedBaseCount !== prCommitCount) {
+        approvedRange = `${approvedSha}~${prCommitCount}..${approvedSha}`;
+      }
+    }
+  } catch {
+    // Fall back to default origin/${baseRef}..${approvedSha}
+  }
+
+  return { approvedRange, currentRange };
+}
+
+/**
  * Shell Helper: Executes git range-diff between approved commit and current commit relative to base.
  * @param {string} baseRef - Target base branch name.
  * @param {string} approvedSha - Previous approved commit SHA.
@@ -379,16 +425,14 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
     maxBuffer: GIT_MAX_BUFFER_BYTES,
     timeout: GIT_EXEC_TIMEOUT_MS
   };
-  const diffArgs = [
-    'range-diff',
-    '--no-color',
-    '--',
-    `origin/${baseRef}..${approvedSha}`,
-    `origin/${baseRef}..${currentSha}`
-  ];
+
+  const execute = () => {
+    const { approvedRange, currentRange } = resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions);
+    return execFileSync('git', ['range-diff', '--no-color', approvedRange, currentRange], execOptions);
+  };
 
   try {
-    return execFileSync('git', diffArgs, execOptions);
+    return execute();
   } catch (initialError) {
     try {
       execFileSync(
@@ -396,7 +440,7 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
         ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha],
         { encoding: 'utf8', stdio: 'ignore', timeout: GIT_EXEC_TIMEOUT_MS }
       );
-      return execFileSync('git', diffArgs, execOptions);
+      return execute();
     } catch (fallbackError) {
       throw new Error(`Failed to execute git range-diff: ${fallbackError.message}`);
     }
@@ -528,6 +572,7 @@ module.exports = {
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
+  resolveCommitRanges,
   runGitRangeDiff,
   run
 };

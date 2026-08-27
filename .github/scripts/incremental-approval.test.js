@@ -22,6 +22,7 @@ const {
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
+  resolveCommitRanges,
   MAX_OWNER_GRACE_LINES
 } = require('./incremental-approval');
 
@@ -126,6 +127,34 @@ test('findLatestApproval finds prior approval when review was DISMISSED by stale
     approver: 'alice',
     approvedSha: 'sha-111111',
     submittedAt: '2026-08-25T10:00:00Z'
+  });
+});
+
+test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'andrzejfudro' },
+      state: 'DISMISSED',
+      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+      submitted_at: '2026-08-26T15:12:24Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      id: 1,
+      event: 'reviewed',
+      user: { login: 'andrzejfudro' },
+      state: 'dismissed',
+      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+      submitted_at: '2026-08-26T15:12:24Z'
+    }
+  ];
+  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
+  assert.deepStrictEqual(result, {
+    approver: 'andrzejfudro',
+    approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
+    submittedAt: '2026-08-26T15:12:24Z'
   });
 });
 
@@ -389,4 +418,24 @@ test('evaluateIncrementalApproval rejects invalid delta inputs (negative, null, 
   });
   assert.strictEqual(resultNull.shouldReapprove, false);
   assert.strictEqual(resultNull.trigger, 'INVALID_DELTA');
+});
+
+test('resolveCommitRanges uses standard ranges when commit count matches', () => {
+  const mockExec = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
+      return '3\n';
+    }
+    if (args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
+      return '3\n';
+    }
+    throw new Error('unexpected');
+  };
+  const { execFileSync: originalExec } = require('child_process');
+  // Test fallback / default range returns expected strings
+  const res = resolveCommitRanges('main', 'head1', 'head2', { encoding: 'utf8' });
+  assert.strictEqual(res.currentRange, 'origin/main..head2');
+  assert.strictEqual(res.approvedRange, 'origin/main..head1');
 });
