@@ -67,15 +67,16 @@
       <div class="capacity-boxes-stack">
         @for (cap of capacities(); track cap.resourceType) {
           @let cohortInfo = cap | cohortStateInfo;
+          @let isCapacityHealthy = isQueueHealthy() && cohortInfo.state !== cohortStateSqueezed;
           <div
             class="capacity-box table-row"
-            [class.squeezed-box]="cohortInfo.state === 'SQUEEZED'"
-            [class.borrowing-box]="cohortInfo.state === 'BORROWING'"
+            [class.squeezed-box]="cohortInfo.state === cohortStateSqueezed"
+            [class.borrowing-box]="cohortInfo.state === cohortStateBorrowing"
           >
             <div class="capacity-box-header">
               <div class="flavor-header-group">
                 <span class="flavor-main-name">{{ cap.resourceType }}</span>
-                @if (cohortInfo.state === 'SQUEEZED') {
+                @if (cohortInfo.state === cohortStateSqueezed) {
                   <span
                     class="cohort-badge squeezed-badge"
                     matTooltip="Peers in your cohort are currently using shared capacity"
@@ -83,7 +84,7 @@
                     <mat-icon class="badge-mini-icon">warning</mat-icon>
                     Squeezed by cohort
                   </span>
-                } @else if (cohortInfo.state === 'BORROWING') {
+                } @else if (cohortInfo.state === cohortStateBorrowing) {
                   <span
                     class="cohort-badge borrowing-badge"
                     matTooltip="Idle capacity is available in your cohort to borrow"
@@ -95,14 +96,10 @@
               </div>
               <mat-icon
                 class="flavor-status-icon"
-                [class.flavor-check-icon]="isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'"
-                [class.flavor-warn-icon]="!isQueueHealthy() || cohortInfo.state === 'SQUEEZED'"
+                [class.flavor-check-icon]="isCapacityHealthy"
+                [class.flavor-warn-icon]="!isCapacityHealthy"
               >
-                {{
-                  isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'
-                    ? 'check_circle'
-                    : 'warning_amber'
-                }}
+                {{ isCapacityHealthy ? 'check_circle' : 'warning_amber' }}
               </mat-icon>
             </div>
             <div class="capacity-stats-grid">
@@ -118,16 +115,16 @@
                 </div>
                 <div
                   class="cell-value bold-metric"
-                  [class.green-text]="isQueueHealthy() && cohortInfo.state !== 'SQUEEZED'"
-                  [class.amber-text]="!isQueueHealthy() || cohortInfo.state === 'SQUEEZED'"
+                  [class.green-text]="isCapacityHealthy"
+                  [class.amber-text]="!isCapacityHealthy"
                 >
                   <span>{{ cap | maxSchedulableDisplay }}</span>
                   @if (cohortInfo.tooltip) {
                     <mat-icon
                       class="cohort-value-tip-icon"
                       matTooltipClass="rod-term-tooltip"
-                      [class.squeezed-tip-icon]="cohortInfo.state === 'SQUEEZED'"
-                      [class.borrowing-tip-icon]="cohortInfo.state === 'BORROWING'"
+                      [class.squeezed-tip-icon]="cohortInfo.state === cohortStateSqueezed"
+                      [class.borrowing-tip-icon]="cohortInfo.state === cohortStateBorrowing"
                       [matTooltip]="cohortInfo.tooltip"
                       >info_outline</mat-icon
                     >

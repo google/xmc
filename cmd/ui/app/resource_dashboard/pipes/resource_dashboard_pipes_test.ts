@@ -18,6 +18,9 @@ import {
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
+  COHORT_STATE_BALANCED,
+  COHORT_STATE_BORROWING,
+  COHORT_STATE_SQUEEZED,
   CohortStateInfoPipe,
   FreeTotalDisplayPipe,
   MaxSchedulableDisplayPipe,
@@ -97,14 +100,15 @@ describe('Resource Dashboard Pipes', () => {
         freeCapacity: 60,
         freeCapacityWithBorrowing: 30,
       };
-      const info = pipe.transform(cap);
-      expect(info.state).toBe('SQUEEZED');
-      expect(info.delta).toBe(30);
-      expect(info.badgeClass).toBe('squeezed');
-      expect(info.label).toBe('Squeezed by cohort');
-      expect(info.tooltip).toBe(
-        'Shared cohort pool depleted: Immediate headroom (30) is lower than nominal free quota (60) due to cohort-wide workload demand.',
-      );
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_SQUEEZED,
+        delta: 30,
+        badgeClass: 'squeezed',
+        label: 'Squeezed by cohort',
+        icon: 'warning',
+        tooltip:
+          'Shared cohort pool depleted: Immediate headroom (30) is lower than nominal free quota (60) due to cohort-wide workload demand.',
+      });
     });
 
     it('should identify BORROWING state when freeCapacityWithBorrowing > freeCapacity', () => {
@@ -114,12 +118,14 @@ describe('Resource Dashboard Pipes', () => {
         freeCapacity: 60,
         freeCapacityWithBorrowing: 80,
       };
-      const info = pipe.transform(cap);
-      expect(info.state).toBe('BORROWING');
-      expect(info.delta).toBe(20);
-      expect(info.badgeClass).toBe('borrowing');
-      expect(info.label).toBe('Borrowing available');
-      expect(info.tooltip).toBe('Can borrow up to +20 beyond nominal quota from cohort.');
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_BORROWING,
+        delta: 20,
+        badgeClass: 'borrowing',
+        label: 'Borrowing available',
+        icon: 'bolt',
+        tooltip: 'Can borrow up to +20 beyond nominal quota from cohort.',
+      });
     });
 
     it('should identify BALANCED state when freeCapacityWithBorrowing == freeCapacity', () => {
@@ -129,12 +135,13 @@ describe('Resource Dashboard Pipes', () => {
         freeCapacity: 60,
         freeCapacityWithBorrowing: 60,
       };
-      const info = pipe.transform(cap);
-      expect(info.state).toBe('BALANCED');
-      expect(info.delta).toBe(0);
-      expect(info.badgeClass).toBe('balanced');
-      expect(info.label).toBe('Balanced');
-      expect(info.tooltip).toBeUndefined();
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_BALANCED,
+        delta: 0,
+        badgeClass: 'balanced',
+        label: 'Balanced',
+        icon: 'check_circle',
+      });
     });
   });
 

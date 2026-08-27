@@ -36,8 +36,17 @@ export class FreeTotalDisplayPipe implements PipeTransform {
   }
 }
 
+export const COHORT_STATE_BALANCED = 'BALANCED' as const;
+export const COHORT_STATE_SQUEEZED = 'SQUEEZED' as const;
+export const COHORT_STATE_BORROWING = 'BORROWING' as const;
+
+export type CohortState =
+  | typeof COHORT_STATE_BALANCED
+  | typeof COHORT_STATE_SQUEEZED
+  | typeof COHORT_STATE_BORROWING;
+
 export interface CohortStateInfo {
-  state: 'BALANCED' | 'SQUEEZED' | 'BORROWING';
+  state: CohortState;
   label: string;
   badgeClass: string;
   icon: string;
@@ -48,12 +57,38 @@ export interface CohortStateInfo {
 const EPSILON = 1e-5;
 
 const BALANCED_STATE: CohortStateInfo = {
-  state: 'BALANCED',
+  state: COHORT_STATE_BALANCED,
   label: 'Balanced',
   badgeClass: 'balanced',
   icon: 'check_circle',
   delta: 0,
 };
+
+function buildSqueezedStateInfo(
+  schedulable: number,
+  freeNominal: number,
+  delta: number,
+): CohortStateInfo {
+  return {
+    state: COHORT_STATE_SQUEEZED,
+    label: 'Squeezed by cohort',
+    badgeClass: 'squeezed',
+    icon: 'warning',
+    delta: Math.abs(delta),
+    tooltip: `Shared cohort pool depleted: Immediate headroom (${schedulable}) is lower than nominal free quota (${freeNominal}) due to cohort-wide workload demand.`,
+  };
+}
+
+function buildBorrowingStateInfo(delta: number): CohortStateInfo {
+  return {
+    state: COHORT_STATE_BORROWING,
+    label: 'Borrowing available',
+    badgeClass: 'borrowing',
+    icon: 'bolt',
+    delta,
+    tooltip: `Can borrow up to +${delta} beyond nominal quota from cohort.`,
+  };
+}
 
 /**
  * Derives cohort sharing state info (BALANCED, SQUEEZED, BORROWING) from a QueueResourceCapacity.
@@ -66,25 +101,11 @@ export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): Coh
   const delta = schedulable - freeNominal;
 
   if (delta < -EPSILON) {
-    return {
-      state: 'SQUEEZED',
-      label: 'Squeezed by cohort',
-      badgeClass: 'squeezed',
-      icon: 'warning',
-      delta: Math.abs(delta),
-      tooltip: `Shared cohort pool depleted: Immediate headroom (${schedulable}) is lower than nominal free quota (${freeNominal}) due to cohort-wide workload demand.`,
-    };
+    return buildSqueezedStateInfo(schedulable, freeNominal, delta);
   }
 
   if (delta > EPSILON) {
-    return {
-      state: 'BORROWING',
-      label: 'Borrowing available',
-      badgeClass: 'borrowing',
-      icon: 'bolt',
-      delta,
-      tooltip: `Can borrow up to +${delta} beyond nominal quota from cohort.`,
-    };
+    return buildBorrowingStateInfo(delta);
   }
 
   return BALANCED_STATE;
