@@ -17,7 +17,7 @@
  */
 export const ROD_TERM_TOOLTIPS = {
   maxSchedulableNow:
-    "Max Schedulable Now (Cluster quota / Cohort quota)\n\nCluster quota: Free capacity available within this queue's nominal quota without borrowing.\n\nCohort quota: Max single workload size that can be admitted immediately right now taking into account cohort borrowing (without waiting or preemption).",
+    'Max Schedulable Now (Cohort quota)\n\nThe maximum single workload size that can be admitted immediately right now taking into account cohort borrowing (without waiting or preemption).',
 
   freeTotalCapacity:
     "Nominal Queue Quota (Free / Total)\n\nFree: Unused portion of this queue's guaranteed nominal quota.\n\nTotal: The baseline nominal quota configured for this queue.",

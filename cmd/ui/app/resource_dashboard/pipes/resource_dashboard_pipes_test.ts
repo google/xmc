@@ -63,23 +63,23 @@ describe('Resource Dashboard Pipes', () => {
       expect(pipe.transform(undefined)).toBe('-');
     });
 
-    it('should return cluster quota / cohort quota when freeCapacityWithBorrowing is available', () => {
+    it('should return freeCapacityWithBorrowing when available', () => {
       const cap: QueueResourceCapacity = {
         resourceType: 'nvidia-tesla-h100',
         freeCapacity: 32,
         totalCapacity: 64,
         freeCapacityWithBorrowing: 24,
       };
-      expect(pipe.transform(cap)).toBe('32 / 24');
+      expect(pipe.transform(cap)).toBe('24');
     });
 
-    it('should format cluster quota / cluster quota when freeCapacityWithBorrowing is not set', () => {
+    it('should fall back to freeCapacity when freeCapacityWithBorrowing is not set', () => {
       const cap: QueueResourceCapacity = {
         resourceType: 'cpu',
         freeCapacity: 128,
         totalCapacity: 256,
       };
-      expect(pipe.transform(cap)).toBe('128 / 128');
+      expect(pipe.transform(cap)).toBe('128');
     });
   });
 
