@@ -219,7 +219,7 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		// Summed CPU (128+64=192) and Memory (512+256=768) across all flavors, with distinct accelerator capacities for nvidia-l4 and nvidia-tesla-h100:
 		QueueCapacity: []*spb.QueueResourceCapacity{
 			{
-				ResourceType:              "nvidia-l4",
+				ResourceType:              "nvidia.com/gpu: nvidia-l4",
 				TotalCapacity:             32.0,
 				FreeCapacity:              24.0,
 				FreeCapacityWithBorrowing: 24.0,
@@ -237,7 +237,7 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 				FreeCapacityWithBorrowing: 600.0,
 			},
 			{
-				ResourceType:              "nvidia-tesla-h100",
+				ResourceType:              "nvidia.com/gpu: nvidia-tesla-h100",
 				TotalCapacity:             8.0,
 				FreeCapacity:              6.0,
 				FreeCapacityWithBorrowing: 6.0,
