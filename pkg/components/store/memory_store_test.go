@@ -1001,11 +1001,40 @@ func TestMemoryStore_ValidateComponentRequirement(t *testing.T) {
 	}
 }
 
-func TestMemoryStore_GetPlatformHealth_Unimplemented(t *testing.T) {
+func TestMemoryStore_GetPlatformHealth(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, err := ms.GetPlatformHealth(ctx, "", 10, ""); status.Code(err) != codes.Unimplemented {
-		t.Errorf("GetPlatformHealth got code %v, want Unimplemented", status.Code(err))
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("health-comp-%d", i)
+		spec := &componentspb.ComponentSpec{
+			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version: "v1.0.0",
+		}
+		if _, err := ms.SetComponentIntent(ctx, name, spec, nil, 0); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
+		}
+		state := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+		ready := i%2 == 0
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: ready}, state, "OK"); err != nil {
+			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
+		}
+	}
+
+	resp, err := ms.GetPlatformHealth(ctx, "state=ENABLED", 2, "")
+	if err != nil {
+		t.Fatalf("GetPlatformHealth failed: %v", err)
+	}
+	if len(resp.GetComponents()) != 2 {
+		t.Errorf("len(Components) = %d, want 2", len(resp.GetComponents()))
+	}
+	if resp.GetTotalHealthy() != 3 {
+		t.Errorf("TotalHealthy = %d, want 3", resp.GetTotalHealthy())
+	}
+	if resp.GetTotalUnhealthy() != 2 {
+		t.Errorf("TotalUnhealthy = %d, want 2", resp.GetTotalUnhealthy())
+	}
+	if resp.GetNextPageToken() == "" {
+		t.Error("NextPageToken is empty, want token")
 	}
 }

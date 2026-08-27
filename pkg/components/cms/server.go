@@ -306,7 +306,6 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
-// Note: To be implemented in subsequent platform health monitoring tasks.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
@@ -314,5 +313,9 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	if err := s.checkStoreReady(); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented")
+	if req.GetPageSize() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "page size cannot be negative")
+	}
+
+	return s.store.GetPlatformHealth(ctx, req.GetFilter(), req.GetPageSize(), req.GetPageToken())
 }
