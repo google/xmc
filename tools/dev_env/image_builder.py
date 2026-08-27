@@ -98,8 +98,14 @@ class ImageBuilder:
             List of tuples: (bazel_package, bazel_target, docker_image_tag).
         """
         active_services = self.config.enabled_services if services is None else services
+        active_services = list(dict.fromkeys(active_services))
         specs: list[tuple[str, str, str]] = []
         for s in active_services:
+            if not s or not all(c.isalnum() or c in "_-" for c in s):
+                raise ValueError(
+                    f"Invalid service name '{s}'. Service names must only contain "
+                    "alphanumeric characters, underscores, or dashes."
+                )
             if s in _SERVICE_TARGET_MAP:
                 specs.append(_SERVICE_TARGET_MAP[s])
             else:
