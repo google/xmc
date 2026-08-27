@@ -95,6 +95,29 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     await removeBtns[index].click();
   }
 
+  private readonly dominantBadges = this.locatorForAll('.dominant-badge');
+
+  /** Gets whether a dominant badge is present. */
+  async hasDominantBadge(): Promise<boolean> {
+    const badges = await this.dominantBadges();
+    return badges.length > 0;
+  }
+
+  /** Gets the text of the dominant badge if present. */
+  async getDominantBadgeText(): Promise<string | null> {
+    const badges = await this.dominantBadges();
+    return badges.length > 0 ? (await badges[0].text()).trim() : null;
+  }
+
+  /** Returns whether the select box at the given index has the dominant class. */
+  async isDominantSelectBox(index: number): Promise<boolean> {
+    const selects = await this.selectBoxes();
+    if (!selects[index]) {
+      throw new Error(`No resource type select found at index ${index}`);
+    }
+    return selects[index].hasClass('dominant-select-box');
+  }
+
   /** Clicks the + Add resource type button. */
   async clickAddButton(): Promise<void> {
     const addBtn = await this.addButton();

@@ -352,6 +352,42 @@
   column-gap: 20px;
 }
 
+.dominant-flavor-tag {
+  font-size: 11px;
+  background-color: #fce8e6;
+  color: #d93025;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.predictability-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border: 1px dashed #dadce0;
+  border-radius: 6px;
+  margin-top: 12px;
+
+  .empty-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: #5f6368;
+    flex-shrink: 0;
+  }
+
+  .empty-text {
+    font-size: 13px;
+    color: #5f6368;
+    line-height: 1.4;
+  }
+}
+
 .predictability-spinner-container {
   display: flex;
   flex-direction: column;

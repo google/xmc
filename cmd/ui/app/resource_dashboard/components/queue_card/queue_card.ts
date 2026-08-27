@@ -47,6 +47,7 @@ import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
+  findQueuePredictability,
   getPendingJobsCount,
 } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_velocity';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
@@ -82,6 +83,8 @@ export class QueueCardComponent {
   readonly isSecondaryLoading = input<boolean>(false);
   readonly isSelected = input<boolean>(false);
   readonly activeResourceFilters = input<string[]>([]);
+  readonly dominantResource = input<string | null>(null);
+  readonly velocityPeriod = input<string>('1h');
   readonly selectQueue = output<string>();
 
   private readonly clipboard = inject(Clipboard);
@@ -110,16 +113,23 @@ export class QueueCardComponent {
 
   protected readonly isCopied = signal<boolean>(false);
   protected readonly predictabilityVm = computed<PredictabilityViewModel | null>(() => {
+    const dominant = this.dominantResource();
+    if (!dominant) return null;
+
     const sec = this.secondaryData();
     if (!sec?.queuePredictability?.length) return null;
-    const reqRes = calculatePendingRequestsDisplay(sec);
-    const firstPred = sec.queuePredictability[0];
-    const resType = firstPred?.pendingResourceRequests?.resourceType;
+
+    const period = this.velocityPeriod();
+    const match = findQueuePredictability(sec, period, dominant);
+    if (!match) return null;
+
+    const reqRes = calculatePendingRequestsDisplay(sec, dominant);
+    const resType = match.pendingResourceRequests?.resourceType ?? dominant;
     return {
-      jobVelocityDisplay: calculateJobVelocity(sec, '1h'),
-      resourceVelocityDisplay: calculateResourceVelocity(sec, '1h'),
+      jobVelocityDisplay: calculateJobVelocity(sec, period, dominant),
+      resourceVelocityDisplay: calculateResourceVelocity(sec, period, dominant),
       pendingJobs: getPendingJobsCount(sec),
-      requestedResourcesDisplay: resType ? `${reqRes} ${resType}` : `${reqRes} units`,
+      requestedResourcesDisplay: `${reqRes} ${resType}`,
     };
   });
 
