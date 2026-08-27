@@ -57,6 +57,20 @@ func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
 	return engine, nil
 }
 
+// Ping checks that the ClickHouse connection behind the engine is still usable.
+//
+// A built engine says only that a connection was established once. Readiness needs to know whether
+// queries would work now, and the only way to find that out is to ask ClickHouse.
+func (e *DataEngine) Ping(ctx context.Context) error {
+	if e == nil {
+		return fmt.Errorf("data engine is not initialized")
+	}
+	if err := e.conn.Ping(ctx); err != nil {
+		return fmt.Errorf("clickhouse ping failed: %w", err)
+	}
+	return nil
+}
+
 // FetchChartData compiles and executes queries for all plots within a Chart.
 func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
 	// The engine is optional at startup, so a caller can end up holding a nil one. Report that as an

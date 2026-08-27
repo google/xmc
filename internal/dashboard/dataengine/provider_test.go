@@ -138,7 +138,52 @@ func TestProviderEngineRecoversAfterRetryInterval(t *testing.T) {
 	}
 }
 
-func TestProviderEngineDoesNotQueueBehindAnAttempt(t *testing.T) {
+func TestProviderEngineSharesAnInFlightAttempt(t *testing.T) {
+	dialing, release := make(chan struct{}), make(chan struct{})
+	blocked := func() (ClickHouseConn, error) {
+		close(dialing)
+		<-release
+		return succeeds()
+	}
+	connector := &countingConnector{results: []func() (ClickHouseConn, error){blocked}}
+	provider := NewProvider(connector.connect)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		provider.Engine(context.Background())
+	}()
+	<-dialing
+
+	// Callers arriving mid-dial wait on the attempt already running rather than being turned
+	// away, so each sees the engine that attempt produced instead of an error about a competing
+	// one.
+	errs := make(chan error, 8)
+	var wg sync.WaitGroup
+	for range cap(errs) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := provider.Engine(context.Background())
+			errs <- err
+		}()
+	}
+	close(release)
+	wg.Wait()
+	close(errs)
+	<-done
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Engine() during an in-flight dial = %v, want no error", err)
+		}
+	}
+	if got := connector.callCount(); got != 1 {
+		t.Errorf("connector ran %d times for one shared attempt, want 1", got)
+	}
+}
+
+func TestProviderEngineStopsWaitingWhenTheCallerGivesUp(t *testing.T) {
 	dialing, release := make(chan struct{}), make(chan struct{})
 	blocked := func() (ClickHouseConn, error) {
 		close(dialing)
@@ -153,12 +198,91 @@ func TestProviderEngineDoesNotQueueBehindAnAttempt(t *testing.T) {
 		provider.Engine(context.Background())
 	}()
 	<-dialing
-	_, err := provider.Engine(context.Background())
+
+	// A readiness probe arriving mid-dial must come back on its own deadline rather than be held
+	// open for however long ClickHouse takes to answer.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := provider.Engine(ctx)
 	close(release)
 	<-done
 
-	if !errors.Is(err, errAttemptInProgress) {
-		t.Errorf("Engine() during an in-flight dial = %v, want %v", err, errAttemptInProgress)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Engine() with a cancelled context = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestProviderEngineOutlivesTheCancelledCallerThatStartedIt(t *testing.T) {
+	dialing, release := make(chan struct{}), make(chan struct{})
+	// Sampled once the initiating caller has already given up, so a cancelled dial context here
+	// would mean its cancellation had propagated into the shared attempt.
+	var errDuringDial error
+	connector := func(ctx context.Context) (ClickHouseConn, error) {
+		close(dialing)
+		<-release
+		errDuringDial = ctx.Err()
+		return succeeds()
+	}
+	provider := NewProvider(connector)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	initiator := make(chan error, 1)
+	go func() {
+		_, err := provider.Engine(ctx)
+		initiator <- err
+	}()
+	<-dialing
+	cancel()
+	if err := <-initiator; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the initiating Engine() = %v, want %v", err, context.Canceled)
+	}
+
+	// The attempt is shared, so the caller that happened to start it cannot be allowed to abort
+	// it for everyone else still waiting.
+	close(release)
+	engine, err := provider.Engine(context.Background())
+
+	if err != nil {
+		t.Fatalf("Engine() after the initiator gave up = %v, want no error", err)
+	}
+	if engine == nil {
+		t.Fatal("Engine() returned no engine after the initiator gave up")
+	}
+	if errDuringDial != nil {
+		t.Errorf("dial context reported %v while the initiator was cancelled, want nil", errDuringDial)
+	}
+}
+
+func TestProviderPingChecksTheConnection(t *testing.T) {
+	pingErr := errors.New("clickhouse is unreachable")
+	conn := &mockClickHouseConn{pingFn: func(context.Context) error { return pingErr }}
+	provider := NewProvider(func(context.Context) (ClickHouseConn, error) { return conn, nil })
+
+	// A cached engine is not evidence that ClickHouse still answers, which is the whole reason
+	// readiness pings rather than merely asking whether an engine exists.
+	if _, err := provider.Engine(context.Background()); err != nil {
+		t.Fatalf("Engine() returned error: %v", err)
+	}
+	err := provider.Ping(context.Background())
+
+	if !errors.Is(err, pingErr) {
+		t.Errorf("Ping() = %v, want it to wrap %v", err, pingErr)
+	}
+}
+
+func TestProviderPingSucceedsWhenClickHouseAnswers(t *testing.T) {
+	provider := NewProvider((&countingConnector{results: []func() (ClickHouseConn, error){succeeds}}).connect)
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Errorf("Ping() = %v, want no error", err)
+	}
+}
+
+func TestProviderPingReportsAnUnbuildableEngine(t *testing.T) {
+	provider := NewProvider((&countingConnector{results: []func() (ClickHouseConn, error){fails}}).connect)
+
+	if err := provider.Ping(context.Background()); err == nil {
+		t.Error("Ping() = nil, want an error when the engine cannot be built")
 	}
 }
 
@@ -187,8 +311,8 @@ func TestProviderEngineServesConcurrentCallersOnceBuilt(t *testing.T) {
 		t.Fatalf("Engine() failed to build: %v", err)
 	}
 
-	// Contending for the dial lock in the steady state would make callers reject each other with
-	// errAttemptInProgress even though ClickHouse is up and the engine is already cached.
+	// Coordinating in the steady state would make callers wait on each other even though
+	// ClickHouse is up and the engine is already cached.
 	errs := make(chan error, 32)
 	var wg sync.WaitGroup
 	for range cap(errs) {

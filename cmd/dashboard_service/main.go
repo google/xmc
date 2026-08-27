@@ -170,7 +170,10 @@ func newReadinessCheck(sc *spanner.Client, provider *dataengine.Provider) func(c
 		if provider == nil {
 			return nil
 		}
-		if _, err := provider.Engine(checkCtx); err != nil {
+		// Ping rather than Engine: the engine is built once and cached, so asking only whether one
+		// exists keeps reporting ready long after ClickHouse has gone away. The probe has to reach
+		// the database itself for its answer to mean anything.
+		if err := provider.Ping(checkCtx); err != nil {
 			return fmt.Errorf("chart data engine is unavailable: %w", err)
 		}
 		return nil
