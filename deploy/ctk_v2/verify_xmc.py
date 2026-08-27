@@ -26,7 +26,7 @@ _repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.append(str(_repo_root))
 
-from tools.tool_utils import ensure_venv  # noqa: E402
+from tools.common.tool_utils import ensure_venv  # noqa: E402
 
 
 def _extract_yaml_val(content: str, key: str) -> str | None:

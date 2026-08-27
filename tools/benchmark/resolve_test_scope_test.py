@@ -43,6 +43,8 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(is_non_code_file("pkg/auth/oauth2/handlers.go"))
         self.assertFalse(is_non_code_file("cmd/ui/src/app/app.component.ts"))
         self.assertFalse(is_non_code_file("services/billing/v1/billing.go"))
+        self.assertFalse(is_non_code_file("deploy/ctk_v2/verify_xmc.py"))
+        self.assertFalse(is_non_code_file("deploy/ctk_v2/BUILD.bazel"))
 
     def test_classify_modified_files_inverted_default_safety(self):
         # Brand new unknown backend folder MUST trigger backend code flag!
