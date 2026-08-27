@@ -151,6 +151,16 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("ingestionGatewayDeployment", content)
         self.assertIn("ingestion_gateway_image:latest", content)
 
+    def test_prepare_local_chart_source_not_found(self) -> None:
+        deployer = HelmDeployer(
+            config=self.config,
+            repo_root=self.temp_path / "empty_repo",
+            temp_dir=self.temp_path,
+        )
+        with self.assertRaises(FileNotFoundError) as ctx:
+            deployer.prepare_local_chart()
+        self.assertIn("Source Helm chart directory not found", str(ctx.exception))
+
     def test_prepare_local_chart_read_only_template(self) -> None:
         helm_src = self.temp_path / "deploy" / "helm" / "templates" / "ess"
         helm_src.mkdir(parents=True, exist_ok=True)
@@ -163,6 +173,20 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertTrue(surviving.exists())
         content = surviving.read_text(encoding="utf-8")
         self.assertIn("imagePullPolicy: IfNotPresent", content)
+
+    @patch("tools.dev_env.helm_deployer.shutil.which")
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_capture_diagnostics_custom_namespace(
+        self, mock_run: MagicMock, mock_which: MagicMock
+    ) -> None:
+        mock_which.return_value = "/usr/local/bin/kubectl"
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="NAME STATUS", stderr="")
+
+        diag_path = self.deployer.capture_diagnostics(namespace="custom-ns")
+        self.assertTrue(diag_path.is_file())
+        content = diag_path.read_text(encoding="utf-8")
+        self.assertIn("=== PODS (namespace: custom-ns) ===", content)
+        self.assertIn("=== PODS (namespace: dex) ===", content)
 
     @patch("tools.dev_env.helm_deployer.shutil.which")
     @patch("tools.dev_env.helm_deployer.run_command")
@@ -310,7 +334,7 @@ class TestHelmDeployer(unittest.TestCase):
         mock_run.side_effect = RuntimeError("Rollout timed out")
         with self.assertRaises(RuntimeError):
             self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=10)
-        mock_diag.assert_called_once()
+        mock_diag.assert_called_once_with(namespace="xmc")
 
     @patch("tools.dev_env.helm_deployer.run_command")
     @patch.object(HelmDeployer, "capture_diagnostics")
@@ -322,7 +346,7 @@ class TestHelmDeployer(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=10)
         self.assertEqual(str(ctx.exception), "Rollout timed out")
-        mock_diag.assert_called_once()
+        mock_diag.assert_called_once_with(namespace="xmc")
 
     @patch("tools.dev_env.helm_deployer.run_command")
     @patch.object(HelmDeployer, "prepare_local_chart")

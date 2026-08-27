@@ -145,6 +145,8 @@ class HelmDeployer:
         if self.helm_dir.exists():
             shutil.rmtree(self.helm_dir)
         source_chart = self.repo_root / "deploy" / "helm"
+        if not source_chart.is_dir():
+            raise FileNotFoundError(f"Source Helm chart directory not found at '{source_chart}'")
         shutil.copytree(source_chart, self.helm_dir)
 
         templates_dir = self.helm_dir / "templates"
@@ -167,19 +169,19 @@ class HelmDeployer:
         """Replaces imagePullPolicy Always with IfNotPresent in local templates."""
         total_patched = 0
         for path in self.helm_dir.rglob("*.yaml"):
-            text = path.read_text(encoding="utf-8")
-            patched, count = re.subn(
-                r'imagePullPolicy:\s*["\']?Always["\']?',
-                "imagePullPolicy: IfNotPresent",
-                text,
-            )
-            if count > 0:
-                total_patched += count
-                try:
+            try:
+                text = path.read_text(encoding="utf-8")
+                patched, count = re.subn(
+                    r'imagePullPolicy:\s*["\']?Always["\']?',
+                    "imagePullPolicy: IfNotPresent",
+                    text,
+                )
+                if count > 0:
+                    total_patched += count
                     path.chmod(path.stat().st_mode | 0o200)
                     path.write_text(patched, encoding="utf-8")
-                except OSError as e:
-                    _LOGGER.warning("Failed to write patched file %s: %s", path, e)
+            except OSError as e:
+                _LOGGER.warning("Failed to process or patch file %s: %s", path, e)
         _LOGGER.debug("Patched imagePullPolicy: IfNotPresent across %d locations", total_patched)
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
