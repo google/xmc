@@ -155,12 +155,10 @@ class SpannerManager:
             for key, (ddl, proto, mig) in _SCHEMA_DEFINITIONS.items()
             if getattr(self.config, f"{key}_database", None)
         ]
-        normalized_targets: list[tuple[str, str, str, str]] = []
-        for target in db_targets:
-            if len(target) == 3:
-                normalized_targets.append((target[0], target[1], target[2], ""))
-            else:
-                normalized_targets.append(target)
+        normalized_targets = [
+            target if len(target) == 4 else (target[0], target[1], target[2], "")
+            for target in db_targets
+        ]
         missing_targets = [t for t in normalized_targets if t[0] not in existing_dbs]
         if not missing_targets:
             _LOGGER.debug("Required Spanner databases already exist: %s", existing_dbs)
@@ -221,9 +219,10 @@ class SpannerManager:
                 f"Failed to get migration version for database '{database}': {output.strip()}"
             )
 
-        ver_match = re.search(r"Version:\s*([0-9]+)", output, re.IGNORECASE)
+        stdout_str = res.stdout or ""
+        ver_match = re.search(r"Version:\s*([0-9]+)", stdout_str, re.IGNORECASE)
         current_version = int(ver_match.group(1)) if ver_match else 0
-        dirty_match = re.search(r"Dirty:\s*(true|false)", output, re.IGNORECASE)
+        dirty_match = re.search(r"Dirty:\s*(true|false)", stdout_str, re.IGNORECASE)
         is_dirty = dirty_match.group(1).lower() == "true" if dirty_match else False
         return current_version, is_dirty
 
