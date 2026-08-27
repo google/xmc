@@ -1,4 +1,4 @@
-# XMC Bridge Controller Daemon (`cmd/xmc-bridge`)
+# XMC Bridge Controller Daemon (`cmd/xmc_bridge`)
 
 `xmc-bridge` is the deployable controller daemon responsible for reconciling Kubernetes `Component` custom resources (`xmc.dev/v1alpha1`) with the Component Manager Service (CMS) in XMC.
 

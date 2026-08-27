@@ -18,11 +18,11 @@ load("//:oci.bzl", "oci_image_for_service")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "xmc-bridge_lib",
+    name = "xmc_bridge_lib",
     srcs = [
         "main.go",
     ],
-    importpath = "xmanager_cloud/cmd/xmc-bridge",
+    importpath = "xmanager_cloud/cmd/xmc_bridge",
     visibility = ["//visibility:private"],
     deps = [
         "//internal/logging",
@@ -35,23 +35,23 @@ go_library(
 )
 
 go_binary(
-    name = "xmc-bridge",
-    embed = [":xmc-bridge_lib"],
+    name = "xmc_bridge",
+    embed = [":xmc_bridge_lib"],
     pure = "on",
     visibility = ["//visibility:public"],
 )
 
 oci_image_for_service(
-    name = "xmc-bridge_image",
-    binary = ":xmc-bridge",
+    name = "xmc_bridge_image",
+    binary = ":xmc_bridge",
 )
 
 go_test(
-    name = "xmc-bridge_test",
+    name = "xmc_bridge_test",
     srcs = [
         "main_test.go",
     ],
-    embed = [":xmc-bridge_lib"],
+    embed = [":xmc_bridge_lib"],
     deps = [
         "//internal/logging",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
