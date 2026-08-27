@@ -382,7 +382,6 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
   const diffArgs = [
     'range-diff',
     '--no-color',
-    '--',
     `origin/${baseRef}..${approvedSha}`,
     `origin/${baseRef}..${currentSha}`
   ];

@@ -22,6 +22,7 @@ const {
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
+  runGitRangeDiff,
   MAX_OWNER_GRACE_LINES
 } = require('./incremental-approval');
 
@@ -389,4 +390,11 @@ test('evaluateIncrementalApproval rejects invalid delta inputs (negative, null, 
   });
   assert.strictEqual(resultNull.shouldReapprove, false);
   assert.strictEqual(resultNull.trigger, 'INVALID_DELTA');
+});
+
+test('runGitRangeDiff executes range-diff without usage errors', () => {
+  // Test range diff between HEAD and HEAD (clean self-comparison)
+  const headSha = require('child_process').execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+  const output = runGitRangeDiff('main', headSha, headSha);
+  assert.strictEqual(typeof output, 'string');
 });
