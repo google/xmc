@@ -12,20 +12,20 @@ This example demonstrates an end-to-end workflow for:
 
 ```mermaid
 flowchart TD
-    subgraph Local Workstation
+    subgraph "Local Workstation"
         A[install_venv.sh] -->|Initializes| B[Python .venv]
         B -->|Executes| C[launch.py]
     end
 
-    subgraph XMC Platform
-        C -->|1. Create Experiment| D[Experiment State Server (XID)]
-        C -->|2. Create WorkUnit| E[JobSet / WorkUnit Controller (WID)]
-        C -->|4. Register Dashboard & Charts| F[Dashboard Service (xdash)]
+    subgraph "XMC Platform"
+        C -->|1. Create Experiment| D["Experiment State Server (XID)"]
+        C -->|2. Create WorkUnit| E["JobSet / WorkUnit Controller (WID)"]
+        C -->|"4. Register Dashboard & Charts"| F["Dashboard Service (xdash)"]
     end
 
-    subgraph GKE Cluster
-        E -->|Launches Pod| G[Worker Container: worker.py]
-        G -->|3. Batch Insert xmc_metrics| H[(ClickHouse Database)]
+    subgraph "GKE Cluster"
+        E -->|Launches Pod| G["Worker Container: worker.py"]
+        G -->|3. Batch Insert xmc_metrics| H[("ClickHouse Database")]
     end
 
     H -.->|Queried on Demand| F
@@ -51,6 +51,13 @@ flowchart TD
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
 4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
+5. **A route to the Dashboard Service**: `launch.py` speaks gRPC to `XMC_DASHBOARD_ENDPOINT`, which
+   defaults to `localhost:50051`. Running from a workstation against a remote cluster, forward the
+   port first:
+
+   ```bash
+   kubectl port-forward -n xmc svc/dashboard-service 50051:50051
+   ```
 
 ---
 
@@ -117,16 +124,18 @@ Example output:
 ==================================================
 Worker Image       : us-docker.pkg.dev/my-project/xmc/clickhouse-metrics-job:latest
 Queue Name         : cpu-queue
-ClickHouse Host    : my-clickstack-clickhouse.xmc-metrics.svc.cluster.local:8123
+ClickHouse Host    : clickhouse.xmc-metrics.svc.cluster.local:8123
 ClickHouse Database: default
-Dashboard Endpoint : localhost:8080
+Dashboard Endpoint : localhost:50051
 ==================================================
 
 [1/3] Created Experiment successfully: experiments/234911125 (XID: 234911125)
 [2/3] Created WorkUnit successfully: experiments/234911125/workUnits/1 (WID: 1)
 
 [3/3] Creating Dashboard and Chart for generated metrics...
---> Connecting to Dashboard Service at localhost:8080...
+--> Connecting to Dashboard Service at localhost:50051...
+--> Creating Chart 'experiments/234911125/workUnits/1/charts/model_training_metrics'...
+--> Created Chart successfully: experiments/234911125/workUnits/1/charts/model_training_metrics
 --> Creating Dashboard 'Experiment 234911125 - Training & Metrics Overview' (ID: exp_234911125_training_overview)...
 --> Created Dashboard successfully: dashboards/exp_234911125_training_overview
 
