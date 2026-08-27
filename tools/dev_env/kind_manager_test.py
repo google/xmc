@@ -234,6 +234,23 @@ class KindManagerTest(unittest.TestCase):
 
         self.assertEqual(oct(tls_key.stat().st_mode & 0o777), oct(0o600))
 
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_ensure_secrets_includes_tls_sans_and_least_privilege_oauth(
+        self, mock_run: mock.MagicMock
+    ) -> None:
+        adc_file = Path(self.temp_dir.name) / "adc.json"
+        adc_file.write_text("{}")
+        with mock.patch.object(self.manager, "_resolve_adc_file", return_value=adc_file):
+            self.manager.ensure_secrets()
+
+        calls = [call[0][0] for call in mock_run.call_args_list]
+        req_call = next(c for c in calls if "req" in c)
+        self.assertIn("-addext", req_call)
+        self.assertIn("subjectAltName = DNS:localhost, DNS:dex, IP:127.0.0.1", req_call)
+
+        oauth_create = next(c for c in calls if "backend-oauth-secrets" in c and "create" in c)
+        self.assertFalse(any("--from-file=key.json" in arg for arg in oauth_create))
+
     def test_default_temp_dir_under_home(self) -> None:
         km = KindManager(config=self.config)
         self.assertEqual(km.temp_dir, Path.home() / ".xmc" / "dev" / "test-kind")

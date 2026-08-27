@@ -199,7 +199,6 @@ class KindManager:
         self._apply_secret_generic(
             "backend-oauth-secrets",
             ["xmc"],
-            files=[f"key.json={adc_file}"],
             literals=[
                 "jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
                 "client-secret=xmc-client-secret",
@@ -241,6 +240,8 @@ class KindManager:
                     "365",
                     "-subj",
                     "/CN=xmc-dev-signer",
+                    "-addext",
+                    "subjectAltName = DNS:localhost, DNS:dex, IP:127.0.0.1",
                 ]
             )
 
