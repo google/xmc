@@ -53,8 +53,6 @@ spec:
         openAPIV3Schema:
           type: object
           x-kubernetes-validations:
-            - rule: "has(oldSelf) || !has(self.spec.deletionProtection) || self.spec.deletionProtection == true"
-              message: "deletionProtection must be true on manifest creation to safeguard catalog inventory."
             - rule: "!has(self.spec.deletionPolicy) || self.spec.deletionPolicy in ['Orphan', 'Delete']"
               message: "deletionPolicy must be either 'Orphan' or 'Delete'."
             - rule: "!has(self.spec.lifecycleControl) || !has(self.spec.lifecycleControl.drainTimeoutSeconds) || self.spec.lifecycleControl.drainTimeoutSeconds >= 0"
