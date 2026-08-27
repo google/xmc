@@ -134,7 +134,7 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
     approver: reviewer,
     state,
     approvedSha: commitSha,
-    submittedAt: event.submitted_at || event.submittedAt || event.created_at
+    submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
   };
 }
 
@@ -463,8 +463,9 @@ function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
         approvedRange = `${approvedSha}~${prCommitCount}..${approvedSha}`;
       }
     }
-  } catch {
+  } catch (error) {
     // Fall back to default origin/${baseRef}..${approvedSha}
+    console.log(`[incremental-approval] Failed to resolve advanced commit range, falling back: ${error.message}`);
   }
 
   return { approvedRange, currentRange };
