@@ -111,7 +111,9 @@ func getPassword() (string, error) {
 	}
 
 	// Secret Manager payloads routinely carry a trailing newline, which is not part of the password.
-	return strings.TrimSpace(string(content)), nil
+	// Only the line terminator is stripped: a space is a legal password character, so trimming all
+	// surrounding whitespace would corrupt a valid credential into an authentication failure.
+	return strings.TrimRight(string(content), "\r\n"), nil
 }
 
 // Connect establishes a connection to ClickHouse using options loaded from environment variables.
