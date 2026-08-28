@@ -236,7 +236,7 @@ CREATE TABLE WorkUnits (
   -- The status of the current work unit execution.
   WorkUnitStatus cloud.xmanager.v1.WorkUnitStatus NOT NULL,
 
-  -- The queue name of the work unit. Stored for indexing.
+  -- The queue name of the work unit. Stored for indexing. Should match the kueue ClusterQueue.
   QueueName STRING(MAX) NOT NULL AS (Executable.scheduling_constraints.queue_name) STORED,
   -- The state of the current work unit execution. Stored for searching.
   ExecutionState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL AS (WorkUnitStatus.state) STORED,
@@ -410,7 +410,9 @@ CREATE TABLE Dashboards (
 CREATE TABLE Charts (
   ChartId STRING(MAX) NOT NULL,
   Title STRING(MAX) NOT NULL,
+  Description STRING(MAX),
   Xid INT64 NOT NULL,
+  Wid INT64 NOT NULL DEFAULT (0),
   PlotLayout BYTES(MAX),
   Owner STRING(MAX) NOT NULL,
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
@@ -451,4 +453,100 @@ CREATE TABLE ArtifactCharts (
   INTERLEAVE IN PARENT Artifacts ON DELETE CASCADE;
 
 CREATE INDEX ArtifactChartsByChartId ON ArtifactCharts (ChartId);
+
+-- Table: Components
+CREATE TABLE Components (
+  ComponentId INT64 NOT NULL,
+  Name STRING(MAX) NOT NULL,
+  ComponentClass STRING(128),
+  ConfigProto BYTES(MAX) NOT NULL,
+  AccessPayload BYTES(MAX),
+  State INT64 NOT NULL,
+  Generation INT64 NOT NULL,
+  ObservedGeneration INT64,
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED,
+  CONSTRAINT CK_Components_State CHECK (State IN (1, 2, 3, 4, 5))
+) PRIMARY KEY (ComponentId);
+
+CREATE UNIQUE NULL_FILTERED INDEX Idx_Components_ActiveName ON Components(ActiveName);
+CREATE INDEX Idx_Components_Class ON Components(ComponentClass);
+
+-- Table: ComponentDependencies
+CREATE TABLE ComponentDependencies (
+  ComponentId INT64 NOT NULL,
+  DependencyComponentId INT64 NOT NULL,
+  CONSTRAINT FK_Dependency FOREIGN KEY (DependencyComponentId) REFERENCES Components(ComponentId)
+) PRIMARY KEY (ComponentId, DependencyComponentId),
+  INTERLEAVE IN PARENT Components ON DELETE CASCADE;
+
+CREATE INDEX Idx_ComponentDependencies_Dependency ON ComponentDependencies(DependencyComponentId);
+
+-- Table: ExperimentComponentSnapshots
+CREATE TABLE ExperimentComponentSnapshots (
+  BitReversedXid INT64 NOT NULL,
+  ComponentId INT64 NOT NULL,
+  LockedGeneration INT64 NOT NULL,
+  ConfigProto BYTES(MAX) NOT NULL,
+  AccessPayload BYTES(MAX),
+  CONSTRAINT FK_Snapshots_Component FOREIGN KEY (ComponentId) REFERENCES Components(ComponentId)
+) PRIMARY KEY (BitReversedXid, ComponentId),
+  INTERLEAVE IN PARENT Experiments ON DELETE CASCADE;
+
+CREATE INDEX Idx_Snapshots_Component ON ExperimentComponentSnapshots(ComponentId);
+
+-- View: ExperimentConsistencyInfo
+CREATE VIEW ExperimentConsistencyInfo SQL SECURITY INVOKER AS
+SELECT
+  e.BitReversedXid,
+  e.Xid,
+  NOT EXISTS (
+    SELECT 1
+    FROM ExperimentComponentSnapshots s
+    INNER JOIN Components c ON s.ComponentId = c.ComponentId
+    WHERE s.BitReversedXid = e.BitReversedXid
+      AND (c.State = 5 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
+  ) AS IsExperimentConsistent,
+  EXISTS (
+    SELECT 1
+    FROM ExperimentComponentSnapshots s
+    INNER JOIN Components c ON s.ComponentId = c.ComponentId
+    WHERE s.BitReversedXid = e.BitReversedXid
+      AND c.ObservedGeneration IS NULL
+  ) AS HasPendingReconciliation
+FROM Experiments e
+WHERE e.ActiveState = 1;
+
+-- WorkUnitStatusHistory tracks historical state transitions of work units for telemetry and queue velocity metrics.
+CREATE TABLE WorkUnitStatusHistory (
+  -- The associated experiment ID (XID).
+  Xid INT64 NOT NULL,
+  -- Bit-reversed XID for distribution across Spanner split boundaries.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  -- The associated work unit ID.
+  WorkUnitId INT64 NOT NULL,
+  -- Unique identifier for the status history entry.
+  HistoryId INT64 NOT NULL,
+  -- The associated work unit execution ID.
+  ExecutionId INT64,
+  -- The name of the queue assigned to the work unit. Should match the kueue ClusterQueue.
+  QueueName STRING(MAX),
+  -- The previous work unit state prior to transition.
+  PreviousState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState,
+  -- The new work unit state after transition.
+  NewState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL,
+  -- Compute resource type requested (e.g. nvidia-tesla-h100, TPU, CPU).
+  ResourceType STRING(MAX),
+  -- Quantity of compute resource units requested.
+  ResourceUnits INT64,
+  -- Timestamp of state transition and row creation.
+  CreateTime TIMESTAMP NOT NULL,
+  -- Expiration time for automatic row pruning via TTL policy (30 days).
+  ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(CreateTime, INTERVAL 30 DAY)) STORED,
+) PRIMARY KEY (BitReversedXid, WorkUnitId, HistoryId),
+  ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));
+
+-- Index for efficient sliding-window queue velocity and turnover rate queries.
+CREATE INDEX WorkUnitStatusHistoryByQueueAndCreateTime ON WorkUnitStatusHistory (QueueName, CreateTime DESC, NewState, PreviousState) STORING (ResourceType, ResourceUnits);
 

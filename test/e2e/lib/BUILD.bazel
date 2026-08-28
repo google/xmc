@@ -1,0 +1,94 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+py_library(
+    name = "orchestration_lib",
+    srcs = [
+        "__init__.py",
+        "command.py",
+        "config.py",
+        "dex_authenticator.py",
+        "helm_deployer.py",
+        "image_builder.py",
+        "kind.py",
+        "orchestrator.py",
+        "spanner.py",
+        "test_executor.py",
+        "ui_diagnostics.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "command_test",
+    srcs = ["command_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "spanner_test",
+    srcs = ["spanner_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "kind_test",
+    srcs = ["kind_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "image_builder_test",
+    srcs = ["image_builder_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "helm_deployer_test",
+    srcs = ["helm_deployer_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "test_executor_test",
+    srcs = ["test_executor_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "orchestrator_test",
+    srcs = ["orchestrator_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "ui_diagnostics_test",
+    srcs = ["ui_diagnostics_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "dex_authenticator_test",
+    srcs = ["dex_authenticator_test.py"],
+    deps = [":orchestration_lib"],
+)

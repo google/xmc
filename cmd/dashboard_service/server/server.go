@@ -22,14 +22,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	cstatus "task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -38,12 +36,21 @@ import (
 
 // DashboardRepository defines the persistence contract for dashboards and charts.
 type DashboardRepository interface {
-	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error
+	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
 	GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
 	ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
 	DeleteDashboard(ctx context.Context, dashboardId string) error
+	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
+	ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
+	UpdateChart(ctx context.Context, chart *dpb.Chart) error
+	DeleteChart(ctx context.Context, chartId string) error
+}
+
+// ChartDataEngine defines the interface for fetching analytics chart data.
+type ChartDataEngine interface {
+	FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error)
 }
 
 // Config holds configuration for the dashboard service server.
@@ -62,13 +69,13 @@ type Server struct {
 	repo       DashboardRepository
 	auth       auth.AuthorizerInterface
 	xidClient  xidapipb.XidServiceClient
-	dataEngine *dataengine.DataEngine
+	dataEngine ChartDataEngine
 }
 
 var _ spb.DashboardServiceServer = (*Server)(nil)
 
 // NewServer creates a new instance of Server.
-func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine) *Server {
+func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de ChartDataEngine) *Server {
 	if repo == nil {
 		panic("repo must not be nil")
 	}
@@ -151,17 +158,137 @@ func isAlreadyExistsError(err error) bool {
 	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
 }
 
-// CreateChart creates a chart stub.
-func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
+// createDefaultPlotSpecs returns standard default plots for on-the-fly work unit charts.
+func createDefaultPlotSpecs() []*dpb.PlotSpec {
+	return []*dpb.PlotSpec{
+		{
+			PlotId: "val_loss_kpi",
+			Title:  "Last validation loss",
+			Type:   dpb.PlotType_SUMMARY_BOX,
+			Data:   &dpb.DataSpec{Metrics: []string{"val/loss"}},
+		},
+		{
+			PlotId: "train_acc_kpi",
+			Title:  "Last training accuracy",
+			Type:   dpb.PlotType_SUMMARY_BOX,
+			Data:   &dpb.DataSpec{Metrics: []string{"train/accuracy"}},
+		},
+		{
+			PlotId: "loss_vs_steps",
+			Title:  "Validation loss vs steps",
+			Type:   dpb.PlotType_SCATTER,
+			Data:   &dpb.DataSpec{Metrics: []string{"val/loss"}},
+		},
+		{
+			PlotId: "acc_vs_steps",
+			Title:  "Training accuracy vs steps",
+			Type:   dpb.PlotType_SCATTER,
+			Data:   &dpb.DataSpec{Metrics: []string{"train/accuracy"}},
+		},
+	}
 }
 
-// GetChart retrieves a chart stub.
-func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.Chart, error) {
+// resolveChart loads a chart from storage, falling back to a synthesized default
+// specification for work unit charts that have never been persisted.
+func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
+	_, _, chartID, err := validator.ValidateChartName(name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name %q: %v", name, err)
+	}
+	chart, err := s.repo.GetChart(ctx, chartID)
+	if err == nil {
+		if chart == nil {
+			return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", name)
+		}
+		if xid := s.resolveChartXID(chart, name); xid > 0 {
+			chart.Xid = xid
+		}
+		return chart, nil
+	}
+	if !isNotFoundError(err) {
+		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", name, err)
+	}
+	parsed, parseErr := validator.ParseChartName(name)
+	if parseErr != nil || parsed.XID <= 0 {
+		return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
+	}
 	return &dpb.Chart{
-		Name:  req.GetName(),
-		Title: "Sample Chart",
+		Name:  name,
+		Title: "Metrics Chart",
+		Xid:   parsed.XID,
+		Wid:   parsed.WID,
+		Plots: createDefaultPlotSpecs(),
 	}, nil
+}
+
+// resolveChartXID returns the chart's persisted experiment XID, falling back to the
+// XID encoded in the chart resource name when the stored record does not carry one.
+func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
+	xid := chart.GetXid()
+	if xid <= 0 {
+		if parsed, err := validator.ParseChartName(name); err == nil && parsed.XID > 0 {
+			return parsed.XID
+		}
+	}
+	return xid
+}
+
+// validateDataEngineDependencies ensures required service dependencies are configured.
+func (s *Server) validateDataEngineDependencies() error {
+	if s.dataEngine == nil {
+		return status.Error(codes.FailedPrecondition, "data engine is not configured")
+	}
+	if s.repo == nil {
+		return status.Error(codes.FailedPrecondition, "chart repository is not configured")
+	}
+	if s.xidClient == nil {
+		return status.Error(codes.FailedPrecondition, "xid client is not configured")
+	}
+	return nil
+}
+
+// authorizeChartAccess verifies that a chart has a valid experiment XID and that the user is authorized to read it.
+func (s *Server) authorizeChartAccess(ctx context.Context, user string, chart *dpb.Chart) error {
+	if chart == nil {
+		return status.Error(codes.Internal, "chart is nil")
+	}
+	xid := chart.GetXid()
+	if xid <= 0 {
+		return status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chart.GetName(), xid)
+	}
+	return s.authorizeExperimentRead(ctx, user, xid)
+}
+
+// authorizeExperimentRead checks user read authorization against the XID service.
+func (s *Server) authorizeExperimentRead(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_READER)
+}
+
+// authorizeExperimentWrite checks user write authorization against the XID service.
+func (s *Server) authorizeExperimentWrite(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_WRITER)
+}
+
+// authorizeExperiment checks user authorization for a specific role against the XID service.
+func (s *Server) authorizeExperiment(ctx context.Context, user string, xid int64, roleType xpb.XidAcls_RoleType) error {
+	xidName := validator.ConstructXIDName(xid)
+	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
+		Name:     &xidName,
+		User:     &user,
+		RoleType: &roleType,
+	})
+	if err != nil {
+		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "role", roleType.String(), "error", err)
+		return status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", xid)
+	}
+	if xidResp == nil || !xidResp.GetAuthorized() {
+		action := "read"
+		if roleType == xpb.XidAcls_WRITER {
+			action = "modify"
+		}
+		return status.Errorf(codes.PermissionDenied, "user %q is not authorized to %s experiment %d", user, action, xid)
+	}
+	return nil
 }
 
 // GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
@@ -173,70 +300,16 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
-	if s.dataEngine == nil {
-		return nil, status.Error(codes.FailedPrecondition, "data engine is not configured")
+	if err := s.validateDataEngineDependencies(); err != nil {
+		return nil, err
 	}
-	if s.repo == nil {
-		return nil, status.Error(codes.FailedPrecondition, "chart repository is not configured")
-	}
-	if s.xidClient == nil {
-		return nil, status.Error(codes.FailedPrecondition, "xid client is not configured")
-	}
-	chart, err := s.repo.GetChart(ctx, req.GetName())
+	chart, err := s.resolveChart(ctx, req.GetName())
 	if err != nil {
-		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "chart %q not found", req.GetName())
-		}
-		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", req.GetName(), err)
+		return nil, err
 	}
-
-	xid := chart.GetXid()
-	if xid <= 0 {
-		if parsed, err := validator.ParseChartName(req.GetName()); err == nil && parsed.XID > 0 {
-			xid = parsed.XID
-		}
-	}
-	if xid <= 0 {
-		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", req.GetName(), chart.GetXid())
-	}
-
-	// Authorize experiment access via XID Service using canonical name ("xids/{xid}")
-	xidName := validator.ConstructXIDName(xid)
-	roleType := xpb.XidAcls_READER
-	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
-		Name:     &xidName,
-		User:     &user,
-		RoleType: &roleType,
-	})
-	if err != nil {
-		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", xid)
-	}
-	if xidResp == nil || !xidResp.GetAuthorized() {
-		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, xid)
+	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
+		return nil, err
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)
-}
-
-// ListCharts retrieves a list of charts stub.
-func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*spb.ListChartsResponse, error) {
-	return &spb.ListChartsResponse{
-		Charts: []*dpb.Chart{
-			{
-				Name:  req.GetParent() + "/charts/sample",
-				Title: "Sample Chart",
-			},
-		},
-	}, nil
-}
-
-// UpdateChart updates a chart stub.
-func (s *Server) UpdateChart(ctx context.Context, req *spb.UpdateChartRequest) (*dpb.Chart, error) {
-	return req.GetChart(), nil
-}
-
-// DeleteChart deletes a chart stub.
-func (s *Server) DeleteChart(ctx context.Context, req *spb.DeleteChartRequest) (*emptypb.Empty, error) {
-	return &emptypb.Empty{}, nil
 }

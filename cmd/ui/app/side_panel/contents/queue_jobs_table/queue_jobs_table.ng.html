@@ -16,10 +16,12 @@
 <div class="jobs-in-queue-card">
   <div class="jobs-card-header">
     <div class="title-row">
-      <h3 id="queue-jobs-title" class="jobs-card-title">Jobs in the queue ({{ totalCount() }})</h3>
+      <h3 id="queue-jobs-title" class="jobs-card-title">
+        Jobs in the queue ({{ tableControls.totalCount() }})
+      </h3>
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
-    <p class="jobs-card-subtitle">There are {{ totalCount() }} jobs ahead of you.</p>
+    <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
   </div>
 
   @if (isLoading()) {
@@ -117,7 +119,7 @@
         <ng-container matColumnDef="user">
           <th mat-header-cell *matHeaderCellDef>Author</th>
           <td mat-cell *matCellDef="let job" class="author-cell">
-            <xmc-wip-banner />
+            {{ job.user || '-' }}
           </td>
         </ng-container>
 
@@ -125,7 +127,16 @@
         <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
       </table>
 
-      <!-- TODO(#186): Implement table pagination when job list volumes increase. -->
+      @if (tableControls.totalCount() > 0) {
+        <mat-paginator
+          aria-label="Select page of queue jobs"
+          [length]="tableControls.totalCount()"
+          [pageSize]="tableControls.pageSize()"
+          [pageIndex]="tableControls.pageIndex()"
+          [pageSizeOptions]="pageSizeOptions"
+          (page)="onPageChange($event)"
+        />
+      }
     </div>
   }
 </div>

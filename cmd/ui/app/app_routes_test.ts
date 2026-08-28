@@ -22,6 +22,9 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { DashboardsListPage } from './pages/dashboards/dashboards_list_page/dashboards_list_page';
+import { DashboardsPage } from './pages/dashboards/dashboards_page';
+import { performanceDashboardGuard } from './performance_dashboard.guard';
 import { resourceDashboardGuard } from './resource_dashboard.guard';
 import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
@@ -29,7 +32,7 @@ import { WorkUnitPage } from './work_unit_page/work_unit_page';
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(4);
+    expect(routes.length).toBe(5);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -52,6 +55,21 @@ describe('App Routes', () => {
     expect(route).toBeDefined();
     expect(route?.component).toBe(ResourceDashboard);
     expect(route?.canActivate).toEqual([authGuard, resourceDashboardGuard]);
+  });
+
+  it('should route "dashboards" with authGuard and performanceDashboardGuard and children', () => {
+    const route = routes.find((r) => r.path === 'dashboards');
+    expect(route).toBeDefined();
+    expect(route?.canActivate).toEqual([authGuard, performanceDashboardGuard]);
+    expect(route?.children?.length).toBe(2);
+
+    const listChild = route?.children?.find((r) => r.path === '');
+    expect(listChild).toBeDefined();
+    expect(listChild?.component).toBe(DashboardsListPage);
+
+    const detailChild = route?.children?.find((r) => r.path === ':id');
+    expect(detailChild).toBeDefined();
+    expect(detailChild?.component).toBe(DashboardsPage);
   });
 
   it('should route "experiments" with authGuard and children', () => {

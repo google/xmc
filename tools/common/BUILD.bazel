@@ -1,0 +1,115 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "build_oci.py",
+    "requirements.txt",
+    "setup_venv.py",
+    "workspace_status.py",
+])
+
+py_library(
+    name = "tool_utils",
+    srcs = ["tool_utils.py"],
+    data = [
+        "requirements.txt",
+        "setup_venv.py",
+    ],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "tool_utils_test",
+    srcs = ["tool_utils_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "build_oci_lib",
+    srcs = ["build_oci.py"],
+    imports = ["../.."],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_binary(
+    name = "build_oci",
+    srcs = ["build_oci.py"],
+    imports = ["../.."],
+    deps = [
+        ":build_oci_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "build_oci_test",
+    srcs = ["build_oci_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":build_oci_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "setup_venv_lib",
+    srcs = ["setup_venv.py"],
+    data = ["requirements.txt"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "setup_venv",
+    srcs = ["setup_venv.py"],
+    data = ["requirements.txt"],
+    imports = ["../.."],
+    deps = [
+        ":setup_venv_lib",
+    ],
+)
+
+py_test(
+    name = "setup_venv_test",
+    srcs = ["setup_venv_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":setup_venv_lib",
+    ],
+)
+
+py_library(
+    name = "workspace_status_lib",
+    srcs = ["workspace_status.py"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "workspace_status",
+    srcs = ["workspace_status.py"],
+    imports = ["../.."],
+    deps = [
+        ":workspace_status_lib",
+    ],
+)

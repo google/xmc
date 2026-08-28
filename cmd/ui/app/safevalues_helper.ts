@@ -1,7 +1,7 @@
 // Copyright 2026 Google LLC
 
 import { HtmlSanitizerBuilder as RealHtmlSanitizerBuilder, SafeHtml } from 'safevalues';
-import { safeElement, safeWindow } from 'safevalues/dom';
+import { safeElement } from 'safevalues/dom';
 
 export class HtmlSanitizerBuilder {
   private readonly builder = new RealHtmlSanitizerBuilder();
@@ -38,13 +38,4 @@ export function trySanitizeUrl(url: string): string {
     return trimmed;
   }
   return 'about:blank';
-}
-
-export function windowOpen(
-  window: Window,
-  url: string,
-  name?: string,
-  specs?: string,
-): Window | null {
-  return safeWindow.open(window, url, name, specs);
 }

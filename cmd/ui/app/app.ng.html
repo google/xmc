@@ -33,6 +33,11 @@ limitations under the License.
               <span class="google-symbols"> experiment </span> Experiments
             </div>
           </a>
+          @if (isPerformanceDashboardEnabled) {
+            <a mat-list-item routerLink="/dashboards">
+              <div class="menu-item-container"><mat-icon>insert_chart</mat-icon> Dashboards</div>
+            </a>
+          }
           @if (isResourceDashboardEnabled) {
             <a mat-list-item routerLink="/resources">
               <div class="menu-item-container"><mat-icon>dashboard</mat-icon> Resources</div>

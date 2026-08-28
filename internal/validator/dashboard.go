@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"task/go/status"
+	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
 
@@ -27,7 +28,46 @@ var allowedUpdateDashboardPaths = map[string]bool{
 	"title":        true,
 	"description":  true,
 	"chart_layout": true,
-	"charts":       true,
+	"chartLayout":  true,
+	"chart_ids":    true,
+	"chartIds":     true,
+}
+
+// ValidateChartID validates that a chart ID string is non-empty and contains no slashes.
+func ValidateChartID(s string) (string, error) {
+	if strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("chart ID cannot be empty or whitespace: %w", status.ErrInvalidArgument)
+	}
+	if strings.Contains(s, "/") {
+		return "", fmt.Errorf("chart ID %q cannot contain slashes: %w", s, status.ErrInvalidArgument)
+	}
+	return s, nil
+}
+
+// ValidateChartIDs validates a slice of chart IDs, ensuring valid format and no duplicates.
+func ValidateChartIDs(chartIDs []string) error {
+	if len(chartIDs) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(chartIDs))
+	for _, id := range chartIDs {
+		if _, err := ValidateChartID(id); err != nil {
+			return err
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate chart ID %q: %w", id, status.ErrInvalidArgument)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+var allowedUpdateChartPaths = map[string]bool{
+	"title":       true,
+	"description": true,
+	"plots":       true,
+	"plot_layout": true,
+	"plotLayout":  true,
 }
 
 // validateDashboardID checks if a dashboard ID string is non-empty and contains no slashes.
@@ -61,6 +101,32 @@ func ValidateCreateDashboardRequest(in *spb.CreateDashboardRequest) error {
 	if dash.GetName() != "" {
 		if _, err := ValidateDashboardName(dash.GetName()); err != nil {
 			return fmt.Errorf("invalid dashboard.name: %w", err)
+		}
+	}
+	if len(dash.GetChartIds()) > 0 {
+		if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+			return err
+		}
+	}
+	return validateInlineCharts(in.GetCharts())
+}
+
+// validateInlineCharts validates the charts created alongside a dashboard. Their names and IDs are
+// assigned by the server, so only the caller-supplied fields are checked: a title, and the work unit
+// coordinates that decide which experiment's ACL governs the write.
+func validateInlineCharts(charts []*dpb.Chart) error {
+	for i, chart := range charts {
+		if chart == nil {
+			return fmt.Errorf("charts[%d] cannot be nil: %w", i, status.ErrInvalidArgument)
+		}
+		if strings.TrimSpace(chart.GetTitle()) == "" {
+			return fmt.Errorf("charts[%d].title must be set and not only contain whitespace: %w", i, status.ErrInvalidArgument)
+		}
+		if chart.GetXid() <= 0 {
+			return fmt.Errorf("charts[%d].xid %d must be a positive experiment ID: %w", i, chart.GetXid(), status.ErrInvalidArgument)
+		}
+		if chart.GetWid() <= 0 {
+			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), status.ErrInvalidArgument)
 		}
 	}
 	return nil
@@ -112,6 +178,11 @@ func ValidateUpdateDashboardRequest(in *spb.UpdateDashboardRequest) error {
 	if strings.TrimSpace(dash.GetTitle()) == "" {
 		return fmt.Errorf("dashboard title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
 	}
+	if len(dash.GetChartIds()) > 0 {
+		if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -120,10 +191,15 @@ func validateDashboardUpdateMask(in *spb.UpdateDashboardRequest) error {
 	dash := in.GetDashboard()
 	for _, path := range in.GetUpdateMask().GetPaths() {
 		if !allowedUpdateDashboardPaths[path] {
-			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, chart_layout, charts: %w", path, status.ErrInvalidArgument)
+			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, chart_layout (chartLayout), chart_ids (chartIds): %w", path, status.ErrInvalidArgument)
 		}
 		if path == "title" && strings.TrimSpace(dash.GetTitle()) == "" {
 			return fmt.Errorf("dashboard title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
+		if (path == "chart_ids" || path == "chartIds") && len(dash.GetChartIds()) > 0 {
+			if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -151,7 +227,7 @@ func ValidateGetChartDataRequest(in *spb.GetChartDataRequest) error {
 	if in.GetName() == "" {
 		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+	if _, _, _, err := ValidateChartName(in.GetName()); err != nil {
 		return fmt.Errorf("invalid chart name: %w", err)
 	}
 	if in.GetChartWidthPixels() < 0 {
@@ -178,10 +254,25 @@ func ValidateGetChartRequest(in *spb.GetChartRequest) error {
 	if in.GetName() == "" {
 		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+	if _, err := ValidateRootChartName(in.GetName()); err != nil {
 		return fmt.Errorf("invalid chart name: %w", err)
 	}
 	return nil
+}
+
+// ValidateCreateChartParent extracts and validates experiment XID and work unit WID for a CreateChartRequest.
+func ValidateCreateChartParent(in *spb.CreateChartRequest) (xid int64, wid int64, err error) {
+	if in == nil {
+		return 0, 0, fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetParent() == "" {
+		return 0, 0, fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	expXid, wuWid, err := ValidateWorkUnitName(in.GetParent())
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid parent work unit: %w", err)
+	}
+	return expXid, wuWid, nil
 }
 
 // ValidateCreateChartRequest validates the given CreateChartRequest.
@@ -189,14 +280,26 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if in.GetParent() == "" {
-		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
-	}
-	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
-		return fmt.Errorf("invalid parent dashboard name: %w", err)
-	}
 	if in.GetChart() == nil {
 		return fmt.Errorf("chart cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(in.GetChart().GetTitle()) == "" {
+		return fmt.Errorf("chart.title must be set and not only contain whitespace: %w", status.ErrInvalidArgument)
+	}
+	if in.GetChartId() != "" {
+		if _, err := ValidateChartID(in.GetChartId()); err != nil {
+			return err
+		}
+	}
+	expXid, wuWid, err := ValidateCreateChartParent(in)
+	if err != nil {
+		return err
+	}
+	if in.GetChart().GetXid() != expXid {
+		return fmt.Errorf("chart.xid %d must match parent experiment xid %d: %w", in.GetChart().GetXid(), expXid, status.ErrInvalidArgument)
+	}
+	if in.GetChart().GetWid() != wuWid {
+		return fmt.Errorf("chart.wid %d must match parent work unit wid %d: %w", in.GetChart().GetWid(), wuWid, status.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -209,8 +312,8 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	if in.GetParent() == "" {
 		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
-		return fmt.Errorf("invalid parent dashboard name: %w", err)
+	if err := ValidateChartParentName(in.GetParent()); err != nil {
+		return err
 	}
 	if in.GetPageSize() < 0 {
 		return fmt.Errorf("page_size cannot be negative: %w", status.ErrInvalidArgument)
@@ -218,20 +321,50 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	return nil
 }
 
+// ValidateChartParentName validates a chart collection parent, which may be a dashboard or a work unit.
+func ValidateChartParentName(parent string) error {
+	if _, err := ValidateDashboardName(parent); err == nil {
+		return nil
+	}
+	if _, _, err := ValidateWorkUnitName(parent); err == nil {
+		return nil
+	}
+	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}' or 'experiments/{xid}/workUnits/{wid}': %w", status.ErrInvalidArgument)
+}
+
 // ValidateUpdateChartRequest validates the given UpdateChartRequest.
 func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if in.GetChart() == nil {
+	chart := in.GetChart()
+	if chart == nil {
 		return fmt.Errorf("chart cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	chart := in.GetChart()
 	if chart.GetName() == "" {
 		return fmt.Errorf("chart.name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, err := ValidateChartName(chart.GetName()); err != nil {
+	if _, err := ValidateRootChartName(chart.GetName()); err != nil {
 		return fmt.Errorf("invalid chart.name: %w", err)
+	}
+	if in.GetUpdateMask() == nil || len(in.GetUpdateMask().GetPaths()) == 0 {
+		if strings.TrimSpace(chart.GetTitle()) == "" {
+			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	return validateChartUpdateMask(chart.GetTitle(), in.GetUpdateMask().GetPaths())
+}
+
+// validateChartUpdateMask verifies update mask paths and associated field constraints for a chart.
+func validateChartUpdateMask(title string, paths []string) error {
+	for _, path := range paths {
+		if !allowedUpdateChartPaths[path] {
+			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, plots, plot_layout: %w", path, status.ErrInvalidArgument)
+		}
+		if path == "title" && strings.TrimSpace(title) == "" {
+			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }
@@ -244,7 +377,7 @@ func ValidateDeleteChartRequest(in *spb.DeleteChartRequest) error {
 	if in.GetName() == "" {
 		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+	if _, err := ValidateRootChartName(in.GetName()); err != nil {
 		return fmt.Errorf("invalid chart name: %w", err)
 	}
 	return nil

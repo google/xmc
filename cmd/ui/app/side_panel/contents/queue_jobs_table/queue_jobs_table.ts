@@ -12,18 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
-import { catchError, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import {
   BaseSidePanelContent,
@@ -38,12 +47,10 @@ import {
 
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {
-  constructor(readonly queueName: string) {}
+  constructor(public readonly queueName: string) {}
 }
 
-/**
- * Modern Angular standalone component displaying pending and running jobs for a selected queue.
- */
+/** Component presenting the list of active/pending jobs for a given cluster queue. */
 @Component({
   selector: 'xmc-queue-jobs-table',
   standalone: true,
@@ -53,50 +60,83 @@ export class QueueJobsTableData implements BaseSidePanelData {
   imports: [
     RouterModule,
     MatTableModule,
+    MatPaginatorModule,
     MatIconModule,
     MatButtonModule,
     MatTooltipModule,
     StatusChip,
     ResourceChip,
-    QueueJobStatusPipe,
     QueueJobPositionPipe,
+    QueueJobStatusPipe,
     QueueJobResourcesPipe,
-    WipBannerComponent,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
-  private readonly resourceService = inject(ResourceService);
+  public readonly data = input<QueueJobsTableData>();
+  public readonly queueName = input<string>('gpu-cluster-queue');
 
-  readonly data = input<QueueJobsTableData>();
-  readonly queueName = input<string>('gpu-cluster-queue');
-
-  readonly activeQueueName = computed(
+  protected readonly activeQueueName = computed(
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
   );
 
-  protected readonly isLoading = signal<boolean>(false);
+  private readonly resourceService = inject(ResourceService);
 
-  protected readonly jobs = toSignal(
-    toObservable(this.activeQueueName).pipe(
+  protected readonly isLoading = signal<boolean>(false);
+  protected readonly tableControls = {
+    pageSize: signal<number>(10),
+    pageIndex: signal<number>(0),
+    pageToken: signal<string>(''),
+    pageTokens: signal<string[]>(['']),
+    totalCount: signal<number>(0),
+    nextPageToken: signal<string>(''),
+  };
+
+  protected readonly requestParams = computed(() => ({
+    queueName: this.activeQueueName(),
+    pageSize: this.tableControls.pageSize(),
+    pageToken: this.tableControls.pageToken(),
+  }));
+
+  protected readonly jobsResponse = toSignal(
+    toObservable(this.requestParams).pipe(
+      distinctUntilChanged(
+        (prev, curr) =>
+          prev.queueName === curr.queueName &&
+          prev.pageSize === curr.pageSize &&
+          prev.pageToken === curr.pageToken,
+      ),
       tap(() => this.isLoading.set(true)),
-      switchMap((qName) =>
-        this.resourceService.getQueueJobs(qName).pipe(
-          map((resp) => resp?.jobs ?? []),
-          tap(() => this.isLoading.set(false)),
+      switchMap(({ queueName, pageSize, pageToken }) =>
+        this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
+          tap((resp) => {
+            this.isLoading.set(false);
+            this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
+            this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
+            for (const job of resp?.jobs ?? []) {
+              if (!job.user) {
+                console.error(
+                  `Job "${job.xid ? `Experiment #${job.xid}` : 'unknown'}" is missing an assigned user.`,
+                );
+              }
+            }
+          }),
           catchError(() => {
             this.isLoading.set(false);
-            return of([]);
+            this.tableControls.totalCount.set(0);
+            this.tableControls.nextPageToken.set('');
+            return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
           }),
         ),
       ),
     ),
-    { initialValue: [] },
+    { initialValue: { jobs: [], totalQueueSize: 0, nextPageToken: '' } },
   );
 
-  // TODO(#186): Implement table pagination when job list volumes increase.
-  protected readonly totalCount = computed(() => this.jobs().length);
+  protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
 
-  protected displayedColumns: string[] = [
+  protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
+
+  protected readonly displayedColumns: readonly string[] = [
     'position',
     'jobName',
     'status',
@@ -105,4 +145,45 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'workUnitId',
     'user',
   ];
+
+  constructor() {
+    effect(() => {
+      this.activeQueueName();
+      untracked(() => {
+        this.tableControls.pageIndex.set(0);
+        this.tableControls.pageToken.set('');
+        this.tableControls.pageTokens.set(['']);
+      });
+    });
+  }
+
+  protected onPageChange(event: PageEvent): void {
+    if (event.pageSize !== this.tableControls.pageSize()) {
+      this.tableControls.pageSize.set(event.pageSize);
+      this.tableControls.pageIndex.set(0);
+      this.tableControls.pageToken.set('');
+      this.tableControls.pageTokens.set(['']);
+      return;
+    }
+
+    const newIndex = event.pageIndex;
+    const oldIndex = this.tableControls.pageIndex();
+
+    if (newIndex === oldIndex) {
+      return;
+    }
+
+    let token = '';
+    if (newIndex > oldIndex) {
+      token = this.tableControls.nextPageToken();
+    } else {
+      token = this.tableControls.pageTokens()[newIndex] ?? '';
+    }
+
+    const updatedTokens = [...this.tableControls.pageTokens()];
+    updatedTokens[newIndex] = token;
+    this.tableControls.pageTokens.set(updatedTokens);
+    this.tableControls.pageIndex.set(newIndex);
+    this.tableControls.pageToken.set(token);
+  }
 }

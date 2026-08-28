@@ -1,0 +1,114 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dex
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+  namespace: dex
+data:
+  config.yaml: |
+    issuer: http://localhost:5556/dex
+    storage:
+      type: memory
+    web:
+      http: 0.0.0.0:5556
+    telemetry:
+      http: 0.0.0.0:5558
+    staticClients:
+      - id: xmc-client
+        redirectURIs:
+          - 'http://localhost:8080/api/callback'
+          - 'http://127.0.0.1:8080/api/callback'
+        name: 'XMC Test App'
+        secret: xmc-client-secret
+    enablePasswordDB: true
+    staticPasswords:
+      - email: "admin@xmc.local"
+        hash: "$2b$10$i.aTTP2x4NcvTXwknktngeFWY5/h.eqmidwbbKHAtJKXrLJnEiusm"
+        username: "admin"
+        userID: "08a5ba03-e7e8-4970-a7e3-8c52b4456b35"
+      - email: "viewer@xmc.local"
+        hash: "$2b$10$i.aTTP2x4NcvTXwknktngeFWY5/h.eqmidwbbKHAtJKXrLJnEiusm"
+        username: "viewer"
+        userID: "18a5ba03-e7e8-4970-a7e3-8c52b4456b36"
+      - email: "unauthorized@xmc.local"
+        hash: "$2b$10$i.aTTP2x4NcvTXwknktngeFWY5/h.eqmidwbbKHAtJKXrLJnEiusm"
+        username: "unauthorized"
+        userID: "28a5ba03-e7e8-4970-a7e3-8c52b4456b37"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  namespace: dex
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+      - name: dex
+        image: ghcr.io/dexidp/dex:v2.41.1
+        imagePullPolicy: IfNotPresent
+        command: ["dex", "serve", "/etc/dex/cfg/config.yaml"]
+        ports:
+        - name: http
+          containerPort: 5556
+        volumeMounts:
+        - name: config
+          mountPath: /etc/dex/cfg
+        readinessProbe:
+          httpGet:
+            path: /dex/healthz
+            port: 5556
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /dex/healthz
+            port: 5556
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: dex-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: dex
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 5556
+    targetPort: 5556
+    nodePort: 30556
+  selector:
+    app: dex

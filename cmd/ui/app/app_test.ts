@@ -25,11 +25,13 @@ import { bootstrap, hasEl, setupModule } from './testing/test';
 
 describe('App Component', () => {
   let isResourceDashboardEnabled = true;
+  let isPerformanceDashboardEnabled = true;
   let isNonProdAuthFlag = false;
   let userIsNonProdAuth = false;
 
   beforeEach(() => {
     isResourceDashboardEnabled = true;
+    isPerformanceDashboardEnabled = true;
     isNonProdAuthFlag = false;
     userIsNonProdAuth = false;
 
@@ -53,6 +55,9 @@ describe('App Component', () => {
     const featureFlagServiceMock = {
       get isResourceDashboardEnabled() {
         return isResourceDashboardEnabled;
+      },
+      get isPerformanceDashboardEnabled() {
+        return isPerformanceDashboardEnabled;
       },
       get isAdminPanelEnabled() {
         return false;
@@ -91,6 +96,17 @@ describe('App Component', () => {
     isResourceDashboardEnabled = false;
     bootstrap(App);
     expect(hasEl('a[routerLink="/resources"]')).toBeFalse();
+  });
+
+  it('should display Dashboards menu item when isPerformanceDashboardEnabled is true', () => {
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeTrue();
+  });
+
+  it('should hide Dashboards menu item when isPerformanceDashboardEnabled is false', () => {
+    isPerformanceDashboardEnabled = false;
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/dashboards"]')).toBeFalse();
   });
 
   it('should display non-prod auth banner when isNonProdAuth feature flag is true', () => {

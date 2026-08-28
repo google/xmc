@@ -190,13 +190,13 @@ describe('dashboard_normalizer', () => {
 
     it('should normalize chart plotsData and numeric xid/wid', () => {
       const cd = normalizeChartData({
-        name: 'experiments/123/charts/main',
+        name: 'experiments/123/workUnits/1/charts/main',
         xid: '123',
         wid: '1',
         plots_data: [{ plot_id: 'plot_1', type: PlotType.SCATTER }],
       });
 
-      expect(cd?.name).toBe('experiments/123/charts/main');
+      expect(cd?.name).toBe('experiments/123/workUnits/1/charts/main');
       expect(cd?.xid).toBe(123);
       expect(cd?.wid).toBe(1);
       expect(cd?.plotsData?.length).toBe(1);
@@ -267,21 +267,30 @@ describe('dashboard_normalizer', () => {
   });
 
   describe('normalizeDashboard', () => {
-    it('should normalize dashboard with charts array', () => {
+    it('should normalize dashboard with camelCase chart IDs', () => {
       const dash = normalizeDashboard({
         name: 'dashboards/resnet',
         title: 'ResNet Benchmark',
         owner: 'user@google.com',
-        charts: [{ xid: 101, title: 'Chart 101' }],
+        chartIds: ['chart-101'],
         create_time: '2026-08-17T00:00:00Z',
       });
 
       expect(dash.name).toBe('dashboards/resnet');
       expect(dash.title).toBe('ResNet Benchmark');
       expect(dash.owner).toBe('user@google.com');
-      expect(dash.charts?.length).toBe(1);
-      expect(dash.charts?.[0].title).toBe('Chart 101');
+      expect(dash.chartIds).toEqual(['chart-101']);
       expect(dash.createTime).toBe('2026-08-17T00:00:00Z');
+    });
+
+    it('should normalize dashboard with snake_case chart IDs', () => {
+      const dash = normalizeDashboard({
+        name: 'dashboards/resnet',
+        title: 'ResNet Benchmark',
+        chart_ids: ['chart-101', 'chart-102'],
+      });
+
+      expect(dash.chartIds).toEqual(['chart-101', 'chart-102']);
     });
 
     it('should return safe default Dashboard when undefined is passed', () => {

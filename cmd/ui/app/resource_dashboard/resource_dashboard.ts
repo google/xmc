@@ -51,7 +51,7 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
+import { matchesResourceFilter } from './utils/resource_filter';
 import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
 /**
@@ -91,7 +91,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
-  protected readonly termTooltips = ROD_TERM_TOOLTIPS;
 
   private readonly fetchTrigger$ = new Subject<void>();
 
@@ -138,27 +137,35 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
-    const types = new Set<string>();
-    for (const q of this.queues()) {
-      for (const cap of q.queueCapacity ?? []) {
-        if (cap.resourceType) {
-          types.add(cap.resourceType);
-        }
-      }
-    }
-    return Array.from(types).sort();
+    return [
+      ...new Set(
+        this.queues()
+          .flatMap((q) => q.queueCapacity ?? [])
+          .map((cap) => cap.resourceType)
+          .filter((type): type is string => Boolean(type)),
+      ),
+    ].sort();
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {
     const query = this.activeQuery();
     if (!query) return [];
-    const types = new Set<string>();
-    for (const req of query.requirements) {
-      if (req.resourceType && req.resourceType.trim() !== '') {
-        types.add(req.resourceType.trim());
-      }
+    return [
+      ...new Set(
+        query.requirements
+          .map((req) => req.resourceType?.trim())
+          .filter((type): type is string => Boolean(type)),
+      ),
+    ];
+  });
+
+  protected readonly dominantResource = computed<string | null>(() => {
+    const query = this.activeQuery();
+    if (!query || !query.requirements || query.requirements.length === 0) {
+      return null;
     }
-    return Array.from(types);
+    const first = query.requirements[0]?.resourceType?.trim();
+    return first ? first : null;
   });
 
   protected readonly filteredQueues = computed<QueueOverview[]>(() => {
@@ -227,7 +234,7 @@ function matchesRequirementRow(
   row: ResourceRequirementRow,
 ): boolean {
   if (!capacities) return false;
-  const filter = (row.resourceType || '').trim().toLowerCase();
+  const filter = (row.resourceType || '').trim();
   const reqAmount = row.amount;
 
   return capacities.some((cap) => {
@@ -235,7 +242,6 @@ function matchesRequirementRow(
     if (free < reqAmount) return false;
     if (!filter) return true;
 
-    const rName = (cap.resourceType || '').toLowerCase();
-    return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
+    return matchesResourceFilter(cap.resourceType || '', filter);
   });
 }

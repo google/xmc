@@ -14,7 +14,7 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpClient, HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -129,6 +129,31 @@ describe('ResourceService', () => {
       const response = await responsePromise;
       expect(response.jobs).toEqual([]);
       expect(response.totalQueueSize).toBe(0);
+      await flush();
+    });
+
+    it('should pass pageSize and pageToken query parameters when requested', async () => {
+      const mockResponse: GetRunningAndPendingJobsResponse = {
+        jobs: [],
+        totalQueueSize: 100,
+        nextPageToken: 'next-token',
+      };
+
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
+        state.service.getQueueJobs('custom-queue', 10, 'token-123'),
+      );
+
+      const req = state.httpMock.expectOne(
+        (r: HttpRequest<unknown>) =>
+          r.url === `${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs` &&
+          r.params.get('pageSize') === '10' &&
+          r.params.get('pageToken') === 'token-123',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.nextPageToken).toBe('next-token');
       await flush();
     });
   });

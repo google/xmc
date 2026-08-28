@@ -56,6 +56,13 @@ vars:
   redis_region:
   status_message_history_enabled: true
   enable_metrics: false
+  # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
+  # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
   enable_components: false
   health_service_deployment_enabled: false
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
@@ -188,6 +195,9 @@ deployment_groups:
       database_name: $(db_spanner.database_ids.xid)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
       db_type: xid
+      # Both appliers reach the same Spanner instance, so they run one after the
+      # other rather than at once.
+      depends_on_anchor: $(apply_ess_schema.applied)
 
   - id: private_service_access
     source: modules/network/private-service-access
@@ -442,6 +452,16 @@ deployment_groups:
       - name: metrics.enabled
         value: $(vars.enable_metrics)
         type: auto
+      - name: metrics.clickhouse.host
+        value: $(vars.clickhouse_host)
+      - name: metrics.clickhouse.port
+        value: $(vars.clickhouse_port)
+      - name: metrics.clickhouse.database
+        value: $(vars.clickhouse_database)
+      - name: metrics.clickhouse.user
+        value: $(vars.clickhouse_user)
+      - name: metrics.clickhouse.password
+        value: $(vars.clickhouse_password)
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.enable_metrics)
         type: auto
@@ -473,7 +493,7 @@ deployment_groups:
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
 
   - id: log_monitor
-    source: ./deploy/terraform/modules/log_monitor
+    source: ./deploy/ctk_v2/modules/log_monitor
     use: [log_monitor_service_account]
     settings:
       project_id: $(vars.project_id)

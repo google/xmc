@@ -159,6 +159,20 @@ func readMigration(src source.Driver, version uint) (migrationPreview, error) {
 
 	return migrationPreview{
 		identifier: identifier,
-		content:    string(content),
+		content:    stripLeadingLicense(string(content)),
 	}, nil
+}
+
+// stripLeadingLicense removes leading license and copyright comments starting with "--" from migration content.
+func stripLeadingLicense(content string) string {
+	lines := strings.Split(content, "\n")
+	start := 0
+	for start < len(lines) {
+		line := strings.TrimSpace(lines[start])
+		if line != "" && !strings.HasPrefix(line, "--") {
+			break
+		}
+		start++
+	}
+	return strings.TrimSpace(strings.Join(lines[start:], "\n"))
 }

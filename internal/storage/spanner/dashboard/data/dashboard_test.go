@@ -30,12 +30,21 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 		Title:       "Test Dashboard Title",
 		Description: "Test Description",
 		Owner:       "user@example.com",
-		Charts: []*dpb.Chart{
-			{Name: "charts/c1"},
+		ChartIds: []string{
+			"f47ac10b-58cc-4372-a567-0e02b2c3d479",
 		},
 		ChartLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,
 			Columns: 2,
+			Positions: []*dpb.GridPosition{
+				{
+					ItemId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+					X:      0,
+					Y:      0,
+					Width:  6,
+					Height: 4,
+				},
+			},
 		},
 	}
 
@@ -49,12 +58,84 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 	}
 }
 
-func TestChartProtoToInsertMutations_Success(t *testing.T) {
+func TestDashboardWithChartsToInsertMutations_Success(t *testing.T) {
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	dash := &dpb.Dashboard{
+		Name:     "dashboards/test-data-with-charts",
+		Title:    "Test Dashboard Title",
+		Owner:    "user@example.com",
+		ChartIds: []string{chartID},
+	}
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-data-1",
+		Name:  "experiments/100/workUnits/1/charts/" + chartID,
 		Title: "Test Chart Title",
 		Xid:   100,
 		Wid:   1,
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "plot-1",
+				Title:  "Loss",
+				Type:   dpb.PlotType_SCATTER,
+			},
+		},
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart})
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 4 {
+		t.Errorf("Expected 4 mutations (chart + plot spec + dashboard + chart link), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NoCharts(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-no-charts",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, nil)
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (dashboard only), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_InvalidChart(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-invalid-chart",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+	chart := &dpb.Chart{
+		Name:  "invalid-chart-name",
+		Title: "Invalid Name Chart",
+	}
+
+	if _, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart}); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with an invalid chart expected error, got nil")
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NilDashboard(t *testing.T) {
+	if _, err := DashboardWithChartsToInsertMutations(nil, nil); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with nil dashboard expected error, got nil")
+	}
+}
+
+func TestChartProtoToInsertMutations_Success(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:        "experiments/100/workUnits/1/charts/test-chart-data-1",
+		Title:       "Test Chart Title",
+		Description: "Test Chart Description",
+		Xid:         100,
+		Wid:         1,
 		Plots: []*dpb.PlotSpec{
 			{
 				PlotId: "plot-1",
@@ -73,15 +154,45 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
 	}
 
-	if len(mutations) != 3 {
-		t.Errorf("Expected 3 mutations (chart + plot spec + artifact chart link), got %d", len(mutations))
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations (chart + plot spec), got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToInsertMutations_NoPlots(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:        "experiments/100/workUnits/1/charts/test-chart-no-plots",
+		Title:       "Chart Without Plots",
+		Description: "No plots description",
+	}
+
+	mutations, err := ChartProtoToInsertMutations(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (chart only), got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToInsertMutations_InvalidName(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "invalid-chart-name",
+		Title: "Invalid Name Chart",
+	}
+
+	if _, err := ChartProtoToInsertMutations(chart); err == nil {
+		t.Errorf("ChartProtoToInsertMutations with invalid name expected error, got nil")
 	}
 }
 
 func TestChartProtoToUpdateMutations_Success(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-1",
-		Title: "Updated Chart Title",
+		Name:        "experiments/100/workUnits/1/charts/test-chart-update-1",
+		Title:       "Updated Chart Title",
+		Description: "Updated Description",
+		Wid:         2,
 		Plots: []*dpb.PlotSpec{
 			{
 				PlotId: "plot-1",
@@ -108,7 +219,7 @@ func TestChartProtoToUpdateMutations_Success(t *testing.T) {
 
 func TestChartProtoToUpdateMutations_WithoutLayout(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-no-layout",
+		Name:  "experiments/100/workUnits/1/charts/test-chart-update-no-layout",
 		Title: "No Layout Chart",
 	}
 
@@ -149,7 +260,7 @@ func TestChartProtoToInsertMutations_Nil(t *testing.T) {
 
 func TestChartProtoToUpdateMutation_Success(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-single",
+		Name:  "experiments/100/workUnits/1/charts/test-chart-update-single",
 		Title: "Updated Single Chart Title",
 		PlotLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,
@@ -270,9 +381,9 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 		t.Fatalf("proto.Marshal(layout) failed: %v", err)
 	}
 
-	charts := []*dpb.Chart{
-		{Name: "charts/c2"},
-		{Name: "charts/c1"},
+	chartIDs := []string{
+		"f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		"c9a646d3-9c61-4cd7-bf10-8e96dc638210",
 	}
 
 	now := time.Now().UTC()
@@ -284,7 +395,7 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 		t.Fatalf("spanner.NewRow failed: %v", err)
 	}
 
-	dash, err := DashboardRowToProto(row, charts)
+	dash, err := DashboardRowToProto(row, chartIDs)
 	if err != nil {
 		t.Fatalf("DashboardRowToProto failed: %v", err)
 	}
@@ -301,11 +412,62 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 	if dash.GetOwner() != "owner@example.com" {
 		t.Errorf("dash.Owner: got %q, want 'owner@example.com'", dash.GetOwner())
 	}
-	if len(dash.GetCharts()) != 2 || dash.GetCharts()[0].GetName() != "charts/c1" {
-		t.Errorf("dash.Charts: got %v, want canonically sorted charts", dash.GetCharts())
+	if len(dash.GetChartIds()) != 2 || dash.GetChartIds()[0] != "c9a646d3-9c61-4cd7-bf10-8e96dc638210" {
+		t.Errorf("dash.ChartIds: got %v, want canonically sorted chart IDs", dash.GetChartIds())
 	}
 	if dash.GetChartLayout() == nil || dash.GetChartLayout().GetColumns() != 3 {
 		t.Errorf("dash.ChartLayout: got %v, want columns=3", dash.GetChartLayout())
+	}
+}
+
+func TestDashboardRowToProto_QueryGenAliases(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 3,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	chartIDs := []string{
+		"f47ac10b-58cc-4372-a567-0e02b2c3d479",
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"created", "dashboard_id", "updated", "description", "owner", "title", "chart_layout"},
+		[]interface{}{now, "d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	dash, err := DashboardRowToProto(row, chartIDs)
+	if err != nil {
+		t.Fatalf("DashboardRowToProto failed with query generator aliases: %v", err)
+	}
+
+	if dash.GetName() != "dashboards/d1" {
+		t.Errorf("dash.Name: got %q, want 'dashboards/d1'", dash.GetName())
+	}
+	if dash.GetTitle() != "Test Title" {
+		t.Errorf("dash.Title: got %q, want 'Test Title'", dash.GetTitle())
+	}
+	if dash.GetDescription() != "Test Desc" {
+		t.Errorf("dash.Description: got %q, want 'Test Desc'", dash.GetDescription())
+	}
+	if dash.GetOwner() != "owner@example.com" {
+		t.Errorf("dash.Owner: got %q, want 'owner@example.com'", dash.GetOwner())
+	}
+	if dash.GetChartLayout() == nil || dash.GetChartLayout().GetColumns() != 3 {
+		t.Errorf("dash.ChartLayout: got %v, want columns=3", dash.GetChartLayout())
+	}
+	if dash.GetCreateTime() == nil || dash.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("dash.CreateTime mismatch: got %v, want %v", dash.GetCreateTime(), now)
+	}
+	if dash.GetUpdateTime() == nil || dash.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("dash.UpdateTime mismatch: got %v, want %v", dash.GetUpdateTime(), now)
 	}
 }
 
@@ -345,8 +507,8 @@ func TestChartRowToProto_Success(t *testing.T) {
 
 	now := time.Now().UTC()
 	row, err := spanner.NewRow(
-		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Xid", "PlotLayout", "ExtraCol"},
-		[]interface{}{now, "charts/c1", now, "owner@example.com", "Test Title", int64(100), layoutBytes, 12345},
+		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Description", "Xid", "Wid", "PlotLayout", "ExtraCol"},
+		[]interface{}{now, "c1", now, "owner@example.com", "Test Title", "Test Description", int64(100), int64(1), layoutBytes, 12345},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
@@ -357,14 +519,83 @@ func TestChartRowToProto_Success(t *testing.T) {
 		t.Fatalf("ChartRowToProto failed: %v", err)
 	}
 
-	if chart.GetName() != "charts/c1" {
-		t.Errorf("chart.Name: got %q, want 'charts/c1'", chart.GetName())
+	if chart.GetName() != "experiments/100/workUnits/1/charts/c1" {
+		t.Errorf("chart.Name: got %q, want 'experiments/100/workUnits/1/charts/c1'", chart.GetName())
 	}
 	if chart.GetTitle() != "Test Title" {
 		t.Errorf("chart.Title: got %q, want 'Test Title'", chart.GetTitle())
 	}
+	if chart.GetDescription() != "Test Description" {
+		t.Errorf("chart.Description: got %q, want 'Test Description'", chart.GetDescription())
+	}
 	if chart.GetXid() != 100 {
 		t.Errorf("chart.Xid: got %d, want 100", chart.GetXid())
+	}
+	if chart.GetWid() != 1 {
+		t.Errorf("chart.Wid: got %d, want 1", chart.GetWid())
+	}
+	if chart.GetCreateTime() == nil || chart.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.CreateTime mismatch: got %v, want %v", chart.GetCreateTime(), now)
+	}
+	if chart.GetUpdateTime() == nil || chart.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.UpdateTime mismatch: got %v, want %v", chart.GetUpdateTime(), now)
+	}
+	if len(chart.GetPlots()) != 1 || chart.GetPlots()[0].GetPlotId() != "plot-1" {
+		t.Errorf("chart.Plots: got %v, want 1 plot with ID 'plot-1'", chart.GetPlots())
+	}
+	if chart.GetPlotLayout() == nil || chart.GetPlotLayout().GetColumns() != 2 {
+		t.Errorf("chart.PlotLayout: got %v, want columns=2", chart.GetPlotLayout())
+	}
+}
+
+func TestChartRowToProto_QueryGenAliases(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 2,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	plots := []*dpb.PlotSpec{
+		{PlotId: "plot-1", Title: "Loss"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"created", "chart_id", "updated", "owner", "title", "description", "xid", "wid", "plot_layout"},
+		[]interface{}{now, "c1", now, "owner@example.com", "Test Title", "Test Description", int64(100), int64(1), layoutBytes},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	chart, err := ChartRowToProto(row, plots)
+	if err != nil {
+		t.Fatalf("ChartRowToProto failed with query generator aliases: %v", err)
+	}
+
+	if chart.GetName() != "experiments/100/workUnits/1/charts/c1" {
+		t.Errorf("chart.Name: got %q, want 'experiments/100/workUnits/1/charts/c1'", chart.GetName())
+	}
+	if chart.GetTitle() != "Test Title" {
+		t.Errorf("chart.Title: got %q, want 'Test Title'", chart.GetTitle())
+	}
+	if chart.GetDescription() != "Test Description" {
+		t.Errorf("chart.Description: got %q, want 'Test Description'", chart.GetDescription())
+	}
+	if chart.GetXid() != 100 {
+		t.Errorf("chart.Xid: got %d, want 100", chart.GetXid())
+	}
+	if chart.GetWid() != 1 {
+		t.Errorf("chart.Wid: got %d, want 1", chart.GetWid())
+	}
+	if chart.GetCreateTime() == nil || chart.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.CreateTime mismatch: got %v, want %v", chart.GetCreateTime(), now)
+	}
+	if chart.GetUpdateTime() == nil || chart.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.UpdateTime mismatch: got %v, want %v", chart.GetUpdateTime(), now)
 	}
 	if len(chart.GetPlots()) != 1 || chart.GetPlots()[0].GetPlotId() != "plot-1" {
 		t.Errorf("chart.Plots: got %v, want 1 plot with ID 'plot-1'", chart.GetPlots())
@@ -408,7 +639,7 @@ func TestMergeDashboards_AllFieldsNoMask(t *testing.T) {
 		Title:       "Old Title",
 		Description: "Old Desc",
 		Owner:       "owner@example.com",
-		Charts:      []*dpb.Chart{{Name: "charts/c1"}},
+		ChartIds:    []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 		ChartLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
 	}
 	updated := &dpb.Dashboard{
@@ -416,7 +647,7 @@ func TestMergeDashboards_AllFieldsNoMask(t *testing.T) {
 		Title:       "New Title",
 		Description: "New Desc",
 		Owner:       "attacker@example.com",
-		Charts:      []*dpb.Chart{{Name: "charts/c2"}},
+		ChartIds:    []string{"c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 		ChartLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_SIDE_BY_SIDE, Columns: 2},
 	}
 
@@ -434,8 +665,8 @@ func TestMergeDashboards_AllFieldsNoMask(t *testing.T) {
 	if merged.GetOwner() != "owner@example.com" {
 		t.Errorf("Owner: got %q, want 'owner@example.com' (owner must not be overwritten)", merged.GetOwner())
 	}
-	if len(merged.GetCharts()) != 1 || merged.GetCharts()[0].GetName() != "charts/c2" {
-		t.Errorf("Charts: got %v, want charts/c2", merged.GetCharts())
+	if len(merged.GetChartIds()) != 1 || merged.GetChartIds()[0] != "c9a646d3-9c61-4cd7-bf10-8e96dc638210" {
+		t.Errorf("ChartIds: got %v, want c9a646d3-9c61-4cd7-bf10-8e96dc638210", merged.GetChartIds())
 	}
 	if merged.GetChartLayout().GetType() != dpb.LayoutSpec_SIDE_BY_SIDE {
 		t.Errorf("ChartLayout: got %v, want SIDE_BY_SIDE", merged.GetChartLayout().GetType())
@@ -447,13 +678,13 @@ func TestMergeDashboards_WithFieldMask(t *testing.T) {
 		Name:        "dashboards/d1",
 		Title:       "Old Title",
 		Description: "Old Desc",
-		Charts:      []*dpb.Chart{{Name: "charts/c1"}},
+		ChartIds:    []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 	}
 	updated := &dpb.Dashboard{
 		Name:        "dashboards/d1",
 		Title:       "New Title",
 		Description: "New Desc",
-		Charts:      []*dpb.Chart{{Name: "charts/c2"}},
+		ChartIds:    []string{"c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 	}
 
 	mask := &fieldmaskpb.FieldMask{Paths: []string{"title"}}
@@ -468,8 +699,8 @@ func TestMergeDashboards_WithFieldMask(t *testing.T) {
 	if merged.GetDescription() != "Old Desc" {
 		t.Errorf("Description: got %q, want 'Old Desc' (should not have changed)", merged.GetDescription())
 	}
-	if len(merged.GetCharts()) != 1 || merged.GetCharts()[0].GetName() != "charts/c1" {
-		t.Errorf("Charts: got %v, want charts/c1 (should not have changed)", merged.GetCharts())
+	if len(merged.GetChartIds()) != 1 || merged.GetChartIds()[0] != "f47ac10b-58cc-4372-a567-0e02b2c3d479" {
+		t.Errorf("ChartIds: got %v, want f47ac10b-58cc-4372-a567-0e02b2c3d479 (should not have changed)", merged.GetChartIds())
 	}
 }
 
@@ -493,12 +724,129 @@ func TestMergeDashboards_NilInputs(t *testing.T) {
 	}
 }
 
+func TestMergeCharts_AllFieldsNoMask(t *testing.T) {
+	current := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Xid:         100,
+		Wid:         1,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p1", Title: "Plot 1", Type: dpb.PlotType_SCATTER}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
+	}
+	updated := &dpb.Chart{
+		Name:        "charts/c1-ignored",
+		Title:       "New Title",
+		Description: "New Desc",
+		Xid:         999,
+		Wid:         2,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p2", Title: "Plot 2", Type: dpb.PlotType_BAR}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_WRAP, Columns: 3},
+	}
+
+	merged, err := MergeCharts(current, updated, nil)
+	if err != nil {
+		t.Fatalf("MergeCharts failed: %v", err)
+	}
+
+	if merged.GetTitle() != "New Title" {
+		t.Errorf("Title: got %q, want 'New Title'", merged.GetTitle())
+	}
+	if merged.GetDescription() != "New Desc" {
+		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
+	}
+	if merged.GetWid() != 1 {
+		t.Errorf("Wid: got %d, want 1 (wid must be preserved)", merged.GetWid())
+	}
+	if merged.GetXid() != 100 {
+		t.Errorf("Xid: got %d, want 100 (xid must be preserved)", merged.GetXid())
+	}
+	if len(merged.GetPlots()) != 1 || merged.GetPlots()[0].GetPlotId() != "p2" {
+		t.Errorf("Plots: got %v, want plot with ID 'p2'", merged.GetPlots())
+	}
+	if merged.GetPlotLayout().GetType() != dpb.LayoutSpec_WRAP || merged.GetPlotLayout().GetColumns() != 3 {
+		t.Errorf("PlotLayout: got %v, want WRAP with 3 columns", merged.GetPlotLayout())
+	}
+}
+
+func TestMergeCharts_ImmutableFieldsInMask(t *testing.T) {
+	current := &dpb.Chart{Name: "charts/c1", Xid: 10, Wid: 1}
+	updated := &dpb.Chart{Name: "charts/c1", Xid: 20, Wid: 2}
+
+	for _, field := range []string{"wid", "xid"} {
+		mask := &fieldmaskpb.FieldMask{Paths: []string{field}}
+		if _, err := MergeCharts(current, updated, mask); err == nil {
+			t.Errorf("MergeCharts with immutable field %q in mask succeeded, want error", field)
+		}
+	}
+}
+
+func TestMergeCharts_WithFieldMask(t *testing.T) {
+	current := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Wid:         1,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p1"}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
+	}
+	updated := &dpb.Chart{
+		Name:        "charts/c1",
+		Title:       "New Title",
+		Description: "New Desc",
+		Wid:         5,
+		Plots:       []*dpb.PlotSpec{{PlotId: "p2"}},
+		PlotLayout:  &dpb.LayoutSpec{Type: dpb.LayoutSpec_SIDE_BY_SIDE, Columns: 2},
+	}
+
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"description", "plot_layout"}}
+	merged, err := MergeCharts(current, updated, mask)
+	if err != nil {
+		t.Fatalf("MergeCharts failed: %v", err)
+	}
+
+	if merged.GetTitle() != "Old Title" {
+		t.Errorf("Title: got %q, want 'Old Title' (should not change)", merged.GetTitle())
+	}
+	if merged.GetDescription() != "New Desc" {
+		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
+	}
+	if merged.GetWid() != 1 {
+		t.Errorf("Wid: got %d, want 1 (should not change)", merged.GetWid())
+	}
+	if len(merged.GetPlots()) != 1 || merged.GetPlots()[0].GetPlotId() != "p1" {
+		t.Errorf("Plots: got %v, want 'p1' (should not change)", merged.GetPlots())
+	}
+	if merged.GetPlotLayout().GetType() != dpb.LayoutSpec_SIDE_BY_SIDE {
+		t.Errorf("PlotLayout: got %v, want SIDE_BY_SIDE", merged.GetPlotLayout())
+	}
+}
+
+func TestMergeCharts_InvalidPath(t *testing.T) {
+	current := &dpb.Chart{Name: "charts/c1"}
+	updated := &dpb.Chart{Name: "charts/c1"}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"invalid_field"}}
+
+	if _, err := MergeCharts(current, updated, mask); err == nil {
+		t.Errorf("MergeCharts with invalid field mask path succeeded, want error")
+	}
+}
+
+func TestMergeCharts_NilInputs(t *testing.T) {
+	if _, err := MergeCharts(nil, &dpb.Chart{}, nil); err == nil {
+		t.Errorf("MergeCharts(nil, updated, nil) succeeded, want error")
+	}
+	if _, err := MergeCharts(&dpb.Chart{}, nil, nil); err == nil {
+		t.Errorf("MergeCharts(current, nil, nil) succeeded, want error")
+	}
+}
+
 func TestDashboardProtoToUpdateMutations_Success(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name:        "dashboards/d1",
 		Title:       "Updated Title",
 		Description: "Updated Desc",
-		Charts:      []*dpb.Chart{{Name: "charts/c1"}, {Name: "charts/c2"}},
+		ChartIds:    []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 	}
 
 	// Without charts update
@@ -530,120 +878,139 @@ func TestDashboardProtoToUpdateMutations_InvalidInput(t *testing.T) {
 	}
 }
 
-func TestDashboardProtoToInsertMutations_NilChart(t *testing.T) {
+func TestDashboardProtoToInsertMutations_InvalidChartID(t *testing.T) {
 	dash := &dpb.Dashboard{
-		Name:   "dashboards/d1",
-		Charts: []*dpb.Chart{nil},
+		Name:     "dashboards/d1",
+		ChartIds: []string{"invalid/chart/id"},
 	}
 	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
-		t.Errorf("DashboardProtoToInsertMutations with nil chart succeeded, want error")
+		t.Errorf("DashboardProtoToInsertMutations with invalid chart ID succeeded, want error")
 	}
 }
 
-func TestDashboardProtoToUpdateMutations_NilChart(t *testing.T) {
+func TestDashboardProtoToUpdateMutations_InvalidChartID(t *testing.T) {
 	dash := &dpb.Dashboard{
-		Name:   "dashboards/d1",
-		Charts: []*dpb.Chart{nil},
+		Name:     "dashboards/d1",
+		ChartIds: []string{"invalid/chart/id"},
 	}
 	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
-		t.Errorf("DashboardProtoToUpdateMutations with nil chart succeeded, want error")
+		t.Errorf("DashboardProtoToUpdateMutations with invalid chart ID succeeded, want error")
 	}
 }
 
-func TestSortCharts(t *testing.T) {
-	chart1 := &dpb.Chart{Name: "charts/c1"}
-	chart2 := &dpb.Chart{Name: "charts/c2"}
-	chart3 := &dpb.Chart{Name: "charts/c3"}
+func TestSortChartIDs(t *testing.T) {
+	c1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	c2 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	c3 := "d8a646d3-9c61-4cd7-bf10-8e96dc638211"
 
 	tests := []struct {
 		name     string
-		input    []*dpb.Chart
+		input    []string
 		wantLen  int
-		wantName []string
+		wantList []string
 	}{
 		{
 			name:     "nil slice",
 			input:    nil,
 			wantLen:  0,
-			wantName: nil,
+			wantList: nil,
 		},
 		{
 			name:     "empty slice",
-			input:    []*dpb.Chart{},
+			input:    []string{},
 			wantLen:  0,
-			wantName: []string{},
+			wantList: nil,
 		},
 		{
 			name:     "single element",
-			input:    []*dpb.Chart{chart1},
+			input:    []string{c1},
 			wantLen:  1,
-			wantName: []string{"charts/c1"},
+			wantList: []string{c1},
 		},
 		{
 			name:     "already sorted",
-			input:    []*dpb.Chart{chart1, chart2, chart3},
+			input:    []string{c2, c3, c1},
 			wantLen:  3,
-			wantName: []string{"charts/c1", "charts/c2", "charts/c3"},
+			wantList: []string{c2, c3, c1},
 		},
 		{
 			name:     "reverse sorted",
-			input:    []*dpb.Chart{chart3, chart2, chart1},
+			input:    []string{c1, c3, c2},
 			wantLen:  3,
-			wantName: []string{"charts/c1", "charts/c2", "charts/c3"},
+			wantList: []string{c2, c3, c1},
 		},
 		{
-			name:     "with nil element",
-			input:    []*dpb.Chart{chart2, nil, chart1},
-			wantLen:  3,
-			wantName: []string{"", "charts/c1", "charts/c2"},
+			name:     "with duplicates",
+			input:    []string{c1, c2, c1},
+			wantLen:  2,
+			wantList: []string{c2, c1},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := SortCharts(tc.input)
+			got := SortChartIDs(tc.input)
 			if len(got) != tc.wantLen {
-				t.Fatalf("SortCharts() len = %d, want %d", len(got), tc.wantLen)
+				t.Fatalf("SortChartIDs() len = %d, want %d", len(got), tc.wantLen)
 			}
-			for i, want := range tc.wantName {
-				if got[i] == nil {
-					if want != "" {
-						t.Errorf("got[%d] = nil, want %q", i, want)
-					}
-					continue
-				}
-				if got[i].GetName() != want {
-					t.Errorf("got[%d] Name = %q, want %q", i, got[i].GetName(), want)
+			for i, want := range tc.wantList {
+				if got[i] != want {
+					t.Errorf("got[%d] = %q, want %q", i, got[i], want)
 				}
 			}
 		})
 	}
 }
 
-func TestSortCharts_Immutability(t *testing.T) {
-	chart1 := &dpb.Chart{Name: "charts/c1"}
-	chart2 := &dpb.Chart{Name: "charts/c2"}
-	input := []*dpb.Chart{chart2, chart1}
+func TestSortChartIDs_Immutability(t *testing.T) {
+	c1 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	c2 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	input := []string{c1, c2}
 
-	got := SortCharts(input)
-	if got[0].GetName() != "charts/c1" || got[1].GetName() != "charts/c2" {
-		t.Errorf("SortCharts() did not sort properly: got %v", got)
+	got := SortChartIDs(input)
+	if got[0] != c2 || got[1] != c1 {
+		t.Errorf("SortChartIDs() did not sort properly: got %v", got)
 	}
-	if input[0].GetName() != "charts/c2" || input[1].GetName() != "charts/c1" {
-		t.Errorf("SortCharts() mutated original input slice: got %v", input)
+	if input[0] != c1 || input[1] != c2 {
+		t.Errorf("SortChartIDs() mutated original input slice: got %v", input)
 	}
 }
 
-func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
+func TestChartIDsEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a    []string
+		b    []string
+		want bool
+	}{
+		{name: "both nil", a: nil, b: nil, want: true},
+		{name: "one nil one empty", a: nil, b: []string{}, want: true},
+		{name: "both empty", a: []string{}, b: []string{}, want: true},
+		{name: "equal single", a: []string{"c1"}, b: []string{"c1"}, want: true},
+		{name: "equal multiple", a: []string{"c1", "c2"}, b: []string{"c1", "c2"}, want: true},
+		{name: "different lengths", a: []string{"c1"}, b: []string{"c1", "c2"}, want: false},
+		{name: "different elements", a: []string{"c1"}, b: []string{"c2"}, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ChartIDsEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("ChartIDsEqual(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeDashboards_PreservesChartIDsOrder(t *testing.T) {
 	current := &dpb.Dashboard{
-		Name:   "dashboards/d1",
-		Title:  "Title",
-		Charts: []*dpb.Chart{{Name: "charts/c1"}},
+		Name:     "dashboards/d1",
+		Title:    "Title",
+		ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 	}
 	updated := &dpb.Dashboard{
-		Name:   "dashboards/d1",
-		Title:  "Title",
-		Charts: []*dpb.Chart{{Name: "charts/c3"}, {Name: "charts/c1"}, {Name: "charts/c2"}},
+		Name:     "dashboards/d1",
+		Title:    "Title",
+		ChartIds: []string{"d8a646d3-9c61-4cd7-bf10-8e96dc638211", "f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 	}
 
 	merged, err := MergeDashboards(current, updated, nil)
@@ -651,12 +1018,12 @@ func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
 		t.Fatalf("MergeDashboards failed: %v", err)
 	}
 
-	charts := merged.GetCharts()
-	if len(charts) != 3 {
-		t.Fatalf("merged.Charts len = %d, want 3", len(charts))
+	chartIDs := merged.GetChartIds()
+	if len(chartIDs) != 3 {
+		t.Fatalf("merged.ChartIds len = %d, want 3", len(chartIDs))
 	}
-	if charts[0].GetName() != "charts/c3" || charts[1].GetName() != "charts/c1" || charts[2].GetName() != "charts/c2" {
-		t.Errorf("merged.Charts order not preserved: got %v", charts)
+	if chartIDs[0] != "d8a646d3-9c61-4cd7-bf10-8e96dc638211" || chartIDs[1] != "f47ac10b-58cc-4372-a567-0e02b2c3d479" || chartIDs[2] != "c9a646d3-9c61-4cd7-bf10-8e96dc638210" {
+		t.Errorf("merged.ChartIds order not preserved: got %v", chartIDs)
 	}
 }
 
@@ -675,5 +1042,64 @@ func TestDashboardProtoToUpdateMutations_InvalidDashboardName(t *testing.T) {
 	}
 	if _, err := DashboardProtoToUpdateMutations(dash, false); err == nil {
 		t.Errorf("DashboardProtoToUpdateMutations with invalid name succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToInsertMutations_EmptyChartIDs(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:     "dashboards/test-empty-charts",
+		Title:    "Dashboard without charts",
+		ChartIds: []string{},
+	}
+	mutations, err := DashboardProtoToInsertMutations(dash)
+	if err != nil {
+		t.Fatalf("DashboardProtoToInsertMutations failed: %v", err)
+	}
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (dashboard only), got %d", len(mutations))
+	}
+}
+
+func TestDashboardProtoToInsertMutations_LayoutPositionMatching(t *testing.T) {
+	uuid1 := "c9a646d3-9c61-4cd7-bf10-8e96dc638210"
+	uuid2 := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-layout-matching",
+		Title: "Dashboard with Layout Matching",
+		ChartIds: []string{
+			uuid1,
+			uuid2,
+		},
+		ChartLayout: &dpb.LayoutSpec{
+			Type:    dpb.LayoutSpec_GRID,
+			Columns: 2,
+			Positions: []*dpb.GridPosition{
+				{
+					ItemId: uuid1,
+					X:      0,
+					Y:      0,
+					Width:  6,
+					Height: 4,
+				},
+				{
+					ItemId: uuid2,
+					X:      6,
+					Y:      0,
+					Width:  6,
+					Height: 4,
+				},
+			},
+		},
+	}
+
+	mutations, err := DashboardProtoToInsertMutations(dash)
+	if err != nil {
+		t.Fatalf("DashboardProtoToInsertMutations failed: %v", err)
+	}
+
+	// 1 Dashboard mutation + 2 DashboardCharts mutations = 3
+	if len(mutations) != 3 {
+		t.Fatalf("Expected 3 mutations, got %d", len(mutations))
 	}
 }

@@ -18,46 +18,17 @@ import {
   RangePreset,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-/**
- * Velocity period options for queue resource calculations.
- */
-export interface VelocityPeriodOption {
-  readonly value: string;
-  readonly label: string;
-}
-
-export const VELOCITY_PERIOD_OPTIONS: readonly VelocityPeriodOption[] = [
-  { value: '1h', label: '1 hour' },
-  { value: '24h', label: '1 day' },
-  { value: '7d', label: '7 days' },
-];
+const rateFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 
 /**
  * Format numerical velocity rate cleanly.
  */
 export function formatRate(val: number): string {
   if (val === 0) return '0';
-  if (Number.isInteger(val)) return `${val}`;
-  return parseFloat(val.toFixed(2)).toString();
-}
-
-/**
- * Convert velocity period string to numeric hours.
- */
-export function getVelocityHours(period: string): number {
-  switch (period) {
-    case '1h':
-    case '1 hour':
-      return 1;
-    case '24h':
-    case '1 day':
-      return 24;
-    case '7d':
-    case '7 days':
-      return 168;
-    default:
-      return 168;
-  }
+  return rateFormatter.format(val);
 }
 
 /**
@@ -80,28 +51,34 @@ export function mapPeriodToRangePreset(period: string): RangePreset {
 }
 
 /**
- * Find QueuePredictability matching the given timeframe period.
+ * Find QueuePredictability matching the given timeframe period and optional dominant resource type.
  */
 export function findQueuePredictability(
   queue: ClusterQueueSecondaryMetrics,
   period: string,
+  dominantResource?: string | null,
 ): QueuePredictability | undefined {
   const targetRange = mapPeriodToRangePreset(period);
   const predictabilities = queue?.queuePredictability ?? [];
-  return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
+
+  if (!dominantResource) {
+    return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
+  }
+
+  const normDominant = dominantResource.trim().toLowerCase();
+  return predictabilities.find(
+    (p) =>
+      p.velocityRange === targetRange &&
+      (p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
+        p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant),
+  );
 }
 
 /**
  * Calculate pending jobs count for a cluster queue.
  */
 export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number {
-  const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (p.pendingJobs !== undefined && p.pendingJobs !== null) {
-      return p.pendingJobs;
-    }
-  }
-  return 0;
+  return queue?.queuePredictability?.find((p) => p.pendingJobs != null)?.pendingJobs ?? 0;
 }
 
 /**
@@ -110,18 +87,23 @@ export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number
 export function calculateResourceVelocity(
   queue: ClusterQueueSecondaryMetrics,
   period: string,
+  dominantResource?: string | null,
 ): string {
-  const match = findQueuePredictability(queue, period);
+  const match = findQueuePredictability(queue, period, dominantResource);
   const vel = match?.resourceVelocity?.velocity ?? 0;
-  const resType = match?.resourceVelocity?.resourceType ?? 'units';
+  const resType = match?.resourceVelocity?.resourceType ?? dominantResource ?? 'units';
   return `~${formatRate(vel)} ${resType}/hr`;
 }
 
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
-export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period: string): string {
-  const match = findQueuePredictability(queue, period);
+export function calculateJobVelocity(
+  queue: ClusterQueueSecondaryMetrics,
+  period: string,
+  dominantResource?: string | null,
+): string {
+  const match = findQueuePredictability(queue, period, dominantResource);
   const vel = match?.jobVelocity ?? 0;
   return `${formatRate(vel)} jobs/hr`;
 }
@@ -129,15 +111,21 @@ export function calculateJobVelocity(queue: ClusterQueueSecondaryMetrics, period
 /**
  * Calculate pending resource requests display text for a cluster queue.
  */
-export function calculatePendingRequestsDisplay(queue: ClusterQueueSecondaryMetrics): string {
+export function calculatePendingRequestsDisplay(
+  queue: ClusterQueueSecondaryMetrics,
+  dominantResource?: string | null,
+): string {
   const predictabilities = queue?.queuePredictability ?? [];
-  for (const p of predictabilities) {
-    if (
-      p.pendingResourceRequests?.count !== undefined &&
-      p.pendingResourceRequests?.count !== null
-    ) {
-      return formatRate(p.pendingResourceRequests.count);
-    }
-  }
-  return '0';
+  const normDominant = dominantResource?.trim().toLowerCase();
+  const match = normDominant
+    ? predictabilities.find(
+        (p) =>
+          (p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
+            p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant) &&
+          p.pendingResourceRequests?.count != null,
+      )
+    : predictabilities.find((p) => p.pendingResourceRequests?.count != null);
+  return match?.pendingResourceRequests?.count != null
+    ? formatRate(match.pendingResourceRequests.count)
+    : '0';
 }

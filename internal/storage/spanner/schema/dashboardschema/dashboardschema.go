@@ -35,6 +35,7 @@ const (
 	OwnerTableField            = querytools.TableField("owner")
 	ChartIDTableField          = querytools.TableField("chart_id")
 	XidTableField              = querytools.TableField("xid")
+	WidTableField              = querytools.TableField("wid")
 	PlotIDTableField           = querytools.TableField("plot_id")
 	PlotSpecTableField         = querytools.TableField("plot_spec")
 	ChartLayoutTableField      = querytools.TableField("chart_layout")
@@ -61,7 +62,9 @@ var (
 	FetchedChartColumns = []string{
 		"ChartId",
 		"Title",
+		"Description",
 		"Xid",
+		"Wid",
 		"PlotLayout",
 		"Owner",
 		"CreatedAt",
@@ -146,9 +149,23 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			DescriptionTableField: {
+				Name:         DescriptionTableField,
+				QueryLiteral: safesql.New("c.Description"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
 			XidTableField: {
 				Name:         XidTableField,
 				QueryLiteral: safesql.New("c.Xid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			WidTableField: {
+				Name:         WidTableField,
+				QueryLiteral: safesql.New("c.Wid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
@@ -224,12 +241,15 @@ var (
 		NameClause: safesql.New("ChartPlots cp"),
 		Cost:       10,
 		Fields: map[querytools.TableField]querytools.Member{
+			// Plots are fetched for a whole page of charts at once, so the chart_id disjunction is
+			// collapsed into a single IN UNNEST clause instead of one OR term per chart.
 			ChartIDTableField: {
-				Name:         ChartIDTableField,
-				QueryLiteral: safesql.New("cp.ChartId"),
-				Type:         filtervisitor.String,
-				Selectable:   true,
-				Indexed:      true,
+				Name:                   ChartIDTableField,
+				QueryLiteral:           safesql.New("cp.ChartId"),
+				Type:                   filtervisitor.String,
+				Selectable:             true,
+				Indexed:                true,
+				DisjunctionOptimizable: true,
 			},
 			PlotIDTableField: {
 				Name:         PlotIDTableField,
@@ -308,6 +328,13 @@ var (
 				Selectable:   true,
 				Indexed:      true,
 			},
+			DashboardChartIDTableField: {
+				Name:         DashboardChartIDTableField,
+				QueryLiteral: safesql.New("dc.DashboardChartId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
 			ChartIDTableField: {
 				Name:         ChartIDTableField,
 				QueryLiteral: safesql.New("c.ChartId"),
@@ -322,9 +349,23 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			DescriptionTableField: {
+				Name:         DescriptionTableField,
+				QueryLiteral: safesql.New("c.Description"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
 			XidTableField: {
 				Name:         XidTableField,
 				QueryLiteral: safesql.New("c.Xid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			WidTableField: {
+				Name:         WidTableField,
+				QueryLiteral: safesql.New("c.Wid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
@@ -359,6 +400,7 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
 			{TableField: ChartIDTableField, SortOrder: querytools.Asc},
 		},
 	}
@@ -402,7 +444,9 @@ var (
 	ChartsSelectFields = []querytools.TableField{
 		ChartIDTableField,
 		TitleTableField,
+		DescriptionTableField,
 		XidTableField,
+		WidTableField,
 		PlotLayoutTableField,
 		OwnerTableField,
 		CreatedTableField,
@@ -416,5 +460,7 @@ var (
 		{TableField: ChartIDTableField},
 		{TableField: TitleTableField},
 		{TableField: XidTableField},
+		{TableField: WidTableField},
+		{TableField: OwnerTableField},
 	}
 )

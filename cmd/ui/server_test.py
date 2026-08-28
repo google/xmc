@@ -18,7 +18,7 @@ import io
 import os
 import socket
 import unittest
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 # TYPE_CHECKING is True only during static type analysis (e.g. Mypy/IDEs).
@@ -324,7 +324,7 @@ class SPAHandlerTest(unittest.TestCase):
         mock_do_get.assert_called_once()
 
     def test_get_bool_env(self):
-        cases = [
+        cases: list[dict[str, Any]] = [
             {"env_val": "true", "default": False, "expected": True},
             {"env_val": "TRUE", "default": False, "expected": True},
             {"env_val": "false", "default": True, "expected": False},

@@ -66,39 +66,74 @@
 
       <div class="capacity-boxes-stack">
         @for (cap of capacities(); track cap.resourceType) {
-          <div class="capacity-box table-row">
+          @let cohortInfo = cap | cohortStateInfo;
+          @let isCapacityHealthy = isQueueHealthy() && cohortInfo.state !== cohortStateSqueezed;
+          <div
+            class="capacity-box table-row"
+            [class.squeezed-box]="cohortInfo.state === cohortStateSqueezed"
+            [class.borrowing-box]="cohortInfo.state === cohortStateBorrowing"
+          >
             <div class="capacity-box-header">
-              <span class="flavor-main-name">{{ cap.resourceType }}</span>
+              <div class="flavor-header-group">
+                <span class="flavor-main-name">{{ cap.resourceType }}</span>
+                @if (cohortInfo.state === cohortStateSqueezed) {
+                  <span
+                    class="cohort-badge squeezed-badge"
+                    matTooltip="Peers in your cohort are currently using shared capacity"
+                  >
+                    <mat-icon class="badge-mini-icon">warning</mat-icon>
+                    Squeezed by cohort
+                  </span>
+                } @else if (cohortInfo.state === cohortStateBorrowing) {
+                  <span
+                    class="cohort-badge borrowing-badge"
+                    matTooltip="Idle capacity is available in your cohort to borrow"
+                  >
+                    <mat-icon class="badge-mini-icon">bolt</mat-icon>
+                    Borrowing available
+                  </span>
+                }
+              </div>
               <mat-icon
                 class="flavor-status-icon"
-                [class.flavor-check-icon]="isQueueHealthy()"
-                [class.flavor-warn-icon]="!isQueueHealthy()"
+                [class.flavor-check-icon]="isCapacityHealthy"
+                [class.flavor-warn-icon]="!isCapacityHealthy"
               >
-                {{ isQueueHealthy() ? 'check_circle' : 'warning_amber' }}
+                {{ isCapacityHealthy ? 'check_circle' : 'warning_amber' }}
               </mat-icon>
             </div>
             <div class="capacity-stats-grid">
               <div class="stat-cell">
                 <div class="cell-label">
-                  Max workload size
+                  Max schedulable now (Cohort quota)
                   <mat-icon
                     class="help-tip-icon"
                     matTooltipClass="rod-term-tooltip"
-                    [matTooltip]="termTooltips.maxWorkloadSize"
+                    [matTooltip]="termTooltips.maxSchedulableNow"
                     >help_outline</mat-icon
                   >
                 </div>
                 <div
                   class="cell-value bold-metric"
-                  [class.green-text]="isQueueHealthy()"
-                  [class.amber-text]="!isQueueHealthy()"
+                  [class.green-text]="isCapacityHealthy"
+                  [class.amber-text]="!isCapacityHealthy"
                 >
-                  {{ cap | maxWorkloadDisplay }}
+                  <span>{{ cap | maxSchedulableDisplay }}</span>
+                  @if (cohortInfo.tooltip) {
+                    <mat-icon
+                      class="cohort-value-tip-icon"
+                      matTooltipClass="rod-term-tooltip"
+                      [class.squeezed-tip-icon]="cohortInfo.state === cohortStateSqueezed"
+                      [class.borrowing-tip-icon]="cohortInfo.state === cohortStateBorrowing"
+                      [matTooltip]="cohortInfo.tooltip"
+                      >info_outline</mat-icon
+                    >
+                  }
                 </div>
               </div>
               <div class="stat-cell">
                 <div class="cell-label">
-                  Free / Total
+                  Nominal Queue Quota (Free / Total)
                   <mat-icon
                     class="help-tip-icon"
                     matTooltipClass="rod-term-tooltip"
@@ -128,14 +163,23 @@
       </div>
       <xmc-wip-banner />
 
-      @if (isSecondaryLoading()) {
+      @if (!dominantResource()) {
+        <div class="predictability-empty-state">
+          <mat-icon class="empty-icon">info_outline</mat-icon>
+          <span class="empty-text">
+            Select a resource type in the top picker to display velocity metrics.
+          </span>
+        </div>
+      } @else if (isSecondaryLoading()) {
         <div class="predictability-spinner-container">
           <mat-spinner diameter="24" />
           <span class="spinner-text">Fetching predictability metrics...</span>
         </div>
       } @else if (!predictabilityVm()) {
         <div class="predictability-spinner-container">
-          <span class="spinner-text">No predictability data available.</span>
+          <span class="spinner-text"
+            >No predictability data available for {{ dominantResource() }}.</span
+          >
         </div>
       } @else {
         @let vm = predictabilityVm()!;

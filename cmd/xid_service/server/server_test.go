@@ -30,12 +30,6 @@ import (
 
 type testServerOpt func(p *Params)
 
-func withConfig(cfg config.Config) testServerOpt {
-	return func(p *Params) {
-		p.Config = cfg
-	}
-}
-
 func withStorage(s storage.Storage) testServerOpt {
 	return func(p *Params) {
 		p.Storage = s

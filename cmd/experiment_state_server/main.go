@@ -37,6 +37,7 @@ import (
 	"golang/grpc/reflection/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -44,6 +45,8 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/cms"
+	"xmanager_cloud/pkg/components/store"
 )
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
@@ -77,7 +80,7 @@ func main() {
 	defer prodServer.Close()
 
 	// 3. Initialize TLS credentials.
-	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
 	}
@@ -94,14 +97,16 @@ func main() {
 
 	s := grpc.NewServer(opts...)
 
-	spb.RegisterExperimentStateServiceServer(s, prodServer)
-
-	reflection.Register(s)
-
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(s, healthServer)
-
 	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
+
+	spb.RegisterExperimentStateServiceServer(s, prodServer)
+	if cfg.EnableComponents {
+		initCMS(ctx, s, healthServer)
+	}
+
+	reflection.Register(s)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 
@@ -112,7 +117,7 @@ func main() {
 	}()
 
 	// 5. Initialize the gRPC gateway mux.
-	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
 	}
@@ -127,67 +132,12 @@ func main() {
 	}
 
 	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
-	httpMux := http.NewServeMux()
-
-	// Load dynamic OAuth2 Authentication configurations
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
 	configureAuth(oauthAuth, oauthCfg)
 	defer oauthAuth.Close()
 
-	// Mount OAuth2 routing handlers
-	httpMux.HandleFunc("/api/login", oauthAuth.HandleLogin)
-	httpMux.HandleFunc("/api/callback", oauthAuth.HandleCallback)
-	httpMux.HandleFunc("/api/logout", oauthAuth.HandleLogout)
-	httpMux.Handle("/api/user", oauthAuth.Authenticate(http.HandlerFunc(oauthAuth.HandleUser)))
-
-	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
-	if err != nil {
-		logging.Fatal(ctx, "failed to create static file system", "error", err)
-	}
-	staticServer := http.FileServer(http.FS(staticRootFS))
-
-	httpMux.HandleFunc("/v1/static/", func(w http.ResponseWriter, r *http.Request) {
-		// Prevent directory listing
-		if strings.HasSuffix(r.URL.Path, "/") {
-			http.NotFound(w, r)
-			return
-		}
-
-		// Determine Content-Type based on extension
-		ext := filepath.Ext(r.URL.Path)
-		mimeType := mime.TypeByExtension(ext)
-		if mimeType == "" {
-			// Fallback if type can't be determined
-			mimeType = "application/octet-stream"
-		}
-		w.Header().Set("Content-Type", mimeType)
-
-		// The http.FileServer and http.StripPrefix expect the original URL path
-		// to match the prefix. Since we are in HandleFunc("/v1/static/"),
-		// the r.URL.Path already includes "/v1/static/". We let StripPrefix handle it.
-		http.StripPrefix("/v1/static/", staticServer).ServeHTTP(w, r)
-	})
-
 	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
-	httpMux.HandleFunc("/readyz", activeHealthCheck(spHealth, xidHealth, tqHealth))
-	httpMux.HandleFunc("/healthz", livenessCheck())
-
-	// Secure the private gRPC-Gateway endpoints with the Authenticate middleware.
-	authenticatedGwmux := oauthAuth.Authenticate(gwmux)
-
-	// Register a handler for the "/" path, aka. all traffic to the HTTP port.
-	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Check if the path is exactly "/". This serves as a simple "live" check
-		// for load balancers that default to "/" if not overridden.
-		if r.URL.Path == "/" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-			return
-		}
-
-		// Delegate to the gRPC-Gateway, secured by OAuth2.
-		authenticatedGwmux.ServeHTTP(w, r)
-	})
+	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
 
 	// 7. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)
@@ -212,4 +162,61 @@ func main() {
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
 	logging.Info(ctx, "Server gracefully stopped")
+}
+
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server) {
+	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
+	// TODO: Initialize with a concrete store implementation.
+	var cmsStore store.Store
+	cmsServer := cms.NewServer(cmsStore)
+	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
+	healthServer.SetServingStatus("cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
+	logging.Info(ctx, "Component Manager Service (CMS) registered successfully")
+}
+
+func setupHTTPMux(ctx context.Context, oauthAuth *oauth.Authenticator, authenticatedGwmux http.Handler, readyHandler http.Handler, livenessHandler http.Handler) *http.ServeMux {
+	httpMux := http.NewServeMux()
+
+	httpMux.HandleFunc("/api/login", oauthAuth.HandleLogin)
+	httpMux.HandleFunc("/api/callback", oauthAuth.HandleCallback)
+	httpMux.HandleFunc("/api/logout", oauthAuth.HandleLogout)
+	httpMux.Handle("/api/user", oauthAuth.Authenticate(http.HandlerFunc(oauthAuth.HandleUser)))
+
+	mountStaticFiles(ctx, httpMux)
+
+	httpMux.Handle("/readyz", readyHandler)
+	httpMux.Handle("/healthz", livenessHandler)
+
+	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
+		authenticatedGwmux.ServeHTTP(w, r)
+	})
+
+	return httpMux
+}
+
+func mountStaticFiles(ctx context.Context, httpMux *http.ServeMux) {
+	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
+	if err != nil {
+		logging.Fatal(ctx, "failed to create static file system", "error", err)
+	}
+	staticServer := http.FileServer(http.FS(staticRootFS))
+
+	httpMux.HandleFunc("/v1/static/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		ext := filepath.Ext(r.URL.Path)
+		mimeType := mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", mimeType)
+		http.StripPrefix("/v1/static/", staticServer).ServeHTTP(w, r)
+	})
 }

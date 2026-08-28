@@ -39,9 +39,6 @@ except ImportError:
             "'pip install pytorch-lightning>=2.0.0'."
         ) from exc
 
-_parse_version = parse_version
-_extract_scalar = extract_scalar
-
 
 def _validate_lightning_version() -> None:
     """Validates PyTorch Lightning version >= 2.0.0, failing fast if incompatible."""
@@ -55,7 +52,7 @@ def _validate_lightning_version() -> None:
             except Exception:
                 version_str = "0.0.0"
 
-    if _parse_version(version_str) < _parse_version(MIN_LIGHTNING_VERSION):
+    if parse_version(version_str) < parse_version(MIN_LIGHTNING_VERSION):
         raise ImportError(
             f"PyTorch Lightning version >= {MIN_LIGHTNING_VERSION} is required for XmcLogger, "
             f"found version {version_str}. Please upgrade via 'pip install --upgrade xmc[lightning]' "
@@ -128,7 +125,7 @@ class XmcLogger(Logger):  # type: ignore[misc]
             return
 
         for key, val in metrics.items():
-            scalar_val = _extract_scalar(val)
+            scalar_val = extract_scalar(val)
             if scalar_val is not None:
                 metric_name = f"{self._prefix}{key}" if self._prefix else key
                 if self.client is not None:
@@ -147,7 +144,7 @@ class XmcLogger(Logger):  # type: ignore[misc]
 
         if isinstance(params, dict):
             for key, val in params.items():
-                scalar_val = _extract_scalar(val)
+                scalar_val = extract_scalar(val)
                 if scalar_val is not None:
                     param_name = f"hp/{key}"
                     metric_name = f"{self._prefix}{param_name}" if self._prefix else param_name

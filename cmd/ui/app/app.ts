@@ -47,7 +47,6 @@ import { SidePanel } from './side_panel/side_panel';
   ],
 })
 export class App {
-  title = 'xmc';
   readonly isSidenavOpened = signal(true);
 
   private readonly authService = inject(AuthService);
@@ -57,6 +56,9 @@ export class App {
 
   protected readonly isResourceDashboardEnabled =
     this.featureFlagService.isResourceDashboardEnabled;
+
+  protected readonly isPerformanceDashboardEnabled =
+    this.featureFlagService.isPerformanceDashboardEnabled;
 
   protected readonly isAdminPanelEnabled = toSignal(this.healthService.isAdminPanelAccessible(), {
     initialValue: false,

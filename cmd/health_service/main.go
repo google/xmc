@@ -17,6 +17,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,38 +30,38 @@ import (
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
-	"google.golang.org/api/cloudidentity/v1beta1"
-	"google.golang.org/api/option"
 	health "xmanager_cloud/common/health"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/security/tlsutil"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
-	run "google.golang.org/api/run/v2"
+	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
 
-	"cloud.google.com/go/spanner"
+	run "google.golang.org/api/run/v2"
 
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 type grpcServerDeps struct {
-	grpcServer  *grpc.Server
-	listener    net.Listener
-	srv         *server
-	essClient   *spanner.Client
-	xidClient   *spanner.Client
-	redisClient *redisclient.PublisherClient
+	grpcServer       *grpc.Server
+	listener         net.Listener
+	srv              *server
+	essSpannerClient health.SpannerHealthClient
+	xidSpannerClient health.SpannerHealthClient
+	redisClient      *redisclient.PublisherClient
 }
 
 func (d *grpcServerDeps) Close(ctx context.Context) {
-	if d.essClient != nil {
-		d.essClient.Close()
+	if closer, ok := d.essSpannerClient.(io.Closer); ok {
+		_ = closer.Close()
 	}
-	if d.xidClient != nil {
-		d.xidClient.Close()
+	if closer, ok := d.xidSpannerClient.(io.Closer); ok {
+		_ = closer.Close()
 	}
 	if d.redisClient != nil {
 		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -77,6 +78,7 @@ func main() {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
 	oauthCfg, err := oauth2.LoadConfig()
@@ -135,16 +137,15 @@ func main() {
 	logging.Info(ctx, "Health service stopped")
 }
 
-func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*spanner.Client, health.SpannerHealthClient) {
+func initSpannerHealthClient(ctx context.Context, dbPath string, name string) health.SpannerHealthClient {
 	if dbPath == "" {
-		return nil, nil
+		return nil
 	}
-	client, err := spanner.NewClient(ctx, dbPath)
-	if err != nil {
-		logging.Warn(ctx, fmt.Sprintf("Failed to initialize %s Spanner client", name), "database", dbPath, "error", err)
-		return nil, nil
+	lazyClient := NewLazySpannerHealthClient(dbPath, nil)
+	if err := lazyClient.Initialize(ctx); err != nil {
+		logging.Warn(ctx, fmt.Sprintf("Failed to eagerly initialize %s Spanner client; will retry lazily on request", name), "database", dbPath, "error", err)
 	}
-	return client, health.NewSpannerHealthClient(client)
+	return lazyClient
 }
 
 func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, authenticator *oauth2.Authenticator) *grpcServerDeps {
@@ -153,15 +154,15 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 
-	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server credentials", "error", err)
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
 
-	essClient, essHealth := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
-	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
+	essSpannerClient := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
+	xidSpannerClient := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
 	var redisPingClient RedisPingClient
 	var publisher *redisclient.PublisherClient
@@ -177,11 +178,13 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
-		Config:          cfg,
-		EssHealthClient: essHealth,
-		XidHealthClient: xidHealth,
-		RedisClient:     redisPingClient,
-		CloudRunService: cloudRunService,
+		Config:                   cfg,
+		EssHealthClient:          essSpannerClient,
+		XidHealthClient:          xidSpannerClient,
+		RedisClient:              redisPingClient,
+		CloudRunService:          cloudRunService,
+		EssExpectedSchemaVersion: version.EssExpectedSchemaVersion(),
+		XidExpectedSchemaVersion: version.XidExpectedSchemaVersion(),
 	})
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
@@ -197,17 +200,17 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	reflection.Register(grpcServer)
 
 	return &grpcServerDeps{
-		grpcServer:  grpcServer,
-		listener:    lis,
-		srv:         srv,
-		essClient:   essClient,
-		xidClient:   xidClient,
-		redisClient: publisher,
+		grpcServer:       grpcServer,
+		listener:         lis,
+		srv:              srv,
+		essSpannerClient: essSpannerClient,
+		xidSpannerClient: xidSpannerClient,
+		redisClient:      publisher,
 	}
 }
 
 func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
-	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create client credentials", "error", err)
 	}

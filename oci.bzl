@@ -28,8 +28,8 @@ def oci_image_for_service(name, binary):
         name = tarball_target,
         srcs = [binary],
         outs = [tarball_file],
-        cmd = "python3 $(location //tools:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
-        tools = ["//tools:build_oci.py"],
+        cmd = "python3 $(location //tools/common:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
+        tools = ["//tools/common:build_oci.py"],
         visibility = ["//visibility:public"],
     )
 

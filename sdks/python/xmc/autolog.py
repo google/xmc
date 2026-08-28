@@ -14,6 +14,7 @@
 
 """XMC Autologging Entrypoint and Framework Patching Module."""
 
+import contextlib
 import functools
 import inspect
 import logging
@@ -76,12 +77,10 @@ def unpatch_keras() -> None:
     """Restores original Keras Model.fit method if patched."""
     global _patched_keras_original_fit
     if _patched_keras_original_fit is not None:
-        try:
+        with contextlib.suppress(Exception):
             import keras
 
             keras.Model.fit = _patched_keras_original_fit
-        except Exception:
-            pass
         _patched_keras_original_fit = None
 
 
@@ -131,15 +130,13 @@ def unpatch_lightning() -> None:
     """Restores original PyTorch Lightning Trainer.fit method if patched."""
     global _patched_lightning_original_fit
     if _patched_lightning_original_fit is not None:
-        try:
+        with contextlib.suppress(Exception):
             try:
                 import lightning.pytorch as pl
             except ImportError:
                 import pytorch_lightning as pl
 
             pl.Trainer.fit = _patched_lightning_original_fit
-        except Exception:
-            pass
         _patched_lightning_original_fit = None
 
 

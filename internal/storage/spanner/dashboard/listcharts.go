@@ -66,7 +66,10 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	iter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	txn := r.client.ReadOnlyTransaction().WithTimestampBound(spanner.ExactStaleness(staleness))
+	defer txn.Close()
+
+	iter := txn.Query(ctx, *stmt)
 	defer iter.Stop()
 
 	var charts []*dpb.Chart
@@ -82,7 +85,15 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", fmt.Errorf("failed to read chart rows: %w", err)
 	}
 
-	return ls.ApplyPagination(charts, pageSize, ExtractChartCursor)
+	// Paginate before hydrating so the over-fetched probe row never costs a plot lookup.
+	page, nextPageToken, err := ls.ApplyPagination(charts, pageSize, ExtractChartCursor)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := r.hydrateChartPlots(ctx, txn, page); err != nil {
+		return nil, "", fmt.Errorf("failed to hydrate chart plots: %w", err)
+	}
+	return page, nextPageToken, nil
 }
 
 // ExtractChartCursor extracts pagination cursor values from a Chart proto.
@@ -90,8 +101,12 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart cannot be nil")
 	}
+	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
+	}
 	return map[string]any{
-		"chart_id": chart.GetName(),
+		"chart_id": chartID,
 	}, nil
 }
 
@@ -105,6 +120,9 @@ func combineFilters(parentFilter, filter string) string {
 	return fmt.Sprintf("(%s) AND (%s)", parentFilter, filter)
 }
 
+// buildParentFilter translates a chart collection parent into a filter expression. The only two
+// parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}",
+// so an experiment name on its own is rejected rather than widened to every work unit under it.
 func (r *Repository) buildParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
@@ -115,11 +133,11 @@ func (r *Repository) buildParentFilter(parent string) (string, error) {
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", trimmed, withPrefix), nil
 	}
 	if strings.HasPrefix(parent, "experiments/") {
-		xid, err := validator.ValidateExperimentName(parent)
+		xid, wid, err := validator.ValidateWorkUnitName(parent)
 		if err != nil {
-			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
+			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
 		}
-		return fmt.Sprintf("xid = %d", xid), nil
+		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
 	}
 	return "", fmt.Errorf("unsupported parent format: %q", parent)
 }

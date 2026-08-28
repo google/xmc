@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"golang/google_api/idtoken/idtoken"
@@ -190,15 +189,6 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 
 func isRetryableError(err error) bool {
 	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) || apierrors.IsInternalError(err) || apierrors.IsConflict(err)
-}
-
-// extractOIDCToken extracts the Authorization token from the Authorization header.
-func extractOIDCToken(authHeader string) (string, bool) {
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return "", false
-	}
-	return parts[1], true
 }
 
 // validateAuthTokenString validates the auth token string, including the service account email.

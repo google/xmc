@@ -23,7 +23,7 @@ py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        "//tools:tool_utils",
+        "//tools/common:tool_utils",
     ],
 )
 

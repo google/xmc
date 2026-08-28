@@ -71,7 +71,7 @@ export class Header {
   readonly experiment = input.required<Experiment>();
 
   readonly experimentId = computed(() => this.workUnit().name!.split('/')[1]);
-  readonly workUnitId = computed(() => this.workUnit().name!.split('/').pop()!);
+  readonly workUnitId = computed(() => this.workUnit().name!.split('/').at(-1) ?? '');
   protected isStopping$ = new BehaviorSubject<boolean>(false);
   protected isRestarting$ = new BehaviorSubject<boolean>(false);
 

@@ -222,6 +222,34 @@ vars:
         self.assertIn("--- 8. Component Controllers Status ---", output)
         self.assertIn("Foundational Component Controllers enabled.", output)
 
+    @mock.patch.object(verify_xmc, "_check_components")
+    @mock.patch.object(verify_xmc, "_check_log_monitor")
+    @mock.patch.object(verify_xmc, "_check_connectivity")
+    @mock.patch.object(verify_xmc, "_check_k8s_resources")
+    @mock.patch.object(verify_xmc, "_resolve_config")
+    @mock.patch.object(verify_xmc, "ensure_venv")
+    def test_main(
+        self,
+        mock_ensure_venv,
+        mock_resolve_config,
+        mock_k8s,
+        mock_connectivity,
+        mock_log_monitor,
+        mock_components,
+    ):
+        mock_resolve_config.return_value = ("dev", "us-central1", "test-proj", True)
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            exit_code = verify_xmc.main()
+
+        self.assertEqual(exit_code, 0)
+        mock_ensure_venv.assert_called_once()
+        mock_resolve_config.assert_called_once()
+        mock_k8s.assert_called_once()
+        mock_connectivity.assert_called_once()
+        mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj")
+        mock_components.assert_called_once_with(True)
+
 
 if __name__ == "__main__":
     unittest.main()

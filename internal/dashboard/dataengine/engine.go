@@ -59,6 +59,11 @@ func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
 
 // FetchChartData compiles and executes queries for all plots within a Chart.
 func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+	// The engine is optional at startup, so a caller can end up holding a nil one. Report that as an
+	// error rather than letting the plot fetchers take down the process on a nil dereference.
+	if e == nil {
+		return nil, fmt.Errorf("data engine is not initialized")
+	}
 	if chart == nil {
 		return nil, fmt.Errorf("chart specification must not be nil")
 	}

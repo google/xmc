@@ -119,6 +119,7 @@ export default tseslint.config(
       '**/testing/**',
       '**/stubs/**',
       '**/mock_*.ts',
+      '**/screenshot_tests/**',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
@@ -137,6 +138,7 @@ export default tseslint.config(
       '**/testing/**',
       '**/stubs/**',
       '**/mock_*.ts',
+      '**/screenshot_tests/**',
       '**/app_config.ts',
     ],
     rules: {

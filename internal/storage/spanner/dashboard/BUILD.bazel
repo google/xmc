@@ -17,6 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 compat_go_library(
     name = "dashboard",
     srcs = [
+        "chartplots.go",
         "createchart.go",
         "createdashboard.go",
         "deletechart.go",
@@ -49,12 +50,14 @@ compat_go_library(
         "@org_golang_google_api//iterator",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
 
 compat_go_test(
     name = "dashboard_test",
     srcs = [
+        "chartplots_test.go",
         "createchart_test.go",
         "createdashboard_test.go",
         "deletechart_test.go",
@@ -71,6 +74,7 @@ compat_go_test(
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//internal/compat/field_mask",
+        "//internal/storage/spanner/dashboard/data",
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",

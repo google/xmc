@@ -24,6 +24,7 @@ import (
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
+	"k8s.io/utils/ptr"
 	fmpb "protobuf/field_mask_go_proto"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -108,7 +109,7 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec:       workloadSpecWithNecessaryLabels,
 				Status: v1beta1.WorkloadStatus{
-					ClusterName: stringPtr("worker-cluster"),
+					ClusterName: ptr.To("worker-cluster"),
 				},
 			},
 			objs: []runtime.Object{multiKueueCluster},
@@ -184,7 +185,7 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec:       workloadSpecWithNecessaryLabels,
 				Status: v1beta1.WorkloadStatus{
-					ClusterName: stringPtr("worker-cluster"),
+					ClusterName: ptr.To("worker-cluster"),
 					Admission: &v1beta1.Admission{
 						PodSetAssignments: []v1beta1.PodSetAssignment{
 							{
@@ -217,7 +218,7 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec:       workloadSpecWithNecessaryLabels,
 				Status: v1beta1.WorkloadStatus{
-					ClusterName: stringPtr("worker-cluster-not-found"),
+					ClusterName: ptr.To("worker-cluster-not-found"),
 				},
 			},
 			objs:    []runtime.Object{},
@@ -263,7 +264,7 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec:       workloadSpecWithNecessaryLabels,
 				Status: v1beta1.WorkloadStatus{
-					ClusterName: stringPtr("worker-cluster-no-labels"),
+					ClusterName: ptr.To("worker-cluster-no-labels"),
 				},
 			},
 			objs: []runtime.Object{multiKueueClusterNoLabels},
@@ -412,8 +413,4 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 			}
 		})
 	}
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

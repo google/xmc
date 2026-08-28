@@ -23,12 +23,12 @@ func TestGetChart_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepositoryWithParent(ctx, t, 200, 2)
 
-	chart := blankChartProto("charts/test-get-chart-1", 200, 2)
+	chart := blankChartProto("test-get-chart-1", 200, 2)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
-	got, err := repo.GetChart(ctx, "charts/test-get-chart-1")
+	got, err := repo.GetChart(ctx, "test-get-chart-1")
 	if err != nil {
 		t.Fatalf("GetChart failed: %v", err)
 	}
@@ -39,8 +39,14 @@ func TestGetChart_Success(t *testing.T) {
 	if got.GetTitle() != chart.GetTitle() {
 		t.Errorf("GetChart Title mismatch: got %q, want %q", got.GetTitle(), chart.GetTitle())
 	}
+	if got.GetDescription() != chart.GetDescription() {
+		t.Errorf("GetChart Description mismatch: got %q, want %q", got.GetDescription(), chart.GetDescription())
+	}
 	if got.GetXid() != chart.GetXid() {
 		t.Errorf("GetChart Xid mismatch: got %d, want %d", got.GetXid(), chart.GetXid())
+	}
+	if got.GetWid() != chart.GetWid() {
+		t.Errorf("GetChart Wid mismatch: got %d, want %d", got.GetWid(), chart.GetWid())
 	}
 	if len(got.GetPlots()) != len(chart.GetPlots()) {
 		t.Fatalf("GetChart Plots len mismatch: got %d, want %d", len(got.GetPlots()), len(chart.GetPlots()))
@@ -54,8 +60,18 @@ func TestGetChart_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	_, err := repo.GetChart(ctx, "charts/non-existent")
+	_, err := repo.GetChart(ctx, "non-existent")
 	if err == nil {
 		t.Errorf("GetChart for non-existent chart succeeded, want error")
+	}
+}
+
+func TestGetChart_EmptyID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	_, err := repo.GetChart(ctx, "")
+	if err == nil {
+		t.Errorf("GetChart for empty chartId succeeded, want error")
 	}
 }

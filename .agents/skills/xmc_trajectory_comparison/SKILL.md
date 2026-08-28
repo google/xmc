@@ -27,6 +27,7 @@ graph TD
 ## 1. Trigger Criteria
 
 Run this skill when:
+- **Iterative Reflection Validation**: You have formulated candidate rule, skill, or tool additions via [XMC Iterative Reflection](../xmc_iterative_reflection/SKILL.md) and want empirical A/B verification before opening a Draft PR.
 - **Rule or Skill Authoring**: You have modified or added a rule (`.agents/rules/*.md`) or skill definition (`.agents/skills/*/SKILL.md`) in your working tree and want to verify its efficacy before submitting a PR.
 - **Pre-Commit Verification**: You want to test if a rule update prevents past friction without causing new regressions, hallucinated output, or excessive turn count bloat.
 
@@ -35,10 +36,10 @@ Run this skill when:
 ## 2. Execution Workflow
 
 ### Phase 1: Structured Diff Extraction & Agent Synthesis
-Run `tools/analyze_diff_and_synthesize.py` to extract structured git diff data:
+Run `tools/benchmark/analyze_diff_and_synthesize.py` to extract structured git diff data:
 
 ```bash
-python3 tools/analyze_diff_and_synthesize.py --target-dir .agents
+python3 tools/benchmark/analyze_diff_and_synthesize.py --target-dir .agents
 ```
 
 The main agent parses the resulting JSON payload (`changed_files`, `added_lines`, `removed_lines`, `category`) and performs semantic reasoning to:
@@ -67,17 +68,17 @@ Invoke two worker subagents concurrently via `invoke_subagent`:
 
 
 ### Phase 4: Resource Teardown & Manifest Cleanup
-After both subagents complete, run `tools/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
+After both subagents complete, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
 
 ```bash
-python3 tools/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
+python3 tools/benchmark/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
 ```
 
 ### Phase 5: Dual-Pillar Evaluation & Relevance Gate
-Pass the `transcript.jsonl` log file paths from both subagents to `tools/compare_trajectories.py`:
+Pass the `transcript.jsonl` log file paths from both subagents to `tools/benchmark/compare_trajectories.py`:
 
 ```bash
-python3 tools/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> --prompt "<test_prompt>" -o /tmp/trajectory_report.md
+python3 tools/benchmark/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> --prompt "<test_prompt>" -o /tmp/trajectory_report.md
 ```
 
 The main agent reviews the output and populates the scorecard using the **Prompt Relevance Gate**:
@@ -109,8 +110,8 @@ After completing the Dual-Pillar report:
    > 
    > *[Markdown Preview]*
    > 
-   > *Feel free to edit `updated_pr_body.md` directly. Proceed with `./tools/update_pr_description.py <number> --body-file updated_pr_body.md`? (Y/n)"*
-4. Upon confirmation, execute `./tools/update_pr_description.py <number> --body-file updated_pr_body.md`.
+   > *Feel free to edit `updated_pr_body.md` directly. Proceed with `./tools/pr_review/update_pr_description.py <number> --body-file updated_pr_body.md`? (Y/n)"*
+4. Upon confirmation, execute `./tools/pr_review/update_pr_description.py <number> --body-file updated_pr_body.md`.
 
 ### Scenario B: No PR Created Yet
 1. Save the benchmark artifact to `/tmp/benchmark_report_<branch_name>.md`.

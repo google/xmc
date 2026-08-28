@@ -15,6 +15,7 @@
 """Background flusher thread for XMC metrics collection."""
 
 import atexit
+import contextlib
 import logging
 import threading
 import time
@@ -375,19 +376,6 @@ class MetricsFlusher:
                 break
         return total_flushed
 
-    def _handle_send_failure(self, exc: Exception) -> bool:
-        """Handles batch send failure, suppressing duplicate stack traces on consecutive errors."""
-        self._consecutive_failures += 1
-        if self._consecutive_failures == 1:
-            logger.exception("Error sending metrics batch: %s", exc)
-        else:
-            logger.warning(
-                "Consecutive metric batch send failure (%d): %s",
-                self._consecutive_failures,
-                exc,
-            )
-        return False
-
     def _dispatch_send(self, items: list[MetricTuple]) -> Any:
         """Dispatches batch to custom flush callback or client."""
         if self._flush_fn is not None:
@@ -469,10 +457,8 @@ class MetricsFlusher:
             self._shutdown_event.set()
 
             if self._atexit_handler is not None:
-                try:
+                with contextlib.suppress(Exception):
                     atexit.unregister(self._atexit_handler)
-                except Exception:
-                    pass
                 self._atexit_handler = None
 
         with self._condition:

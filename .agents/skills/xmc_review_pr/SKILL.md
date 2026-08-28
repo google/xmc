@@ -35,9 +35,9 @@ graph TD
 
 ---
 
-## Guidelines for Using Helper CLI Tools (`tools/review_pr_*.py`)
+## Guidelines for Using Helper CLI Tools (`tools/pr_review/review_pr_*.py`)
 
-When invoking helper CLI scripts under `tools/` (`review_pr_generate_audit.py`, `review_pr_post_inline_comment.py`, `review_pr_verify_posted.py`):
+When invoking helper CLI scripts under `tools/pr_review/` (`review_pr_generate_audit.py`, `review_pr_post_inline_comment.py`, `review_pr_verify_posted.py`):
 1. **Do not read tool source code**: Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Inspect parameters via `--help`**: Run tools with `--help` to inspect parameter schemas and usage flags.
 3. **Parse Structured JSON Output**: Tools output structured JSON with exit code 0 for success, 1 for handled errors, and 2 for unhandled errors.
@@ -55,7 +55,7 @@ Before launching deep code analysis or subagent review panels, the agent must in
 
 1. **Run Initial Audit Script**:
    ```bash
-   tools/venv/bin/python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
+   tools/venv/bin/python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
    *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
 
@@ -110,6 +110,7 @@ All expert subagents invoked during Phase 2 MUST receive the following mandatory
 4. **Strict Inline Deduplication & Already-Resolved Thread Governance**:
    - Inspect the supplied existing comment index (`comments`) and **never generate duplicate inline comments** for problems already raised on the PR.
    - **Already Resolved Threads on GitHub UI (`[RESOLVED ON GITHUB]`)**: Treat threads marked resolved on GitHub as closed engineering decisions. Do NOT re-open or propose duplicate inline comments unless a new commit explicitly regressed that exact file line.
+5. **Strict Mock & Fixture Isolation Audit**: Explicitly audit production files for mock data leakage. Production components, handlers, and service files must NEVER contain static mock datasets, sample entities, or fallback mock branching. All test doubles and fixtures belong strictly in dedicated test files (`*_test.ts`, `*_test.go`, `test_*.py`) or testing helpers (`cmd/ui/app/testing/mock_*.ts`, `test/fixtures/`) per `core_engineering.md#4`.
 
 ---
 
@@ -118,7 +119,7 @@ All expert subagents invoked during Phase 2 MUST receive the following mandatory
 After subagents complete their reviews, the Main Orchestrator synthesizes findings, filters out duplicate/trivial comments, and formats the Interactive Audit Checklist inside `<appDataDir>/brain/<conv_id>/pr_review_audit_checklist.md`.
 
 Crucially, the Main Orchestrator MUST partition every finding into **two distinct scope categories** based on git diff patch boundaries:
-1. **Group A: Inline PR Diff Patch Items (`Patch-In-Scope`)**: Target lines that were actually modified or added in the PR diff patch. These can be posted directly as inline GitHub diff comments (`review_pr_post_inline_comment.py`).
+1. **Group A: Inline PR Diff Patch Items (`Patch-In-Scope`)**: Target lines that were actually modified or added in the PR diff patch. These can be posted directly as inline GitHub diff comments (`tools/pr_review/review_pr_post_inline_comment.py`).
 2. **Group B: Out-of-Diff Scope Observations (`Unchanged-Line-Out-of-Scope`)**: Target unchanged surrounding lines in modified files outside the PR diff patch. Because GitHub's inline comment API rejects non-diff lines with 422 errors, these **cannot be posted as inline review comments**.
 
 Each proposed item in `pr_review_audit_checklist.md` must specify:
@@ -162,7 +163,7 @@ When asking for Phase 4 confirmation, the agent MUST present both tables separat
 
 ---
 
-### Phase 5: Strictly Inline Posting (`review_pr_post_inline_comment.py`)
+### Phase 5: Strictly Inline Posting (`tools/pr_review/review_pr_post_inline_comment.py`)
 
 Comments MUST always be posted inline on specific PR diff lines. Never post generic PR-level spam unless explicitly requested.
 
@@ -170,7 +171,7 @@ For each user-approved item:
 1. Write the proposed inline markdown comment to a temporary file (`comment_body.md`).
 2. Run the posting script:
    ```bash
-   python3 tools/review_pr_post_inline_comment.py <owner> <repo> <pr_number> \
+   python3 tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> \
        --commit-id <head_commit_sha> \
        --path <file_path> \
        --line <line_number> \
@@ -184,7 +185,7 @@ For each user-approved item:
 Before completing the review session:
 1. Execute programmatic verification against the checklist artifact:
    ```bash
-   python3 tools/review_pr_verify_posted.py <owner> <repo> <pr_number> \
+   python3 tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
        -c <appDataDir>/brain/<conv_id>/pr_review_audit_checklist.md
    ```
 2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff.
@@ -199,7 +200,7 @@ Triggered when reviewing a Pull Request where the author has replied to earlier 
 ### Phase 1: Pull Author Replies & Diff Deltas
 Run the audit generator script in `re-review` mode:
 ```bash
-python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-review --conv-id <conversation_id>
+python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-review --conv-id <conversation_id>
 ```
 *This generates `pr_rereview_audit_report.md` inside `<appDataDir>/brain/<conv_id>/` indexing every open review thread, original reviewer text, and author response.*
 
@@ -254,6 +255,6 @@ Because the re-review analysis is saved as a markdown document in `<appDataDir>/
 * The agent asks for explicit confirmation:
   > *"Please inspect `pr_rereview_audit_report.md`. Shall I proceed with posting recommended counter-replies and resolving verified threads on PR #<pr_number>? (Y/n)"*
 * For every confirmed thread:
-  * If `[RESPOND]`: Invoke `review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
-  * If `[RESOLVE]`: Update thread status on GitHub and mark item resolved.
-* Run programmatic verification check (`review_pr_verify_posted.py`).
+  * If `[RESPOND]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
+  * If `[RESOLVE]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL.
+* Run programmatic verification check (`tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> <checklist_file>`).

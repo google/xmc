@@ -15,53 +15,22 @@
 package main
 
 import (
-	"strconv"
-	"strings"
-
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/domain/workunit"
+	"xmanager_cloud/internal/common/resourceaccumulator"
 )
-
-const (
-	resourceTypeCPU    = "cpu"
-	resourceTypeMemory = "memory"
-	resourceTypeGPU    = "GPU"
-	resourceTypeTPU    = "TPU"
-)
-
-type resourceAccumulator struct {
-	totals map[string]float64
-	order  []string
-}
-
-func (a *resourceAccumulator) add(resType string, count float64) {
-	if count <= 0 {
-		return
-	}
-	if _, exists := a.totals[resType]; !exists {
-		a.order = append(a.order, resType)
-	}
-	a.totals[resType] += count
-}
 
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources
 // into presentation DTOs ([]*spb.Resource) required by the ROD API, aggregating identical resource types.
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
-	resourceSets := workunit.GetWorkUnitResources(wu)
-	if len(resourceSets) == 0 {
+	if wu == nil || wu.GetExecutable() == nil {
 		return nil
 	}
-	totals, order := accumulateResourceTotals(resourceSets)
+	acc := resourceaccumulator.New()
+	acc.AccumulateExecutable(wu.GetExecutable())
+	totals := acc.Totals()
+	order := acc.Order()
 	return buildResourceDTOs(totals, order)
-}
-
-func accumulateResourceTotals(resourceSets []*essmsgpb.ResourceSet) (totals map[string]float64, order []string) {
-	acc := &resourceAccumulator{totals: make(map[string]float64, len(resourceSets))}
-	for _, rs := range resourceSets {
-		accumulateResource(rs, acc)
-	}
-	return acc.totals, acc.order
 }
 
 func buildResourceDTOs(totals map[string]float64, order []string) []*spb.Resource {
@@ -73,60 +42,4 @@ func buildResourceDTOs(totals map[string]float64, order []string) []*spb.Resourc
 		})
 	}
 	return resources
-}
-
-func accumulateResource(rs *essmsgpb.ResourceSet, acc *resourceAccumulator) {
-	if rs == nil || acc == nil {
-		return
-	}
-	if cpu := rs.GetCpuResources(); cpu != nil {
-		accumulateCpuResource(cpu, acc)
-	} else if gpu := rs.GetGpuResources(); gpu != nil {
-		accumulateGpuResource(gpu, acc)
-	} else if tpu := rs.GetTpuResources(); tpu != nil {
-		accumulateTpuResource(tpu, acc)
-	}
-}
-
-func accumulateCpuResource(cpu *essmsgpb.CpuResources, acc *resourceAccumulator) {
-	if millicores := cpu.GetCpuMillicores(); millicores > 0 {
-		acc.add(resourceTypeCPU, float64(millicores)/1000.0)
-	}
-	if memoryBytes := cpu.GetMemoryBytes(); memoryBytes > 0 {
-		acc.add(resourceTypeMemory, float64(memoryBytes))
-	}
-}
-
-func accumulateGpuResource(gpu *essmsgpb.GpuResources, acc *resourceAccumulator) {
-	resType := gpu.GetType()
-	if resType == "" {
-		resType = resourceTypeGPU
-	}
-	acc.add(resType, float64(gpu.GetCount()))
-}
-
-func accumulateTpuResource(tpu *essmsgpb.TpuResources, acc *resourceAccumulator) {
-	resType := tpu.GetType()
-	if resType == "" {
-		resType = resourceTypeTPU
-	}
-	chips := parseTotalChips(tpu.GetTopology())
-	acc.add(resType, float64(chips))
-}
-
-func parseTotalChips(topology string) int64 {
-	if topology == "" {
-		return 1
-	}
-	cleaned := strings.TrimSpace(strings.ToLower(topology))
-	dims := strings.Split(cleaned, "x")
-	totalChips := int64(1)
-	for _, d := range dims {
-		v, err := strconv.ParseInt(d, 10, 64)
-		if err != nil || v <= 0 {
-			return 1
-		}
-		totalChips *= v
-	}
-	return totalChips
 }

@@ -232,6 +232,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 
 	testCases := []struct {
 		name          string
+		req           *apipb.CreateArtifactRequest
 		authenticator auth.AuthorizerInterface
 		xidClient     xidgrpcpb.XidServiceClient
 		storage       storage.Storage
@@ -243,6 +244,30 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
 			wantErr:       status.ErrUnauthenticated,
+		},
+		{
+			name: "unauthorized_user_returns_permission_denied",
+			xidClient: &mockXidClient{
+				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+					Authorized: proto.Bool(false),
+				},
+			},
+			storage: &storage.MockStorage{},
+			wantErr: status.ErrPermissionDenied,
+		},
+		{
+			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
+			xidClient: &mockXidClient{
+				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+					Authorized: proto.Bool(false),
+				},
+			},
+			storage: &storage.MockStorage{},
+			req: &apipb.CreateArtifactRequest{
+				Parent:   "experiments/123",
+				Artifact: nil,
+			},
+			wantErr: status.ErrPermissionDenied,
 		},
 		{
 			name: "xid_creation_fails",
@@ -294,7 +319,11 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				opts = append(opts, withXidClient(tc.xidClient))
 			}
 			server := newTestServer(t, opts...)
-			_, err := server.CreateArtifact(ctx, goodReq)
+			req := goodReq
+			if tc.req != nil {
+				req = tc.req
+			}
+			_, err := server.CreateArtifact(ctx, req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("%s: CreateArtifact() returned error %v, want %v", tc.name, err, tc.wantErr)
 			}

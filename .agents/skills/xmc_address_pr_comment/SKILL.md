@@ -21,7 +21,11 @@ graph TD
     J --> K["Agent builds & pushes OCI Images"]
     K --> L["Agent performs Kubectl Rollout Restart"]
     L --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
-    M --> N["Agent reports status & completes task"]
+    M --> N["Agent conducts Root-Cause Retrospective & Proposes /XMC Iterative Reflection"]
+    N --> O{"User approves reflection?"}
+    O -->|Yes| P["Invoke /XMC Iterative Reflection (Benchmark & Update Rules/Skills)"]
+    P --> Q["Agent reports status & completes task"]
+    O -->|No / Done| Q
 ```
 
 > [!IMPORTANT]
@@ -31,9 +35,9 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-When invoking helper tools under `tools/` (e.g. `generate_review_checklist.py`, `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
+When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
-2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/fetch_pr_comment.py --help`).
+2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
    - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
@@ -52,7 +56,7 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
 
 ### Execution Command
 ```bash
-./tools/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
+./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
 ```
 
 ### Result Output Schema
@@ -74,11 +78,11 @@ This generates `pr_review_checklist.md` in the workspace populated with interact
 
 ## 2. Input & Comment Details Fetching
 
-The agent accepts a comment link or PR number. The helper script `tools/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
+The agent accepts a comment link or PR number. The helper script `tools/pr_review/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
 
 ### Execution Command
 ```bash
-./tools/fetch_pr_comment.py "<github_comment_url>"
+./tools/pr_review/fetch_pr_comment.py "<github_comment_url>"
 ```
 
 ### Result Schema
@@ -183,10 +187,10 @@ Comment link: <github_comment_url>"
 ```
 
 ### Post GitHub Comment Notification
-The agent runs the helper script `tools/reply_pr_comment.py` to notify the reviewer that the changes have been made:
+The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made:
 ```bash
 export GITHUB_TOKEN="your_github_token"
-./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
 
 Or pass a file containing the message via `--message-file` (or `-f`):
@@ -194,21 +198,21 @@ Or pass a file containing the message via `--message-file` (or `-f`):
 cat << 'EOF' > reply_message.txt
 Addressed review comment for `handlers.go`.
 EOF
-./tools/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
 ```
 
 > [!WARNING]
-> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
+> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/pr_review/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
 
 ### Usage Telemetry Tracking
-When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
+When `tools/pr_review/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
 ```html
 <!-- xmc-telemetry: {"git_username": "Chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->
 ```
 
 To extract this telemetry and output it as a raw JSON dataset, run:
 ```bash
-./tools/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
+./tools/benchmark/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
 ```
 
 ---
@@ -256,13 +260,41 @@ kubectl rollout status deployment/xid-service-deployment -n xmc
 ## 8. 1-to-1 Thread Resolution Verification
 
 Before marking the PR review task as complete:
-1. Run `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
+1. Run `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
 2. Confirm that every single comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
 3. Update the checklist artifact status for each item to `[x] Resolved`.
 
 ---
 
-## 9. Workflow Example
+## 9. Root-Cause Retrospective & Iterative Reflection Proposal
+
+Whenever review comments (from human reviewers or automated review bots) are addressed and verified, the agent must not merely "fix and forget". The agent performs a fast root-cause classification on why the initial PR implementation missed the expected standard and proposes invoking the [Iterative Reflection Skill](../xmc_iterative_reflection/SKILL.md).
+
+### Root-Cause Classification Framework
+Classify each addressed review comment into one of three categories:
+1. **Rule & Guideline Gap (`.agents/rules/`)**: The codebase guidelines lacked an explicit rule, style constraint, or invariant (e.g., missing error wrapping convention, naming convention, or mock contract).
+2. **Tooling & Automation Gap (`tools/`)**: The feedback could have been caught mechanically before PR submission by a script, linter, or pre-commit hook (e.g., missing parameter validation, formatting check, or test coverage threshold).
+3. **Skill & Workflow Gap (`.agents/skills/`)**: The development workflow playbook lacked a necessary pre-PR inspection step or verification phase.
+
+### Presenting the Retrospective Proposal
+At the end of the comment resolution report, present a structured proposal table and ask the user if they wish to trigger iterative reflection:
+
+```markdown
+### 🔄 PR Comment Retrospective & Meta-Learning Proposal
+
+| Comment ID | Reviewer Feedback Summary | Root-Cause Category | Proposed Rule / Tool Enhancement |
+| :--- | :--- | :--- | :--- |
+| #1234 | "Wrap internal errors with `%w`" | Rule Gap (`.agents/rules/languages/golang.md`) | Add explicit Go error wrapping rule |
+| #1235 | "Missing unit test for helper function" | Skill Gap (`.agents/skills/xmc_feature_development/SKILL.md`) | Enforce 1-to-1 helper unit test check |
+
+> Would you like to invoke `/XMC Iterative Reflection` to analyze these root causes, benchmark candidate rule updates with `/XMC Trajectory Comparison`, and open a dedicated improvement PR?
+```
+
+If the user approves, proceed to invoke the [XMC Iterative Reflection Skill](../xmc_iterative_reflection/SKILL.md).
+
+---
+
+## 10. Workflow Example
 
 Here is a step-by-step example of how you can invoke this agent:
 
@@ -287,3 +319,4 @@ Here is a step-by-step example of how you can invoke this agent:
    - Restarts GKE pods: `kubectl rollout restart deployment/xid-service-deployment -n xmc`.
    - Programmatically verifies 1-to-1 thread resolution for all comment IDs against the checklist.
    - Updates checklist artifact and replies with test outputs and rollout status confirmation.
+   - **Presents PR Comment Retrospective table** and proposes invoking `/XMC Iterative Reflection` to codify learnings into `.agents/rules/` and prevent future review feedback.

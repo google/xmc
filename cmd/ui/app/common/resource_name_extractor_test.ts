@@ -14,6 +14,9 @@
 import 'jasmine';
 
 import {
+  extractChartId,
+  extractDashboardId,
+  formatWorkUnitParent,
   parseArtifactName,
   parseExperimentName,
   parseWorkUnitName,
@@ -58,6 +61,66 @@ describe('ResourceNames', () => {
       expect(parseArtifactName('experiments/123')).toBeNull();
       expect(parseArtifactName('experiments/123/workUnits/1')).toBeNull();
       expect(parseArtifactName('experiments/123/artifacts/1/invalid')).toBeNull();
+    });
+  });
+
+  describe('extractChartId', () => {
+    it('should extract the ID from every parent a chart can be addressed under', () => {
+      expect(
+        extractChartId('experiments/1234/workUnits/1/charts/f47ac10b-58cc-4372-a567-0e02b2c3d479'),
+      ).toBe('f47ac10b-58cc-4372-a567-0e02b2c3d479');
+      expect(extractChartId('dashboards/vcc_comparison/charts/chart-uuid')).toBe('chart-uuid');
+      expect(extractChartId('charts/chart-uuid')).toBe('chart-uuid');
+    });
+
+    it('should pass a bare ID through unchanged', () => {
+      expect(extractChartId('chart-uuid')).toBe('chart-uuid');
+    });
+
+    it('should not mistake another resource name for a chart', () => {
+      expect(extractChartId('experiments/123/workUnits/1')).toBe('');
+      expect(extractChartId('dashboards/vcc_comparison')).toBe('');
+      expect(extractChartId('charts/')).toBe('');
+    });
+
+    it('should return an empty string for missing input', () => {
+      expect(extractChartId('')).toBe('');
+      expect(extractChartId(undefined)).toBe('');
+    });
+  });
+
+  describe('extractDashboardId', () => {
+    it('should extract the ID from a dashboard resource name', () => {
+      expect(extractDashboardId('dashboards/vcc_comparison')).toBe('vcc_comparison');
+    });
+
+    it('should pass a bare ID through unchanged', () => {
+      expect(extractDashboardId('my_dashboard')).toBe('my_dashboard');
+    });
+
+    it('should not mistake another resource name for a dashboard', () => {
+      expect(extractDashboardId('dashboards/vcc_comparison/charts/chart-uuid')).toBe('');
+      expect(extractDashboardId('experiments/123/workUnits/1')).toBe('');
+    });
+
+    it('should return an empty string for missing input', () => {
+      expect(extractDashboardId('')).toBe('');
+      expect(extractDashboardId(undefined)).toBe('');
+    });
+  });
+
+  describe('formatWorkUnitParent', () => {
+    it('should build a work unit parent that parseWorkUnitName round-trips', () => {
+      expect(formatWorkUnitParent(1234, 2)).toBe('experiments/1234/workUnits/2');
+      expect(parseWorkUnitName(formatWorkUnitParent(1234, 2))).toEqual({
+        xid: '1234',
+        wid: '2',
+      });
+    });
+
+    it('should default a missing work unit ID to 1', () => {
+      expect(formatWorkUnitParent(1234)).toBe('experiments/1234/workUnits/1');
+      expect(formatWorkUnitParent(1234, undefined)).toBe('experiments/1234/workUnits/1');
     });
   });
 });
