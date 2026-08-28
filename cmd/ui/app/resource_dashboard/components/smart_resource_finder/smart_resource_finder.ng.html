@@ -40,16 +40,14 @@
             }
             <select
               class="query-select-box"
-              [class.dominant-select-box]="$index === 0 && row.resourceType"
+              [class.dominant-select-box]="$index === 0 && !!row.resourceType"
               [id]="'resource-type-select-' + row.id"
-              [value]="row.resourceType"
-              (change)="onResourceTypeChange($index, $any($event.target).value)"
+              [ngModel]="row.resourceType"
+              (ngModelChange)="onResourceTypeChange($index, $event)"
             >
               <option value="">-</option>
               @for (resType of availableResourceTypes(); track resType) {
-                <option [value]="resType" [selected]="resType === row.resourceType">
-                  {{ resType }}
-                </option>
+                <option [value]="resType">{{ resType }}</option>
               }
             </select>
           </div>

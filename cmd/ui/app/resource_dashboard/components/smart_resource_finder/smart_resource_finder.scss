@@ -72,22 +72,27 @@
 }
 
 .select-box-container {
-  display: flex;
-  flex-direction: column;
   position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 .dominant-text {
+  position: absolute;
+  top: -15px;
+  left: 0;
   font-size: 10px;
   font-weight: 700;
   color: #d93025;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 2px;
   line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .query-select-box {
+  box-sizing: border-box;
   border: 1px solid #dadce0;
   border-radius: 4px;
   padding: 6px 10px;
@@ -95,6 +100,9 @@
   color: #202124;
   outline: none;
   background-color: #ffffff;
+  height: 34px;
+  min-width: 140px;
+  cursor: pointer;
 
   &:focus {
     border-color: #1a73e8;
@@ -102,6 +110,7 @@
 
   &.dominant-select-box {
     border: 2px solid #d93025 !important;
+    padding: 5px 9px;
 
     &:focus {
       border-color: #d93025 !important;

@@ -160,9 +160,6 @@
           {{ isQueueHealthy() ? 'check_circle_outline' : 'warning_amber' }}
         </mat-icon>
         <span class="section-title-text">Predictability</span>
-        @if (dominantResource()) {
-          <span class="dominant-flavor-tag">for {{ dominantResource() }}</span>
-        }
       </div>
       <xmc-wip-banner />
 
