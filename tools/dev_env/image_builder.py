@@ -12,7 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Parallel container image building via Bazel and Docker/KinD loading."""
+"""Parallel container image building via Bazel and Docker/KinD loading.
+
+Note on OCI Image Build Architecture:
+- `tools/common/build_oci.py`: Low-level tool invoked inside Bazel genrules (`//:oci.bzl`)
+  to package a single cross-compiled Go binary into an OCI container `.tar` archive.
+- `tools/dev_env/image_builder.py`: High-level dev orchestrator that executes a single
+  concurrent `bazel build` across multiple service targets in parallel (which triggers
+  `build_oci.py` under the hood), discovers output tarballs in `bazel-bin/`, loads them into
+  the host Docker daemon, and injects them concurrently into KinD cluster nodes.
+"""
 
 from __future__ import annotations
 
