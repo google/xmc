@@ -17,13 +17,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 
 import dotenv
 from absl import app
+from google.protobuf import json_format
 from xdash import (
     ChartBuilder,
     DashboardBuilder,
@@ -53,6 +57,89 @@ def _get_env_bool(key: str, default: bool = True) -> bool:
     return val in {"1", "true", "yes", "t", "y"}
 
 
+def _resolve_dashboard_endpoint() -> str:
+    """Resolves the dashboard service endpoint URL from environment variables.
+
+    Derives the endpoint from XMC_DASHBOARD_ENDPOINT, XMANAGER_UI_URL, or
+    XMANAGER_ENDPOINT (stripping gRPC/DNS prefixes and appending /v1/dashboards).
+    """
+    if custom_endpoint := os.environ.get("XMC_DASHBOARD_ENDPOINT") or os.environ.get(
+        "DASHBOARD_ENDPOINT"
+    ):
+        return custom_endpoint
+
+    if ui_url := os.environ.get("XMANAGER_UI_URL"):
+        return f"{ui_url.rstrip('/')}/v1/dashboards"
+
+    xmanager_endpoint = os.environ.get("XMANAGER_ENDPOINT", "")
+    if not xmanager_endpoint:
+        return "http://localhost:8080/v1/dashboards"
+
+    endpoint = xmanager_endpoint
+    for prefix in ("dns:///", "dns://", "grpc://", "https://", "http://"):
+        if endpoint.startswith(prefix):
+            endpoint = endpoint[len(prefix) :]
+    endpoint = endpoint.split(":")[0]  # Remove port if present
+
+    if endpoint.startswith("grpc.api."):
+        endpoint = endpoint[len("grpc.api.") :]
+    elif endpoint.startswith("grpc."):
+        endpoint = endpoint[len("grpc.") :]
+
+    scheme = "http" if endpoint in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} else "https"
+    return f"{scheme}://{endpoint}/v1/dashboards"
+
+
+def _get_auth_headers() -> dict[str, str]:
+    """Generates authentication headers for HTTP requests to the XMC Gateway.
+
+    Attempts to fetch a Google OIDC ID token using IAM credentials impersonation
+    (XMC_CLIENT_SA and IAP_CLIENT_ID), direct id_token fetch, or an explicit
+    AUTH_TOKEN/XMC_AUTH_TOKEN environment variable.
+    """
+    headers = {"Content-Type": "application/json"}
+    if auth_token := os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN"):
+        headers["Authorization"] = f"Bearer {auth_token}"
+        return headers
+
+    iap_client_id = os.environ.get("IAP_CLIENT_ID") or os.environ.get("CLIENT_ID")
+    client_sa = os.environ.get("XMC_CLIENT_SA")
+
+    if not iap_client_id:
+        return headers
+
+    try:
+        import google.auth
+        from google.auth.transport import requests as google_requests
+
+        credentials, _ = google.auth.default()
+        if client_sa:
+            authed_session = google_requests.AuthorizedSession(credentials)
+            url = (
+                "https://iamcredentials.googleapis.com/v1/projects/-/"
+                f"serviceAccounts/{client_sa}:generateIdToken"
+            )
+            body = {"audience": iap_client_id, "includeEmail": True}
+            response = authed_session.post(url, json=body, timeout=10)
+            response.raise_for_status()
+            token = response.json().get("token")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                return headers
+        else:
+            from google.oauth2 import id_token
+
+            req = google_requests.Request()
+            token = id_token.fetch_id_token(req, iap_client_id)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                return headers
+    except Exception as err:  # pylint: disable=broad-except
+        sys.stderr.write(f"⚠️ Warning: Could not retrieve OIDC ID token: {err}\n")
+
+    return headers
+
+
 def create_experiment_dashboard(
     dashboard_endpoint: str,
     xid: int,
@@ -61,81 +148,96 @@ def create_experiment_dashboard(
     """Builds and publishes an XMC dashboard and chart for the experiment metrics.
 
     Args:
-        dashboard_endpoint: gRPC target address of the Dashboard Service.
+        dashboard_endpoint: HTTP REST URL or gRPC target address of the Dashboard Service.
         xid: Experiment ID.
         wid: WorkUnit ID.
     """
-    print(f"--> Connecting to Dashboard Service at {dashboard_endpoint}...")
-    with DashboardClient(endpoint=dashboard_endpoint) as client:
-        chart_name = f"experiments/{xid}/workUnits/{wid}/charts/model_training_metrics"
-        chart = (
-            ChartBuilder(name=chart_name)
-            .for_experiment(xid=xid, wid=wid)
-            .set_title("Model Training & Evaluation Metrics")
-            .set_description(
-                f"Performance and convergence metrics for Experiment {xid} WorkUnit {wid}"
+    chart_name = f"experiments/{xid}/workUnits/{wid}/charts/model_training_metrics"
+    chart = (
+        ChartBuilder(name=chart_name)
+        .for_experiment(xid=xid, wid=wid)
+        .set_title("Model Training & Evaluation Metrics")
+        .set_description(f"Performance and convergence metrics for Experiment {xid} WorkUnit {wid}")
+        .set_grid_layout(columns=2)
+        .add_plot(
+            summary_kpi_plot(
+                "loss_kpi",
+                "Loss KPI (Latest)",
+                ["train/loss", "eval/loss"],
             )
-            .set_grid_layout(columns=2)
-            .add_plot(
-                summary_kpi_plot(
-                    "loss_kpi",
-                    "Loss KPI (Latest)",
-                    ["train/loss", "eval/loss"],
-                )
-            )
-            .add_plot(
-                summary_kpi_plot(
-                    "acc_kpi",
-                    "Accuracy KPI (Latest)",
-                    ["train/accuracy"],
-                )
-            )
-            .add_plot(
-                scatter_plot(
-                    "loss_curves",
-                    "Loss Curves vs Step",
-                    ["train/loss", "eval/loss"],
-                )
-            )
-            .add_plot(
-                scatter_plot(
-                    "accuracy_curve",
-                    "Training Accuracy vs Step",
-                    ["train/accuracy"],
-                )
-            )
-            .add_plot(
-                scatter_plot(
-                    "step_time_curve",
-                    "Step Execution Time (ms)",
-                    ["perf/step_time_ms"],
-                )
-            )
-            .build()
         )
-
-        # A Dashboard references charts by ID and never creates them, so the chart has to exist
-        # first. The server's copy is what the dashboard references: its name carries the
-        # authoritative chart ID, which need not match the one requested here.
-        print(f"--> Creating Chart '{chart_name}'...")
-        created_chart = client.create_charts([chart])[0]
-        print(f"--> Created Chart successfully: {created_chart.name}")
-
-        dashboard_id = f"exp_{xid}_training_overview"
-        dashboard = (
-            DashboardBuilder(name=f"dashboards/{dashboard_id}")
-            .set_title(f"Experiment {xid} - Training & Metrics Overview")
-            .set_description(
-                f"Automated monitoring dashboard for Experiment {xid} (WorkUnit {wid})."
+        .add_plot(
+            summary_kpi_plot(
+                "acc_kpi",
+                "Accuracy KPI (Latest)",
+                ["train/accuracy"],
             )
-            .set_grid_layout(columns=1)
-            .add_chart(created_chart)
-            .build()
         )
+        .add_plot(
+            scatter_plot(
+                "loss_curves",
+                "Loss Curves vs Step",
+                ["train/loss", "eval/loss"],
+            )
+        )
+        .add_plot(
+            scatter_plot(
+                "accuracy_curve",
+                "Training Accuracy vs Step",
+                ["train/accuracy"],
+            )
+        )
+        .add_plot(
+            scatter_plot(
+                "step_time_curve",
+                "Step Execution Time (ms)",
+                ["perf/step_time_ms"],
+            )
+        )
+        .build()
+    )
 
-        print(f"--> Creating Dashboard '{dashboard.title}' (ID: {dashboard_id})...")
-        created_dashboard = client.create_dashboard(dashboard, dashboard_id=dashboard_id)
-        print(f"--> Created Dashboard successfully: {created_dashboard.name}")
+    dashboard_id = f"exp_{xid}_training_overview"
+    dashboard = (
+        DashboardBuilder(name=f"dashboards/{dashboard_id}")
+        .set_title(f"Experiment {xid} - Training & Metrics Overview")
+        .set_description(f"Automated monitoring dashboard for Experiment {xid} (WorkUnit {wid}).")
+        .set_grid_layout(columns=1)
+        .add_chart(chart)
+        .build()
+    )
+
+    if dashboard_endpoint.startswith("http://") or dashboard_endpoint.startswith("https://"):
+        print(
+            f"--> Publishing Dashboard '{dashboard.title}' to HTTP REST endpoint {dashboard_endpoint}..."
+        )
+        chart_dict = json_format.MessageToDict(chart, preserving_proto_field_name=False)
+        dashboard_dict = json_format.MessageToDict(dashboard, preserving_proto_field_name=False)
+        payload = {
+            "dashboard": dashboard_dict,
+            "dashboard_id": dashboard_id,
+            "charts": [chart_dict],
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        headers = _get_auth_headers()
+        req = urllib.request.Request(
+            dashboard_endpoint,
+            data=req_data,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(f"--> Created Dashboard successfully: {dashboard.name} (HTTP {resp.status})")
+        except urllib.error.HTTPError as http_err:
+            err_msg = http_err.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {http_err.code} {http_err.reason}: {err_msg}") from http_err
+    else:
+        print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
+        with DashboardClient(endpoint=dashboard_endpoint) as client:
+            print(f"--> Creating Dashboard '{dashboard.title}' (ID: {dashboard_id})...")
+            created_dashboard = client.create_dashboard(dashboard, dashboard_id=dashboard_id)
+            print(f"--> Created Dashboard successfully: {created_dashboard.name}")
 
 
 def main(argv: Sequence[str]) -> None:
@@ -171,8 +273,8 @@ def main(argv: Sequence[str]) -> None:
     ch_table = os.environ.get("CLICKHOUSE_TABLE", "xmc_metrics")
     num_steps = os.environ.get("NUM_STEPS", "100")
 
-    # Dashboard service endpoint
-    dashboard_endpoint = os.environ.get("XMC_DASHBOARD_ENDPOINT", "localhost:50051")
+    # Dashboard service endpoint derived from environment (XMANAGER_ENDPOINT / XMANAGER_UI_URL)
+    dashboard_endpoint = _resolve_dashboard_endpoint()
     create_dash = _get_env_bool("CREATE_DASHBOARD", default=True)
 
     print("==================================================")
