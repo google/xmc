@@ -29,9 +29,12 @@ import dotenv
 from absl import app
 from google.protobuf import json_format
 from xdash import (
+    USER_EMAIL_ENV_VAR,
+    USER_EMAIL_METADATA_KEY,
     ChartBuilder,
     DashboardBuilder,
     DashboardClient,
+    resolve_user_email,
     scatter_plot,
     summary_kpi_plot,
 )
@@ -91,13 +94,26 @@ def _resolve_dashboard_endpoint() -> str:
 
 
 def _get_auth_headers() -> dict[str, str]:
-    """Generates authentication headers for HTTP requests to the XMC Gateway.
+    """Generates authentication and identity headers for HTTP requests to the XMC Gateway.
 
     Attempts to fetch a Google OIDC ID token using IAM credentials impersonation
     (XMC_CLIENT_SA and IAP_CLIENT_ID), direct id_token fetch, or an explicit
-    AUTH_TOKEN/XMC_AUTH_TOKEN environment variable.
+    AUTH_TOKEN/XMC_AUTH_TOKEN environment variable, and names the user the resulting
+    dashboard should belong to.
     """
     headers = {"Content-Type": "application/json"}
+    # Set before the token, so every path out of this function carries it. The token below is
+    # minted for the impersonated service account, so this header is the only place the person
+    # who ran the launcher appears; without it the Dashboard Service records the service account
+    # as the owner, and only the service account can then administer the dashboard.
+    if user_email := os.environ.get(USER_EMAIL_ENV_VAR) or resolve_user_email():
+        headers[USER_EMAIL_METADATA_KEY] = user_email
+    else:
+        sys.stderr.write(
+            "⚠️ Warning: could not determine the calling user's email; the dashboard will be "
+            f"owned by the authenticated principal. Set {USER_EMAIL_ENV_VAR} to name the user.\n"
+        )
+
     if auth_token := os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN"):
         headers["Authorization"] = f"Bearer {auth_token}"
         return headers

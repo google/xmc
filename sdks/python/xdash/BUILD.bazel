@@ -19,6 +19,7 @@ py_library(
     srcs = [
         "__init__.py",
         "_protos.py",
+        "auth.py",
         "builders.py",
         "cli.py",
         "client.py",
@@ -42,6 +43,12 @@ py_binary(
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//visibility:public"],
+    deps = [":xdash"],
+)
+
+py_test(
+    name = "auth_test",
+    srcs = ["auth_test.py"],
     deps = [":xdash"],
 )
 

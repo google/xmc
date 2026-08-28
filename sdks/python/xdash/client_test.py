@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.auth import UserEmailInterceptor
 from xdash.builders import DashboardBuilder
 from xdash.client import DashboardClient, XDashError, XDashRPCError, _is_local_endpoint
 
@@ -378,6 +379,63 @@ class ChannelSecurityTest(unittest.TestCase):
     def test_credentials_with_secure_false_is_rejected(self) -> None:
         with patch("xdash.client.grpc"), self.assertRaises(ValueError):
             DashboardClient(endpoint="localhost:8080", credentials=object(), secure=False)
+
+
+class CallerIdentityTest(unittest.TestCase):
+    """Tests that the client tells the server whose dashboard it is creating.
+
+    The server takes the owner from the caller's identity, and the bearer token on an
+    impersonated run names the service account. Losing the interceptor here is what makes every
+    dashboard a launcher creates come back owned by the script's credentials.
+    """
+
+    def test_the_stub_talks_through_an_intercepted_channel(self) -> None:
+        with (
+            patch("xdash.client.grpc") as mock_grpc,
+            patch("xdash.client.DashboardServiceStub") as mock_stub,
+        ):
+            DashboardClient(endpoint="localhost:8080", user_email="human@example.com")
+
+        mock_grpc.intercept_channel.assert_called_once()
+        channel, interceptor = mock_grpc.intercept_channel.call_args[0]
+        self.assertIs(channel, mock_grpc.insecure_channel.return_value)
+        self.assertIsInstance(interceptor, UserEmailInterceptor)
+        mock_stub.assert_called_once_with(mock_grpc.intercept_channel.return_value)
+
+    def test_an_injected_channel_is_intercepted_too(self) -> None:
+        mock_channel = MagicMock()
+        with patch("xdash.client.grpc") as mock_grpc, patch("xdash.client.DashboardServiceStub"):
+            DashboardClient(channel=mock_channel, user_email="human@example.com")
+
+        mock_grpc.intercept_channel.assert_called_once()
+        self.assertIs(mock_grpc.intercept_channel.call_args[0][0], mock_channel)
+
+    def test_close_still_shuts_down_the_underlying_channel(self) -> None:
+        """The interceptor wraps the channel, so close() must not be left holding the wrapper."""
+        with patch("xdash.client.grpc") as mock_grpc, patch("xdash.client.DashboardServiceStub"):
+            with DashboardClient(endpoint="localhost:8080"):
+                pass
+
+        mock_grpc.insecure_channel.return_value.close.assert_called_once()
+        mock_grpc.intercept_channel.return_value.close.assert_not_called()
+
+    def test_an_empty_user_email_opts_out(self) -> None:
+        with (
+            patch("xdash.client.grpc") as mock_grpc,
+            patch("xdash.client.DashboardServiceStub") as mock_stub,
+        ):
+            DashboardClient(endpoint="localhost:8080", user_email="")
+
+        mock_grpc.intercept_channel.assert_not_called()
+        mock_stub.assert_called_once_with(mock_grpc.insecure_channel.return_value)
+
+    def test_constructing_a_client_resolves_no_identity(self) -> None:
+        """Opening a client must not reach the metadata server or the userinfo endpoint."""
+        with patch("xdash.auth.resolve_user_email") as resolve:
+            with patch("xdash.client.grpc"), patch("xdash.client.DashboardServiceStub"):
+                DashboardClient(endpoint="localhost:8080")
+
+        resolve.assert_not_called()
 
 
 if __name__ == "__main__":

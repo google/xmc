@@ -13,6 +13,12 @@
 # limitations under the License.
 """Public API for xdash: XMC Python SDK & CLI for Metrics Dashboards."""
 
+from xdash.auth import (
+    USER_EMAIL_ENV_VAR,
+    USER_EMAIL_METADATA_KEY,
+    UserEmailInterceptor,
+    resolve_user_email,
+)
 from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
@@ -50,6 +56,10 @@ __all__ = [
     "XDashError",
     "XDashConnectionError",
     "XDashRPCError",
+    "UserEmailInterceptor",
+    "resolve_user_email",
+    "USER_EMAIL_METADATA_KEY",
+    "USER_EMAIL_ENV_VAR",
     "create_vcc_comparison_dashboard",
     "create_vcc_comparison_charts",
     "create_standard_experiment_chart",

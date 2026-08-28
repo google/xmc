@@ -25,6 +25,7 @@ except ImportError:
     grpc = None  # type: ignore[assignment]
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.auth import UserEmailInterceptor
 from xdash.builders import chart_id_from_name
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
@@ -38,6 +39,17 @@ def _is_local_endpoint(endpoint: str) -> bool:
     """Reports whether a gRPC target addresses a local, plaintext service."""
     host = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
     return host.strip("[]").lower() in _LOCAL_HOSTS
+
+
+def _with_caller_identity(channel: Any, user_email: str | None) -> Any:
+    """Wraps a channel so its calls name the human behind the credentials.
+
+    Returns the channel untouched for an explicit empty user_email, which is how a caller opts
+    out -- a test harness, or a script that has already attached the metadata itself.
+    """
+    if user_email == "":
+        return channel
+    return grpc.intercept_channel(channel, UserEmailInterceptor(user_email))
 
 
 def _reject_doubly_attached_charts(
@@ -139,6 +151,7 @@ class DashboardClient:
         stub: Any | None = None,
         secure: bool | None = None,
         credentials: Any | None = None,
+        user_email: str | None = None,
     ) -> None:
         """Initializes the DashboardClient.
 
@@ -152,6 +165,10 @@ class DashboardClient:
                 except a local one, since the hosted service requires TLS.
             credentials: Optional grpc.ChannelCredentials. Implies secure=True and
                 replaces the default grpc.ssl_channel_credentials().
+            user_email: Whom the server should record as the owner of what this client
+                creates. Defaults to XMC_USER_EMAIL and then to the identity behind the
+                ambient credentials, resolved on the first call; '' sends no identity, which
+                leaves the server naming the authenticated principal. See xdash.auth.
 
         Raises:
             ValueError: If credentials are supplied alongside secure=False.
@@ -194,7 +211,10 @@ class DashboardClient:
                 ) from e
             self._owns_channel = True
 
-        self._stub = DashboardServiceStub(self._channel)
+        # The interceptor wraps only what the stub talks through: self._channel stays the raw
+        # channel, because that is the one close() has to shut down and the one ownership was
+        # decided about above.
+        self._stub = DashboardServiceStub(_with_caller_identity(self._channel, user_email))
 
     def close(self) -> None:
         """Closes the gRPC channel, unless the caller injected one it owns itself."""

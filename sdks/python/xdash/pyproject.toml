@@ -42,6 +42,12 @@ dependencies = [
     "googleapis-common-protos>=1.50.0",
 ]
 
+# Only needed to work out who is running the script, so that the Dashboard Service records the
+# person rather than the impersonated service account as the owner. A client pointed at a local
+# plaintext service has no Google credentials to resolve, so this stays out of the core install.
+[project.optional-dependencies]
+auth = ["google-auth>=2.28.0"]
+
 [project.scripts]
 xdash = "xdash.cli:main"
 

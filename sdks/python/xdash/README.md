@@ -54,6 +54,30 @@ DashboardClient(endpoint="mtls.example.com:443", credentials=my_creds)  # custom
 
 The CLI exposes the same override as `--insecure`.
 
+### Dashboard Ownership
+
+The server records the caller as the owner of every dashboard and chart it creates, and the owner
+is also the ACL principal that may later update or delete it. On a run authenticated through an
+impersonated service account, the bearer token names the service account, so the client sends the
+`x-goog-user-email` metadata key to say who the run is actually for. It is resolved on the first
+RPC, from `XMC_USER_EMAIL` if set and otherwise from your application default credentials, which
+needs the optional `google-auth` extra:
+
+```bash
+pip install 'xdash[auth]'
+```
+
+```python
+DashboardClient(endpoint=...)                                # resolved from ADC
+DashboardClient(endpoint=..., user_email="me@example.com")   # named explicitly
+DashboardClient(endpoint=..., user_email="")                 # send no identity
+```
+
+Without an identity the service falls back to the authenticated principal, which is how a
+dashboard ends up owned by the service account that ran the script; the client logs a warning
+when it reaches that state. The header is asserted by the client and is not verified against the
+bearer token, matching how the XManager client identifies its callers.
+
 ### Building Custom Charts and Plots
 
 Use the fluent `ChartBuilder`, `DashboardBuilder`, and plot helper functions (`summary_kpi_plot`,
