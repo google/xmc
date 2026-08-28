@@ -173,8 +173,8 @@ func TestAggregatePlatformHealth_FilteringAndCounts(t *testing.T) {
 		{
 			name:          "Filter_ReadyTrue",
 			filter:        "ready=true",
-			wantTotal:     2,
-			wantHealthy:   1,
+			wantTotal:     3,
+			wantHealthy:   2,
 			wantUnhealthy: 1,
 		},
 		{
@@ -201,8 +201,8 @@ func TestAggregatePlatformHealth_FilteringAndCounts(t *testing.T) {
 		{
 			name:          "CompoundFilter_And",
 			filter:        "state=ENABLED AND ready=true",
-			wantTotal:     1,
-			wantHealthy:   1,
+			wantTotal:     2,
+			wantHealthy:   2,
 			wantUnhealthy: 0,
 		},
 		{
@@ -218,6 +218,13 @@ func TestAggregatePlatformHealth_FilteringAndCounts(t *testing.T) {
 			wantTotal:     3,
 			wantHealthy:   2,
 			wantUnhealthy: 1,
+		},
+		{
+			name:          "Filter_ColonWithEqualsInQuotedValue",
+			filter:        `name:"comp=1"`,
+			wantTotal:     0,
+			wantHealthy:   0,
+			wantUnhealthy: 0,
 		},
 		{
 			name:          "Filter_InvalidReadyBoolean",

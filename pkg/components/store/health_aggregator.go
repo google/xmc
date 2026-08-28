@@ -194,14 +194,12 @@ func matchesTypePredicate(rec *ComponentRecord, expected string) bool {
 }
 
 func matchesReadyPredicate(rec *ComponentRecord, expected string) bool {
-	if rec.Status == nil {
-		return false
-	}
 	expectedBool, err := strconv.ParseBool(strings.TrimSpace(expected))
 	if err != nil {
 		return false
 	}
-	return rec.Status.Ready == expectedBool
+	ready := rec.Status == nil || rec.Status.Ready
+	return ready == expectedBool
 }
 
 func matchesNamePredicate(actualName, expected string) bool {
@@ -242,16 +240,12 @@ func splitFilterPredicates(filter string) []string {
 }
 
 func parseSinglePredicate(clause string) (filterPredicate, error) {
-	var key, val string
-	if idx := strings.Index(clause, "="); idx != -1 {
-		key = strings.TrimSpace(clause[:idx])
-		val = strings.Trim(strings.TrimSpace(clause[idx+1:]), `"'`)
-	} else if idx := strings.Index(clause, ":"); idx != -1 {
-		key = strings.TrimSpace(clause[:idx])
-		val = strings.Trim(strings.TrimSpace(clause[idx+1:]), `"'`)
-	} else {
+	idx := strings.IndexAny(clause, "=:")
+	if idx == -1 {
 		return filterPredicate{}, status.Errorf(codes.InvalidArgument, "invalid filter predicate %q", clause)
 	}
+	key := strings.TrimSpace(clause[:idx])
+	val := strings.Trim(strings.TrimSpace(clause[idx+1:]), `"'`)
 
 	cleanKey := strings.ToLower(key)
 	if !isValidFilterKey(cleanKey) {
