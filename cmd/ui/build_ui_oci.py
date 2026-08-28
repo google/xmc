@@ -40,7 +40,14 @@ import tempfile
 
 
 def get_sha256(filepath: str) -> str:
-    """Computes SHA256 hex digest for a file."""
+    """Computes SHA256 hex digest for a file.
+
+    Args:
+        filepath: Path to the file to hash.
+
+    Returns:
+        Hexadecimal SHA-256 string.
+    """
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         while True:
@@ -52,7 +59,14 @@ def get_sha256(filepath: str) -> str:
 
 
 def translate_imports(content: str) -> str:
-    """Translates legacy Angular import strings to npm package name."""
+    """Translates legacy Angular import strings to npm package names.
+
+    Args:
+        content: Source code string from an Angular template, style, or TypeScript file.
+
+    Returns:
+        Translated source string compatible with standard npm dependencies.
+    """
     content = content.replace(
         "'third_party/javascript/angular_components/material'",
         "'@angular/material'",
@@ -69,7 +83,7 @@ def translate_imports(content: str) -> str:
     return content.replace('.css"', '.scss"')
 
 
-def copy_flat(src_dir: str, dest_dir: str):
+def copy_flat(src_dir: str, dest_dir: str) -> None:
     """Copies UI source files resolving symlinks and translating legacy imports.
 
     Bazel sandboxes and monorepos often rely heavily on symlinks. When building
@@ -134,7 +148,7 @@ def copy_flat(src_dir: str, dest_dir: str):
                 raise
 
 
-def main():
+def main() -> None:
     """Main entrypoint for building UI container image.
 
     Strategy:
