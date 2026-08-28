@@ -112,6 +112,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
             this.isLoading.set(false);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
             this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
+            for (const job of resp?.jobs ?? []) {
+              if (!job.user) {
+                console.error(
+                  `Job "${job.xid ? `Experiment #${job.xid}` : 'unknown'}" is missing an assigned user.`,
+                );
+              }
+            }
           }),
           catchError(() => {
             this.isLoading.set(false);

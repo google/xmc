@@ -285,4 +285,14 @@ describe('QueueJobsTable Component', () => {
     expect(document.querySelector(LOADING_CONTAINER_SELECTOR)).toBeNull();
     expect(await harness.getRowCount()).toBe(3);
   });
+
+  it('should log a console.error when a job is missing an assigned user', async () => {
+    spyOn(console, 'error');
+    bootstrap(TestHostComponent);
+    await flush();
+
+    expect(console.error).toHaveBeenCalledWith(
+      'Job "Experiment #53310" is missing an assigned user.',
+    );
+  });
 });
