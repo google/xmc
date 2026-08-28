@@ -25,12 +25,18 @@ go_library(
     importpath = "xmanager_cloud/cmd/xmc_bridge",
     visibility = ["//visibility:private"],
     deps = [
+        "//api/protos/components/v1alpha1",
         "//internal/logging",
+        "//pkg/components/bridge",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_client_go//dynamic",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
     ],
 )
 
@@ -53,11 +59,13 @@ go_test(
     ],
     embed = [":xmc_bridge_lib"],
     deps = [
-        "//internal/logging",
+        "//api/protos/components/v1alpha1",
+        "//pkg/components/bridge",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_client_go//dynamic/fake",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

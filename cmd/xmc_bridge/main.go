@@ -25,9 +25,15 @@ import (
 	"syscall"
 	"time"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/bridge"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -44,14 +50,45 @@ var (
 
 // Config holds runtime configuration options for the xmc-bridge controller.
 type Config struct {
-	CMSAddress    string
-	Namespace     string
+	// CMSAddress is the gRPC endpoint address of the Component Manager Service.
+	CMSAddress string
+	// Namespace is the target Kubernetes namespace to watch and reconcile Component resources.
+	Namespace string
+	// ProbeInterval is the duration interval between periodic reconciliation sweeps.
 	ProbeInterval time.Duration
-	ProbeTimeout  time.Duration
-	Kubeconfig    string
+	// ProbeTimeout is the timeout duration for individual component probe and reconciliation passes.
+	ProbeTimeout time.Duration
+	// Kubeconfig is the optional explicit path to a kubeconfig file.
+	Kubeconfig string
 }
 
-// ParseConfig parses command line flags into a validated Config object.
+// ComponentStatus defines the structured representation of .status in the Component CRD.
+type ComponentStatus struct {
+	ObservedGeneration int64                `json:"observedGeneration"`
+	State              string               `json:"state"`
+	Access             *ComponentAccess     `json:"access,omitempty"`
+	Conditions         []ComponentCondition `json:"conditions,omitempty"`
+}
+
+// ComponentAccess defines the access configuration in .status.access.
+type ComponentAccess struct {
+	EnvVars map[string]string `json:"envVars,omitempty"`
+}
+
+// ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
+type ComponentCondition struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	ObservedGeneration int64  `json:"observedGeneration"`
+	Reason             string `json:"reason"`
+	Message            string `json:"message"`
+	LastTransitionTime string `json:"lastTransitionTime"`
+}
+
+// ParseConfig parses command line flags and environment variables into a validated Config object.
+// args typically receives os.Args[1:]. Default values fall back to corresponding environment
+// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, KUBECONFIG) if flags are omitted.
+// Returns an error if flag parsing fails or if intervals/timeouts are non-positive.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	if defaultCMS == "" {
@@ -63,23 +100,27 @@ func ParseConfig(args []string) (*Config, error) {
 	}
 	defaultProbeInterval := 5 * time.Second
 	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			defaultProbeInterval = d
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PROBE_INTERVAL %q: %w", val, err)
 		}
+		defaultProbeInterval = d
 	}
 	defaultProbeTimeout := 2 * time.Second
 	if val := os.Getenv("PROBE_TIMEOUT"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			defaultProbeTimeout = d
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PROBE_TIMEOUT %q: %w", val, err)
 		}
+		defaultProbeTimeout = d
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
 
-	fs := flag.NewFlagSet("xmc-bridge", flag.ContinueOnError)
+	fs := flag.NewFlagSet("xmc_bridge", flag.ContinueOnError)
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
-	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe passes")
+	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 
 	if err := fs.Parse(args); err != nil {
@@ -100,7 +141,10 @@ func ParseConfig(args []string) (*Config, error) {
 	}, nil
 }
 
-// BuildKubeConfig builds a Kubernetes client config from a path or in-cluster environment.
+// BuildKubeConfig constructs a Kubernetes *rest.Config using the following resolution order:
+// 1. Explicit kubeconfigPath (if non-empty).
+// 2. In-cluster pod service account environment (rest.InClusterConfig).
+// 3. Standard deferred clientcmd loading rules (KUBECONFIG environment variable or ~/.kube/config).
 func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 	if kubeconfigPath != "" {
 		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
@@ -114,27 +158,36 @@ func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
 }
 
-// Controller orchestrates dynamic polling and reconciliation sweeps for Component resources.
+// Controller orchestrates dynamic polling and reconciliation sweeps across Kubernetes
+// Component custom resources (xmc.dev/v1alpha1) within a specific namespace.
 type Controller struct {
 	dynamicClient dynamic.Interface
+	reconciler    *bridge.Reconciler
 	namespace     string
 	probeInterval time.Duration
 	probeTimeout  time.Duration
 }
 
 // NewController creates a new Controller instance.
-func NewController(client dynamic.Interface, ns string, interval time.Duration, timeout time.Duration) *Controller {
+// client is the dynamic Kubernetes client used to list and update Component custom resources.
+// r is the core bridge Reconciler handling state synchronization and lifecycle logic.
+// ns is the target namespace to reconcile.
+// interval is the duration between periodic namespace reconciliation sweeps.
+// timeout is the maximum duration allocated per component reconciliation pass.
+func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, interval time.Duration, timeout time.Duration) *Controller {
 	return &Controller{
 		dynamicClient: client,
+		reconciler:    r,
 		namespace:     ns,
 		probeInterval: interval,
 		probeTimeout:  timeout,
 	}
 }
 
-// Run starts the reconciliation loop and blocks until context cancellation.
+// Run executes an immediate initial reconciliation pass and then periodically triggers
+// reconciliation sweeps on every ticker tick until ctx is cancelled.
 func (c *Controller) Run(ctx context.Context) error {
-	logging.Info(ctx, "Starting XMC Bridge Controller daemon", "namespace", c.namespace, "probeInterval", c.probeInterval, "probeTimeout", c.probeTimeout)
+	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", c.namespace, "probeInterval", c.probeInterval, "probeTimeout", c.probeTimeout)
 	ticker := time.NewTicker(c.probeInterval)
 	defer ticker.Stop()
 
@@ -155,23 +208,110 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 }
 
-// RunReconcilePass executes a single sweep across all Component resources in the namespace.
+// RunReconcilePass lists all Component resources in the configured namespace and executes
+// reconciliation on each item sequentially, checking context cancellation between iterations.
 func (c *Controller) RunReconcilePass(ctx context.Context) error {
 	list, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list Component resources: %w", err)
 	}
-
-	logging.Info(ctx, "Discovered Component resources during polling sweep", "count", len(list.Items), "namespace", c.namespace)
+	logging.Debug(ctx, "Reconciliation pass found components", "namespace", c.namespace, "count", len(list.Items))
 	for i := range list.Items {
-		item := &list.Items[i]
-		logging.Debug(ctx, "Discovered Component resource", "name", item.GetName(), "generation", item.GetGeneration())
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		c.reconcileItem(ctx, &list.Items[i])
 	}
 	return nil
 }
 
-// RunBridge executes the complete Bridge daemon lifecycle using the specified configuration.
+// reconcileItem performs a bounded reconciliation pass on a single unstructured Component resource.
+// It establishes a per-item timeout context (probeTimeout), calls Reconciler.Reconcile, and updates
+// the custom resource's .status subresource with the resulting state and conditions.
+func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstructured) {
+	name := item.GetName()
+	reconcileCtx, cancel := context.WithTimeout(ctx, c.probeTimeout)
+	defer cancel()
+
+	res, err := c.reconciler.Reconcile(reconcileCtx, item)
+	if res != nil {
+		if syncErr := c.syncStatus(ctx, item, res); syncErr != nil {
+			logging.Error(ctx, "Error syncing status for component", "name", name, "error", syncErr)
+		}
+	}
+	if err != nil {
+		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
+		return
+	}
+	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+}
+
+// syncStatus serializes the ReconcileResult into the .status map of item and persists it
+// via the Kubernetes dynamic client UpdateStatus API. It uses a deep copy to avoid local
+// object mutation if the API server update fails.
+func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	itemCopy := item.DeepCopy()
+	itemCopy.Object["status"] = BuildStatusMap(res)
+	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+	item.Object = updated.Object
+	logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	return nil
+}
+
+// BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
+// including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
+func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
+	status := ComponentStatus{
+		ObservedGeneration: res.ObservedGeneration,
+		State:              res.State.String(),
+	}
+	if res.Access != nil && len(res.Access.EnvVars) > 0 {
+		status.Access = &ComponentAccess{EnvVars: res.Access.EnvVars}
+	}
+	if len(res.Conditions) > 0 {
+		status.Conditions = make([]ComponentCondition, 0, len(res.Conditions))
+		for _, c := range res.Conditions {
+			status.Conditions = append(status.Conditions, ComponentCondition{
+				Type:               c.Type,
+				Status:             string(c.Status),
+				ObservedGeneration: c.ObservedGeneration,
+				Reason:             c.Reason,
+				Message:            c.Message,
+				LastTransitionTime: c.LastTransitionTime.Format(time.RFC3339),
+			})
+		}
+	}
+	return status
+}
+
+// BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema.
+func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
+	status := BuildStatus(res)
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
+	if err != nil {
+		fallback := ComponentStatus{
+			ObservedGeneration: res.ObservedGeneration,
+			State:              res.State.String(),
+		}
+		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
+		return fallbackMap
+	}
+	return m
+}
+
+// RunBridge initializes all dependencies (CMS gRPC client, Kubernetes dynamic client,
+// WorkloadManager, and Reconciler) and starts the Controller main loop.
 func RunBridge(ctx context.Context, cfg *Config) error {
+	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", cfg.CMSAddress)
+	conn, err := grpc.NewClient(cfg.CMSAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect to CMS at %q: %w", cfg.CMSAddress, err)
+	}
+	defer conn.Close()
+
 	logging.Info(ctx, "Configuring Kubernetes dynamic client", "kubeconfig", cfg.Kubeconfig)
 	k8sCfg, err := BuildKubeConfig(cfg.Kubeconfig)
 	if err != nil {
@@ -181,7 +321,11 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes dynamic client: %w", err)
 	}
-	return NewController(dynamicClient, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Reconciler: %w", err)
+	}
+	return NewController(dynamicClient, reconciler, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
 }
 
 func main() {
