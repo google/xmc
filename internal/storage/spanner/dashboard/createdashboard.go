@@ -22,11 +22,12 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// CreateDashboard writes a new dashboard and its child dashboard-chart relationships to Spanner.
-func (r *Repository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error {
-	logging.Info(ctx, "Create dashboard in storage", "name", dashboard.GetName())
+// CreateDashboard writes a new dashboard, the charts created with it and their child
+// dashboard-chart relationships to Spanner in a single commit.
+func (r *Repository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
+	logging.Info(ctx, "Create dashboard in storage", "name", dashboard.GetName(), "charts", len(charts))
 
-	mutations, err := data.DashboardProtoToInsertMutations(dashboard)
+	mutations, err := data.DashboardWithChartsToInsertMutations(dashboard, charts)
 	if err != nil {
 		logging.Error(ctx, "Failed to generate create dashboard mutations", "error", err)
 		return err

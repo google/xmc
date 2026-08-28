@@ -94,20 +94,17 @@ export class DashboardService {
   }
 
   /**
-   * Creates a new dashboard.
+   * Creates a new dashboard together with the charts it is composed of.
+   *
+   * The whole request is the request body: CreateDashboard binds `body: "*"` so that `charts` can
+   * be sent at all, which also makes `dashboardId` a body field rather than a query parameter.
    */
   createDashboard(request: CreateDashboardRequest): Observable<Dashboard> {
     if (!request.dashboard) {
       return throwError(() => new Error('Dashboard payload is required'));
     }
-    const paramsMap: Record<string, string> = {};
-    if (request.dashboardId) {
-      paramsMap['dashboardId'] = request.dashboardId;
-    }
-    const params = new HttpParams({ fromObject: paramsMap });
     return this.http
-      .post<RawDashboard>(`${XMC_API_DOMAIN}/dashboards`, request.dashboard, {
-        params,
+      .post<RawDashboard>(`${XMC_API_DOMAIN}/dashboards`, request, {
         withCredentials: true,
       })
       .pipe(

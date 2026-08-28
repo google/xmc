@@ -131,7 +131,7 @@ func TestListCharts_ParentDashboard(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/parent-dash-1")
 	dash.ChartIds = []string{c1ID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -152,7 +152,7 @@ func TestListCharts_ParentDashboard_Empty(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	dash := blankDashboardProto("dashboards/empty-dash-1")
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -229,7 +229,7 @@ func TestListCharts_HydratesPlotsPerChart(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/hydrate-list-dash")
 	dash.ChartIds = []string{"hydrate-list-1", "hydrate-list-2", "hydrate-list-3"}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -331,7 +331,7 @@ func TestListCharts_ParentDashboard_WithStaleness(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/parent-dash-stale")
 	dash.ChartIds = []string{c1ID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -365,7 +365,7 @@ func TestListCharts_ParentDashboard_WithFilter(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/parent-dash-filter")
 	dash.ChartIds = []string{c1ID, c2ID}
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
@@ -395,7 +395,7 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 
 	dash := blankDashboardProto("dashboards/parent-dash-page")
 	dash.ChartIds = chartIDs
-	if err := repo.CreateDashboard(ctx, dash); err != nil {
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
