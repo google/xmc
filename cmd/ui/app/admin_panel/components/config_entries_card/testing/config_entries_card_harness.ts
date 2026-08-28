@@ -41,6 +41,12 @@ export class ConfigEntriesCardHarness extends ComponentHarness {
   private readonly _noResults = this.locatorForOptional('.no-results-cell');
   private readonly _errorBanner = this.locatorForOptional('.error-banner');
   private readonly _retryButton = this.locatorForOptional('.retry-button');
+  private readonly _spinner = this.locatorForOptional('mat-spinner');
+
+  async hasSpinner(): Promise<boolean> {
+    const el = await this._spinner();
+    return el !== null;
+  }
 
   async enterSearchTerm(term: string): Promise<void> {
     const input = await this._searchInput();

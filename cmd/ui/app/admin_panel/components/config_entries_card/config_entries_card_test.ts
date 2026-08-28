@@ -32,6 +32,7 @@ import { ConfigEntriesCardHarness } from './testing/config_entries_card_harness'
   template: `<xmc-config-entries-card
     [configGroups]="groups()"
     [errorMessage]="errorMessage()"
+    [loading]="loading()"
     (retry)="onRetry()"
   ></xmc-config-entries-card>`,
   standalone: true,
@@ -40,6 +41,7 @@ import { ConfigEntriesCardHarness } from './testing/config_entries_card_harness'
 class TestHostComponent {
   readonly groups = signal<ConfigGroup[] | undefined>(undefined);
   readonly errorMessage = signal<string | null>(null);
+  readonly loading = signal<boolean>(false);
   retryCount = 0;
 
   onRetry(): void {
@@ -220,5 +222,15 @@ describe('ConfigEntriesCardComponent', () => {
     await flush();
 
     expect(host.retryCount).toBe(1);
+  });
+
+  it('should display loading spinner when loading is true', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.loading.set(true);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasSpinner()).toBeTrue();
+    expect(await harness.hasErrorBanner()).toBeFalse();
   });
 });

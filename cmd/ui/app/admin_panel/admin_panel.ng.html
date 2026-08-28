@@ -52,6 +52,7 @@
       <xmc-config-entries-card
         [configGroups]="configs.configGroups"
         [errorMessage]="configEntriesError() ? 'Failed to load configuration entries.' : null"
+        [loading]="isConfigLoading()"
         (retry)="onRetryConfigs()"
       />
     } @else {

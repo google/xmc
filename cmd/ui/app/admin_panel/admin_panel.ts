@@ -53,6 +53,7 @@ export class AdminPanelPage {
 
   protected readonly healthStatusError = signal<unknown>(null);
   protected readonly configEntriesError = signal<unknown>(null);
+  protected readonly isConfigLoading = signal<boolean>(false);
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
@@ -87,14 +88,18 @@ export class AdminPanelPage {
 
   protected readonly healthConfigs = toSignal(
     this.configRefreshTrigger$.pipe(
+      tap(() => {
+        this.isConfigLoading.set(true);
+        this.configEntriesError.set(null);
+      }),
       switchMap(() =>
         this.healthService.getHealthConfigs().pipe(
-          tap(() => this.configEntriesError.set(null)),
           catchError((error) => {
             console.error('Failed to fetch health configs', error);
             this.configEntriesError.set(error);
             return of({} as ListConfigEntriesResponse);
           }),
+          finalize(() => this.isConfigLoading.set(false)),
         ),
       ),
     ),

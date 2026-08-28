@@ -14,6 +14,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
 
@@ -38,7 +39,7 @@ export interface ConfigGroupItem extends ConfigGroup {
 @Component({
   selector: 'xmc-config-entries-card',
   standalone: true,
-  imports: [MatIconModule, ErrorBannerComponent],
+  imports: [MatIconModule, ErrorBannerComponent, MatProgressSpinnerModule],
   templateUrl: './config_entries_card.ng.html',
   styleUrl: './config_entries_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +47,7 @@ export interface ConfigGroupItem extends ConfigGroup {
 export class ConfigEntriesCardComponent {
   readonly configGroups = input<ConfigGroup[] | undefined>();
   readonly errorMessage = input<string | null>(null);
+  readonly loading = input<boolean>(false);
   readonly retry = output<void>();
 
   protected readonly searchTerm = signal<string>('');
