@@ -95,26 +95,42 @@
   box-sizing: border-box;
   border: 1px solid #dadce0;
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: 0 10px;
   font-size: 14px;
   color: #202124;
   outline: none;
   background-color: #ffffff;
   height: 34px;
   min-width: 140px;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
 
-  &:focus {
+  &:focus,
+  &.mat-mdc-select-focused {
     border-color: #1a73e8;
   }
 
   &.dominant-select-box {
     border: 2px solid #d93025 !important;
-    padding: 5px 9px;
+    padding: 0 9px;
 
-    &:focus {
+    &:focus,
+    &.mat-mdc-select-focused {
       border-color: #d93025 !important;
     }
+  }
+
+  ::ng-deep .mat-mdc-select-trigger {
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  ::ng-deep .mat-mdc-select-value {
+    font-size: 14px;
+    color: #202124;
   }
 }
 

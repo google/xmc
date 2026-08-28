@@ -15,7 +15,9 @@
 import { ChangeDetectionStrategy, Component, input, OnInit, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatOptionModule } from '@angular/material/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
 
 export interface ResourceRequirementRow {
   id: string;
@@ -37,7 +39,7 @@ function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
   templateUrl: './smart_resource_finder.ng.html',
   styleUrl: './smart_resource_finder.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MatIconModule, MatButtonModule],
+  imports: [FormsModule, MatIconModule, MatButtonModule, MatSelectModule, MatOptionModule],
 })
 export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
