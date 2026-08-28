@@ -68,9 +68,9 @@ pip install 'xdash[auth]'
 ```
 
 ```python
-DashboardClient(endpoint=...)                                # resolved from ADC
-DashboardClient(endpoint=..., user_email="me@example.com")   # named explicitly
-DashboardClient(endpoint=..., user_email="")                 # send no identity
+DashboardClient(endpoint=...)  # resolved from ADC
+DashboardClient(endpoint=..., user_email="me@example.com")  # named explicitly
+DashboardClient(endpoint=..., user_email="")  # send no identity
 ```
 
 Without an identity the service falls back to the authenticated principal, which is how a
