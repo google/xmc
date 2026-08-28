@@ -40,6 +40,8 @@
             }
             <mat-select
               class="query-select-box"
+              panelClass="resource-type-select-panel"
+              [panelWidth]="null"
               [class.dominant-select-box]="$index === 0 && !!row.resourceType"
               [id]="'resource-type-select-' + row.id"
               [value]="row.resourceType"
