@@ -41,12 +41,12 @@
             <mat-select
               class="query-select-box"
               panelClass="resource-type-select-panel"
+              placeholder="-"
               [panelWidth]="null"
               [class.dominant-select-box]="$index === 0 && !!row.resourceType"
               [id]="'resource-type-select-' + row.id"
               [value]="row.resourceType"
               (selectionChange)="onResourceTypeChange($index, $event.value)"
-              placeholder="-"
             >
               <mat-option value="">-</mat-option>
               @for (resType of availableResourceTypes(); track resType) {
