@@ -478,7 +478,7 @@ The development tooling supports two distinct deployment tiers tailored for diff
 Certain hardware and cloud infrastructure primitives cannot run inside a local Docker container / KinD cluster and strictly require a live Google Cloud GKE deployment (`dev_env gke-deploy` / `dev_env gke-upgrade`):
 - **Specialized Accelerators & Topologies**: Physical Cloud TPUs (`google.com/tpu` v4, v5e, v5p, v6e), multi-host optical circuit switches (OCS), and NVIDIA Cloud GPUs.
 - **Cloud IAM & Storage Integrations**: Google Cloud Workload Identity Federation, Cloud Storage FUSE CSI driver mounting real GCS buckets, Google Cloud Armor, and Google-managed OAuth / Identity-Aware Proxy (IAP).
-- **Multi-Cluster Orchestration & Dynamic Capacity**: MultiKueue cross-cluster dispatching across physical remote GKE clusters and Google Compute Engine `ProvisioningRequest` capacity reservations.
+- **Dynamic GCE Capacity Reservations**: Integrating Kueue `ProvisioningRequest` CRDs with Google Compute Engine (GCE) dynamic capacity reservation APIs and GKE Cluster Autoscaler.
 
 ### 2. Local KinD Scope: Current Baseline vs. Reachable Capabilities
 
@@ -491,20 +491,24 @@ Certain hardware and cloud infrastructure primitives cannot run inside a local D
 | **Kueue Local Quota & Admission**| ⚠️ Open-Schema CRD only | 🟢 **Reachable** (Kueue Controller) | ✅ Live Real Queues |
 | **Reconciler State Machine** | ⚠️ Go Unit/Integration Tests | 🟢 **Reachable** (Upstream Controllers) | ✅ Live Real Pods |
 | **CPU Mock Workload Execution** | ❌ Controller not installed | 🟢 **Reachable** (Mock JobSets/Pods) | ✅ Live Real Pods |
-| **Multi-Cluster MultiKueue** | ❌ Never Reachable | ❌ Never Reachable | ✅ Live Multi-Cluster |
+| **Multi-Cluster MultiKueue** | ❌ Single KinD Cluster | 🟢 **Reachable** (Dual-KinD on Docker Net)| ✅ Live Multi-Cluster |
 | **TPU / GPU Hardware Execution** | ❌ Never Reachable | ❌ Never Reachable | ✅ Live Real Hardware |
+| **Dynamic GCE ProvisioningRequests**| ❌ Never Reachable | ❌ Never Reachable | ✅ Live Cloud Capacity |
 
 #### Current Baseline with Dummy CRDs:
 To keep local startup near-instantaneous (~35s) and memory overhead minimal, KinD installs open-schema CustomResourceDefinitions ([`dummy_crds.yaml`](../../test/e2e/manifests/dummy_crds.yaml)) for `JobSet` and `Kueue`.
 - **What works**: `actuator` and `reconciler` can perform Kubernetes CRUD operations without API server rejection (`no matches for kind "JobSet"`).
 - **What is tested in-memory**: The complete Reconciler state machine (`SCHEDULING` $\rightarrow$ `STARTING` $\rightarrow$ `RUNNING` $\rightarrow$ `COMPLETED`/`FAILED`/`PARTIALLY_FAILED`, `ImagePullBackOff`, unschedulable handling, Non-Restarting JobSets Contract) is verified via comprehensive Go table-driven integration tests (`cmd/reconciler/jobset/converter_test.go`).
 
-#### Reachable Local Enhancement (Roadmap):
-Deploying standard upstream JobSet and Kueue controller manager manifests (`sigs.k8s.io/jobset`, `sigs.k8s.io/kueue`) into KinD is technically straightforward. When enabled (e.g. via an optional `--with-workload-controllers` flag):
-- KinD will run the upstream controller pods in `jobset-system` and `kueue-system`.
-- Kueue will manage local queue admission, quota limits, and cohort borrowing on standard CRs (`ClusterQueue`, `LocalQueue`, `ResourceFlavor`, `WorkloadPriorityClass`).
-- Creating a `JobSet` will spawn actual child `Job` and `Pod` containers running mock CPU tasks locally on Docker.
-- `reconciler` will observe real pod lifecycles and update WorkUnit database records live in Spanner.
+#### Reachable Local Enhancements (Roadmap):
+1. **Single-Cluster Workload Controllers (`--with-workload-controllers`)**:
+   - Deploys upstream `sigs.k8s.io/jobset` and `sigs.k8s.io/kueue` into the local KinD cluster.
+   - Kueue manages local queue admission, quota limits, and priority preemption on standard CRs (`ClusterQueue`, `LocalQueue`, `ResourceFlavor`, `WorkloadPriorityClass`).
+   - Creating a `JobSet` spawns actual child `Job` and `Pod` containers running mock CPU tasks locally on Docker.
+   - `reconciler` observes real pod lifecycles and updates WorkUnit database records live in Spanner.
+2. **Dual-KinD Multi-Cluster MultiKueue (`--multi-cluster`)**:
+   - Bootstraps two KinD clusters on the same Docker bridge network (`xmc-mgmt` and `xmc-worker`).
+   - Because MultiKueue only requires control-plane API server connectivity (`kube-apiserver` client traffic over the internal Docker network `https://xmc-worker-control-plane:6443`) and does *not* require pod overlay routing, cross-cluster workload dispatching and status synchronization can be validated 100% locally without cloud infrastructure.
 
 ---
 
