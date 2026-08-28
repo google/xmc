@@ -66,18 +66,11 @@ export function findQueuePredictability(
   }
 
   const normDominant = dominantResource.trim().toLowerCase();
-  const exactMatch = predictabilities.find(
+  return predictabilities.find(
     (p) =>
       p.velocityRange === targetRange &&
       (p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
         p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant),
-  );
-  if (exactMatch) return exactMatch;
-
-  return predictabilities.find(
-    (p) =>
-      p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
-      p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant,
   );
 }
 
@@ -122,7 +115,16 @@ export function calculatePendingRequestsDisplay(
   queue: ClusterQueueSecondaryMetrics,
   dominantResource?: string | null,
 ): string {
-  const match = findQueuePredictability(queue, '1h', dominantResource);
+  const predictabilities = queue?.queuePredictability ?? [];
+  const normDominant = dominantResource?.trim().toLowerCase();
+  const match = normDominant
+    ? predictabilities.find(
+        (p) =>
+          (p.resourceVelocity?.resourceType?.toLowerCase() === normDominant ||
+            p.pendingResourceRequests?.resourceType?.toLowerCase() === normDominant) &&
+          p.pendingResourceRequests?.count != null,
+      )
+    : predictabilities.find((p) => p.pendingResourceRequests?.count != null);
   return match?.pendingResourceRequests?.count != null
     ? formatRate(match.pendingResourceRequests.count)
     : '0';

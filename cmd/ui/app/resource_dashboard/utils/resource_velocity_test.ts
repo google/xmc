@@ -20,6 +20,7 @@ import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
+  findQueuePredictability,
   formatRate,
   getPendingJobsCount,
 } from './resource_velocity';
@@ -107,11 +108,45 @@ describe('Resource Velocity Utilities', () => {
     });
   });
 
+  describe('findQueuePredictability', () => {
+    it('should return exact match for timeframe and dominant resource', () => {
+      const match = findQueuePredictability(mockSecondaryData, '1h', 'nvidia.com/gpu');
+      expect(match).toBeDefined();
+      expect(match?.jobVelocity).toBe(12.5);
+    });
+
+    it('should return undefined when timeframe does not exist for dominant resource', () => {
+      const match = findQueuePredictability(mockSecondaryData, '7d', 'nvidia.com/gpu');
+      expect(match).toBeUndefined();
+    });
+
+    it('should fallback to first entry when dominantResource is null or empty', () => {
+      const match = findQueuePredictability(mockSecondaryData, '7d');
+      expect(match).toBeDefined();
+      expect(match?.velocityRange).toBe('RANGE_PRESET_LAST_HOUR');
+    });
+  });
+
   describe('calculatePendingRequestsDisplay', () => {
     it('should return pending resource requests display text for dominant resource', () => {
       expect(calculatePendingRequestsDisplay({})).toBe('0');
       expect(calculatePendingRequestsDisplay(mockSecondaryData, 'nvidia.com/gpu')).toBe('16');
       expect(calculatePendingRequestsDisplay(mockSecondaryData, 'cpu')).toBe('48');
+    });
+
+    it('should find pending requests count even if only non-1h range preset exists', () => {
+      const weeklyOnlyData: ClusterQueueSecondaryMetrics = {
+        queuePredictability: [
+          {
+            velocityRange: 'RANGE_PRESET_LAST_WEEK',
+            pendingResourceRequests: {
+              resourceType: 'nvidia.com/gpu',
+              count: 32,
+            },
+          },
+        ],
+      };
+      expect(calculatePendingRequestsDisplay(weeklyOnlyData, 'nvidia.com/gpu')).toBe('32');
     });
   });
 });
