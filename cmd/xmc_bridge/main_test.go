@@ -193,6 +193,42 @@ func TestController_RunReconcilePass(t *testing.T) {
 	}
 }
 
+func TestBuildStatus(t *testing.T) {
+	res := &bridge.ReconcileResult{
+		ObservedGeneration: 5,
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Access:             &bridge.AccessStatus{EnvVars: map[string]string{"PORT": "8080"}},
+		Conditions: []bridge.Condition{
+			{
+				Type:               bridge.ConditionTypeReady,
+				Status:             bridge.ConditionStatusTrue,
+				ObservedGeneration: 5,
+				Reason:             "ComponentReady",
+				Message:            "All good",
+				LastTransitionTime: time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	status := BuildStatus(res)
+	if status.ObservedGeneration != 5 {
+		t.Errorf("expected ObservedGeneration 5, got %v", status.ObservedGeneration)
+	}
+	if status.State != "COMPONENT_STATE_ENABLED" {
+		t.Errorf("expected State COMPONENT_STATE_ENABLED, got %v", status.State)
+	}
+	if status.Access == nil || status.Access.EnvVars["PORT"] != "8080" {
+		t.Errorf("expected Access.EnvVars[PORT]=8080, got %+v", status.Access)
+	}
+	if len(status.Conditions) != 1 {
+		t.Fatalf("expected 1 condition, got %d", len(status.Conditions))
+	}
+	cond := status.Conditions[0]
+	if cond.Type != bridge.ConditionTypeReady || cond.Status != string(bridge.ConditionStatusTrue) || cond.ObservedGeneration != 5 || cond.Reason != "ComponentReady" || cond.Message != "All good" {
+		t.Errorf("unexpected condition content: %+v", cond)
+	}
+}
+
 func TestBuildStatusMap(t *testing.T) {
 	res := &bridge.ReconcileResult{
 		ObservedGeneration: 5,

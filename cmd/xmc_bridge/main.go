@@ -261,9 +261,9 @@ func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstruct
 	return nil
 }
 
-// BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema,
+// BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
 // including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
-func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
+func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
 	status := ComponentStatus{
 		ObservedGeneration: res.ObservedGeneration,
 		State:              res.State.String(),
@@ -284,12 +284,20 @@ func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
 			})
 		}
 	}
+	return status
+}
+
+// BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema.
+func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
+	status := BuildStatus(res)
 	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
 	if err != nil {
-		return map[string]any{
-			"observedGeneration": res.ObservedGeneration,
-			"state":              res.State.String(),
+		fallback := ComponentStatus{
+			ObservedGeneration: res.ObservedGeneration,
+			State:              res.State.String(),
 		}
+		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
+		return fallbackMap
 	}
 	return m
 }
