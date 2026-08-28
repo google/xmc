@@ -306,6 +306,7 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
+// If pageSize is unspecified or 0, the store defaults to 50 (max 1000) per AIP-158.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
