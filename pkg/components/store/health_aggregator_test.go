@@ -413,6 +413,11 @@ func TestAggregatePlatformHealth_PageSizeBounding(t *testing.T) {
 	if len(respCapped.GetComponents()) != 5 {
 		t.Errorf("len(Components) = %d, want 5", len(respCapped.GetComponents()))
 	}
+
+	// Negative page size -> InvalidArgument
+	if _, err := AggregatePlatformHealth(components, "", -1, ""); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("AggregatePlatformHealth(-1) got code %v, want InvalidArgument", status.Code(err))
+	}
 }
 
 func TestHealthAggregator_InternalHelpers(t *testing.T) {

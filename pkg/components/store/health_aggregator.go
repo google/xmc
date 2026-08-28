@@ -40,6 +40,10 @@ type filterPredicate struct {
 
 // AggregatePlatformHealth filters components, computes health metrics, and paginates results per AIP-158.
 func AggregatePlatformHealth(components map[string]*ComponentRecord, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
+	if pageSize < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "page size cannot be negative: %d", pageSize)
+	}
+
 	predicates, err := parsePlatformHealthFilter(filter)
 	if err != nil {
 		return nil, err
@@ -71,7 +75,7 @@ func AggregatePlatformHealth(components map[string]*ComponentRecord, filter stri
 }
 
 func normalizePageSize(pageSize int32) int {
-	if pageSize <= 0 {
+	if pageSize == 0 {
 		return defaultPlatformHealthPageSize
 	}
 	if pageSize > maxPlatformHealthPageSize {
