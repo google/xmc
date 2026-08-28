@@ -49,6 +49,55 @@ def env_value(name: str, default: str) -> str:
     return os.environ.get(name, default) or default
 
 
+def positive_int_env(name: str, default: str) -> int:
+    """Reads a positive integer setting, refusing a malformed or out-of-range value.
+
+    Falling back to the default on a bad value is the worse failure: a worker that quietly runs
+    100 steps when the manifest asked for 5000 is indistinguishable from a healthy run, which is
+    the silent misconfiguration report_ingestion_readiness exists to make loud. Naming the
+    variable and the value it was given saves the operator from reading a traceback.
+    """
+    raw = env_value(name, default)
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r} is not an integer") from None
+    if value <= 0:
+        raise ValueError(f"{name}={raw!r} must be greater than zero")
+    return value
+
+
+def non_negative_float_env(name: str, default: str) -> float:
+    """Reads a non-negative float setting, refusing a malformed or out-of-range value.
+
+    See positive_int_env: a delay silently reset to its default hides the same class of typo.
+    'nan' and 'inf' parse as floats but are rejected here, because time.sleep takes neither.
+    """
+    raw = env_value(name, default)
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r} is not a number") from None
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name}={raw!r} must be a finite, non-negative number")
+    return value
+
+
+def seed_env(name: str, default: str) -> int:
+    """Reads the RNG seed, warning and falling back when it is not an integer.
+
+    Unlike the settings above, a wrong seed costs nothing -- it only picks which synthetic noise
+    the run replays. XMC_XID is set by the platform, and refusing to start over a value the
+    metrics path itself tolerates would trade a working run for a cosmetic one.
+    """
+    raw = env_value(name, default)
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"!!! {name}={raw!r} is not an integer: seeding from {default} instead.")
+        return int(default)
+
+
 def report_ingestion_readiness() -> bool:
     """Prints whether the SDK will actually ship metrics, and returns that verdict.
 
@@ -90,7 +139,7 @@ def run_training_loop(total_steps: int, seed: int) -> None:
     rng = random.Random(seed)
     # Read once rather than per step: the value cannot change mid-loop, and re-reading it inside
     # the hot path only spreads the parse across every iteration.
-    step_delay = float(env_value("STEP_DELAY_SECONDS", "0.2"))
+    step_delay = non_negative_float_env("STEP_DELAY_SECONDS", "0.2")
     print(f"--> Simulating {total_steps} training steps...")
 
     for step in range(1, total_steps + 1):
@@ -124,10 +173,10 @@ def main() -> None:
 
     report_ingestion_readiness()
 
-    total_steps = int(env_value("NUM_STEPS", "100"))
+    total_steps = positive_int_env("NUM_STEPS", "100")
     # Seeding from the experiment keeps a rerun of the same experiment reproducible while
     # still giving separate experiments visibly different curves.
-    seed = int(env_value("XMC_XID", "0"))
+    seed = seed_env("XMC_XID", "0")
 
     try:
         run_training_loop(total_steps=total_steps, seed=seed)
