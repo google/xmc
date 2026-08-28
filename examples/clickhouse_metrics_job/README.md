@@ -12,20 +12,20 @@ This example demonstrates an end-to-end workflow for:
 
 ```mermaid
 flowchart TD
-    subgraph Local Workstation
+    subgraph "Local Workstation"
         A[install_venv.sh] -->|Initializes| B[Python .venv]
         B -->|Executes| C[launch.py]
     end
 
-    subgraph XMC Platform
-        C -->|1. Create Experiment| D[Experiment State Server (XID)]
-        C -->|2. Create WorkUnit| E[JobSet / WorkUnit Controller (WID)]
-        C -->|4. Register Dashboard & Charts| F[Dashboard Service (xdash)]
+    subgraph "XMC Platform"
+        C -->|1. Create Experiment| D["Experiment State Server (XID)"]
+        C -->|2. Create WorkUnit| E["JobSet / WorkUnit Controller (WID)"]
+        C -->|"4. Register Dashboard & Charts"| F["Dashboard Service (xdash)"]
     end
 
-    subgraph GKE Cluster
-        E -->|Launches Pod| G[Worker Container: worker.py]
-        G -->|3. Batch Insert xmc_metrics| H[(ClickHouse Database)]
+    subgraph "GKE Cluster"
+        E -->|Launches Pod| G["Worker Container: worker.py"]
+        G -->|3. Batch Insert xmc_metrics| H[("ClickHouse Database")]
     end
 
     H -.->|Queried on Demand| F
