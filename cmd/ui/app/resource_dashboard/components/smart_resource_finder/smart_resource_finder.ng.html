@@ -38,18 +38,19 @@
             @if ($index === 0 && row.resourceType) {
               <span class="dominant-text">Dominant</span>
             }
-            <select
+            <mat-select
               class="query-select-box"
               [class.dominant-select-box]="$index === 0 && !!row.resourceType"
               [id]="'resource-type-select-' + row.id"
-              [ngModel]="row.resourceType"
-              (ngModelChange)="onResourceTypeChange($index, $event)"
+              [value]="row.resourceType"
+              (selectionChange)="onResourceTypeChange($index, $event.value)"
+              placeholder="-"
             >
-              <option value="">-</option>
+              <mat-option value="">-</mat-option>
               @for (resType of availableResourceTypes(); track resType) {
-                <option [value]="resType">{{ resType }}</option>
+                <mat-option [value]="resType">{{ resType }}</mat-option>
               }
-            </select>
+            </mat-select>
           </div>
           @if (rows().length > 1) {
             <button
