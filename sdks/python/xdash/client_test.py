@@ -113,6 +113,75 @@ class DashboardClientTest(unittest.TestCase):
         self.client.create_dashboard(dashboard, dashboard_id="override")
         self.assertEqual(self.mock_stub.CreateDashboard.call_args[0][0].dashboard_id, "override")
 
+    def test_create_dashboard_sends_inline_charts(self) -> None:
+        """Without this the charts are dropped and the dashboard is created empty."""
+        dashboard = messages_pb2.Dashboard(name="dashboards/d1", title="D1")
+        chart = messages_pb2.Chart(title="C1", xid=1001, wid=1)
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(dashboard, charts=[chart])
+
+        req = self.mock_stub.CreateDashboard.call_args[0][0]
+        self.assertEqual(len(req.charts), 1)
+        self.assertEqual(req.charts[0].title, "C1")
+        self.assertEqual(req.charts[0].xid, 1001)
+
+    def test_create_dashboard_without_charts_sends_none(self) -> None:
+        dashboard = messages_pb2.Dashboard(name="dashboards/d1", title="D1")
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(dashboard)
+
+        self.assertEqual(len(self.mock_stub.CreateDashboard.call_args[0][0].charts), 0)
+
+    def test_create_dashboard_rejects_a_chart_passed_inline_and_by_id(self) -> None:
+        """The server assigns inline chart IDs, so a reference to one names nothing."""
+        chart = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/model_training_metrics",
+            title="C1",
+            xid=1001,
+            wid=1,
+        )
+        dashboard = DashboardBuilder(name="dashboards/d1").set_title("D1").add_chart(chart).build()
+
+        with self.assertRaises(ValueError) as raised:
+            self.client.create_dashboard(dashboard, charts=[chart])
+
+        self.assertIn("model_training_metrics", str(raised.exception))
+        self.mock_stub.CreateDashboard.assert_not_called()
+
+    def test_create_dashboard_allows_inline_charts_beside_unrelated_references(self) -> None:
+        """Attaching an existing chart and creating a new one in one call is legitimate."""
+        dashboard = messages_pb2.Dashboard(
+            name="dashboards/d1", title="D1", chart_ids=["already-exists"]
+        )
+        inline = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/placeholder",
+            title="C1",
+            xid=1001,
+            wid=1,
+        )
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(dashboard, charts=[inline])
+
+        req = self.mock_stub.CreateDashboard.call_args[0][0]
+        self.assertEqual(list(req.dashboard.chart_ids), ["already-exists"])
+        self.assertEqual(len(req.charts), 1)
+
+    def test_create_dashboard_tolerates_an_inline_chart_with_no_name(self) -> None:
+        """The server names inline charts, so leaving the name unset is the normal case."""
+        dashboard = messages_pb2.Dashboard(
+            name="dashboards/d1", title="D1", chart_ids=["already-exists"]
+        )
+        self.mock_stub.CreateDashboard.return_value = dashboard
+
+        self.client.create_dashboard(
+            dashboard, charts=[messages_pb2.Chart(title="C1", xid=1001, wid=1)]
+        )
+
+        self.assertEqual(len(self.mock_stub.CreateDashboard.call_args[0][0].charts), 1)
+
     def test_create_chart_sends_the_parent_chart_and_id(self) -> None:
         chart = messages_pb2.Chart(
             name="experiments/1001/workUnits/1/charts/c1",
