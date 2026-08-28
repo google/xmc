@@ -258,7 +258,7 @@ describe('QueueCardComponent', () => {
     hostInstance.secondaryData.set({
       queuePredictability: [
         {
-          velocityRange: 1,
+          velocityRange: 'RANGE_PRESET_LAST_HOUR',
           jobVelocity: 12.5,
           resourceVelocity: {
             resourceType: 'nvidia-tesla-h100',
