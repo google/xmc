@@ -58,7 +58,9 @@ _BOUND_NAME = re.compile(r"^\s*k8s_service_account_name:\s*(\S+)\s*$", re.MULTIL
 def annotated_service_accounts(manifests: str) -> set[str]:
     """Returns the names of the rendered service accounts that ask to act as a Google account."""
     names = set()
-    for document in re.split(r"^---$", manifests, flags=re.MULTILINE):
+    # Trailing whitespace after a separator is legal YAML and would silently merge two documents
+    # into one, which would then be searched for a name that belongs to the wrong resource.
+    for document in re.split(r"^---\s*$", manifests, flags=re.MULTILINE):
         if not _SERVICE_ACCOUNT_KIND.search(document):
             continue
         if not _WORKLOAD_IDENTITY_ANNOTATION.search(document):
