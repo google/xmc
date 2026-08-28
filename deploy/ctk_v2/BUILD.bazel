@@ -17,6 +17,14 @@ load("@rules_python//python:py_test.bzl", "py_test")
 
 exports_files(["verify_xmc.py"])
 
+# The deployment blueprint, exposed so that tests can assert the chart and the infrastructure it
+# is deployed onto agree with each other.
+filegroup(
+    name = "blueprint",
+    srcs = ["xmanager-cloud.yaml"],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "verify_xmc_lib",
     srcs = ["verify_xmc.py"],

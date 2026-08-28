@@ -124,6 +124,14 @@ deployment_groups:
       - storage.objectAdmin
       - artifactregistry.reader
       - serviceusage.serviceUsageConsumer
+      # Stage 3 of the authorization pipeline falls back to the project IAM policy when a caller
+      # matches neither the email nor the domain allowlist, so every service that serves
+      # authenticated traffic on this account -- the experiment state server, ROD and the
+      # dashboard service -- needs resourcemanager.projects.getIamPolicy. Browser is the smallest
+      # predefined role that carries it. iam.securityReviewer, which xmc-hs-sa uses for the same
+      # need, would additionally hand the actuator and the reconciler read access to the IAM
+      # policies on Spanner, GCS and everything else in the project, which none of them require.
+      - browser
 
   - id: workload_sa_token_creator
     source: ./deploy/ctk_v2/modules/self-token-creator
@@ -266,6 +274,21 @@ deployment_groups:
     settings:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: rod-data-provider-service-account
+
+  # Every Kubernetes service account the chart annotates with iam.gke.io/gcp-service-account needs
+  # a matching binding here, or the pod cannot mint tokens for the account it is annotated with.
+  # test/helm/workload_identity_binding_test.py holds that list and this one in step.
+  - id: xmc_wi_binding_dashboard_service
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: dashboard-service-account
+
+  - id: xmc_wi_binding_xid
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: xid-service
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
