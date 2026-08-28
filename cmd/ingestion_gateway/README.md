@@ -107,6 +107,19 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 
 - **Liveness Probe**: `GET /healthz` (Returns `200 OK` when the process is running).
 - **Readiness Probe**: `GET /readyz` (Returns `200 OK` when the topic topology validation succeeds and producer is connected).
+- **Metrics**: `GET /metrics` (Prometheus exposition format).
+
+### Produce Telemetry
+
+The produce series are named after what they measure rather than after the client library that
+happens to emit them, so a future message bus backend reports on the same series.
+
+| Metric | Description |
+| :--- | :--- |
+| `xmc_ingestion_produce_records_total` | Records acknowledged by the message bus. |
+| `xmc_ingestion_produce_errors_total` | Publish attempts that failed. |
+| `xmc_ingestion_produce_record_size_bytes` | Size in bytes of each accepted record value. Failed publishes are not observed, so this describes the same population as `xmc_ingestion_produce_records_total`. |
+| `franz_go_brokers_connections` | Open broker connections. Keeps its franz-go name because broker connections are Kafka-specific. |
 
 ---
 
