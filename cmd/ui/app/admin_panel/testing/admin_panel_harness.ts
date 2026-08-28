@@ -23,7 +23,12 @@ export class AdminPanelHarness extends ComponentHarness {
   static hostSelector = 'xmc-admin-panel, [data-component-selector="xmc-admin-panel"]';
 
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
-  private readonly _errorContainer = this.locatorForOptional('.error-container');
+  private readonly _pageErrorBanner = this.locatorForOptional(
+    '.page-error-container xmc-error-banner',
+  );
+  private readonly _pageErrorRetryButton = this.locatorForOptional(
+    '.page-error-container .retry-button',
+  );
   private readonly _spinner = this.locatorForOptional('mat-spinner');
 
   async getTimestampText(): Promise<string | null> {
@@ -32,8 +37,21 @@ export class AdminPanelHarness extends ComponentHarness {
   }
 
   async getErrorText(): Promise<string | null> {
-    const el = await this._errorContainer();
+    const el = await this._pageErrorBanner();
     return el ? el.text() : null;
+  }
+
+  async hasPageErrorBanner(): Promise<boolean> {
+    const el = await this._pageErrorBanner();
+    return el !== null;
+  }
+
+  async clickPageErrorRetry(): Promise<void> {
+    const button = await this._pageErrorRetryButton();
+    if (!button) {
+      throw new Error('Page error retry button not found');
+    }
+    await button.click();
   }
 
   async hasSpinner(): Promise<boolean> {

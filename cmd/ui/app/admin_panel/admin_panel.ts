@@ -23,6 +23,7 @@ import {
   ListConfigEntriesResponse,
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
+import { ErrorBannerComponent } from '../common/components/error_banner/error_banner';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
 import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
@@ -40,6 +41,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
     SystemInfoCardComponent,
     HealthStatusSectionComponent,
     ConfigEntriesCardComponent,
+    ErrorBannerComponent,
   ],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
@@ -50,12 +52,14 @@ export class AdminPanelPage {
   private readonly snackbarService = inject(SnackbarService);
 
   protected readonly healthStatusError = signal<unknown>(null);
+  protected readonly configEntriesError = signal<unknown>(null);
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
   protected readonly isRefreshing = signal<boolean>(false);
 
   private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
+  private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   protected readonly healthStatus = toSignal(
     this.refreshTrigger$.pipe(
@@ -82,11 +86,17 @@ export class AdminPanelPage {
   );
 
   protected readonly healthConfigs = toSignal(
-    this.healthService.getHealthConfigs().pipe(
-      catchError((error) => {
-        console.error('Failed to fetch health configs', error);
-        return of({} as ListConfigEntriesResponse);
-      }),
+    this.configRefreshTrigger$.pipe(
+      switchMap(() =>
+        this.healthService.getHealthConfigs().pipe(
+          tap(() => this.configEntriesError.set(null)),
+          catchError((error) => {
+            console.error('Failed to fetch health configs', error);
+            this.configEntriesError.set(error);
+            return of({} as ListConfigEntriesResponse);
+          }),
+        ),
+      ),
     ),
   );
 
@@ -107,5 +117,10 @@ export class AdminPanelPage {
 
   protected onRefresh(): void {
     this.refreshTrigger$.next(true);
+    this.configRefreshTrigger$.next();
+  }
+
+  protected onRetryConfigs(): void {
+    this.configRefreshTrigger$.next();
   }
 }

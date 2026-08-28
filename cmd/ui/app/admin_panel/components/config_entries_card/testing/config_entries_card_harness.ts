@@ -34,14 +34,19 @@ export class ConfigRowHarness extends ComponentHarness {
 export class ConfigEntriesCardHarness extends ComponentHarness {
   static hostSelector = 'xmc-config-entries-card';
 
-  private readonly _searchInput = this.locatorFor('.filter-input');
+  private readonly _searchInput = this.locatorForOptional('.filter-input');
   private readonly _groupHeaderRows = this.locatorForAll('.group-header-row');
   private readonly _groupTitles = this.locatorForAll('.group-display-name');
   private readonly _configRows = this.locatorForAll(ConfigRowHarness);
   private readonly _noResults = this.locatorForOptional('.no-results-cell');
+  private readonly _errorBanner = this.locatorForOptional('.error-banner');
+  private readonly _retryButton = this.locatorForOptional('.retry-button');
 
   async enterSearchTerm(term: string): Promise<void> {
     const input = await this._searchInput();
+    if (!input) {
+      throw new Error('Search input not found on ConfigEntriesCard');
+    }
     await input.clear();
     if (term) {
       await input.sendKeys(term);
@@ -84,5 +89,28 @@ export class ConfigEntriesCardHarness extends ComponentHarness {
   async getNoResultsText(): Promise<string | null> {
     const el = await this._noResults();
     return el ? el.text() : null;
+  }
+
+  async getErrorBannerText(): Promise<string | null> {
+    const el = await this._errorBanner();
+    return el ? el.text() : null;
+  }
+
+  async hasErrorBanner(): Promise<boolean> {
+    const el = await this._errorBanner();
+    return el !== null;
+  }
+
+  async hasRetryButton(): Promise<boolean> {
+    const el = await this._retryButton();
+    return el !== null;
+  }
+
+  async clickRetry(): Promise<void> {
+    const button = await this._retryButton();
+    if (!button) {
+      throw new Error('Retry button not found in error banner');
+    }
+    await button.click();
   }
 }

@@ -29,12 +29,22 @@ import { ConfigEntriesCardComponent, ConfigGroup } from './config_entries_card';
 import { ConfigEntriesCardHarness } from './testing/config_entries_card_harness';
 
 @Component({
-  template: `<xmc-config-entries-card [configGroups]="groups()"></xmc-config-entries-card>`,
+  template: `<xmc-config-entries-card
+    [configGroups]="groups()"
+    [errorMessage]="errorMessage()"
+    (retry)="onRetry()"
+  ></xmc-config-entries-card>`,
   standalone: true,
   imports: [ConfigEntriesCardComponent],
 })
 class TestHostComponent {
   readonly groups = signal<ConfigGroup[] | undefined>(undefined);
+  readonly errorMessage = signal<string | null>(null);
+  retryCount = 0;
+
+  onRetry(): void {
+    this.retryCount++;
+  }
 }
 
 describe('ConfigEntriesCardComponent', () => {
@@ -184,5 +194,31 @@ describe('ConfigEntriesCardComponent', () => {
     expect(names).toEqual(['Configuration', 'Named Group']);
     expect(isCollapsed).toBeTrue();
     expect(entries).toEqual([{ key: 'named.key', value: 'named.value' }]);
+  });
+
+  it('should display error banner when errorMessage is set', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.errorMessage.set('Failed to load configuration entries.');
+    host.groups.set(undefined);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasErrorBanner()).toBeTrue();
+    expect(await harness.getErrorBannerText()).toContain('Failed to load configuration entries.');
+  });
+
+  it('should emit retry output when clicking retry button in error banner', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.errorMessage.set('Failed to load configuration entries.');
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasErrorBanner()).toBeTrue();
+    expect(await harness.hasRetryButton()).toBeTrue();
+
+    await harness.clickRetry();
+    await flush();
+
+    expect(host.retryCount).toBe(1);
   });
 });

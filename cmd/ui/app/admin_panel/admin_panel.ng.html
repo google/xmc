@@ -18,8 +18,11 @@
     <p>Loading Admin Panel...</p>
   </div>
 } @else if (healthStatusError()) {
-  <div class="error-container">
-    <p>Failed to load health status. Please try again later.</p>
+  <div class="page-error-container">
+    <xmc-error-banner
+      message="Failed to load health status. Please try again later."
+      (retry)="onRefresh()"
+    />
   </div>
 } @else {
   <div class="admin-panel-container">
@@ -46,7 +49,11 @@
     />
 
     @if (healthConfigs(); as configs) {
-      <xmc-config-entries-card [configGroups]="configs.configGroups" />
+      <xmc-config-entries-card
+        [configGroups]="configs.configGroups"
+        [errorMessage]="configEntriesError() ? 'Failed to load configuration entries.' : null"
+        (retry)="onRetryConfigs()"
+      />
     } @else {
       <div class="loading-container config-loading-container">
         <mat-spinner diameter="32" aria-label="Loading Configuration" />

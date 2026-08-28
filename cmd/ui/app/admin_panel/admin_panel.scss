@@ -75,10 +75,12 @@
   }
 }
 
-.error-container {
+.page-error-container {
   display: flex;
   justify-content: center;
-  padding: 48px 24px;
-  color: var(--mat-sys-error, #d93025);
-  font-size: 14px;
+  width: 100%;
+  max-width: 640px;
+  margin: 48px auto 0;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
