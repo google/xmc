@@ -245,6 +245,10 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 	}
 	updatedItem, err := c.syncFinalizers(ctx, item, res)
 	if err != nil {
+		// If syncFinalizers fails (e.g. API conflict or network blip), log and return.
+		// Level-triggered reconciliation will automatically pick up the custom resource
+		// on the subsequent pass: if detaching finalizer, the CR remains present in K8s
+		// and deletion will be retried idempotently without leaking resources.
 		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
 		return
 	}
@@ -279,6 +283,8 @@ func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructu
 
 // syncFinalizers attaches the deletion protection finalizer if res.AddFinalizer is true,
 // or removes it if res.RemoveFinalizer is true, updating the custom resource in Kubernetes.
+// If the Kubernetes API update fails, the error is returned so that the controller can retry
+// on the next pass while ensuring the finalizer remains in place to prevent premature deletion.
 func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
 	if res == nil {
 		return item, nil
