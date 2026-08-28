@@ -53,6 +53,14 @@ batcher is what keeps Spanner write volume proportional to *experiments per tick
 Concurrency is bounded per controller by `max_concurrent_reconciles` (default 10), and Kubernetes
 API pressure by `kube_api_qps` / `kube_api_burst` (100 / 200).
 
+> [!NOTE]
+> Two naming conventions appear in this document, and the difference is meaningful. `camelCase`
+> names are Helm values you set in `values.yaml` (`detectInadmissibleWorkUnits`,
+> `startupPodErrorCheckEnabled`, `statusMessageHistoryEnabled`). `snake_case` names are keys in
+> [`reconciler-config`](../../deploy/helm/templates/reconciler/configmap.yaml) or CLI flags, which
+> is what the binary reads — most are hardcoded in the ConfigMap template and have no Helm value to
+> override them.
+
 ---
 
 ## 2. JobSet Reconciler
@@ -132,9 +140,9 @@ A JobSet can be admitted and expanded yet never actually run: an image that does
 selector nothing satisfies, a config map that does not exist. None of these produce a JobSet-level
 failure, so the work unit would simply sit in `STARTING`.
 
-When `startup_pod_error_check_enabled` is on (the default), the reconciler requeues young JobSets
-until they reach `startup_pod_error_check_time` (default 2 minutes), then lists their pods and
-inspects container statuses. Errors found there become user-facing status messages, turning silent
+When `startupPodErrorCheckEnabled` is on (the default), the reconciler requeues young JobSets until
+they reach `startup_pod_error_check_time` (default 2 minutes), then lists their pods and inspects
+container statuses. Errors found there become user-facing status messages, turning silent
 hangs into readable diagnostics.
 
 ### Status conversion
@@ -155,7 +163,7 @@ admission, pod-set assignment, and condition transitions — rather than on ever
 bump.
 
 Its most valuable job is diagnosing non-admission. When
-`detect_inadmissible_work_units` is enabled (the default), it looks for the Kueue condition:
+`detectInadmissibleWorkUnits` is enabled (the default), it looks for the Kueue condition:
 
 ```
 type: QuotaReserved, status: False, reason: Inadmissible

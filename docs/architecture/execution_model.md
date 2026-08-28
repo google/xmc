@@ -112,8 +112,8 @@ Two derived signals matter operationally:
   reason as a status message rather than leaving the work unit silently pending.
 - **`STARTING` that never advances** is caught by the startup pod error check. When
   `startupPodErrorCheckEnabled` is set, the JobSet reconciler waits
-  `StartupPodErrorCheckTime` after JobSet creation and then inspects the pods for image pull
-  failures, scheduling errors, and similar bring-up problems.
+  `startup_pod_error_check_time` (2m) after JobSet creation and then inspects the pods for image
+  pull failures, scheduling errors, and similar bring-up problems.
 
 ### Experiment-level state
 
@@ -257,6 +257,11 @@ dominating:
 | `LOW` | `exp-low-wu-low` (300) | `exp-low-wu-medium` (310) | `exp-low-wu-high` (320) |
 | `NORMAL` | `exp-medium-wu-low` (600) | `exp-medium-wu-medium` (610) | `exp-medium-wu-high` (620) |
 | `HIGH` | `exp-high-wu-low` (900) | `exp-high-wu-medium` (910) | `exp-high-wu-high` (920) |
+
+> [!NOTE]
+> The API enum and the priority class names use different words for the middle rung: API `NORMAL`
+> maps to `medium` in the class name. Searching the cluster for a `*-normal-*` priority class will
+> find nothing — look for `exp-medium-wu-medium`.
 
 The 300-point gaps mean *any* high-priority experiment outranks *every* work unit in a
 normal-priority experiment. Changing an experiment's priority re-labels the JobSets of its work
