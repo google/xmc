@@ -73,6 +73,7 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && !isDeletedRecord(rec) {
 		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
+		m.recordSnapshotLocked(rec)
 		return cloneRecord(rec), nil
 	}
 
@@ -80,6 +81,7 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, desiredGen, now)
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
+	m.recordSnapshotLocked(rec)
 
 	return cloneRecord(rec), nil
 }
@@ -228,6 +230,7 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 
 	rec.UpdateTime = time.Now().UTC()
 	rec.Etag = generateEtag(rec)
+	m.recordSnapshotLocked(rec)
 	return cloneRecord(rec), nil
 }
 
@@ -408,21 +411,43 @@ func transitionToDeleted(rec *ComponentRecord, now time.Time) {
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-// Note: To be implemented in subsequent snapshot resolution tasks.
 func (m *MemoryStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	return nil, nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented in MemoryStore")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return ResolveComponentSnapshotFromMap(m.componentsByName, m.snapshots, name, generation)
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
-// Note: To be implemented in subsequent dependency validation tasks.
 func (m *MemoryStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented in MemoryStore")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return ValidateComponentRequirementFromMap(m.componentsByName, name, reqType, minVersion)
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
 // Note: To be implemented in subsequent platform health monitoring tasks.
 func (m *MemoryStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in MemoryStore")
+}
+
+func (m *MemoryStore) recordSnapshotLocked(rec *ComponentRecord) {
+	if rec == nil {
+		return
+	}
+	if m.snapshots[rec.Name] == nil {
+		m.snapshots[rec.Name] = make(map[int64]*SnapshotRecord)
+	}
+	var coords *componentspb.ResolvedComponentCoordinates
+	if rec.Status != nil && rec.Status.Coordinates != nil {
+		coords = proto.Clone(rec.Status.Coordinates).(*componentspb.ResolvedComponentCoordinates)
+	}
+	m.snapshots[rec.Name][rec.Generation] = &SnapshotRecord{
+		Name:        rec.Name,
+		Generation:  rec.Generation,
+		Record:      cloneRecord(rec),
+		Coordinates: coords,
+		CreatedAt:   rec.UpdateTime,
+	}
 }
 
 // cloneRecord performs a deep copy of a ComponentRecord.

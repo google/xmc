@@ -250,18 +250,35 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-// Note: To be implemented in subsequent snapshot resolution tasks.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented")
+	gen := req.GetGeneration()
+	if gen < 0 {
+		return nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
+	}
+
+	rec, coords, err := s.store.ResolveComponentSnapshot(ctx, canonicalName, gen)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &componentspb.ResolveComponentSnapshotResponse{
+		Component: store.ToProtoComponent(rec),
+		State:     rec.State,
+	}
+	if coords != nil {
+		resp.Coordinates = proto.Clone(coords).(*componentspb.ResolvedComponentCoordinates)
+	}
+	return resp, nil
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
-// Note: To be implemented in subsequent dependency validation tasks.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
 	if minVersion := req.GetMinimumVersion(); minVersion != "" {
@@ -269,7 +286,23 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}
-	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
+	if _, ok := componentspb.ComponentType_name[int32(req.GetRequiredType())]; !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid required type %d", req.GetRequiredType())
+	}
+
+	res, err := s.store.ValidateComponentRequirement(ctx, canonicalName, req.GetRequiredType(), req.GetMinimumVersion())
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &componentspb.ValidateComponentRequirementResponse{
+		Satisfied: res.IsSatisfied,
+		Reason:    res.Reason,
+	}
+	if res.Component != nil {
+		resp.Component = store.ToProtoComponent(res.Component)
+	}
+	return resp, nil
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
