@@ -36,20 +36,108 @@ export class FreeTotalDisplayPipe implements PipeTransform {
   }
 }
 
+export const COHORT_STATE_BALANCED = 'BALANCED' as const;
+export const COHORT_STATE_SQUEEZED = 'SQUEEZED' as const;
+export const COHORT_STATE_BORROWING = 'BORROWING' as const;
+
+export type CohortState =
+  | typeof COHORT_STATE_BALANCED
+  | typeof COHORT_STATE_SQUEEZED
+  | typeof COHORT_STATE_BORROWING;
+
+export interface CohortStateInfo {
+  state: CohortState;
+  label: string;
+  badgeClass: string;
+  icon: string;
+  delta: number;
+  tooltip?: string;
+}
+
+const EPSILON = 1e-5;
+
+const BALANCED_STATE: CohortStateInfo = {
+  state: COHORT_STATE_BALANCED,
+  label: 'Balanced',
+  badgeClass: 'balanced',
+  icon: 'check_circle',
+  delta: 0,
+};
+
+function buildSqueezedStateInfo(
+  schedulable: number,
+  freeNominal: number,
+  delta: number,
+): CohortStateInfo {
+  return {
+    state: COHORT_STATE_SQUEEZED,
+    label: 'Squeezed by cohort',
+    badgeClass: 'squeezed',
+    icon: 'warning',
+    delta: Math.abs(delta),
+    tooltip: `Shared cohort pool depleted: Immediate headroom (${schedulable}) is lower than nominal free quota (${freeNominal}) due to cohort-wide workload demand.`,
+  };
+}
+
+function buildBorrowingStateInfo(delta: number): CohortStateInfo {
+  return {
+    state: COHORT_STATE_BORROWING,
+    label: 'Borrowing available',
+    badgeClass: 'borrowing',
+    icon: 'bolt',
+    delta,
+    tooltip: `Can borrow up to +${delta} beyond nominal quota from cohort.`,
+  };
+}
+
 /**
- * Pure Angular pipe to compute max workload display text for a queue resource capacity.
+ * Derives cohort sharing state info (BALANCED, SQUEEZED, BORROWING) from a QueueResourceCapacity.
+ */
+export function getCohortStateInfo(capacity?: QueueResourceCapacity | null): CohortStateInfo {
+  if (!capacity) return BALANCED_STATE;
+
+  const freeNominal = capacity.freeCapacity ?? 0;
+  const schedulable = capacity.freeCapacityWithBorrowing ?? freeNominal;
+  const delta = schedulable - freeNominal;
+
+  if (delta < -EPSILON) {
+    return buildSqueezedStateInfo(schedulable, freeNominal, delta);
+  }
+
+  if (delta > EPSILON) {
+    return buildBorrowingStateInfo(delta);
+  }
+
+  return BALANCED_STATE;
+}
+
+/**
+ * Pure Angular pipe to compute max schedulable display text for a queue resource capacity.
  */
 @Pipe({
-  name: 'maxWorkloadDisplay',
+  name: 'maxSchedulableDisplay',
   standalone: true,
   pure: true,
 })
-export class MaxWorkloadDisplayPipe implements PipeTransform {
+export class MaxSchedulableDisplayPipe implements PipeTransform {
   transform(capacity?: QueueResourceCapacity | null): string {
     if (!capacity) return '-';
-    const free = capacity.freeCapacity ?? 0;
-    const total = capacity.totalCapacity ?? 0;
-    return `${free} → ${total}`;
+    const schedulable = capacity.freeCapacityWithBorrowing ?? capacity.freeCapacity ?? 0;
+    return `${schedulable}`;
+  }
+}
+
+/**
+ * Pure Angular pipe to compute cohort state info for capacity headers and contextual banners.
+ */
+@Pipe({
+  name: 'cohortStateInfo',
+  standalone: true,
+  pure: true,
+})
+export class CohortStateInfoPipe implements PipeTransform {
+  transform(capacity?: QueueResourceCapacity | null): CohortStateInfo {
+    return getCohortStateInfo(capacity);
   }
 }
 

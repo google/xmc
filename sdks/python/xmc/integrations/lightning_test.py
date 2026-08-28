@@ -229,11 +229,11 @@ class LightningIntegrationTest(unittest.TestCase):
             np_mock = MagicMock()
             np_mock.numpy.return_value = 3.14
 
-            self.assertEqual(mod._extract_scalar(10), 10)
-            self.assertEqual(mod._extract_scalar(0.5), 0.5)
-            self.assertEqual(mod._extract_scalar(item_mock), 2.718)
-            self.assertEqual(mod._extract_scalar(np_mock), 3.14)
-            self.assertIsNone(mod._extract_scalar("string"))
+            self.assertEqual(mod.extract_scalar(10), 10)
+            self.assertEqual(mod.extract_scalar(0.5), 0.5)
+            self.assertEqual(mod.extract_scalar(item_mock), 2.718)
+            self.assertEqual(mod.extract_scalar(np_mock), 3.14)
+            self.assertIsNone(mod.extract_scalar("string"))
 
     def test_global_xmc_flusher_fallback(self) -> None:
         """Verifies logger falls back to global xmc.log_metric when no client is provided."""

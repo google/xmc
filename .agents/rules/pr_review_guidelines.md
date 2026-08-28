@@ -16,7 +16,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
   - **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.
   - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff.
-- **Interactive Multi-Agent Review Workflow (Optional)**: For structured PR code reviews featuring dynamic expert subagent panels, open user direction windows, inline comment deduplication, explicit confirmation gates, and re-review verification, agents may optionally utilize the procedure defined in the [XMC Review PR Skill](../skills/xmc_review_pr/SKILL.md) backed by `./tools/review_pr_generate_audit.py`, `./tools/review_pr_post_inline_comment.py`, and `./tools/review_pr_verify_posted.py`, or use their own established review workflows.
+- **Interactive Multi-Agent Review Workflow (Optional)**: For structured PR code reviews featuring dynamic expert subagent panels, open user direction windows, inline comment deduplication, explicit confirmation gates, and re-review verification, agents may optionally utilize the procedure defined in the [XMC Review PR Skill](../skills/xmc_review_pr/SKILL.md) backed by `./tools/pr_review/review_pr_generate_audit.py`, `./tools/pr_review/review_pr_post_inline_comment.py`, and `./tools/pr_review/review_pr_verify_posted.py`, or use their own established review workflows.
 
 ---
 
@@ -25,8 +25,8 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 For detailed comment resolution workflows, including fetching comment context, generating checklist artifacts, running local unit tests, and verifying 1-to-1 thread resolution, follow the mandatory procedures defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md).
 
 Key tools for PR comment processing:
-- **Generate Review Checklist Artifact**: `./tools/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]`
-- **Fetch Inline Comment Context**: `./tools/fetch_pr_comment.py "<comment_url>"`
-- **Post Thread Reply**: `./tools/reply_pr_comment.py "<comment_url>" "<reply_message>"`
-- **Verify Thread Resolution**: `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
+- **Generate Review Checklist Artifact**: `./tools/pr_review/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]`
+- **Fetch Inline Comment Context**: `./tools/pr_review/fetch_pr_comment.py "<comment_url>"`
+- **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>"`
+- **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
 

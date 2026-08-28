@@ -35,6 +35,7 @@ export class QueueListComponent {
   readonly secondaryDataMap = input<Record<string, ClusterQueueSecondaryMetrics>>({});
   readonly isSecondaryLoading = input<boolean>(false);
   readonly activeResourceFilters = input<string[]>([]);
+  readonly dominantResource = input<string | null>(null);
   readonly selectQueue = output<string>();
 
   readonly velocityPeriod = model<string>('1h');

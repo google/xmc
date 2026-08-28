@@ -26,6 +26,7 @@ import (
 // Config holds the runtime configuration for the Ingestion Gateway.
 type Config struct {
 	Port                  string
+	MessageBus            string
 	RedpandaBrokers       []string
 	TopicName             string
 	MinPartitions         int
@@ -46,6 +47,7 @@ type Config struct {
 // Flags holds the CLI flag value bindings for FlagSet registration.
 type Flags struct {
 	Port                  string
+	MessageBus            string
 	RedpandaBrokers       string
 	TopicName             string
 	MinPartitions         int
@@ -67,10 +69,14 @@ type Flags struct {
 func RegisterFlags(fs *flag.FlagSet) *Flags {
 	f := &Flags{}
 	fs.StringVar(&f.Port, "port", "8080", "The HTTP server port to listen on.")
-	fs.StringVar(&f.RedpandaBrokers, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses.")
-	fs.StringVar(&f.TopicName, "topic_name", "xmc-metrics", "The Redpanda metrics topic name.")
-	fs.IntVar(&f.MinPartitions, "min_partitions", 128, "Minimum required partition count for topic topology assertion.")
-	fs.IntVar(&f.MinReplicas, "min_replicas", 3, "Minimum required replica count for topic topology assertion.")
+	// Defaulted to empty rather than to MessageBusRedpanda so that LoadConfig can tell "unset" from
+	// "explicitly redpanda" and let an explicit flag win over MESSAGE_BUS. The effective default is
+	// applied in LoadConfig, after the environment has had its turn.
+	fs.StringVar(&f.MessageBus, "message_bus", "", "Message bus backend to publish metrics to: redpanda or pubsub (default redpanda).")
+	fs.StringVar(&f.RedpandaBrokers, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses. Ignored when message_bus is pubsub.")
+	fs.StringVar(&f.TopicName, "topic_name", "xmc-metrics", "The metrics topic name: a Redpanda topic, or a Pub/Sub topic ID when message_bus is pubsub.")
+	fs.IntVar(&f.MinPartitions, "min_partitions", 128, "Minimum required partition count for topic topology assertion. Ignored when message_bus is pubsub.")
+	fs.IntVar(&f.MinReplicas, "min_replicas", 3, "Minimum required replica count for topic topology assertion. Ignored when message_bus is pubsub.")
 	fs.BoolVar(&f.SASLEnabled, "sasl_enabled", false, "Whether SASL authentication is enabled.")
 	fs.StringVar(&f.SASLMechanism, "sasl_mechanism", "SCRAM-SHA-256", "SASL mechanism (SCRAM-SHA-256, SCRAM-SHA-512, PLAIN).")
 	fs.StringVar(&f.SASLUser, "sasl_user", "", "SASL username (if omitted, loaded from sasl_credentials_dir/username).")
@@ -81,7 +87,7 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.StringVar(&f.TLSKeyFile, "tls_key_file", "", "Path to TLS client private key file for mTLS.")
 	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
-	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging.")
+	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
 	return f
 }
 
@@ -103,6 +109,14 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	}
 
 	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
+	// Passing "" as the default keeps the flag's own value distinguishable from its absence, so the
+	// precedence is flag, then environment, then the built-in default applied below. Passing
+	// MessageBusRedpanda here instead would make -message_bus=redpanda look unset and let
+	// MESSAGE_BUS=pubsub silently redirect an explicitly configured gateway.
+	effectiveMessageBus := getEnvOrDefault(f.MessageBus, "", "MESSAGE_BUS")
+	if strings.TrimSpace(effectiveMessageBus) == "" {
+		effectiveMessageBus = MessageBusRedpanda
+	}
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
 
@@ -119,6 +133,7 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 
 	cfg := &Config{
 		Port:                  strings.TrimSpace(effectivePort),
+		MessageBus:            strings.ToLower(strings.TrimSpace(effectiveMessageBus)),
 		RedpandaBrokers:       brokers,
 		TopicName:             strings.TrimSpace(effectiveTopicName),
 		MinPartitions:         minParts,
@@ -136,7 +151,9 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		ProjectID:             strings.TrimSpace(f.ProjectID),
 	}
 
-	if cfg.SASLEnabled {
+	// SASL is a Kafka wire-protocol concept. Skip the secret file reads in Pub/Sub mode so that a
+	// stray sasl_enabled surfaces as the clear validation error below, not a missing-file error.
+	if cfg.SASLEnabled && cfg.messageBusOrDefault() != MessageBusPubSub {
 		if err := loadSASLCredentials(cfg); err != nil {
 			return nil, fmt.Errorf("failed to load SASL credentials: %w", err)
 		}
@@ -204,17 +221,40 @@ func readSecretFile(dir, filename string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Validate checks configuration field constraints.
+// Validate checks configuration field constraints shared by every backend, then delegates to the
+// checks specific to the selected message bus.
 func (c *Config) Validate() error {
 	p, err := strconv.Atoi(c.Port)
 	if err != nil || p <= 0 || p > 65535 {
 		return fmt.Errorf("invalid port %q: must be between 1 and 65535", c.Port)
 	}
-	if len(c.RedpandaBrokers) == 0 {
-		return fmt.Errorf("redpanda_brokers cannot be empty")
-	}
 	if strings.TrimSpace(c.TopicName) == "" {
 		return fmt.Errorf("topic_name cannot be empty")
+	}
+	if c.messageBusOrDefault() == MessageBusPubSub {
+		return c.validatePubSub()
+	}
+	if c.messageBusOrDefault() == MessageBusRedpanda {
+		return c.validateRedpanda()
+	}
+	return errUnsupportedMessageBus(c.MessageBus)
+}
+
+// messageBusOrDefault resolves the selected backend, treating an unset value as the default.
+//
+// LoadConfig always populates MessageBus; this covers Config values built directly, notably in tests.
+func (c *Config) messageBusOrDefault() string {
+	if c.MessageBus == "" {
+		return MessageBusRedpanda
+	}
+	return c.MessageBus
+}
+
+// validateRedpanda checks the broker addressing, topology thresholds, and Kafka wire-protocol
+// authentication settings that only apply to the Redpanda backend.
+func (c *Config) validateRedpanda() error {
+	if len(c.RedpandaBrokers) == 0 {
+		return fmt.Errorf("redpanda_brokers cannot be empty")
 	}
 	if c.MinPartitions <= 0 {
 		return fmt.Errorf("min_partitions must be > 0")
@@ -226,6 +266,25 @@ func (c *Config) Validate() error {
 		return err
 	}
 	return c.validateTLS()
+}
+
+// validatePubSub checks the Pub/Sub backend settings.
+//
+// Broker addresses, partition and replica counts, SASL, and TLS have no Pub/Sub equivalent:
+// durability and per-key ordering are service-managed and transport security is not configurable.
+// Setting them is rejected rather than ignored so an operator is never misled about what is in
+// effect.
+func (c *Config) validatePubSub() error {
+	if strings.TrimSpace(c.ProjectID) == "" {
+		return fmt.Errorf("project_id is required when message_bus is %q", MessageBusPubSub)
+	}
+	if c.SASLEnabled {
+		return fmt.Errorf("sasl_enabled is not supported when message_bus is %q", MessageBusPubSub)
+	}
+	if c.TLSEnabled {
+		return fmt.Errorf("tls_enabled is not supported when message_bus is %q", MessageBusPubSub)
+	}
+	return nil
 }
 
 func (c *Config) validateSASL() error {

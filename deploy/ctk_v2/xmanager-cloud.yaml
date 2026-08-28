@@ -516,7 +516,7 @@ deployment_groups:
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
 
   - id: log_monitor
-    source: ./deploy/terraform/modules/log_monitor
+    source: ./deploy/ctk_v2/modules/log_monitor
     use: [log_monitor_service_account]
     settings:
       project_id: $(vars.project_id)
