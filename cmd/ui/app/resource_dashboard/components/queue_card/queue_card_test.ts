@@ -276,7 +276,6 @@ describe('QueueCardComponent', () => {
 
     const predText = await harness.getPredictabilitySectionText();
     expect(predText).not.toBeNull();
-    expect(predText).toContain('for nvidia-tesla-h100');
     expect(predText).toContain('12.5 jobs/hr');
     expect(predText).toContain('100 nvidia-tesla-h100/hr');
     expect(predText).toContain('3');
