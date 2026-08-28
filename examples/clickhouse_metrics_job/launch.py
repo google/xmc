@@ -152,9 +152,13 @@ def create_experiment_dashboard(
         xid: Experiment ID.
         wid: WorkUnit ID.
     """
-    chart_name = f"experiments/{xid}/workUnits/{wid}/charts/model_training_metrics"
+    # Deliberately unnamed: this chart is created inline with the dashboard, so the server names
+    # it, generates its ID and appends that ID to dashboard.chart_ids. A name set here would be
+    # overwritten, and deriving a chart_id from it -- which is what DashboardBuilder.add_chart does
+    # -- would declare a reference to a chart that is supposed to already exist, which the server
+    # rejects with `chart "..." does not exist`.
     chart = (
-        ChartBuilder(name=chart_name)
+        ChartBuilder()
         .for_experiment(xid=xid, wid=wid)
         .set_title("Model Training & Evaluation Metrics")
         .set_description(f"Performance and convergence metrics for Experiment {xid} WorkUnit {wid}")
@@ -203,7 +207,6 @@ def create_experiment_dashboard(
         .set_title(f"Experiment {xid} - Training & Metrics Overview")
         .set_description(f"Automated monitoring dashboard for Experiment {xid} (WorkUnit {wid}).")
         .set_grid_layout(columns=1)
-        .add_chart(chart)
         .build()
     )
 
@@ -228,7 +231,9 @@ def create_experiment_dashboard(
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
+                created = json.loads(resp.read().decode("utf-8"))
                 print(f"--> Created Dashboard successfully: {dashboard.name} (HTTP {resp.status})")
+                print(f"--> Server-assigned chart IDs: {created.get('chartIds', [])}")
         except urllib.error.HTTPError as http_err:
             err_msg = http_err.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {http_err.code} {http_err.reason}: {err_msg}") from http_err
@@ -236,8 +241,11 @@ def create_experiment_dashboard(
         print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
         with DashboardClient(endpoint=dashboard_endpoint) as client:
             print(f"--> Creating Dashboard '{dashboard.title}' (ID: {dashboard_id})...")
-            created_dashboard = client.create_dashboard(dashboard, dashboard_id=dashboard_id)
+            created_dashboard = client.create_dashboard(
+                dashboard, dashboard_id=dashboard_id, charts=[chart]
+            )
             print(f"--> Created Dashboard successfully: {created_dashboard.name}")
+            print(f"--> Server-assigned chart IDs: {list(created_dashboard.chart_ids)}")
 
 
 def main(argv: Sequence[str]) -> None:
