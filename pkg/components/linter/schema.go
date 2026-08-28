@@ -40,14 +40,14 @@ func (l *Linter) validateRawManifest(m *RawManifest, rules *RulesConfig, res *Va
 	if line <= 0 {
 		line = 1
 	}
-	if strings.TrimSpace(m.APIVersion) == "" {
-		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "apiVersion is required and cannot be empty")
-	}
-	if strings.TrimSpace(m.Kind) == "" {
-		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "kind is required and cannot be empty")
-	}
-	if strings.TrimSpace(m.Metadata.Name) == "" {
-		res.AddError(m.FilePath, line, "REQUIRED_FIELD", "metadata.name is required and cannot be empty")
+	requireNonEmptyField(m.FilePath, line, "apiVersion", m.APIVersion, res)
+	requireNonEmptyField(m.FilePath, line, "kind", m.Kind, res)
+	requireNonEmptyField(m.FilePath, line, "metadata.name", m.Metadata.Name, res)
+}
+
+func requireNonEmptyField(filePath string, line int, fieldName, val string, res *ValidationResult) {
+	if strings.TrimSpace(val) == "" {
+		res.AddError(filePath, line, "REQUIRED_FIELD", fmt.Sprintf("%s is required and cannot be empty", fieldName))
 	}
 }
 
@@ -118,7 +118,7 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 func is1PComponent(ct string) bool {
 	switch strings.ToUpper(strings.TrimSpace(ct)) {
 	case "COMPONENT_TYPE_UNSPECIFIED",
-		"COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT", "1P", "1P_COMPONENT":
+		"COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT":
 		return true
 	default:
 		return false
@@ -127,7 +127,7 @@ func is1PComponent(ct string) bool {
 
 func is3PWrapper(ct string) bool {
 	switch strings.ToUpper(strings.TrimSpace(ct)) {
-	case "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "CUSTOM_3P_WRAPPER", "3P", "3P_WRAPPER":
+	case "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "CUSTOM_3P_WRAPPER":
 		return true
 	default:
 		return false
@@ -140,7 +140,7 @@ func isValidComponentType(ct string) bool {
 
 func isValidDeletionPolicy(dp string) bool {
 	switch strings.ToUpper(strings.TrimSpace(dp)) {
-	case "DELETION_POLICY_UNSPECIFIED", "UNSPECIFIED",
+	case "DELETION_POLICY_UNSPECIFIED",
 		"DELETION_POLICY_DELETE", "DELETE",
 		"DELETION_POLICY_ORPHAN", "ORPHAN":
 		return true

@@ -15,8 +15,6 @@
 package linter_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"xmanager_cloud/pkg/components/linter"
@@ -361,6 +359,38 @@ spec:
 			wantValid: false,
 			wantRules: []string{"INVALID_COMPONENT_TYPE"},
 		},
+		{
+			name:  "informal componentType 1P is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: informal-type
+spec:
+  componentType: "1P"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_COMPONENT_TYPE"},
+		},
+		{
+			name:  "informal deletionPolicy is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: informal-policy
+spec:
+  deletionPolicy: "DESTROY"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_DELETION_POLICY"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -369,10 +399,7 @@ spec:
 			t.Parallel()
 			dir := t.TempDir()
 			for fname, content := range tc.manifests {
-				p := filepath.Join(dir, fname)
-				if err := os.WriteFile(p, []byte(content), 0644); err != nil {
-					t.Fatalf("failed to write %s: %v", fname, err)
-				}
+				writeTestManifest(t, dir, fname, content)
 			}
 
 			l := linter.NewLinter(tc.rules)
@@ -399,18 +426,14 @@ func TestLinter_ZeroValueRulesValidation(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	p := filepath.Join(dir, "comp.yaml")
-	content := `
+	writeTestManifest(t, dir, "comp.yaml", `
 apiVersion: components.xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: safe-component
 spec:
   version: "1.0.0"
-`
-	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write test manifest: %v", err)
-	}
+`)
 
 	t.Run("zero value struct Linter does not panic", func(t *testing.T) {
 		t.Parallel()
@@ -441,8 +464,7 @@ func TestSchema_EdgeCaseCoverage(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	compFile := filepath.Join(dir, "comp_wrapper.yaml")
-	content := `
+	writeTestManifest(t, dir, "comp_wrapper.yaml", `
 apiVersion: components.xmc.dev/v1alpha1
 kind: Component
 metadata:
@@ -454,10 +476,7 @@ spec:
     crdVersion: "v1"
     crdKind: ""
     targetName: "jobset"
-`
-	if err := os.WriteFile(compFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write test manifest: %v", err)
-	}
+`)
 
 	l := linter.NewLinter(nil)
 	res, err := l.ValidateDirectory(dir)
