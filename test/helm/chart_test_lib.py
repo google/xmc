@@ -45,12 +45,18 @@ def require_helm() -> None:
 
 
 def find_repo_file(relative_path: str) -> str:
-    """Resolves a repository-relative path from bazel runfiles or from the repository root."""
+    """Resolves a repository-relative path from bazel runfiles or from the repository root.
+
+    A missing file here is a packaging error -- a typo in the path, or a data dependency left
+    out of the BUILD target -- not an optional prerequisite like the helm binary. Skipping would
+    green the run on every machine that has not set XMC_REQUIRE_HELM, which is the developer
+    default, so this raises instead.
+    """
     for base in (os.curdir, *(os.path.join(*([os.pardir] * depth)) for depth in range(1, 4))):
         candidate = os.path.join(base, relative_path)
         if os.path.isfile(candidate):
             return candidate
-    skip_unless_required(f"{relative_path} not found relative to working directory")
+    raise FileNotFoundError(f"{relative_path} not found relative to working directory")
 
 
 def find_chart_dir() -> str:

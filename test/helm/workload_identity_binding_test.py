@@ -51,8 +51,12 @@ _SERVICE_ACCOUNT_KIND = re.compile(r"^kind:\s*ServiceAccount\s*$", re.MULTILINE)
 _WORKLOAD_IDENTITY_ANNOTATION = re.compile(
     r"^\s+iam\.gke\.io/gcp-service-account:\s*\S", re.MULTILINE
 )
-_METADATA_NAME = re.compile(r"^\s{2}name:\s*(\S+)\s*$", re.MULTILINE)
-_BOUND_NAME = re.compile(r"^\s*k8s_service_account_name:\s*(\S+)\s*$", re.MULTILINE)
+# Stopping at the first space or '#' rather than anchoring to end-of-line: a trailing inline
+# comment would make an anchored pattern fail the whole line, dropping that account from the set
+# and turning a real gap into a vacuous pass. The blueprint the bound names come from is
+# hand-written, so a comment beside a value is entirely plausible there.
+_METADATA_NAME = re.compile(r"^\s{2}name:\s*([^\s#]+)", re.MULTILINE)
+_BOUND_NAME = re.compile(r"^\s*k8s_service_account_name:\s*([^\s#]+)", re.MULTILINE)
 
 
 def annotated_service_accounts(manifests: str) -> set[str]:

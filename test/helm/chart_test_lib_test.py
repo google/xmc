@@ -72,9 +72,9 @@ class RenderTemplateTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(located))
 
     def test_missing_repo_file_does_not_pass_silently(self) -> None:
-        with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": "1"}):
-            with self.assertRaises(RuntimeError):
-                find_repo_file(os.path.join("deploy", "does-not-exist.yaml"))
+        """A packaging error must fail whether or not the caller declared helm is required."""
+        with self.assertRaises(FileNotFoundError):
+            find_repo_file(os.path.join("deploy", "does-not-exist.yaml"))
 
     def test_render_returns_the_requested_manifest(self) -> None:
         manifest = render_template(
