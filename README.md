@@ -8,6 +8,12 @@ XManager on Cloud (XMC) is a high-performance backend application that exposes g
 
 Explore the folders and guides below to set up, build, or deploy XMC:
 
+* ### [Architecture Overview](docs/architecture/overview.md)
+  Start here. The four planes (control, execution, telemetry, components), how the twelve services interact, request routing at the edge, data stores, and cross-cutting concerns. Continues into the [Component Reference](docs/architecture/components.md), the [Execution Model](docs/architecture/execution_model.md), and [Use Cases](docs/architecture/use_cases.md) for ML researchers, platform engineers, and new contributors.
+
+* ### [Main Flows](docs/flows/README.md)
+  Sequence-level walkthroughs of the principal paths: [experiment lifecycle](docs/flows/experiment_lifecycle.md), [work unit lifecycle](docs/flows/work_unit_lifecycle.md) (the asynchronous actuation path), [reconciliation](docs/flows/reconciliation.md), and [metrics & observability](docs/flows/metrics_and_observability.md).
+
 * ### [Installation & Deployment Guide](INSTALL.md)
   Step-by-step setup guides covering automated agent skills, Cluster Toolkit v2 blueprints, and direct Terraform/Helm commands, alongside the global configuration reference table.
 

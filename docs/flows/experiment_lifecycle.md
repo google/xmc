@@ -1,0 +1,284 @@
+# Experiment Lifecycle Flows
+
+The read and write paths for experiments, their status, their artifacts, and their status
+messages. All of these are handled entirely by the Experiment State Server (ESS), the XID Service,
+and Cloud Spanner — none of them touch the cluster.
+
+For anything that starts, stops, or restarts actual work, see
+[Work Unit Lifecycle](work_unit_lifecycle.md).
+
+---
+
+## 1. Create Experiment
+
+Source diagram: [`artifacts/create_experiment.mmd`](artifacts/create_experiment.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. CreateExperiment(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. CreateXidEntry
+    XID-->>ESS: 4. XidEntry (XID)
+    ESS->>XID: 5. CheckAuth(WRITER)
+    XID-->>ESS: 6. Authorized
+    ESS->>ESS: 7. Assemble Experiment
+    ESS->>Spanner: 8. CreateExperiment
+    Spanner-->>ESS: 9. Success
+    ESS-->>Client: 10. Experiment
+```
+
+The ordering here is worth noting: the `xid` is allocated by the XID Service **before** the
+experiment row exists. The XID entry is what carries ownership and access control, so authorization
+is checked against a freshly created entry rather than against the experiment itself. That keeps a
+single source of truth for "who may touch experiment N" across every subsequent call.
+
+Domain rules for assembling the experiment — defaults, derived fields, validation — live in
+[`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.
+
+---
+
+## 2. Read Experiments
+
+### Get a single experiment
+
+Source diagram: [`artifacts/get_experiment.mmd`](artifacts/get_experiment.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. GetExperiment(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. GetXidEntry (Implicit Auth)
+    XID-->>ESS: 4. XidEntry
+    ESS->>Spanner: 5. FetchExperiment
+    Spanner-->>ESS: 6. Experiment
+    ESS->>ESS: 7. Attach ACLs
+    ESS-->>Client: 8. Experiment
+```
+
+`GetXidEntry` serves double duty: it authorizes the read (a caller who cannot see the entry cannot
+see the experiment) and supplies the ACL data attached to the response, so the UI can decide
+whether to render stop/restart controls without a second round trip.
+
+### List or search experiments
+
+Source diagram: [`artifacts/list_experiments.mmd`](artifacts/list_experiments.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. List/Search(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>Spanner: 3. ListExperiments
+    Spanner-->>ESS: 4. List<Experiment>, token
+    ESS->>XID: 5. ListXidEntries
+    XID-->>ESS: 6. List<XidEntry>
+    ESS->>ESS: 7. Attach ACLs
+    ESS-->>Client: 8. Response
+```
+
+The order inverts relative to `GetExperiment`: Spanner is queried first, then a single batched
+`ListXidEntries` call resolves ACLs for the whole page. This keeps list latency independent of page
+size in terms of XID round trips.
+
+`ListExperiments` and `SearchExperiments` share this implementation; `Search*` additionally accepts
+an AIP-160 filter expression, compiled by
+[`internal/query_generator`](../../internal/query_generator). The same `List`/`Search` pairing
+exists for work units, artifacts, and status messages.
+
+---
+
+## 3. Update Experiment
+
+Source diagram: [`artifacts/update_experiment.mmd`](artifacts/update_experiment.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. UpdateExperiment(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. CheckAuth(WRITER)
+    XID-->>ESS: 4. Authorized
+    ESS->>Spanner: 5. UpdateExperiment
+    Spanner-->>ESS: 6. Experiment (updated)
+    alt Need to Update XID Entry
+        ESS->>XID: 7. Update/Get XidEntry
+    end
+    XID-->>ESS: 8. XidEntry (updated/fetched)
+    ESS->>ESS: 9. Populate ACLs
+    ESS-->>Client: 10. Experiment
+```
+
+Some experiment fields are mirrored in the XID entry (ownership and access control in particular),
+so an update that touches them writes to both stores. Fields that exist only in Spanner skip the
+conditional branch.
+
+> [!NOTE]
+> Changing an experiment's **priority** is an exception to "experiment updates do not touch the
+> cluster": priority feeds the Kueue `WorkloadPriorityClass` label on every child work unit's
+> JobSet, so it propagates through the actuation path described in
+> [Work Unit Lifecycle §5](work_unit_lifecycle.md#5-update-work-unit).
+
+---
+
+## 4. Update Launch State
+
+Source diagram: [`artifacts/update_launch_state.mmd`](artifacts/update_launch_state.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. UpdateLaunchState(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. CheckAuth(WRITER)
+    XID-->>ESS: 4. Authorized
+    ESS->>Spanner: 5. UpdateLaunchState
+    Spanner-->>ESS: 6. Experiment (updated)
+    ESS->>XID: 7. GetXidEntry
+    XID-->>ESS: 8. XidEntry (for ACLs)
+    ESS->>ESS: 9. Populate ACLs
+    ESS-->>Client: 10. Experiment
+```
+
+Launching an experiment is a client-side loop: create the experiment, then create each work unit,
+then declare the launch finished. `UpdateExperimentLaunchState` is how the client reports where it
+is in that loop — `LAUNCHING`, then `COMPLETED` or `FAILED`, carrying a `launch_id`.
+
+This exists because XMC cannot infer completion of a client-driven loop. Without it, an experiment
+whose submitting process crashed after three of ten work units would look identical to a
+deliberately small experiment. With it, the UI can show "launching" and operators can spot
+abandoned launches.
+
+---
+
+## 5. Get Experiment Status
+
+Source diagram: [`artifacts/get_status.mmd`](artifacts/get_status.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. GetStatus(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. CheckAuth(READER)
+    XID-->>ESS: 4. Authorized
+    ESS->>Spanner: 5. FetchExperimentStatus
+    Spanner-->>ESS: 6. ExperimentStatus
+    ESS-->>Client: 7. ExperimentStatus
+```
+
+`GetExperimentStatus` returns the aggregate rollup rather than the experiment resource: active
+state, launch state, per-`WorkUnitState` counts, and per-severity status message counts. It is the
+call the UI polls for the experiment list and detail pages, because it answers "how is this going?"
+in one round trip instead of listing every work unit.
+
+The counts it aggregates are written by the observation loop described in
+[Reconciliation](reconciliation.md) — this read path never consults the cluster.
+
+---
+
+## 6. Artifacts
+
+Artifacts are named outputs and references attached to experiments and work units — checkpoint
+paths, dataset URIs, links to external systems. They are pure Spanner CRUD with no cluster
+involvement.
+
+Source diagrams: [`create_artifact.mmd`](artifacts/create_artifact.mmd),
+[`get_artifact.mmd`](artifacts/get_artifact.mmd),
+[`list_artifacts.mmd`](artifacts/list_artifacts.mmd),
+[`delete_artifact.mmd`](artifacts/delete_artifact.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS
+    participant XID
+    participant Spanner
+
+    Client->>ESS: CreateArtifact(req)
+    ESS->>XID: CheckAuth(WRITER)
+    XID-->>ESS: Authorized
+    ESS->>Spanner: CreateArtifact
+    Spanner-->>ESS: Artifact
+    ESS-->>Client: Artifact
+```
+
+All six artifact RPCs follow this shape, differing only in the role they require:
+
+| RPC | Required role |
+| :--- | :--- |
+| `GetArtifact`, `ListArtifacts`, `SearchArtifacts` | `READER` |
+| `CreateArtifact`, `UpdateArtifact` | `WRITER` |
+| `DeleteArtifact` | `OWNER` |
+
+Deletion requiring `OWNER` rather than `WRITER` is deliberate: a collaborator who can add outputs
+to an experiment should not be able to remove someone else's.
+
+---
+
+## 7. Status Messages
+
+Source diagram: [`artifacts/list_status_messages.mmd`](artifacts/list_status_messages.mmd)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. ListStatusMessages(req) / SearchStatusMessages(req)
+    ESS->>ESS: 2. Authenticate & Validate (Check Parent & Page Size)
+    ESS->>XID: 3. CheckAuth(READER)
+    XID-->>ESS: 4. Authorized
+    ESS->>Spanner: 5. FetchStatusMessages (with staleness)
+    Spanner-->>ESS: 6. StatusMessages & NextPageToken
+    ESS-->>Client: 7. ListStatusMessagesResponse
+```
+
+Status messages are the human-readable narrative attached to a work unit: scheduling explanations
+from Kueue, bring-up errors from the JobSet reconciler, and parsed application errors from the
+Log Monitor. They carry a severity, which is what `ExperimentStatus.MessageSeverityCount`
+aggregates.
+
+The two RPCs differ in read consistency. `ListStatusMessages` issues a strong Spanner read
+(staleness `0`), so a message written a moment ago is guaranteed to appear. `SearchStatusMessages`
+issues a stale read with a 15-second bound, trading immediacy for cheaper reads on the filtered,
+scan-heavy path. Retention of this history is gated by the `statusMessageHistoryEnabled` value.
+
+Where the messages come from is covered in
+[Metrics & Observability §3](metrics_and_observability.md#3-log-monitoring-pipeline).
+
+---
+
+## 8. Related Reading
+
+- [Work Unit Lifecycle](work_unit_lifecycle.md) — the flows that actually launch work.
+- [Execution Model](../architecture/execution_model.md) — the state machine behind these statuses.
+- [`api/protos/experiment/api.proto`](../../api/protos/experiment/api.proto) — the authoritative
+  RPC definitions.
