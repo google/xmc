@@ -95,18 +95,18 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     await removeBtns[index].click();
   }
 
-  private readonly dominantBadges = this.locatorForAll('.dominant-badge');
+  private readonly dominantTexts = this.locatorForAll('.dominant-text');
 
-  /** Gets whether a dominant badge is present. */
+  /** Gets whether a dominant label text is present. */
   async hasDominantBadge(): Promise<boolean> {
-    const badges = await this.dominantBadges();
-    return badges.length > 0;
+    const texts = await this.dominantTexts();
+    return texts.length > 0;
   }
 
-  /** Gets the text of the dominant badge if present. */
+  /** Gets the text of the dominant label if present. */
   async getDominantBadgeText(): Promise<string | null> {
-    const badges = await this.dominantBadges();
-    return badges.length > 0 ? (await badges[0].text()).trim() : null;
+    const texts = await this.dominantTexts();
+    return texts.length > 0 ? (await texts[0].text()).trim() : null;
   }
 
   /** Returns whether the select box at the given index has the dominant class. */

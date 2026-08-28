@@ -71,18 +71,20 @@
   gap: 4px;
 }
 
-.dominant-badge {
+.select-box-container {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.dominant-text {
   font-size: 10px;
   font-weight: 700;
+  color: #d93025;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background-color: #fce8e6;
-  color: #d93025;
-  border: 1px solid #fad2cf;
-  margin-left: 6px;
-  vertical-align: middle;
+  margin-bottom: 2px;
+  line-height: 1;
 }
 
 .query-select-box {

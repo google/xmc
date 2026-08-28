@@ -32,25 +32,27 @@
       </div>
 
       <div class="query-input-group">
-        <label class="query-label" [for]="'resource-type-select-' + row.id">
-          Resource type *
-          @if ($index === 0 && row.resourceType) {
-            <span class="dominant-badge">Dominant</span>
-          }
-        </label>
+        <label class="query-label" [for]="'resource-type-select-' + row.id">Resource type *</label>
         <div class="select-with-remove-box">
-          <select
-            class="query-select-box"
-            [class.dominant-select-box]="$index === 0 && row.resourceType"
-            [id]="'resource-type-select-' + row.id"
-            [ngModel]="row.resourceType"
-            (ngModelChange)="updateRowResourceType($index, $event)"
-          >
-            <option value="">-</option>
-            @for (resType of availableResourceTypes(); track resType) {
-              <option [value]="resType">{{ resType }}</option>
+          <div class="select-box-container">
+            @if ($index === 0 && row.resourceType) {
+              <span class="dominant-text">Dominant</span>
             }
-          </select>
+            <select
+              class="query-select-box"
+              [class.dominant-select-box]="$index === 0 && row.resourceType"
+              [id]="'resource-type-select-' + row.id"
+              [value]="row.resourceType"
+              (change)="onResourceTypeChange($index, $any($event.target).value)"
+            >
+              <option value="">-</option>
+              @for (resType of availableResourceTypes(); track resType) {
+                <option [value]="resType" [selected]="resType === row.resourceType">
+                  {{ resType }}
+                </option>
+              }
+            </select>
+          </div>
           @if (rows().length > 1) {
             <button
               type="button"

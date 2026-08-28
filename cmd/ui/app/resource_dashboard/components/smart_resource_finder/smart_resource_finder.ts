@@ -60,13 +60,17 @@ export class SmartResourceFinderComponent implements OnInit {
     this.emitQuery();
   }
 
-  protected updateRowAmount(index: number, val: number | null | undefined) {
+  protected updateRowAmount(index: number, val: number | string | null | undefined) {
     const amountNum = typeof val === 'number' ? val : Number(val);
+    const current = this.rows()[index];
+    if (current && current.amount === amountNum) return;
     this.rows.update((r) => r.with(index, { ...r[index], amount: amountNum }));
     this.emitQuery();
   }
 
-  protected updateRowResourceType(index: number, val: string) {
+  protected onResourceTypeChange(index: number, val: string) {
+    const current = this.rows()[index];
+    if (current && current.resourceType === val) return;
     this.rows.update((r) => r.with(index, { ...r[index], resourceType: val }));
     this.emitQuery();
   }
