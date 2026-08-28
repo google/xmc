@@ -469,8 +469,8 @@ The development tooling supports two distinct deployment tiers tailored for diff
 |  • Web UI & API Gateway Routing                 |  • NVIDIA GPU Accelerators      |
 |  • Dex OIDC Authentication & Session JWTs       |  • Cloud Storage FUSE Mounts    |
 |  • Cloud Spanner DDL Migrations & Queries       |  • Workload Identity & GCP IAM  |
-|  • Open-Schema Dummy CRDs (JobSet / Kueue)      |  • Live Kueue Quota & MultiKueue|
-|  • (Roadmap) CPU Mock Workload Controllers      |  • End-to-End Distributed Jobs  |
+|  • Open-Schema Dummy CRDs (JobSet / Kueue)      |  • Multi-Cluster MultiKueue     |
+|  • (Roadmap) CPU Mock & Kueue Quota Controllers |  • Dynamic ProvisioningRequests |
 +-------------------------------------------------+---------------------------------+
 ```
 
@@ -478,7 +478,7 @@ The development tooling supports two distinct deployment tiers tailored for diff
 Certain hardware and cloud infrastructure primitives cannot run inside a local Docker container / KinD cluster and strictly require a live Google Cloud GKE deployment (`dev_env gke-deploy` / `dev_env gke-upgrade`):
 - **Specialized Accelerators & Topologies**: Physical Cloud TPUs (`google.com/tpu` v4, v5e, v5p, v6e), multi-host optical circuit switches (OCS), and NVIDIA Cloud GPUs.
 - **Cloud IAM & Storage Integrations**: Google Cloud Workload Identity Federation, Cloud Storage FUSE CSI driver mounting real GCS buckets, Google Cloud Armor, and Google-managed OAuth / Identity-Aware Proxy (IAP).
-- **Multi-Cluster Infrastructure**: MultiKueue dispatching across multiple physical remote GKE clusters and Cluster Autoscaler nodepools.
+- **Multi-Cluster Orchestration & Dynamic Capacity**: MultiKueue cross-cluster dispatching across physical remote GKE clusters and Google Compute Engine `ProvisioningRequest` capacity reservations.
 
 ### 2. Local KinD Scope: Current Baseline vs. Reachable Capabilities
 
@@ -488,8 +488,10 @@ Certain hardware and cloud infrastructure primitives cannot run inside a local D
 | **Dex OIDC Authentication** | ✅ Live (`dex.yaml`) | ✅ Live | ✅ Cloud IAP / OAuth |
 | **Cloud Spanner Migrations** | ✅ Live (`spanner.py`) | ✅ Live | ✅ Real Cloud Spanner |
 | **CRD API Schema Validation** | ✅ Open-Schema (`dummy_crds.yaml`)| ✅ Full Upstream CRDs | ✅ GKE Add-ons |
+| **Kueue Local Quota & Admission**| ⚠️ Open-Schema CRD only | 🟢 **Reachable** (Kueue Controller) | ✅ Live Real Queues |
 | **Reconciler State Machine** | ⚠️ Go Unit/Integration Tests | 🟢 **Reachable** (Upstream Controllers) | ✅ Live Real Pods |
 | **CPU Mock Workload Execution** | ❌ Controller not installed | 🟢 **Reachable** (Mock JobSets/Pods) | ✅ Live Real Pods |
+| **Multi-Cluster MultiKueue** | ❌ Never Reachable | ❌ Never Reachable | ✅ Live Multi-Cluster |
 | **TPU / GPU Hardware Execution** | ❌ Never Reachable | ❌ Never Reachable | ✅ Live Real Hardware |
 
 #### Current Baseline with Dummy CRDs:
@@ -498,8 +500,9 @@ To keep local startup near-instantaneous (~35s) and memory overhead minimal, Kin
 - **What is tested in-memory**: The complete Reconciler state machine (`SCHEDULING` $\rightarrow$ `STARTING` $\rightarrow$ `RUNNING` $\rightarrow$ `COMPLETED`/`FAILED`/`PARTIALLY_FAILED`, `ImagePullBackOff`, unschedulable handling, Non-Restarting JobSets Contract) is verified via comprehensive Go table-driven integration tests (`cmd/reconciler/jobset/converter_test.go`).
 
 #### Reachable Local Enhancement (Roadmap):
-Deploying the standard upstream JobSet and Kueue controller manager manifests (`sigs.k8s.io/jobset`, `sigs.k8s.io/kueue`) into KinD is technically straightforward. When enabled (e.g. via an optional `--with-workload-controllers` flag):
+Deploying standard upstream JobSet and Kueue controller manager manifests (`sigs.k8s.io/jobset`, `sigs.k8s.io/kueue`) into KinD is technically straightforward. When enabled (e.g. via an optional `--with-workload-controllers` flag):
 - KinD will run the upstream controller pods in `jobset-system` and `kueue-system`.
+- Kueue will manage local queue admission, quota limits, and cohort borrowing on standard CRs (`ClusterQueue`, `LocalQueue`, `ResourceFlavor`, `WorkloadPriorityClass`).
 - Creating a `JobSet` will spawn actual child `Job` and `Pod` containers running mock CPU tasks locally on Docker.
 - `reconciler` will observe real pod lifecycles and update WorkUnit database records live in Spanner.
 
