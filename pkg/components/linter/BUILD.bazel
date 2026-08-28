@@ -32,6 +32,7 @@ go_test(
     srcs = [
         "diagnostic_test.go",
         "linter_test.go",
+        "manifest_decoder_test.go",
         "manifest_test.go",
     ],
     embed = [":linter"],

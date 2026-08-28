@@ -52,7 +52,7 @@ func (d *ComponentDependencyRef) UnmarshalYAML(node *yaml.Node) error {
 
 // UnmarshalYAML decodes ComponentWrapperRef with fallback aliases.
 func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
-	type rawWrapper struct {
+	var raw struct {
 		CrdGroup        string `yaml:"crdGroup"`
 		CrdVersion      string `yaml:"crdVersion"`
 		CrdKind         string `yaml:"crdKind"`
@@ -64,7 +64,6 @@ func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
 		Namespace       string `yaml:"namespace"`
 		Name            string `yaml:"name"`
 	}
-	var raw rawWrapper
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
@@ -78,31 +77,26 @@ func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
 
 // UnmarshalYAML implements flexible duration and numeric seconds unmarshaling for lifecycle control.
 func (c *ComponentLifecycleCtrl) UnmarshalYAML(node *yaml.Node) error {
-	type rawCtrl struct {
+	var raw struct {
 		DrainTimeoutSeconds yaml.Node `yaml:"drainTimeoutSeconds,omitempty"`
 		GracePeriodSeconds  yaml.Node `yaml:"gracePeriodSeconds,omitempty"`
 		ForceDeletion       bool      `yaml:"forceDeletion,omitempty"`
 		DrainingTimeout     yaml.Node `yaml:"drainingTimeout,omitempty"`
 		GracePeriod         yaml.Node `yaml:"gracePeriod,omitempty"`
 	}
-	var raw rawCtrl
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
 	c.ForceDeletion = raw.ForceDeletion
-
-	drainNode := firstNonEmptyNode(&raw.DrainTimeoutSeconds, &raw.DrainingTimeout)
-	if drainNode != nil {
-		sec, err := parseDurationNode(drainNode, "drainTimeoutSeconds")
+	if drain := firstNonEmptyNode(&raw.DrainTimeoutSeconds, &raw.DrainingTimeout); drain != nil {
+		sec, err := parseDurationNode(drain, "drainTimeoutSeconds")
 		if err != nil {
 			return err
 		}
 		c.DrainTimeoutSeconds = sec
 	}
-
-	graceNode := firstNonEmptyNode(&raw.GracePeriodSeconds, &raw.GracePeriod)
-	if graceNode != nil {
-		sec, err := parseDurationNode(graceNode, "gracePeriodSeconds")
+	if grace := firstNonEmptyNode(&raw.GracePeriodSeconds, &raw.GracePeriod); grace != nil {
+		sec, err := parseDurationNode(grace, "gracePeriodSeconds")
 		if err != nil {
 			return err
 		}
@@ -170,7 +164,7 @@ func parseDurationSeconds(s string) (int, error) {
 
 // UnmarshalYAML handles flexible dependencies formats (list of strings, list of objects, maps).
 func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
-	type rawSpec struct {
+	var raw struct {
 		Enabled            *bool                   `yaml:"enabled,omitempty"`
 		Type               string                  `yaml:"type,omitempty"`
 		ComponentType      string                  `yaml:"componentType,omitempty"`
@@ -183,7 +177,6 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 		Manifests          []string                `yaml:"manifests,omitempty"`
 		Description        string                  `yaml:"description,omitempty"`
 	}
-	var raw rawSpec
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
