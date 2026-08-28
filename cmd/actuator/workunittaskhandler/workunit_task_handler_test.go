@@ -144,18 +144,6 @@ func withK8sClient(client K8sClient) testHandlerOption {
 	}
 }
 
-func withProjectID(projectID string) testHandlerOption {
-	return func(p *Params) {
-		p.ProjectID = projectID
-	}
-}
-
-func withAudience(audience string) testHandlerOption {
-	return func(p *Params) {
-		p.Audience = audience
-	}
-}
-
 func withServiceAccount(sa string) testHandlerOption {
 	return func(p *Params) {
 		p.XManagerServiceAccount = sa
@@ -946,73 +934,6 @@ func TestIsRetryableError(t *testing.T) {
 			got := isRetryableError(tc.err)
 			if got != tc.want {
 				t.Errorf("isRetryableError(%v) = %v, want %v", tc.err, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestExtractOIDCToken(t *testing.T) {
-	testCases := []struct {
-		name       string
-		authHeader string
-		wantToken  string
-		wantOK     bool
-	}{
-		{
-			name:       "valid_bearer_token",
-			authHeader: "Bearer valid_token_123",
-			wantToken:  "valid_token_123",
-			wantOK:     true,
-		},
-		{
-			name:       "valid_case_insensitive_bearer",
-			authHeader: "bearer valid_token_456",
-			wantToken:  "valid_token_456",
-			wantOK:     true,
-		},
-		{
-			name:       "invalid_multiple_spaces",
-			authHeader: "Bearer  extra_space_token",
-			wantToken:  "",
-			wantOK:     false,
-		},
-		{
-			name:       "invalid_trailing_words",
-			authHeader: "Bearer valid_token extra_word",
-			wantToken:  "",
-			wantOK:     false,
-		},
-		{
-			name:       "invalid_empty_token",
-			authHeader: "Bearer ",
-			wantToken:  "",
-			wantOK:     false,
-		},
-		{
-			name:       "invalid_scheme",
-			authHeader: "Basic user:pass",
-			wantToken:  "",
-			wantOK:     false,
-		},
-		{
-			name:       "invalid_no_scheme",
-			authHeader: "only_a_token",
-			wantToken:  "",
-			wantOK:     false,
-		},
-		{
-			name:       "invalid_empty_header",
-			authHeader: "",
-			wantToken:  "",
-			wantOK:     false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			gotToken, gotOK := extractOIDCToken(tc.authHeader)
-			if gotToken != tc.wantToken || gotOK != tc.wantOK {
-				t.Errorf("extractOIDCToken(%q) = (%q, %v), want (%q, %v)", tc.authHeader, gotToken, gotOK, tc.wantToken, tc.wantOK)
 			}
 		})
 	}

@@ -19,32 +19,48 @@ import (
 
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/internal/common/resourceaccumulator"
 )
 
-const (
-	gkeAcceleratorLabel = "cloud.google.com/gke-accelerator"
-	bytesPerGiB         = 1024 * 1024 * 1024
-)
+const bytesPerGiB = 1024 * 1024 * 1024
 
-// resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
-// using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
-func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
-	if !isAcceleratorResource(resourceName) || rfMap == nil {
-		return resourceName
-	}
-	rf := rfMap[flavorName]
-	if rf == nil {
-		return resourceName
-	}
-	if acc := rf.Spec.NodeLabels[gkeAcceleratorLabel]; acc != "" {
-		return acc
-	}
-	return resourceName
+var acceleratorLabelKeys = []string{
+	"cloud.google.com/gke-accelerator",
+	"cloud.google.com/gke-gpu-type",
+	"cloud.google.com/gke-tpu-accelerator",
+	"kueue.x-k8s.io/gpack-gpu",
+	"gpu.nvidia.com/class",
 }
 
-func isAcceleratorResource(resName string) bool {
-	lower := strings.ToLower(resName)
-	return strings.Contains(lower, "gpu") || strings.Contains(lower, "tpu") || strings.Contains(lower, "accelerator")
+// formatCompoundAccelerator combines the base resource name with the specific accelerator model.
+func formatCompoundAccelerator(resourceName, model string) string {
+	if model == "" || model == resourceName {
+		return resourceName
+	}
+	if strings.HasPrefix(model, resourceName+": ") || strings.HasPrefix(model, resourceName+"/") {
+		return model
+	}
+	return resourceName + ": " + model
+}
+
+// resolveResourceType resolves generic resource names like "nvidia.com/gpu" to compound accelerator names
+// (e.g. "nvidia.com/gpu: nvidia-tesla-h100") using the ResourceFlavor's nodeLabels if present.
+// Non-accelerator resources (like "cpu" or "memory") remain unchanged.
+func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
+	if !resourceaccumulator.IsAcceleratorResource(resourceName) {
+		return resourceName
+	}
+	if rf := rfMap[flavorName]; rf != nil {
+		for _, labelKey := range acceleratorLabelKeys {
+			if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
+				return formatCompoundAccelerator(resourceName, acc)
+			}
+		}
+	}
+	if resourceaccumulator.IsSpecificAcceleratorName(flavorName) {
+		return formatCompoundAccelerator(resourceName, flavorName)
+	}
+	return resourceName
 }
 
 // extractTotalResourceUsageByResourceType calculates total used capacity per resource type across all flavors in ClusterQueueStatus.
@@ -75,13 +91,8 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 // Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
 func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
 	val := q.AsApproximateFloat64()
-	if isMemoryOrStorageResource(resourceType) {
+	if resourceaccumulator.IsMemoryOrStorageResource(resourceType) {
 		return val / bytesPerGiB
 	}
 	return val
-}
-
-func isMemoryOrStorageResource(resourceType string) bool {
-	lower := strings.ToLower(resourceType)
-	return strings.Contains(lower, "memory") || strings.Contains(lower, "storage")
 }

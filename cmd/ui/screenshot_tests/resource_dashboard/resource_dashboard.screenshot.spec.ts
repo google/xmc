@@ -32,9 +32,9 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await jobsPromise;
     await secondaryPromise;
 
-    // Explicitly wait for predictability metrics grid to be rendered in DOM before screenshot
+    // Explicitly wait for predictability section to be rendered in DOM before screenshot
     await page
-      .locator('xmc-rod-queue-card .predictability-stats-grid')
+      .locator('xmc-rod-queue-card .predictability-section')
       .first()
       .waitFor({ state: 'visible' });
     await setupScreenshotEnvironment(page);

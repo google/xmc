@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'jasmine';
-
 import {
   QueueOverview,
   QueueResourceCapacity,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
+  COHORT_STATE_BALANCED,
+  COHORT_STATE_BORROWING,
+  COHORT_STATE_SQUEEZED,
+  CohortStateInfoPipe,
   FreeTotalDisplayPipe,
-  MaxWorkloadDisplayPipe,
+  MaxSchedulableDisplayPipe,
   PredictabilityMessagePipe,
   QueueStatusBadgePipe,
 } from './resource_dashboard_pipes';
@@ -53,24 +55,93 @@ describe('Resource Dashboard Pipes', () => {
     });
   });
 
-  describe('MaxWorkloadDisplayPipe', () => {
-    let pipe: MaxWorkloadDisplayPipe;
+  describe('MaxSchedulableDisplayPipe', () => {
+    let pipe: MaxSchedulableDisplayPipe;
 
     beforeEach(() => {
-      pipe = new MaxWorkloadDisplayPipe();
+      pipe = new MaxSchedulableDisplayPipe();
     });
 
     it('should return "-" when capacity is undefined', () => {
       expect(pipe.transform(undefined)).toBe('-');
     });
 
-    it('should compute slot from freeCapacity and totalCapacity', () => {
+    it('should return freeCapacityWithBorrowing when available', () => {
       const cap: QueueResourceCapacity = {
         resourceType: 'nvidia-tesla-h100',
         freeCapacity: 32,
         totalCapacity: 64,
+        freeCapacityWithBorrowing: 24,
       };
-      expect(pipe.transform(cap)).toBe('32 → 64');
+      expect(pipe.transform(cap)).toBe('24');
+    });
+
+    it('should fall back to freeCapacity when freeCapacityWithBorrowing is not set', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        freeCapacity: 128,
+        totalCapacity: 256,
+      };
+      expect(pipe.transform(cap)).toBe('128');
+    });
+  });
+
+  describe('CohortStateInfoPipe & getCohortStateInfo', () => {
+    let pipe: CohortStateInfoPipe;
+
+    beforeEach(() => {
+      pipe = new CohortStateInfoPipe();
+    });
+
+    it('should identify SQUEEZED state when freeCapacityWithBorrowing < freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 30,
+      };
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_SQUEEZED,
+        delta: 30,
+        badgeClass: 'squeezed',
+        label: 'Squeezed by cohort',
+        icon: 'warning',
+        tooltip:
+          'Shared cohort pool depleted: Immediate headroom (30) is lower than nominal free quota (60) due to cohort-wide workload demand.',
+      });
+    });
+
+    it('should identify BORROWING state when freeCapacityWithBorrowing > freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 80,
+      };
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_BORROWING,
+        delta: 20,
+        badgeClass: 'borrowing',
+        label: 'Borrowing available',
+        icon: 'bolt',
+        tooltip: 'Can borrow up to +20 beyond nominal quota from cohort.',
+      });
+    });
+
+    it('should identify BALANCED state when freeCapacityWithBorrowing == freeCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'cpu',
+        totalCapacity: 100,
+        freeCapacity: 60,
+        freeCapacityWithBorrowing: 60,
+      };
+      expect(pipe.transform(cap)).toEqual({
+        state: COHORT_STATE_BALANCED,
+        delta: 0,
+        badgeClass: 'balanced',
+        label: 'Balanced',
+        icon: 'check_circle',
+      });
     });
   });
 

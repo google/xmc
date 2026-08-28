@@ -54,18 +54,33 @@ func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	rp, brokers, err := infra.StartRedpanda(ctx, nil)
+	node, err := infra.StartRedpanda(ctx, nil)
 	if err != nil {
 		fmt.Printf("failed to start shared Redpanda container: %v\n", err)
 		os.Exit(1)
 	}
-	sharedRedpanda = rp
-	sharedBrokers = brokers
+	sharedRedpanda = node.Container
+	sharedBrokers = node.Brokers
 
 	code := m.Run()
 
-	_ = rp.Terminate(context.Background())
+	_ = node.Container.Terminate(context.Background())
 	os.Exit(code)
+}
+
+// newAdminClient returns a Kafka admin client for the shared broker.
+//
+// The gateway producer no longer exposes its franz-go client: MetricProducer is backend-neutral, so
+// topic administration goes through a dedicated client instead.
+func newAdminClient(t *testing.T) *kadm.Client {
+	t.Helper()
+
+	client, err := kgo.NewClient(kgo.SeedBrokers(sharedBrokers...))
+	if err != nil {
+		t.Fatalf("failed to create admin client: %v", err)
+	}
+	t.Cleanup(client.Close)
+	return kadm.NewClient(client)
 }
 
 // createTestMetricRecord marshals a single Metric record into JSON payload for ingestion.
@@ -122,7 +137,7 @@ func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
 	defer producer.Close()
 
 	topicName := fmt.Sprintf("xmc-metrics-happypath-%d", time.Now().UnixNano())
-	adminClient := kadm.NewClient(producer)
+	adminClient := newAdminClient(t)
 	if _, err := adminClient.CreateTopics(ctx, 1, 1, nil, topicName); err != nil {
 		t.Fatalf("failed to create topic %s: %v", topicName, err)
 	}
@@ -215,7 +230,7 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	defer producer.Close()
 
 	topicName := fmt.Sprintf("xmc-metrics-outage-%d", time.Now().UnixNano())
-	adminClient := kadm.NewClient(producer)
+	adminClient := newAdminClient(t)
 	if _, err := adminClient.CreateTopics(ctx, 1, 1, nil, topicName); err != nil {
 		t.Fatalf("failed to create topic %s: %v", topicName, err)
 	}
@@ -303,17 +318,9 @@ func TestGatewayRedpanda_MurmurHash2Partitioning(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	clientOpts := []kgo.Opt{kgo.SeedBrokers(sharedBrokers...)}
-	client, err := kgo.NewClient(clientOpts...)
-	if err != nil {
-		t.Fatalf("failed to create kgo client: %v", err)
-	}
-	defer client.Close()
-
-	adminClient := kadm.NewClient(client)
+	adminClient := newAdminClient(t)
 	topicName := fmt.Sprintf("xmc-partition-test-%d", time.Now().UnixNano())
-	_, err = adminClient.CreateTopics(ctx, 4, 1, nil, topicName)
-	if err != nil {
+	if _, err := adminClient.CreateTopics(ctx, 4, 1, nil, topicName); err != nil {
 		t.Fatalf("failed to create topic %s: %v", topicName, err)
 	}
 
@@ -321,7 +328,14 @@ func TestGatewayRedpanda_MurmurHash2Partitioning(t *testing.T) {
 		RedpandaBrokers: sharedBrokers,
 	}
 
-	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)
+	// The assertion is about which partition a key lands on, which MetricProducer deliberately does
+	// not expose. Drive a franz-go client built from the gateway's own option set instead, so the
+	// partitioner under test is exactly the one the gateway configures.
+	opts, err := ingestiongateway.BuildProducerOptions(cfg, nil)
+	if err != nil {
+		t.Fatalf("failed to build producer options: %v", err)
+	}
+	producer, err := kgo.NewClient(opts...)
 	if err != nil {
 		t.Fatalf("failed to create partition producer client: %v", err)
 	}

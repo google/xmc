@@ -637,54 +637,6 @@ func PhraseExp(qfv QueryFilterVisitor, p *fpb.Phrase) (filtervisitor.PrimType, e
 	return ValueExp(qfv, quoted)
 }
 
-// Internal optimization/check helpers
-func canOptimizeToInList(exprs []*fpb.Expression) bool {
-	if len(exprs) < 2 {
-		return false
-	}
-	// Check if all elements are EQUALS restrictions on the same field
-	var firstField []string
-	for _, expr := range exprs {
-		if expr.WhichExpression() != fpb.Expression_Restriction_case {
-			return false
-		}
-		r := expr.GetRestriction()
-		if r.GetComparator() != fpb.Restriction_EQUALS {
-			return false
-		}
-		// Must be member on the LHS
-		if r.GetLhs().WhichExpression() != fpb.Expression_Member_case {
-			return false
-		}
-		var path []string
-		for _, component := range r.GetLhs().GetMember().GetExpressions() {
-			if component.WhichExpression() == fpb.Expression_Value_case {
-				path = append(path, component.GetValue())
-			}
-		}
-		if len(firstField) == 0 {
-			firstField = path
-		} else {
-			if len(firstField) != len(path) {
-				return false
-			}
-			for idx, part := range path {
-				if firstField[idx] != part {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func buildInListSQL(qfv QueryFilterVisitor, exprs []*fpb.Expression) (safesql.TrustedSQLString, error) {
-	// Reconstruct the IN list
-	// Format: LHS IN (val1, val2, ...)
-	// We want to format this as a standard Spanner query check
-	return safesql.EmptyString(), errors.New("in optimization let fallback logic execute")
-}
-
 func isLhsTextSearch(lhs *fpb.Expression) bool {
 	// A basic keyword HAS search usually has empty/wildcard LHS
 	if lhs == nil {
