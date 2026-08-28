@@ -72,6 +72,10 @@ class DevEnvCliTest(unittest.TestCase):
             "gke-deploy",
             "--config",
             "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--environment",
+            "staging",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -84,6 +88,8 @@ class DevEnvCliTest(unittest.TestCase):
         mock_run.assert_called_once()
         called_args = mock_run.call_args[0][0]
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
+        self.assertEqual(called_args.project_id, "test-p")
+        self.assertEqual(called_args.environment, "staging")
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")
@@ -130,6 +136,10 @@ class DevEnvCliTest(unittest.TestCase):
             "gke-upgrade",
             "--config",
             "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--environment",
+            "staging",
             "--run-migrations",
             "--only",
             "images",
@@ -139,6 +149,8 @@ class DevEnvCliTest(unittest.TestCase):
         mock_run.assert_called_once()
         called_args = mock_run.call_args[0][0]
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
+        self.assertEqual(called_args.project_id, "test-p")
+        self.assertEqual(called_args.environment, "staging")
         self.assertTrue(called_args.run_migrations)
         self.assertEqual(called_args.only, "images")
         self.assertIsNone(called_args.start_from)
@@ -300,7 +312,10 @@ class DevEnvCliTest(unittest.TestCase):
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
     @patch("logging.basicConfig")
     def test_main_dispatch_verbose(
-        self, mock_logging: MagicMock, mock_upgrade: MagicMock, mock_venv: MagicMock
+        self,
+        mock_logging: MagicMock,
+        mock_upgrade: MagicMock,
+        mock_venv: MagicMock,
     ) -> None:
         """Verifies main() configures DEBUG logging on --verbose."""
         dev_env.main(["-v", "gke-upgrade"])
@@ -315,7 +330,10 @@ class DevEnvCliTest(unittest.TestCase):
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
     @patch("logging.basicConfig")
     def test_main_dispatch_quiet(
-        self, mock_logging: MagicMock, mock_upgrade: MagicMock, mock_venv: MagicMock
+        self,
+        mock_logging: MagicMock,
+        mock_upgrade: MagicMock,
+        mock_venv: MagicMock,
     ) -> None:
         """Verifies main() configures ERROR logging on --quiet."""
         dev_env.main(["-q", "gke-upgrade"])

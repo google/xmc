@@ -73,6 +73,16 @@ alias(
 
 # Dev Env
 alias(
+    name = "config_lib",
+    actual = "//tools/dev_env:config_lib",
+)
+
+alias(
+    name = "config_test",
+    actual = "//tools/dev_env:config_test",
+)
+
+alias(
     name = "dev_env_lib",
     actual = "//tools/dev_env:dev_env_lib",
 )

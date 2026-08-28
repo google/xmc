@@ -24,6 +24,10 @@ cmd/ui/playwright-report/
 # Compiled Cluster Toolkit deployments
 /ctk-out
 
+# Local development config
+deploy/local/xmanager-cloud-local.yaml
+deploy/local/*-local.yaml
+
 # Python virtual environments & build artifacts
 **/venv/
 **/.venv/
