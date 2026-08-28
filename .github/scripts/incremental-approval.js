@@ -61,6 +61,84 @@ function isBotUser(username) {
 }
 
 /**
+ * Pure function: Extracts manual dismissal IDs and pre-dismissal review states from timeline events.
+ * @param {Array<Object>} sortedEvents - Chronologically sorted timeline events.
+ * @returns {{ manualDismissalIds: Set<string|number>, dismissedReviewPreviousStates: Map<string|number, string> }}
+ */
+function extractDismissalContext(sortedEvents) {
+  const dismissedReviewPreviousStates = new Map();
+  const manualDismissalIds = new Set();
+
+  for (const event of sortedEvents) {
+    if (event.event === 'dismissed_review') {
+      const reviewId = event.review_id || event.id;
+      if (reviewId) {
+        manualDismissalIds.add(reviewId);
+      }
+    }
+    // GraphQL ReviewDismissedEvent: records pre-dismissal state (APPROVED vs CHANGES_REQUESTED)
+    if (event.__typename === 'ReviewDismissedEvent' || event.previousReviewState) {
+      const reviewId = (event.review && (event.review.databaseId || event.review.id)) || event.review_id;
+      if (reviewId && event.previousReviewState) {
+        dismissedReviewPreviousStates.set(reviewId, event.previousReviewState.toUpperCase());
+      }
+    }
+  }
+
+  return { manualDismissalIds, dismissedReviewPreviousStates };
+}
+
+/**
+ * Pure function: Extracts and normalizes a review record from an individual timeline event.
+ * @param {Object} event - Individual timeline event from REST or GraphQL.
+ * @param {Object} context - Metadata context for filtering and state resolution.
+ * @param {string} context.authorLower - Lowercased PR author username.
+ * @param {Set<string|number>} context.manualDismissalIds - Manually dismissed review IDs.
+ * @param {Map<string|number, string>} context.dismissedReviewPreviousStates - Pre-dismissal state map.
+ * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string } | null}
+ */
+function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dismissedReviewPreviousStates }) {
+  const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
+  if (!isReview) {
+    return null;
+  }
+
+  const reviewer = (event.user && event.user.login) || (event.author && event.author.login);
+  const commitSha = event.commit_id || (event.commit && event.commit.oid);
+  if (!reviewer || !commitSha || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
+    return null;
+  }
+
+  let state = (event.state || '').toUpperCase();
+  if (state === 'COMMENTED') {
+    return null;
+  }
+
+  const reviewId = event.databaseId || event.id || event.review_id;
+  if (reviewId && manualDismissalIds.has(reviewId)) {
+    return null;
+  }
+
+  if (state === 'DISMISSED') {
+    const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
+    if (prevState === 'APPROVED') {
+      state = 'APPROVED';
+    } else if (prevState === 'CHANGES_REQUESTED') {
+      state = 'CHANGES_REQUESTED';
+    } else {
+      return null;
+    }
+  }
+
+  return {
+    approver: reviewer,
+    state,
+    approvedSha: commitSha,
+    submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
+  };
+}
+
+/**
  * Pure function: Reconstructs latest active approval from timeline events.
  * Honors dismissed reviews and checks for active blocking CHANGES_REQUESTED.
  * @param {Array<Object>} timelineEvents - List of timeline events from GitHub API.
@@ -74,40 +152,19 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
 
   const authorLower = (prAuthor || '').toLowerCase();
   const sortedEvents = [...timelineEvents].sort(
-    (a, b) => new Date(a.submitted_at || a.created_at || 0) - new Date(b.submitted_at || b.created_at || 0)
+    (a, b) => new Date(a.submitted_at || a.created_at || a.submittedAt || a.createdAt || 0) -
+              new Date(b.submitted_at || b.created_at || b.submittedAt || b.createdAt || 0)
   );
 
+  const dismissalContext = extractDismissalContext(sortedEvents);
+  const reviewContext = { authorLower, ...dismissalContext };
   const latestByReviewer = new Map();
-  const dismissedReviewIds = new Set();
 
   for (const event of sortedEvents) {
-    if (event.event === 'dismissed_review' && (event.review_id || event.id)) {
-      dismissedReviewIds.add(event.review_id || event.id);
+    const reviewRecord = parseTimelineReviewEvent(event, reviewContext);
+    if (reviewRecord) {
+      latestByReviewer.set(reviewRecord.approver.toLowerCase(), reviewRecord);
     }
-  }
-
-  for (const event of sortedEvents) {
-    if (event.event !== 'reviewed' || !event.user || !event.commit_id) {
-      continue;
-    }
-    const reviewer = event.user.login;
-    if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
-      continue;
-    }
-    const state = (event.state || '').toUpperCase();
-    if (state === 'COMMENTED') {
-      continue;
-    }
-    const reviewId = event.id || event.review_id;
-    if (reviewId && dismissedReviewIds.has(reviewId)) {
-      continue;
-    }
-    latestByReviewer.set(reviewer.toLowerCase(), {
-      approver: reviewer,
-      state,
-      approvedSha: event.commit_id,
-      submittedAt: event.submitted_at
-    });
   }
 
   const activeReviews = Array.from(latestByReviewer.values());
@@ -143,20 +200,29 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
 
   const authorLower = (prAuthor || '').toLowerCase();
   const sortedReviews = [...reviews].sort(
-    (a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0)
+    (a, b) => new Date(a.submitted_at || a.created_at || 0) - new Date(b.submitted_at || b.created_at || 0)
   );
 
   const latestByReviewer = new Map();
 
   for (const review of sortedReviews) {
-    const reviewer = review.user ? review.user.login : '';
+    if (!review.user || !review.commit_id) {
+      continue;
+    }
+    const reviewer = review.user.login;
     if (!reviewer || reviewer.toLowerCase() === authorLower || isBotUser(reviewer)) {
       continue;
     }
-    if (review.state === 'COMMENTED') {
+    const state = (review.state || '').toUpperCase();
+    if (state === 'COMMENTED' || state === 'DISMISSED') {
       continue;
     }
-    latestByReviewer.set(reviewer.toLowerCase(), review);
+    latestByReviewer.set(reviewer.toLowerCase(), {
+      approver: reviewer,
+      state,
+      approvedSha: review.commit_id,
+      submittedAt: review.submitted_at || review.created_at
+    });
   }
 
   const activeReviews = Array.from(latestByReviewer.values());
@@ -165,20 +231,16 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
     return null;
   }
 
-  const approvals = activeReviews.filter(
-    r => (r.state === 'APPROVED' || (r.state === 'DISMISSED' && r.commit_id)) && r.commit_id
-  );
+  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
   if (approvals.length === 0) {
     return null;
   }
 
-  approvals.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-  const latest = approvals[0];
-
+  approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   return {
-    approver: latest.user.login,
-    approvedSha: latest.commit_id,
-    submittedAt: latest.submitted_at
+    approver: approvals[0].approver,
+    approvedSha: approvals[0].approvedSha,
+    submittedAt: approvals[0].submittedAt
   };
 }
 
@@ -365,6 +427,51 @@ function evaluateIncrementalApproval({
 }
 
 /**
+ * Shell Helper: Resolves commit ranges for git range-diff.
+ * Handles stacked PRs (/gh-stack) where the base branch itself was rebased.
+ * @param {string} baseRef - Target base branch name.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ * @param {Object} execOptions - Subprocess options.
+ * @returns {{ approvedRange: string, currentRange: string }}
+ */
+function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions) {
+  const currentRange = `origin/${baseRef}..${currentSha}`;
+  let approvedRange = `origin/${baseRef}..${approvedSha}`;
+  const opts = { encoding: 'utf8', ...execOptions, stdio: ['pipe', 'pipe', 'ignore'] };
+
+  try {
+    const prCommitCountStr = execFileSync(
+      'git',
+      ['rev-list', '--count', currentRange],
+      opts
+    ).trim();
+    const prCommitCount = parseInt(prCommitCountStr, 10) || 0;
+
+    if (prCommitCount > 0) {
+      execFileSync('git', ['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], opts);
+      const approvedBaseCountStr = execFileSync(
+        'git',
+        ['rev-list', '--count', approvedRange],
+        opts
+      ).trim();
+      const approvedBaseCount = parseInt(approvedBaseCountStr, 10) || 0;
+
+      // If approved range contains extra commits from a rebased parent branch in /gh-stack,
+      // scope the approved range to the PR layer commit count.
+      if (approvedBaseCount > prCommitCount) {
+        approvedRange = `${approvedSha}~${prCommitCount}..${approvedSha}`;
+      }
+    }
+  } catch (error) {
+    // Fall back to default origin/${baseRef}..${approvedSha}
+    console.log(`[incremental-approval] Failed to resolve advanced commit range, falling back: ${error.message}`);
+  }
+
+  return { approvedRange, currentRange };
+}
+
+/**
  * Shell Helper: Executes git range-diff between approved commit and current commit relative to base.
  * @param {string} baseRef - Target base branch name.
  * @param {string} approvedSha - Previous approved commit SHA.
@@ -374,31 +481,46 @@ function evaluateIncrementalApproval({
 function runGitRangeDiff(baseRef, approvedSha, currentSha) {
   validateGitRefs(baseRef, approvedSha, currentSha);
 
+  if (approvedSha === currentSha) {
+    return '';
+  }
+
   const execOptions = {
     encoding: 'utf8',
     maxBuffer: GIT_MAX_BUFFER_BYTES,
     timeout: GIT_EXEC_TIMEOUT_MS
   };
-  const diffArgs = [
-    'range-diff',
-    '--no-color',
-    '--',
-    `origin/${baseRef}..${approvedSha}`,
-    `origin/${baseRef}..${currentSha}`
-  ];
+
+  const execute = () => {
+    const { approvedRange, currentRange } = resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions);
+    if (approvedRange === currentRange) {
+      return '';
+    }
+    return execFileSync('git', ['range-diff', '--no-color', approvedRange, currentRange], execOptions);
+  };
 
   try {
-    return execFileSync('git', diffArgs, execOptions);
+    return execute();
   } catch (initialError) {
     try {
+      const fetchArgs = ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha];
+      const fetchEnv = { ...process.env };
+      const token = process.env.GITHUB_TOKEN;
+      if (token) {
+        const authHeader = `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+        fetchEnv.GIT_CONFIG_COUNT = '1';
+        fetchEnv.GIT_CONFIG_KEY_0 = 'http.extraheader';
+        fetchEnv.GIT_CONFIG_VALUE_0 = authHeader;
+      }
       execFileSync(
         'git',
-        ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha],
-        { encoding: 'utf8', stdio: 'ignore', timeout: GIT_EXEC_TIMEOUT_MS }
+        fetchArgs,
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: GIT_EXEC_TIMEOUT_MS, env: fetchEnv }
       );
-      return execFileSync('git', diffArgs, execOptions);
+      return execute();
     } catch (fallbackError) {
-      throw new Error(`Failed to execute git range-diff: ${fallbackError.message}`);
+      const stderr = fallbackError.stderr ? fallbackError.stderr.toString().trim() : fallbackError.message;
+      throw new Error(`Failed to execute git range-diff: ${stderr || fallbackError.message}`);
     }
   }
 }
@@ -447,14 +569,45 @@ async function run({ github, context, core }) {
 
   let timelineEvents = [];
   try {
-    timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
-      owner,
-      repo,
-      issue_number: prNumber,
-      per_page: 100
-    });
-  } catch (timelineError) {
-    core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+    const graphqlResponse = await github.graphql(
+      `query($owner: String!, $repo: String!, $prNumber: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $prNumber) {
+            timelineItems(first: 100, itemTypes: [PULL_REQUEST_REVIEW, REVIEW_DISMISSED_EVENT]) {
+              nodes {
+                __typename
+                ... on PullRequestReview {
+                  databaseId
+                  author { login }
+                  state
+                  commit { oid }
+                  submittedAt
+                }
+                ... on ReviewDismissedEvent {
+                  previousReviewState
+                  review {
+                    databaseId
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { owner, repo, prNumber }
+    );
+    timelineEvents = graphqlResponse?.repository?.pullRequest?.timelineItems?.nodes || [];
+  } catch (graphqlErr) {
+    try {
+      timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
+        owner,
+        repo,
+        issue_number: prNumber,
+        per_page: 100
+      });
+    } catch (timelineError) {
+      core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+    }
   }
 
   const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
@@ -523,11 +676,14 @@ module.exports = {
   MAX_OWNER_GRACE_LINES,
   validateGitRefs,
   isBotUser,
+  extractDismissalContext,
+  parseTimelineReviewEvent,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
   parseRangeDiff,
   evaluateIncrementalApproval,
+  resolveCommitRanges,
   runGitRangeDiff,
   run
 };

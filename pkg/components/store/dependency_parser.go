@@ -32,8 +32,8 @@ const (
 var descDirectivePattern = regexp.MustCompile(`(?i)(?:^|\n)\s*(?:[-*+]\s+)?(?:@|xmc:|xmc\.dev/)?(?:depends-on|dependencies)\s*:\s*([^\n]+)`)
 
 // ExtractDependencies extracts all component dependency references from the component spec and labels.
-// It deduplicates, canonicalizes, filters out self-references, and returns sorted dependencies.
-func ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string, selfName string) []string {
+// It deduplicates, canonicalizes, and returns sorted dependencies.
+func ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string {
 	var rawDeps []string
 	if spec != nil {
 		if len(spec.GetManifests()) > 0 {
@@ -46,7 +46,7 @@ func ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]str
 	if len(labels) > 0 {
 		rawDeps = append(rawDeps, ExtractDependenciesFromLabels(labels)...)
 	}
-	return NormalizeDependencies(rawDeps, selfName)
+	return NormalizeDependencies(rawDeps)
 }
 
 // ExtractDependenciesFromManifests parses raw YAML manifests (supporting multi-document streams)
@@ -160,10 +160,9 @@ func ExtractDependenciesFromLabels(labels map[string]string) []string {
 	return deps
 }
 
-// NormalizeDependencies tokenizes, canonicalizes, deduplicates, filters out self-references,
-// validates component names, and sorts the dependency list alphabetically.
-func NormalizeDependencies(rawDeps []string, selfName string) []string {
-	canonicalSelf := CanonicalComponentName(selfName)
+// NormalizeDependencies tokenizes, canonicalizes, deduplicates, validates component names,
+// and sorts the dependency list alphabetically.
+func NormalizeDependencies(rawDeps []string) []string {
 	seen := make(map[string]bool)
 	result := []string{}
 
@@ -171,7 +170,7 @@ func NormalizeDependencies(rawDeps []string, selfName string) []string {
 		cleaned := cleanRawDependencyString(raw)
 		for _, token := range strings.Fields(cleaned) {
 			canonical := CanonicalComponentName(token)
-			if canonical == "" || canonical == canonicalSelf {
+			if canonical == "" {
 				continue
 			}
 			if !IsValidComponentName(canonical) {

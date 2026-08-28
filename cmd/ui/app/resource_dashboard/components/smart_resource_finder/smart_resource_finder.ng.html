@@ -34,17 +34,26 @@
       <div class="query-input-group">
         <label class="query-label" [for]="'resource-type-select-' + row.id">Resource type *</label>
         <div class="select-with-remove-box">
-          <select
-            class="query-select-box"
-            [id]="'resource-type-select-' + row.id"
-            [ngModel]="row.resourceType"
-            (ngModelChange)="updateRowResourceType($index, $event)"
-          >
-            <option value="">-</option>
-            @for (resType of availableResourceTypes(); track resType) {
-              <option [value]="resType">{{ resType }}</option>
+          <div class="select-box-container">
+            @if ($index === 0 && row.resourceType) {
+              <span class="dominant-text">Dominant</span>
             }
-          </select>
+            <mat-select
+              class="query-select-box"
+              panelClass="resource-type-select-panel"
+              placeholder="-"
+              [panelWidth]="null"
+              [class.dominant-select-box]="$index === 0 && !!row.resourceType"
+              [id]="'resource-type-select-' + row.id"
+              [value]="row.resourceType"
+              (selectionChange)="onResourceTypeChange($index, $event.value)"
+            >
+              <mat-option value="">-</mat-option>
+              @for (resType of availableResourceTypes(); track resType) {
+                <mat-option [value]="resType">{{ resType }}</mat-option>
+              }
+            </mat-select>
+          </div>
           @if (rows().length > 1) {
             <button
               type="button"

@@ -29,8 +29,6 @@ import (
 )
 
 const (
-	// defaultPageSize is the default page size for list requests.
-	defaultPageSize = 10
 	// maxQueueNameLen is the maximum allowed length of a queue name.
 	maxQueueNameLen = 253
 	// These are just some arbitrary limits for sanity. We don't expect users to hit these limits,

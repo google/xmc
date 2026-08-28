@@ -119,7 +119,7 @@
         <ng-container matColumnDef="user">
           <th mat-header-cell *matHeaderCellDef>Author</th>
           <td mat-cell *matCellDef="let job" class="author-cell">
-            <xmc-wip-banner />
+            {{ job.user || '-' }}
           </td>
         </ng-container>
 

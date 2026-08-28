@@ -4,8 +4,7 @@ import 'jasmine';
 
 import { SafeHtml, unwrapHtml } from 'safevalues';
 
-import { HtmlSanitizerBuilder, trySanitizeUrl, windowOpen } from './safevalues_helper';
-import { cleanState } from './testing/test';
+import { HtmlSanitizerBuilder, trySanitizeUrl } from './safevalues_helper';
 
 describe('SafeValues Helper', () => {
   describe('HtmlSanitizerBuilder', () => {
@@ -56,29 +55,6 @@ describe('SafeValues Helper', () => {
       expect(trySanitizeUrl('ftp://example.com')).toBe('about:blank');
       expect(trySanitizeUrl('mailto:test@example.com')).toBe('about:blank');
       expect(trySanitizeUrl('path/without/slash')).toBe('about:blank');
-    });
-  });
-
-  function setup() {
-    return cleanState(() => {
-      const mockWindow = {
-        open: jasmine.createSpy('open').and.returnValue({} as Window),
-      };
-      return { mockWindow };
-    }, beforeEach);
-  }
-
-  describe('windowOpen', () => {
-    const state = setup();
-
-    it('should call window.open with parameters', () => {
-      const result = windowOpen(state.mockWindow, 'https://example.com', '_blank', 'resizable=yes');
-      expect(state.mockWindow.open).toHaveBeenCalledWith(
-        'https://example.com',
-        '_blank',
-        'resizable=yes',
-      );
-      expect(result).toBeDefined();
     });
   });
 });

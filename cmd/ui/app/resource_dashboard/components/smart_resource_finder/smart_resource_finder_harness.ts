@@ -13,21 +13,27 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { MatSelectHarness } from '@angular/material/select/testing';
 
 /** Harness for interacting with <xmc-smart-resource-finder> in tests. */
 export class SmartResourceFinderHarness extends ComponentHarness {
   static hostSelector = 'xmc-smart-resource-finder';
 
   private readonly amountInputs = this.locatorForAll('.query-amount-input');
+  private readonly selectHarnesses = this.locatorForAll(MatSelectHarness);
   private readonly selectBoxes = this.locatorForAll('.query-select-box');
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
-  private readonly optionElements = this.locatorForAll('.query-select-box option');
 
   /** Gets all option labels available in the resource type dropdowns. */
   async getResourceTypeOptions(): Promise<string[]> {
-    const options = await this.optionElements();
-    return Promise.all(options.map(async (opt) => (await opt.text()).trim()));
+    const selects = await this.selectHarnesses();
+    if (selects.length === 0) return [];
+    await selects[0].open();
+    const options = await selects[0].getOptions();
+    const texts = await Promise.all(options.map((opt) => opt.getText()));
+    await selects[0].close();
+    return texts;
   }
 
   /** Gets the amount input value as a string for the given index. */
@@ -56,28 +62,29 @@ export class SmartResourceFinderHarness extends ComponentHarness {
 
   /** Gets the count of resource type select dropdowns. */
   async getResourceTypeSelectCount(): Promise<number> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     return selects.length;
   }
 
   /** Gets the selected value of a resource type select at the given index. */
   async getResourceTypeSelectValue(index: number): Promise<string> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     if (!selects[index]) {
       throw new Error(`No resource type select found at index ${index}`);
     }
-    return selects[index].getProperty<string>('value');
+    const text = await selects[index].getValueText();
+    return text === '-' ? '' : text;
   }
 
   /** Selects an option value for a resource type select at the given index. */
   async selectResourceType(index: number, optionValue: string): Promise<void> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     if (!selects[index]) {
       throw new Error(`No resource type select found at index ${index}`);
     }
-    const selectEl = selects[index];
-    await selectEl.setInputValue(optionValue);
-    await selectEl.dispatchEvent('change');
+    await selects[index].open();
+    const optText = optionValue === '' ? '-' : optionValue;
+    await selects[index].clickOptions({ text: optText });
   }
 
   /** Gets the count of remove resource filter buttons. */
@@ -93,6 +100,29 @@ export class SmartResourceFinderHarness extends ComponentHarness {
       throw new Error(`No remove button found at index ${index}`);
     }
     await removeBtns[index].click();
+  }
+
+  private readonly dominantTexts = this.locatorForAll('.dominant-text');
+
+  /** Gets whether a dominant label text is present. */
+  async hasDominantBadge(): Promise<boolean> {
+    const texts = await this.dominantTexts();
+    return texts.length > 0;
+  }
+
+  /** Gets the text of the dominant label if present. */
+  async getDominantBadgeText(): Promise<string | null> {
+    const texts = await this.dominantTexts();
+    return texts.length > 0 ? (await texts[0].text()).trim() : null;
+  }
+
+  /** Returns whether the select box at the given index has the dominant class. */
+  async isDominantSelectBox(index: number): Promise<boolean> {
+    const selects = await this.selectBoxes();
+    if (!selects[index]) {
+      throw new Error(`No resource type select found at index ${index}`);
+    }
+    return selects[index].hasClass('dominant-select-box');
   }
 
   /** Clicks the + Add resource type button. */
