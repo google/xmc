@@ -45,7 +45,7 @@ func main() {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	logging.Info(ctx, "Initializing Ingestion Gateway service", "brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
+	logInitializing(ctx, cfg)
 
 	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
 
@@ -53,13 +53,24 @@ func main() {
 	// misconfigured message bus fails at startup rather than on the first ingestion request.
 	producer, err := ingestiongateway.NewMetricProducer(ctx, cfg, gMetrics)
 	if err != nil {
-		logging.Fatal(ctx, "failed to create metric producer", "error", err)
+		logging.Fatal(ctx, "failed to create metric producer", "message_bus", cfg.MessageBus, "error", err)
 	}
 	defer producer.Close()
-	logging.Info(ctx, "Topic topology validation passed", "topic", cfg.TopicName, "min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
+	logging.Info(ctx, "Message bus topic validation passed", "message_bus", cfg.MessageBus, "topic", cfg.TopicName)
 
 	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, gMetrics, producer)
 	awaitShutdown(ctx, server)
+}
+
+// logInitializing reports the startup configuration relevant to the selected message bus, omitting
+// the settings the other backend does not use.
+func logInitializing(ctx context.Context, cfg *ingestiongateway.Config) {
+	if cfg.MessageBus == ingestiongateway.MessageBusPubSub {
+		logging.Info(ctx, "Initializing Ingestion Gateway service", "message_bus", cfg.MessageBus, "project", cfg.ProjectID, "topic", cfg.TopicName)
+		return
+	}
+	logging.Info(ctx, "Initializing Ingestion Gateway service", "message_bus", cfg.MessageBus, "brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName,
+		"min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
 }
 
 func startHTTPServer(ctx context.Context, port string, topicName string, metrics *ingestiongateway.GatewayMetrics, optionalProducer ...ingestiongateway.MetricProducer) *http.Server {

@@ -17,17 +17,30 @@ package ingestiongateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 )
 
+// Supported message bus backends selectable via the -message_bus flag.
+const (
+	// MessageBusRedpanda publishes metrics over the Kafka protocol to Redpanda.
+	MessageBusRedpanda = "redpanda"
+	// MessageBusPubSub publishes metrics to a Google Cloud Pub/Sub topic.
+	MessageBusPubSub = "pubsub"
+)
+
+// errUnsupportedMessageBus reports a backend that is neither supported message bus.
+//
+// Config validation and producer construction both reject one, and an operator reading either
+// message should be told the same thing.
+func errUnsupportedMessageBus(bus string) error {
+	return fmt.Errorf("unsupported message_bus %q: must be one of %q, %q", bus, MessageBusRedpanda, MessageBusPubSub)
+}
+
 // MetricRecord is a backend-neutral metrics message.
 //
-// Topic names the destination the record is published to. A backend that binds its destination
-// once at construction rather than per record must reject, or at least not silently disagree with,
-// a record naming a different topic.
-//
-// Key carries the composite (xid, work_unit_id) identifier used to preserve per-work-unit FIFO
-// ordering. The Kafka backend partitions by it via kgo.StickyKeyPartitioner.
+// Key carries the composite (xid, work_unit_id) identifier that both backends use to preserve
+// per-work-unit FIFO ordering: Redpanda partitions by it, Pub/Sub orders by it.
 type MetricRecord struct {
 	Topic string
 	Key   []byte
@@ -39,9 +52,6 @@ type MetricRecord struct {
 // Produce must not block on broker acknowledgement. It reports the outcome of each record by
 // invoking promise exactly once, passing a *PublishError so callers can map failures to an HTTP
 // status without knowing which backend produced them.
-//
-// Redpanda is the only implementation today; the interface exists so the handler no longer depends
-// on franz-go types.
 type MetricProducer interface {
 	Produce(ctx context.Context, rec *MetricRecord, promise func(*MetricRecord, error))
 	Close()
@@ -107,18 +117,28 @@ func FormatCompositeKey(xid, workUnitID int64) []byte {
 	return buf
 }
 
-// NewMetricProducer constructs the message bus backend and verifies its destination topic before
-// returning.
+// NewMetricProducer constructs the message bus backend selected by cfg.MessageBus and verifies
+// its destination topic before returning.
 //
-// It returns an interface rather than a concrete struct so that callers hold the backend-neutral
-// contract; each backend constructor still returns its own type.
+// It returns an interface rather than a concrete struct because the backend is chosen at runtime;
+// each backend constructor still returns its own type.
 func NewMetricProducer(ctx context.Context, cfg *Config, gMetrics *GatewayMetrics) (MetricProducer, error) {
 	if cfg == nil {
 		return nil, errors.New("config cannot be nil")
 	}
-	producer, err := newValidatedKafkaProducer(ctx, cfg, gMetrics)
-	if err != nil {
-		return nil, err
+	if cfg.messageBusOrDefault() == MessageBusPubSub {
+		producer, err := newValidatedPubSubProducer(ctx, cfg, gMetrics)
+		if err != nil {
+			return nil, err
+		}
+		return producer, nil
 	}
-	return producer, nil
+	if cfg.messageBusOrDefault() == MessageBusRedpanda {
+		producer, err := newValidatedKafkaProducer(ctx, cfg, gMetrics)
+		if err != nil {
+			return nil, err
+		}
+		return producer, nil
+	}
+	return nil, errUnsupportedMessageBus(cfg.MessageBus)
 }

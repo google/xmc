@@ -160,6 +160,22 @@ func TestNewMetricProducer_NilConfig(t *testing.T) {
 	}
 }
 
+func TestNewMetricProducer_UnsupportedMessageBus(t *testing.T) {
+	cfg := &Config{
+		MessageBus:      "rabbitmq",
+		RedpandaBrokers: []string{"127.0.0.1:9092"},
+		TopicName:       "xmc-metrics",
+	}
+	producer, err := NewMetricProducer(context.Background(), cfg, nil)
+	if err == nil {
+		producer.Close()
+		t.Fatalf("expected an error for an unsupported message bus")
+	}
+	if !strings.Contains(err.Error(), "rabbitmq") {
+		t.Errorf("expected the error to name the rejected backend, got %q", err.Error())
+	}
+}
+
 // TestNewMetricProducer_RedpandaValidatesTopology asserts the Redpanda branch performs its startup
 // topology check: with no broker listening the check must fail rather than yield a live producer.
 func TestNewMetricProducer_RedpandaValidatesTopology(t *testing.T) {
@@ -167,6 +183,7 @@ func TestNewMetricProducer_RedpandaValidatesTopology(t *testing.T) {
 	defer cancel()
 
 	cfg := &Config{
+		MessageBus:      MessageBusRedpanda,
 		RedpandaBrokers: []string{"127.0.0.1:1"},
 		TopicName:       "xmc-metrics",
 		MinPartitions:   1,

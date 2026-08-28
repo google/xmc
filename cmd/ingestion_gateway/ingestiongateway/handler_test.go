@@ -478,7 +478,7 @@ func (bp *blockingProducer) Close() {}
 
 // TestCongestionControl_BrokerSaturation_Returns503 checks the handler's mapping from a
 // congestion-kinded publish failure onto 503. Which backend errors count as congestion is the
-// producer's business and is covered in kafka_producer_test.go.
+// producer's business and is covered in kafka_producer_test.go / pubsub_producer_test.go.
 func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 	tests := []struct {
 		name        string
