@@ -286,7 +286,7 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}
-	if req.GetRequiredType() < componentspb.ComponentType_COMPONENT_TYPE_UNSPECIFIED || req.GetRequiredType() > componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+	if _, ok := componentspb.ComponentType_name[int32(req.GetRequiredType())]; !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid required type %d", req.GetRequiredType())
 	}
 
