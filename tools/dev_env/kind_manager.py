@@ -137,7 +137,20 @@ class KindManager:
         return res
 
     def create_cluster(self, cluster_name: str | None = None, recreate: bool = False) -> None:
-        """Creates the KinD cluster with NodePort port-mappings if not already running."""
+        """Creates the local KinD cluster with NodePort port-mappings if not already running.
+
+        Loads `kind_config.yaml` to configure control-plane port mappings for local
+        ingress (e.g. 8080 -> 30080 for UI Gateway, 5556 -> 30556 for Dex OIDC),
+        creates the cluster via the `kind` CLI, sets the active kubectl context,
+        and initializes the default 'xmc' namespace.
+
+        Args:
+            cluster_name: Optional KinD cluster name; defaults to config.cluster_name.
+            recreate: If True, deletes any existing cluster with the same name before creation.
+
+        Raises:
+            FileNotFoundError: If kind_config.yaml cannot be located in candidate manifest paths.
+        """
         name = cluster_name or self.config.cluster_name
         if self.cluster_exists(name):
             if recreate:
@@ -167,7 +180,19 @@ class KindManager:
         log_success(f"KinD cluster '{name}' is ready.")
 
     def _resolve_adc_file(self) -> Path:
-        """Resolves path to valid Google Application Default Credentials JSON file."""
+        """Resolves the path to a valid Google Application Default Credentials (ADC) JSON file.
+
+        Attempts resolution in the following order:
+        1. Explicit GOOGLE_APPLICATION_CREDENTIALS environment variable.
+        2. Standard gcloud ADC path (~/.config/gcloud/application_default_credentials.json).
+        3. Ephemeral mock credentials file when SPANNER_EMULATOR_HOST is set.
+
+        Returns:
+            Absolute Path to the resolved credentials JSON file.
+
+        Raises:
+            FileNotFoundError: If no valid ADC file can be found and no emulator is active.
+        """
         adc_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         if adc_path and Path(adc_path).is_file():
             _LOGGER.debug("Resolved ADC from GOOGLE_APPLICATION_CREDENTIALS: %s", adc_path)
@@ -266,7 +291,17 @@ class KindManager:
         self._apply_secret_generic("redis-secret", ["xmc"], literals=["redis-password="], ctx=ctx)
 
     def ensure_secrets(self, cluster_name: str | None = None) -> None:
-        """Creates GCP service account credentials, OAuth tokens, and TLS certificates."""
+        """Provisions required Kubernetes secrets in the local KinD cluster.
+
+        Injects:
+        - gcp-sa-key: Host ADC credentials for Cloud Spanner access.
+        - backend-oauth-secrets: Development JWT signing secret and OAuth client secret.
+        - validation-secret: Self-signed TLS private key and certificate for admission webhooks.
+        - redis-secret: Empty development password for local Redis.
+
+        Args:
+            cluster_name: Optional KinD cluster name; defaults to config.cluster_name.
+        """
         name = cluster_name or self.config.cluster_name
         ctx = f"kind-{name}"
         log_info("=== [KinD] Configuring Kubernetes secrets in 'xmc' namespace ===")
@@ -292,9 +327,24 @@ class KindManager:
         literals: list[str] | None = None,
         ctx: str | None = None,
     ) -> None:
-        """Applies generic secret across namespaces idempotently."""
+        """Applies a generic Kubernetes secret across specified namespaces idempotently.
+
+        Deletes any pre-existing secret with the same name before recreating it
+        to guarantee clean, idempotent state across multiple bootstrap invocations.
+
+        Args:
+            name: Secret resource name in Kubernetes.
+            namespaces: Target Kubernetes namespaces where the secret should be created.
+            files: Optional key=path file mappings for secret data (--from-file).
+            literals: Optional key=value literal pairs for secret data (--from-literal).
+            ctx: Optional kubectl context override; defaults to self.kube_context.
+
+        Raises:
+            RuntimeError: If secret creation fails in any specified namespace.
+        """
         target_ctx = ctx or self.kube_context
         for ns in namespaces:
+            # Delete existing secret first to prevent immutable field conflicts
             run_command(
                 [
                     "kubectl",
@@ -335,7 +385,22 @@ class KindManager:
                 ) from None
 
     def apply_manifests(self, cluster_name: str | None = None) -> None:
-        """Applies dummy CRDs, Redis, Dex OIDC, and Gateway Proxy manifests."""
+        """Applies supporting infrastructure manifests to the local KinD cluster.
+
+        Discovers and applies local infrastructure definitions:
+        - dummy_crds.yaml: Registers open-schema CRD definitions (JobSet and Kueue)
+          so the Kubernetes API server accepts custom resources without rejection.
+        - redis.yaml: Local Redis cache instance.
+        - dex.yaml: Local Dex OIDC authentication provider.
+        - gateway_proxy.yaml: Local NGINX reverse-proxy routing UI and API traffic.
+
+        Args:
+            cluster_name: Optional KinD cluster name; defaults to config.cluster_name.
+
+        Raises:
+            FileNotFoundError: If any required manifest is missing from candidate dirs.
+            ValueError: If kubectl apply fails during manifest installation.
+        """
         name = cluster_name or self.config.cluster_name
         ctx = f"kind-{name}"
         log_info("=== [KinD] Applying supporting infrastructure manifests ===")
@@ -368,7 +433,17 @@ class KindManager:
         log_success("Supporting manifests applied.")
 
     def check_endpoint_health(self, url: str) -> bool:
-        """Pings an HTTP health check endpoint."""
+        """Performs an HTTP GET probe against a local service endpoint.
+
+        Sends a lightweight HTTP GET request with a short 3-second timeout and
+        a custom User-Agent header to verify service responsiveness.
+
+        Args:
+            url: The HTTP/HTTPS endpoint URL to probe.
+
+        Returns:
+            True if the endpoint returns an HTTP 2xx status code; False otherwise.
+        """
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "XMC-DevEnv"})
             with urllib.request.urlopen(req, timeout=3) as resp:
@@ -380,7 +455,19 @@ class KindManager:
             return False
 
     def get_status(self, cluster_name: str | None = None) -> dict[str, Any]:
-        """Inspects and displays KinD cluster status, pods, and endpoint health."""
+        """Inspects and returns the operational status of the KinD development cluster.
+
+        Checks cluster existence, fetches wide pod tables across 'xmc' and 'dex'
+        namespaces, probes local Gateway Proxy and Dex health endpoints, and
+        prints human-readable summary diagnostics to stdout.
+
+        Args:
+            cluster_name: Optional KinD cluster name; defaults to config.cluster_name.
+
+        Returns:
+            Dictionary containing 'cluster_name', 'running' boolean, 'pods' mapping
+            by namespace, and 'health' endpoint status mapping.
+        """
         name = cluster_name or self.config.cluster_name
         ctx = f"kind-{name}"
         cluster_exists = self.cluster_exists(name)
@@ -432,7 +519,20 @@ class KindManager:
         follow: bool = False,
         namespace: str = "xmc",
     ) -> None:
-        """Streams or prints logs for a specific service or all pods."""
+        """Streams or tails container stdout/stderr logs from the local KinD cluster.
+
+        Resolves service aliases (e.g. 'ess' -> 'experiment-state-server',
+        'xid' -> 'xid-service') to match Kubernetes app labels, applies line limits
+        or live streaming (-f), and handles user interrupts gracefully.
+
+        Args:
+            service_name: Optional target service name or alias (e.g. 'ess', 'ui').
+                If omitted, logs across all services with an 'app' label are streamed.
+            cluster_name: Optional KinD cluster name; defaults to config.cluster_name.
+            lines: Optional number of historical log lines to tail (defaults to 100).
+            follow: When True, streams logs continuously in real time.
+            namespace: Target Kubernetes namespace (default: 'xmc').
+        """
         name = cluster_name or self.config.cluster_name
         if not self.cluster_exists(name):
             log_error(f"Cluster '{name}' is not running.")
