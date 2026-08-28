@@ -83,7 +83,7 @@
   left: 0;
   font-size: 10px;
   font-weight: 700;
-  color: #d93025;
+  color: #1a73e8;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   line-height: 1;
@@ -113,12 +113,12 @@
   }
 
   &.dominant-select-box {
-    border: 2px solid #d93025 !important;
+    border: 2px solid #1a73e8 !important;
     padding: 0 9px;
 
     &:focus,
     &.mat-mdc-select-focused {
-      border-color: #d93025 !important;
+      border-color: #1a73e8 !important;
     }
   }
 
