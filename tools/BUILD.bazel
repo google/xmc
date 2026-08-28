@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "BUILD.bazel",
     "README.md",
+    "dev_env.py",
 ])
 
 # Aliases to subpackages for backwards compatibility
@@ -71,6 +72,21 @@ alias(
 )
 
 # Dev Env
+alias(
+    name = "dev_env_lib",
+    actual = "//tools/dev_env:dev_env_lib",
+)
+
+alias(
+    name = "dev_env",
+    actual = "//tools/dev_env:dev_env",
+)
+
+alias(
+    name = "dev_env_test",
+    actual = "//tools/dev_env:dev_env_test",
+)
+
 alias(
     name = "deploy_dev_env_lib",
     actual = "//tools/dev_env:deploy_dev_env_lib",

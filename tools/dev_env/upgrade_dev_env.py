@@ -519,6 +519,16 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
     log_success("Upgrade completed end-to-end successfully!")
 
 
+def run_upgrade(args: argparse.Namespace) -> None:
+    """Executes the upgrade pipeline.
+
+    Args:
+        args: Parsed command-line arguments.
+    """
+    config = load_config(args.config, run_migrations=args.run_migrations)
+    run_pipeline(args, config, STEPS)
+
+
 def main(args_list: list[str] | None = None) -> None:
     """Main entrypoint for the upgrade script."""
     ensure_venv()
@@ -531,8 +541,7 @@ def main(args_list: list[str] | None = None) -> None:
         os.chdir(Path(__file__).resolve().parent.parent)
 
     args = parse_args(args_list)
-    config = load_config(args.config, run_migrations=args.run_migrations)
-    run_pipeline(args, config, STEPS)
+    run_upgrade(args)
 
 
 if __name__ == "__main__":
