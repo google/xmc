@@ -454,6 +454,57 @@ The `ChangeDetector` module inspects the active git working tree and staged diff
 
 ---
 
+## Environment Architecture & Scope: Local KinD vs. Remote GKE
+
+The development tooling supports two distinct deployment tiers tailored for different phases of engineering. It is important to distinguish between **capabilities that are inherently cloud-dependent (never reachable locally)** and **capabilities that are reachable or planned for local KinD**.
+
+```
++-----------------------------------------------------------------------------------+
+|                              XMC Development Tiers                                |
++-------------------------------------------------+---------------------------------+
+|              Local KinD Environment             |       Remote GKE Deployment     |
+|             (tools/dev_env/dev_env.py)          |      (tools/upgrade_dev_env.py) |
++-------------------------------------------------+---------------------------------+
+|  • Sub-second Inner-Loop Fast Reload            |  • Real Multi-Slice TPU Topologies |
+|  • Web UI & API Gateway Routing                 |  • NVIDIA GPU Accelerators      |
+|  • Dex OIDC Authentication & Session JWTs       |  • Cloud Storage FUSE Mounts    |
+|  • Cloud Spanner DDL Migrations & Queries       |  • Workload Identity & GCP IAM  |
+|  • Open-Schema Dummy CRDs (JobSet / Kueue)      |  • Live Kueue Quota & MultiKueue|
+|  • (Roadmap) CPU Mock Workload Controllers      |  • End-to-End Distributed Jobs  |
++-------------------------------------------------+---------------------------------+
+```
+
+### 1. Inherent Cloud Dependencies (Never Reachable Locally)
+Certain hardware and cloud infrastructure primitives cannot run inside a local Docker container / KinD cluster and strictly require a live Google Cloud GKE deployment (`dev_env gke-deploy` / `dev_env gke-upgrade`):
+- **Specialized Accelerators & Topologies**: Physical Cloud TPUs (`google.com/tpu` v4, v5e, v5p, v6e), multi-host optical circuit switches (OCS), and NVIDIA Cloud GPUs.
+- **Cloud IAM & Storage Integrations**: Google Cloud Workload Identity Federation, Cloud Storage FUSE CSI driver mounting real GCS buckets, Google Cloud Armor, and Google-managed OAuth / Identity-Aware Proxy (IAP).
+- **Multi-Cluster Infrastructure**: MultiKueue dispatching across multiple physical remote GKE clusters and Cluster Autoscaler nodepools.
+
+### 2. Local KinD Scope: Current Baseline vs. Reachable Capabilities
+
+| Capability | Current Local KinD Baseline | Reachable on KinD (Roadmap) | Remote GKE |
+| :--- | :---: | :---: | :---: |
+| **Control Plane & Web UI** | ✅ Live (`dev_env up`, `reload`) | ✅ Live | ✅ Live |
+| **Dex OIDC Authentication** | ✅ Live (`dex.yaml`) | ✅ Live | ✅ Cloud IAP / OAuth |
+| **Cloud Spanner Migrations** | ✅ Live (`spanner.py`) | ✅ Live | ✅ Real Cloud Spanner |
+| **CRD API Schema Validation** | ✅ Open-Schema (`dummy_crds.yaml`)| ✅ Full Upstream CRDs | ✅ GKE Add-ons |
+| **Reconciler State Machine** | ⚠️ Go Unit/Integration Tests | 🟢 **Reachable** (Upstream Controllers) | ✅ Live Real Pods |
+| **CPU Mock Workload Execution** | ❌ Controller not installed | 🟢 **Reachable** (Mock JobSets/Pods) | ✅ Live Real Pods |
+| **TPU / GPU Hardware Execution** | ❌ Never Reachable | ❌ Never Reachable | ✅ Live Real Hardware |
+
+#### Current Baseline with Dummy CRDs:
+To keep local startup near-instantaneous (~35s) and memory overhead minimal, KinD installs open-schema CustomResourceDefinitions ([`dummy_crds.yaml`](../../test/e2e/manifests/dummy_crds.yaml)) for `JobSet` and `Kueue`.
+- **What works**: `actuator` and `reconciler` can perform Kubernetes CRUD operations without API server rejection (`no matches for kind "JobSet"`).
+- **What is tested in-memory**: The complete Reconciler state machine (`SCHEDULING` $\rightarrow$ `STARTING` $\rightarrow$ `RUNNING` $\rightarrow$ `COMPLETED`/`FAILED`/`PARTIALLY_FAILED`, `ImagePullBackOff`, unschedulable handling, Non-Restarting JobSets Contract) is verified via comprehensive Go table-driven integration tests (`cmd/reconciler/jobset/converter_test.go`).
+
+#### Reachable Local Enhancement (Roadmap):
+Deploying the standard upstream JobSet and Kueue controller manager manifests (`sigs.k8s.io/jobset`, `sigs.k8s.io/kueue`) into KinD is technically straightforward. When enabled (e.g. via an optional `--with-workload-controllers` flag):
+- KinD will run the upstream controller pods in `jobset-system` and `kueue-system`.
+- Creating a `JobSet` will spawn actual child `Job` and `Pod` containers running mock CPU tasks locally on Docker.
+- `reconciler` will observe real pod lifecycles and update WorkUnit database records live in Spanner.
+
+---
+
 ## Testing
 
 Run unit tests for the `tools/dev_env` package with Bazel:
