@@ -129,7 +129,7 @@ describe('SmartResourceFinderComponent', () => {
     expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'tpu']);
   });
 
-  it('should render Dominant badge and red border only on index 0 when populated', async () => {
+  it('should render Dominant badge and blue border only on index 0 when populated', async () => {
     expect(await harness.hasDominantBadge()).toBeFalse();
     expect(await harness.isDominantSelectBox(0)).toBeFalse();
 
