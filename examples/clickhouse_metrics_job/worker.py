@@ -184,15 +184,10 @@ def insert_records_via_http(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    # urlopen raises on any non-2xx status, so the failure has to be caught rather than inspected on
-    # the response. The body is what carries the reason ClickHouse rejected the insert -- an unknown
-    # table or a column type mismatch -- and HTTPError alone reports only the status code.
-    try:
-        with urllib.request.urlopen(req, timeout=30):
-            pass
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"ClickHouse HTTP insert failed ({err.code}): {body}") from err
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        if resp.status != 200:
+            body = resp.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"ClickHouse HTTP insert failed ({resp.status}): {body}")
 
 
 def _load_env_file_if_present() -> None:
