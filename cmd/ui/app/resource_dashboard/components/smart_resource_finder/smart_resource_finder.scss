@@ -101,7 +101,8 @@
   outline: none;
   background-color: #ffffff;
   height: 34px;
-  min-width: 140px;
+  min-width: 190px;
+  width: 210px;
   display: inline-flex;
   align-items: center;
   cursor: pointer;
@@ -131,6 +132,21 @@
   ::ng-deep .mat-mdc-select-value {
     font-size: 14px;
     color: #202124;
+  }
+}
+
+::ng-deep .resource-type-select-panel {
+  min-width: 250px !important;
+  max-width: 420px !important;
+
+  .mat-mdc-option {
+    min-height: 38px;
+
+    .mdc-list-item__primary-text {
+      white-space: nowrap !important;
+      overflow: visible !important;
+      font-size: 13px;
+    }
   }
 }
 
