@@ -56,8 +56,17 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
       timeInQueueSeconds: 300,
       requestedResources: [{ resourceType: 'TPU v4', count: 16 }],
     },
+    {
+      positionInQueue: 3,
+      xid: 53310,
+      workUnitId: 3,
+      priority: 0,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 150,
+      requestedResources: [{ resourceType: 'cpu', count: 1000 }],
+    },
   ],
-  totalQueueSize: 2,
+  totalQueueSize: 3,
 };
 
 @Component({
@@ -114,7 +123,7 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);
-    expect(await harness.getRowCount()).toBe(2);
+    expect(await harness.getRowCount()).toBe(3);
 
     const firstRow = await harness.getRowCellsText(0);
     expect(firstRow.position).toBe('N/A - running');
@@ -125,7 +134,7 @@ describe('QueueJobsTable Component', () => {
     expect(firstRow.resources).toContain('memory: 3298886726347889');
     expect(firstRow.resources).toContain('4 x H100');
     expect(firstRow.workUnitId).toContain('1');
-    expect(firstRow.user).toContain('Work in Progress');
+    expect(firstRow.user).toContain('example@example.com');
 
     const secondRow = await harness.getRowCellsText(1);
     expect(secondRow.position).toBe('2');
@@ -133,6 +142,15 @@ describe('QueueJobsTable Component', () => {
     expect(secondRow.status).toContain('Scheduling');
     expect(secondRow.priority).toContain('100');
     expect(secondRow.resources).toContain('16 x TPU v4');
+    expect(secondRow.user).toContain('example-admin@example.com');
+
+    const thirdRow = await harness.getRowCellsText(2);
+    expect(thirdRow.position).toBe('3');
+    expect(thirdRow.jobName).toContain('Experiment #53310');
+    expect(thirdRow.status).toContain('Scheduling');
+    expect(thirdRow.priority).toContain('0');
+    expect(thirdRow.resources).toContain('cpu: 1000');
+    expect(thirdRow.user).toBe('-');
   });
 
   it('should properly construct experiment and work unit router links using harness', async () => {
@@ -140,7 +158,7 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);
-    expect(await harness.getRowCount()).toBe(2);
+    expect(await harness.getRowCount()).toBe(3);
 
     const firstRowLinks = await harness.getRowLinks(0);
     expect(firstRowLinks.jobLink).toBe('/experiments/53296');
@@ -265,6 +283,16 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     expect(document.querySelector(LOADING_CONTAINER_SELECTOR)).toBeNull();
-    expect(await harness.getRowCount()).toBe(2);
+    expect(await harness.getRowCount()).toBe(3);
+  });
+
+  it('should log a console.error when a job is missing an assigned user', async () => {
+    spyOn(console, 'error');
+    bootstrap(TestHostComponent);
+    await flush();
+
+    expect(console.error).toHaveBeenCalledWith(
+      'Job "Experiment #53310" is missing an assigned user.',
+    );
   });
 });

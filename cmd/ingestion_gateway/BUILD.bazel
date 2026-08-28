@@ -25,7 +25,6 @@ go_library(
         "//cmd/ingestion_gateway/ingestiongateway",
         "//internal/compat/google",
         "//internal/logging",
-        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
     ],
 )
 
@@ -45,9 +44,5 @@ go_test(
     name = "ingestion_gateway_test",
     srcs = ["main_test.go"],
     embed = [":ingestion_gateway_lib"],
-    deps = [
-        "//cmd/ingestion_gateway/ingestiongateway",
-        "@com_github_twmb_franz_go//pkg/kgo",
-        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
-    ],
+    deps = ["//cmd/ingestion_gateway/ingestiongateway"],
 )

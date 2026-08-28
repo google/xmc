@@ -25,7 +25,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/apis/metrics"
@@ -34,7 +33,7 @@ import (
 const (
 	// MaxDrainBytes is the maximum amount of remaining request body to drain on error.
 	MaxDrainBytes = 5 * 1024 * 1024 // 5MB
-	// DefaultTopicName is the fallback Kafka topic for metrics ingestion.
+	// DefaultTopicName is the fallback message bus topic for metrics ingestion.
 	DefaultTopicName = "xmc-metrics"
 )
 
@@ -44,7 +43,7 @@ type ServiceUnavailableErrorPayload struct {
 	Message string `json:"message"`
 }
 
-// NewMetricsIngestionHandler constructs an http.HandlerFunc that produces metrics asynchronously to Kafka/Redpanda.
+// NewMetricsIngestionHandler constructs an http.HandlerFunc that produces metrics asynchronously to the configured message bus.
 func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetrics *GatewayMetrics) http.HandlerFunc {
 	if topicName == "" {
 		topicName = DefaultTopicName
@@ -143,14 +142,14 @@ func publishMetricRecord(ctx context.Context, m *metrics.Metric, topicName strin
 		return fmt.Errorf("failed to marshal metric proto: %w", err)
 	}
 
-	record := &kgo.Record{
+	record := &MetricRecord{
 		Topic: topicName,
 		Key:   FormatCompositeKey(m.Xid, m.WorkUnitId),
 		Value: valBytes,
 	}
 
 	wg.Add(1)
-	producer.Produce(ctx, record, func(r *kgo.Record, err error) {
+	producer.Produce(ctx, record, func(r *MetricRecord, err error) {
 		defer wg.Done()
 		if err != nil {
 			errCopy := fmt.Errorf("async produce error: %w", err)
@@ -215,8 +214,12 @@ func drainRequestBody(r io.Reader, maxBytes int64) {
 	io.Copy(io.Discard, io.LimitReader(r, maxBytes))
 }
 
+// handlePublishError maps a backend publish failure onto the HTTP contract using the kind the
+// producer attached, so the handler stays independent of which message bus is configured.
 func handlePublishError(ctx context.Context, w http.ResponseWriter, r *http.Request, gMetrics *GatewayMetrics, err error) {
-	if IsClientProduceError(err) {
+	kind := publishErrorKind(err)
+
+	if kind == PublishErrorClient {
 		logging.Warn(ctx, "Metrics ingestion request failed due to invalid metric payload", "error", err.Error())
 		if gMetrics != nil {
 			gMetrics.RecordDroppedPayload("client_produce_error")
@@ -228,7 +231,7 @@ func handlePublishError(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if IsCongestionError(err) {
+	if kind == PublishErrorCongestion {
 		logging.Error(ctx, "Metrics ingestion request failed due to broker congestion or outage", "error", err.Error())
 		if gMetrics != nil {
 			gMetrics.RecordDroppedPayload("congestion_error")
@@ -240,7 +243,7 @@ func handlePublishError(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", err.Error())
+	logging.Error(ctx, "Metrics ingestion request failed due to message bus publish error", "error", err.Error())
 	if gMetrics != nil {
 		gMetrics.RecordDroppedPayload("broker_publish_error")
 	}
