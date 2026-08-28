@@ -15,6 +15,7 @@
 package resourceaccumulator
 
 import (
+	"sync"
 	"testing"
 
 	"golang/cmp/cmp"
@@ -181,5 +182,70 @@ func TestAccumulateExecutable(t *testing.T) {
 		if diff := cmp.Diff(wantTotals, totals); diff != "" {
 			t.Errorf("AccumulateExecutable Totals() diff (-want +got):\n%s", diff)
 		}
+	})
+}
+
+func TestConcurrentGetters(t *testing.T) {
+	acc := New()
+	acc.Add("cpu", 4.0)
+	acc.Add("nvidia-tesla-h100", 8.0)
+	acc.Add("nvidia.com/gpu", 2.0)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_ = acc.Totals()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = acc.IntTotals()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = acc.Order()
+		}()
+	}
+	wg.Wait()
+}
+
+func TestNilAccumulatorReceiverSafety(t *testing.T) {
+	var acc *Accumulator
+
+	t.Run("Totals on nil accumulator", func(t *testing.T) {
+		totals := acc.Totals()
+		if totals == nil {
+			t.Errorf("acc.Totals() on nil returned nil, want non-nil empty map")
+		}
+		if len(totals) != 0 {
+			t.Errorf("acc.Totals() len = %d, want 0", len(totals))
+		}
+	})
+
+	t.Run("IntTotals on nil accumulator", func(t *testing.T) {
+		intTotals := acc.IntTotals()
+		if intTotals == nil {
+			t.Errorf("acc.IntTotals() on nil returned nil, want non-nil empty map")
+		}
+		if len(intTotals) != 0 {
+			t.Errorf("acc.IntTotals() len = %d, want 0", len(intTotals))
+		}
+	})
+
+	t.Run("Order on nil accumulator", func(t *testing.T) {
+		order := acc.Order()
+		if order == nil {
+			t.Errorf("acc.Order() on nil returned nil, want non-nil empty slice")
+		}
+		if len(order) != 0 {
+			t.Errorf("acc.Order() len = %d, want 0", len(order))
+		}
+	})
+
+	t.Run("mutator methods on nil accumulator do not panic", func(t *testing.T) {
+		acc.Add("cpu", 1.0)
+		acc.AccumulateResourceSet(nil)
+		acc.AccumulateExecutable(nil)
 	})
 }

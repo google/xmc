@@ -1,0 +1,202 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "analyze_ci_performance.py",
+    "analyze_diff_and_synthesize.py",
+    "compare_trajectories.py",
+    "extract_telemetry.py",
+    "resolve_test_scope.py",
+    "teardown_benchmark.py",
+])
+
+py_library(
+    name = "analyze_ci_performance_lib",
+    srcs = ["analyze_ci_performance.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "analyze_ci_performance",
+    srcs = ["analyze_ci_performance.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":analyze_ci_performance_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "analyze_ci_performance_test",
+    srcs = ["analyze_ci_performance_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":analyze_ci_performance_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "compare_trajectories_lib",
+    srcs = ["compare_trajectories.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "compare_trajectories",
+    srcs = ["compare_trajectories.py"],
+    imports = ["../.."],
+    deps = [
+        ":compare_trajectories_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "compare_trajectories_test",
+    srcs = ["compare_trajectories_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":compare_trajectories_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "analyze_diff_and_synthesize_lib",
+    srcs = ["analyze_diff_and_synthesize.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "analyze_diff_and_synthesize",
+    srcs = ["analyze_diff_and_synthesize.py"],
+    imports = ["../.."],
+    deps = [
+        ":analyze_diff_and_synthesize_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "analyze_diff_and_synthesize_test",
+    srcs = ["analyze_diff_and_synthesize_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":analyze_diff_and_synthesize_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "extract_telemetry_lib",
+    srcs = ["extract_telemetry.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
+    ],
+)
+
+py_binary(
+    name = "extract_telemetry",
+    srcs = ["extract_telemetry.py"],
+    imports = ["../.."],
+    deps = [
+        ":extract_telemetry_lib",
+        "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
+    ],
+)
+
+py_test(
+    name = "extract_telemetry_test",
+    srcs = ["extract_telemetry_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":extract_telemetry_lib",
+        "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
+    ],
+)
+
+py_library(
+    name = "resolve_test_scope_lib",
+    srcs = ["resolve_test_scope.py"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "resolve_test_scope",
+    srcs = ["resolve_test_scope.py"],
+    imports = ["../.."],
+    deps = [
+        ":resolve_test_scope_lib",
+    ],
+)
+
+py_test(
+    name = "resolve_test_scope_test",
+    srcs = ["resolve_test_scope_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":resolve_test_scope_lib",
+    ],
+)
+
+py_library(
+    name = "teardown_benchmark_lib",
+    srcs = ["teardown_benchmark.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "teardown_benchmark",
+    srcs = ["teardown_benchmark.py"],
+    imports = ["../.."],
+    deps = [
+        ":teardown_benchmark_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "teardown_benchmark_test",
+    srcs = ["teardown_benchmark_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":teardown_benchmark_lib",
+        "//tools/common:tool_utils",
+    ],
+)

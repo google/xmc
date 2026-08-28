@@ -149,7 +149,7 @@ When updating an existing Pull Request description:
 2. **User Edit Gate**: Present the updated PR description preview to the user and pause for confirmation/edits.
 3. **Execute Update Tool**:
    ```bash
-   ./tools/update_pr_description.py <pr_number> --body-file updated_pr_body.md
+   ./tools/pr_review/update_pr_description.py <pr_number> --body-file updated_pr_body.md
    ```
    > [!IMPORTANT]
    > Do NOT use `gh pr edit` directly to update descriptions, as classic project deprecations break description fields.
@@ -194,9 +194,9 @@ When creating and managing Pull Requests, follow this mandatory 5-step lifecycle
 3. **Pull Review Comments**:
    Fetch unresolved review comments and generate the review checklist artifact:
    ```bash
-   ./tools/generate_review_checklist.py <owner> <repo> <pr_number> -o pr_review_checklist.md
+   ./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> -o pr_review_checklist.md
    ```
 4. **Address Review Comments**:
-   Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/verify_pr_comment_resolution.py`).
+   Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/pr_review/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/pr_review/verify_pr_comment_resolution.py`).
 5. **Verify CI Checks & Draft Status Report (Requires Explicit Confirmation Gate to Convert)**:
    Verify CI status with `gh pr checks <pr_number>`. When checks pass and all comments are resolved, report the final state to the user. Do NOT automatically convert the PR to open. Explicitly ask for user confirmation per Section 6 ('*Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)*'). Only if explicitly confirmed by the user, execute: `gh pr ready <pr_number>`

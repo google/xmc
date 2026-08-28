@@ -16,11 +16,17 @@
 
 import argparse
 import subprocess
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
-import analyze_diff_size
-from tool_utils import HandledError
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools import analyze_diff_size  # noqa: E402
+from tools.common.tool_utils import HandledError  # noqa: E402
 
 
 class AnalyzeDiffSizeTest(unittest.TestCase):
@@ -55,7 +61,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(analyze_diff_size.classify_file("deploy/helm/values.yaml"), "prod")
         self.assertEqual(analyze_diff_size.classify_file("tools/BUILD.bazel"), "prod")
 
-    @mock.patch("subprocess.run")
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
     def test_get_diff_entries_success(self, mock_run):
         mock_run.return_value = mock.Mock(
             stdout="100\t20\tpkg/reconciler/handler.go\n50\t10\tpkg/reconciler/handler_test.go\n-\t-\timage.png\n",
@@ -67,7 +73,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(entries[0], (100, "pkg/reconciler/handler.go"))
         self.assertEqual(entries[1], (50, "pkg/reconciler/handler_test.go"))
 
-    @mock.patch("subprocess.run")
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
     def test_get_diff_entries_handled_error(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(
             1, ["git", "diff"], stderr="fatal: not a git repo"
@@ -75,7 +81,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         with self.assertRaises(HandledError):
             analyze_diff_size.get_diff_entries("invalid-branch")
 
-    @mock.patch("analyze_diff_size.get_diff_entries")
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
     def test_analyze_diff_size_within_thresholds(self, mock_diff_entries):
         mock_diff_entries.return_value = [
             (100, "pkg/reconciler/handler.go"),  # prod: 100
@@ -95,7 +101,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(res["metrics"]["doc_lines"], 50)
         self.assertEqual(res["metrics"]["generated_lines"], 1000)
 
-    @mock.patch("analyze_diff_size.get_diff_entries")
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
     def test_analyze_diff_size_exceeds_prod_threshold(self, mock_diff_entries):
         mock_diff_entries.return_value = [
             (410, "pkg/reconciler/handler.go"),  # prod: 410 (>= 400)
@@ -109,7 +115,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertTrue(res["should_trigger_split_verifier"])
         self.assertTrue(any("Production code" in r for r in res["exceeded_reasons"]))
 
-    @mock.patch("analyze_diff_size.get_diff_entries")
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
     def test_analyze_diff_size_exceeds_total_code_threshold(self, mock_diff_entries):
         mock_diff_entries.return_value = [
             (350, "pkg/reconciler/handler.go"),  # prod: 350 (< 400)
@@ -124,7 +130,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertTrue(res["should_trigger_split_verifier"])
         self.assertTrue(any("Total code" in r for r in res["exceeded_reasons"]))
 
-    @mock.patch("analyze_diff_size.get_diff_entries")
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
     def test_analyze_diff_size_exceeds_doc_threshold(self, mock_diff_entries):
         mock_diff_entries.return_value = [
             (100, "pkg/reconciler/handler.go"),  # prod: 100

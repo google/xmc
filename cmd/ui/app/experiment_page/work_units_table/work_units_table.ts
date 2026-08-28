@@ -23,10 +23,8 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule } from '@angular/material/paginator';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
@@ -91,9 +89,6 @@ interface WorkUnitView extends WorkUnit {
     MatIconModule,
     MatButtonModule,
     RouterLink,
-    MatProgressBarModule,
-    LoadingBar,
-    MatChipsModule,
     LoadingBar,
     Tag,
     PageSizeSelector,

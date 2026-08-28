@@ -20,11 +20,8 @@ import {
   OnInit,
   Signal,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute } from '@angular/router';
 
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
@@ -60,9 +57,6 @@ import { WorkUnitPageStore } from './work_unit_page_store';
     JobsTable,
     MatCardModule,
     MatTabsModule,
-    MatButtonModule,
-    MatIconModule,
-    MatTooltipModule,
     StatusMessage,
     UrlsWidget,
     ArtifactsList,

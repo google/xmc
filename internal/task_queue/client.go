@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,8 +45,6 @@ const (
 	// DefaultSignatureTTLSeconds is the default signature TTL in seconds.
 	DefaultSignatureTTLSeconds = 3600
 )
-
-var osHostname = os.Hostname
 
 type Client struct {
 	invokerSA        string

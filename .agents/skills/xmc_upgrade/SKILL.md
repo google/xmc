@@ -12,21 +12,21 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 
 > [!CAUTION]
 > **Exclusive Execution Tool Policy**:
-> Environment upgrades MUST be performed EXCLUSIVELY using `python3 ./tools/upgrade_dev_env.py`.
-> Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 ./tools/upgrade_dev_env.py --start-from <step>` or `--only <step>`.
+> Environment upgrades MUST be performed EXCLUSIVELY using the unified development environment CLI `python3 tools/dev_env/dev_env.py gke-upgrade` (or legacy `python3 ./tools/dev_env/upgrade_dev_env.py`).
+> Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 tools/dev_env/dev_env.py gke-upgrade --start-from <step>` or `--only <step>`.
 
 > [!CAUTION]
-> **Authentication Integrity Policy**: Under no circumstances should `upgrade_dev_env.py` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
+> **Authentication Integrity Policy**: Under no circumstances should `gke-upgrade` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
 
 ```mermaid
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]
-    CheckEnv --> CheckRun["Run python3 ./tools/upgrade_dev_env.py --only check"]
-    CheckRun --> MigrateCheck["Run python3 ./tools/upgrade_dev_env.py --only migrate"]
-    MigrateCheck -->|No pending migrations| AutoRun["Run python3 ./tools/upgrade_dev_env.py --start-from images"]
+    CheckEnv --> CheckRun["Run python3 tools/dev_env/dev_env.py gke-upgrade --only check"]
+    CheckRun --> MigrateCheck["Run python3 tools/dev_env/dev_env.py gke-upgrade --only migrate"]
+    MigrateCheck -->|No pending migrations| AutoRun["Run python3 tools/dev_env/dev_env.py gke-upgrade --start-from images"]
     MigrateCheck -->|"Pending migrations (Exit 10)"| PromptUser["Prompt User to run migrations"]
     PromptUser -->|User declines| Abort["Abort Upgrade"]
-    PromptUser -->|User approves| AutoRunMigrate["Run python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations"]
+    PromptUser -->|User approves| AutoRunMigrate["Run python3 tools/dev_env/dev_env.py gke-upgrade --start-from migrate --run-migrations"]
     AutoRunMigrate --> Verify["Verification & Validation"]
     AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
@@ -67,20 +67,20 @@ If no configuration file is found at the default path:
 
 ---
 
-## 2. Automated Dev Upgrade (`upgrade_dev_env.py`)
+## 2. Automated Dev Upgrade (`tools/dev_env/dev_env.py gke-upgrade`)
 
-Use the automated upgrade tool (`python3 ./tools/upgrade_dev_env.py`) to execute the environment upgrade.
+Use the unified environment tool (`python3 tools/dev_env/dev_env.py gke-upgrade` or legacy `upgrade_dev_env.py` / `upgrade` command) to execute the environment upgrade.
 
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
-python3 ./tools/upgrade_dev_env.py --only check
+python3 tools/dev_env/dev_env.py gke-upgrade --only check
 ```
 
 ### Step 2: Check for Pending Database Migrations
 Verify if there are any pending Spanner database migrations:
 ```bash
-python3 ./tools/upgrade_dev_env.py --only migrate
+python3 tools/dev_env/dev_env.py gke-upgrade --only migrate
 ```
 
 > [!IMPORTANT]
@@ -96,32 +96,32 @@ python3 ./tools/upgrade_dev_env.py --only migrate
 If no migrations were pending, or if the user approved running migrations:
 
 > [!NOTE]
-> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `upgrade_dev_env.py` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled: false`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
+> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `gke-upgrade` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled: false`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
 
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from images
+    python3 tools/dev_env/dev_env.py gke-upgrade --start-from images
     ```
 *   **Case B: User approved migrations**:
     Run the upgrade starting from `migrate` step and authorize migration execution:
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations
+    python3 tools/dev_env/dev_env.py gke-upgrade --start-from migrate --run-migrations
     ```
 
 > [!NOTE]
-> During the `app` step, `upgrade_dev_env.py` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
+> During the `app` step, `gke-upgrade` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
 
 *   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `restart`, `verify`):
     ```bash
-    python3 ./tools/upgrade_dev_env.py --start-from <failed_step>
+    python3 tools/dev_env/dev_env.py gke-upgrade --start-from <failed_step>
     ```
 *   **Execute a single step**: To execute **only** one specific step:
     ```bash
-    python3 ./tools/upgrade_dev_env.py --only <step>
+    python3 tools/dev_env/dev_env.py gke-upgrade --only <step>
     ```
     *Valid steps: `check`, `migrate`, `images`, `app`, `restart`, `verify`*
 
