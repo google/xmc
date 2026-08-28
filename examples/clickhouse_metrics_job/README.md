@@ -129,6 +129,7 @@ Dashboard Endpoint : localhost:8080
 --> Connecting to Dashboard Service at localhost:8080...
 --> Creating Dashboard 'Experiment 234911125 - Training & Metrics Overview' (ID: exp_234911125_training_overview)...
 --> Created Dashboard successfully: dashboards/exp_234911125_training_overview
+--> Server-assigned chart IDs: ['b6f1c0a2-3d5e-4f18-9c47-2a0e8d3b7f91']
 
 ==================================================
   🎉 Experiment and WorkUnit Launch Completed!    
@@ -166,7 +167,11 @@ You can retrieve the created dashboard and verify chart hydration via the `xdash
 python3 -m xdash get-dashboard exp_[XID]_training_overview
 ```
 
-Or query chart data directly:
+Or query chart data directly. The chart is created together with the dashboard in one
+transaction, so its ID is assigned by the server rather than chosen by the launch script — take
+`[CHART_ID]` from the `chart_ids` of the dashboard above, or from the launch script's own
+`Server-assigned chart IDs` line:
+
 ```bash
-python3 -m xdash get-chart-data experiments/[XID]/workUnits/1/charts/model_training_metrics --width 800
+python3 -m xdash get-chart-data experiments/[XID]/workUnits/1/charts/[CHART_ID] --width 800
 ```
