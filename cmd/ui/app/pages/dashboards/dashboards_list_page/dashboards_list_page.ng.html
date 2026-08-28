@@ -100,8 +100,8 @@ limitations under the License.
           <td mat-cell *matCellDef="let row" class="count-cell">
             <span class="badge-count">
               <mat-icon class="count-icon">science</mat-icon>
-              {{ row.charts?.length || 0 }}
-              {{ row.charts?.length === 1 ? 'experiment' : 'experiments' }}
+              {{ row.chartIds?.length || 0 }}
+              {{ row.chartIds?.length === 1 ? 'experiment' : 'experiments' }}
             </span>
           </td>
         </ng-container>

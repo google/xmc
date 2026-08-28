@@ -44,7 +44,7 @@ export function normalizeDashboard(d?: RawDashboard): Dashboard {
     name: d.name,
     description: d.description,
     owner: d.owner,
-    charts: d.charts?.map(normalizeChart),
+    chartIds: d.chartIds ?? d.chart_ids,
     chartLayout: d.chartLayout ?? d.chart_layout,
     createTime: d.createTime ?? d.create_time,
     updateTime: d.updateTime ?? d.update_time,
