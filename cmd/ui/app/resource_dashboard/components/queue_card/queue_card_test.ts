@@ -40,6 +40,8 @@ import { QueueCardHarness } from './queue_card_harness';
       [isSecondaryLoading]="isSecondaryLoading()"
       [isSelected]="isSelected()"
       [activeResourceFilters]="activeResourceFilters()"
+      [dominantResource]="dominantResource()"
+      [velocityPeriod]="velocityPeriod()"
       (selectQueue)="selectedQueueName.set($event)"
     />
   `,
@@ -60,6 +62,8 @@ class TestHostComponent {
   readonly isSecondaryLoading = signal<boolean>(false);
   readonly isSelected = signal<boolean>(false);
   readonly activeResourceFilters = signal<string[]>([]);
+  readonly dominantResource = signal<string | null>(null);
+  readonly velocityPeriod = signal<string>('1h');
   readonly selectedQueueName = signal<string>('');
 }
 
@@ -215,7 +219,20 @@ describe('QueueCardComponent', () => {
     expect(bannerText).toContain('Work in Progress');
   });
 
-  it('should display loading spinner when isSecondaryLoading is true', async () => {
+  it('should display empty state guidance when dominantResource is not set', async () => {
+    hostInstance.dominantResource.set(null);
+    hostInstance.isSecondaryLoading.set(false);
+    fixture.detectChanges();
+
+    const predText = await harness.getPredictabilitySectionText();
+    expect(predText).not.toBeNull();
+    expect(predText).toContain(
+      'Select a resource type in the top picker to display velocity metrics.',
+    );
+  });
+
+  it('should display loading spinner when isSecondaryLoading is true and dominantResource is set', async () => {
+    hostInstance.dominantResource.set('nvidia-tesla-h100');
     hostInstance.isSecondaryLoading.set(true);
     fixture.detectChanges();
 
@@ -224,22 +241,24 @@ describe('QueueCardComponent', () => {
     expect(spinnerText).toContain('Fetching predictability metrics...');
   });
 
-  it('should display fallback message when predictability data is not available', async () => {
+  it('should display fallback message when predictability data is not available for the dominant resource', async () => {
+    hostInstance.dominantResource.set('nvidia-tesla-h100');
     hostInstance.isSecondaryLoading.set(false);
     hostInstance.secondaryData.set(undefined);
     fixture.detectChanges();
 
     const text = await harness.getSpinnerContainerText();
     expect(text).not.toBeNull();
-    expect(text).toContain('No predictability data available.');
+    expect(text).toContain('No predictability data available for nvidia-tesla-h100.');
   });
 
-  it('should display predictability metrics when secondaryData is provided', async () => {
+  it('should display predictability metrics when secondaryData is provided matching dominant resource', async () => {
+    hostInstance.dominantResource.set('nvidia-tesla-h100');
     hostInstance.isSecondaryLoading.set(false);
     hostInstance.secondaryData.set({
       queuePredictability: [
         {
-          velocityRange: 1,
+          velocityRange: 'RANGE_PRESET_LAST_HOUR',
           jobVelocity: 12.5,
           resourceVelocity: {
             resourceType: 'nvidia-tesla-h100',
@@ -263,19 +282,36 @@ describe('QueueCardComponent', () => {
     expect(predText).toContain('24 nvidia-tesla-h100');
   });
 
-  it('should display default units string when resourceType is missing in predictability metrics', async () => {
+  it('should compute predictability for selected velocityPeriod', async () => {
+    hostInstance.dominantResource.set('nvidia-tesla-h100');
+    hostInstance.velocityPeriod.set('24h');
     hostInstance.isSecondaryLoading.set(false);
     hostInstance.secondaryData.set({
       queuePredictability: [
         {
-          velocityRange: 1,
-          jobVelocity: 5,
+          velocityRange: 'RANGE_PRESET_LAST_HOUR',
+          jobVelocity: 12.5,
           resourceVelocity: {
-            velocity: 40,
+            resourceType: 'nvidia-tesla-h100',
+            velocity: 100,
           },
-          pendingJobs: 2,
+          pendingJobs: 3,
           pendingResourceRequests: {
-            count: 16,
+            resourceType: 'nvidia-tesla-h100',
+            count: 24,
+          },
+        },
+        {
+          velocityRange: 'RANGE_PRESET_LAST_DAY',
+          jobVelocity: 8.0,
+          resourceVelocity: {
+            resourceType: 'nvidia-tesla-h100',
+            velocity: 64,
+          },
+          pendingJobs: 3,
+          pendingResourceRequests: {
+            resourceType: 'nvidia-tesla-h100',
+            count: 24,
           },
         },
       ],
@@ -284,7 +320,7 @@ describe('QueueCardComponent', () => {
 
     const predText = await harness.getPredictabilitySectionText();
     expect(predText).not.toBeNull();
-    expect(predText).toContain('40 units/hr');
-    expect(predText).toContain('16 units');
+    expect(predText).toContain('8 jobs/hr');
+    expect(predText).toContain('64 nvidia-tesla-h100/hr');
   });
 });

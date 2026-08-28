@@ -163,14 +163,23 @@
       </div>
       <xmc-wip-banner />
 
-      @if (isSecondaryLoading()) {
+      @if (!dominantResource()) {
+        <div class="predictability-empty-state">
+          <mat-icon class="empty-icon">info_outline</mat-icon>
+          <span class="empty-text">
+            Select a resource type in the top picker to display velocity metrics.
+          </span>
+        </div>
+      } @else if (isSecondaryLoading()) {
         <div class="predictability-spinner-container">
           <mat-spinner diameter="24" />
           <span class="spinner-text">Fetching predictability metrics...</span>
         </div>
       } @else if (!predictabilityVm()) {
         <div class="predictability-spinner-container">
-          <span class="spinner-text">No predictability data available.</span>
+          <span class="spinner-text"
+            >No predictability data available for {{ dominantResource() }}.</span
+          >
         </div>
       } @else {
         @let vm = predictabilityVm()!;

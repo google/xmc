@@ -128,4 +128,55 @@ describe('SmartResourceFinderComponent', () => {
     const options = await harness.getResourceTypeOptions();
     expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'tpu']);
   });
+
+  it('should render Dominant badge and blue border only on index 0 when populated', async () => {
+    expect(await harness.hasDominantBadge()).toBeFalse();
+    expect(await harness.isDominantSelectBox(0)).toBeFalse();
+
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    fixture.detectChanges();
+
+    expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.getDominantBadgeText()).toBe('Dominant');
+    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+
+    // Add row 1 with 'cpu'
+    await harness.clickAddButton();
+    await harness.selectResourceType(1, 'cpu');
+    fixture.detectChanges();
+
+    // Only 1 dominant badge exists, specifically on row 0
+    expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+    expect(await harness.isDominantSelectBox(1)).toBeFalse();
+  });
+
+  it('should promote row 1 to dominant when row 0 is removed', async () => {
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    await harness.clickAddButton();
+    await harness.selectResourceType(1, 'tpu');
+    fixture.detectChanges();
+
+    expect(await harness.getResourceTypeSelectValue(0)).toBe('nvidia.com/gpu');
+    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+
+    // Remove row 0
+    await harness.clickRemoveButton(0);
+    fixture.detectChanges();
+
+    expect(await harness.getResourceTypeSelectValue(0)).toBe('tpu');
+    expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+  });
+
+  it('should remove dominant badge when row 0 selection is cleared', async () => {
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    fixture.detectChanges();
+    expect(await harness.hasDominantBadge()).toBeTrue();
+
+    await harness.selectResourceType(0, '');
+    fixture.detectChanges();
+    expect(await harness.hasDominantBadge()).toBeFalse();
+    expect(await harness.isDominantSelectBox(0)).toBeFalse();
+  });
 });
