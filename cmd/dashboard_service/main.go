@@ -101,12 +101,24 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 func initDataEngine(ctx context.Context) *dataengine.DataEngine {
 	clickhouseConn, err := clickhouse.Connect(ctx)
 	if err != nil {
-		logging.Info(ctx, "ClickHouse connection not available at startup, initializing without data engine", "error", err)
+		logging.Warn(ctx, "ClickHouse connection not available at startup, initializing without data engine", "error", err)
 		return nil
 	}
 	de, err := dataengine.New(clickhouseConn)
 	if err != nil {
-		logging.Info(ctx, "Failed to initialize DataEngine", "error", err)
+		logging.Warn(ctx, "Failed to initialize DataEngine", "error", err)
+		return nil
+	}
+	return de
+}
+
+// chartDataEngine converts the concrete engine into the interface the server consumes.
+//
+// The conversion cannot be left implicit: assigning a nil *DataEngine straight into the interface
+// yields a non-nil interface holding a nil pointer, which passes the server's "data engine is not
+// configured" guard and then dereferences nil on the first method call.
+func chartDataEngine(de *dataengine.DataEngine) server.ChartDataEngine {
+	if de == nil {
 		return nil
 	}
 	return de
@@ -177,7 +189,7 @@ func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.Dashboa
 		return nil, nil, fmt.Errorf("failed to listen on gRPC port: %w", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, xidClient, de))
+	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, xidClient, chartDataEngine(de)))
 	reflection.Register(grpcServer)
 
 	healthServer := health.NewServer()

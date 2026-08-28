@@ -29,6 +29,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"xmanager_cloud/cmd/dashboard_service/server"
+	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -207,6 +209,27 @@ func TestInitDataEngine_GracefulFallback(t *testing.T) {
 	// return nil without panicking or failing fatally.
 	ctx := context.Background()
 	_ = initDataEngine(ctx)
+}
+
+func TestChartDataEngine_NilEngineStaysNilInterface(t *testing.T) {
+	// A nil *DataEngine must not become a non-nil interface holding a nil pointer: the server's
+	// "data engine is not configured" guard compares against nil, and would let the request through.
+	// The variable is typed explicitly so that the comparison is the one the server actually makes.
+	var got server.ChartDataEngine = chartDataEngine(nil)
+
+	if got != nil {
+		t.Errorf("chartDataEngine(nil) = %v, want a nil interface", got)
+	}
+}
+
+func TestChartDataEngine_WrapsEngine(t *testing.T) {
+	engine := &dataengine.DataEngine{}
+
+	got := chartDataEngine(engine)
+
+	if got != engine {
+		t.Errorf("chartDataEngine(engine) = %v, want the engine itself", got)
+	}
 }
 
 func TestInitXidClient(t *testing.T) {

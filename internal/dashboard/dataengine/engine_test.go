@@ -71,6 +71,28 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestFetchChartData_NilEngine(t *testing.T) {
+	var engine *DataEngine
+
+	chartData, err := engine.FetchChartData(context.Background(), &dpb.Chart{
+		Name: "experiments/1001/workUnits/1/charts/chart-1",
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "scatter_curve",
+				Type:   dpb.PlotType_SCATTER,
+				Data:   &dpb.DataSpec{Metrics: []string{"accuracy"}},
+			},
+		},
+	}, nil)
+
+	if err == nil {
+		t.Fatal("FetchChartData() on a nil engine returned no error, want one")
+	}
+	if chartData != nil {
+		t.Errorf("FetchChartData() = %v, want nil", chartData)
+	}
+}
+
 func TestFetchChartData(t *testing.T) {
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 
