@@ -35,8 +35,11 @@ import {
 import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
+  COHORT_STATE_BORROWING,
+  COHORT_STATE_SQUEEZED,
+  CohortStateInfoPipe,
   FreeTotalDisplayPipe,
-  MaxWorkloadDisplayPipe,
+  MaxSchedulableDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
 import { matchesResourceFilter } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_filter';
@@ -66,7 +69,8 @@ export interface PredictabilityViewModel {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    MaxWorkloadDisplayPipe,
+    MaxSchedulableDisplayPipe,
+    CohortStateInfoPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
     WipBannerComponent,
@@ -97,6 +101,9 @@ export class QueueCardComponent {
       return !!rName && filters.some((f) => matchesResourceFilter(rName, f));
     });
   });
+
+  protected readonly cohortStateSqueezed = COHORT_STATE_SQUEEZED;
+  protected readonly cohortStateBorrowing = COHORT_STATE_BORROWING;
 
   // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
   protected readonly isQueueHealthy = computed(() => true);

@@ -95,7 +95,58 @@ describe('QueueCardComponent', () => {
     expect(await harness.getFlavorRowCount()).toBe(1);
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
+    expect(rowText).toContain('Nominal Queue Quota (Free / Total)');
     expect(rowText).toContain('56 / 64');
+    expect(rowText).toContain('Max schedulable now (Cohort quota)');
+    expect(rowText).toContain('56');
+  });
+
+  it('should render Squeezed by cohort badge and tooltip when cohort capacity is squeezed', async () => {
+    hostInstance.queue.set({
+      queueName: 'squeezed-queue',
+      queueCapacity: [
+        {
+          resourceType: 'cpu',
+          totalCapacity: 100,
+          freeCapacity: 60,
+          freeCapacityWithBorrowing: 30,
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const rowText = await harness.getFlavorRowText(0);
+    expect(rowText).toContain('Squeezed by cohort');
+    expect(rowText).toContain('30');
+    expect(rowText).toContain('60 / 100');
+
+    const tipIcon = fixture.nativeElement.querySelector('.cohort-value-tip-icon.squeezed-tip-icon');
+    expect(tipIcon).not.toBeNull();
+  });
+
+  it('should render Borrowing available badge and tooltip when cohort capacity can be borrowed', async () => {
+    hostInstance.queue.set({
+      queueName: 'borrowing-queue',
+      queueCapacity: [
+        {
+          resourceType: 'cpu',
+          totalCapacity: 100,
+          freeCapacity: 60,
+          freeCapacityWithBorrowing: 80,
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const rowText = await harness.getFlavorRowText(0);
+    expect(rowText).toContain('Borrowing available');
+    expect(rowText).toContain('80');
+    expect(rowText).toContain('60 / 100');
+
+    const tipIcon = fixture.nativeElement.querySelector(
+      '.cohort-value-tip-icon.borrowing-tip-icon',
+    );
+    expect(tipIcon).not.toBeNull();
   });
 
   it('should filter flavor capacity sub-cards when activeResourceFilters are set', async () => {

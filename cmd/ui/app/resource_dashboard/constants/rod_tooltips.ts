@@ -16,11 +16,11 @@
  * Static tooltips dictionary for Resource Observability Dashboard (ROD) term explanations.
  */
 export const ROD_TERM_TOOLTIPS = {
-  maxWorkloadSize:
-    'Max Workload Size Guaranteed→Opportunistic Capacity\n\nGuaranteed Capacity: The guaranteed capacity that is consumable by job(s).\n\nOpportunistic Capacity: The potential maximum workload including the borrowable resources.',
+  maxSchedulableNow:
+    'Max Schedulable Now (Cohort quota)\n\nThe maximum single workload size that can be admitted immediately right now taking into account cohort borrowing (without waiting or preemption).',
 
   freeTotalCapacity:
-    'Free / Total Capacity\n\nFree Capacity: The sum of all guaranteed and opportunistic resources. It can be scattered across clusters, not necessarily consumable by one job.\n\nTotal Capacity: The maximum amount of a hardware resource currently managed by this queue.',
+    "Nominal Queue Quota (Free / Total)\n\nFree: Unused portion of this queue's guaranteed nominal quota.\n\nTotal: The baseline nominal quota configured for this queue.",
 
   resourceVelocity:
     'The rate at which hardware resources (e.g., GPUs) are being assigned to new workloads.\n\nIt represents the volume of hardware turning over to serve new requests over the selected timeframe (1h / 24h / 7d). A high Resource Velocity means large blocks of hardware are freeing up, which is useful for gauging if there is room for large-scale multi-node jobs.',
