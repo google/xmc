@@ -133,11 +133,11 @@ class KerasIntegrationTest(unittest.TestCase):
             np_mock = MagicMock()
             np_mock.numpy.return_value = 4.56
 
-            self.assertEqual(mod.XmcKerasCallback._extract_scalar(42), 42)
-            self.assertEqual(mod.XmcKerasCallback._extract_scalar(3.14), 3.14)
-            self.assertEqual(mod.XmcKerasCallback._extract_scalar(item_mock), 1.23)
-            self.assertEqual(mod.XmcKerasCallback._extract_scalar(np_mock), 4.56)
-            self.assertIsNone(mod.XmcKerasCallback._extract_scalar("unsupported"))
+            self.assertEqual(mod.extract_scalar(42), 42)
+            self.assertEqual(mod.extract_scalar(3.14), 3.14)
+            self.assertEqual(mod.extract_scalar(item_mock), 1.23)
+            self.assertEqual(mod.extract_scalar(np_mock), 4.56)
+            self.assertIsNone(mod.extract_scalar("unsupported"))
 
     def test_global_xmc_flusher_fallback(self) -> None:
         """Verifies callback falls back to global xmc.log_metric when no client is passed."""

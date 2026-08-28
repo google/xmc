@@ -500,25 +500,511 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 	}
 }
 
-func TestMemoryStore_UnimplementedStubs(t *testing.T) {
+func TestMemoryStore_SetComponentIntent_CycleRejection(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, err := ms.PrepareDeactivation(ctx, "comp-1", false); status.Code(err) != codes.Unimplemented {
-		t.Errorf("PrepareDeactivation got code %v, want Unimplemented", status.Code(err))
+	// 1. Create comp-a depending on comp-b
+	specA := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-b",
 	}
-	if err := ms.CompleteDeactivation(ctx, "comp-1"); status.Code(err) != codes.Unimplemented {
-		t.Errorf("CompleteDeactivation got code %v, want Unimplemented", status.Code(err))
+	if _, err := ms.SetComponentIntent(ctx, "comp-a", specA, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-a) unexpected error: %v", err)
 	}
-	if err := ms.ExecuteDeletion(ctx, "comp-1", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ExecuteDeletion got code %v, want Unimplemented", status.Code(err))
+
+	// 2. Attempt to create comp-b depending on comp-a -> Cycle detected!
+	specB := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-a",
 	}
-	if _, _, err := ms.ResolveComponentSnapshot(ctx, "comp-1", 1); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ResolveComponentSnapshot got code %v, want Unimplemented", status.Code(err))
+	_, err := ms.SetComponentIntent(ctx, "comp-b", specB, nil, 0)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("SetComponentIntent(comp-b with cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
 	}
-	if _, err := ms.ValidateComponentRequirement(ctx, "comp-1", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.0.0"); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ValidateComponentRequirement got code %v, want Unimplemented", status.Code(err))
+
+	// 3. Create comp-b without cycle (depending on comp-c)
+	specBValid := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-c",
 	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-b", specBValid, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-b valid) unexpected error: %v", err)
+	}
+
+	// 4. Update comp-c to depend on comp-a -> Cycle detected across 3 nodes!
+	specC := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-a",
+	}
+	_, err = ms.SetComponentIntent(ctx, "comp-c", specC, nil, 0)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("SetComponentIntent(comp-c transitive cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
+	}
+}
+
+func TestMemoryStore_PrepareDeactivation(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	specRoot := sampleSpec("Root component")
+	if _, err := ms.SetComponentIntent(ctx, "root-comp", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-comp) failed: %v", err)
+	}
+
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-comp",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dependent-comp", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dependent-comp) failed: %v", err)
+	}
+
+	// 1. Prepare deactivation without cascade on root -> rejected due to active dependent
+	_, err := ms.PrepareDeactivation(ctx, "root-comp", false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("PrepareDeactivation(root, cascade=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation with cascade -> succeeds and marks both DISABLING
+	res, err := ms.PrepareDeactivation(ctx, "root-comp", true)
+	if err != nil {
+		t.Fatalf("PrepareDeactivation(root, cascade=true) unexpected error: %v", err)
+	}
+	if !res.IsSafeToDeactivate {
+		t.Error("IsSafeToDeactivate = false, want true")
+	}
+	if diff := cmp.Diff([]string{"dependent-comp"}, res.CascadedDeactivations); diff != "" {
+		t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
+	}
+
+	// Verify states in store
+	recRoot, err := ms.GetComponent(ctx, "root-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(root-comp) failed: %v", err)
+	}
+	if recRoot.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("root-comp State = %v, want DISABLING", recRoot.State)
+	}
+	if recRoot.Status.GetLastTransitionTime() == nil {
+		t.Error("root-comp Status.LastTransitionTime is nil, want non-nil timestamp")
+	}
+
+	recDep, err := ms.GetComponent(ctx, "dependent-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(dependent-comp) failed: %v", err)
+	}
+	if recDep.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("dependent-comp State = %v, want DISABLING", recDep.State)
+	}
+	if recDep.Status.GetLastTransitionTime() == nil {
+		t.Error("dependent-comp Status.LastTransitionTime is nil, want non-nil timestamp")
+	}
+
+	// 3. Repeated PrepareDeactivation is idempotent and preserves UpdateTime and Etag
+	origEtag := recRoot.Etag
+	origUpdateTime := recRoot.UpdateTime
+	if _, err := ms.PrepareDeactivation(ctx, "root-comp", true); err != nil {
+		t.Fatalf("PrepareDeactivation(root, second call) unexpected error: %v", err)
+	}
+	recRoot2, err := ms.GetComponent(ctx, "root-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(root-comp) failed: %v", err)
+	}
+	if recRoot2.Etag != origEtag {
+		t.Errorf("root-comp Etag changed on second PrepareDeactivation: got %s, want %s", recRoot2.Etag, origEtag)
+	}
+	if !recRoot2.UpdateTime.Equal(origUpdateTime) {
+		t.Errorf("root-comp UpdateTime changed on second PrepareDeactivation: got %v, want %v", recRoot2.UpdateTime, origUpdateTime)
+	}
+
+	// 3. Nonexistent component
+	_, err = ms.PrepareDeactivation(ctx, "nonexistent", false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("PrepareDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_CompleteDeactivation(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := sampleSpec("Deactivation target")
+	if _, err := ms.SetComponentIntent(ctx, "comp-deact", spec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Complete deactivation on non-disabling state -> ErrInvalidStateTransition
+	err := ms.CompleteDeactivation(ctx, "comp-deact", false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(not disabling) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation
+	if _, err := ms.PrepareDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Fatalf("PrepareDeactivation failed: %v", err)
+	}
+
+	// 3. Add an active dependent
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-deact",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-active", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-active) failed: %v", err)
+	}
+
+	// 4. Attempt complete deactivation while dependent is active -> FailedPrecondition
+	err = ms.CompleteDeactivation(ctx, "comp-deact", false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(with active dependent) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 5. Force complete deactivation on a separate component with active dependent
+	specForceTarget := sampleSpec("Force target")
+	if _, err := ms.SetComponentIntent(ctx, "comp-force", specForceTarget, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-force) failed: %v", err)
+	}
+	specForceDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: comp-force",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-force", specForceDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-force) failed: %v", err)
+	}
+	if _, err := ms.PrepareDeactivation(ctx, "comp-force", true); err != nil {
+		t.Fatalf("PrepareDeactivation(comp-force) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "comp-force", true); err != nil {
+		t.Fatalf("CompleteDeactivation(comp-force, force=true) unexpected error: %v", err)
+	}
+	recForce, err := ms.GetComponent(ctx, "comp-force")
+	if err != nil {
+		t.Fatalf("GetComponent(comp-force) failed: %v", err)
+	}
+	if recForce.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("comp-force State = %v, want DISABLED", recForce.State)
+	}
+
+	// 6. Deactivate and complete dependent first
+	if _, err := ms.PrepareDeactivation(ctx, "dep-active", false); err != nil {
+		t.Fatalf("PrepareDeactivation(dep-active) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "dep-active", false); err != nil {
+		t.Fatalf("CompleteDeactivation(dep-active) failed: %v", err)
+	}
+
+	// 7. Now complete deactivation on root -> succeeds
+	if err := ms.CompleteDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
+	}
+
+	rec, err := ms.GetComponent(ctx, "comp-deact")
+	if err != nil {
+		t.Fatalf("GetComponent failed: %v", err)
+	}
+	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("State = %v, want DISABLED", rec.State)
+	}
+	if rec.Status.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("Status.State = %v, want DISABLED", rec.Status.GetState())
+	}
+	if rec.Status.GetLastTransitionTime() == nil {
+		t.Error("Status.LastTransitionTime is nil, want non-nil timestamp")
+	}
+
+	// 7. PrepareDeactivation on already DISABLED component is a no-op and preserves DISABLED state
+	if _, err := ms.PrepareDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Fatalf("PrepareDeactivation(already DISABLED) failed: %v", err)
+	}
+	recAfter, err := ms.GetComponent(ctx, "comp-deact")
+	if err != nil {
+		t.Fatalf("GetComponent failed: %v", err)
+	}
+	if recAfter.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("State after PrepareDeactivation on DISABLED component = %v, want DISABLED", recAfter.State)
+	}
+
+	// 8. CompleteDeactivation on already DISABLED component is idempotent and succeeds
+	if err := ms.CompleteDeactivation(ctx, "comp-deact", false); err != nil {
+		t.Errorf("CompleteDeactivation(already DISABLED) unexpected error: %v", err)
+	}
+
+	// 9. Nonexistent component
+	err = ms.CompleteDeactivation(ctx, "nonexistent", false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_ExecuteDeletion(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	// Component 1: Protected
+	spec1 := sampleSpec("Protected")
+	if _, err := ms.SetComponentIntent(ctx, "comp-prot", spec1, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent(comp-prot) failed: %v", err)
+	}
+
+	// Attempt deletion without force -> ErrDeletionProtected
+	err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(protected, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Deletion with force -> succeeds
+	if err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Fatalf("ExecuteDeletion(protected, force=true) unexpected error: %v", err)
+	}
+
+	// Component 2: With active dependent & Non-cascading policy
+	specRoot := sampleSpec("Root for deletion")
+	if _, err := ms.SetComponentIntent(ctx, "root-del", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-del) failed: %v", err)
+	}
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-del",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "dep-del", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(dep-del) failed: %v", err)
+	}
+
+	// Attempt non-cascading deletion without force -> ErrHasActiveDependents
+	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(with dep, orphan policy, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Cascading deletion without force -> succeeds and deletes both root and dependent
+	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion(with dep, delete policy, force=false) unexpected error: %v", err)
+	}
+
+	// Verify GetComponent returns NotFound for both root and cascaded deleted dependent
+	if _, err := ms.GetComponent(ctx, "root-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(root-del) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "dep-del"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(dep-del) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Component 3: Cascading deletion with protected dependent
+	specParent := sampleSpec("Parent with protected child")
+	if _, err := ms.SetComponentIntent(ctx, "parent-prot", specParent, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(parent-prot) failed: %v", err)
+	}
+	specChild := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: parent-prot",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "child-prot", specChild, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent(child-prot) failed: %v", err)
+	}
+
+	// Cascading deletion without force -> ErrDeletionProtected
+	err = ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(cascading with protected child, force=false) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// Cascading deletion with force -> succeeds and deletes both parent and child
+	if err := ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+		t.Fatalf("ExecuteDeletion(cascading with protected child, force=true) unexpected error: %v", err)
+	}
+	if _, err := ms.GetComponent(ctx, "parent-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(parent-prot) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "child-prot"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(child-prot) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Component 4: Cascading deletion with disabled dependent
+	specRoot4 := sampleSpec("Root 4")
+	if _, err := ms.SetComponentIntent(ctx, "root-4", specRoot4, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(root-4) failed: %v", err)
+	}
+	specChild4 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: root-4",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "child-4", specChild4, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent(child-4) failed: %v", err)
+	}
+	// Disable child-4
+	if _, err := ms.PrepareDeactivation(ctx, "child-4", false); err != nil {
+		t.Fatalf("PrepareDeactivation(child-4) failed: %v", err)
+	}
+	if err := ms.CompleteDeactivation(ctx, "child-4", false); err != nil {
+		t.Fatalf("CompleteDeactivation(child-4) failed: %v", err)
+	}
+	// Cascading deletion of root-4 should delete disabled child-4 too
+	if err := ms.ExecuteDeletion(ctx, "root-4", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion(root-4) failed: %v", err)
+	}
+	if _, err := ms.GetComponent(ctx, "root-4"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(root-4) got code %v, want NotFound", status.Code(err))
+	}
+	if _, err := ms.GetComponent(ctx, "child-4"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(child-4) got code %v, want NotFound", status.Code(err))
+	}
+
+	// Nonexistent deletion
+	err = ms.ExecuteDeletion(ctx, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestMemoryStore_ResolveComponentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec1 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Spec Gen 1",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-snap", spec1, map[string]string{"env": "prod"}, 1); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	coords1 := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-1",
+		Namespace:   "default",
+		ServiceName: "snap-svc-v1",
+		Port:        8080,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords1, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 1"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Resolve Gen 1 snapshot
+	snap1, snapCoords1, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(1) failed: %v", err)
+	}
+	if snap1.Generation != 1 {
+		t.Errorf("snap1.Generation = %d, want 1", snap1.Generation)
+	}
+	if snap1.Spec.GetVersion() != "v1.0.0" {
+		t.Errorf("snap1.Spec.Version = %q, want 'v1.0.0'", snap1.Spec.GetVersion())
+	}
+	if snapCoords1 == nil || snapCoords1.GetServiceName() != "snap-svc-v1" {
+		t.Errorf("snapCoords1.ServiceName = %v, want 'snap-svc-v1'", snapCoords1)
+	}
+
+	// 2. Update to Gen 2
+	spec2 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.0.0",
+		Description: "Spec Gen 2",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-snap", spec2, map[string]string{"env": "prod-v2"}, 2); err != nil {
+		t.Fatalf("SetComponentIntent(2) failed: %v", err)
+	}
+	coords2 := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-1",
+		Namespace:   "default",
+		ServiceName: "snap-svc-v2",
+		Port:        9090,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 2, &componentspb.ComponentAccessStatus{Coordinates: coords2, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 2"); err != nil {
+		t.Fatalf("UpdateObservedGeneration(2) failed: %v", err)
+	}
+
+	// 3. Verify Gen 1 historical snapshot remains completely immutable
+	snap1Historical, snapCoords1Historical, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(1 historical) failed: %v", err)
+	}
+	if snap1Historical.Generation != 1 {
+		t.Errorf("snap1Historical.Generation = %d, want 1", snap1Historical.Generation)
+	}
+	if snap1Historical.Spec.GetVersion() != "v1.0.0" {
+		t.Errorf("snap1Historical.Spec.Version = %q, want 'v1.0.0'", snap1Historical.Spec.GetVersion())
+	}
+	if snap1Historical.Spec.GetDescription() != "Spec Gen 1" {
+		t.Errorf("snap1Historical.Spec.Description = %q, want 'Spec Gen 1'", snap1Historical.Spec.GetDescription())
+	}
+	if snapCoords1Historical == nil || snapCoords1Historical.GetServiceName() != "snap-svc-v1" {
+		t.Errorf("snapCoords1Historical.ServiceName = %v, want 'snap-svc-v1'", snapCoords1Historical)
+	}
+
+	// 4. Resolve Gen 2 snapshot (and generation=0 for latest)
+	snap2, snapCoords2, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 0)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(0 latest) failed: %v", err)
+	}
+	if snap2.Generation != 2 {
+		t.Errorf("snap2.Generation = %d, want 2", snap2.Generation)
+	}
+	if snap2.Spec.GetVersion() != "v2.0.0" {
+		t.Errorf("snap2.Spec.Version = %q, want 'v2.0.0'", snap2.Spec.GetVersion())
+	}
+	if snapCoords2 == nil || snapCoords2.GetServiceName() != "snap-svc-v2" {
+		t.Errorf("snapCoords2.ServiceName = %v, want 'snap-svc-v2'", snapCoords2)
+	}
+}
+
+func TestMemoryStore_ValidateComponentRequirement(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.4.0",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-req", spec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Pending reconciliation -> not satisfied
+	resPending, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.0.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if resPending.IsSatisfied {
+		t.Error("IsSatisfied = true for pending reconciliation component, want false")
+	}
+
+	// 2. Transition to ENABLED -> satisfied
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+	resEnabled, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.2.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if !resEnabled.IsSatisfied {
+		t.Errorf("IsSatisfied = false for ENABLED component, want true (reason: %q)", resEnabled.Reason)
+	}
+
+	// 3. Higher version requirement -> unsatisfied
+	resHigher, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v2.0.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if resHigher.IsSatisfied {
+		t.Error("IsSatisfied = true for higher version requirement, want false")
+	}
+}
+
+func TestMemoryStore_GetPlatformHealth_Unimplemented(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
 	if _, err := ms.GetPlatformHealth(ctx, "", 10, ""); status.Code(err) != codes.Unimplemented {
 		t.Errorf("GetPlatformHealth got code %v, want Unimplemented", status.Code(err))
 	}

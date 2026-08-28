@@ -29,11 +29,7 @@ limitations under the License.
       <xmc-urls-widget [urls]="urlsVal" />
     }
 
-    <xmc-work-unit-details
-      class="details-section"
-      [workUnit]="workUnitVal"
-      [experiment]="experimentVal"
-    />
+    <xmc-work-unit-details class="details-section" [workUnit]="workUnitVal" />
 
     @let statusMessagesVal = statusMessages();
     @if (statusMessagesVal.length > 0) {

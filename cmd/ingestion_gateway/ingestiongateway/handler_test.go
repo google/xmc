@@ -30,8 +30,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 
 	metrics "xmanager_cloud/api/protos/metrics"
@@ -39,7 +37,7 @@ import (
 
 type noopProducer struct{}
 
-func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error)) {
+func (np *noopProducer) Produce(ctx context.Context, rec *MetricRecord, promise func(*MetricRecord, error)) {
 	promise(rec, nil)
 }
 
@@ -460,7 +458,7 @@ type blockingProducer struct {
 	cancelCalls  int
 }
 
-func (bp *blockingProducer) Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error)) {
+func (bp *blockingProducer) Produce(ctx context.Context, rec *MetricRecord, promise func(*MetricRecord, error)) {
 	bp.mu.Lock()
 	bp.produceCalls++
 	bp.mu.Unlock()
@@ -470,7 +468,7 @@ func (bp *blockingProducer) Produce(ctx context.Context, rec *kgo.Record, promis
 		bp.mu.Lock()
 		bp.cancelCalls++
 		bp.mu.Unlock()
-		promise(rec, ctx.Err())
+		promise(rec, newPublishError(PublishErrorCongestion, ctx.Err()))
 	case <-time.After(5 * time.Second):
 		promise(rec, nil)
 	}
@@ -478,6 +476,9 @@ func (bp *blockingProducer) Produce(ctx context.Context, rec *kgo.Record, promis
 
 func (bp *blockingProducer) Close() {}
 
+// TestCongestionControl_BrokerSaturation_Returns503 checks the handler's mapping from a
+// congestion-kinded publish failure onto 503. Which backend errors count as congestion is the
+// producer's business and is covered in kafka_producer_test.go / pubsub_producer_test.go.
 func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -486,12 +487,12 @@ func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 	}{
 		{
 			name:        "queue saturation",
-			failErr:     fmt.Errorf("franz-go: client queue limit exceeded"),
+			failErr:     newPublishError(PublishErrorCongestion, fmt.Errorf("franz-go: client queue limit exceeded")),
 			expectedMsg: "async produce error: franz-go: client queue limit exceeded",
 		},
 		{
 			name:        "broker paused",
-			failErr:     fmt.Errorf("broker paused: buffer full"),
+			failErr:     newPublishError(PublishErrorCongestion, fmt.Errorf("broker paused: buffer full")),
 			expectedMsg: "async produce error: broker paused: buffer full",
 		},
 	}
@@ -536,7 +537,7 @@ func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 func TestMetricsIngestionHandler_BrokerOutage_Returns503(t *testing.T) {
 	mp := NewMockProducer()
 	mp.failIndex = 0
-	mp.failErr = fmt.Errorf("redpanda broker unreachable: connection refused")
+	mp.failErr = newPublishError(PublishErrorCongestion, fmt.Errorf("broker unreachable: connection refused"))
 
 	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "gpu_mem", "metric_value": 8192.0, "step": 10, "timestamp": 1700000000}]`
@@ -564,7 +565,7 @@ func TestMetricsIngestionHandler_BrokerOutage_Returns503(t *testing.T) {
 func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
 	mp := NewMockProducer()
 	mp.failIndex = 0
-	mp.failErr = kerr.MessageTooLarge
+	mp.failErr = newPublishError(PublishErrorClient, errors.New("message too large"))
 
 	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "large_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
@@ -576,7 +577,7 @@ func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status 400 Bad Request on client produce error (MessageTooLarge), got %d", resp.StatusCode)
+		t.Fatalf("expected status 400 Bad Request on a client-kinded publish error, got %d", resp.StatusCode)
 	}
 
 	var payload400 BadRequestErrorPayload
@@ -589,10 +590,12 @@ func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
 	}
 }
 
+// TestMetricsIngestionHandler_GenericBrokerError_Returns500 also covers the fallback for an error
+// a backend returned without classifying it: anything that is not a *PublishError is a 500.
 func TestMetricsIngestionHandler_GenericBrokerError_Returns500(t *testing.T) {
 	mp := NewMockProducer()
 	mp.failIndex = 0
-	mp.failErr = kerr.UnknownServerError
+	mp.failErr = errors.New("unknown server error")
 
 	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "test_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
@@ -649,7 +652,7 @@ func TestCongestionControl_GoroutineAndResourceLeakCheck(t *testing.T) {
 
 	mp := NewMockProducer()
 	mp.failIndex = 0
-	mp.failErr = fmt.Errorf("simulated queue saturation")
+	mp.failErr = newPublishError(PublishErrorCongestion, fmt.Errorf("simulated queue saturation"))
 
 	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
@@ -722,7 +725,7 @@ func TestMetricsIngestionHandler_DroppedPayloadsRecording(t *testing.T) {
 			payload: validPayload,
 			setupMock: func(mp *MockProducer) {
 				mp.failIndex = 0
-				mp.failErr = kerr.MessageTooLarge
+				mp.failErr = newPublishError(PublishErrorClient, errors.New("message too large"))
 			},
 			wantStatus: http.StatusBadRequest,
 			wantReason: "client_produce_error",
@@ -733,7 +736,7 @@ func TestMetricsIngestionHandler_DroppedPayloadsRecording(t *testing.T) {
 			payload: validPayload,
 			setupMock: func(mp *MockProducer) {
 				mp.failIndex = 0
-				mp.failErr = kgo.ErrClientClosed
+				mp.failErr = newPublishError(PublishErrorCongestion, errors.New("client closed"))
 			},
 			wantStatus: http.StatusServiceUnavailable,
 			wantReason: "congestion_error",

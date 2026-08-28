@@ -30,8 +30,6 @@ except ImportError as exc:
         "via 'pip install xmc[keras]' or 'pip install keras>=3.0.0'."
     ) from exc
 
-_parse_version = parse_version
-
 
 def _validate_keras_version() -> None:
     """Validates Keras version >= 3.0.0, failing fast if incompatible."""
@@ -42,7 +40,7 @@ def _validate_keras_version() -> None:
         except Exception:
             version_str = "0.0.0"
 
-    if _parse_version(version_str) < _parse_version(MIN_KERAS_VERSION):
+    if parse_version(version_str) < parse_version(MIN_KERAS_VERSION):
         raise ImportError(
             f"Keras version >= {MIN_KERAS_VERSION} is required for XmcKerasCallback, "
             f"found version {version_str}. Please upgrade via 'pip install --upgrade xmc[keras]' "
@@ -99,13 +97,8 @@ class XmcKerasCallback(keras.callbacks.Callback):  # type: ignore[misc]
         if not hasattr(opt, "iterations"):
             return None
 
-        step_val = self._extract_scalar(opt.iterations)
+        step_val = extract_scalar(opt.iterations)
         return int(step_val) if step_val is not None else None
-
-    @staticmethod
-    def _extract_scalar(val: Any) -> float | int | None:
-        """Extracts a primitive float or int scalar from various framework tensor types."""
-        return extract_scalar(val)
 
     def on_epoch_begin(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
         """Resets batch counter at the start of each epoch.
@@ -124,7 +117,7 @@ class XmcKerasCallback(keras.callbacks.Callback):  # type: ignore[misc]
 
         step = self._get_global_step()
         for key, val in logs.items():
-            scalar_val = self._extract_scalar(val)
+            scalar_val = extract_scalar(val)
             if scalar_val is not None:
                 self._log(key, scalar_val, step=step)
 
@@ -135,6 +128,6 @@ class XmcKerasCallback(keras.callbacks.Callback):  # type: ignore[misc]
 
         step = self._get_global_step()
         for key, val in logs.items():
-            scalar_val = self._extract_scalar(val)
+            scalar_val = extract_scalar(val)
             if scalar_val is not None:
                 self._log(key, scalar_val, step=step)

@@ -40,10 +40,10 @@ type GatewayMetrics struct {
 	DroppedPayloadsTotal       *prometheus.CounterVec
 
 	// Franz-Go Telemetry Metrics
-	BrokersConnections    prometheus.Gauge
-	ProduceBatchSizeBytes prometheus.Histogram
-	ProduceRecordsTotal   prometheus.Counter
-	ProduceErrorsTotal    prometheus.Counter
+	BrokersConnections     prometheus.Gauge
+	ProduceRecordSizeBytes prometheus.Histogram
+	ProduceRecordsTotal    prometheus.Counter
+	ProduceErrorsTotal     prometheus.Counter
 }
 
 // NewGatewayMetrics initializes and registers all Prometheus metrics with the given registry.
@@ -94,24 +94,27 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 			},
 		),
 
-		ProduceBatchSizeBytes: prometheus.NewHistogram(
+		ProduceRecordSizeBytes: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
-				Name:    "franz_go_produce_batch_size_bytes",
-				Help:    "Size of produce batches in bytes.",
-				Buckets: prometheus.ExponentialBuckets(1024, 2, 12),
+				Name: "xmc_ingestion_produce_record_size_bytes",
+				Help: "Size in bytes of each metric record accepted by the message bus.",
+				// One serialized metric record, not a batch: a few hundred bytes typically, capped by
+				// the 1 MiB producer batch limit. The old 1 KiB floor put nearly every observation in
+				// the first bucket and told us nothing.
+				Buckets: prometheus.ExponentialBuckets(64, 2, 15),
 			},
 		),
 
 		ProduceRecordsTotal: prometheus.NewCounter(
 			prometheus.CounterOpts{
-				Name: "franz_go_produce_records_total",
-				Help: "Total number of records produced to Kafka.",
+				Name: "xmc_ingestion_produce_records_total",
+				Help: "Total number of records produced to the message bus.",
 			},
 		),
 
 		ProduceErrorsTotal: prometheus.NewCounter(
 			prometheus.CounterOpts{
-				Name: "franz_go_produce_errors_total",
+				Name: "xmc_ingestion_produce_errors_total",
 				Help: "Total number of produce errors.",
 			},
 		),
@@ -126,7 +129,7 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 	reg.MustRegister(m.DroppedPayloadsTotal)
 
 	reg.MustRegister(m.BrokersConnections)
-	reg.MustRegister(m.ProduceBatchSizeBytes)
+	reg.MustRegister(m.ProduceRecordSizeBytes)
 	reg.MustRegister(m.ProduceRecordsTotal)
 	reg.MustRegister(m.ProduceErrorsTotal)
 
@@ -143,6 +146,29 @@ func (m *GatewayMetrics) RecordHTTPRequest(status int, path, method string, dura
 // RecordDroppedPayload increments dropped payloads counter with a specific reason.
 func (m *GatewayMetrics) RecordDroppedPayload(reason string) {
 	m.DroppedPayloadsTotal.WithLabelValues(reason).Inc()
+}
+
+// RecordProducedRecord records the payload size and outcome of a single publish attempt.
+//
+// Both message bus backends report through here so the produce series stay comparable across them.
+// A nil receiver is a no-op, since metrics are optional throughout the gateway.
+//
+// Size is observed only for accepted records, so the histogram describes the same population as
+// ProduceRecordsTotal and a burst of rejections cannot skew it. Rejected payloads are therefore
+// invisible here; ProduceErrorsTotal and the client_produce_error dropped-payload reason are where
+// an oversized-record problem shows up.
+func (m *GatewayMetrics) RecordProducedRecord(valueBytes int, err error) {
+	if m == nil {
+		return
+	}
+	if err != nil {
+		m.ProduceErrorsTotal.Inc()
+		return
+	}
+	if valueBytes > 0 {
+		m.ProduceRecordSizeBytes.Observe(float64(valueBytes))
+	}
+	m.ProduceRecordsTotal.Inc()
 }
 
 // sanitizePath normalizes dynamic or unknown URL paths to prevent cardinality explosion in Prometheus.
@@ -229,17 +255,14 @@ func (h *FranzGoMetricsHook) OnBrokerDisconnect(meta kgo.BrokerMetadata, conn ne
 
 // OnProduceRecordUnbuffered implements kgo.HookProduceRecordUnbuffered.
 func (h *FranzGoMetricsHook) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
-	if h == nil || h.metrics == nil {
+	if h == nil {
 		return
 	}
-	if r != nil && len(r.Value) > 0 {
-		h.metrics.ProduceBatchSizeBytes.Observe(float64(len(r.Value)))
+	valueBytes := 0
+	if r != nil {
+		valueBytes = len(r.Value)
 	}
-	if err != nil {
-		h.metrics.ProduceErrorsTotal.Inc()
-	} else {
-		h.metrics.ProduceRecordsTotal.Inc()
-	}
+	h.metrics.RecordProducedRecord(valueBytes, err)
 }
 
 var (

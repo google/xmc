@@ -16,7 +16,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 
 import { getArtifactDisplayProperties } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import { ArtifactListItem, PayloadType } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { ArtifactCard } from 'xmanager_cloud/ui/app/common/components/artifact_card/artifact_card';
 
 /**
@@ -36,5 +36,4 @@ export class ArtifactsColumn {
   readonly isOnExperimentPage = input<boolean>(false);
 
   protected readonly getArtifactDisplayProperties = getArtifactDisplayProperties;
-  protected readonly PayloadType = PayloadType;
 }

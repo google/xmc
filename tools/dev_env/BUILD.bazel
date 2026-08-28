@@ -1,0 +1,139 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "__init__.py",
+    "config.py",
+    "deploy_dev_env.py",
+    "dev_env.py",
+    "upgrade_dev_env.py",
+])
+
+py_library(
+    name = "config_lib",
+    srcs = ["config.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+    ],
+)
+
+py_library(
+    name = "dev_env_lib",
+    srcs = [
+        "__init__.py",
+        "dev_env.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":deploy_dev_env_lib",
+        ":upgrade_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "dev_env",
+    srcs = ["dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        ":dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "dev_env_test",
+    srcs = ["dev_env_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "deploy_dev_env_lib",
+    srcs = ["deploy_dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "deploy_dev_env",
+    srcs = ["deploy_dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        ":deploy_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "deploy_dev_env_test",
+    srcs = ["deploy_dev_env_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":deploy_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "upgrade_dev_env_lib",
+    srcs = ["upgrade_dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "upgrade_dev_env",
+    srcs = ["upgrade_dev_env.py"],
+    imports = ["../.."],
+    deps = [
+        ":upgrade_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "upgrade_dev_env_test",
+    srcs = ["upgrade_dev_env_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":upgrade_dev_env_lib",
+        "//tools/common:tool_utils",
+    ],
+)

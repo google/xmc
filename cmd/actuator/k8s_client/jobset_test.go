@@ -24,7 +24,6 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
@@ -72,29 +71,6 @@ func createTestWorkUnit(namespace string) *esspb.WorkUnit {
 	}
 }
 
-type skipTestFixture struct {
-	client           *Client
-	dynamicClient    *dynamicfake.FakeDynamicClient
-	jobSetName       string
-	earlierTimestamp time.Time
-}
-
-func setupSkipTest(t *testing.T, target string) skipTestFixture {
-	t.Helper()
-	ctx, client, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	jobSetName := buildJobSetName(target)
-	earlierTimestamp := testTime
-	laterTimestamp := earlierTimestamp.Add(time.Minute)
-	labels := map[string]string{constants.LastEditLabel: strconv.FormatInt(laterTimestamp.Unix(), 10)}
-	createTestJobSet(ctx, t, client, testNamespace, target, labels)
-	return skipTestFixture{
-		client:           client,
-		dynamicClient:    dynamicClient,
-		jobSetName:       jobSetName,
-		earlierTimestamp: earlierTimestamp,
-	}
-}
-
 type populateTestFixture struct {
 	client        *Client
 	dynamicClient *dynamicfake.FakeDynamicClient
@@ -111,66 +87,6 @@ func setupPopulateTest(t *testing.T, target string) populateTestFixture {
 		dynamicClient: dynamicClient,
 		timestamp:     testTime,
 	}
-}
-
-func createTestWorkload(t *testing.T, dynamicClient *dynamicfake.FakeDynamicClient, namespace, name string) {
-	t.Helper()
-	ctx := t.Context()
-	workload := &unstructured.Unstructured{
-		Object: map[string]any{
-			"apiVersion": "kueue.x-k8s.io/v1beta1",
-			"kind":       "Workload",
-			"metadata": map[string]any{
-				"name":      name,
-				"namespace": namespace,
-			},
-			"spec": map[string]any{
-				"queueName": namespace,
-				"active":    true,
-			},
-		},
-	}
-	_, err := dynamicClient.Resource(KueueWorkloadGVR).Namespace(namespace).Create(ctx, workload, metav1.CreateOptions{})
-	if err != nil {
-		t.Fatalf("Failed to create test workload: %v", err)
-	}
-}
-
-var jobSetWithNoJobs = &jobsetv1alpha2.JobSet{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: "jobset.x-k8s.io/v1alpha2",
-		Kind:       "JobSet",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "xmc-operation-123-456",
-		Namespace: "xmc",
-		Labels: map[string]string{
-			constants.ExperimentIDLabel: "123",
-			constants.WorkUnitIDLabel:   "456",
-			constants.ExecutionIDLabel:  "1",
-			constants.ManagedByLabel:    constants.XmcLabelValue,
-			kueueQueueLabel:             constants.XmcLabelValue,
-			constants.LastEditLabel:     strconv.FormatInt(testTime.Unix(), 10),
-			kueuePriorityClassLabel:     "exp-low-wu-low",
-		},
-		Annotations: map[string]string{
-			constants.AuthorAnnotation:                "test-author",
-			constants.AutoscalerSafeToEvictAnnotation: "false",
-		},
-		Finalizers: []string{constants.JobSetFinalizer},
-	},
-	Spec: jobsetv1alpha2.JobSetSpec{
-		ReplicatedJobs: nil,
-		Suspend:        ptr.To(false),
-		SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
-			Operator: jobsetv1alpha2.OperatorAll,
-		},
-		FailurePolicy: &jobsetv1alpha2.FailurePolicy{
-			MaxRestarts: 0,
-			Rules:       []jobsetv1alpha2.FailurePolicyRule{},
-		},
-		TTLSecondsAfterFinished: proto.Int32(604800),
-	},
 }
 
 var testWorkUnitWithJob = &esspb.WorkUnit{
@@ -256,7 +172,7 @@ var workUnitForOperationTest = &esspb.WorkUnit{
 	},
 }
 
-func testBuildJobSetName(t *testing.T) {
+func TestBuildJobSetName(t *testing.T) {
 	got := buildJobSetName("experiments/1/workUnits/1/executions/1")
 	want := "xmc-operation-1-1"
 	if got != want {

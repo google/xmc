@@ -143,19 +143,6 @@ func (f *testFixture) assertCallWithHeader(ctx context.Context, req *spb.GetHeal
 	return resp
 }
 
-func (f *testFixture) assertRateLimited(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) {
-	f.t.Helper()
-	_, err := f.server.GetHealthStatus(ctx, req)
-	if err == nil {
-		f.t.Fatal("expected rate limit error, got nil")
-	}
-	st, ok := status.FromError(err)
-	if !ok || st.Code() != codes.ResourceExhausted {
-		f.t.Errorf("expected ResourceExhausted error, got %v", err)
-	}
-	f.assertCallCount(expectedCalls)
-}
-
 func TestGetHealthStatus(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -476,8 +463,8 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 6, "MISS")
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "MISS")
 
-		// 6. 6th Force refresh immediately - Rate Limited
-		tf.assertRateLimited(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
+		// 6. 6th Force refresh immediately - Rate limit exceeded, falls back to cache (X-Cache: HIT)
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "HIT")
 
 		// 7. Sleep past rate limit window (5s) to reset rate limit
 		time.Sleep(6 * time.Second)
