@@ -91,11 +91,20 @@ class ImageBuilder:
     ) -> list[tuple[str, str, str]]:
         """Resolves Bazel package, tarball target, and image tag specifications.
 
+        Maps service identifiers to known package definitions or falls back to
+        the standard naming convention (cmd/{service}:{service}_image_tarball).
+        Deduplicates service names while preserving order and validates that
+        service names contain only safe alphanumeric and dash/underscore characters.
+
         Args:
-            services: Optional list of service names. Defaults to config.enabled_services.
+            services: Optional list of service names. If None, defaults to
+                self.config.enabled_services.
 
         Returns:
             List of tuples: (bazel_package, bazel_target, docker_image_tag).
+
+        Raises:
+            ValueError: If any service name contains invalid or potentially unsafe characters.
         """
         active_services = self.config.enabled_services if services is None else services
         active_services = list(dict.fromkeys(active_services))
@@ -118,14 +127,22 @@ class ImageBuilder:
         services: list[str] | None = None,
         skip_build: bool = False,
     ) -> list[str]:
-        """Builds container images in parallel with Bazel and loads into Docker.
+        """Builds container image tarballs in parallel via Bazel and loads them into Docker.
+
+        Executes `bazel build //pkg:target` across all resolved targets in a single
+        concurrent invocation to leverage Bazel's multi-core dependency graph.
+        Locates generated `.tar` artifacts in the `bazel-bin` output tree and loads
+        each into the local Docker daemon.
 
         Args:
             services: Optional list of specific services to build.
-            skip_build: If True, skips compiling and assumes images exist in Docker.
+            skip_build: If True, bypasses Bazel compilation and returns expected image tags.
 
         Returns:
-            List of Docker image tags built and loaded.
+            List of Docker image tags built and loaded into the Docker daemon.
+
+        Raises:
+            RuntimeError: If bazel-bin directory resolution fails.
         """
         specs = self.get_service_specs(services)
         if not specs:
@@ -165,10 +182,13 @@ class ImageBuilder:
         return image_tags
 
     def load_images_into_kind(self, image_tags: list[str]) -> None:
-        """Loads container images from Docker into KinD cluster nodes.
+        """Loads container images from the host Docker daemon directly into KinD cluster nodes.
+
+        Uses `kind load docker-image` to transfer image layers into the containerd
+        runtime of the KinD node containers, eliminating the need for an external OCI registry.
 
         Args:
-            image_tags: List of Docker image tags to load into KinD.
+            image_tags: List of Docker image tags to import into the KinD cluster.
         """
         if not image_tags:
             _LOGGER.debug("No container image tags provided to load into KinD.")
