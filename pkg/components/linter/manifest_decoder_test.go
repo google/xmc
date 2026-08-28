@@ -1,0 +1,290 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package linter_test
+
+import (
+	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"xmanager_cloud/pkg/components/linter"
+)
+
+func TestComponentDependencyRef_UnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	t.Run("scalar string dependency name", func(t *testing.T) {
+		t.Parallel()
+		var dep linter.ComponentDependencyRef
+		if err := yaml.Unmarshal([]byte(`cert-manager`), &dep); err != nil || dep.Name != "cert-manager" {
+			t.Fatalf("unexpected result: dep=%+v, err=%v", dep, err)
+		}
+	})
+
+	t.Run("mapping dependency with version and optional", func(t *testing.T) {
+		t.Parallel()
+		var dep linter.ComponentDependencyRef
+		rawYAML := "name: kueue\nversion: \">=0.19.0\"\noptional: true\n"
+		if err := yaml.Unmarshal([]byte(rawYAML), &dep); err != nil || dep.Name != "kueue" || dep.Version != ">=0.19.0" || !dep.Optional {
+			t.Fatalf("unexpected mapping dep: %+v, err=%v", dep, err)
+		}
+	})
+
+	t.Run("alias dependency node resolution", func(t *testing.T) {
+		t.Parallel()
+		aliasYAML := "alias: &ref\n  name: kueue\n  version: \">=1.0.0\"\ndep:\n  *ref\n"
+		var wrapper struct {
+			Dep linter.ComponentDependencyRef `yaml:"dep"`
+		}
+		if err := yaml.Unmarshal([]byte(aliasYAML), &wrapper); err != nil || wrapper.Dep.Name != "kueue" || wrapper.Dep.Version != ">=1.0.0" {
+			t.Fatalf("alias unmarshal failed: %v, got: %+v", err, wrapper.Dep)
+		}
+	})
+
+	t.Run("invalid dependency reference formats return error", func(t *testing.T) {
+		t.Parallel()
+		testCases := []string{
+			`[nested]`,
+			`""`,
+			`"   "`,
+			`version: ">=1.0.0"`,
+			`name: ""`,
+			`name: "   "`,
+		}
+		for _, tc := range testCases {
+			var dep linter.ComponentDependencyRef
+			if err := yaml.Unmarshal([]byte(tc), &dep); err == nil {
+				t.Errorf("expected error for input %q, got %+v", tc, dep)
+			}
+		}
+		var compNull linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte("spec:\n  dependencies:\n    - null\n"), &compNull); err == nil {
+			t.Errorf("expected error for null list dependency element")
+		}
+		if err := yaml.Unmarshal([]byte("spec:\n  dependencies:\n    - \"\"\n"), &compNull); err == nil {
+			t.Errorf("expected error for empty string list dependency element")
+		}
+	})
+}
+
+func TestComponentWrapperRef_UnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	t.Run("primary CRD wrapper fields", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := `
+crdGroup: jobset.x-k8s.io
+crdVersion: v1alpha2
+crdKind: JobSet
+targetNamespace: xmc-system
+targetName: jobset-controller
+`
+		var w linter.ComponentWrapperRef
+		if err := yaml.Unmarshal([]byte(rawYAML), &w); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if w.CrdGroup != "jobset.x-k8s.io" || w.CrdVersion != "v1alpha2" || w.CrdKind != "JobSet" || w.TargetNamespace != "xmc-system" || w.TargetName != "jobset-controller" {
+			t.Errorf("wrapper mismatch: %+v", w)
+		}
+	})
+
+	t.Run("fallback alias wrapper fields", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := `
+group: jobset.x-k8s.io
+version: v1alpha2
+kind: JobSet
+namespace: xmc-system
+name: jobset-controller
+`
+		var w linter.ComponentWrapperRef
+		if err := yaml.Unmarshal([]byte(rawYAML), &w); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if w.CrdGroup != "jobset.x-k8s.io" || w.CrdVersion != "v1alpha2" || w.CrdKind != "JobSet" || w.TargetNamespace != "xmc-system" || w.TargetName != "jobset-controller" {
+			t.Errorf("wrapper fallback mismatch: %+v", w)
+		}
+	})
+
+	t.Run("primary fields take precedence over fallback fields", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := `
+crdGroup: primary.x-k8s.io
+group: fallback.x-k8s.io
+targetName: primary-target
+name: fallback-target
+`
+		var w linter.ComponentWrapperRef
+		if err := yaml.Unmarshal([]byte(rawYAML), &w); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if w.CrdGroup != "primary.x-k8s.io" || w.TargetName != "primary-target" {
+			t.Errorf("wrapper precedence mismatch: %+v", w)
+		}
+	})
+
+	t.Run("invalid wrapper format returns error", func(t *testing.T) {
+		t.Parallel()
+		var w linter.ComponentWrapperRef
+		if err := yaml.Unmarshal([]byte(`"invalid-scalar"`), &w); err == nil {
+			t.Errorf("expected error for non-mapping wrapper")
+		}
+	})
+}
+
+func TestComponentLifecycleCtrl_UnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	t.Run("durations and numeric seconds parsing", func(t *testing.T) {
+		t.Parallel()
+		var comp, compMs, compZero, compNull, compExplicitZero, compStringFields linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "5m", gracePeriod: "30", forceDeletion: true } }`), &comp); err != nil || comp.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *comp.Spec.LifecycleControl.DrainTimeoutSeconds != 300 {
+			t.Errorf("lifecycleControl mismatch: %+v", comp.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "500ms" } }`), &compMs); err != nil || compMs.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compMs.Spec.LifecycleControl.DrainTimeoutSeconds != 1 {
+			t.Errorf("sub-second round failed: %+v", compMs.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: "0s" } }`), &compZero); err != nil || compZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+			t.Errorf("zero seconds failed: %+v", compZero.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainingTimeout: null, gracePeriod: "~" } }`), &compNull); err != nil || compNull.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compNull.Spec.LifecycleControl.GracePeriodSeconds != nil {
+			t.Errorf("null duration failed: %+v", compNull.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: 0, drainingTimeout: "5m" } }`), &compExplicitZero); err != nil || compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compExplicitZero.Spec.LifecycleControl.DrainTimeoutSeconds != 0 {
+			t.Errorf("explicit zero timeout failed: %+v", compExplicitZero.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: "60s", gracePeriodSeconds: "30s" } }`), &compStringFields); err != nil || compStringFields.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *compStringFields.Spec.LifecycleControl.DrainTimeoutSeconds != 60 || compStringFields.Spec.LifecycleControl.GracePeriodSeconds == nil || *compStringFields.Spec.LifecycleControl.GracePeriodSeconds != 30 {
+			t.Errorf("string fields parsing failed: %+v", compStringFields.Spec.LifecycleControl)
+		}
+	})
+
+	t.Run("omitted duration fields remain nil", func(t *testing.T) {
+		t.Parallel()
+		var compOmitted, compNullModern linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { forceDeletion: true } }`), &compOmitted); err != nil || compOmitted.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compOmitted.Spec.LifecycleControl.GracePeriodSeconds != nil {
+			t.Errorf("omitted fields should be nil: %+v", compOmitted.Spec.LifecycleControl)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { lifecycleControl: { drainTimeoutSeconds: null, gracePeriodSeconds: ~ } }`), &compNullModern); err != nil || compNullModern.Spec.LifecycleControl.DrainTimeoutSeconds != nil || compNullModern.Spec.LifecycleControl.GracePeriodSeconds != nil {
+			t.Errorf("modern null duration fields should be nil: %+v", compNullModern.Spec.LifecycleControl)
+		}
+	})
+
+	t.Run("invalid duration inputs return error", func(t *testing.T) {
+		t.Parallel()
+		invalidInputs := []string{
+			`spec: { lifecycleControl: { drainingTimeout: "invalid" } }`,
+			`spec: { lifecycleControl: { drainTimeoutSeconds: "invalid" } }`,
+			`spec: { lifecycleControl: { gracePeriodSeconds: "invalid" } }`,
+			`spec: { lifecycleControl: { drainingTimeout: "-30s" } }`,
+			`spec: { lifecycleControl: { drainingTimeout: "-100ms" } }`,
+			`spec: { lifecycleControl: { drainingTimeout: -10 } }`,
+			`spec: { lifecycleControl: { gracePeriod: -5 } }`,
+			`spec: { lifecycleControl: { gracePeriod: "-10s" } }`,
+			`spec: { lifecycleControl: { drainingTimeout: [1, 2] } }`,
+			`spec: { lifecycleControl: { gracePeriod: { k: v } } }`,
+			`spec: { lifecycleControl: "invalid-string" }`,
+		}
+		for _, in := range invalidInputs {
+			var comp linter.ComponentManifest
+			if err := yaml.Unmarshal([]byte(in), &comp); err == nil {
+				t.Errorf("expected error for input %s", in)
+			}
+		}
+	})
+}
+
+func TestComponentManifestSpec_UnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unmarshal flexible dependencies list of strings and objects", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := "spec:\n  dependencies:\n    - cert-manager\n    - name: kueue\n      version: \">=0.19.0\"\n      optional: true\n"
+		var comp linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil || len(comp.Spec.Dependencies) != 2 {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if comp.Spec.Dependencies[0].Name != "cert-manager" || comp.Spec.Dependencies[1].Name != "kueue" || !comp.Spec.Dependencies[1].Optional {
+			t.Errorf("dep mismatch: %+v", comp.Spec.Dependencies)
+		}
+	})
+
+	t.Run("unmarshal mapping dependencies format", func(t *testing.T) {
+		t.Parallel()
+		var comp, compNull linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: { cert-manager: "^1.12.0", kueue: { version: ">=0.19.0", optional: true } } }`), &comp); err != nil || len(comp.Spec.Dependencies) != 2 {
+			t.Fatalf("unmarshal mapping deps failed: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: { cert-manager: null, kueue: "~" } }`), &compNull); err != nil || len(compNull.Spec.Dependencies) != 2 || compNull.Spec.Dependencies[0].Version != "" {
+			t.Fatalf("unmarshal null mapping deps failed: %v", err)
+		}
+		var compSpecNull, compSpecTilde, compSpecTildeRaw linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: null }`), &compSpecNull); err != nil || len(compSpecNull.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal null spec dependencies failed: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: "~" }`), &compSpecTilde); err != nil || len(compSpecTilde.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal tilde spec dependencies failed: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(`spec: { dependencies: ~ }`), &compSpecTildeRaw); err != nil || len(compSpecTildeRaw.Spec.Dependencies) != 0 {
+			t.Fatalf("unmarshal raw tilde spec dependencies failed: %v", err)
+		}
+	})
+
+	t.Run("fallback componentType from type field", func(t *testing.T) {
+		t.Parallel()
+		var comp linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(`spec: { type: CUSTOM_1P_COMPONENT }`), &comp); err != nil || comp.Spec.ComponentType != "CUSTOM_1P_COMPONENT" {
+			t.Fatalf("type fallback failed: %+v, err=%v", comp.Spec, err)
+		}
+	})
+
+	t.Run("unmarshal yaml alias nodes", func(t *testing.T) {
+		t.Parallel()
+		rawYAML := "shared_dep: &cert_dep { name: cert-manager, version: \">=1.0.0\" }\nshared_key: &dep_key \"kueue\"\nshared_timeout: &timeout \"60s\"\nspec:\n  dependencies:\n    - *cert_dep\n  lifecycleControl: { drainingTimeout: *timeout }\n"
+		var comp linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(rawYAML), &comp); err != nil || len(comp.Spec.Dependencies) != 1 || comp.Spec.LifecycleControl.DrainTimeoutSeconds == nil || *comp.Spec.LifecycleControl.DrainTimeoutSeconds != 60 {
+			t.Fatalf("alias decoding failed: %v", err)
+		}
+
+		mapYAML := "shared_key: &dep_key \"kueue\"\nspec:\n  dependencies:\n    *dep_key: \">=0.19.0\"\n"
+		var compMap linter.ComponentManifest
+		if err := yaml.Unmarshal([]byte(mapYAML), &compMap); err != nil || len(compMap.Spec.Dependencies) != 1 || compMap.Spec.Dependencies[0].Name != "kueue" {
+			t.Fatalf("mapping key alias decoding failed: %v", err)
+		}
+	})
+
+	t.Run("invalid dependencies structures return error", func(t *testing.T) {
+		t.Parallel()
+		invalidDeps := []string{
+			`spec: { wrapperRef: "invalid-string" }`,
+			`spec: { dependencies: { comp-a: [nested, list] } }`,
+			`spec: { dependencies: "scalar-string" }`,
+			`spec: { dependencies: [ { name: [ nested ] } ] }`,
+			`spec: { dependencies: [ [ nested ] ] }`,
+			`spec: { dependencies: { cert-manager: { version: [1, 2] } } }`,
+			"spec:\n  dependencies:\n    ? [invalid_non_scalar_key]\n    : \">=1.0.0\"\n",
+			"spec:\n  dependencies:\n    \"\": \">=1.0.0\"\n",
+			"spec:\n  dependencies:\n    \"   \": \">=1.0.0\"\n",
+			"spec:\n  dependencies:\n    - null\n",
+			"spec:\n  dependencies:\n    - \"\"\n",
+			"spec:\n  dependencies:\n    kueue:\n      version: \">=1.0.0\"\n      optinal: true\n",
+		}
+		for _, in := range invalidDeps {
+			var comp linter.ComponentManifest
+			if err := yaml.Unmarshal([]byte(in), &comp); err == nil {
+				t.Errorf("expected error for input %s", in)
+			}
+		}
+	})
+}

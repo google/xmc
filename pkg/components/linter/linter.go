@@ -49,14 +49,15 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 	}
 
 	res := NewValidationResult()
-	if _, err := l.collectManifests(dir, res); err != nil {
+	if _, _, err := l.collectManifests(dir, res); err != nil {
 		return nil, err
 	}
 	return res, nil
 }
 
-func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawManifest, error) {
+func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawManifest, []*ComponentManifest, error) {
 	var rawManifests []*RawManifest
+	var compManifests []*ComponentManifest
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
@@ -71,18 +72,21 @@ func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawMani
 			res.AddError(path, 1, "FILE_READ_ERROR", fmt.Sprintf("failed to read file: %v", readErr))
 			return nil
 		}
-		raws := l.parseManifestFile(path, data, res)
+		raws, comps := l.parseManifestFile(path, data, res)
 		rawManifests = append(rawManifests, raws...)
+		compManifests = append(compManifests, comps...)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan manifests in %q: %w", dir, err)
+		return nil, nil, fmt.Errorf("failed to scan manifests in %q: %w", dir, err)
 	}
-	return rawManifests, nil
+	return rawManifests, compManifests, nil
 }
 
-func (l *Linter) parseManifestFile(path string, data []byte, res *ValidationResult) []*RawManifest {
+func (l *Linter) parseManifestFile(path string, data []byte, res *ValidationResult) ([]*RawManifest, []*ComponentManifest) {
 	var rawManifests []*RawManifest
+	var compManifests []*ComponentManifest
+
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	for {
 		var node yaml.Node
@@ -92,11 +96,37 @@ func (l *Linter) parseManifestFile(path string, data []byte, res *ValidationResu
 			}
 			break
 		}
-		if raw := decodeRawDocumentNode(path, &node, res); raw != nil {
+		raw, comp := decodeDocumentNode(path, &node, res)
+		if raw != nil {
 			rawManifests = append(rawManifests, raw)
 		}
+		if comp != nil {
+			compManifests = append(compManifests, comp)
+		}
 	}
-	return rawManifests
+	return rawManifests, compManifests
+}
+
+func decodeDocumentNode(path string, node *yaml.Node, res *ValidationResult) (*RawManifest, *ComponentManifest) {
+	raw := decodeRawDocumentNode(path, node, res)
+	if raw == nil {
+		return nil, nil
+	}
+	hasComponentGroup := strings.HasPrefix(raw.APIVersion, "components.xmc.dev/") || raw.APIVersion == "components.xmc.dev"
+	if hasComponentGroup && raw.Kind != "Component" {
+		res.AddError(path, raw.Line, "SCHEMA_ERROR", fmt.Sprintf("invalid kind %q for apiVersion %q; expected \"Component\"", raw.Kind, raw.APIVersion))
+		return raw, nil
+	}
+	if !hasComponentGroup || raw.Kind != "Component" {
+		return raw, nil
+	}
+	var comp ComponentManifest
+	if err := node.Decode(&comp); err != nil {
+		res.AddError(path, raw.Line, "SCHEMA_ERROR", fmt.Sprintf("failed to decode Component in %s: %v", path, err))
+		return raw, nil
+	}
+	comp.FilePath, comp.Line = raw.FilePath, raw.Line
+	return raw, &comp
 }
 
 func decodeRawDocumentNode(path string, node *yaml.Node, res *ValidationResult) *RawManifest {
