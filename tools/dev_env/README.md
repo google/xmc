@@ -487,8 +487,8 @@ Certain hardware and cloud infrastructure primitives cannot run inside a local D
 | **Control Plane & Web UI** | ✅ Live (`dev_env up`, `reload`) | ✅ Live | ✅ Live |
 | **Dex OIDC Authentication** | ✅ Live (`dex.yaml`) | ✅ Live | ✅ Cloud IAP / OAuth |
 | **Cloud Spanner Migrations** | ✅ Live (`spanner.py`) | ✅ Live | ✅ Real Cloud Spanner |
-| **CRD API Schema Validation** | ✅ Open-Schema (`dummy_crds.yaml`)| ✅ Full Upstream CRDs | ✅ GKE Add-ons |
-| **Kueue Local Quota & Admission**| ⚠️ Open-Schema CRD only | 🟢 **Reachable** (Kueue Controller) | ✅ Live Real Queues |
+| **CRD API Schema Validation** | ✅ Schema Registered (`dummy_crds.yaml`)| ✅ Full Upstream CRDs | ✅ GKE Add-ons |
+| **Kueue Local Quota & Admission**| ⚠️ CRD Registered (No Controller) | 🟢 **Reachable** (Kueue Controller) | ✅ Live Real Queues |
 | **Reconciler State Machine** | ⚠️ Go Unit/Integration Tests | 🟢 **Reachable** (Upstream Controllers) | ✅ Live Real Pods |
 | **CPU Mock Workload Execution** | ❌ Controller not installed | 🟢 **Reachable** (Mock JobSets/Pods) | ✅ Live Real Pods |
 | **Multi-Cluster MultiKueue** | ❌ Single KinD Cluster | 🟢 **Reachable** (Dual-KinD on Docker Net)| ✅ Live Multi-Cluster |
@@ -496,8 +496,8 @@ Certain hardware and cloud infrastructure primitives cannot run inside a local D
 | **Dynamic GCE ProvisioningRequests**| ❌ Never Reachable | ❌ Never Reachable | ✅ Live Cloud Capacity |
 
 #### Current Baseline with Dummy CRDs:
-To keep local startup near-instantaneous (~35s) and memory overhead minimal, KinD installs open-schema CustomResourceDefinitions ([`dummy_crds.yaml`](../../test/e2e/manifests/dummy_crds.yaml)) for `JobSet` and `Kueue`.
-- **What works**: `actuator` and `reconciler` can perform Kubernetes CRUD operations without API server rejection (`no matches for kind "JobSet"`).
+To keep local startup near-instantaneous (~35s) and memory overhead minimal, KinD installs open-schema CustomResourceDefinitions ([`dummy_crds.yaml`](../../test/e2e/manifests/dummy_crds.yaml)) for `JobSet` and `Kueue` (`x-kubernetes-preserve-unknown-fields: true`).
+- **What "CRD Registered (No Controller)" means**: The CRD schemas are registered on the Kubernetes API server, allowing `kubectl apply`, Helm, and client CRUD operations from `actuator` and `reconciler` to succeed without schema validation rejections (`no matches for kind "JobSet"`). However, the background controller manager pods that reconcile CRDs into worker pods are inactive.
 - **What is tested in-memory**: The complete Reconciler state machine (`SCHEDULING` $\rightarrow$ `STARTING` $\rightarrow$ `RUNNING` $\rightarrow$ `COMPLETED`/`FAILED`/`PARTIALLY_FAILED`, `ImagePullBackOff`, unschedulable handling, Non-Restarting JobSets Contract) is verified via comprehensive Go table-driven integration tests (`cmd/reconciler/jobset/converter_test.go`).
 
 #### Reachable Local Enhancements (Roadmap):
