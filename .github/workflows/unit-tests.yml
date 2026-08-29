@@ -256,6 +256,7 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # The chart suite renders templates with a host helm binary rather than building Bazel
       # targets, so its scope is resolved by path rather than by the Bazel dependency graph.
