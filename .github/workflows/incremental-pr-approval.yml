@@ -39,10 +39,17 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: 'Restore trusted scripts and ownership from base branch'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git checkout "origin/${BASE_REF}" -- .github/scripts/ .github/workflows/ OWNERS
+
       - name: 'Evaluate Incremental Approval'
         uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAX_OWNER_GRACE_LINES: ${{ vars.MAX_OWNER_GRACE_LINES }}
         with:
           script: |
             const { run } = require('./.github/scripts/incremental-approval.js');
