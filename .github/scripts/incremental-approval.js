@@ -261,11 +261,19 @@ function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
 /**
  * Pure function: Parses git range-diff output using Column 1 (outer diff) to detect line changes.
  * @param {string} output - Raw output of `git range-diff`.
- * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean, hasRemovedCommits: boolean, addedCommitShas: Array<string> }}
  */
 function parseRangeDiff(output) {
   if (!output || typeof output !== 'string' || output.trim() === '') {
-    return { additions: 0, deletions: 0, totalDelta: 0, isCleanRebase: true, hasUnmatchedCommits: false };
+    return {
+      additions: 0,
+      deletions: 0,
+      totalDelta: 0,
+      isCleanRebase: true,
+      hasUnmatchedCommits: false,
+      hasRemovedCommits: false,
+      addedCommitShas: []
+    };
   }
 
   const lines = output.split(/\r?\n/);
@@ -273,7 +281,8 @@ function parseRangeDiff(output) {
   let deletions = 0;
   let inCodeDiffHunk = false;
   let hasModifiedCommits = false;
-  let hasUnmatchedCommits = false;
+  let hasRemovedCommits = false;
+  const addedCommitShas = [];
 
   for (const line of lines) {
     const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
@@ -283,8 +292,13 @@ function parseRangeDiff(output) {
       if (status !== '=') {
         hasModifiedCommits = true;
       }
-      if (status === '<' || status === '>') {
-        hasUnmatchedCommits = true;
+      if (status === '<') {
+        hasRemovedCommits = true;
+      } else if (status === '>') {
+        const addedSha = commitMatch[3];
+        if (addedSha && addedSha !== '--------') {
+          addedCommitShas.push(addedSha);
+        }
       }
       inCodeDiffHunk = false;
       continue;
@@ -334,9 +348,17 @@ function parseRangeDiff(output) {
   }
 
   const totalDelta = additions + deletions;
-  const isCleanRebase = !hasModifiedCommits && !hasUnmatchedCommits && totalDelta === 0;
+  const isCleanRebase = !hasModifiedCommits && !hasRemovedCommits && addedCommitShas.length === 0 && totalDelta === 0;
 
-  return { additions, deletions, totalDelta, isCleanRebase, hasUnmatchedCommits };
+  return {
+    additions,
+    deletions,
+    totalDelta,
+    isCleanRebase,
+    hasUnmatchedCommits: hasRemovedCommits,
+    hasRemovedCommits,
+    addedCommitShas
+  };
 }
 
 /**
@@ -509,6 +531,41 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
 }
 
 /**
+ * Shell Helper: Calculates line additions and deletions for a single commit.
+ * @param {string} commitSha - Commit SHA to inspect.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {{ additions: number, deletions: number, totalDelta: number }}
+ */
+function getCommitLineDelta(commitSha, execOptions = {}) {
+  const opts = {
+    encoding: 'utf8',
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+    timeout: GIT_EXEC_TIMEOUT_MS,
+    stdio: ['pipe', 'pipe', 'ignore'],
+    ...execOptions
+  };
+
+  try {
+    const numstat = execFileSync('git', ['diff-tree', '--numstat', '-r', '--no-renames', commitSha], opts);
+    let additions = 0;
+    let deletions = 0;
+    for (const line of numstat.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        const a = parseInt(parts[0], 10);
+        const d = parseInt(parts[1], 10);
+        if (!isNaN(a)) additions += a;
+        if (!isNaN(d)) deletions += d;
+      }
+    }
+    return { additions, deletions, totalDelta: additions + deletions };
+  } catch (error) {
+    console.log(`[incremental-approval] Failed to get line delta for commit ${commitSha}: ${error.message}`);
+    return { additions: 0, deletions: 0, totalDelta: 0 };
+  }
+}
+
+/**
  * Orchestrator: Fetches PR reviews, calculates semantic delta, evaluates grace policy, and auto-reapproves.
  * @param {Object} params - Injected by actions/github-script.
  */
@@ -618,8 +675,21 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const { totalDelta, isCleanRebase, hasUnmatchedCommits } = parseRangeDiff(rangeDiffOutput);
-  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, totalDelta=${totalDelta} lines, hasUnmatchedCommits=${hasUnmatchedCommits}`);
+  const {
+    totalDelta: hunkDelta,
+    isCleanRebase,
+    hasUnmatchedCommits,
+    addedCommitShas
+  } = parseRangeDiff(rangeDiffOutput);
+
+  let addedCommitsDelta = 0;
+  for (const addedSha of addedCommitShas) {
+    const commitDelta = getCommitLineDelta(addedSha);
+    addedCommitsDelta += commitDelta.totalDelta;
+  }
+
+  const totalDelta = hunkDelta + addedCommitsDelta;
+  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedCommitsDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines, hasUnmatchedCommits=${hasUnmatchedCommits}`);
 
   const decision = evaluateIncrementalApproval({
     hasPriorApproval: true,
@@ -665,6 +735,7 @@ module.exports = {
   findLatestApprovalFromReviews,
   findLatestApproval,
   parseRangeDiff,
+  getCommitLineDelta,
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,

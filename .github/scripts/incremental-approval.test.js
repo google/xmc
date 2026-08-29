@@ -23,6 +23,7 @@ const {
   findLatestApprovalFromReviews,
   findLatestApproval,
   parseRangeDiff,
+  getCommitLineDelta,
   evaluateIncrementalApproval,
   resolveCommitRanges,
   MAX_OWNER_GRACE_LINES
@@ -389,7 +390,7 @@ test('parseRangeDiff ignores Commit message hunks', () => {
   assert.strictEqual(result.totalDelta, 1);
 });
 
-test('parseRangeDiff identifies added, removed, or squashed commits as unmatched', () => {
+test('parseRangeDiff identifies added commits and captures addedCommitShas', () => {
   const sampleAdded = [
     '1:  a1b2c3d = 1:  e5f6g7h First commit',
     '-:  ------- > 2:  89abcdef Added new commit'
@@ -397,7 +398,9 @@ test('parseRangeDiff identifies added, removed, or squashed commits as unmatched
 
   const resultAdded = parseRangeDiff(sampleAdded);
   assert.strictEqual(resultAdded.isCleanRebase, false);
-  assert.strictEqual(resultAdded.hasUnmatchedCommits, true);
+  assert.strictEqual(resultAdded.hasUnmatchedCommits, false);
+  assert.strictEqual(resultAdded.hasRemovedCommits, false);
+  assert.deepStrictEqual(resultAdded.addedCommitShas, ['89abcdef']);
   assert.strictEqual(resultAdded.totalDelta, 0);
 
   const sampleRemoved = [
@@ -407,6 +410,55 @@ test('parseRangeDiff identifies added, removed, or squashed commits as unmatched
   const resultRemoved = parseRangeDiff(sampleRemoved);
   assert.strictEqual(resultRemoved.isCleanRebase, false);
   assert.strictEqual(resultRemoved.hasUnmatchedCommits, true);
+  assert.strictEqual(resultRemoved.hasRemovedCommits, true);
+  assert.deepStrictEqual(resultRemoved.addedCommitShas, []);
+});
+
+test('getCommitLineDelta parses numstat additions and deletions correctly', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      return '94d6450805df211f728adf73e0c98b8419e22005\n3\t1\t.github/workflows/unit-tests.yml\n1\t0\tREADME.md\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
+
+  try {
+    const delta = mockedGetCommitLineDelta('94d64508');
+    assert.strictEqual(delta.additions, 4);
+    assert.strictEqual(delta.deletions, 1);
+    assert.strictEqual(delta.totalDelta, 5);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('getCommitLineDelta handles subprocess failure gracefully', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = () => {
+    throw new Error('Fatal git error');
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
+
+  try {
+    const delta = mockedGetCommitLineDelta('invalid-sha');
+    assert.strictEqual(delta.additions, 0);
+    assert.strictEqual(delta.deletions, 0);
+    assert.strictEqual(delta.totalDelta, 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
 });
 
 test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
