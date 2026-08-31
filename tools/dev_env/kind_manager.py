@@ -34,6 +34,9 @@ _LOGGER = logging.getLogger("xmc.dev_env.kind")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+_DEV_TEMP_DIR_MODE: int = 0o700
+_DEV_TLS_KEY_MODE: int = 0o600
+
 REQUIRED_PREFLIGHT_TOOLS: list[str] = [
     "docker",
     "kind",
@@ -52,7 +55,7 @@ def check_preflight_tools(required_tools: list[str] | None = None) -> None:
     if missing:
         raise RuntimeError(
             f"Missing required pre-flight tool(s): {', '.join(missing)}. "
-            "Please ensure Docker, KinD, kubectl, Helm, OpenSSL, gcloud, and Bazel "
+            f"Please ensure the required tools ({', '.join(tools)}) "
             "are installed and available in your PATH."
         )
     _LOGGER.debug("Pre-flight check passed: %s", tools)
@@ -167,7 +170,7 @@ class KindManager:
             return default_adc.resolve()
         if "SPANNER_EMULATOR_HOST" in os.environ:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
-            self.temp_dir.chmod(0o700)
+            self.temp_dir.chmod(_DEV_TEMP_DIR_MODE)
             dummy_path = self.temp_dir / "dummy-credentials.json"
             if not dummy_path.exists():
                 dummy_path.write_text('{"type": "service_account", "project_id": "dummy"}')
@@ -178,15 +181,8 @@ class KindManager:
             "Please run 'gcloud auth application-default login' or set GOOGLE_APPLICATION_CREDENTIALS."
         )
 
-    def ensure_secrets(self, cluster_name: str | None = None) -> None:
-        """Creates GCP service account credentials, OAuth tokens, and TLS certificates."""
-        name = cluster_name or self.config.cluster_name
-        ctx = f"kind-{name}"
-        log_info("=== [KinD] Configuring Kubernetes secrets in 'xmc' namespace ===")
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.temp_dir.chmod(0o700)
-        adc_file = self._resolve_adc_file()
-
+    def _ensure_gcp_sa_secret(self, ctx: str, adc_file: Path) -> None:
+        """Creates GCP SA credentials secret 'gcp-sa-key'."""
         log_info("Creating GCP SA credentials secret 'gcp-sa-key'...")
         self._apply_secret_generic(
             "gcp-sa-key",
@@ -195,6 +191,8 @@ class KindManager:
             ctx=ctx,
         )
 
+    def _ensure_backend_oauth_secrets(self, ctx: str) -> None:
+        """Creates backend OAuth secrets 'backend-oauth-secrets'."""
         log_info("Creating backend OAuth secrets 'backend-oauth-secrets'...")
         self._apply_secret_generic(
             "backend-oauth-secrets",
@@ -206,6 +204,8 @@ class KindManager:
             ctx=ctx,
         )
 
+    def _ensure_validation_tls_secret(self, ctx: str) -> None:
+        """Generates self-signed TLS certificates for 'validation-secret'."""
         log_info("Generating self-signed TLS certificates for 'validation-secret'...")
         tls_key, tls_crt = (
             self.temp_dir / "dev-validation.key",
@@ -225,7 +225,7 @@ class KindManager:
                 ]
             )
             if tls_key.exists():
-                tls_key.chmod(0o600)
+                tls_key.chmod(_DEV_TLS_KEY_MODE)
             run_command(
                 [
                     "openssl",
@@ -252,8 +252,24 @@ class KindManager:
             ctx=ctx,
         )
 
+    def _ensure_redis_secret(self, ctx: str) -> None:
+        """Creates Redis secret 'redis-secret'."""
         log_info("Creating Redis secret 'redis-secret'...")
         self._apply_secret_generic("redis-secret", ["xmc"], literals=["redis-password="], ctx=ctx)
+
+    def ensure_secrets(self, cluster_name: str | None = None) -> None:
+        """Creates GCP service account credentials, OAuth tokens, and TLS certificates."""
+        name = cluster_name or self.config.cluster_name
+        ctx = f"kind-{name}"
+        log_info("=== [KinD] Configuring Kubernetes secrets in 'xmc' namespace ===")
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.chmod(_DEV_TEMP_DIR_MODE)
+        adc_file = self._resolve_adc_file()
+
+        self._ensure_gcp_sa_secret(ctx, adc_file)
+        self._ensure_backend_oauth_secrets(ctx)
+        self._ensure_validation_tls_secret(ctx)
+        self._ensure_redis_secret(ctx)
         log_success("Kubernetes secrets successfully configured.")
 
     def create_secrets(self, cluster_name: str | None = None) -> None:

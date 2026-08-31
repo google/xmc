@@ -126,7 +126,8 @@ python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
   3. Injects Kubernetes secrets from the host environment:
      - `gcp-sa-key`: Extracted from active `gcloud auth application-default` ADC credentials.
      - `backend-oauth-secrets`: Shared OIDC client credentials for Dex authentication.
-     - `dex-tls-secret`: Self-signed SAN TLS certificate for secure local token issuance.
+     - `validation-secret`: Self-signed SAN TLS certificate for webhook validation and token signing.
+     - `redis-secret`: Local Redis cache authentication credentials.
 - `delete`: Safely deletes the local KinD cluster and its underlying containers.
 
 ---
