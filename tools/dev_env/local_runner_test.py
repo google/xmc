@@ -363,7 +363,7 @@ class TestLocalRunner(unittest.TestCase):
     def test_reload_rollout_failure_handled_gracefully(
         self, mock_run: MagicMock, mock_log_info: MagicMock
     ) -> None:
-        """Verifies rollout command failures are caught and logged without crashing."""
+        """Verifies rollout command failures are caught, logged, and raise RuntimeError."""
         mock_run.side_effect = RuntimeError("kubectl rollout failed")
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
@@ -372,7 +372,9 @@ class TestLocalRunner(unittest.TestCase):
             ),
             patch.object(self.runner.image_builder, "load_images_into_kind"),
         ):
-            self.runner.reload(services=["reconciler"])
+            with self.assertRaises(RuntimeError) as ctx:
+                self.runner.reload(services=["reconciler"])
+            self.assertIn("failure(s)", str(ctx.exception))
             mock_log_info.assert_any_call(
                 "Failed to restart deployment 'reconciler-deployment': kubectl rollout failed. Skipping."
             )

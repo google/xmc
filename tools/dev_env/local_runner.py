@@ -119,18 +119,23 @@ class LocalRunner:
             )
         log_success("Local KinD development environment teardown complete.")
 
-    def _resolve_target_services(self, services: list[str] | None = None) -> tuple[set[str], bool]:
+    def _resolve_target_services(
+        self,
+        services: list[str] | None = None,
+        helm: bool = False,
+    ) -> tuple[set[str], bool]:
         """Resolves target services and Helm requirement from args and git status."""
         target_services: set[str] = set()
-        helm_needed = False
+        helm_needed = helm
         raw_services = services or []
         lowercase_services = {s.strip().lower() for s in raw_services if s and s.strip()}
 
-        if not raw_services or "auto" in lowercase_services:
+        if ("auto" in lowercase_services) or (not raw_services and not helm):
             log_info("=== [ChangeDetector] Auto-detecting modified services from git ===")
             det = self.change_detector.detect_changes()
             target_services.update(det.services)
-            helm_needed = det.helm_upgrade_needed
+            if det.helm_upgrade_needed:
+                helm_needed = True
             for svc, r in det.reasons.items():
                 files_str = ", ".join(r[:2]) + ("..." if len(r) > 2 else "")
                 log_info(f"  • {svc}: triggered by {len(r)} file(s) ({files_str})")
@@ -139,8 +144,16 @@ class LocalRunner:
             explicit_services = [
                 s.strip()
                 for s in raw_services
-                if s and s.strip() and s.strip().lower() not in ("auto", "all")
+                if s
+                and s.strip()
+                and s.strip().lower() not in ("auto", "all", "helm", "chart", "charts")
             ]
+            if any(
+                s.strip().lower() in ("helm", "chart", "charts")
+                for s in raw_services
+                if s and s.strip()
+            ):
+                helm_needed = True
             if explicit_services:
                 resolved = resolve_service_names(explicit_services)
                 invalid_or_disabled = [
@@ -226,7 +239,7 @@ class LocalRunner:
             results = executor.map(_wait_single, deployments)
             return [r for r in results if r is not None]
 
-    def reload(self, services: list[str] | None = None) -> None:
+    def reload(self, services: list[str] | None = None, helm: bool = False) -> bool:
         """Recompiles and hot-reloads selected or modified microservices into the running cluster.
 
         Fast inner-loop reload pipeline:
@@ -235,7 +248,7 @@ class LocalRunner:
         3. Validates and merges explicitly specified services or 'all' keyword.
         4. Recompiles OCI container images in parallel with Bazel.
         5. Imports new image layers into KinD cluster nodes via `kind load docker-image`.
-        6. Upgrades Helm release if chart or supporting manifests were modified.
+        6. Upgrades Helm release if chart or supporting manifests were modified or requested.
         7. Triggers non-blocking `kubectl rollout restart` across affected deployments.
         8. Concurrently monitors rollout completion across worker threads with timeout bounds.
         9. Reports sub-second execution elapsed time and success status.
@@ -243,6 +256,10 @@ class LocalRunner:
         Args:
             services: Optional list of microservice names or aliases to reload.
                 Supports special keywords 'auto' (detect from git) and 'all' (all services).
+            helm: If True, forces a Helm chart upgrade.
+
+        Returns:
+            True if any service or Helm upgrade was performed; False if clean.
 
         Raises:
             RuntimeError: If the KinD cluster is not currently running or any rollouts fail.
@@ -254,10 +271,10 @@ class LocalRunner:
                 "Run 'python3 tools/dev_env/dev_env.py up' first."
             )
 
-        target_services, helm_needed = self._resolve_target_services(services)
+        target_services, helm_needed = self._resolve_target_services(services, helm=helm)
         if not target_services and not helm_needed:
             log_info("No modified microservices or Helm manifests detected. Working tree clean.")
-            return
+            return False
         start_time = time.perf_counter()
         sorted_targets = sorted(target_services)
 
@@ -284,9 +301,13 @@ class LocalRunner:
             log_success(
                 f"Services{msg_suffix} reloaded in {elapsed:.2f}s: {', '.join(sorted_targets)}"
             )
-        elif helm_needed:
+            return True
+        if helm_needed:
             elapsed = time.perf_counter() - start_time
             log_success(f"Helm release reloaded in {elapsed:.2f}s")
+            return True
+
+        return False
 
     def _display_ready_banner(self) -> None:
         """Displays formatted completion summary with clickable URLs."""
