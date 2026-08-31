@@ -84,83 +84,82 @@ class VersionRecommendation:
     bump_triggers: list[str] = field(default_factory=list)
 
 
-# Mapping of code paths and subsystems to controlling deployment / Helm feature flags
-KNOWN_GATED_SUBSYSTEMS: dict[str, dict[str, Any]] = {
-    "components": {
-        "display_name": "Components Engine",
-        "ctk_flag": "enable_components",
-        "helm_flag": "componentsDeployment.enabled",
-        "path_prefixes": [
-            "pkg/components/",
-            "cmd/components/",
-            "api/protos/components",
-            "deploy/terraform/modules/components",
-            "deploy/helm/templates/components",
-        ],
-        "scopes": ["components", "component", "cms"],
-        "default_state": False,
-    },
-    "rod": {
-        "display_name": "Resource Observability Dashboard (ROD)",
-        "ctk_flag": "rod_deployment_enabled",
-        "helm_flag": "rodDeployment.enabled",
-        "path_prefixes": [
-            "pkg/rod/",
-            "cmd/rod/",
-            "cmd/rod_data_provider/",
-            "deploy/helm/templates/rod",
-        ],
-        "scopes": ["rod", "rod-ui", "rod-backend"],
-        "default_state": False,
-    },
-    "health_service": {
-        "display_name": "Health Service & Admin Panel",
-        "ctk_flag": "health_service_deployment_enabled",
-        "helm_flag": "healthServiceDeployment.enabled",
-        "path_prefixes": [
-            "pkg/health/",
-            "cmd/health/",
-            "cmd/health_service/",
-            "cmd/ui/app/admin_panel/",
-            "cmd/ui/screenshot_tests/admin_panel/",
-            "deploy/helm/templates/health_service",
-        ],
-        "scopes": ["health", "health_service", "health-service", "admin_panel"],
-        "default_state": False,
-    },
-    "dashboard_service": {
-        "display_name": "Dashboard Service & xdash SDK",
-        "ctk_flag": "dashboard_service_deployment_enabled",
-        "helm_flag": "dashboardServiceDeployment.enabled",
-        "path_prefixes": [
-            "pkg/dashboard/",
-            "cmd/dashboard/",
-            "cmd/dashboard_service/",
-            "cmd/ui/app/pages/dashboards",
-            "cmd/ui/app/common/components/dashboard",
-            "cmd/ui/app/performance_dashboard",
-            "cmd/ui/app/service/dashboard",
-            "sdks/python/xdash/",
-            "examples/xdash_dashboard/",
-            "deploy/helm/templates/dashboard_service",
-        ],
-        "scopes": ["dashboard", "dashboards", "xdash", "dashboard_service"],
-        "default_state": False,
-    },
-    "metrics_ingestion": {
-        "display_name": "Metrics & Ingestion Gateway",
-        "ctk_flag": "enable_metrics",
-        "helm_flag": "metrics.enabled",
-        "path_prefixes": [
-            "pkg/metrics/",
-            "cmd/ingestion_gateway/",
-            "deploy/clickhouse/",
-            "deploy/helm/templates/ingestion_gateway",
-        ],
-        "scopes": ["metrics", "ingestion", "ingestion_gateway", "metrics_ingestion"],
-        "default_state": False,
-    },
-}
+@dataclass(kw_only=True)
+class FeatureFlagInfo:
+    """Represents a dynamically discovered feature flag in deployment configurations."""
+
+    flag_name: str
+    display_name: str
+    tokens: set[str] = field(default_factory=set)
+    ctk_value: bool | None = None
+    helm_value: bool | None = None
+    is_active: bool = False
+
+
+def normalize_flag_name(flag: str) -> str:
+    """Strips common prefix/suffix boilerplate to extract the core subsystem identifier."""
+    clean = flag
+    if clean.startswith("vars."):
+        clean = clean[5:]
+    if clean.startswith("enable_"):
+        clean = clean[7:]
+    elif clean.startswith("use_"):
+        clean = clean[4:]
+    if clean.endswith("_deployment_enabled"):
+        clean = clean[:-19]
+    elif clean.endswith("Deployment.enabled"):
+        clean = clean[:-18]
+    elif clean.endswith("_enabled") or clean.endswith(".enabled"):
+        clean = clean[:-8]
+    return clean.lower()
+
+
+def derive_flag_tokens(flag_name: str) -> set[str]:
+    """Generates matching tokens and search terms for a given feature flag name."""
+    core = normalize_flag_name(flag_name)
+    tokens = {core, core.replace("_", "-"), core.replace("-", "_")}
+    if core.endswith("s"):
+        tokens.add(core[:-1])
+    else:
+        tokens.add(f"{core}s")
+
+    # Add domain-level aliases
+    if "rod" in core:
+        tokens.update(["rod", "rod_data_provider", "rod-data-provider", "rod-ui", "rod-backend"])
+    if "health" in core:
+        tokens.update(["health", "health_service", "health-service", "admin_panel", "admin-panel"])
+    if "dashboard" in core or "dash" in core:
+        tokens.update(
+            ["dashboard", "dashboards", "xdash", "dashboard_service", "dashboard-service"]
+        )
+    if "metric" in core or "ingestion" in core:
+        tokens.update(["metrics", "metric", "ingestion", "ingestion_gateway", "metrics_ingestion"])
+    if "component" in core:
+        tokens.update(["component", "components", "cms"])
+
+    return {t for t in tokens if t}
+
+
+def derive_display_name(flag_name: str) -> str:
+    """Derives a human-readable title from a flag name."""
+    core = normalize_flag_name(flag_name)
+    special_cases = {
+        "rod": "Resource Observability Dashboard (ROD)",
+        "cms": "Component Management Service (CMS)",
+        "xdash": "Dashboard Service & xdash SDK",
+        "health_service": "Health Service & Admin Panel",
+        "health": "Health Service & Admin Panel",
+        "components": "Components Engine",
+        "component": "Components Engine",
+        "metrics": "Metrics & Ingestion Gateway",
+        "metric": "Metrics & Ingestion Gateway",
+        "ingestion": "Metrics & Ingestion Gateway",
+    }
+    if core in special_cases:
+        return special_cases[core]
+
+    words = [w.capitalize() for w in re.split(r"[_.-]", core) if w]
+    return " ".join(words)
 
 
 def parse_conventional_commit(subject: str) -> tuple[str, str, str, int | None]:
@@ -338,8 +337,8 @@ def extract_flag_transitions(
     return transitions
 
 
-def get_current_feature_states(target_ref: str, repo_dir: Path) -> dict[str, bool]:
-    """Extracts the active status of known gated subsystems at target ref."""
+def discover_feature_flags(target_ref: str, repo_dir: Path) -> dict[str, FeatureFlagInfo]:
+    """Dynamically extracts all feature flags from CTK and Helm configs at target ref."""
     ctk_candidate_files = [
         "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
         "deploy/ctk_v2/xmanager-cloud.yaml",
@@ -352,16 +351,55 @@ def get_current_feature_states(target_ref: str, repo_dir: Path) -> dict[str, boo
             ctk_flags.update(parse_yaml_booleans(content))
 
     helm_content = get_git_file_content(target_ref, "deploy/helm/values.yaml", repo_dir)
-    helm_flags = parse_yaml_booleans(helm_content)
+    helm_flags = parse_yaml_booleans(helm_content) if helm_content else {}
 
-    states: dict[str, bool] = {}
-    for sub_key, sub_meta in KNOWN_GATED_SUBSYSTEMS.items():
-        ctk_flag = sub_meta["ctk_flag"]
-        helm_flag = sub_meta["helm_flag"]
-        # If explicitly enabled in CTK or Helm, treat as active
-        is_active = ctk_flags.get(ctk_flag, helm_flags.get(helm_flag, sub_meta["default_state"]))
-        states[sub_key] = bool(is_active)
-    return states
+    all_raw_flags = set(ctk_flags.keys()) | set(helm_flags.keys())
+    feature_toggle_names = {
+        f
+        for f in all_raw_flags
+        if f.startswith(("enable_", "use_"))
+        or f.endswith(("_enabled", "_deployment_enabled", ".enabled", "Deployment.enabled"))
+    }
+
+    discovered: dict[str, FeatureFlagInfo] = {}
+    for flag in feature_toggle_names:
+        core = normalize_flag_name(flag)
+        ctk_val = ctk_flags.get(flag)
+        helm_val = helm_flags.get(flag)
+
+        if ctk_val is None:
+            for k, v in ctk_flags.items():
+                if normalize_flag_name(k) == core:
+                    ctk_val = v
+                    break
+        if helm_val is None:
+            for k, v in helm_flags.items():
+                if normalize_flag_name(k) == core:
+                    helm_val = v
+                    break
+
+        is_active = bool(ctk_val) or bool(helm_val)
+        tokens = derive_flag_tokens(flag)
+        display_name = derive_display_name(flag)
+
+        info = FeatureFlagInfo(
+            flag_name=flag,
+            display_name=display_name,
+            tokens=tokens,
+            ctk_value=ctk_val,
+            helm_value=helm_val,
+            is_active=is_active,
+        )
+        discovered[core] = info
+        discovered[flag] = info
+
+    return discovered
+
+
+def get_current_feature_states(target_ref: str, repo_dir: Path) -> dict[str, bool]:
+    """Extracts the active boolean status of dynamically discovered feature flags."""
+    flags = discover_feature_flags(target_ref, repo_dir)
+    return {k: info.is_active for k, info in flags.items()}
 
 
 def parse_semver(version_str: str) -> tuple[int, int, int]:
@@ -538,7 +576,7 @@ def calculate_version_recommendation(
 
 def classify_commit(
     commit: CommitInfo,
-    active_states: dict[str, bool],
+    active_states: dict[str, Any],
     promoted_flags: set[str],
     approved_flags: set[str] | None = None,
 ) -> None:
@@ -573,41 +611,59 @@ def classify_commit(
         commit.category = "developer_velocity"
         return
 
-    # 3. Match files changed against known gated subsystems
-    matched_subsystems: set[str] = set()
-    for f in commit.files_changed:
-        for sub_key, sub_meta in KNOWN_GATED_SUBSYSTEMS.items():
-            if any(f.startswith(prefix) for prefix in sub_meta["path_prefixes"]):
-                matched_subsystems.add(sub_key)
+    # 3. Match files changed or scope against dynamically discovered feature flags
+    matched_flags: list[FeatureFlagInfo] = []
+    flag_infos: list[FeatureFlagInfo] = []
+    seen_flag_names: set[str] = set()
 
-    # Check commit scope if non-empty
-    if commit.scope:
-        for sub_key, sub_meta in KNOWN_GATED_SUBSYSTEMS.items():
-            if (
-                commit.scope == sub_key
-                or commit.scope in sub_key
-                or commit.scope in sub_meta.get("scopes", [])
-            ):
-                matched_subsystems.add(sub_key)
+    for k, v in active_states.items():
+        if isinstance(v, FeatureFlagInfo):
+            if v.flag_name not in seen_flag_names:
+                flag_infos.append(v)
+                seen_flag_names.add(v.flag_name)
+        else:
+            flag_name = k
+            if flag_name not in seen_flag_names:
+                info = FeatureFlagInfo(
+                    flag_name=flag_name,
+                    display_name=derive_display_name(flag_name),
+                    tokens=derive_flag_tokens(flag_name),
+                    is_active=bool(v),
+                )
+                flag_infos.append(info)
+                seen_flag_names.add(flag_name)
 
-    if matched_subsystems:
-        sub_key = next(iter(matched_subsystems))
-        sub_meta = KNOWN_GATED_SUBSYSTEMS[sub_key]
-        commit.gated_subsystem = sub_key
-        commit.gated_flag = sub_meta["ctk_flag"]
+    for info in flag_infos:
+        if commit.scope and any(commit.scope == tok or tok in commit.scope for tok in info.tokens):
+            matched_flags.append(info)
+            continue
+        for f in commit.files_changed:
+            parts = Path(f).parts
+            if any(tok in parts or any(tok in part for part in parts) for tok in info.tokens):
+                matched_flags.append(info)
+                break
 
-        if active_states.get(sub_key, False):
+    if matched_flags:
+        flag_info = matched_flags[0]
+        commit.gated_subsystem = normalize_flag_name(flag_info.flag_name)
+        commit.gated_flag = flag_info.flag_name
+
+        if flag_info.is_active:
             if commit.commit_type == "fix":
                 commit.category = "user_facing_fixes"
             else:
                 commit.category = "user_facing_features"
         else:
             approved_set = approved_flags or set()
-            if (
-                sub_meta["ctk_flag"] in approved_set
-                or sub_meta["helm_flag"] in approved_set
-                or sub_key in approved_set
-            ):
+            normalized_approved = {normalize_flag_name(a) for a in approved_set}
+            is_approved = (
+                flag_info.flag_name in approved_set
+                or normalize_flag_name(flag_info.flag_name) in normalized_approved
+                or any(
+                    tok in approved_set or tok in normalized_approved for tok in flag_info.tokens
+                )
+            )
+            if is_approved:
                 commit.category = "approved_preview_features"
             else:
                 commit.category = "experimental_preview_features"
@@ -756,12 +812,12 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
     promoted_flags = {t.flag_name for t in transitions if t.is_promotion_to_default}
 
     # 2. Get active feature states at target ref
-    active_states = get_current_feature_states(target_ref, repo_dir)
+    discovered_flags = discover_feature_flags(target_ref, repo_dir)
 
     # 3. Extract commits and classify them
     commits = get_git_commits(base_ref, target_ref, repo_dir)
     for commit in commits:
-        classify_commit(commit, active_states, promoted_flags, approved_flags)
+        classify_commit(commit, discovered_flags, promoted_flags, approved_flags)
 
     # 4. Group commits by category
     categorized: dict[str, list[dict[str, Any]]] = {
@@ -778,14 +834,20 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
         cat_key = c.category if c.category in categorized else "developer_velocity"
         categorized[cat_key].append(asdict(c))
 
-    # 5. Build Gated Subsystems Status Matrix
+    # 5. Build Gated Subsystems Status Matrix dynamically
     gated_status_matrix = []
-    for sub_key, sub_meta in KNOWN_GATED_SUBSYSTEMS.items():
-        is_active = active_states.get(sub_key, False)
+    seen_matrix_flags: set[str] = set()
+    for flag_info in discovered_flags.values():
+        if flag_info.flag_name in seen_matrix_flags:
+            continue
+        seen_matrix_flags.add(flag_info.flag_name)
+
+        is_active = flag_info.is_active
+        normalized_approved = {normalize_flag_name(a) for a in approved_flags}
         is_approved = (
-            sub_meta["ctk_flag"] in approved_flags
-            or sub_meta["helm_flag"] in approved_flags
-            or sub_key in approved_flags
+            flag_info.flag_name in approved_flags
+            or normalize_flag_name(flag_info.flag_name) in normalized_approved
+            or any(tok in approved_flags or tok in normalized_approved for tok in flag_info.tokens)
         )
         if is_active:
             status = "Active (Out-of-the-Box)"
@@ -796,10 +858,10 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
 
         gated_status_matrix.append(
             {
-                "subsystem": sub_key,
-                "display_name": sub_meta["display_name"],
-                "ctk_flag": sub_meta["ctk_flag"],
-                "helm_flag": sub_meta["helm_flag"],
+                "subsystem": normalize_flag_name(flag_info.flag_name),
+                "display_name": flag_info.display_name,
+                "ctk_flag": flag_info.flag_name,
+                "helm_flag": flag_info.flag_name,
                 "is_active_ootb": is_active,
                 "is_approved": is_approved,
                 "status": status,

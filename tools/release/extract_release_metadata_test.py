@@ -28,9 +28,11 @@ if str(_REPO_ROOT) not in sys.path:
 try:
     from tools.release.extract_release_metadata import (
         CommitInfo,
+        FeatureFlagInfo,
         FlagTransition,
         calculate_version_recommendation,
         classify_commit,
+        discover_feature_flags,
         extract_flag_transitions,
         extract_release_metadata,
         get_current_feature_states,
@@ -42,9 +44,11 @@ try:
 except ImportError:
     from extract_release_metadata import (  # type: ignore[no-redef]
         CommitInfo,
+        FeatureFlagInfo,
         FlagTransition,
         calculate_version_recommendation,
         classify_commit,
+        discover_feature_flags,
         extract_flag_transitions,
         extract_release_metadata,
         get_current_feature_states,
@@ -190,7 +194,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
             pr_number=470,
             files_changed=["pkg/components/controller.go"],
         )
-        active_states = {"components": False, "rod": True}
+        active_states = {"enable_components": False, "rod_deployment_enabled": True}
         promoted_flags: set[str] = set()
         approved_flags: set[str] = set()
 
@@ -212,7 +216,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
             pr_number=474,
             files_changed=["pkg/rod/metrics.go"],
         )
-        active_states = {"components": False, "rod": False}
+        active_states = {"enable_components": False, "rod_deployment_enabled": False}
         promoted_flags: set[str] = set()
         approved_flags = {"rod_deployment_enabled"}
 
@@ -234,7 +238,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
             pr_number=435,
             files_changed=["pkg/rod/cache.go"],
         )
-        active_states = {"components": False, "rod": True}
+        active_states = {"enable_components": False, "rod_deployment_enabled": True}
         promoted_flags: set[str] = set()
 
         classify_commit(commit, active_states, promoted_flags)
@@ -319,16 +323,29 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(commit.category, "user_facing_fixes")
 
     @patch("tools.release.extract_release_metadata.get_git_commits")
-    @patch("tools.release.extract_release_metadata.get_current_feature_states")
+    @patch("tools.release.extract_release_metadata.discover_feature_flags")
     @patch("tools.release.extract_release_metadata.extract_flag_transitions")
     def test_extract_release_metadata_handler(
         self,
         mock_transitions: MagicMock,
-        mock_states: MagicMock,
+        mock_flags: MagicMock,
         mock_commits: MagicMock,
     ) -> None:
         mock_transitions.return_value = []
-        mock_states.return_value = {"components": False, "rod": False}
+        mock_flags.return_value = {
+            "enable_components": FeatureFlagInfo(
+                flag_name="enable_components",
+                display_name="Components Engine",
+                tokens={"components", "component", "cms"},
+                is_active=False,
+            ),
+            "rod_deployment_enabled": FeatureFlagInfo(
+                flag_name="rod_deployment_enabled",
+                display_name="Resource Observability Dashboard (ROD)",
+                tokens={"rod", "rod_data_provider"},
+                is_active=False,
+            ),
+        }
         mock_commits.return_value = [
             CommitInfo(
                 commit_hash="1111",
@@ -497,6 +514,35 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(commits[1].commit_type, "fix")
         self.assertEqual(commits[1].pr_number, 101)
         self.assertEqual(commits[1].files_changed, ["pkg/server/server.go"])
+
+    @patch("tools.release.extract_release_metadata.get_git_file_content")
+    def test_discover_feature_flags_dynamic_services(self, mock_get_content: MagicMock) -> None:
+        ctk_content = """
+        vars:
+          enable_batch_evaluator: false
+          anomaly_detector_deployment_enabled: true
+        """
+        helm_content = """
+        batchEvaluatorDeployment:
+          enabled: false
+        anomalyDetectorDeployment:
+          enabled: true
+        """
+
+        def mock_content(ref: str, path: str, _repo: Path) -> str:
+            if "ctk_v2" in path:
+                return ctk_content
+            return helm_content
+
+        mock_get_content.side_effect = mock_content
+
+        flags = discover_feature_flags("1.0.0", Path("."))
+        self.assertIn("batch_evaluator", flags)
+        self.assertIn("anomaly_detector", flags)
+        self.assertFalse(flags["batch_evaluator"].is_active)
+        self.assertTrue(flags["anomaly_detector"].is_active)
+        self.assertIn("batch_evaluator", flags["batch_evaluator"].tokens)
+        self.assertEqual(flags["anomaly_detector"].display_name, "Anomaly Detector")
 
 
 if __name__ == "__main__":
