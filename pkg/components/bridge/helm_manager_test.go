@@ -77,19 +77,71 @@ func TestK8sHelmManager_Lifecycle(t *testing.T) {
 		t.Error("expected ingestion-gateway to be inactive after deletion")
 	}
 
-	// Verify ConfigMap was updated with enabled = false
+	// Verify ConfigMap was updated by removing the component JSON key
 	cmUpdated, err := client.CoreV1().ConfigMaps("xmc").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("failed to get updated ConfigMap: %v", err)
 	}
 
-	if err := json.Unmarshal([]byte(cmUpdated.Data["ingestion-gateway.json"]), &parsedValues); err != nil {
-		t.Fatalf("failed to unmarshal updated JSON: %v", err)
+	if _, exists := cmUpdated.Data["ingestion-gateway.json"]; exists {
+		t.Errorf("expected ingestion-gateway.json to be deleted from ConfigMap, but key still exists")
+	}
+}
+
+func TestK8sHelmManager_NamespaceIsolation(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+
+	optsXMC := HelmComponentOptions{
+		ComponentName: "rod",
+		Namespace:     "xmc",
+		Enabled:       true,
+	}
+	optsOther := HelmComponentOptions{
+		ComponentName: "rod",
+		Namespace:     "analytics",
+		Enabled:       true,
 	}
 
-	igMapUpdated, ok := parsedValues["ingestionGatewayDeployment"].(map[string]any)
-	if !ok || igMapUpdated["enabled"] != false {
-		t.Errorf("expected ingestionGatewayDeployment.enabled = false after delete, got %+v", parsedValues)
+	if err := mgr.Ensure1PComponent(ctx, "xmc", "rod", optsXMC); err != nil {
+		t.Fatalf("Ensure1PComponent xmc failed: %v", err)
+	}
+	if err := mgr.Ensure1PComponent(ctx, "analytics", "rod", optsOther); err != nil {
+		t.Fatalf("Ensure1PComponent analytics failed: %v", err)
+	}
+
+	// Verify ConfigMaps in both namespaces
+	cmXMC, err := client.CoreV1().ConfigMaps("xmc").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil || cmXMC.Data["rod.json"] == "" {
+		t.Fatalf("expected rod.json in xmc ConfigMap: %v", err)
+	}
+
+	cmAnalytics, err := client.CoreV1().ConfigMaps("analytics").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil || cmAnalytics.Data["rod.json"] == "" {
+		t.Fatalf("expected rod.json in analytics ConfigMap: %v", err)
+	}
+
+	// Delete from analytics only
+	if err := mgr.Delete1PComponent(ctx, "analytics", "rod"); err != nil {
+		t.Fatalf("Delete1PComponent analytics failed: %v", err)
+	}
+
+	// Verify analytics ConfigMap had rod.json removed, while xmc remains intact
+	cmAnalyticsUpdated, err := client.CoreV1().ConfigMaps("analytics").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get analytics ConfigMap: %v", err)
+	}
+	if _, exists := cmAnalyticsUpdated.Data["rod.json"]; exists {
+		t.Errorf("expected rod.json to be removed from analytics ConfigMap")
+	}
+
+	cmXMCUpdated, err := client.CoreV1().ConfigMaps("xmc").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get xmc ConfigMap: %v", err)
+	}
+	if _, exists := cmXMCUpdated.Data["rod.json"]; !exists {
+		t.Errorf("expected rod.json to still exist in xmc ConfigMap")
 	}
 }
 
@@ -108,6 +160,10 @@ func TestK8sHelmManager_Guards(t *testing.T) {
 	}
 
 	mgr := NewK8sHelmManager(nil, "", "")
+	if mgr.resolveNamespace("") != DefaultNamespace {
+		t.Errorf("expected default namespace %q, got %q", DefaultNamespace, mgr.resolveNamespace(""))
+	}
+
 	if err := mgr.Ensure1PComponent(ctx, "", "", HelmComponentOptions{}); err == nil {
 		t.Error("expected error on empty componentName for Ensure1PComponent")
 	}

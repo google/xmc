@@ -50,8 +50,22 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **`HelmManager` Interface**: Declarative contract for applying and removing synthesized 1P values:
   - `Ensure1PComponent(ctx context.Context, namespace string, componentName string, opts HelmComponentOptions) error`
   - `Delete1PComponent(ctx context.Context, namespace string, componentName string) error`
+  - `Orphan1PComponent(ctx context.Context, namespace string, componentName string) error`
   - `IsComponentActive(componentName string) bool`
 - **`FakeHelmManager`**: In-memory test double supporting concurrent testing and error injection.
+
+---
+
+## Kubernetes Helm Manager (`helm_manager.go`)
+
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps and tracking active 1P component states:
+
+- **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
+- **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
+- **Clean Lifecycle Operations**:
+  - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap and records component enablement.
+  - `Delete1PComponent`: Deletes the component JSON key from the ConfigMap and clears active tracking state.
+  - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership.
 
 ---
 
@@ -60,5 +74,5 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
-- **1P Helm Values Synthesis Engine**: Synthesizes structured Helm values and enablement toggles (`<component>Deployment.enabled = true`, `global.imageTag`, `parameters`) from component specifications for Helm release actuation.
+- **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.

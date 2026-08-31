@@ -97,11 +97,11 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 // DefaultComponentRepository returns standard default image repository for known components.
 func DefaultComponentRepository(componentName string) string {
 	switch componentName {
-	case "ingestion-gateway", "ingestion_gateway":
+	case "ingestion-gateway":
 		return "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway"
-	case "rod", "rod-data-provider":
+	case "rod":
 		return "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider"
-	case "health-service", "health_service":
+	case "health-service":
 		return "us-docker.pkg.dev/xmc-prod/xmc/health-service"
 	default:
 		return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", componentName)
@@ -132,14 +132,10 @@ func ResolveImage(componentName string, imageTag string, parameters map[string]s
 func ComponentNameToHelmKey(name string) string {
 	known := map[string]string{
 		"ingestion-gateway": "ingestionGatewayDeployment",
-		"ingestion_gateway": "ingestionGatewayDeployment",
 		"rod":               "rodDeployment",
-		"rod-data-provider": "rodDeployment",
 		"health-service":    "healthServiceDeployment",
-		"health_service":    "healthServiceDeployment",
 		"metrics":           "metrics",
 		"xmc-bridge":        "componentsDeployment",
-		"xmc_bridge":        "componentsDeployment",
 	}
 	if k, ok := known[name]; ok {
 		return k

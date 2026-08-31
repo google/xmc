@@ -30,6 +30,8 @@ import (
 )
 
 const (
+	// DefaultNamespace is the standard Kubernetes namespace for XMC components.
+	DefaultNamespace = "xmc"
 	// DefaultHelmReleaseName is the standard Helm release name for XMC.
 	DefaultHelmReleaseName = "xmanager-cloud"
 	// ComponentValuesConfigMapName is the ConfigMap storing active 1P component Helm values overrides.
@@ -51,12 +53,19 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 	if releaseName == "" {
 		releaseName = DefaultHelmReleaseName
 	}
+	if namespace == "" {
+		namespace = DefaultNamespace
+	}
 	return &K8sHelmManager{
 		client:      client,
 		namespace:   namespace,
 		releaseName: releaseName,
 		activeState: make(map[string]bool),
 	}
+}
+
+func componentKey(namespace, componentName string) string {
+	return namespace + "/" + componentName
 }
 
 // Ensure1PComponent sets the component values in the release ConfigMap and records component enablement.
@@ -76,13 +85,14 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, namespace string
 
 	m.mu.Lock()
 	m.activeState[componentName] = opts.Enabled
+	m.activeState[componentKey(targetNamespace, componentName)] = opts.Enabled
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Ensured 1P component Helm values", "name", componentName, "namespace", targetNamespace, "enabled", opts.Enabled)
 	return nil
 }
 
-// Delete1PComponent disables the component in the release ConfigMap and removes it from active state.
+// Delete1PComponent removes the component values from the release ConfigMap and removes it from active state.
 func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, namespace string, componentName string) error {
 	if m == nil {
 		return nil
@@ -91,19 +101,14 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, namespace string
 		return errors.New("component name must not be empty")
 	}
 	targetNamespace := m.resolveNamespace(namespace)
-	disabledOpts := HelmComponentOptions{
-		ComponentName: componentName,
-		Namespace:     targetNamespace,
-		Enabled:       false,
-	}
-	values := BuildHelmValues(disabledOpts)
 
-	if err := m.persistComponentValues(ctx, targetNamespace, componentName, values); err != nil {
-		return fmt.Errorf("failed to disable Helm values for %q: %w", componentName, err)
+	if err := m.removeComponentValues(ctx, targetNamespace, componentName); err != nil {
+		return fmt.Errorf("failed to remove Helm values for %q: %w", componentName, err)
 	}
 
 	m.mu.Lock()
 	delete(m.activeState, componentName)
+	delete(m.activeState, componentKey(targetNamespace, componentName))
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Disabled 1P component Helm values", "name", componentName, "namespace", targetNamespace)
@@ -118,10 +123,12 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, namespace string
 	if componentName == "" {
 		return errors.New("component name must not be empty")
 	}
+	targetNamespace := m.resolveNamespace(namespace)
 	m.mu.Lock()
 	delete(m.activeState, componentName)
+	delete(m.activeState, componentKey(targetNamespace, componentName))
 	m.mu.Unlock()
-	logging.Info(ctx, "Orphaned 1P component Helm values", "name", componentName, "namespace", namespace)
+	logging.Info(ctx, "Orphaned 1P component Helm values", "name", componentName, "namespace", targetNamespace)
 	return nil
 }
 
@@ -132,7 +139,11 @@ func (m *K8sHelmManager) IsComponentActive(componentName string) bool {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.activeState[componentName]
+	if m.activeState[componentName] {
+		return true
+	}
+	targetNamespace := m.resolveNamespace("")
+	return m.activeState[componentKey(targetNamespace, componentName)]
 }
 
 func (m *K8sHelmManager) resolveNamespace(ns string) string {
@@ -142,7 +153,7 @@ func (m *K8sHelmManager) resolveNamespace(ns string) string {
 	if m.namespace != "" {
 		return m.namespace
 	}
-	return "default"
+	return DefaultNamespace
 }
 
 func (m *K8sHelmManager) persistComponentValues(ctx context.Context, namespace, componentName string, values map[string]any) error {
@@ -182,6 +193,32 @@ func (m *K8sHelmManager) persistComponentValues(ctx context.Context, namespace, 
 		cm.Data = make(map[string]string)
 	}
 	cm.Data[componentName+".json"] = string(rawJSON)
+	_, updateErr := cmClient.Update(ctx, cm, metav1.UpdateOptions{})
+	return updateErr
+}
+
+func (m *K8sHelmManager) removeComponentValues(ctx context.Context, namespace, componentName string) error {
+	if m.client == nil {
+		return nil
+	}
+
+	cmClient := m.client.CoreV1().ConfigMaps(namespace)
+	cm, err := cmClient.Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if cm.Data == nil {
+		return nil
+	}
+	key := componentName + ".json"
+	if _, exists := cm.Data[key]; !exists {
+		return nil
+	}
+	delete(cm.Data, key)
 	_, updateErr := cmClient.Update(ctx, cm, metav1.UpdateOptions{})
 	return updateErr
 }

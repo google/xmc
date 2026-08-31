@@ -77,11 +77,10 @@ func TestBuildHelmValues(t *testing.T) {
 			wantKey string
 		}{
 			{"ingestion-gateway", "ingestionGatewayDeployment"},
-			{"ingestion_gateway", "ingestionGatewayDeployment"},
 			{"rod", "rodDeployment"},
-			{"rod-data-provider", "rodDeployment"},
 			{"health-service", "healthServiceDeployment"},
 			{"metrics", "metrics"},
+			{"xmc-bridge", "componentsDeployment"},
 			{"custom-service", "customServiceDeployment"},
 		}
 
