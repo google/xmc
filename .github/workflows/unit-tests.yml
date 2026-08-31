@@ -65,6 +65,9 @@ jobs:
           filters: |
             chart:
               - 'deploy/helm/**'
+              # The suite also asserts the chart agrees with the deployment blueprint, so a
+              # blueprint-only edit can break it just as a chart-only edit can.
+              - 'deploy/ctk_v2/xmanager-cloud.yaml'
               - 'test/helm/**'
               - '.github/workflows/unit-tests.yml'
 

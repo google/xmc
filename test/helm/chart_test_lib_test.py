@@ -18,7 +18,14 @@ import os
 import unittest
 from unittest import mock
 
-from chart_test_lib import find_chart_dir, render_template, require_helm, skip_unless_required
+from chart_test_lib import (
+    find_chart_dir,
+    find_repo_file,
+    render_chart,
+    render_template,
+    require_helm,
+    skip_unless_required,
+)
 
 
 class SkipUnlessRequiredTest(unittest.TestCase):
@@ -58,6 +65,17 @@ class RenderTemplateTest(unittest.TestCase):
     def test_chart_dir_is_discoverable(self) -> None:
         self.assertTrue(os.path.isfile(os.path.join(find_chart_dir(), "Chart.yaml")))
 
+    def test_repo_file_is_discoverable(self) -> None:
+        """Suites that compare the chart against another file need to find that file too."""
+        located = find_repo_file(os.path.join("deploy", "helm", "values.yaml"))
+
+        self.assertTrue(os.path.isfile(located))
+
+    def test_missing_repo_file_does_not_pass_silently(self) -> None:
+        """A packaging error must fail whether or not the caller declared helm is required."""
+        with self.assertRaises(FileNotFoundError):
+            find_repo_file(os.path.join("deploy", "does-not-exist.yaml"))
+
     def test_render_returns_the_requested_manifest(self) -> None:
         manifest = render_template(
             "templates/dashboard-service/deployment.yaml",
@@ -65,6 +83,13 @@ class RenderTemplateTest(unittest.TestCase):
         )
 
         self.assertIn("kind: Deployment", manifest)
+
+    def test_render_chart_returns_every_manifest(self) -> None:
+        """Suites whose subject is the set of rendered resources render without --show-only."""
+        manifests = render_chart({"dashboardServiceDeployment.enabled": "true"})
+
+        self.assertIn("templates/dashboard-service/deployment.yaml", manifests)
+        self.assertIn("templates/ess/deployment.yaml", manifests)
 
     def test_render_surfaces_the_template_error(self) -> None:
         """A bare CalledProcessError hides the helm output that says what went wrong."""

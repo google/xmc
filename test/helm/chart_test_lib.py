@@ -44,29 +44,50 @@ def require_helm() -> None:
         skip_unless_required("helm binary not available")
 
 
+def find_repo_file(relative_path: str) -> str:
+    """Resolves a repository-relative path from bazel runfiles or from the repository root.
+
+    A missing file here is a packaging error -- a typo in the path, or a data dependency left
+    out of the BUILD target -- not an optional prerequisite like the helm binary. Skipping would
+    green the run on every machine that has not set XMC_REQUIRE_HELM, which is the developer
+    default, so this raises instead.
+    """
+    for base in (os.curdir, *(os.path.join(*([os.pardir] * depth)) for depth in range(1, 4))):
+        candidate = os.path.join(base, relative_path)
+        if os.path.isfile(candidate):
+            return candidate
+    raise FileNotFoundError(f"{relative_path} not found relative to working directory")
+
+
 def find_chart_dir() -> str:
     """Locates deploy/helm from the working directory, supporting bazel runfiles and repo root."""
-    for base in (os.curdir, *(os.path.join(*([os.pardir] * depth)) for depth in range(1, 4))):
-        candidate = os.path.join(base, "deploy", "helm")
-        if os.path.isfile(os.path.join(candidate, "Chart.yaml")):
-            return candidate
-    skip_unless_required("deploy/helm chart not found relative to working directory")
+    return os.path.dirname(find_repo_file(os.path.join("deploy", "helm", "Chart.yaml")))
 
 
 def render_template(show_only: str, values: dict[str, str]) -> str:
     """Renders a single chart template and returns the raw manifest text."""
+    return _render(values, "--show-only", show_only)
+
+
+def render_chart(values: dict[str, str]) -> str:
+    """Renders every enabled template and returns the concatenated manifest text.
+
+    Suites asserting on one resource should use render_template. This is for the ones whose
+    subject is the set of resources the chart produces rather than any single one of them.
+    """
+    return _render(values)
+
+
+def _render(values: dict[str, str], *args: str) -> str:
+    """Shells out to helm and returns what it rendered."""
     overrides = [arg for key, value in values.items() for arg in ("--set", f"{key}={value}")]
+    command = ["helm", "template", "xmc", find_chart_dir(), *args, *overrides]
     try:
-        result = subprocess.run(
-            ["helm", "template", "xmc", find_chart_dir(), "--show-only", show_only, *overrides],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as error:
         # CalledProcessError omits captured output, which hides the template error that
         # explains the failure.
         raise RuntimeError(
-            f"rendering {show_only} failed:\nstdout: {error.stdout}\nstderr: {error.stderr}"
+            f"`{' '.join(command)}` failed:\nstdout: {error.stdout}\nstderr: {error.stderr}"
         ) from error
     return result.stdout

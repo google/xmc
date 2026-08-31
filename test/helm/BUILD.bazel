@@ -60,6 +60,25 @@ py_test(
 )
 
 py_test(
+    name = "workload_identity_binding_test",
+    srcs = ["workload_identity_binding_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/helm:chart",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "workload_identity_binding_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "dashboard_service_probes_test",
     srcs = ["dashboard_service_probes_test.py"],
     data = ["//deploy/helm:chart"],
