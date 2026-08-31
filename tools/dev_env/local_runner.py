@@ -137,6 +137,9 @@ class LocalRunner:
             helm: If True, explicitly triggers a Helm chart upgrade and manifest sync.
             interval: Polling interval in seconds when operating in continuous watch mode.
 
+        Returns:
+            True if any service or Helm upgrade was performed; False if clean; None in watch mode.
+
         Raises:
             RuntimeError: If the KinD cluster is not currently running.
             ValueError: If `interval <= 0` in watch mode or if any requested service is invalid.
@@ -151,9 +154,9 @@ class LocalRunner:
             if interval <= 0:
                 raise ValueError("Watch interval must be greater than 0 seconds.")
             self._watch_loop(services=services, interval=interval, helm=helm)
-            return
+            return None
 
-        self._reload_once(services=services, helm=helm)
+        return self._reload_once(services=services, helm=helm)
 
     def _get_workspace_signature(self) -> dict[str, tuple[int, int]]:
         """Computes a lightweight signature (mtime + file size) of modified git files.
