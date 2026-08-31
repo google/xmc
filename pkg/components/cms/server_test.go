@@ -16,6 +16,7 @@ package cms
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1172,5 +1173,70 @@ func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("ValidateComponentRequirement(invalid type) got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("cms-health-%d", i)
+		spec := &componentspb.ComponentSpec{
+			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version: "v1.0.0",
+		}
+		if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+			Name: name,
+			Spec: spec,
+		}); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
+		}
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
+		}
+	}
+
+	// 1. Success path
+	resp, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: 2,
+	})
+	if err != nil {
+		t.Fatalf("GetPlatformHealth failed: %v", err)
+	}
+	if len(resp.GetComponents()) != 2 {
+		t.Errorf("len(Components) = %d, want 2", len(resp.GetComponents()))
+	}
+	if resp.GetTotalHealthy() != 3 {
+		t.Errorf("TotalHealthy = %d, want 3", resp.GetTotalHealthy())
+	}
+	if resp.GetTotalUnhealthy() != 0 {
+		t.Errorf("TotalUnhealthy = %d, want 0", resp.GetTotalUnhealthy())
+	}
+	if resp.GetNextPageToken() == "" {
+		t.Error("NextPageToken is empty, want token")
+	}
+
+	// 2. Negative page size -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: -1,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(negative page size) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 3. Nil request -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(nil request) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 4. Invalid filter -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		Filter: "invalid_key=value",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(invalid filter) got code %v, want InvalidArgument", status.Code(err))
 	}
 }

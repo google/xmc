@@ -425,9 +425,10 @@ func (m *MemoryStore) ValidateComponentRequirement(ctx context.Context, name str
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
-// Note: To be implemented in subsequent platform health monitoring tasks.
 func (m *MemoryStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in MemoryStore")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return AggregatePlatformHealth(m.componentsByName, filter, pageSize, pageToken)
 }
 
 func (m *MemoryStore) recordSnapshotLocked(rec *ComponentRecord) {
