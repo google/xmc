@@ -54,26 +54,20 @@ ORDER BY Name ASC`
 	selectDependenciesByComponentIDSQL = `SELECT dep.Name
 FROM ComponentDependencies cd
 JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
-WHERE cd.ComponentId = @id
+WHERE cd.ComponentId = @id AND dep.ActiveName IS NOT NULL
 ORDER BY dep.Name ASC`
 
 	selectAllActiveDependenciesSQL = `SELECT cd.ComponentId, dep.Name
 FROM ComponentDependencies cd
 JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
 JOIN Components parent ON cd.ComponentId = parent.ComponentId
-WHERE parent.ActiveName IS NOT NULL
+WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL
 ORDER BY cd.ComponentId, dep.Name ASC`
 
 	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
 FROM ExperimentComponentSnapshots
 WHERE ComponentId = @id AND LockedGeneration = @gen
 LIMIT 1`
-
-	selectActiveDependentsByDependencyIDSQL = `SELECT parent.Name
-FROM ComponentDependencies cd
-JOIN Components parent ON cd.ComponentId = parent.ComponentId
-WHERE cd.DependencyComponentId = @id AND parent.State != @disabledState AND parent.State != @deletedState
-ORDER BY parent.Name ASC`
 )
 
 type spannerQueryable interface {
@@ -544,9 +538,14 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
+		catalog, err := s.loadActiveCatalog(ctx, txn)
 		if err != nil {
 			return err
+		}
+
+		rec, ok := catalog[canonicalName]
+		if !ok || rec == nil || isDeletedRecord(rec) {
+			return ErrComponentNotFound
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
@@ -557,10 +556,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		}
 
 		if !force {
-			activeDependents, err := s.queryActiveDependents(ctx, txn, rec.ComponentID)
-			if err != nil {
-				return err
-			}
+			activeDependents, _ := findActiveDependents(catalog, canonicalName)
 			if len(activeDependents) > 0 {
 				return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 			}
@@ -591,20 +587,6 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	})
 
 	return err
-}
-
-func (s *SpannerStore) queryActiveDependents(ctx context.Context, queryable spannerQueryable, compID int64) ([]string, error) {
-	stmt := spanner.Statement{
-		SQL: selectActiveDependentsByDependencyIDSQL,
-		Params: map[string]any{
-			"id":            compID,
-			"disabledState": int64(componentspb.ComponentState_COMPONENT_STATE_DISABLED),
-			"deletedState":  int64(componentspb.ComponentState_COMPONENT_STATE_DELETED),
-		},
-	}
-	iter := queryable.Query(ctx, stmt)
-	defer iter.Stop()
-	return fetchDependencies(iter)
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
@@ -767,7 +749,10 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		return nil, nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
 	}
 
-	rec, err := s.GetComponent(ctx, canonicalName)
+	txn := s.client.ReadOnlyTransaction()
+	defer txn.Close()
+
+	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -789,10 +774,10 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		return cloneRecord(rec), coords, nil
 	}
 
-	return s.resolveHistoricalSnapshot(ctx, rec, targetGen, canonicalName)
+	return s.resolveHistoricalSnapshot(ctx, txn, rec, targetGen, canonicalName)
 }
 
-func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, rec *ComponentRecord, targetGen int64, canonicalName string) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable spannerQueryable, rec *ComponentRecord, targetGen int64, canonicalName string) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	stmt := spanner.Statement{
 		SQL: selectSnapshotByComponentIDAndGenSQL,
 		Params: map[string]any{
@@ -800,7 +785,7 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, rec *Compo
 			"gen": targetGen,
 		},
 	}
-	iter := s.client.Single().Query(ctx, stmt)
+	iter := queryable.Query(ctx, stmt)
 	defer iter.Stop()
 
 	row, err := iter.Next()
@@ -832,18 +817,17 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, rec *Compo
 
 	snapRec := cloneRecord(rec)
 	snapRec.Generation = lockedGen
+	snapRec.Status = nil
 	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
 	}
+	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
+	}
 
 	var coords *componentspb.ResolvedComponentCoordinates
-	if len(accessPayload) > 0 {
-		if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
-			return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
-		}
-		if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-			coords = cloneCoordinates(snapRec.Status.Coordinates)
-		}
+	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
+		coords = cloneCoordinates(snapRec.Status.Coordinates)
 	}
 
 	return snapRec, coords, nil
@@ -1035,6 +1019,7 @@ func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {
 
 func unmarshalAccessStatus(accessBytes []byte, rec *ComponentRecord) error {
 	if len(accessBytes) == 0 {
+		rec.Status = nil
 		return nil
 	}
 	var statusProto componentspb.ComponentAccessStatus

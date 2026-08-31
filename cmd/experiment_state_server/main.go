@@ -173,7 +173,7 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
 	} else {
 		cmsStore = store.NewMemoryStore()
-		logging.Info(ctx, "Using MemoryStore fallback for Component Manager Service")
+		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
 	}
 	cmsServer := cms.NewServer(cmsStore)
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)

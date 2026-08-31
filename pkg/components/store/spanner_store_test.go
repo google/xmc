@@ -462,6 +462,63 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 }
 
+func TestSpannerStore_CompleteDeactivation_TransitiveInactiveChain(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTestStore(ctx, t)
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+
+	// Chain: a-active -> b-mid -> c-base
+	if _, err := s.SetComponentIntent(ctx, "c-base", spec, nil, 1); err != nil {
+		t.Fatalf("failed to create c-base: %v", err)
+	}
+	if _, err := s.SetComponentIntent(ctx, "b-mid", spec, map[string]string{"xmc.dev/depends-on": "c-base"}, 1); err != nil {
+		t.Fatalf("failed to create b-mid: %v", err)
+	}
+	if _, err := s.SetComponentIntent(ctx, "a-active", spec, map[string]string{"xmc.dev/depends-on": "b-mid"}, 1); err != nil {
+		t.Fatalf("failed to create a-active: %v", err)
+	}
+
+	// Make sure all are ENABLED
+	for _, name := range []string{"c-base", "b-mid", "a-active"} {
+		if _, err := s.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "ready"); err != nil {
+			t.Fatalf("failed to mark %s ENABLED: %v", name, err)
+		}
+	}
+
+	// Disable b-mid directly (Prepare + Complete with force or single)
+	if _, err := s.PrepareDeactivation(ctx, "b-mid", true); err != nil {
+		t.Fatalf("failed to prepare b-mid: %v", err)
+	}
+	if err := s.CompleteDeactivation(ctx, "b-mid", true); err != nil {
+		t.Fatalf("failed to complete b-mid: %v", err)
+	}
+
+	// Prepare c-base for deactivation with cascade=true (transitions c-base and a-active to DISABLING)
+	if _, err := s.PrepareDeactivation(ctx, "c-base", true); err != nil {
+		t.Fatalf("failed to prepare c-base: %v", err)
+	}
+
+	// Try to CompleteDeactivation on c-base while a-active is still in DISABLING (not yet DISABLED)
+	err := s.CompleteDeactivation(ctx, "c-base", false)
+	if err == nil {
+		t.Fatalf("expected CompleteDeactivation on c-base to fail because transitive dependent a-active is still active (in DISABLING)")
+	}
+
+	// Complete deactivation of a-active first
+	if err := s.CompleteDeactivation(ctx, "a-active", false); err != nil {
+		t.Fatalf("failed to complete a-active: %v", err)
+	}
+
+	// Now CompleteDeactivation on c-base should succeed
+	if err := s.CompleteDeactivation(ctx, "c-base", false); err != nil {
+		t.Fatalf("expected CompleteDeactivation on c-base to succeed after all transitive dependents are disabled, got: %v", err)
+	}
+}
+
 func TestSpannerStore_ExecuteDeletion(t *testing.T) {
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)
