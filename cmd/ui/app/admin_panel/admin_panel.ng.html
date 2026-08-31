@@ -12,34 +12,34 @@
  See the License for the specific language governing permissions and
  limitations under the License. -->
 
-@if (isLoading()) {
-  <div class="loading-container">
-    <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
-    <p>Loading Admin Panel...</p>
-  </div>
-} @else if (healthStatusError()) {
-  <div class="page-error-container">
-    @if (isRefreshing()) {
-      <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
-    } @else {
-      <xmc-error-banner
-        message="Failed to load health status. Please try again later."
-        (retry)="onRefresh()"
-      />
+<div class="admin-panel-container">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">XMC Admin Panel</h1>
+      <p class="page-subtitle">Consolidated control plane for Platform Admins</p>
+    </div>
+    @if (lastUpdated()) {
+      <div class="timestamp-badge">Last updated: {{ lastUpdated() }}</div>
     }
   </div>
-} @else {
-  <div class="admin-panel-container">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">XMC Admin Panel</h1>
-        <p class="page-subtitle">Consolidated control plane for Platform Admins</p>
-      </div>
-      @if (lastUpdated()) {
-        <div class="timestamp-badge">Last updated: {{ lastUpdated() }}</div>
+
+  @if (isLoading()) {
+    <div class="loading-container">
+      <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
+      <p>Loading Admin Panel...</p>
+    </div>
+  } @else if (healthStatusError()) {
+    <div class="page-error-container">
+      @if (isRefreshing()) {
+        <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
+      } @else {
+        <xmc-error-banner
+          message="Failed to load health status. Please try again later."
+          (retry)="onRefresh()"
+        />
       }
     </div>
-
+  } @else {
     @if (healthStatus()?.systemInfo; as systemInfo) {
       <xmc-system-info-card [systemInfo]="systemInfo" />
     }
@@ -66,5 +66,5 @@
         <span>Build Version: {{ systemInfo.buildVersion }}</span>
       </footer>
     }
-  </div>
-}
+  }
+</div>

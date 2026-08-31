@@ -51,10 +51,17 @@
 
   .retry-button {
     flex-shrink: 0;
+    border-color: var(--mat-sys-error, #d93025) !important;
+    color: var(--mat-sys-on-error-container, #c5221f) !important;
     height: 32px;
     line-height: 30px;
     padding: 0 12px;
     font-size: 12px;
+    background-color: transparent;
+
+    &:hover {
+      background-color: rgba(217, 48, 37, 0.08);
+    }
 
     .retry-icon {
       font-size: 16px;
@@ -62,6 +69,7 @@
       height: 16px;
       margin-right: 4px;
       vertical-align: middle;
+      color: inherit;
     }
   }
 }
