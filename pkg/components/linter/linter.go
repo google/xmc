@@ -25,6 +25,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 // Linter executes multi-pass static validation against manifest directories.
@@ -59,6 +61,8 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 		return nil, err
 	}
 	l.validateSchema(rawManifests, compManifests, res)
+	compMap := l.buildComponentMap(compManifests, res)
+	l.validateDAG(compManifests, compMap, res)
 	return res, nil
 }
 
@@ -154,4 +158,24 @@ func decodeRawDocumentNode(path string, node *yaml.Node, res *ValidationResult) 
 	}
 	raw.FilePath, raw.Line = path, line
 	return &raw
+}
+
+func (l *Linter) buildComponentMap(compManifests []*ComponentManifest, res *ValidationResult) map[string]*ComponentManifest {
+	compMap := make(map[string]*ComponentManifest, len(compManifests))
+	for _, c := range compManifests {
+		canonical := store.CanonicalComponentName(c.Metadata.Name)
+		if canonical == "" {
+			continue
+		}
+		if existing, found := compMap[canonical]; found {
+			line := c.Line
+			if line <= 0 {
+				line = 1
+			}
+			res.AddError(c.FilePath, line, "DUPLICATE_COMPONENT_NAME", fmt.Sprintf("duplicate component definition for %q (also defined in %s)", canonical, existing.FilePath))
+			continue
+		}
+		compMap[canonical] = c
+	}
+	return compMap
 }
