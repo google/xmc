@@ -90,6 +90,14 @@ helm install clickstack-operators clickstack/clickstack-operators --namespace xm
 helm install my-clickstack clickstack/clickstack
 ```
 
+### 6. Initialize Metrics Schema
+
+Initialize the physical metrics tables, Kafka queue consumer table, and materialized view using the schema definition in [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql):
+
+```bash
+kubectl exec -i -n xmc-metrics my-clickstack-clickhouse-clickhouse-0-0-0 -- clickhouse-client < deploy/clickhouse/schema.sql
+```
+
 ---
 
 ## Verification & Connection Testing

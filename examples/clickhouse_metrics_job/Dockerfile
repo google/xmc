@@ -19,6 +19,6 @@ WORKDIR /app
 RUN pip install --no-cache-dir clickhouse-connect
 
 COPY examples/clickhouse_metrics_job/worker.py /app/worker.py
-RUN chmod +x /app/worker.py
+RUN chmod 755 /app /app/worker.py
 
 ENTRYPOINT ["python3", "-u", "/app/worker.py"]
