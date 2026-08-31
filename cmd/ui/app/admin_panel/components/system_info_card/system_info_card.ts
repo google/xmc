@@ -35,23 +35,21 @@ export class SystemInfoCardComponent {
   systemInfo = input.required<SystemInfo>();
 
   protected readonly essDbSchemaVersion = computed(() =>
-    this.formatSchemaVersion(this.systemInfo().essDbSchemaVersion)
+    this.formatSchemaVersion(this.systemInfo().essDbSchemaVersion),
   );
   protected readonly xidDbSchemaVersion = computed(() =>
-    this.formatSchemaVersion(this.systemInfo().xidDbSchemaVersion)
+    this.formatSchemaVersion(this.systemInfo().xidDbSchemaVersion),
   );
 
   protected readonly isEssUnavailable = computed(() =>
-    this.isSchemaUnavailable(this.systemInfo().essDbSchemaVersion)
+    this.isSchemaUnavailable(this.systemInfo().essDbSchemaVersion),
   );
   protected readonly isXidUnavailable = computed(() =>
-    this.isSchemaUnavailable(this.systemInfo().xidDbSchemaVersion)
+    this.isSchemaUnavailable(this.systemInfo().xidDbSchemaVersion),
   );
 
   private formatSchemaVersion(version: string | undefined | null): string {
-    return !version || version === UNAVAILABLE_SCHEMA_VERSION
-      ? PLACEHOLDER_VERSION
-      : version;
+    return !version || version === UNAVAILABLE_SCHEMA_VERSION ? PLACEHOLDER_VERSION : version;
   }
 
   private isSchemaUnavailable(version: string | undefined | null): boolean {
