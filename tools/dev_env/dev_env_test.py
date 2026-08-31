@@ -41,6 +41,7 @@ class DevEnvCliTest(unittest.TestCase):
         output = help_stream.getvalue()
         self.assertIn("up", output)
         self.assertIn("down", output)
+        self.assertIn("reload", output)
         self.assertIn("gke-deploy", output)
         self.assertIn("gke-upgrade", output)
         self.assertIn("deploy", output)
@@ -568,12 +569,23 @@ class DevEnvCliTest(unittest.TestCase):
 
     @patch("tools.dev_env.local_runner.LocalRunner.reload")
     @patch("tools.dev_env.config.load_config")
-    def test_reload_action(self, mock_load_config: MagicMock, mock_reload: MagicMock) -> None:
-        """Verifies 'dev_env reload' dispatches to LocalRunner.reload."""
-        args = self.parser.parse_args(["reload", "ess", "ui", "--helm"])
+    def test_reload_action_auto(self, mock_load_config: MagicMock, mock_reload: MagicMock) -> None:
+        """Verifies 'dev_env reload' dispatches to LocalRunner.reload with None."""
+        args = self.parser.parse_args(["reload"])
         args.func(args)
         mock_load_config.assert_called_once_with(args)
-        mock_reload.assert_called_once_with(services=["ess", "ui"], helm=True)
+        mock_reload.assert_called_once_with(services=None)
+
+    @patch("tools.dev_env.local_runner.LocalRunner.reload")
+    @patch("tools.dev_env.config.load_config")
+    def test_reload_action_explicit_services(
+        self, mock_load_config: MagicMock, mock_reload: MagicMock
+    ) -> None:
+        """Verifies 'dev_env reload <services>' dispatches to LocalRunner.reload."""
+        args = self.parser.parse_args(["reload", "reconciler", "ui"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_reload.assert_called_once_with(services=["reconciler", "ui"])
 
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")

@@ -80,11 +80,14 @@ python3 tools/dev_env/dev_env.py down --drop-db
 
 ---
 
-#### 3. `reload` (Microservice Fast Reload & Rollout Restart)
-Recompiles specified microservices with Bazel in parallel, side-loads updated image layers into the running KinD cluster, and triggers non-blocking rolling restarts in ~5–10s without restarting or recreating the KinD cluster:
+#### 3. `reload` (Smart Fast Microservice Reload)
+Incrementally recompiles modified microservices with Bazel, updates container images in KinD, and triggers targeted Kubernetes rollout restarts without recreating the cluster or rerunning full deployments (~5-10s iteration speed).
 
 ```bash
-# Reload specific microservices by name or alias
+# Auto-detect modified source files and reload affected microservices
+python3 tools/dev_env/dev_env.py reload
+
+# Explicitly reload specific microservices by canonical name or alias
 python3 tools/dev_env/dev_env.py reload ess ui
 
 # Reload using full canonical snake_case or kebab-case service names
@@ -101,16 +104,19 @@ python3 tools/dev_env/dev_env.py reload ess --helm
 ##### Supported Service Aliases & Canonical Names
 Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice target (`snake_case` or `kebab-case`) can always be specified directly even if it does not have a dedicated alias in `SERVICE_ALIASES`:
 
-- `ess` → `experiment_state_server` (or pass `experiment_state_server` / `experiment-state-server`)
-- `xid` → `xid_service` (or pass `xid_service` / `xid-service`)
-- `actuator` → `actuator`
-- `reconciler` → `reconciler`
-- `rod` → `rod_data_provider` (or pass `rod_data_provider` / `rod-data-provider`)
-- `gw` / `gateway` → `ingestion_gateway` (`gateway-proxy`)
-- `ui` / `frontend` / `web` → `ui`
-- `dash` / `dashboard` → `dashboard_service` (or pass `dashboard_service` / `dashboard-service`)
-- `health` → `health_service` (or pass `health_service` / `health-service`)
-- `comp` → `components`
+| Alias | Canonical Microservice Target |
+| :--- | :--- |
+| `ess` | `experiment_state_server` |
+| `xid` | `xid_service` |
+| `ui`, `frontend`, `web` | `ui` |
+| `gw`, `gateway` | `ingestion_gateway` (`gateway-proxy`) |
+| `actuator` | `actuator` |
+| `reconciler` | `reconciler` |
+| `dash`, `dashboard` | `dashboard_service` |
+| `health` | `health_service` |
+| `rod` | `rod_data_provider` |
+| `comp` | `components` |
+| `all` | Reload all enabled microservices |
 
 > [!TIP]
 > When adding a new microservice under `cmd/<new_service>`, it works immediately with `dev_env.py reload <new_service>` or `dev_env.py reload <new-service>` without needing to define an alias in `tools/dev_env/service_resolver.py`.
@@ -131,7 +137,7 @@ python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
 
 ---
 
-#### 4. `logs` (Stream Microservice Logs)
+#### 5. `logs` (Stream Microservice Logs)
 Streams or tails container stdout/stderr logs from a specific microservice running in the local KinD cluster.
 
 ```bash
@@ -144,7 +150,7 @@ python3 tools/dev_env/dev_env.py logs ui -f
 
 ---
 
-#### 5. `build-images` (Parallel OCI Container Builds & KinD Side-Loading)
+#### 6. `build-images` (Parallel OCI Container Builds & KinD Side-Loading)
 Compiles Bazel OCI image tarballs in parallel and side-loads them directly into the local KinD cluster nodes without remote container registry pushes.
 
 ```bash
@@ -179,7 +185,7 @@ python3 tools/dev_env/dev_env.py build-images \
 
 ---
 
-#### 6. `cluster` (Local KinD Cluster Management)
+#### 7. `cluster` (Local KinD Cluster Management)
 Manages the lifecycle of the local Kubernetes-in-Docker (KinD) cluster, verifies pre-flight dependencies, configures port mappings, and injects host authentication credentials and TLS certificates.
 
 ```bash
@@ -199,7 +205,7 @@ python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
 
 ---
 
-#### 7. `spanner` (Cloud Spanner Database Management)
+#### 8. `spanner` (Cloud Spanner Database Management)
 Automates verification, single-batch DDL schema creation with compiled protobuf descriptor sets, schema migrations, and teardown for Cloud Spanner databases.
 
 ```bash
@@ -231,7 +237,7 @@ python3 tools/dev_env/dev_env.py spanner drop \
 
 ### Remote GKE Deployment Commands
 
-#### 8. `gke-deploy` (Deploy Remote GKE Environment)
+#### 9. `gke-deploy` (Deploy Remote GKE Environment)
 Compiles Cluster Toolkit (`gcluster`) blueprints and orchestrates step-by-step remote infrastructure and service deployment.
 
 ```bash
@@ -259,7 +265,7 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 
 ---
 
-#### 9. `gke-upgrade` (Upgrade Remote GKE Services)
+#### 10. `gke-upgrade` (Upgrade Remote GKE Services)
 Incrementally rebuilds changed microservices, pushes OCI container images to Artifact Registry, and rolls out Helm chart updates or Spanner migrations without destroying infrastructure.
 
 ```bash
@@ -279,7 +285,7 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 
 ---
 
-### 10. Generic Aliases (`deploy` / `upgrade`)
+### 11. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash
@@ -402,6 +408,25 @@ If a deployment fails or times out during `dev_env up` or Helm upgrade:
 - Automatically captures failing pod descriptions (`kubectl describe pod`).
 - Fetches recent pod container stdout/stderr log snippets (`kubectl logs --tail=50`).
 - Dumps Kubernetes namespace events (`kubectl get events --sort-by=.metadata.creationTimestamp`) to aid immediate troubleshooting.
+
+---
+
+## Smart Change Detection & Fast Reload Architecture
+
+The `ChangeDetector` module inspects the active git working tree and staged diffs (`git status --porcelain`, `git diff --name-only HEAD`) and maps modified paths to affected microservices:
+
+### Path Mapping Rules
+- `cmd/experiment_state_server/**`, `internal/storage/spanner/**`, `api/protos/experiment/**` $\rightarrow$ `experiment_state_server`
+- `cmd/xid_service/**`, `api/protos/xid/**` $\rightarrow$ `xid_service`
+- `cmd/actuator/**` $\rightarrow$ `actuator`
+- `cmd/reconciler/**` $\rightarrow$ `reconciler`
+- `cmd/ui/**` $\rightarrow$ `ui`
+- `cmd/ingestion_gateway/**`, `api/protos/metrics/**` $\rightarrow$ `ingestion_gateway`
+- `cmd/dashboard_service/**`, `internal/dashboard/**`, `api/protos/dashboard/**` $\rightarrow$ `dashboard_service`
+- `cmd/health_service/**`, `api/protos/health/**` $\rightarrow$ `health_service`
+- `cmd/rod_data_provider/**`, `internal/rod/**` $\rightarrow$ `rod_data_provider`
+- **Shared Code** (`internal/common/**`, `internal/auth/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
+- **Helm Templates / Manifests** (`deploy/helm/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
 
 ---
 

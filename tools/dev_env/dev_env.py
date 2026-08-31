@@ -185,14 +185,11 @@ def handle_down(args: argparse.Namespace) -> None:
 
 
 def handle_reload(args: argparse.Namespace) -> None:
-    """Handler for hot-reloading microservices into local KinD cluster."""
+    """Handler for local KinD fast service reload."""
     from tools.dev_env.local_runner import LocalRunner
 
     cfg = config.load_config(args)
-    LocalRunner(cfg).reload(
-        services=getattr(args, "services", None),
-        helm=getattr(args, "helm", False),
-    )
+    LocalRunner(cfg).reload(services=getattr(args, "services", None) or None)
 
 
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
@@ -462,23 +459,19 @@ def _add_down_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Adds 'reload' command subparser for fast inner-loop microservice recompilation."""
+    """Adds the 'reload' subcommand parser for fast microservice reload."""
     p = subparsers.add_parser(
         "reload",
-        help="Recompile and hot-reload microservices into the local KinD cluster.",
-        description="Recompiles modified or specified microservices and restarts deployments.",
+        help="Recompile and hot-reload modified services into KinD cluster.",
+        description="Fast incremental reload of modified microservices into local KinD.",
     )
-    _add_common_config_flags(p)
     p.add_argument(
         "services",
         nargs="*",
-        help="Specific microservices or aliases to reload (e.g. 'ess', 'ui', 'all').",
+        default=None,
+        help="Services to reload (e.g. reconciler, ui). Defaults to auto-detecting changes from git.",
     )
-    p.add_argument(
-        "--helm",
-        action="store_true",
-        help="Force Helm chart upgrade and manifest synchronization.",
-    )
+    _add_common_config_flags(p)
     p.add_argument("-c", "--config", help="Path to deployment YAML config.")
     p.set_defaults(func=handle_reload)
 
@@ -491,9 +484,9 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python3 tools/dev_env/dev_env.py up --recreate
-  python3 tools/dev_env/dev_env.py reload ess ui
-  python3 tools/dev_env/dev_env.py reload all --helm
   python3 tools/dev_env/dev_env.py down --drop-db
+  python3 tools/dev_env/dev_env.py reload
+  python3 tools/dev_env/dev_env.py reload reconciler ui
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml

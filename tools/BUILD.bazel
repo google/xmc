@@ -198,6 +198,16 @@ alias(
 )
 
 alias(
+    name = "change_detector_lib",
+    actual = "//tools/dev_env:change_detector_lib",
+)
+
+alias(
+    name = "change_detector_test",
+    actual = "//tools/dev_env:change_detector_test",
+)
+
+alias(
     name = "spanner_manager_lib",
     actual = "//tools/dev_env:spanner_manager_lib",
 )

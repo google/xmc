@@ -22,11 +22,20 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tools.dev_env.config import LocalDevConfig
-from tools.dev_env.local_runner import LocalRunner
+from tools.dev_env.local_runner import LocalRunner, service_to_k8s_deployment_name
 
 
 class TestLocalRunner(unittest.TestCase):
     """Test suite for LocalRunner."""
+
+    def test_service_to_k8s_deployment_name(self) -> None:
+        self.assertEqual(service_to_k8s_deployment_name("actuator"), "actuator-deployment")
+        self.assertEqual(
+            service_to_k8s_deployment_name("experiment_state_server"),
+            "experiment-state-server-deployment",
+        )
+        self.assertEqual(service_to_k8s_deployment_name("gateway_proxy"), "gateway-proxy")
+        self.assertEqual(service_to_k8s_deployment_name("ui"), "ui-deployment")
 
     def setUp(self) -> None:
         super().setUp()
@@ -133,44 +142,12 @@ class TestLocalRunner(unittest.TestCase):
         self.assertIn("http://localhost:5556/dex", output)
         self.assertIn("admin@xmc.local", output)
 
-    def test_service_to_k8s_deployment_name(self) -> None:
-        from tools.dev_env.service_resolver import (
-            resolve_service_names,
-            service_to_k8s_deployment_name,
-        )
-
-        self.assertEqual(
-            service_to_k8s_deployment_name("dashboard_service"), "dashboard-service-deployment"
-        )
-        self.assertEqual(
-            service_to_k8s_deployment_name("experiment_state_server"),
-            "experiment-state-server-deployment",
-        )
-        self.assertEqual(
-            service_to_k8s_deployment_name("ess"), "experiment-state-server-deployment"
-        )
-        self.assertEqual(service_to_k8s_deployment_name("ui"), "ui-deployment")
-        self.assertEqual(service_to_k8s_deployment_name("ingestion_gateway"), "gateway-proxy")
-        self.assertEqual(service_to_k8s_deployment_name("gw"), "gateway-proxy")
-
-        self.assertEqual(
-            resolve_service_names(["ess", "ui", "rod"]),
-            ["experiment_state_server", "ui", "rod_data_provider"],
-        )
-
     def test_reload_cluster_not_running(self) -> None:
         self.runner.kind_mgr = MagicMock()
         self.runner.kind_mgr.exists.return_value = False
         with self.assertRaises(RuntimeError) as ctx:
             self.runner.reload(["ess"])
         self.assertIn("is not running", str(ctx.exception))
-
-    def test_reload_no_services_raises(self) -> None:
-        self.runner.kind_mgr = MagicMock()
-        self.runner.kind_mgr.exists.return_value = True
-        with self.assertRaises(ValueError) as ctx:
-            self.runner.reload([])
-        self.assertIn("No services specified", str(ctx.exception))
 
     def test_reload_invalid_service_raises(self) -> None:
         self.runner.kind_mgr = MagicMock()
@@ -181,36 +158,248 @@ class TestLocalRunner(unittest.TestCase):
 
     @patch("tools.dev_env.local_runner.run_command")
     def test_reload_explicit_services(self, mock_run: MagicMock) -> None:
-        self.runner.kind_mgr = MagicMock()
-        self.runner.kind_mgr.exists.return_value = True
-        self.runner.kind_mgr.kube_context = "kind-test-cluster"
-        self.runner.image_builder = MagicMock()
-        self.runner.helm_deployer = MagicMock()
-        self.runner.image_builder.build_images.return_value = [
-            "experiment_state_server_image:latest"
-        ]
+        """Verifies reloading explicit services triggers targeted build, load, and rollout."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["img:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+        ):
+            self.runner.reload(services=["reconciler"])
 
-        result = self.runner.reload(["ess"])
-        self.assertTrue(result)
-        self.runner.image_builder.build_images.assert_called_once_with(
-            services=["experiment_state_server"]
-        )
-        self.runner.image_builder.load_images_into_kind.assert_called_once()
-        self.runner.helm_deployer.deploy.assert_not_called()
+            mock_build.assert_called_once_with(services=["reconciler"])
+            mock_load.assert_called_once_with(["img:latest"])
+            self.assertTrue(mock_run.called)
+            restart_call = [
+                "kubectl",
+                "--context",
+                self.runner.kind_mgr.kube_context,
+                "rollout",
+                "restart",
+                "deployment/reconciler-deployment",
+                "-n",
+                "xmc",
+            ]
+            status_call = [
+                "kubectl",
+                "--context",
+                self.runner.kind_mgr.kube_context,
+                "rollout",
+                "status",
+                "deployment/reconciler-deployment",
+                "-n",
+                "xmc",
+                "--timeout=120s",
+            ]
+            mock_run.assert_any_call(restart_call, check=True)
+            mock_run.assert_any_call(status_call, check=True)
 
     @patch("tools.dev_env.local_runner.run_command")
-    def test_reload_all_with_helm(self, mock_run: MagicMock) -> None:
-        self.runner.kind_mgr = MagicMock()
-        self.runner.kind_mgr.exists.return_value = True
-        self.runner.kind_mgr.kube_context = "kind-test-cluster"
-        self.runner.image_builder = MagicMock()
-        self.runner.helm_deployer = MagicMock()
-        self.runner.image_builder.build_images.return_value = ["img:latest"]
+    def test_reload_auto_detection_with_changes(self, mock_run: MagicMock) -> None:
+        """Verifies auto-detection triggers rebuild and rollout of detected services."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
 
-        result = self.runner.reload(["all"], helm=True)
-        self.assertTrue(result)
-        self.runner.helm_deployer.deploy.assert_called_once()
-        self.runner.kind_mgr.apply_manifests.assert_called_once()
+        mock_result = ChangeDetectionResult(
+            services=["ui"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/ui/src/app.ts"],
+            reasons={"ui": ["cmd/ui/src/app.ts"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["ui-image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
+        ):
+            self.runner.reload(services=None)
+
+            mock_detect.assert_called_once()
+            mock_build.assert_called_once_with(services=["ui"])
+            mock_load.assert_called_once_with(["ui-image:latest"])
+            mock_helm_deploy.assert_not_called()
+            self.assertTrue(mock_run.called)
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_auto_detection_with_helm_changes(self, mock_run: MagicMock) -> None:
+        """Verifies auto-detection executes helm upgrade when manifests are modified."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["reconciler"],
+            helm_upgrade_needed=True,
+            modified_files=["deploy/helm/values.yaml", "cmd/reconciler/reconciler.go"],
+            reasons={"reconciler": ["cmd/reconciler/reconciler.go"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.kind_mgr, "apply_manifests") as mock_apply_manifests,
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
+        ):
+            self.runner.reload(services=["auto"])
+
+            mock_detect.assert_called_once()
+            mock_helm_deploy.assert_called_once()
+            mock_apply_manifests.assert_called_once()
+            mock_build.assert_called_once_with(services=["reconciler"])
+            mock_load.assert_called_once_with(["reconciler_image:latest"])
+            self.assertTrue(mock_run.called)
+
+    def test_reload_auto_detection_clean_working_tree(self) -> None:
+        """Verifies auto-detection exits cleanly when no changes are detected."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=[],
+            helm_upgrade_needed=False,
+            modified_files=[],
+            reasons={},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(self.runner.image_builder, "build_images") as mock_build,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
+        ):
+            self.runner.reload(services=None)
+
+            mock_detect.assert_called_once()
+            mock_build.assert_not_called()
+            mock_helm_deploy.assert_not_called()
+
+    def test_reload_all_services(self) -> None:
+        """Verifies reloading 'all' rebuilds all enabled services."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["img1", "img2"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner.reload(services=["all"])
+
+            mock_detect.assert_not_called()
+            mock_build.assert_called_once()
+            mock_load.assert_called_once_with(["img1", "img2"])
+
+    def test_reload_mixed_services_with_auto(self) -> None:
+        """Verifies containing 'auto' in services triggers auto-detection."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["actuator"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/actuator/actuator.go"],
+            reasons={"actuator": ["cmd/actuator/actuator.go"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["actuator_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner.reload(services=["reconciler", "auto"])
+
+            mock_detect.assert_called_once()
+            mock_build.assert_called_once_with(services=["actuator", "reconciler"])
+            mock_load.assert_called_once_with(["actuator_image:latest"])
+
+    def test_reload_disabled_service_raises_error(self) -> None:
+        """Verifies reloading a disabled or invalid service raises ValueError."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            self.assertRaises(ValueError),
+        ):
+            self.runner.reload(services=["invalid_service_foo"])
+
+    def test_reload_disabled_service_with_all_raises_error(self) -> None:
+        """Verifies invalid service raises ValueError even when 'all' is present."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            self.assertRaises(ValueError),
+        ):
+            self.runner.reload(services=["all", "invalid_service_foo"])
+
+    def test_reload_mixed_services_with_all(self) -> None:
+        """Verifies containing 'all' in services targets all enabled services."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["img1", "img2"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner.reload(services=["reconciler", "all"])
+
+            mock_detect.assert_not_called()
+            mock_build.assert_called_once()
+            mock_load.assert_called_once_with(["img1", "img2"])
+
+    @patch("tools.dev_env.local_runner.log_info")
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_rollout_failure_handled_gracefully(
+        self, mock_run: MagicMock, mock_log_info: MagicMock
+    ) -> None:
+        """Verifies rollout command failures are caught and logged without crashing."""
+        mock_run.side_effect = RuntimeError("kubectl rollout failed")
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
+            ),
+            patch.object(self.runner.image_builder, "load_images_into_kind"),
+        ):
+            self.runner.reload(services=["reconciler"])
+            mock_log_info.assert_any_call(
+                "Failed to restart deployment 'reconciler-deployment': kubectl rollout failed. Skipping."
+            )
+
+    def test_reload_uppercase_keywords(self) -> None:
+        """Verifies uppercase 'ALL' and 'AUTO' are handled correctly."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["img1", "img2"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner.reload(services=["ALL"])
+
+            mock_detect.assert_not_called()
+            mock_build.assert_called_once()
+            mock_load.assert_called_once_with(["img1", "img2"])
+
+    def test_reload_not_running_raises_error(self) -> None:
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=False),
+            self.assertRaises(RuntimeError),
+        ):
+            self.runner.reload()
 
     @patch("tools.dev_env.local_runner.run_command")
     def test_reload_only_helm(self, mock_run: MagicMock) -> None:
