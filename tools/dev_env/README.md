@@ -132,7 +132,34 @@ python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
 
 ---
 
-### 5. Generic Aliases (`deploy` / `upgrade`)
+### 5. `status` (Cluster Status & Health Inspection)
+Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
+
+```bash
+python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
+```
+
+#### Output Sections
+- **Cluster & Node Readiness**: KinD cluster control-plane and worker node readiness.
+- **Support & Service Pods**: Pod status table for core services and dependencies (`dex`, `redis`, `gateway-proxy`, `experiment_state_server`, `ui`, etc.).
+- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080/healthz`) and Dex OIDC (`http://localhost:5556/dex/healthz`).
+
+---
+
+### 6. `logs` (Stream Microservice Logs)
+Streams or tails container stdout/stderr logs from a specific microservice running in the local KinD cluster.
+
+```bash
+# Tail last 50 lines of logs for experiment_state_server
+python3 tools/dev_env/dev_env.py logs experiment_state_server --lines 50
+
+# Follow continuous logs in real-time
+python3 tools/dev_env/dev_env.py logs ui -f
+```
+
+---
+
+### 7. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash
