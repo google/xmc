@@ -68,10 +68,59 @@ ORDER BY cd.ComponentId, dep.Name ASC`
 FROM ExperimentComponentSnapshots
 WHERE ComponentId = @id AND LockedGeneration = @gen
 LIMIT 1`
+
+	selectActiveDependentsByDependencyIDSQL = `SELECT parent.Name
+FROM ComponentDependencies cd
+JOIN Components parent ON cd.ComponentId = parent.ComponentId
+WHERE cd.DependencyComponentId = @id AND parent.State != @disabledState AND parent.State != @deletedState
+ORDER BY parent.Name ASC`
 )
 
 type spannerQueryable interface {
 	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
+}
+
+func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, error) {
+	stmt := spanner.Statement{
+		SQL: selectComponentByActiveNameSQL,
+		Params: map[string]any{
+			"name": canonicalName,
+		},
+	}
+
+	iter := queryable.Query(ctx, stmt)
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if err != nil {
+		if err == iterator.Done {
+			return nil, ErrComponentNotFound
+		}
+		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
+	}
+
+	rec, err := rowToComponentRecord(row)
+	if err != nil {
+		return nil, err
+	}
+
+	depStmt := spanner.Statement{
+		SQL: selectDependenciesByComponentIDSQL,
+		Params: map[string]any{
+			"id": rec.ComponentID,
+		},
+	}
+	depIter := queryable.Query(ctx, depStmt)
+	defer depIter.Stop()
+
+	deps, err := fetchDependencies(depIter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch dependencies for component %q: %w", canonicalName, err)
+	}
+	rec.Dependencies = deps
+	rec.Etag = generateEtag(rec)
+
+	return rec, nil
 }
 
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
@@ -313,44 +362,10 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*Componen
 	txn := s.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	stmt := spanner.Statement{
-		SQL: selectComponentByActiveNameSQL,
-		Params: map[string]any{
-			"name": canonicalName,
-		},
-	}
-
-	iter := txn.Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return nil, ErrComponentNotFound
-		}
-		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
-	}
-
-	rec, err := rowToComponentRecord(row)
+	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 	if err != nil {
 		return nil, err
 	}
-
-	depStmt := spanner.Statement{
-		SQL: selectDependenciesByComponentIDSQL,
-		Params: map[string]any{
-			"id": rec.ComponentID,
-		},
-	}
-	depIter := txn.Query(ctx, depStmt)
-	defer depIter.Stop()
-
-	deps, err := fetchDependencies(depIter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch dependencies for component %q: %w", canonicalName, err)
-	}
-	rec.Dependencies = deps
-	rec.Etag = generateEtag(rec)
 
 	return cloneRecord(rec), nil
 }
@@ -529,14 +544,9 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
 			return err
-		}
-
-		rec, ok := catalog[canonicalName]
-		if !ok || rec == nil || isDeletedRecord(rec) {
-			return ErrComponentNotFound
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
@@ -547,7 +557,10 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		}
 
 		if !force {
-			activeDependents, _ := findActiveDependents(catalog, canonicalName)
+			activeDependents, err := s.queryActiveDependents(ctx, txn, rec.ComponentID)
+			if err != nil {
+				return err
+			}
 			if len(activeDependents) > 0 {
 				return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 			}
@@ -580,6 +593,20 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	return err
 }
 
+func (s *SpannerStore) queryActiveDependents(ctx context.Context, queryable spannerQueryable, compID int64) ([]string, error) {
+	stmt := spanner.Statement{
+		SQL: selectActiveDependentsByDependencyIDSQL,
+		Params: map[string]any{
+			"id":            compID,
+			"disabledState": int64(componentspb.ComponentState_COMPONENT_STATE_DISABLED),
+			"deletedState":  int64(componentspb.ComponentState_COMPONENT_STATE_DELETED),
+		},
+	}
+	iter := queryable.Query(ctx, stmt)
+	defer iter.Stop()
+	return fetchDependencies(iter)
+}
+
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
 func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
 	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
@@ -590,14 +617,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	var finalRec *ComponentRecord
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
 			return err
-		}
-
-		rec, ok := catalog[canonicalName]
-		if !ok || rec == nil || isDeletedRecord(rec) {
-			return ErrComponentNotFound
 		}
 
 		rec.ObservedGeneration = &observedGen
@@ -810,14 +832,17 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, rec *Compo
 
 	snapRec := cloneRecord(rec)
 	snapRec.Generation = lockedGen
-	unmarshalConfigProto(configProto, snapRec)
+	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
+	}
 
 	var coords *componentspb.ResolvedComponentCoordinates
 	if len(accessPayload) > 0 {
-		var statusProto componentspb.ComponentAccessStatus
-		if err := proto.Unmarshal(accessPayload, &statusProto); err == nil {
-			snapRec.Status = &statusProto
-			coords = cloneCoordinates(statusProto.Coordinates)
+		if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
+		}
+		if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
+			coords = cloneCoordinates(snapRec.Status.Coordinates)
 		}
 	}
 
@@ -972,8 +997,12 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 		rec.ObservedGeneration = &gen
 	}
 
-	unmarshalConfigProto(d.configProto, rec)
-	unmarshalAccessStatus(d.accessPayload, rec)
+	if err := unmarshalConfigProto(d.configProto, rec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config proto: %w", err)
+	}
+	if err := unmarshalAccessStatus(d.accessPayload, rec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal access status: %w", err)
+	}
 
 	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
 		t := d.updateTime
@@ -984,9 +1013,9 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 	return rec, nil
 }
 
-func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) {
+func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {
 	if len(configBytes) == 0 {
-		return
+		return nil
 	}
 	var comp componentspb.Component
 	if err := proto.Unmarshal(configBytes, &comp); err == nil && (comp.Spec != nil || len(comp.Labels) > 0) {
@@ -994,22 +1023,26 @@ func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) {
 		if len(comp.Labels) > 0 {
 			rec.Labels = copyMap(comp.Labels)
 		}
-		return
+		return nil
 	}
 	var spec componentspb.ComponentSpec
-	if err := proto.Unmarshal(configBytes, &spec); err == nil {
-		rec.Spec = &spec
+	if err := proto.Unmarshal(configBytes, &spec); err != nil {
+		return err
 	}
+	rec.Spec = &spec
+	return nil
 }
 
-func unmarshalAccessStatus(accessBytes []byte, rec *ComponentRecord) {
+func unmarshalAccessStatus(accessBytes []byte, rec *ComponentRecord) error {
 	if len(accessBytes) == 0 {
-		return
+		return nil
 	}
 	var statusProto componentspb.ComponentAccessStatus
-	if err := proto.Unmarshal(accessBytes, &statusProto); err == nil {
-		rec.Status = &statusProto
+	if err := proto.Unmarshal(accessBytes, &statusProto); err != nil {
+		return err
 	}
+	rec.Status = &statusProto
+	return nil
 }
 
 func fetchDependencies(iter *spanner.RowIterator) ([]string, error) {
