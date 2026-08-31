@@ -122,6 +122,8 @@ compat_go_test(
         "utils_test.go",
     ],
     embed = [":server"],
+    # Shard across 10 parallel executors to distribute extensive server RPC
+    # integration tests and live Spanner emulator operations across CI slots.
     shard_count = 10,
     deps = [
         "//api/protos/experiment:api_go_proto",

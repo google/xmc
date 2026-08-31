@@ -58,6 +58,8 @@ compat_go_test(
         "updatexidentry_test.go",
     ],
     embed = [":server"],
+    # Shard across 4 parallel executors to divide Spanner emulator database
+    # setup and live integration tests from ~26s down to ~18s.
     shard_count = 4,
     deps = [
         "//api/protos/xid:api_go_proto",
