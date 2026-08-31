@@ -56,14 +56,6 @@ type StatusDetectorHealthProber interface {
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
 }
 
-// WorkloadManager defines the lifecycle manager interface for 1P child workloads.
-type WorkloadManager interface {
-	// Ensure1PWorkload reconciles Kubernetes Deployment and Service workloads matching spec.
-	Ensure1PWorkload(ctx context.Context, namespace string, name string, spec *componentspb.ComponentSpec) error
-	// Delete1PWorkload deletes child workloads associated with the named component.
-	Delete1PWorkload(ctx context.Context, namespace string, name string) error
-}
-
 type serverClientAdapter struct {
 	server componentspb.ComponentManagerServiceServer
 }
@@ -123,20 +115,20 @@ type ReconcileResult struct {
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
 type Reconciler struct {
-	cmsClient       CMSClient
-	prober          StatusDetectorHealthProber
-	workloadManager WorkloadManager
+	cmsClient   CMSClient
+	prober      StatusDetectorHealthProber
+	helmManager HelmManager
 }
 
 // NewReconciler constructs a new Reconciler instance.
 // cms is the required gRPC client for CMS communication.
 // prober is an optional health prober for component health checks.
-// wm is an optional WorkloadManager for provisioning 1P child workloads.
-func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, wm WorkloadManager) (*Reconciler, error) {
+// helmMgr is an optional HelmManager for provisioning 1P component workloads via Helm releases.
+func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr HelmManager) (*Reconciler, error) {
 	if cms == nil {
 		return nil, errors.New("cms client must not be nil")
 	}
-	return &Reconciler{cmsClient: cms, prober: prober, workloadManager: wm}, nil
+	return &Reconciler{cmsClient: cms, prober: prober, helmManager: helmMgr}, nil
 }
 
 // ReconcileComponentInput bundles parameters for a component reconciliation pass.
@@ -159,6 +151,7 @@ type ReconcileComponentInput struct {
 	Enabled bool
 	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
+	HelmOpts           HelmComponentOptions
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -193,7 +186,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	if !in.Enabled {
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
-	if err := r.ensureWorkload(ctx, in, res); err != nil {
+	if err := r.ensure1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
 	return r.evaluateHealth(ctx, in, canonicalName, res)
@@ -201,7 +194,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 
 // reconcileDeletion handles component teardown when a deletionTimestamp is present.
 // If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
-// and finalizers remain intact. Otherwise, child workloads are pruned and CMS ExecuteDeletion is called.
+// and finalizers remain intact. Otherwise, 1P components are disabled in Helm and CMS ExecuteDeletion is called.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.DeletionProtection {
 		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
@@ -210,11 +203,11 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-		if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to delete 1P workload: %w", err)
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager != nil {
+		if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+			return res, fmt.Errorf("failed to delete 1P Helm component: %w", err)
 		}
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
@@ -242,12 +235,12 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	return nil
 }
 
-// reconcileDisabled tears down 1P child workloads when the component is deactivated (enabled: false),
+// reconcileDisabled disables 1P components in Helm when deactivated (enabled: false),
 // sets state to COMPONENT_STATE_DISABLED, sets conditions to Ready=False, Degraded=False,
 // and updates the observed generation in CMS.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		if err := r.deleteDisabledWorkload(ctx, in, res); err != nil {
+		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
 			return res, err
 		}
 	}
@@ -261,35 +254,34 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	return res, nil
 }
 
-func (r *Reconciler) deleteDisabledWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
-	if r.workloadManager == nil {
-		logging.Warn(ctx, "WorkloadManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
+func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+	if r.helmManager == nil {
+		logging.Warn(ctx, "HelmManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
 		return nil
 	}
-	if err := r.workloadManager.Delete1PWorkload(ctx, in.Namespace, in.Name); err != nil {
+	if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadDeletionFailed", err.Error())
-		return fmt.Errorf("failed to delete 1P workload: %w", err)
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
 	}
 	return nil
 }
 
-// ensureWorkload provisions or updates 1P child Kubernetes workloads (Deployment/Service)
-// via WorkloadManager.Ensure1PWorkload.
-func (r *Reconciler) ensureWorkload(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+// ensure1PComponent sets component enablement and parameter values in the Helm release.
+func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		if r.workloadManager == nil {
-			logging.Warn(ctx, "WorkloadManager is nil; skipping 1P child workload provisioning", "name", in.Name, "namespace", in.Namespace)
+		if r.helmManager == nil {
+			logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
 			return nil
 		}
-		if err := r.workloadManager.Ensure1PWorkload(ctx, in.Namespace, in.Name, in.Spec); err != nil {
+		if err := r.helmManager.Ensure1PComponent(ctx, in.Namespace, in.Name, in.HelmOpts); err != nil {
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "WorkloadProvisionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "WorkloadProvisionFailed", err.Error())
-			return fmt.Errorf("failed to ensure 1P workload: %w", err)
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmUpgradeFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())
+			return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 		}
-		logging.Debug(ctx, "Ensured 1P child workload", "name", in.Name, "namespace", in.Namespace)
+		logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace)
 	}
 	return nil
 }
@@ -335,6 +327,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		}
 	}
 	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
+	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
@@ -345,6 +338,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		DeletionProtection: dp,
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
+		HelmOpts:           opts,
 	})
 }
 

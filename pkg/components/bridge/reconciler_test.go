@@ -67,12 +67,12 @@ func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.Compone
 	return m.healthy, m.msg
 }
 
-type mockWM struct {
+type mockHelm struct {
 	ensureErr, deleteErr error
 	active               bool
 }
 
-func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, spec *componentspb.ComponentSpec) error {
+func (m *mockHelm) Ensure1PComponent(ctx context.Context, ns, name string, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
 	}
@@ -82,7 +82,7 @@ func (m *mockWM) Ensure1PWorkload(ctx context.Context, ns, name string, spec *co
 	return m.ensureErr
 }
 
-func (m *mockWM) Delete1PWorkload(ctx context.Context, ns, name string) error {
+func (m *mockHelm) Delete1PComponent(ctx context.Context, ns, name string) error {
 	if m == nil {
 		return nil
 	}
@@ -90,6 +90,13 @@ func (m *mockWM) Delete1PWorkload(ctx context.Context, ns, name string) error {
 		m.active = false
 	}
 	return m.deleteErr
+}
+
+func (m *mockHelm) IsComponentActive(name string) bool {
+	if m == nil {
+		return false
+	}
+	return m.active
 }
 
 func TestNewReconciler(t *testing.T) {
@@ -121,7 +128,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		name          string
 		cms           *mockCMS
 		prober        *mockProber
-		wm            *mockWM
+		helm          *mockHelm
 		in            ReconcileComponentInput
 		wantErr       bool
 		wantState     componentspb.ComponentState
@@ -141,7 +148,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "active 1P without deletion protection still attaches finalizer",
 			cms:  &mockCMS{},
-			wm:   &mockWM{},
+			helm: &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: false, DeletionProtection: false, Enabled: true,
@@ -152,7 +159,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "active 1P with nil prober defaults to healthy",
 			cms:  &mockCMS{},
-			wm:   &mockWM{},
+			helm: &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
@@ -171,7 +178,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "deletion successful 1P",
 			cms:  &mockCMS{},
-			wm:   &mockWM{active: true},
+			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
@@ -190,9 +197,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantRemoveFin: true,
 		},
 		{
-			name: "deletion 1P workload delete failure",
+			name: "deletion 1P Helm delete failure",
 			cms:  &mockCMS{},
-			wm:   &mockWM{deleteErr: errors.New("delete error")},
+			helm: &mockHelm{deleteErr: errors.New("delete error")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
@@ -211,7 +218,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "disabled component",
 			cms:  &mockCMS{},
-			wm:   &mockWM{active: true},
+			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
@@ -219,9 +226,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
 		{
-			name: "disabled component 1P workload delete failure",
+			name: "disabled component 1P Helm delete failure",
 			cms:  &mockCMS{},
-			wm:   &mockWM{deleteErr: errors.New("cannot stop container")},
+			helm: &mockHelm{deleteErr: errors.New("cannot stop release")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
@@ -232,7 +239,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "disabled component update observed CMS failure",
 			cms:  &mockCMS{obsErr: errors.New("cms unreachable")},
-			wm:   &mockWM{},
+			helm: &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
@@ -243,7 +250,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:    "intent application CMS error",
 			cms:     &mockCMS{setErr: status.Error(codes.InvalidArgument, "bad spec")},
-			wm:      &mockWM{active: true},
+			helm:    &mockHelm{active: true},
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
@@ -252,9 +259,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
-			name:    "1P workload provisioning error",
+			name:    "1P Helm provisioning error",
 			cms:     &mockCMS{},
-			wm:      &mockWM{ensureErr: errors.New("quota exceeded")},
+			helm:    &mockHelm{ensureErr: errors.New("upgrade failed")},
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
@@ -299,11 +306,11 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if tt.prober != nil {
 				p = tt.prober
 			}
-			var wm WorkloadManager
-			if tt.wm != nil {
-				wm = tt.wm
+			var helmMgr HelmManager
+			if tt.helm != nil {
+				helmMgr = tt.helm
 			}
-			r, _ := NewReconciler(tt.cms, p, wm)
+			r, _ := NewReconciler(tt.cms, p, helmMgr)
 			res, err := r.ReconcileComponent(ctx, tt.in)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ReconcileComponent() error = %v, wantErr %v", err, tt.wantErr)
@@ -322,10 +329,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 					t.Errorf("got RemoveFinalizer %v, want %v", res.RemoveFinalizer, tt.wantRemoveFin)
 				}
 			}
-			if tt.name == "intent application CMS error" && tt.wm != nil && !tt.wm.active {
-				t.Errorf("expected 1P workload to remain active on transient CMS intent failure")
+			if tt.name == "intent application CMS error" && tt.helm != nil && !tt.helm.active {
+				t.Errorf("expected 1P component to remain active on transient CMS intent failure")
 			}
-			if (tt.name == "deletion 1P workload delete failure" || tt.name == "deletion CMS failure") && len(res.Conditions) == 0 {
+			if (tt.name == "deletion 1P Helm delete failure" || tt.name == "deletion CMS failure") && len(res.Conditions) == 0 {
 				t.Errorf("expected conditions to be populated on deletion failure, got empty conditions")
 			}
 			if tt.name == "deletion blocked by protection" {
