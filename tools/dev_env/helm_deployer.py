@@ -245,7 +245,18 @@ class HelmDeployer:
         """Captures wide pod listing in a given namespace."""
         lines = [f"=== PODS (namespace: {ns}) ==="]
         res = run_command(
-            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "pods", "-n", ns, "-o", "wide"],
+            [
+                "kubectl",
+                "--context",
+                ctx,
+                "--request-timeout=10s",
+                "get",
+                "pods",
+                "-n",
+                ns,
+                "-o",
+                "wide",
+            ],
             capture_output=True,
             check=False,
             log_cmd=False,
@@ -269,7 +280,17 @@ class HelmDeployer:
         """Captures recent Kubernetes events in a given namespace."""
         lines = [f"=== EVENTS (namespace: {ns}) ==="]
         ev_res = run_command(
-            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "events", "-n", ns, "--sort-by=.metadata.creationTimestamp"],
+            [
+                "kubectl",
+                "--context",
+                ctx,
+                "--request-timeout=10s",
+                "get",
+                "events",
+                "-n",
+                ns,
+                "--sort-by=.metadata.creationTimestamp",
+            ],
             capture_output=True,
             check=False,
             log_cmd=False,
@@ -281,7 +302,18 @@ class HelmDeployer:
         """Captures tail logs for all containers in each pod in a namespace."""
         lines: list[str] = []
         pods_res = run_command(
-            ["kubectl", "--context", ctx, "--request-timeout=10s", "get", "pods", "-n", ns, "-o", "jsonpath={.items[*].metadata.name}"],
+            [
+                "kubectl",
+                "--context",
+                ctx,
+                "--request-timeout=10s",
+                "get",
+                "pods",
+                "-n",
+                ns,
+                "-o",
+                "jsonpath={.items[*].metadata.name}",
+            ],
             capture_output=True,
             check=False,
             log_cmd=False,
@@ -290,7 +322,18 @@ class HelmDeployer:
             for pod in (pods_res.stdout or "").split():
                 lines.append(f"--- Logs for pod: {pod} (ns: {ns}) ---")
                 log_res = run_command(
-                    ["kubectl", "--context", ctx, "--request-timeout=10s", "logs", "-n", ns, pod, "--all-containers=true", "--tail=100"],
+                    [
+                        "kubectl",
+                        "--context",
+                        ctx,
+                        "--request-timeout=10s",
+                        "logs",
+                        "-n",
+                        ns,
+                        pod,
+                        "--all-containers=true",
+                        "--tail=100",
+                    ],
                     capture_output=True,
                     check=False,
                     log_cmd=False,
@@ -339,9 +382,7 @@ class HelmDeployer:
         """Checks rollout status for Dex in the 'dex' namespace if present."""
         check_dex_cmd = ["kubectl", "--context", ctx, "get", "deployment/dex", "-n", "dex"]
         if (
-            run_command(
-                check_dex_cmd, check=False, capture_output=True, log_cmd=False
-            ).returncode
+            run_command(check_dex_cmd, check=False, capture_output=True, log_cmd=False).returncode
             == 0
         ):
             _LOGGER.debug("Checking rollout status for deployment/dex in namespace dex")
