@@ -615,7 +615,7 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
 	}
 	if ref.Name == "" {
-		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "InvalidWrapperRef", "3P wrapper target name is empty")
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)

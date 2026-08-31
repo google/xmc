@@ -258,6 +258,20 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name:   "active 3P with empty target name",
+			cms:    &mockCMS{},
+			prober: &mockProber{resStatus: &ResourceStatus{Found: true, Ready: true}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1,
+				Spec: &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+				},
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantAddFin: true,
+		},
+		{
 			name: "active 1P without deletion protection still attaches finalizer",
 			cms:  &mockCMS{},
 			helm: &mockHelm{},

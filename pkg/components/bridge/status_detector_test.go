@@ -79,6 +79,30 @@ func TestResolveGVR(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name: "UsesRESTMapperWithoutVersion",
+			ref: bridge.WrapperRef{
+				Group: "ray.io",
+				Kind:  "RayCluster",
+			},
+			restMapper: &fakeRESTMapper{
+				mapping: &meta.RESTMapping{
+					Resource: schema.GroupVersionResource{
+						Group:    "ray.io",
+						Version:  "v1",
+						Resource: "rayclusters",
+					},
+					Scope: meta.RESTScopeNamespace,
+				},
+			},
+			wantResource: schema.GroupVersionResource{
+				Group:    "ray.io",
+				Version:  "v1",
+				Resource: "rayclusters",
+			},
+			wantNamespaced: true,
+			wantErr:        false,
+		},
+		{
 			name: "FallbackToUnsafeGuessWhenMapperNil",
 			ref: bridge.WrapperRef{
 				Group:   "clickhouse.altinity.com",
@@ -134,6 +158,7 @@ func TestExtractResourceStatus_DefaultReadiness(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		ref       bridge.WrapperRef
 		obj       *unstructured.Unstructured
 		wantFound bool
 		wantReady bool
@@ -147,6 +172,26 @@ func TestExtractResourceStatus_DefaultReadiness(t *testing.T) {
 							map[string]any{
 								"type":   "Ready",
 								"status": "True",
+							},
+						},
+					},
+				},
+			},
+			wantFound: true,
+			wantReady: true,
+		},
+		{
+			name: "CustomExpectedReadyValue",
+			ref: bridge.WrapperRef{
+				ExpectedReadyValue: "Healthy",
+			},
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"status": map[string]any{
+						"conditions": []any{
+							map[string]any{
+								"type":   "Ready",
+								"status": "Healthy",
 							},
 						},
 					},
@@ -195,7 +240,7 @@ func TestExtractResourceStatus_DefaultReadiness(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			status, err := bridge.ExtractResourceStatus(tc.obj, bridge.WrapperRef{})
+			status, err := bridge.ExtractResourceStatus(tc.obj, tc.ref)
 			if err != nil {
 				t.Fatalf("ExtractResourceStatus() unexpected error: %v", err)
 			}

@@ -138,7 +138,11 @@ func (d *K8sStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*
 func ResolveGVR(ref WrapperRef, restMapper meta.RESTMapper) (schema.GroupVersionResource, bool, error) {
 	gvk := schema.GroupVersionKind{Group: ref.Group, Version: ref.Version, Kind: ref.Kind}
 	if restMapper != nil {
-		mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		var versions []string
+		if gvk.Version != "" {
+			versions = []string{gvk.Version}
+		}
+		mapping, err := restMapper.RESTMapping(gvk.GroupKind(), versions...)
 		if err != nil {
 			return schema.GroupVersionResource{}, false, err
 		}
@@ -160,7 +164,11 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	if og, found, _ := unstructured.NestedInt64(obj.Object, "status", "observedGeneration"); found {
 		obsGen = og
 	}
-	ready, readyMsg, err := evaluateDefaultReadiness(obj, defaultReadyValue)
+	expectedReady := defaultReadyValue
+	if ref.ExpectedReadyValue != "" {
+		expectedReady = ref.ExpectedReadyValue
+	}
+	ready, readyMsg, err := evaluateDefaultReadiness(obj, expectedReady)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate readiness: %w", err)
 	}
