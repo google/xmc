@@ -212,6 +212,39 @@ class TestLocalRunner(unittest.TestCase):
         self.runner.helm_deployer.deploy.assert_called_once()
         self.runner.kind_mgr.apply_manifests.assert_called_once()
 
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_only_helm(self, mock_run: MagicMock) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        self.runner.kind_mgr.kube_context = "kind-test-cluster"
+        self.runner.image_builder = MagicMock()
+        self.runner.helm_deployer = MagicMock()
+
+        result = self.runner.reload([], helm=True)
+        self.assertTrue(result)
+        self.runner.helm_deployer.deploy.assert_called_once()
+        self.runner.kind_mgr.apply_manifests.assert_called_once()
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_with_failures_raises(self, mock_run: MagicMock) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        self.runner.kind_mgr.kube_context = "kind-test-cluster"
+        self.runner.image_builder = MagicMock()
+        self.runner.helm_deployer = MagicMock()
+        self.runner.image_builder.build_images.return_value = ["img:latest"]
+
+        def run_side_effect(cmd, *args, **kwargs):
+            if "status" in cmd:
+                raise Exception("rollout timeout")
+            return MagicMock()
+
+        mock_run.side_effect = run_side_effect
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.runner.reload(["ess"])
+        self.assertIn("failure(s)", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

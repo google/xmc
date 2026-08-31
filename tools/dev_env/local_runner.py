@@ -163,23 +163,24 @@ class LocalRunner:
         """Resolves target services and Helm requirement from explicit arguments."""
         target_services: set[str] = set()
         helm_needed = helm
-        lowercase_services = (
-            {s.strip().lower() for s in services if s and s.strip()} if services else set()
-        )
+        raw_services = services or []
+        lowercase_services = {s.strip().lower() for s in raw_services if s and s.strip()}
 
-        if not services:
+        if not raw_services and not helm:
             raise ValueError(
-                "No services specified to reload. Specify microservice names (e.g. 'ess', 'ui', 'all')."
+                "No services specified to reload. Specify microservice names (e.g. 'ess', 'ui', 'all') or use --helm."
             )
 
         if any(
-            s.strip().lower() in ("helm", "chart", "charts") for s in services if s and s.strip()
+            s.strip().lower() in ("helm", "chart", "charts")
+            for s in raw_services
+            if s and s.strip()
         ):
             helm_needed = True
 
         explicit_services = [
             s.strip()
-            for s in services
+            for s in raw_services
             if s and s.strip() and s.strip().lower() not in ("all", "helm", "chart", "charts")
         ]
         if explicit_services:
@@ -204,9 +205,12 @@ class LocalRunner:
         images = self.image_builder.build_images(services=sorted_targets)
         self.image_builder.load_images_into_kind(images)
 
-    def _restart_deployments(self, ctx: str, sorted_targets: list[str]) -> list[str]:
+    def _restart_deployments(
+        self, ctx: str, sorted_targets: list[str]
+    ) -> tuple[list[str], list[str]]:
         """Triggers rollout restart across affected deployments."""
-        deployments: list[str] = []
+        triggered: list[str] = []
+        failed: list[str] = []
         for svc in sorted_targets:
             deploy = service_to_k8s_deployment_name(svc)
             log_info(f"Restarting deployment '{deploy}' in namespace 'xmc'...")
@@ -224,10 +228,11 @@ class LocalRunner:
                     ],
                     check=True,
                 )
-                deployments.append(deploy)
+                triggered.append(deploy)
             except Exception as e:
                 log_info(f"Failed to restart deployment '{deploy}': {e}. Skipping.")
-        return deployments
+                failed.append(deploy)
+        return triggered, failed
 
     def _wait_for_restarted_rollouts(self, ctx: str, deployments: list[str]) -> list[str]:
         """Monitors rollouts in parallel and returns list of failed deployment names."""
@@ -282,7 +287,7 @@ class LocalRunner:
             True if any service or Helm upgrade was performed.
 
         Raises:
-            RuntimeError: If the KinD cluster is not currently running.
+            RuntimeError: If the KinD cluster is not currently running or any rollouts fail.
             ValueError: If services list is empty or any requested service is invalid.
         """
         if not self.kind_mgr.exists():
@@ -305,19 +310,19 @@ class LocalRunner:
 
         if sorted_targets:
             ctx = self.kind_mgr.kube_context
-            deployments = self._restart_deployments(ctx, sorted_targets)
-            failed = self._wait_for_restarted_rollouts(ctx, deployments)
+            triggered, failed = self._restart_deployments(ctx, sorted_targets)
+            rollout_failed = self._wait_for_restarted_rollouts(ctx, triggered)
+            failed.extend(rollout_failed)
             elapsed = time.perf_counter() - start_time
             msg_suffix = " and Helm release" if helm_needed else ""
             if failed:
-                log_info(
+                raise RuntimeError(
                     f"Services{msg_suffix} reloaded in {elapsed:.2f}s with {len(failed)} failure(s): "
                     f"{', '.join(sorted_targets)} (failed: {', '.join(failed)})"
                 )
-            else:
-                log_success(
-                    f"Services{msg_suffix} reloaded in {elapsed:.2f}s: {', '.join(sorted_targets)}"
-                )
+            log_success(
+                f"Services{msg_suffix} reloaded in {elapsed:.2f}s: {', '.join(sorted_targets)}"
+            )
             return True
 
         if helm_needed:
