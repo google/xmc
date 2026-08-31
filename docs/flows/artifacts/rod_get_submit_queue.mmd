@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant Client as Client / SDK / UI
+    participant Gateway as GKE Gateway API
+    participant ROD as rod-data-provider
+    participant Cache as KueueCache (In-Memory)
+
+    Client->>Gateway: 1. GET /v1/clusterqueues:getSubmitQueue (resource requirements)
+    Gateway->>ROD: 2. Route via rod-route
+    ROD->>Cache: 3. Match LocalQueues and ClusterQueues
+    Cache-->>ROD: 4. Candidate Queues & Nominal Headroom
+    ROD->>ROD: 5. Select Optimal Submission Target
+    ROD-->>Gateway: 6. GetSubmitQueueResponse (LocalQueue, ClusterQueue)
+    Gateway-->>Client: 7. Target Queue Recommendation

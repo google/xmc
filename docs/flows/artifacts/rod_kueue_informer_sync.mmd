@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant K8sAPI as Kubernetes API Server (Kueue)
+    participant Informer as Controller-Runtime Informers
+    participant Reconciler as CQ / LQ / RF Reconcilers
+    participant Cache as KueueCache (In-Memory)
+
+    K8sAPI->>Informer: 1. Watch Event (ClusterQueue / LocalQueue Modified)
+    Informer->>Reconciler: 2. Trigger Reconcile(Request)
+    Reconciler->>K8sAPI: 3. Fetch Latest Custom Resource
+    K8sAPI-->>Reconciler: 4. Resource Spec & Status
+    Reconciler->>Cache: 5. Update In-Memory Cache (Thread-Safe Mutex)
+    Cache-->>Reconciler: 6. Cache Synchronized

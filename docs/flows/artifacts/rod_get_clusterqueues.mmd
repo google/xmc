@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant Browser as Web Browser (UI)
+    participant Gateway as GKE Gateway API
+    participant ROD as rod-data-provider
+    participant Cache as KueueCache (In-Memory)
+
+    Browser->>Gateway: 1. GET /v1/clusterqueues
+    Gateway->>ROD: 2. Route via rod-route (HTTP / gRPC)
+    ROD->>Cache: 3. ListClusterQueues & ListResourceFlavors
+    Cache-->>ROD: 4. Cached ClusterQueue & Flavor CRDs
+    ROD->>ROD: 5. Calculate LocalFree & CohortFree Capacities
+    ROD-->>Gateway: 6. GetClusterQueuesResponse (Queue Overviews)
+    Gateway-->>Browser: 7. JSON Response (Render Queue Cards)

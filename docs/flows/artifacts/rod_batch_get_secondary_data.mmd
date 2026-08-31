@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant UI as Queue Card / Predictability Grid
+    participant Gateway as GKE Gateway API
+    participant ROD as rod-data-provider
+    participant Spanner as Cloud Spanner (Storage)
+
+    UI->>Gateway: 1. POST /v1/clusterqueues:batchGetSecondaryData (timeRange=LAST_HOUR)
+    Gateway->>ROD: 2. Route via rod-route
+    ROD->>Spanner: 3. Query WorkUnitStatusHistory (Transition Time Window)
+    Spanner-->>ROD: 4. State Transitions (SCHEDULING -> RUNNING -> COMPLETED)
+    ROD->>ROD: 5. Compute Job Velocity (jobs/hr) & Resource Velocity (units/hr)
+    ROD-->>Gateway: 6. BatchGetQueueSecondaryDataResponse (Predictability & Backlog)
+    Gateway-->>UI: 7. Render Velocity Grid for Dominant Resource

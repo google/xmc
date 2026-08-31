@@ -23,6 +23,9 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 * ### [Resource Observability Dashboard (ROD)](docs/design/resource_observability_dashboard.md)
   System architecture and design specification for the real-time Kueue cluster queue observability dashboard, capacity calculations, turnover velocity analytics, and data provider microservice.
 
+* ### [System Execution & Sequence Flows](docs/flows/README.md)
+  Visual sequence diagrams and flowcharts capturing end-to-end communication across Experiment State Server, WorkUnit lifecycle, Reconciler, and ROD data provider services.
+
 * ### [Agent Workflows](docs/agent_workflows.md)
   Overview of pre-configured agent-assisted skills (`xmc_deploy` and `xmc_address_pr_comment`) for automated cloud deployment and PR feedback resolution.
 

@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant UI as Smart Resource Finder (UI)
+    participant Gateway as GKE Gateway API
+    participant ROD as rod-data-provider
+    participant Cache as KueueCache (In-Memory)
+
+    UI->>Gateway: 1. POST /v1/clusterqueues:getFittingQueues (multi-flavor demands)
+    Gateway->>ROD: 2. Route via rod-route
+    ROD->>Cache: 3. Evaluate Available Flavor Headroom
+    Cache-->>ROD: 4. Active Flavors & Quotas
+    ROD->>ROD: 5. Filter & Rank Qualifying Queues
+    ROD-->>Gateway: 6. GetFittingQueuesResponse (Matching Queues)
+    Gateway-->>UI: 7. Highlight Qualifying Queue Cards

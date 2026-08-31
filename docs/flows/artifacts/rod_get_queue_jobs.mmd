@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant UI as Queue Jobs Side Panel (UI)
+    participant Gateway as GKE Gateway API
+    participant ROD as rod-data-provider
+    participant Spanner as Cloud Spanner (Storage)
+
+    UI->>Gateway: 1. GET /v1/clusterqueues/{queue_name}/jobs?pageSize=10&pageToken=...
+    Gateway->>ROD: 2. Route via rod-route
+    ROD->>Spanner: 3. Query WorkUnits using WorkUnitsByQueueAndPosition Index
+    Spanner-->>ROD: 4. Active & Queued WorkUnits with Keyset Page
+    ROD->>ROD: 5. Map DTOs (Position, Status, Priority, User, Resources)
+    ROD-->>Gateway: 6. GetRunningAndPendingJobsResponse (Jobs & NextPageToken)
+    Gateway-->>UI: 7. Render Paginated Workloads in Side Panel
