@@ -43,50 +43,6 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
     except subprocess.CalledProcessError:
         pass
 
-    try:
-        target_hash = None
-        try:
-            target_hash = subprocess.run(
-                ["git", "rev-parse", f"{target_ref}^{{commit}}"],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=cwd,
-            ).stdout.strip()
-        except subprocess.CalledProcessError:
-            pass
-
-        cmd = [
-            "git",
-            "for-each-ref",
-            "--sort=-v:refname",
-            "--format=%(refname:short) %(objectname) %(*objectname)",
-            "refs/tags",
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
-        for line in res.stdout.splitlines():
-            parts = line.strip().split()
-            if not parts:
-                continue
-            t = parts[0]
-            if t != target_ref:
-                if target_hash and len(parts) >= 2:
-                    tag_commit = parts[2] if len(parts) > 2 else parts[1]
-                    if tag_commit == target_hash:
-                        continue
-                try:
-                    subprocess.run(
-                        ["git", "merge-base", "--is-ancestor", t, target_ref],
-                        check=True,
-                        cwd=cwd,
-                        capture_output=True,
-                    )
-                    return t
-                except subprocess.CalledProcessError:
-                    continue
-    except subprocess.CalledProcessError:
-        pass
-
     return None
 
 
@@ -166,6 +122,17 @@ def get_git_commits(
         if pr_match:
             pr_number = int(pr_match.group(1))
 
+        commit_type = "other"
+        scope = ""
+        description = subject
+        cc_match = re.match(r"^([a-zA-Z0-9_-]+)(?:\(([a-zA-Z0-9_-]+)\))?:\s*(.*)$", subject)
+        if cc_match:
+            commit_type = cc_match.group(1)
+            scope = cc_match.group(2) or ""
+            description = cc_match.group(3)
+            if pr_match:
+                description = re.sub(r"\s*\(#\d+\)\s*$", "", description)
+
         commits.append(
             CommitInfo(
                 commit_hash=commit_hash,
@@ -173,6 +140,9 @@ def get_git_commits(
                 subject=subject,
                 author=author,
                 date=date,
+                commit_type=commit_type,
+                scope=scope,
+                description=description,
                 pr_number=pr_number,
                 files_changed=files,
             )

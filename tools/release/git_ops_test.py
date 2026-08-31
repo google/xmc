@@ -52,22 +52,10 @@ class GitOpsTest(unittest.TestCase):
         self.assertEqual(tag, "0.5.0")
 
     @patch("tools.release.git_ops.subprocess.run")
-    def test_get_latest_tag_before_fallback_tag_sort(self, mock_run: MagicMock) -> None:
-        def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
-            if "describe" in cmd:
-                raise subprocess.CalledProcessError(1, cmd)
-            if "rev-parse" in cmd:
-                return MagicMock(stdout="hash-060\n", returncode=0)
-            if "for-each-ref" in cmd:
-                return MagicMock(
-                    stdout="0.6.0 hash-060\n0.5.0 hash-050\n0.4.0 hash-040\n",
-                    returncode=0,
-                )
-            return MagicMock(stdout="", returncode=0)
-
-        mock_run.side_effect = side_effect
+    def test_get_latest_tag_before_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "describe"])
         tag = get_latest_tag_before("HEAD", Path("."))
-        self.assertEqual(tag, "0.5.0")
+        self.assertIsNone(tag)
 
     @patch("tools.release.git_ops.subprocess.run")
     def test_get_git_file_content(self, mock_run: MagicMock) -> None:
@@ -94,11 +82,17 @@ pkg/core/server.go
         self.assertEqual(len(commits), 2)
         self.assertEqual(commits[0].short_hash, "1111")
         self.assertEqual(commits[0].author, "Author One")
+        self.assertEqual(commits[0].commit_type, "feat")
+        self.assertEqual(commits[0].scope, "ui")
+        self.assertEqual(commits[0].description, "add dashboard")
         self.assertEqual(commits[0].pr_number, 123)
         self.assertEqual(commits[0].files_changed, ["ui/app.ts", "ui/index.html"])
 
         self.assertEqual(commits[1].short_hash, "2222")
         self.assertEqual(commits[1].subject, "fix(core): resolve race: delimiter check")
+        self.assertEqual(commits[1].commit_type, "fix")
+        self.assertEqual(commits[1].scope, "core")
+        self.assertEqual(commits[1].description, "resolve race: delimiter check")
         self.assertIsNone(commits[1].pr_number)
 
     @patch("tools.release.git_ops.subprocess.run")
