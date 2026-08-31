@@ -127,7 +127,7 @@ describe('AdminPanelPage Component', () => {
     await flush();
 
     const harness = await getHarness(AdminPanelHarness);
-    expect(await harness.getErrorText()).toContain('Failed to load health status');
+    expect(await harness.getErrorText()).toContain('Failed to load admin panel');
     expect(await harness.hasPageErrorBanner()).toBeTrue();
   });
 
@@ -157,7 +157,7 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     expect(await harness.hasPageErrorBanner()).toBeTrue();
-    expect(await harness.getErrorText()).toContain('Failed to load health status.');
+    expect(await harness.getErrorText()).toContain('Failed to load admin panel.');
 
     await harness.clickPageErrorRetry();
     await flush();
