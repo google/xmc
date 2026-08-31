@@ -13,17 +13,73 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A dummy worker script that simulates work."""
+"""Worker that streams randomized training metrics into ClickHouse via the XMC SDK.
 
+`xmc.log_metric` posts to the Ingestion Gateway, which publishes to Redpanda; the
+ClickHouse materialized view then lands the rows in `default.xmc_metrics`. The Chart
+provisioned by `launch.py` reads those rows back through the DataEngine.
+"""
+
+import os
+import random
 import time
 
+import xmc
+from training_metrics import METRIC_NAMES, sample_step_metrics
 
-def main():
-    print("Worker started. Simulating training and generating charts...")
-    for i in range(1, 4):
-        print(f"Step {i}: accuracy = {0.5 + (0.1 * i):.2f}, loss = {1.0 - (0.2 * i):.2f}")
-        time.sleep(10)
-    print("Worker finished successfully.")
+_DEFAULT_TOTAL_STEPS = 60
+_DEFAULT_STEP_DELAY_SECONDS = 1.0
+
+
+def _read_positive_int(name: str, default: int) -> int:
+    """Reads a positive integer environment variable, falling back to a default."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    value = int(raw)
+    if value < 1:
+        raise ValueError(f"{name} must be positive, got {value}")
+    return value
+
+
+def run_training_loop(total_steps: int, seed: int, step_delay_seconds: float) -> None:
+    """Emits one randomized sample per step for every metric in METRIC_NAMES.
+
+    Args:
+        total_steps: Number of steps to simulate.
+        seed: Seed for the sampler, so a run can be reproduced.
+        step_delay_seconds: Pause between steps, spreading points over the time axis.
+    """
+    rng = random.Random(seed)
+    print(f"Simulating {total_steps} training steps (seed={seed})...")
+
+    for step in range(1, total_steps + 1):
+        sample = sample_step_metrics(step, total_steps, rng)
+        for metric_name in METRIC_NAMES:
+            xmc.log_metric(metric_name, sample[metric_name], step=step)
+
+        rendered = ", ".join(f"{name}={sample[name]:.4f}" for name in METRIC_NAMES)
+        print(f"[Step {step}/{total_steps}] {rendered}")
+        time.sleep(step_delay_seconds)
+
+
+def main() -> None:
+    """Entry point for the chart artifact metrics worker."""
+    print("=== XMC Chart Artifact Worker Started ===")
+    print(f"XMC_GATEWAY_URL: {os.environ.get('XMC_GATEWAY_URL')}")
+    print(f"XMC_XID: {os.environ.get('XMC_XID')}")
+    print(f"XMC_WORK_UNIT_ID: {os.environ.get('XMC_WORK_UNIT_ID')}")
+    print(f"XMC_EXECUTION_ID: {os.environ.get('XMC_EXECUTION_ID')}")
+
+    total_steps = _read_positive_int("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
+    seed = _read_positive_int("CHART_DEMO_SEED", random.randrange(1, 1_000_000))
+
+    try:
+        run_training_loop(total_steps, seed, _DEFAULT_STEP_DELAY_SECONDS)
+    finally:
+        print("Flushing remaining buffered metrics...")
+        xmc.shutdown()
+        print("=== XMC Chart Artifact Worker Completed ===")
 
 
 if __name__ == "__main__":

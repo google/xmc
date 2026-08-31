@@ -1,0 +1,45 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Only the dependency-free modules are built here. `launch.py` and `worker.py` are run
+# from the CLI virtualenv and the worker image respectively, and depend on packages that
+# are not part of this Bazel workspace.
+
+py_library(
+    name = "training_metrics",
+    srcs = ["training_metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:private"],
+)
+
+py_library(
+    name = "dashboard_rest_client",
+    srcs = ["dashboard_rest_client.py"],
+    imports = ["."],
+    visibility = ["//visibility:private"],
+)
+
+py_test(
+    name = "training_metrics_test",
+    srcs = ["training_metrics_test.py"],
+    deps = [":training_metrics"],
+)
+
+py_test(
+    name = "dashboard_rest_client_test",
+    srcs = ["dashboard_rest_client_test.py"],
+    deps = [":dashboard_rest_client"],
+)
