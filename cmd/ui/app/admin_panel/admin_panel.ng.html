@@ -53,12 +53,7 @@
     />
 
     @if (healthConfigs(); as configs) {
-      <xmc-config-entries-card
-        [configGroups]="configs.configGroups"
-        [errorMessage]="configEntriesError() ? 'Failed to load configuration entries.' : null"
-        [loading]="isConfigLoading()"
-        (retry)="onRetryConfigs()"
-      />
+      <xmc-config-entries-card [configGroups]="configs.configGroups" />
     } @else {
       <div class="loading-container config-loading-container">
         <mat-spinner diameter="32" aria-label="Loading Configuration" />

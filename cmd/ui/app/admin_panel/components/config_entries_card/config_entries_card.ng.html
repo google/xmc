@@ -22,70 +22,60 @@
     </h2>
   </div>
 
-  @if (loading()) {
-    <div class="card-loading-container">
-      <mat-spinner diameter="32" aria-label="Loading Configuration" />
-    </div>
-  } @else if (errorMessage()) {
-    <div class="card-error-container">
-      <xmc-error-banner [message]="errorMessage()" (retry)="onRetry()" />
-    </div>
-  } @else {
-    <!-- Search Bar -->
-    <div class="search-container">
-      <mat-icon class="search-icon">search</mat-icon>
-      <input
-        type="text"
-        placeholder="Filter entries"
-        class="filter-input"
-        [value]="searchTerm()"
-        (input)="onSearchInput($event)"
-      />
-    </div>
+  <!-- Search Bar -->
+  <div class="search-container">
+    <mat-icon class="search-icon">search</mat-icon>
+    <input
+      type="text"
+      placeholder="Filter entries"
+      class="filter-input"
+      [value]="searchTerm()"
+      (input)="onSearchInput($event)"
+    />
+  </div>
 
-    <!-- Content -->
-    <div class="table-container">
-      <table class="config-table">
-        <thead>
-          <tr class="header-row">
-            <th class="col-key">Key</th>
-            <th class="col-value">Value</th>
+  <!-- Content -->
+  <div class="table-container">
+    <table class="config-table">
+      <thead>
+        <tr class="header-row">
+          <th class="col-key">Key</th>
+          <th class="col-value">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of filteredGroups(); track group.displayName) {
+          <tr
+            class="group-header-row"
+            tabindex="0"
+            role="button"
+            [attr.aria-expanded]="!group.isCollapsed"
+            (click)="toggleGroup(group.displayName)"
+            (keydown.enter)="toggleGroup(group.displayName)"
+            (keydown.space)="toggleGroup(group.displayName); $event.preventDefault()"
+          >
+            <td colspan="2" class="group-header-cell">
+              <div class="group-header-content">
+                <span class="group-toggle-icon">{{ group.isCollapsed ? '+' : '−' }}</span>
+                <span class="group-display-name">{{ group.displayName }}</span>
+              </div>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          @for (group of filteredGroups(); track group.displayName) {
-            <tr
-              class="group-header-row"
-              tabindex="0"
-              role="button"
-              [attr.aria-expanded]="!group.isCollapsed"
-              (click)="toggleGroup(group.displayName)"
-              (keydown.enter)="toggleGroup(group.displayName)"
-              (keydown.space)="toggleGroup(group.displayName); $event.preventDefault()"
-            >
-              <td colspan="2" class="group-header-cell">
-                <div class="group-header-content">
-                  <span class="group-toggle-icon">{{ group.isCollapsed ? '+' : '−' }}</span>
-                  <span class="group-display-name">{{ group.displayName }}</span>
-                </div>
-              </td>
-            </tr>
-            @if (!group.isCollapsed) {
-              @for (config of group.configs; track config.key ?? $index) {
-                <tr class="config-row">
-                  <td class="cell-key">{{ config.key }}</td>
-                  <td class="cell-value">{{ config.value }}</td>
-                </tr>
-              }
+          @if (!group.isCollapsed) {
+            @for (config of group.configs; track config.key ?? $index) {
+              <tr class="config-row">
+                <td class="cell-key">{{ config.key }}</td>
+                <td class="cell-value">{{ config.value }}</td>
+              </tr>
             }
           }
-          @if (filteredGroups().length === 0) {
-            <tr class="no-results-row">
-              <td colspan="2" class="no-results-cell">No entries match the filter</td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  }
+        }
+        @if (filteredGroups().length === 0) {
+          <tr class="no-results-row">
+            <td colspan="2" class="no-results-cell">No entries match the filter</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
 </div>
