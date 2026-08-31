@@ -73,6 +73,7 @@ compat_go_test(
         "updatedashboard_test.go",
     ],
     embed = [":dashboard"],
+    shard_count = 4,
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//internal/compat/field_mask",

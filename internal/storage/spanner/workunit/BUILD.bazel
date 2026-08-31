@@ -91,6 +91,7 @@ compat_go_test(
         "updateworkunit_test.go",
         "updateworkunitexecutions_test.go",
     ],
+    shard_count = 4,
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/cmp",

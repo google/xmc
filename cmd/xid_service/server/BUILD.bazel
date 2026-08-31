@@ -58,6 +58,7 @@ compat_go_test(
         "updatexidentry_test.go",
     ],
     embed = [":server"],
+    shard_count = 4,
     deps = [
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
