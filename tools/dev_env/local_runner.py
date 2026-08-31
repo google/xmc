@@ -354,6 +354,12 @@ class LocalRunner:
             RuntimeError: If the KinD cluster is not currently running or any rollouts fail.
             ValueError: If any explicitly requested service is unrecognized or disabled.
         """
+        _LOGGER.debug(
+            "Single reload iteration (services=%s, changed_files=%s, helm=%s)",
+            services,
+            changed_files,
+            helm,
+        )
         target_services, helm_needed = self._resolve_target_services(
             services=services, changed_files=changed_files, helm=helm
         )
