@@ -49,6 +49,7 @@
   align-items: center;
   box-sizing: border-box;
   height: 44px;
+  min-width: 0;
 
   &:focus-within {
     border-color: #1a73e8;
@@ -74,7 +75,7 @@
   color: #5f6368;
   padding: 0 4px;
   line-height: 1;
-  margin-left: -2px;
+  margin: 0 0 0 -2px;
   white-space: nowrap;
 }
 
