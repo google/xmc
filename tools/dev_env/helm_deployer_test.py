@@ -327,9 +327,8 @@ class TestHelmDeployer(unittest.TestCase):
 
     @patch("tools.dev_env.helm_deployer.run_command")
     @patch.object(HelmDeployer, "capture_diagnostics")
-    @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts_failure_captures_diagnostics(
-        self, mock_run: MagicMock, mock_diag: MagicMock
+        self, mock_diag: MagicMock, mock_run: MagicMock
     ) -> None:
         mock_run.side_effect = RuntimeError("Rollout timed out")
         with self.assertRaises(RuntimeError):
