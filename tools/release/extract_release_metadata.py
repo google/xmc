@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Release metadata extractor CLI and git commit aggregator."""
+"""Release metadata extractor CLI and conventional commit aggregator."""
 
 import argparse
 import json
@@ -27,9 +27,17 @@ if str(_REPO_ROOT) not in sys.path:
 
 try:
     from tools.common.tool_utils import HandledError, run_tool
+    from tools.release.commit_classifier import (
+        classify_commit,
+        parse_conventional_commit,
+    )
     from tools.release.git_ops import get_git_commits, get_latest_tag_before
     from tools.release.models import CommitDict, CommitInfo, ReleaseMetadataResult
 except ImportError:
+    from commit_classifier import (  # type: ignore[no-redef]
+        classify_commit,
+        parse_conventional_commit,
+    )
     from common.tool_utils import HandledError, run_tool  # type: ignore[no-redef]
     from git_ops import (  # type: ignore[no-redef]
         get_git_commits,
@@ -45,13 +53,30 @@ __all__ = [
     "CommitDict",
     "CommitInfo",
     "ReleaseMetadataResult",
+    "classify_commit",
     "extract_release_metadata",
     "get_git_commits",
-    "get_latest_tag_before",
+    "parse_conventional_commit",
 ]
 
 
-def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
+def _group_commits_by_category(
+    commits: list[CommitInfo],
+) -> dict[str, list[dict[str, Any]]]:
+    """Groups categorized commits into release sections."""
+    categorized: dict[str, list[dict[str, Any]]] = {
+        "user_facing_features": [],
+        "user_facing_fixes": [],
+        "operational_and_infrastructure": [],
+        "developer_velocity": [],
+    }
+    for c in commits:
+        cat_key = c.category if c.category in categorized else "developer_velocity"
+        categorized[cat_key].append(asdict(c))
+    return categorized
+
+
+def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
     """Primary execution handler orchestrating release metadata extraction."""
     repo_dir = Path(args.repo_dir).resolve()
     target_ref = args.target_ref
@@ -65,18 +90,23 @@ def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
                 "Explicitly provide --base-ref (e.g. --base-ref 0.5.0).",
             )
 
-    # Extract git commits
+    # 1. Extract and classify commits
     commits = get_git_commits(base_ref, target_ref, repo_dir)
-    raw_commits: list[CommitDict] = [cast(CommitDict, asdict(c)) for c in commits]
+    for commit in commits:
+        classify_commit(commit)
 
-    result: ReleaseMetadataResult = {
+    # 2. Group commits by category
+    categorized = _group_commits_by_category(commits)
+
+    result = {
         "metadata": {
             "base_ref": base_ref,
             "target_ref": target_ref,
             "commit_count": len(commits),
             "pr_count": len([c for c in commits if c.pr_number is not None]),
         },
-        "raw_commits": raw_commits,
+        "categorized_commits": categorized,
+        "raw_commits": [asdict(c) for c in commits],
     }
 
     if args.output:
@@ -91,7 +121,7 @@ def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
 def create_parser() -> argparse.ArgumentParser:
     """Creates CLI arguments parser."""
     parser = argparse.ArgumentParser(
-        description="Extract release metadata and git commit history for XMC."
+        description="Extract release metadata and categorized commits for XMC."
     )
     parser.add_argument(
         "--target-ref",

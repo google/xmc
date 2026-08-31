@@ -31,6 +31,7 @@ try:
         CommitInfo,
         create_parser,
         extract_release_metadata,
+        parse_conventional_commit,
     )
 except ImportError:
     from common.tool_utils import HandledError  # type: ignore[no-redef]
@@ -38,11 +39,21 @@ except ImportError:
         CommitInfo,
         create_parser,
         extract_release_metadata,
+        parse_conventional_commit,
     )
 
 
 class ExtractReleaseMetadataTest(unittest.TestCase):
-    """Test suite for base release metadata extraction."""
+    """Test suite for release metadata extraction and classification."""
+
+    def test_parse_conventional_commit(self) -> None:
+        commit_type, scope, desc, pr = parse_conventional_commit(
+            "feat(ui): implement live resource picker (#436)"
+        )
+        self.assertEqual(commit_type, "feat")
+        self.assertEqual(scope, "ui")
+        self.assertEqual(desc, "implement live resource picker")
+        self.assertEqual(pr, 436)
 
     @patch("tools.release.extract_release_metadata.get_git_commits")
     def test_extract_release_metadata_handler(
@@ -86,6 +97,8 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         res = extract_release_metadata(args)
         self.assertEqual(res["metadata"]["commit_count"], 2)
         self.assertEqual(res["metadata"]["pr_count"], 2)
+        self.assertEqual(len(res["categorized_commits"]["user_facing_features"]), 1)
+        self.assertEqual(len(res["categorized_commits"]["user_facing_fixes"]), 1)
         self.assertEqual(len(res["raw_commits"]), 2)
 
     @patch("tools.release.extract_release_metadata.get_git_commits")
