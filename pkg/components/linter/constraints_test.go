@@ -71,7 +71,7 @@ func TestMatchConstraint_Comprehensive(t *testing.T) {
 		// Pre-release boundary matching
 		{name: "caret pre-release of next major fails", version: "2.0.0-alpha.1", constraint: "^1.2.0", wantMatch: false},
 		{name: "tilde pre-release of next minor fails", version: "1.3.0-alpha.1", constraint: "~1.2.0", wantMatch: false},
-		{name: "caret pre-release within same major succeeds if >= base", version: "1.2.1-alpha.1", constraint: "^1.2.0", wantMatch: true},
+		{name: "caret pre-release within same major without prerelease in constraint fails", version: "1.2.1-alpha.1", constraint: "^1.2.0", wantMatch: false},
 
 		// Tilde ranges (~)
 		{name: "tilde standard match patch", version: "1.0.5", constraint: "~1.0.0", wantMatch: true},
