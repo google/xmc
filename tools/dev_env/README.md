@@ -95,14 +95,14 @@ python3 tools/dev_env/dev_env.py reload ess --helm
 ```
 
 ##### Supported Service Aliases
-- `ess` $\rightarrow$ `experiment_state_server`
-- `xid` $\rightarrow$ `xid_service`
-- `rod` $\rightarrow$ `rod_data_provider`
-- `gw` / `gateway` $\rightarrow$ `ingestion_gateway` (`gateway-proxy`)
-- `ui` / `frontend` / `web` $\rightarrow$ `ui`
-- `dash` / `dashboard` $\rightarrow$ `dashboard_service`
-- `health` $\rightarrow$ `health_service`
-- `comp` $\rightarrow$ `components`
+- `ess` → `experiment_state_server`
+- `xid` → `xid_service`
+- `rod` → `rod_data_provider`
+- `gw` / `gateway` → `ingestion_gateway` (`gateway-proxy`)
+- `ui` / `frontend` / `web` → `ui`
+- `dash` / `dashboard` → `dashboard_service`
+- `health` → `health_service`
+- `comp` → `components`
 
 ---
 

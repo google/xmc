@@ -252,6 +252,7 @@ class LocalRunner:
                         "--timeout=120s",
                     ],
                     check=True,
+                    capture_output=True,
                 )
                 return None
             except Exception as err:
