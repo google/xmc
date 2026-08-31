@@ -314,8 +314,8 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	if err := s.checkStoreReady(); err != nil {
 		return nil, err
 	}
-	if req.GetPageSize() < 0 {
-		return nil, status.Error(codes.InvalidArgument, "page size cannot be negative")
+	if _, err := store.NormalizePageSize(req.GetPageSize()); err != nil {
+		return nil, err
 	}
 
 	return s.store.GetPlatformHealth(ctx, req.GetFilter(), req.GetPageSize(), req.GetPageToken())

@@ -420,6 +420,64 @@ func TestAggregatePlatformHealth_PageSizeBounding(t *testing.T) {
 	}
 }
 
+func TestNormalizePageSize(t *testing.T) {
+	tests := []struct {
+		name        string
+		pageSize    int32
+		wantSize    int
+		wantErrCode codes.Code
+	}{
+		{
+			name:        "Negative_ReturnsInvalidArgument",
+			pageSize:    -1,
+			wantErrCode: codes.InvalidArgument,
+		},
+		{
+			name:        "NegativeLarge_ReturnsInvalidArgument",
+			pageSize:    -100,
+			wantErrCode: codes.InvalidArgument,
+		},
+		{
+			name:     "Zero_DefaultsTo50",
+			pageSize: 0,
+			wantSize: 50,
+		},
+		{
+			name:     "ValidStandardSize",
+			pageSize: 25,
+			wantSize: 25,
+		},
+		{
+			name:     "MaxAllowedSize",
+			pageSize: 1000,
+			wantSize: 1000,
+		},
+		{
+			name:     "ExceedsMax_CappedAt1000",
+			pageSize: 5000,
+			wantSize: 1000,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizePageSize(tc.pageSize)
+			if tc.wantErrCode != codes.OK {
+				if status.Code(err) != tc.wantErrCode {
+					t.Errorf("NormalizePageSize(%d) got code %v, want %v", tc.pageSize, status.Code(err), tc.wantErrCode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizePageSize(%d) unexpected error: %v", tc.pageSize, err)
+			}
+			if got != tc.wantSize {
+				t.Errorf("NormalizePageSize(%d) = %d, want %d", tc.pageSize, got, tc.wantSize)
+			}
+		})
+	}
+}
+
 func TestHealthAggregator_InternalHelpers(t *testing.T) {
 	if isHealthyComponent(nil) {
 		t.Error("isHealthyComponent(nil) = true, want false")

@@ -40,8 +40,9 @@ type filterPredicate struct {
 
 // AggregatePlatformHealth filters components, computes health metrics, and paginates results per AIP-158.
 func AggregatePlatformHealth(components map[string]*ComponentRecord, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
-	if pageSize < 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "page size cannot be negative: %d", pageSize)
+	effectivePageSize, err := NormalizePageSize(pageSize)
+	if err != nil {
+		return nil, err
 	}
 
 	predicates, err := parsePlatformHealthFilter(filter)
@@ -49,7 +50,6 @@ func AggregatePlatformHealth(components map[string]*ComponentRecord, filter stri
 		return nil, err
 	}
 
-	effectivePageSize := normalizePageSize(pageSize)
 	offset, err := parsePageToken(pageToken)
 	if err != nil {
 		return nil, err
@@ -74,14 +74,20 @@ func AggregatePlatformHealth(components map[string]*ComponentRecord, filter stri
 	}, nil
 }
 
-func normalizePageSize(pageSize int32) int {
+// NormalizePageSize validates and normalizes the requested page size per AIP-158.
+// It returns an InvalidArgument error if pageSize is negative, defaults to 50 when 0,
+// and clamps values exceeding 1000 to the maximum of 1000.
+func NormalizePageSize(pageSize int32) (int, error) {
+	if pageSize < 0 {
+		return 0, status.Errorf(codes.InvalidArgument, "page size cannot be negative: %d", pageSize)
+	}
 	if pageSize == 0 {
-		return defaultPlatformHealthPageSize
+		return defaultPlatformHealthPageSize, nil
 	}
 	if pageSize > maxPlatformHealthPageSize {
-		return maxPlatformHealthPageSize
+		return maxPlatformHealthPageSize, nil
 	}
-	return int(pageSize)
+	return int(pageSize), nil
 }
 
 func parsePageToken(token string) (int, error) {
