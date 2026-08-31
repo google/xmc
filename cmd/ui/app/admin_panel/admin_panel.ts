@@ -75,7 +75,7 @@ export class AdminPanelPage {
               return of(this.lastKnownStatus);
             }
             this.healthStatusError.set(error);
-            return of({} as HealthStatusResponse);
+            return of(undefined);
           }),
           finalize(() => this.isRefreshing.set(false)),
         ),
@@ -92,7 +92,9 @@ export class AdminPanelPage {
     ),
   );
 
-  protected readonly isLoading = computed(() => this.healthStatus() === undefined);
+  protected readonly isLoading = computed(
+    () => this.healthStatus() === undefined && !this.healthStatusError(),
+  );
 
   protected readonly lastUpdated = computed(() => {
     const status = this.healthStatus();
@@ -106,6 +108,11 @@ export class AdminPanelPage {
     }
     return '';
   });
+
+  protected onRetry(): void {
+    this.healthStatusError.set(null);
+    this.refreshTrigger$.next(true);
+  }
 
   protected onRefresh(): void {
     this.refreshTrigger$.next(true);

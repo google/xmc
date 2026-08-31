@@ -28,7 +28,7 @@ import { MatIconModule } from '@angular/material/icon';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ErrorBannerComponent {
-  readonly message = input<string | null>(null);
+  readonly message = input.required<string>();
   readonly showRetry = input<boolean>(true);
   readonly retryText = input<string>('Retry');
 

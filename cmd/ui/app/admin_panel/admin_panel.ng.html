@@ -19,14 +19,10 @@
   </div>
 } @else if (healthStatusError()) {
   <div class="error-container">
-    @if (isRefreshing()) {
-      <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
-    } @else {
-      <xmc-error-banner
-        message="Failed to load admin panel. Please try again later."
-        (retry)="onRefresh()"
-      />
-    }
+    <xmc-error-banner
+      message="Failed to load admin panel. Please try again later."
+      (retry)="onRetry()"
+    />
   </div>
 } @else {
   <div class="admin-panel-container">

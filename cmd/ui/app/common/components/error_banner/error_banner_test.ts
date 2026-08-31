@@ -35,7 +35,7 @@ import { ErrorBannerHarness } from './error_banner_harness';
   `,
 })
 class TestHostComponent {
-  readonly message = signal<string | null>('An unexpected error occurred.');
+  readonly message = signal<string>('An unexpected error occurred.');
   readonly showRetry = signal<boolean>(true);
   readonly retryText = signal<string>('Retry');
   retryClickCount = 0;
@@ -69,10 +69,10 @@ describe('ErrorBannerComponent', () => {
     expect(await harness.getRetryButtonText()).toContain('Retry');
   });
 
-  it('should not render banner when message is null', async () => {
-    hostInstance.message.set(null);
+  it('should render custom message text', async () => {
+    hostInstance.message.set('Custom error message.');
     fixture.detectChanges();
-    expect(await harness.isVisible()).toBeFalse();
+    expect(await harness.getMessage()).toContain('Custom error message.');
   });
 
   it('should hide retry button when showRetry is false', async () => {
