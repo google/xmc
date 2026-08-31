@@ -211,21 +211,20 @@ flowchart LR
 
 ---
 
-## 8. SemVer 2.0.0 Constraint Algebra Engine (`constraints.go` & `matrix.go`)
+## 8. SemVer 2.0.0 Constraint Algebra Engine (`constraints.go`, `matrix.go`)
 
-The version validation layer (`pkg/components/linter/constraints.go`) implements a strict SemVer 2.0.0 constraint algebra engine to evaluate version compatibility across component manifest dependencies (`spec.dependencies[].version`).
+The version validation layer (`pkg/components/linter/constraints.go`, `matrix.go`) validates manifest-level dependency constraints (`spec.dependencies[].version`) using a full SemVer 2.0.0 constraint algebra engine.
 
 ### Supported Constraint Operators
 
-| Syntax | Notation | Description | Example |
-| :--- | :--- | :--- | :--- |
-| `1.2.3` / `=1.2.3` | **Exact** | Exact version equality | Matches only `1.2.3` |
-| `>`, `>=`, `<`, `<=` | **Comparison** | Mathematical version inequality | `>=1.2.0 <2.0.0` |
-| `^1.2.3` | **Caret Range** | Compatible with version allowing minor and patch updates (respecting zero-major SemVer breaking semantics) | `^1.2.3` matches `>=1.2.3 <2.0.0`<br>`^0.2.3` matches `>=0.2.3 <0.3.0` |
-| `~1.2.3` | **Tilde Range** | Allows patch-level updates | `~1.2.3` matches `>=1.2.3 <1.3.0` |
-| `1.2.x` / `1.x` / `*` | **Wildcards** | Matches any version within the wildcard segment | `1.2.x` matches `>=1.2.0 <1.3.0` |
-| `1.0.0 - 2.0.0` | **Hyphen Range** | Inclusive version bounds | Matches `>=1.0.0 <=2.0.0` |
-| `^1.0.0 \|\| ^2.0.0` | **Disjunction** | Logical OR across constraint expressions | Matches either `^1.0.0` or `^2.0.0` |
+| Operator | Notation Example | Meaning / Evaluation Rule |
+| :--- | :--- | :--- |
+| **Caret (`^`)** | `^1.2.3` | Allows updates without changing the left-most non-zero digit ($\ge 1.2.3 \text{ and } < 2.0.0$). For `^0.2.3`, allows $< 0.3.0$. For `^0.0.3`, allows exact `=0.0.3`. |
+| **Tilde (`~`)** | `~1.2.3`<br>`~1.2`<br>`~1` | `~1.2.3` allows patch updates ($\ge 1.2.3 \text{ and } < 1.3.0$).<br>`~1.2` allows patch updates ($\ge 1.2.0 \text{ and } < 1.3.0$).<br>`~1` allows minor and patch updates ($\ge 1.0.0 \text{ and } < 2.0.0$). |
+| **Relational** | `>=1.0.0 <2.0.0`<br>`>1.5.0`<br>`<=3.0.0` | Explicit lower and upper bounds. Whitespace joins multiple constraints as conjunctions (AND). |
+| **Hyphen Range** | `1.0.0 - 2.5.0` | Inclusive range ($\ge 1.0.0 \text{ and } \le 2.5.0$). |
+| **Wildcards** | `1.2.x`, `1.*`, `*` | Matches any version within the specified prefix or any version overall. |
+| **Disjunction (`\|\|`)** | `^1.0.0 \|\| ^2.0.0` | Logical OR across multiple constraint clauses. |
 
 ---
 
