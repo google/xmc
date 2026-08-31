@@ -105,6 +105,24 @@ To supplement Kubernetes CR condition checks with real data plane health verific
 
 ---
 
+## 3P Custom Wrapper Reconciliation & Access Publishing (`reconciler.go`)
+
+The reconciler unifies third-party CRD inspection and active health probing in `reconcile3PWrapper`:
+
+- **End-to-End Health Verification**: Combines CR status conditions from `StatusDetector` with runtime probe results from `HealthProber`.
+- **Condition Transitions**:
+  - `Ready = True`: Emitted only when the underlying CR status is ready and active health probes succeed.
+  - `Degraded = True`: Emitted when active probes fail or CR condition reports an error, with root-cause message propagation.
+- **Access Coordinate Publishing**: Parses endpoint locations and publishes standard connection environment variables to CMS `AccessStatus.EnvVars`:
+  - `ENDPOINT`: Full URL or base address.
+  - `HOST`: Target host name or ClusterIP.
+  - `PORT`: Service port.
+  - `SCHEME`: Access protocol scheme (`http`, `https`, `tcp`).
+  - `SECRET_NAME`: Credentials secret name reference.
+- **`BridgeProber`**: Aggregates `StatusDetector` and `HealthProber` into a unified prober implementation for controller initialization.
+
+---
+
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
@@ -116,4 +134,5 @@ To supplement Kubernetes CR condition checks with real data plane health verific
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
 - **Dynamic 3P CRD Status Detection**: Query third-party operator CRDs dynamically using normalized JSONPath queries without compile-time Go types.
 - **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
+- **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
