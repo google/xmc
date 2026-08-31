@@ -33,10 +33,8 @@ func MatchConstraint(versionStr, constraintStr string) (bool, error) {
 		return true, nil
 	}
 
-	// Normalize '==' to '=' for equality constraint compatibility.
-	if strings.HasPrefix(trimmed, "==") {
-		trimmed = strings.TrimPrefix(trimmed, "=")
-	}
+	// Normalize '==' to '=' for equality constraint compatibility across all terms.
+	trimmed = strings.ReplaceAll(trimmed, "==", "=")
 
 	c, err := semver.NewConstraint(trimmed)
 	if err != nil {

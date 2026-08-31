@@ -108,6 +108,7 @@ func TestMatchConstraint_Comprehensive(t *testing.T) {
 		{name: "disjunction branch 1 match", version: "0.9.0", constraint: "<1.0.0 || >=2.0.0", wantMatch: true},
 		{name: "disjunction branch 2 match", version: "2.1.0", constraint: "<1.0.0 || >=2.0.0", wantMatch: true},
 		{name: "disjunction neither match", version: "1.5.0", constraint: "<1.0.0 || >=2.0.0", wantMatch: false},
+		{name: "disjunction with equal prefix == in second branch", version: "2.0.0", constraint: "^1.0.0 || ==2.0.0", wantMatch: true},
 
 		// Invalid inputs
 		{name: "invalid version string", version: "bad.version", constraint: ">=1.0.0", wantErr: true},
