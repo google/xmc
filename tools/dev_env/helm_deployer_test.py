@@ -23,11 +23,38 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tools.dev_env.config import LocalDevConfig
-from tools.dev_env.helm_deployer import HelmDeployer, _dump_yaml
+from tools.dev_env.helm_deployer import (
+    HelmDeployer,
+    _dump_yaml,
+    service_to_deployment_key,
+    service_to_image_key,
+)
 
 
 class TestHelmDeployer(unittest.TestCase):
     """Test suite for HelmDeployer."""
+
+    def test_service_to_deployment_key(self) -> None:
+        self.assertEqual(
+            service_to_deployment_key("dashboard_service"), "dashboardServiceDeployment"
+        )
+        self.assertEqual(service_to_deployment_key("health_service"), "healthServiceDeployment")
+        self.assertEqual(
+            service_to_deployment_key("ingestion_gateway"), "ingestionGatewayDeployment"
+        )
+        self.assertEqual(service_to_deployment_key("components"), "componentsDeployment")
+        self.assertEqual(service_to_deployment_key("rod_data_provider"), "rodDeployment")
+        self.assertEqual(service_to_deployment_key("rod"), "rodDeployment")
+        self.assertEqual(service_to_deployment_key("experiment_state_server"), "essDeployment")
+        self.assertEqual(service_to_deployment_key("ess"), "essDeployment")
+
+    def test_service_to_image_key(self) -> None:
+        self.assertEqual(
+            service_to_image_key("dashboard_service"), "dashboard_service_custom_image"
+        )
+        self.assertEqual(service_to_image_key("experiment_state_server"), "ess_custom_image")
+        self.assertEqual(service_to_image_key("rod_data_provider"), "rod_custom_image")
+        self.assertEqual(service_to_image_key("custom_service"), "custom_service_custom_image")
 
     def setUp(self) -> None:
         super().setUp()

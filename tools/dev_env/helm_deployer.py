@@ -44,6 +44,42 @@ def _dump_yaml(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=2)
 
 
+def service_to_deployment_key(service: str) -> str:
+    """Converts a snake_case service name to camelCase Helm deployment key.
+
+    Examples:
+        'dashboard_service' -> 'dashboardServiceDeployment'
+        'health_service' -> 'healthServiceDeployment'
+        'ingestion_gateway' -> 'ingestionGatewayDeployment'
+        'components' -> 'componentsDeployment'
+        'rod_data_provider' -> 'rodDeployment'
+        'experiment_state_server' -> 'essDeployment'
+    """
+    if service in ("experiment_state_server", "ess"):
+        return "essDeployment"
+    if service in ("rod_data_provider", "rod"):
+        return "rodDeployment"
+
+    parts = service.split("_")
+    camel = parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
+    return f"{camel}Deployment"
+
+
+def service_to_image_key(service: str) -> str:
+    """Derives Helm custom image value key from service name.
+
+    Examples:
+        'dashboard_service' -> 'dashboard_service_custom_image'
+        'experiment_state_server' -> 'ess_custom_image'
+        'rod_data_provider' -> 'rod_custom_image'
+    """
+    if service in ("experiment_state_server", "ess"):
+        return "ess_custom_image"
+    if service in ("rod_data_provider", "rod"):
+        return "rod_custom_image"
+    return f"{service.lower()}_custom_image"
+
+
 class HelmDeployer:
     """Manages Helm release values generation and deployment on KinD."""
 
@@ -114,20 +150,11 @@ class HelmDeployer:
             },
         }
 
-        if "dashboard_service" in cfg.enabled_services:
-            values["dashboard_service_custom_image"] = "dashboard_service_image:latest"
-            values["dashboardServiceDeployment"] = {"enabled": True}
-        if "health_service" in cfg.enabled_services:
-            values["health_service_custom_image"] = "health_service_image:latest"
-            values["healthServiceDeployment"] = {"enabled": True}
-        if "components" in cfg.enabled_services:
-            values["componentsDeployment"] = {"enabled": True}
-        if "rod_data_provider" in cfg.enabled_services:
-            values["rod_custom_image"] = "rod_data_provider_image:latest"
-            values["rodDeployment"] = {"enabled": True}
-        if "ingestion_gateway" in cfg.enabled_services:
-            values["ingestion_gateway_custom_image"] = "ingestion_gateway_image:latest"
-            values["ingestionGatewayDeployment"] = {"enabled": True}
+        for s in cfg.enabled_services:
+            dep_key = service_to_deployment_key(s)
+            img_key = service_to_image_key(s)
+            values[dep_key] = {"enabled": True}
+            values[img_key] = f"{s.lower()}_image:latest"
 
         content = _dump_yaml(values) + "\n"
         target_path.write_text(content, encoding="utf-8")
