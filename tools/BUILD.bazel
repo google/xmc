@@ -388,3 +388,13 @@ py_test(
         ":tool_utils",
     ],
 )
+
+alias(
+    name = "extract_release_metadata_lib",
+    actual = "//tools/release:extract_release_metadata_lib",
+)
+
+alias(
+    name = "extract_release_metadata_test",
+    actual = "//tools/release:extract_release_metadata_test",
+)
