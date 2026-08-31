@@ -30,23 +30,52 @@ _LOGGER = logging.getLogger("xmc.dev_env.helm_deployer")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-_PRUNE_TARGETS: tuple[str, ...] = (
-    "certs",
-    "kueue",
-    "kueue-dev",
-    "wpc",
-    "ess/gateway.yaml",
-    "ess/httproute.yaml",
-    "ess/grpc-backend-config.yaml",
-    "ess/grpc-healthcheck-policy.yaml",
-    "ess/managed-certificate.yaml",
-    "ess/bootstrap-tls.yaml",
-    "ess/secretproviderclass.yaml",
-    "ess/hpa.yaml",
-    "xid/hpa.yaml",
-    "actuator/vpa.yaml",
-    "reconciler/vpa.yaml",
+UNSUPPORTED_LOCAL_API_GROUPS: tuple[str, ...] = (
+    "cloud.google.com",
+    "networking.gke.io",
+    "secrets-store.csi.x-k8s.io",
+    "cert-manager.io",
+    "acme.cert-manager.io",
+    "gateway.networking.k8s.io",
+    "autoscaling.k8s.io",
+    "kueue.x-k8s.io",
 )
+
+UNSUPPORTED_LOCAL_KINDS: tuple[str, ...] = (
+    "BackendConfig",
+    "ManagedCertificate",
+    "HealthCheckPolicy",
+    "SecretProviderClass",
+    "VerticalPodAutoscaler",
+    "HorizontalPodAutoscaler",
+    "Gateway",
+    "HTTPRoute",
+    "Issuer",
+    "ClusterIssuer",
+    "Certificate",
+    "LocalQueue",
+    "ClusterQueue",
+    "ResourceFlavor",
+    "WorkloadPriorityClass",
+)
+
+
+def is_unsupported_kubernetes_doc(doc: str) -> bool:
+    """Checks if a YAML document declares an unsupported cloud-only API group or Kind."""
+    api_match = re.search(r'^\s*apiVersion:\s*["\']?([^"\'\s]+)', doc, re.MULTILINE)
+    kind_match = re.search(r'^\s*kind:\s*["\']?([^"\'\s]+)', doc, re.MULTILINE)
+
+    if api_match:
+        api_val = api_match.group(1)
+        if any(group in api_val for group in UNSUPPORTED_LOCAL_API_GROUPS):
+            return True
+
+    if kind_match:
+        kind_val = kind_match.group(1)
+        if kind_val in UNSUPPORTED_LOCAL_KINDS:
+            return True
+
+    return False
 
 
 try:
@@ -173,20 +202,36 @@ class HelmDeployer:
         _make_tree_writable(self.helm_dir)
 
         templates_dir = self.helm_dir / "templates"
-        for prune in _PRUNE_TARGETS:
-            target = templates_dir / prune
-            try:
-                if target.is_dir():
-                    _LOGGER.debug("Pruning cloud-only directory: %s", prune)
-                    shutil.rmtree(target)
-                elif target.is_file():
-                    _LOGGER.debug("Pruning cloud-only file: %s", prune)
-                    target.unlink()
-            except OSError as e:
-                _LOGGER.warning("Failed to prune %s: %s", prune, e)
-
+        self._sanitize_templates(templates_dir)
         self._patch_image_pull_policy()
         return self.helm_dir
+
+    def _sanitize_templates(self, templates_dir: Path) -> None:
+        """Dynamically filters out cloud-only manifests based on apiVersion and kind."""
+        if not templates_dir.is_dir():
+            return
+
+        for path in list(templates_dir.rglob("*.yaml")) + list(templates_dir.rglob("*.yml")):
+            try:
+                content = path.read_text(encoding="utf-8")
+                docs = re.split(r"(?m)^---\s*$", content)
+                kept_docs = [d for d in docs if d.strip() and not is_unsupported_kubernetes_doc(d)]
+                path.chmod(path.stat().st_mode | 0o200)
+                if not kept_docs:
+                    _LOGGER.debug("Pruning cloud-only template file: %s", path.name)
+                    path.unlink()
+                else:
+                    path.write_text("\n---\n".join(kept_docs) + "\n", encoding="utf-8")
+            except OSError as e:
+                _LOGGER.warning("Failed to sanitize template file %s: %s", path, e)
+
+        # Remove empty subdirectories recursively
+        for directory in sorted(templates_dir.rglob("*"), key=lambda x: len(str(x)), reverse=True):
+            if directory.is_dir() and not any(directory.iterdir()):
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
 
     def _patch_image_pull_policy(self) -> None:
         """Replaces imagePullPolicy Always with IfNotPresent in local templates."""

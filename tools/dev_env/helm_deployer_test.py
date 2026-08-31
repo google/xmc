@@ -28,6 +28,7 @@ from tools.dev_env.helm_deployer import (
     HelmDeployer,
     _dump_yaml,
     _make_tree_writable,
+    is_unsupported_kubernetes_doc,
     service_to_deployment_key,
     service_to_image_key,
 )
@@ -101,25 +102,102 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("test_ess_db", content)
         self.assertIn("test_xid_db", content)
 
+    def test_is_unsupported_kubernetes_doc(self) -> None:
+        # Standard Kubernetes resources (should NOT be unsupported)
+        self.assertFalse(is_unsupported_kubernetes_doc("apiVersion: v1\nkind: Service"))
+        self.assertFalse(is_unsupported_kubernetes_doc("apiVersion: apps/v1\nkind: Deployment"))
+        self.assertFalse(is_unsupported_kubernetes_doc("apiVersion: v1\nkind: ConfigMap"))
+        self.assertFalse(
+            is_unsupported_kubernetes_doc("apiVersion: rbac.authorization.k8s.io/v1\nkind: Role")
+        )
+
+        # Cloud-specific API groups
+        self.assertTrue(
+            is_unsupported_kubernetes_doc("apiVersion: cloud.google.com/v1\nkind: BackendConfig")
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: networking.gke.io/v1\nkind: ManagedCertificate"
+            )
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: secrets-store.csi.x-k8s.io/v1\nkind: SecretProviderClass"
+            )
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc("apiVersion: cert-manager.io/v1\nkind: Issuer")
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: gateway.networking.k8s.io/v1\nkind: HTTPRoute"
+            )
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc("apiVersion: kueue.x-k8s.io/v1beta1\nkind: LocalQueue")
+        )
+
+        # Cloud-specific Kinds
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler"
+            )
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: autoscaling.k8s.io/v1\nkind: VerticalPodAutoscaler"
+            )
+        )
+        self.assertTrue(
+            is_unsupported_kubernetes_doc(
+                "apiVersion: kueue.x-k8s.io/v1beta1\nkind: WorkloadPriorityClass"
+            )
+        )
+
     def test_prepare_local_chart_pruning_and_patching(self) -> None:
         helm_src = self.temp_path / "deploy" / "helm" / "templates"
         (helm_src / "ess").mkdir(parents=True, exist_ok=True)
         (helm_src / "certs").mkdir(parents=True, exist_ok=True)
+        (helm_src / "custom_dir").mkdir(parents=True, exist_ok=True)
 
-        # Create prune targets and surviving targets
-        (helm_src / "certs" / "dummy.yaml").write_text("dummy")
-        (helm_src / "ess" / "gateway.yaml").write_text("gateway")
+        # Create single-doc cloud prune targets
+        (helm_src / "certs" / "issuer.yaml").write_text(
+            "apiVersion: cert-manager.io/v1\nkind: Issuer\nmetadata:\n  name: issuer"
+        )
+        (helm_src / "ess" / "gateway.yaml").write_text(
+            "apiVersion: gateway.networking.k8s.io/v1\nkind: Gateway\nmetadata:\n  name: gw"
+        )
+        (helm_src / "custom_dir" / "new_backend_config.yaml").write_text(
+            "apiVersion: cloud.google.com/v1\nkind: BackendConfig\nmetadata:\n  name: bc"
+        )
+
+        # Create multi-doc template with mixed resources
+        (helm_src / "ess" / "mixed.yaml").write_text(
+            "apiVersion: v1\nkind: Service\nmetadata:\n  name: svc\n---\n"
+            "apiVersion: cloud.google.com/v1\nkind: BackendConfig\nmetadata:\n  name: bc"
+        )
+
+        # Surviving deployment with imagePullPolicy Always
         (helm_src / "ess" / "deployment.yaml").write_text(
-            "imagePullPolicy: Always\nother: Always\nimagePullPolicy: 'Always'"
+            "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: deploy\n"
+            "spec:\n  template:\n    spec:\n      containers:\n      - imagePullPolicy: Always"
         )
 
         prepared_dir = self.deployer.prepare_local_chart()
         self.assertTrue(prepared_dir.is_dir())
         templates_dir = prepared_dir / "templates"
 
-        # Prune targets should be removed
+        # Cloud prune targets and newly empty directories should be removed
         self.assertFalse((templates_dir / "certs").exists())
+        self.assertFalse((templates_dir / "custom_dir").exists())
         self.assertFalse((templates_dir / "ess" / "gateway.yaml").exists())
+
+        # Multi-doc template should retain only the Service
+        mixed_file = templates_dir / "ess" / "mixed.yaml"
+        self.assertTrue(mixed_file.exists())
+        mixed_content = mixed_file.read_text(encoding="utf-8")
+        self.assertIn("kind: Service", mixed_content)
+        self.assertNotIn("BackendConfig", mixed_content)
 
         # Surviving template should have imagePullPolicy patched
         surviving = templates_dir / "ess" / "deployment.yaml"
