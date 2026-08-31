@@ -23,9 +23,15 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 try:
-    from tools.release.yaml_parser import parse_yaml_booleans
+    from tools.release.yaml_parser import (
+        _scan_yaml_lines,
+        parse_yaml_booleans,
+    )
 except ImportError:
-    from yaml_parser import parse_yaml_booleans  # type: ignore[no-redef]
+    from yaml_parser import (  # type: ignore[no-redef]
+        _scan_yaml_lines,
+        parse_yaml_booleans,
+    )
 
 
 class YamlParserTest(unittest.TestCase):
@@ -58,6 +64,34 @@ class YamlParserTest(unittest.TestCase):
         self.assertEqual(flags.get("rodDeployment.enabled"), True)
         self.assertEqual(flags.get("healthService.deployment.enabled"), False)
         self.assertNotIn("blueprint_name", flags)
+
+    def test_scan_yaml_lines_fallback(self) -> None:
+        yaml_content = """
+        # Comment line
+        vars:
+          enable_components: false
+          rod_deployment_enabled: true
+        componentsDeployment:
+          enabled: true
+        healthService:
+          deployment:
+            enabled: false
+        """
+        flags = _scan_yaml_lines(yaml_content)
+        self.assertEqual(flags.get("enable_components"), False)
+        self.assertEqual(flags.get("rod_deployment_enabled"), True)
+        self.assertEqual(flags.get("componentsDeployment.enabled"), True)
+        self.assertEqual(flags.get("healthService.deployment.enabled"), False)
+
+    def test_parse_yaml_booleans_non_dict_fallback(self) -> None:
+        yaml_content = """
+        - not a dict
+        - just a list
+        vars:
+          enable_components: true
+        """
+        flags = parse_yaml_booleans(yaml_content)
+        self.assertEqual(flags.get("enable_components"), True)
 
 
 if __name__ == "__main__":

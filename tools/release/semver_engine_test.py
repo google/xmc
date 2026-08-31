@@ -74,6 +74,7 @@ class SemverEngineTest(unittest.TestCase):
                 subject="feat(components): enable by default (#501)",
                 author="Dev",
                 date="2026-08-21",
+                files_changed=["pkg/spanner/schema.sql"],
             )
         ]
         transitions = [
@@ -91,6 +92,37 @@ class SemverEngineTest(unittest.TestCase):
         self.assertEqual(rec.recommended_bump, "minor")
         self.assertEqual(rec.recommended_version, "0.6.0")
         self.assertTrue(rec.has_promotions)
+        self.assertTrue(rec.has_migrations)
+
+    def test_calculate_version_recommendation_patch_fixes(self) -> None:
+        commits = [
+            CommitInfo(
+                commit_hash="3333",
+                short_hash="3333",
+                subject="fix: handle connection timeout (#502)",
+                author="Dev",
+                date="2026-08-21",
+            )
+        ]
+        rec = calculate_version_recommendation("0.5.0", commits, [], {"user_facing_fixes": [{}]})
+        self.assertEqual(rec.recommended_bump, "patch")
+        self.assertEqual(rec.recommended_version, "0.5.1")
+        self.assertTrue(rec.has_ootb_fixes)
+
+    def test_calculate_version_recommendation_patch_maintenance(self) -> None:
+        commits = [
+            CommitInfo(
+                commit_hash="4444",
+                short_hash="4444",
+                subject="chore: update CI scripts (#503)",
+                author="Dev",
+                date="2026-08-21",
+            )
+        ]
+        rec = calculate_version_recommendation("0.5.0", commits, [], {"developer_velocity": [{}]})
+        self.assertEqual(rec.recommended_bump, "patch")
+        self.assertEqual(rec.recommended_version, "0.5.1")
+        self.assertIn("maintenance", rec.rationale)
 
 
 if __name__ == "__main__":

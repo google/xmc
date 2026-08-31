@@ -119,6 +119,8 @@ def derive_display_name(flag_name: str) -> str:
         "rod": "Resource Observability Dashboard (ROD)",
         "cms": "Component Management Service (CMS)",
         "xdash": "Dashboard Service & xdash SDK",
+        "dashboard_service": "Dashboard Service & xdash SDK",
+        "dashboard": "Dashboard Service & xdash SDK",
         "health_service": "Health Service & Admin Panel",
         "health": "Health Service & Admin Panel",
         "components": "Components Engine",

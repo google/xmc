@@ -390,6 +390,51 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(res["version_recommendation"]["recommended_version"], "0.6.0")
         self.assertEqual(res["version_recommendation"]["recommended_bump"], "minor")
 
+    @patch("tools.release.extract_release_metadata.get_git_commits")
+    @patch("tools.release.extract_release_metadata.discover_feature_flags")
+    @patch("tools.release.extract_release_metadata.extract_flag_transitions")
+    def test_extract_release_metadata_with_output_file(
+        self,
+        mock_transitions: MagicMock,
+        mock_flags: MagicMock,
+        mock_commits: MagicMock,
+    ) -> None:
+        mock_transitions.return_value = []
+        mock_flags.return_value = {}
+        mock_commits.return_value = []
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        args = argparse.Namespace(
+            base_ref="0.5.0",
+            target_ref="0.6.0",
+            repo_dir=".",
+            approved_flags=[],
+            output=tmp_path,
+        )
+        res = extract_release_metadata(args)
+        self.assertEqual(res["metadata"]["commit_count"], 0)
+        self.assertTrue(Path(tmp_path).exists())
+        Path(tmp_path).unlink(missing_ok=True)
+
+    @patch("tools.release.extract_release_metadata.get_latest_tag_before")
+    def test_extract_release_metadata_auto_base_ref_error(self, mock_get_latest: MagicMock) -> None:
+        from tools.common.tool_utils import HandledError
+
+        mock_get_latest.return_value = None
+        args = argparse.Namespace(
+            base_ref="",
+            target_ref="0.6.0",
+            repo_dir=".",
+            approved_flags=[],
+            output=None,
+        )
+        with self.assertRaises(HandledError):
+            extract_release_metadata(args)
+
     def test_parse_semver(self) -> None:
         self.assertEqual(parse_semver("0.5.0"), (0, 5, 0))
         self.assertEqual(parse_semver("v1.2.3"), (1, 2, 3))
