@@ -1,0 +1,72 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Shared plumbing for the suites that assert on rendered Helm manifests.
+
+Every chart suite needs the same three things: a chart directory that resolves from both bazel
+runfiles and the repository root, a rendered template, and a skip that turns into a failure when
+CI declared the prerequisites are supposed to be present.
+"""
+
+import os
+import shutil
+import subprocess
+import unittest
+from typing import NoReturn
+
+
+def skip_unless_required(reason: str) -> NoReturn:
+    """Skips the suite, unless the caller declared the prerequisites are supposed to be present.
+
+    A developer without helm installed should not be blocked, but CI installs it deliberately.
+    Skipping there would report a green run for tests that never executed, which is exactly the
+    silent gap these suites exist to close, so XMC_REQUIRE_HELM turns the skip into a failure.
+    """
+    if os.environ.get("XMC_REQUIRE_HELM", "").strip().lower() in ("1", "true", "yes"):
+        raise RuntimeError(f"XMC_REQUIRE_HELM is set but {reason}")
+    raise unittest.SkipTest(reason)
+
+
+def require_helm() -> None:
+    """Skips or fails the calling suite when the host has no helm binary to render with."""
+    if shutil.which("helm") is None:
+        skip_unless_required("helm binary not available")
+
+
+def find_chart_dir() -> str:
+    """Locates deploy/helm from the working directory, supporting bazel runfiles and repo root."""
+    for base in (os.curdir, *(os.path.join(*([os.pardir] * depth)) for depth in range(1, 4))):
+        candidate = os.path.join(base, "deploy", "helm")
+        if os.path.isfile(os.path.join(candidate, "Chart.yaml")):
+            return candidate
+    skip_unless_required("deploy/helm chart not found relative to working directory")
+
+
+def render_template(show_only: str, values: dict[str, str]) -> str:
+    """Renders a single chart template and returns the raw manifest text."""
+    overrides = [arg for key, value in values.items() for arg in ("--set", f"{key}={value}")]
+    try:
+        result = subprocess.run(
+            ["helm", "template", "xmc", find_chart_dir(), "--show-only", show_only, *overrides],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        # CalledProcessError omits captured output, which hides the template error that
+        # explains the failure.
+        raise RuntimeError(
+            f"rendering {show_only} failed:\nstdout: {error.stdout}\nstderr: {error.stderr}"
+        ) from error
+    return result.stdout

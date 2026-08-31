@@ -166,7 +166,7 @@ The Secret Manager entry named there must exist, because the CSI mount fails for
 Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
 
 > [!IMPORTANT]
-> The dashboard service builds its chart data engine at startup from these variables. If they are absent or wrong, the pod still starts and serves dashboard CRUD, but every `GetChartData` request fails with `FailedPrecondition: data engine is not configured`.
+> Setting these variables declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Leave `metrics.enabled` set to `false` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
 
 #### Local Tooling & Port-Forwarded Sessions
 

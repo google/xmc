@@ -67,12 +67,20 @@ spec:
         envFrom:
         - configMapRef:
             name: dashboard-config
+        # /readyz checks Spanner and, when the metrics pipeline is enabled, that the chart data
+        # engine has a ClickHouse connection. The handler spends at most 5s on that, which the
+        # default 1s probe timeout would cut short and report as an unexplained failure.
         readinessProbe:
           httpGet:
             path: /readyz
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 6
+          failureThreshold: 3
+        # Liveness deliberately stays on /healthz, which checks nothing beyond the process being
+        # able to answer. A dependency outage must leave the pod unready, not restart it: a restart
+        # cannot bring ClickHouse back and only discards the warm process.
         livenessProbe:
           httpGet:
             path: /healthz
