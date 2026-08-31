@@ -28,26 +28,29 @@ chart resource, not as plots, and it does not render that artifact's URL. The pl
 on the Dashboard, and the companion URL artifact is the one-click route to them.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from collections.abc import Sequence
 
 import dotenv
 from absl import app
-from dashboard_rest_client import DashboardRestClient, resource_id_from_name
-from google.protobuf import json_format
-from iap_identity_token import mint_identity_token
 from training_metrics import (
     ACCURACY_METRIC,
     LEARNING_RATE_METRIC,
     LOSS_METRIC,
     METRIC_NAMES,
 )
+from xdash import (
+    ChartBuilder,
+    DashboardBuilder,
+    DashboardClient,
+    scatter_plot,
+    summary_kpi_plot,
+)
 from xmanager import xm_cloud
 from xmanager.xm_cloud import snapshot_code
-from xmanager_cloud.dashboard_service.proto import (
-    messages_pb2 as dashboard_messages_pb2,
-)
 from xmanager_cloud.experiment_state_server.proto import (
     api_pb2 as ess_api_pb2,
     artifact_pb2,
@@ -62,7 +65,10 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 _DEFAULT_GATEWAY_URL = "http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics"
+_DEFAULT_DASHBOARD_ENDPOINT = "localhost:50051"
+_DEFAULT_TOTAL_STEPS = "60"
 _EXPERIMENT_TITLE = "Chart Artifact Experiment"
+_CHART_TITLE = "Randomized Training Run"
 
 
 def _require_env(name: str) -> str:
@@ -74,7 +80,7 @@ def _require_env(name: str) -> str:
 
 
 def _resolve_ui_base_url() -> str:
-    """Resolves the XMC UI origin, which also fronts the Dashboard Service REST routes."""
+    """Resolves the XMC UI origin, used to build the deep links printed at the end."""
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
         return ui_url.rstrip("/")
     return f"https://{_require_env('XMC_DOMAIN')}"
@@ -87,52 +93,33 @@ def _resolve_image_path() -> str:
     return f"us-docker.pkg.dev/{_require_env('PROJECT_ID')}/xmc/chart-artifact-job:latest"
 
 
-def _scatter_plot(plot_id: str, title: str, metric_name: str) -> dashboard_messages_pb2.PlotSpec:
-    """Builds a scatter plot of one metric against training steps."""
-    return dashboard_messages_pb2.PlotSpec(
-        plot_id=plot_id,
-        title=title,
-        type=dashboard_messages_pb2.PlotType.SCATTER,
-        data=dashboard_messages_pb2.DataSpec(metrics=[metric_name]),
-    )
-
-
-def _summary_plot(plot_id: str, title: str, metric_name: str) -> dashboard_messages_pb2.PlotSpec:
-    """Builds a summary box showing the latest value of one metric."""
-    return dashboard_messages_pb2.PlotSpec(
-        plot_id=plot_id,
-        title=title,
-        type=dashboard_messages_pb2.PlotType.SUMMARY_BOX,
-        data=dashboard_messages_pb2.DataSpec(metrics=[metric_name]),
-    )
-
-
-def build_training_chart(xid: int, wid: int) -> dashboard_messages_pb2.Chart:
+def build_training_chart(xid: int, wid: int):
     """Builds the Chart plotting the metrics the worker writes to ClickHouse.
+
+    The chart is created inline with the dashboard, so the server renames it, generates
+    its ID and appends that ID to dashboard.chart_ids. Hence no `set_name()` here, and no
+    `DashboardBuilder.add_chart()` on the dashboard side: either would declare a
+    reference to a chart that is supposed to already exist, which the server rejects.
 
     Args:
         xid: Experiment ID owning the work unit.
         wid: Work unit ID whose metrics the plots read.
 
     Returns:
-        An unsaved Chart message; the server assigns its name and ID on creation.
+        An unsaved Chart message.
     """
-    return dashboard_messages_pb2.Chart(
-        title="Randomized Training Run",
-        description="Metrics streamed to ClickHouse by the chart artifact worker.",
-        xid=xid,
-        wid=wid,
-        plots=[
-            _summary_plot("latest_loss", "Loss (latest)", LOSS_METRIC),
-            _summary_plot("latest_accuracy", "Accuracy (latest)", ACCURACY_METRIC),
-            _scatter_plot("loss_curve", "Loss vs Steps", LOSS_METRIC),
-            _scatter_plot("accuracy_curve", "Accuracy vs Steps", ACCURACY_METRIC),
-            _scatter_plot("lr_curve", "Learning Rate vs Steps", LEARNING_RATE_METRIC),
-        ],
-        plot_layout=dashboard_messages_pb2.LayoutSpec(
-            type=dashboard_messages_pb2.LayoutSpec.LayoutType.GRID,
-            columns=2,
-        ),
+    return (
+        ChartBuilder()
+        .for_experiment(xid=xid, wid=wid)
+        .set_title(_CHART_TITLE)
+        .set_description("Metrics streamed to ClickHouse by the chart artifact worker.")
+        .set_grid_layout(columns=2)
+        .add_plot(summary_kpi_plot("latest_loss", "Loss (latest)", [LOSS_METRIC]))
+        .add_plot(summary_kpi_plot("latest_accuracy", "Accuracy (latest)", [ACCURACY_METRIC]))
+        .add_plot(scatter_plot("loss_curve", "Loss vs Steps", [LOSS_METRIC]))
+        .add_plot(scatter_plot("accuracy_curve", "Accuracy vs Steps", [ACCURACY_METRIC]))
+        .add_plot(scatter_plot("lr_curve", "Learning Rate vs Steps", [LEARNING_RATE_METRIC]))
+        .build()
     )
 
 
@@ -143,6 +130,7 @@ def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2
     so the launcher supplies it alongside the ingestion gateway address.
     """
     gateway_url = os.environ.get("XMC_GATEWAY_URL", _DEFAULT_GATEWAY_URL)
+    total_steps = os.environ.get("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
     return work_unit_pb2.WorkUnit(
         work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
         priority=priority_pb2.Priority.NORMAL,
@@ -158,7 +146,7 @@ def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2
                         spec=work_unit_pb2.ExecutableSpec(
                             name="chart-worker",
                             docker_image=image_path,
-                            command=["python3", "/app/worker.py"],
+                            command=["python3", "-u", "/app/worker.py"],
                             resources=resources_pb2.ResourceSet(
                                 cpu_resources=resources_pb2.CpuResources(
                                     cpu_millicores=500,
@@ -168,6 +156,9 @@ def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2
                             env=[
                                 work_unit_pb2.EnvVar(name="XMC_GATEWAY_URL", value=gateway_url),
                                 work_unit_pb2.EnvVar(name="XMC_XID", value=str(xid)),
+                                work_unit_pb2.EnvVar(
+                                    name="CHART_DEMO_TOTAL_STEPS", value=total_steps
+                                ),
                             ],
                         ),
                     ),
@@ -177,32 +168,36 @@ def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2
     )
 
 
-def provision_dashboard(client: DashboardRestClient, xid: int, wid: int) -> str:
+def publish_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> str:
     """Creates the Dashboard and, in the same transaction, the Chart it renders.
 
     Args:
-        client: Authenticated Dashboard Service REST client.
+        dashboard_endpoint: gRPC target address of the Dashboard Service.
         xid: Experiment ID owning the work unit.
         wid: Work unit ID the chart belongs to.
 
     Returns:
         The dashboard resource ID, for building the UI deep link.
     """
-    dashboard = dashboard_messages_pb2.Dashboard(
-        title=f"{_EXPERIMENT_TITLE} {xid}",
-        description=f"Randomized training metrics for experiments/{xid}/workUnits/{wid}.",
-        chart_layout=dashboard_messages_pb2.LayoutSpec(
-            type=dashboard_messages_pb2.LayoutSpec.LayoutType.GRID,
-            columns=1,
-        ),
+    dashboard_id = f"chart_artifact_x{xid}_w{wid}"
+    dashboard = (
+        DashboardBuilder(name=f"dashboards/{dashboard_id}")
+        .set_title(f"{_EXPERIMENT_TITLE} {xid}")
+        .set_description(f"Randomized training metrics for experiments/{xid}/workUnits/{wid}.")
+        .set_grid_layout(columns=1)
+        .build()
     )
-    created = client.create_dashboard(
-        dashboard=json_format.MessageToDict(dashboard),
-        dashboard_id=f"chart_artifact_x{xid}_w{wid}",
-        charts=[json_format.MessageToDict(build_training_chart(xid, wid))],
-    )
-    print(f"Created Dashboard successfully: {created['name']}")
-    return resource_id_from_name(created["name"])
+
+    print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
+    with DashboardClient(endpoint=dashboard_endpoint) as client:
+        created = client.create_dashboard(
+            dashboard,
+            dashboard_id=dashboard_id,
+            charts=[build_training_chart(xid, wid)],
+        )
+    print(f"--> Created Dashboard successfully: {created.name}")
+    print(f"--> Server-assigned chart IDs: {list(created.chart_ids)}")
+    return dashboard_id
 
 
 def create_chart_artifact(stub, work_unit_name: str, dashboard_url: str):
@@ -223,7 +218,7 @@ def create_chart_artifact(stub, work_unit_name: str, dashboard_url: str):
         url=url_pb2.Url(url=dashboard_url),
         payload=artifact_pb2.ArtifactPayload(
             chart=artifact_pb2.ChartArtifact(
-                title="Randomized Training Run",
+                title=_CHART_TITLE,
                 metric_names=list(METRIC_NAMES),
             )
         ),
@@ -258,9 +253,11 @@ def create_dashboard_link_artifact(stub, work_unit_name: str, dashboard_url: str
 
 
 def main(argv: Sequence[str]) -> None:
-    """Launches the experiment and provisions its chart, dashboard and artifact."""
+    """Launches the experiment and provisions its chart, dashboard and artifacts."""
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
     dotenv.load_dotenv()
+    # Worker-specific defaults; .env above wins, so a workstation override still applies.
+    dotenv.load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "worker.env"))
 
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
@@ -268,12 +265,15 @@ def main(argv: Sequence[str]) -> None:
     image_path = _resolve_image_path()
     queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
     ui_base_url = _resolve_ui_base_url()
-    identity_token = mint_identity_token(
-        service_account=_require_env("XMC_CLIENT_SA"),
-        audience=_require_env("IAP_CLIENT_ID"),
-    )
+    dashboard_endpoint = os.environ.get("XMC_DASHBOARD_ENDPOINT", _DEFAULT_DASHBOARD_ENDPOINT)
 
-    print(f"Creating chart artifact experiment using image: {image_path}")
+    print("==================================================")
+    print("  XMC Chart Artifact WorkUnit Launch Script       ")
+    print("==================================================")
+    print(f"Worker Image       : {image_path}")
+    print(f"Queue Name         : {queue_name}")
+    print(f"Dashboard Endpoint : {dashboard_endpoint}")
+    print("==================================================")
 
     with xm_cloud.create_experiment(
         experiment_title=_EXPERIMENT_TITLE,
@@ -283,6 +283,7 @@ def main(argv: Sequence[str]) -> None:
     ) as experiment:
         stub = experiment._experiment_state_stub  # pylint: disable=protected-access
         xid = int(experiment.resource_name.split("/")[-1])
+        print(f"\n[1/4] Created Experiment successfully: {experiment.resource_name} (XID: {xid})")
 
         created_wu = stub.create_work_unit(
             ess_api_pb2.CreateWorkUnitRequest(
@@ -290,24 +291,26 @@ def main(argv: Sequence[str]) -> None:
                 work_unit=build_work_unit(image_path, queue_name, xid),
             )
         )
-        print(f"Created Work Unit successfully: {created_wu.name}")
-
         # created_wu is an Operation named experiments/{xid}/workUnits/{wid}/operations/{op}.
         wid = int(created_wu.name.split("/")[3])
         work_unit_name = f"experiments/{xid}/workUnits/{wid}"
+        print(f"[2/4] Created WorkUnit successfully: {work_unit_name} (WID: {wid})")
 
-        client = DashboardRestClient(base_url=ui_base_url, identity_token=identity_token)
-        dashboard_id = provision_dashboard(client, xid, wid)
+        print("\n[3/4] Creating Dashboard and Chart for the generated metrics...")
+        dashboard_id = publish_dashboard(dashboard_endpoint, xid, wid)
         dashboard_url = f"{ui_base_url}/dashboards/{dashboard_id}"
 
-        created_chart_artifact = create_chart_artifact(stub, work_unit_name, dashboard_url)
-        print(f"Created Chart Artifact successfully: {created_chart_artifact.name}")
+        print("\n[4/4] Attaching artifacts to the WorkUnit...")
+        chart_artifact = create_chart_artifact(stub, work_unit_name, dashboard_url)
+        print(f"--> Created Chart artifact: {chart_artifact.name}")
+        link_artifact = create_dashboard_link_artifact(stub, work_unit_name, dashboard_url)
+        print(f"--> Created Dashboard link artifact: {link_artifact.name}")
 
-        created_link_artifact = create_dashboard_link_artifact(stub, work_unit_name, dashboard_url)
-        print(f"Created Dashboard link artifact: {created_link_artifact.name}")
-
-        print(f"\nWork Unit:  {ui_base_url}/{work_unit_name}")
-        print(f"Dashboard:  {dashboard_url}")
+        print("\n==================================================")
+        print("  🎉 Experiment and WorkUnit Launch Completed!    ")
+        print(f"  Work Unit : {ui_base_url}/{work_unit_name}")
+        print(f"  Dashboard : {dashboard_url}")
+        print("==================================================")
         print("\nPlots appear once the worker has streamed its first metrics to ClickHouse.")
 
 
