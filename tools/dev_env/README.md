@@ -80,7 +80,33 @@ python3 tools/dev_env/dev_env.py down --drop-db
 
 ---
 
-#### 3. `status` (Cluster Status & Health Inspection)
+#### 3. `reload` (Microservice Fast Reload & Rollout Restart)
+Recompiles specified microservices with Bazel in parallel, side-loads updated image layers into the running KinD cluster, and triggers non-blocking rolling restarts in ~5–10s without restarting or recreating the KinD cluster:
+
+```bash
+# Reload specific microservices by name or alias
+python3 tools/dev_env/dev_env.py reload ess ui
+
+# Reload all enabled microservices
+python3 tools/dev_env/dev_env.py reload all
+
+# Synchronize Helm chart manifests alongside reload
+python3 tools/dev_env/dev_env.py reload ess --helm
+```
+
+##### Supported Service Aliases
+- `ess` $\rightarrow$ `experiment_state_server`
+- `xid` $\rightarrow$ `xid_service`
+- `rod` $\rightarrow$ `rod_data_provider`
+- `gw` / `gateway` $\rightarrow$ `ingestion_gateway` (`gateway-proxy`)
+- `ui` / `frontend` / `web` $\rightarrow$ `ui`
+- `dash` / `dashboard` $\rightarrow$ `dashboard_service`
+- `health` $\rightarrow$ `health_service`
+- `comp` $\rightarrow$ `components`
+
+---
+
+#### 4. `status` (Cluster Status & Health Inspection)
 Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
 
 ```bash

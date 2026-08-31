@@ -184,6 +184,17 @@ def handle_down(args: argparse.Namespace) -> None:
     LocalRunner(cfg).down(drop_db=getattr(args, "drop_db", False))
 
 
+def handle_reload(args: argparse.Namespace) -> None:
+    """Handler for hot-reloading microservices into local KinD cluster."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).reload(
+        services=getattr(args, "services", None),
+        helm=getattr(args, "helm", False),
+    )
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -450,6 +461,28 @@ def _add_down_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_down)
 
 
+def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds 'reload' command subparser for fast inner-loop microservice recompilation."""
+    p = subparsers.add_parser(
+        "reload",
+        help="Recompile and hot-reload microservices into the local KinD cluster.",
+        description="Recompiles modified or specified microservices and restarts deployments.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument(
+        "services",
+        nargs="*",
+        help="Specific microservices or aliases to reload (e.g. 'ess', 'ui', 'all').",
+    )
+    p.add_argument(
+        "--helm",
+        action="store_true",
+        help="Force Helm chart upgrade and manifest synchronization.",
+    )
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_reload)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -458,6 +491,8 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python3 tools/dev_env/dev_env.py up --recreate
+  python3 tools/dev_env/dev_env.py reload ess ui
+  python3 tools/dev_env/dev_env.py reload all --helm
   python3 tools/dev_env/dev_env.py down --drop-db
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
@@ -495,6 +530,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     _add_up_parser(subparsers)
     _add_down_parser(subparsers)
+    _add_reload_parser(subparsers)
 
     gke_deploy_p = subparsers.add_parser(
         "gke-deploy",

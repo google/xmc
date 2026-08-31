@@ -133,6 +133,85 @@ class TestLocalRunner(unittest.TestCase):
         self.assertIn("http://localhost:5556/dex", output)
         self.assertIn("admin@xmc.local", output)
 
+    def test_service_to_k8s_deployment_name(self) -> None:
+        from tools.dev_env.local_runner import (
+            resolve_service_names,
+            service_to_k8s_deployment_name,
+        )
+
+        self.assertEqual(
+            service_to_k8s_deployment_name("dashboard_service"), "dashboard-service-deployment"
+        )
+        self.assertEqual(
+            service_to_k8s_deployment_name("experiment_state_server"),
+            "experiment-state-server-deployment",
+        )
+        self.assertEqual(
+            service_to_k8s_deployment_name("ess"), "experiment-state-server-deployment"
+        )
+        self.assertEqual(service_to_k8s_deployment_name("ui"), "ui-deployment")
+        self.assertEqual(service_to_k8s_deployment_name("ingestion_gateway"), "gateway-proxy")
+        self.assertEqual(service_to_k8s_deployment_name("gw"), "gateway-proxy")
+
+        self.assertEqual(
+            resolve_service_names(["ess", "ui", "rod"]),
+            ["experiment_state_server", "ui", "rod_data_provider"],
+        )
+
+    def test_reload_cluster_not_running(self) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = False
+        with self.assertRaises(RuntimeError) as ctx:
+            self.runner.reload(["ess"])
+        self.assertIn("is not running", str(ctx.exception))
+
+    def test_reload_no_services_raises(self) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        with self.assertRaises(ValueError) as ctx:
+            self.runner.reload([])
+        self.assertIn("No services specified", str(ctx.exception))
+
+    def test_reload_invalid_service_raises(self) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        with self.assertRaises(ValueError) as ctx:
+            self.runner.reload(["nonexistent_service"])
+        self.assertIn("invalid or not enabled", str(ctx.exception))
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_explicit_services(self, mock_run: MagicMock) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        self.runner.kind_mgr.kube_context = "kind-test-cluster"
+        self.runner.image_builder = MagicMock()
+        self.runner.helm_deployer = MagicMock()
+        self.runner.image_builder.build_images.return_value = [
+            "experiment_state_server_image:latest"
+        ]
+
+        result = self.runner.reload(["ess"])
+        self.assertTrue(result)
+        self.runner.image_builder.build_images.assert_called_once_with(
+            services=["experiment_state_server"]
+        )
+        self.runner.image_builder.load_images_into_kind.assert_called_once()
+        self.runner.helm_deployer.deploy.assert_not_called()
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_all_with_helm(self, mock_run: MagicMock) -> None:
+        self.runner.kind_mgr = MagicMock()
+        self.runner.kind_mgr.exists.return_value = True
+        self.runner.kind_mgr.kube_context = "kind-test-cluster"
+        self.runner.image_builder = MagicMock()
+        self.runner.helm_deployer = MagicMock()
+        self.runner.image_builder.build_images.return_value = ["img:latest"]
+
+        result = self.runner.reload(["all"], helm=True)
+        self.assertTrue(result)
+        self.runner.helm_deployer.deploy.assert_called_once()
+        self.runner.kind_mgr.apply_manifests.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
