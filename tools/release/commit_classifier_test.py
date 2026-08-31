@@ -149,8 +149,11 @@ class CommitClassifierTest(unittest.TestCase):
     def test_helper_predicates(self) -> None:
         self.assertFalse(_is_dev_velocity_files([]))
         self.assertTrue(_is_dev_velocity_files(["scripts/deploy.py", "docs/guide.md"]))
+        self.assertTrue(_is_dev_velocity_files(["pkg/server/go.mod", "pkg/server/BUILD.bazel"]))
         self.assertFalse(_is_dev_velocity_files(["pkg/server/handler.go"]))
         self.assertTrue(_is_infra_or_auth_files(["config/default.json"]))
+        self.assertTrue(_is_infra_or_auth_files(["pkg/auth/token.go", "tools/release/BUILD.bazel"]))
+        self.assertFalse(_is_infra_or_auth_files(["pkg/auth/token.go", "pkg/server/handler.go"]))
         self.assertFalse(_is_infra_or_auth_files(["ui/index.html"]))
 
 

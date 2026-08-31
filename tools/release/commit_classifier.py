@@ -74,10 +74,8 @@ def parse_conventional_commit(
     return "other", "", clean_subject, pr_number
 
 
-def _is_dev_velocity_files(files: list[str]) -> bool:
-    """Checks if all modified files strictly pertain to developer velocity / internal tooling."""
-    if not files:
-        return False
+def _is_dev_file(f: str) -> bool:
+    """Checks if a single file pertains to developer velocity / internal tooling."""
     dev_paths = (
         ".github/",
         ".agents/",
@@ -86,26 +84,26 @@ def _is_dev_velocity_files(files: list[str]) -> bool:
         "scripts/",
         "docs/",
         "test/",
-        "BUILD.bazel",
-        "WORKSPACE",
-        "MODULE.bazel",
-        "pyproject.toml",
     )
-    for f in files:
-        is_dev = (
-            f.startswith(dev_paths)
-            or f.endswith(("_test.go", "_test.py", ".spec.ts", "_test.ts"))
-            or f in ("BUILD.bazel", "WORKSPACE", "MODULE.bazel", "go.mod", "go.sum")
-        )
-        if not is_dev:
-            return False
-    return True
+    path = Path(f)
+    return (
+        f.startswith(dev_paths)
+        or path.name
+        in {
+            "BUILD.bazel",
+            "WORKSPACE",
+            "MODULE.bazel",
+            "go.mod",
+            "go.sum",
+            "pyproject.toml",
+        }
+        or path.suffix == ".bzl"
+        or f.endswith(("_test.go", "_test.py", ".spec.ts", "_test.ts"))
+    )
 
 
-def _is_infra_or_auth_files(files: list[str]) -> bool:
-    """Checks if touched files pertain to deployment, auth, security, or storage infrastructure."""
-    if not files:
-        return False
+def _is_infra_file(f: str) -> bool:
+    """Checks if a single file pertains to deployment, auth, security, or storage infrastructure."""
     infra_paths = (
         "deploy/",
         "pkg/auth/",
@@ -113,7 +111,27 @@ def _is_infra_or_auth_files(files: list[str]) -> bool:
         "pkg/storage/",
         "config/",
     )
-    return any(f.startswith(infra_paths) for f in files)
+    return f.startswith(infra_paths)
+
+
+def _is_dev_velocity_files(files: list[str]) -> bool:
+    """Checks if all modified files strictly pertain to developer velocity / internal tooling."""
+    if not files:
+        return False
+    return all(_is_dev_file(f) for f in files)
+
+
+def _is_infra_or_auth_files(files: list[str]) -> bool:
+    """Checks if touched files pertain to deployment, auth, security, or storage infrastructure."""
+    if not files:
+        return False
+    has_infra = False
+    for f in files:
+        if _is_infra_file(f):
+            has_infra = True
+        elif not _is_dev_file(f):
+            return False
+    return has_infra
 
 
 def classify_commit(commit: CommitInfo) -> None:
