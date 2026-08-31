@@ -67,9 +67,9 @@ class LocalDevConfig:
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
-            self.ess_database = f"ess-{self.environment}"
+            self.ess_database = f"experiment-db-{self.environment}"
         if not self.xid_database:
-            self.xid_database = f"xid-{self.environment}"
+            self.xid_database = f"xids-db-{self.environment}"
         if not self.cluster_name:
             self.cluster_name = f"xmc-{self.environment}"
 
@@ -195,6 +195,30 @@ def _resolve_enabled_services(
     )
     if rod_enabled and "rod_data_provider" not in services:
         services.append("rod_data_provider")
+
+    enable_health = _resolve_bool_flag(
+        getattr(args, "enable_health_service", None) if args else None,
+        os.environ.get("ENABLE_HEALTH_SERVICE"),
+        yaml_vars.get(
+            "enable_health_service",
+            yaml_vars.get("health_service_deployment_enabled"),
+        ),
+        default=False,
+    )
+    if enable_health and "health_service" not in services:
+        services.append("health_service")
+
+    enable_dashboard = _resolve_bool_flag(
+        getattr(args, "enable_dashboard_service", None) if args else None,
+        os.environ.get("ENABLE_DASHBOARD_SERVICE"),
+        yaml_vars.get(
+            "enable_dashboard_service",
+            yaml_vars.get("dashboard_service_deployment_enabled"),
+        ),
+        default=False,
+    )
+    if enable_dashboard and "dashboard_service" not in services:
+        services.append("dashboard_service")
 
     return services
 

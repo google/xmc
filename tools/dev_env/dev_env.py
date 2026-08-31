@@ -135,6 +135,34 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Disable ROD data provider service.",
     )
+    p.add_argument(
+        "--enable-health-service",
+        dest="enable_health_service",
+        action="store_true",
+        default=None,
+        help="Enable health monitoring service.",
+    )
+    p.add_argument(
+        "--no-enable-health-service",
+        dest="enable_health_service",
+        action="store_false",
+        default=None,
+        help="Disable health monitoring service.",
+    )
+    p.add_argument(
+        "--enable-dashboard-service",
+        dest="enable_dashboard_service",
+        action="store_true",
+        default=None,
+        help="Enable dashboard service.",
+    )
+    p.add_argument(
+        "--no-enable-dashboard-service",
+        dest="enable_dashboard_service",
+        action="store_false",
+        default=None,
+        help="Disable dashboard service.",
+    )
 
 
 def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:

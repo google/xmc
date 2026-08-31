@@ -154,8 +154,8 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.project_id, "my-proj")
         self.assertEqual(cfg.environment, "dev")
         self.assertEqual(cfg.spanner_instance, "xmc-dev")
-        self.assertEqual(cfg.ess_database, "ess-dev")
-        self.assertEqual(cfg.xid_database, "xid-dev")
+        self.assertEqual(cfg.ess_database, "experiment-db-dev")
+        self.assertEqual(cfg.xid_database, "xids-db-dev")
         self.assertEqual(cfg.cluster_name, "xmc-dev")
         self.assertTrue(cfg.auto_migrate)
         self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
@@ -192,18 +192,22 @@ class ConfigResolutionTest(unittest.TestCase):
             enable_metrics=True,
             enable_components=True,
             rod_deployment_enabled=True,
+            enable_health_service=True,
+            enable_dashboard_service=True,
         )
         cfg = config.load_config(args, repo_root=self.root)
         self.assertIn("ingestion_gateway", cfg.enabled_services)
         self.assertIn("components", cfg.enabled_services)
         self.assertIn("rod_data_provider", cfg.enabled_services)
+        self.assertIn("health_service", cfg.enabled_services)
+        self.assertIn("dashboard_service", cfg.enabled_services)
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_yaml_and_env_mappings(self) -> None:
         """Verifies feature flags resolved from YAML and environment variables."""
         cfg_file = self.root / "config.yaml"
         cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n",
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  health_service_deployment_enabled: true\n",
             encoding="utf-8",
         )
 
@@ -212,7 +216,9 @@ class ConfigResolutionTest(unittest.TestCase):
             cfg = config.load_config(args, repo_root=self.root)
             self.assertIn("ingestion_gateway", cfg.enabled_services)
             self.assertIn("components", cfg.enabled_services)
+            self.assertIn("health_service", cfg.enabled_services)
             self.assertNotIn("rod_data_provider", cfg.enabled_services)
+            self.assertNotIn("dashboard_service", cfg.enabled_services)
 
 
 class LocalDevConfigDataClassTest(unittest.TestCase):
@@ -222,8 +228,8 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
         """Verifies dynamic naming derives from environment string."""
         cfg = config.LocalDevConfig(project_id="test-proj", environment="staging")
         self.assertEqual(cfg.spanner_instance, "xmc-staging")
-        self.assertEqual(cfg.ess_database, "ess-staging")
-        self.assertEqual(cfg.xid_database, "xid-staging")
+        self.assertEqual(cfg.ess_database, "experiment-db-staging")
+        self.assertEqual(cfg.xid_database, "xids-db-staging")
         self.assertEqual(cfg.cluster_name, "xmc-staging")
         self.assertTrue(cfg.auto_migrate)
 

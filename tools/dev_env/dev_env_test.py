@@ -377,6 +377,20 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with("Invalid config parameter")
 
+    def test_parser_service_feature_flags(self) -> None:
+        """Verifies health-service and dashboard-service flags parse into namespace."""
+        parsed = self.parser.parse_args(
+            ["gke-upgrade", "--enable-health-service", "--enable-dashboard-service"]
+        )
+        self.assertTrue(parsed.enable_health_service)
+        self.assertTrue(parsed.enable_dashboard_service)
+
+        parsed_neg = self.parser.parse_args(
+            ["gke-upgrade", "--no-enable-health-service", "--no-enable-dashboard-service"]
+        )
+        self.assertFalse(parsed_neg.enable_health_service)
+        self.assertFalse(parsed_neg.enable_dashboard_service)
+
 
 if __name__ == "__main__":
     unittest.main()
