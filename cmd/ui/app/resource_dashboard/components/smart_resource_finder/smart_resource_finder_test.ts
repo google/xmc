@@ -129,8 +129,9 @@ describe('SmartResourceFinderComponent', () => {
     expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'tpu']);
   });
 
-  it('should render Dominant badge and blue border only on index 0 when populated', async () => {
+  it('should render Dominant badge, help icon, and blue border only on index 0 when populated', async () => {
     expect(await harness.hasDominantBadge()).toBeFalse();
+    expect(await harness.hasDominantHelpIcon()).toBeFalse();
     expect(await harness.isDominantSelectBox(0)).toBeFalse();
 
     await harness.selectResourceType(0, 'nvidia.com/gpu');
@@ -138,7 +139,15 @@ describe('SmartResourceFinderComponent', () => {
 
     expect(await harness.hasDominantBadge()).toBeTrue();
     expect(await harness.getDominantBadgeText()).toBe('Dominant');
+    expect(await harness.hasDominantHelpIcon()).toBeTrue();
     expect(await harness.isDominantSelectBox(0)).toBeTrue();
+
+    const tooltipHarness = await harness.getDominantHelpTooltip();
+    expect(tooltipHarness).not.toBeNull();
+    await tooltipHarness!.show();
+    expect(await tooltipHarness!.getTooltipText()).toBe(
+      'A dominant resource is a resource that determines the unit of velocity of queue predictability',
+    );
 
     // Add row 1 with 'cpu'
     await harness.clickAddButton();
@@ -147,6 +156,7 @@ describe('SmartResourceFinderComponent', () => {
 
     // Only 1 dominant badge exists, specifically on row 0
     expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.hasDominantHelpIcon()).toBeTrue();
     expect(await harness.isDominantSelectBox(0)).toBeTrue();
     expect(await harness.isDominantSelectBox(1)).toBeFalse();
   });
@@ -166,17 +176,27 @@ describe('SmartResourceFinderComponent', () => {
 
     expect(await harness.getResourceTypeSelectValue(0)).toBe('tpu');
     expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.hasDominantHelpIcon()).toBeTrue();
     expect(await harness.isDominantSelectBox(0)).toBeTrue();
+
+    const tooltipHarness = await harness.getDominantHelpTooltip();
+    expect(tooltipHarness).not.toBeNull();
+    await tooltipHarness!.show();
+    expect(await tooltipHarness!.getTooltipText()).toBe(
+      'A dominant resource is a resource that determines the unit of velocity of queue predictability',
+    );
   });
 
-  it('should remove dominant badge when row 0 selection is cleared', async () => {
+  it('should remove dominant badge and help icon when row 0 selection is cleared', async () => {
     await harness.selectResourceType(0, 'nvidia.com/gpu');
     fixture.detectChanges();
     expect(await harness.hasDominantBadge()).toBeTrue();
+    expect(await harness.hasDominantHelpIcon()).toBeTrue();
 
     await harness.selectResourceType(0, '');
     fixture.detectChanges();
     expect(await harness.hasDominantBadge()).toBeFalse();
+    expect(await harness.hasDominantHelpIcon()).toBeFalse();
     expect(await harness.isDominantSelectBox(0)).toBeFalse();
   });
 });

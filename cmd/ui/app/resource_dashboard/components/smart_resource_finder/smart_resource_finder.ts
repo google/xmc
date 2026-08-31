@@ -18,6 +18,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatOptionModule } from '@angular/material/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 
 export interface ResourceRequirementRow {
   id: string;
@@ -39,12 +42,20 @@ function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
   templateUrl: './smart_resource_finder.ng.html',
   styleUrl: './smart_resource_finder.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MatIconModule, MatButtonModule, MatSelectModule, MatOptionModule],
+  imports: [
+    FormsModule,
+    MatIconModule,
+    MatButtonModule,
+    MatSelectModule,
+    MatOptionModule,
+    MatTooltipModule,
+  ],
 })
 export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
 
+  protected readonly dominantTooltip = ROD_TERM_TOOLTIPS.dominantResource;
   protected readonly rows = signal<ResourceRequirementRow[]>([createRow(1, '')]);
 
   ngOnInit() {
