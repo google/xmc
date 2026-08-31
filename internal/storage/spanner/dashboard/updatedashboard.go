@@ -84,12 +84,9 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 
 // fetchDashboardInTransaction reads an existing dashboard and its child chart IDs inside a ReadWriteTransaction.
 func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) (*dpb.Dashboard, error) {
-	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
+	row, err := readRowInTransaction(ctx, txn, dashboardschema.DashboardsTableName, "dashboard", dashboardId, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
-		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
-		}
-		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
+		return nil, err
 	}
 
 	chartIDs, err := fetchDashboardChartsInTransaction(ctx, txn, dashboardId)
