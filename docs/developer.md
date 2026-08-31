@@ -39,6 +39,7 @@ This will build the following targets:
 - `//api/protos/xid:api_go_proto` (Xid service gRPC/API stubs)
 - `//api/protos/experiment:messages_go_proto` (Experiment messages stubs)
 - `//api/protos/experiment:api_go_proto` (Experiment service gRPC/API stubs)
+- `//api/protos/rod:api_go_proto` (ROD data provider service gRPC/API stubs)
 - `//api/protos/task_queue:task_go_proto` (Task queue message stubs)
 
 - **Cross-compiling OCI images**:
@@ -48,6 +49,7 @@ This will build the following targets:
             //cmd/experiment_state_server:experiment_state_server_image_tarball \
             //cmd/log_monitor:log_monitor_image_tarball \
             //cmd/reconciler:reconciler_image_tarball \
+            //cmd/rod_data_provider:rod_data_provider_image_tarball \
             //cmd/xid_service:xid_service_image_tarball
   ```
   For the UI image, specify the target platform via the `XMC_UI_PLATFORM` environment variable:
@@ -189,6 +191,25 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
   bazel test //cmd/ui/...
   ```
 
+### ROD Data Provider Service
+The **ROD Data Provider** (`rod_data_provider`) is the backend daemon serving the Resource Observability Dashboard, managing Kueue informers, in-memory queue capacity caches, and Spanner turnover analytics.
+
+- **Build the Data Provider binary**:
+  ```bash
+  bazel build //cmd/rod_data_provider:rod_data_provider
+  ```
+
+- **Run all Data Provider test suites**:
+  ```bash
+  bazel test //cmd/rod_data_provider/...
+  ```
+
+This test suite executes:
+- `//cmd/rod_data_provider:clusterqueues_test` (ClusterQueue conversion and capacity calculation checks)
+- `//cmd/rod_data_provider:kueue_cache_test` (In-memory Informer cache sync and LocalQueue mapping tests)
+- `//cmd/rod_data_provider:secondary_data_test` (Historical velocity, predictability, and backlog aggregation checks)
+- `//cmd/rod_data_provider:submit_queue_test` (Submission queue candidate matching checks)
+
 
 ---
 
@@ -282,6 +303,7 @@ To build the entire project codebase or run all decoupled standalone test suites
             //cmd/experiment_state_server:experiment_state_server_image_tarball \
             //cmd/log_monitor:log_monitor_image_tarball \
             //cmd/reconciler:reconciler_image_tarball \
+            //cmd/rod_data_provider:rod_data_provider_image_tarball \
             //cmd/ui:ui_image_tarball \
             //cmd/xid_service:xid_service_image_tarball
   ```
@@ -297,6 +319,7 @@ To build the entire project codebase or run all decoupled standalone test suites
   bazel run //cmd/experiment_state_server:experiment_state_server_image_push
   bazel run //cmd/log_monitor:log_monitor_image_push
   bazel run //cmd/reconciler:reconciler_image_push
+  bazel run //cmd/rod_data_provider:rod_data_provider_image_push
   bazel run //cmd/ui:ui_image_push
   bazel run //cmd/xid_service:xid_service_image_push
   ```

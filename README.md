@@ -20,6 +20,9 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 * ### [Gateway & Traffic Routing Design](docs/design/gateway.md)
   Detailed system design for GKE Gateway API path-based HTTP routing, GRPC traffic routing rules, Workload Identity mappings, and GCP IAM integrations.
 
+* ### [Resource Observability Dashboard (ROD)](docs/design/resource_observability_dashboard.md)
+  System architecture and design specification for the real-time Kueue cluster queue observability dashboard, capacity calculations, turnover velocity analytics, and data provider microservice.
+
 * ### [Agent Workflows](docs/agent_workflows.md)
   Overview of pre-configured agent-assisted skills (`xmc_deploy` and `xmc_address_pr_comment`) for automated cloud deployment and PR feedback resolution.
 

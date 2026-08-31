@@ -24,6 +24,9 @@ graph TD
         ESSSvc["experiment-state-server (Service)"]
         ESSPod["ESS Pod <br/>(Go gRPC & HTTP APIs)"]
         
+        RODSvc["rod-data-provider-service (Service)"]
+        RODPod["ROD Pod <br/>(Kueue Informers & Queue Telemetry)"]
+        
         XIDSvc["xid-service (Service)"]
         XIDPod["XID Pod <br/>(Monotonic ID Gen)"]
         
@@ -38,14 +41,17 @@ graph TD
     end
 
     %% Traffic Flows
-    Browser -->|"HTTPS (path: /)"| Gateway
+    Browser -->|"HTTPS (path: / & /resources)"| Gateway
     CLI -->|"gRPC / HTTPS (path: /v1/*)"| Gateway
     
-    Gateway -->|"/ (Routing)"| UISvc
+    Gateway -->|"/ (UI Routing)"| UISvc
     UISvc --> UIPod
     
-    Gateway -->|"/v1/* & gRPC"| ESSSvc
+    Gateway -->|"/v1/experiments* & gRPC"| ESSSvc
     ESSSvc --> ESSPod
+    
+    Gateway -->|"/v1/clusterqueues*"| RODSvc
+    RODSvc --> RODPod
     
     %% Pod-to-Pod communication
     ESSPod -->|"Retrieve Monotonic IDs"| XIDSvc
@@ -56,6 +62,7 @@ graph TD
 
     %% External GCP Interactions
     ESSPod -->|"Read/Write State"| Spanner
+    RODPod -->|"Query WorkUnit History"| Spanner
     ESSPod -.->|"Workload Identity / Role Validation"| IAM
     Browser -->|"OAuth2 Auth Flow"| OAuth
 ```
@@ -75,9 +82,12 @@ All standard stateless services and in-cluster caching workloads run on GKE:
 3. **Experiment State Server (ESS) Deployment (`ess-deployment`)**:
    - **Tech Stack**: Go web server exposing both a REST/JSON API and gRPC endpoints.
    - **Role**: The main orchestrator of XMC, coordinating experiment states, workload pipelines, and CLI communications.
-4. **XID Service Deployment (`xid-deployment`)**:
+4. **ROD Data Provider Deployment (`rod-data-provider-deployment`)**:
+   - **Tech Stack**: Go web server exposing REST/JSON (gRPC-Gateway) and gRPC endpoints.
+   - **Role**: Backend provider for the Resource Observability Dashboard (ROD), caching Kueue cluster queues via event informers and querying Spanner for active workloads and turnover velocity metrics.
+5. **XID Service Deployment (`xid-deployment`)**:
    - **Role**: Lightweight internal service providing monotonically increasing, globally unique IDs.
-5. **Local Redis Instance Deployment (`redis-deployment`)**:
+6. **Local Redis Instance Deployment (`redis-deployment`)**:
    - **Role**: Serves as a fast session cache, authentication cache, and pub/sub channel for active workloads.
 
 ### GCP Supporting Services (External to GKE)
@@ -98,16 +108,19 @@ All standard stateless services and in-cluster caching workloads run on GKE:
 ```
 [ Browser ] --(1. URL Request)--> [ GKE Gateway ]
                                         |
-                                        +---> (Path: /) ------> [ UI Pod ]
+                                        +---> (Path: / & /resources) ------> [ UI Pod ]
                                         |
-                                        +---> (Path: /v1/*) --> [ ESS Pod ]
+                                        +---> (Path: /v1/experiments*) ----> [ ESS Pod ]
+                                        |
+                                        +---> (Path: /v1/clusterqueues*) --> [ ROD Pod ]
 ```
 
 1. **Initial Request**: The user navigates to the XMC application domain.
 2. **TLS Termination**: GKE Gateway terminates TLS using certificates managed by Google Managed Certificates or private GTS/Let's Encrypt issuers.
 3. **Path-Based Routing**:
-   - Path `/` and other UI routes are matched against `HTTPRoute` rules and forwarded to `ui-service`, which serves the static Angular UI files from the Nginx server in the UI Pod.
-   - Path `/v1/*` routes API requests to `experiment-state-server-service` (ESS HTTP API) for fetching dynamic experiment lists, user profiles, etc.
+   - Path `/`, `/resources`, `/experiments`, and other UI routes are matched against `HTTPRoute` rules and forwarded to `ui-service`, which serves the static Angular UI files from the Nginx server in the UI Pod.
+   - Path `/v1/experiments*`, `/api/*`, etc., route API requests to `experiment-state-server-service` (ESS HTTP API) for fetching dynamic experiment lists, user profiles, etc.
+   - Path `/v1/clusterqueues*` routes queue capacity, fit-filtering, and turnover velocity queries to `rod-data-provider-service`.
 4. **Authentication**:
    - Unauthenticated users are redirected to **Google Accounts** for OAuth2 consent.
    - Once authenticated, the browser exchanges codes for an ID token, establishing a secure session cached in the in-cluster Redis instance.
