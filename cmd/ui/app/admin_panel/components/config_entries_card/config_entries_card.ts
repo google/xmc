@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+
+import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
 
 export interface ConfigInfo {
   key?: string;
@@ -36,13 +39,16 @@ export interface ConfigGroupItem extends ConfigGroup {
 @Component({
   selector: 'xmc-config-entries-card',
   standalone: true,
-  imports: [MatIconModule],
+  imports: [MatIconModule, ErrorBannerComponent, MatProgressSpinnerModule],
   templateUrl: './config_entries_card.ng.html',
   styleUrl: './config_entries_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConfigEntriesCardComponent {
-  configGroups = input<ConfigGroup[] | undefined>();
+  readonly configGroups = input<ConfigGroup[] | undefined>();
+  readonly errorMessage = input<string | null>(null);
+  readonly loading = input<boolean>(false);
+  readonly retry = output<void>();
 
   protected readonly searchTerm = signal<string>('');
   protected readonly collapsedGroups = signal<Set<string>>(new Set());
@@ -54,6 +60,10 @@ export class ConfigEntriesCardComponent {
   protected onSearchInput(event: Event): void {
     const inputElement = event.target as HTMLInputElement;
     this.searchTerm.set(inputElement.value);
+  }
+
+  protected onRetry(): void {
+    this.retry.emit();
   }
 
   protected toggleGroup(groupName?: string): void {
