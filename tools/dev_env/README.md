@@ -166,6 +166,9 @@ Compiles Bazel OCI image tarballs in parallel and side-loads them directly into 
 # Build and load all enabled microservice images into KinD
 python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local --load-kind
 
+# Build all discovered buildable services across the repository
+python3 tools/dev_env/dev_env.py build-images all --cluster-name xmc-local --load-kind
+
 # Build and load specific microservices
 python3 tools/dev_env/dev_env.py build-images \
   experiment_state_server ui \
@@ -173,8 +176,18 @@ python3 tools/dev_env/dev_env.py build-images \
   --load-kind
 ```
 
+#### Dynamic Service Discovery & OCI Conventions
+`ImageBuilder` relies on dynamic repository discovery rather than hardcoded service dictionaries:
+- **Automatic Discovery**: Scans `cmd/*/BUILD.bazel` for `oci_image_for_service` or `_image_tarball` definitions.
+- **Convention Derivation**:
+  - **Bazel Package**: `cmd/<service>`
+  - **Bazel Tarball Target**: `//cmd/<service>:<service>_image_tarball`
+  - **Output Archive**: `<service>_image_tarball.tar` (under `bazel-bin/` or cross-platform fallback `bazel-out/`)
+  - **Docker Tag**: `<service>_image:latest`
+- **Extensibility**: Adding a new Go or UI microservice under `cmd/<service>` with an OCI target works immediately with `dev_env.py build-images` without requiring tooling modifications.
+
 #### Options
-- `services`: Specific microservice images to build (defaults to all enabled services).
+- `services`: Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
 - `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
 - `--load-kind`: Also load compiled container images into the local KinD cluster.
 - `--skip-build`: Skip compilation step and only load existing local Docker images.

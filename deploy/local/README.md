@@ -208,11 +208,14 @@ python3 tools/dev_env/dev_env.py spanner drop
 
 ### OCI Image Compilation & Loading
 
-Compile and load microservice container images into Docker or KinD:
+Compile and load microservice container images into Docker or KinD. `ImageBuilder` dynamically scans `cmd/*/BUILD.bazel` for `oci_image_for_service` and `_image_tarball` targets, deriving build targets (`//cmd/<service>:<service>_image_tarball`) and Docker tags (`<service>_image:latest`) automatically:
 
 ```bash
 # Build all enabled microservice images in parallel
 python3 tools/dev_env/dev_env.py build-images
+
+# Build all discovered microservices in the repo and load into local KinD
+python3 tools/dev_env/dev_env.py build-images all --load-kind
 
 # Build specific services and load into local KinD cluster
 python3 tools/dev_env/dev_env.py build-images reconciler ui --load-kind
