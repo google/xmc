@@ -44,10 +44,6 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
         pass
 
     try:
-        cmd = ["git", "tag", "--sort=-v:refname"]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
-        tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
-
         target_hash = None
         try:
             target_hash = subprocess.run(
@@ -60,21 +56,24 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
         except subprocess.CalledProcessError:
             pass
 
-        for t in tags:
+        cmd = [
+            "git",
+            "for-each-ref",
+            "--sort=-v:refname",
+            "--format=%(refname:short) %(objectname) %(*objectname)",
+            "refs/tags",
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+        for line in res.stdout.splitlines():
+            parts = line.strip().split()
+            if not parts:
+                continue
+            t = parts[0]
             if t != target_ref:
-                if target_hash:
-                    try:
-                        tag_hash = subprocess.run(
-                            ["git", "rev-parse", f"{t}^{{commit}}"],
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                            cwd=cwd,
-                        ).stdout.strip()
-                        if tag_hash == target_hash:
-                            continue
-                    except subprocess.CalledProcessError:
-                        pass
+                if target_hash and len(parts) >= 2:
+                    tag_commit = parts[2] if len(parts) > 2 else parts[1]
+                    if tag_commit == target_hash:
+                        continue
                 return t
     except subprocess.CalledProcessError:
         pass

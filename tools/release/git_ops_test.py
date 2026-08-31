@@ -56,14 +56,13 @@ class GitOpsTest(unittest.TestCase):
         def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
             if "describe" in cmd:
                 raise subprocess.CalledProcessError(1, cmd)
-            if "tag" in cmd:
-                return MagicMock(stdout="0.6.0\n0.5.0\n0.4.0\n", returncode=0)
             if "rev-parse" in cmd:
-                ref = cmd[2]
-                if ref.startswith("HEAD") or ref.startswith("0.6.0"):
-                    return MagicMock(stdout="hash-060\n", returncode=0)
-                if ref.startswith("0.5.0"):
-                    return MagicMock(stdout="hash-050\n", returncode=0)
+                return MagicMock(stdout="hash-060\n", returncode=0)
+            if "for-each-ref" in cmd:
+                return MagicMock(
+                    stdout="0.6.0 hash-060\n0.5.0 hash-050\n0.4.0 hash-040\n",
+                    returncode=0,
+                )
             return MagicMock(stdout="", returncode=0)
 
         mock_run.side_effect = side_effect
