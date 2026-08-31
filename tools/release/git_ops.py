@@ -74,7 +74,16 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
                     tag_commit = parts[2] if len(parts) > 2 else parts[1]
                     if tag_commit == target_hash:
                         continue
-                return t
+                try:
+                    subprocess.run(
+                        ["git", "merge-base", "--is-ancestor", t, target_ref],
+                        check=True,
+                        cwd=cwd,
+                        capture_output=True,
+                    )
+                    return t
+                except subprocess.CalledProcessError:
+                    continue
     except subprocess.CalledProcessError:
         pass
 
@@ -86,7 +95,14 @@ def get_git_file_content(ref: str, file_path: str, repo_dir: Path | None = None)
     cwd = str(repo_dir) if repo_dir else None
     try:
         cmd = ["git", "show", f"{ref}:{file_path}"]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=True,
+            cwd=cwd,
+        )
         return res.stdout
     except subprocess.CalledProcessError:
         return None
@@ -111,7 +127,14 @@ def get_git_commits(
     ]
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=True,
+            cwd=cwd,
+        )
     except subprocess.CalledProcessError as e:
         raise HandledError(
             f"Failed to fetch git log between '{base_ref}' and '{target_ref}'.",
