@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
+
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -205,9 +207,9 @@ func validatePlatformRule(filePath string, line int, compName string, p Platform
 // validateK8sVersions validates the SemVer syntax of minK8sVersion and maxK8sVersion,
 // and asserts that minK8sVersion is not greater than maxK8sVersion.
 func validateK8sVersions(filePath string, line int, compName, minK8s, maxK8s string, res *ValidationResult) {
-	var minVer, maxVer *store.Version
+	var minVer, maxVer *semver.Version
 	if minK8s != "" {
-		v, err := parseConstraintVersion(minK8s)
+		v, err := semver.NewVersion(strings.TrimSpace(minK8s))
 		if err != nil {
 			res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid minK8sVersion %q for component %q: %v", minK8s, compName, err))
 		} else {
@@ -215,7 +217,7 @@ func validateK8sVersions(filePath string, line int, compName, minK8s, maxK8s str
 		}
 	}
 	if maxK8s != "" {
-		v, err := parseConstraintVersion(maxK8s)
+		v, err := semver.NewVersion(strings.TrimSpace(maxK8s))
 		if err != nil {
 			res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid maxK8sVersion %q for component %q: %v", maxK8s, compName, err))
 		} else {
