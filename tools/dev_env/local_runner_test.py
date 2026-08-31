@@ -193,7 +193,7 @@ class TestLocalRunner(unittest.TestCase):
                 "--timeout=120s",
             ]
             mock_run.assert_any_call(restart_call, check=True)
-            mock_run.assert_any_call(status_call, check=True)
+            mock_run.assert_any_call(status_call, check=True, capture_output=True)
 
     @patch("tools.dev_env.local_runner.run_command")
     def test_reload_auto_detection_with_changes(self, mock_run: MagicMock) -> None:
