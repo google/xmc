@@ -26,9 +26,9 @@
     <div class="card-loading-container">
       <mat-spinner diameter="32" aria-label="Loading Configuration" />
     </div>
-  } @else if (errorMessage()) {
+  } @else if (errorMessage(); as errorMsg) {
     <div class="card-error-container">
-      <xmc-error-banner [message]="errorMessage()" (retry)="onRetry()" />
+      <xmc-error-banner [message]="errorMsg" (retry)="onRetry()" />
     </div>
   } @else {
     <!-- Search Bar -->
