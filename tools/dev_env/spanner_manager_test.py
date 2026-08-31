@@ -47,15 +47,14 @@ class SpannerManagerTest(unittest.TestCase):
         self.assertEqual(dbs, ["test-ess-db", "other-db"])
 
     @mock.patch("tools.dev_env.spanner_manager.run_command")
-    def test_list_databases_failure_returns_empty(self, mock_run: mock.MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
+    def test_list_databases_failure_raises_error(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            stdout="",
+            cmd=["gcloud", "spanner", "databases", "list"],
             stderr="Instance not found",
         )
-        dbs = self.manager.list_databases()
-        self.assertEqual(dbs, [])
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.manager.list_databases()
 
     @mock.patch.object(Path, "exists", return_value=True)
     @mock.patch("tools.dev_env.spanner_manager.run_command")

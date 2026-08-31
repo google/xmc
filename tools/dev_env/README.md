@@ -94,7 +94,7 @@ python3 tools/dev_env/dev_env.py spanner drop \
 ```
 
 #### Actions
-- `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_proto_descriptor`, `//api/protos/xid:xid_proto_descriptor`), and creates databases with single-batch DDL in parallel.
+- `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_messages_descriptor`, `//api/protos/xid:xid_messages_descriptor`), and creates databases with single-batch DDL in parallel.
 - `drop`: Drops the specified databases from the Cloud Spanner instance.
 
 ---

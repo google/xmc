@@ -66,14 +66,9 @@ class SpannerManager:
                 "--format=value(NAME)",
             ],
             capture_output=True,
-            check=False,
+            check=True,
             log_cmd=False,
         )
-        if res.returncode != 0:
-            _LOGGER.debug(
-                "Could not list databases; instance may not exist or permissions pending."
-            )
-            return []
         dbs = [line.strip().split("/")[-1] for line in res.stdout.splitlines() if line.strip()]
         _LOGGER.debug("Found Spanner databases on instance '%s': %s", target_instance, dbs)
         return dbs
@@ -173,7 +168,7 @@ class SpannerManager:
                 f"--project={self.config.project_id}",
                 "--quiet",
             ],
-            check=False,
+            check=True,
         )
 
     def drop_databases(
