@@ -54,7 +54,10 @@ describe('SmartResourceFinderComponent', () => {
   });
 
   it('should initialize with default amount 1 and single empty resource type filter and emit initial query', async () => {
+    expect(await harness.getAmountBoxLabel()).toBe('Amount *');
     expect(await harness.getAmountValue()).toBe('1');
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.hasPrimaryResourceHelpIcon()).toBeTrue();
     expect(await harness.getResourceTypeSelectCount()).toBe(1);
     expect(await harness.getRemoveButtonCount()).toBe(0);
     expect(hostInstance.lastQuery()).toEqual({
@@ -66,6 +69,8 @@ describe('SmartResourceFinderComponent', () => {
     await harness.clickAddButton();
     fixture.detectChanges();
 
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.getResourceBoxLabel(1)).toBe('Resource type *');
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
     expect(await harness.getRemoveButtonCount()).toBe(2);
     expect(hostInstance.lastQuery()).toEqual({
@@ -129,20 +134,11 @@ describe('SmartResourceFinderComponent', () => {
     expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'tpu']);
   });
 
-  it('should render Dominant badge, help icon, and blue border only on index 0 when populated', async () => {
-    expect(await harness.hasDominantBadge()).toBeFalse();
-    expect(await harness.hasDominantHelpIcon()).toBeFalse();
-    expect(await harness.isDominantSelectBox(0)).toBeFalse();
+  it('should render Primary resource label and help icon with tooltip on index 0', async () => {
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.hasPrimaryResourceHelpIcon()).toBeTrue();
 
-    await harness.selectResourceType(0, 'nvidia.com/gpu');
-    fixture.detectChanges();
-
-    expect(await harness.hasDominantBadge()).toBeTrue();
-    expect(await harness.getDominantBadgeText()).toBe('Dominant');
-    expect(await harness.hasDominantHelpIcon()).toBeTrue();
-    expect(await harness.isDominantSelectBox(0)).toBeTrue();
-
-    const tooltipHarness = await harness.getDominantHelpTooltip();
+    const tooltipHarness = await harness.getPrimaryResourceHelpTooltip();
     expect(tooltipHarness).not.toBeNull();
     await tooltipHarness!.show();
     expect(await tooltipHarness!.getTooltipText()).toBe(
@@ -151,52 +147,36 @@ describe('SmartResourceFinderComponent', () => {
 
     // Add row 1 with 'cpu'
     await harness.clickAddButton();
-    await harness.selectResourceType(1, 'cpu');
     fixture.detectChanges();
 
-    // Only 1 dominant badge exists, specifically on row 0
-    expect(await harness.hasDominantBadge()).toBeTrue();
-    expect(await harness.hasDominantHelpIcon()).toBeTrue();
-    expect(await harness.isDominantSelectBox(0)).toBeTrue();
-    expect(await harness.isDominantSelectBox(1)).toBeFalse();
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.getResourceBoxLabel(1)).toBe('Resource type *');
+    expect(await harness.hasPrimaryResourceHelpIcon()).toBeTrue();
   });
 
-  it('should promote row 1 to dominant when row 0 is removed', async () => {
+  it('should promote row 1 to Primary resource with help icon when row 0 is removed', async () => {
     await harness.selectResourceType(0, 'nvidia.com/gpu');
     await harness.clickAddButton();
     await harness.selectResourceType(1, 'tpu');
     fixture.detectChanges();
 
     expect(await harness.getResourceTypeSelectValue(0)).toBe('nvidia.com/gpu');
-    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.getResourceBoxLabel(1)).toBe('Resource type *');
 
     // Remove row 0
     await harness.clickRemoveButton(0);
     fixture.detectChanges();
 
     expect(await harness.getResourceTypeSelectValue(0)).toBe('tpu');
-    expect(await harness.hasDominantBadge()).toBeTrue();
-    expect(await harness.hasDominantHelpIcon()).toBeTrue();
-    expect(await harness.isDominantSelectBox(0)).toBeTrue();
+    expect(await harness.getResourceBoxLabel(0)).toBe('Primary resource *');
+    expect(await harness.hasPrimaryResourceHelpIcon()).toBeTrue();
 
-    const tooltipHarness = await harness.getDominantHelpTooltip();
+    const tooltipHarness = await harness.getPrimaryResourceHelpTooltip();
     expect(tooltipHarness).not.toBeNull();
     await tooltipHarness!.show();
     expect(await tooltipHarness!.getTooltipText()).toBe(
       'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
     );
-  });
-
-  it('should remove dominant badge and help icon when row 0 selection is cleared', async () => {
-    await harness.selectResourceType(0, 'nvidia.com/gpu');
-    fixture.detectChanges();
-    expect(await harness.hasDominantBadge()).toBeTrue();
-    expect(await harness.hasDominantHelpIcon()).toBeTrue();
-
-    await harness.selectResourceType(0, '');
-    fixture.detectChanges();
-    expect(await harness.hasDominantBadge()).toBeFalse();
-    expect(await harness.hasDominantHelpIcon()).toBeFalse();
-    expect(await harness.isDominantSelectBox(0)).toBeFalse();
   });
 });
