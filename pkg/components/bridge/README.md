@@ -11,7 +11,7 @@ graph TD
     CR["Kubernetes Component CR<br>(xmc.dev/v1alpha1)"] <-->|"Dynamic Informer / Status Patch"| Bridge["xmc-bridge Controller<br>(cmd/xmc_bridge)"]
     Bridge -->|"Reconcile Loop"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
     Reconciler <-->|"gRPC Intent & Status Sync"| CMS["Component Manager Service<br>(ESS)"]
-    Reconciler <-->|"Workload Orchestration"| Workloads["1P Deployments & Services / 3P Dynamic Probers"]
+    Reconciler <-->|"Helm Values Synthesis"| Helm["1P Helm Parameters & Values Synthesis"]
 ```
 
 ---
@@ -26,8 +26,8 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 2. **Intent Synchronization**:
    - Propagate desired spec to CMS via `SetComponentIntent`, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`.
 3. **Enablement & Workload Actuation**:
-   - **Enabled (`spec.enabled: true`)**: Reconciles 1P native workloads (Deployments, Services) or evaluates 3P CR readiness and active HTTP/TCP health probes. Transitions to `COMPONENT_STATE_ENABLED` upon success.
-   - **Disabled (`spec.enabled: false`)**: Tears down 1P child workloads and transitions CMS state to `COMPONENT_STATE_DISABLED`.
+   - **Enabled (`spec.enabled: true`)**: Synthesizes 1P Helm variable overrides and delegates release updates to `HelmManager`. Transitions to `COMPONENT_STATE_ENABLED` upon success.
+   - **Disabled (`spec.enabled: false`)**: Deactivates 1P Helm variable overrides and transitions CMS state to `COMPONENT_STATE_DISABLED`.
 
 ---
 
@@ -38,6 +38,20 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
+
+---
+
+## 1P Component Helm Values Synthesis (`helm_builder.go`)
+
+First-party (1P) components are managed natively through XMC Helm charts. Rather than constructing duplicate Kubernetes `Deployment` and `Service` manifests in Go code, the bridge translates Component CR specifications directly into structured Helm parameter values:
+
+- **`HelmOptions`**: Encapsulates component parameters, image tags, replica counts, port bindings, and lifecycle controls.
+- **`SynthesizeHelmValues(opts HelmOptions) (map[string]any, error)`**: Translates declarative component options into hierarchical Helm parameter maps (e.g., enabling `<component>Deployment.enabled: true`, setting custom images, and binding ports).
+- **`HelmManager` Interface**: Declarative contract for applying and removing synthesized 1P values:
+  - `Ensure1PComponent(ctx context.Context, opts HelmOptions) error`
+  - `Delete1PComponent(ctx context.Context, name, namespace string, policy DeletionPolicy) error`
+  - `IsComponentActive(ctx context.Context, name, namespace string) (bool, error)`
+- **`FakeHelmManager`**: In-memory test double supporting concurrent testing and error injection.
 
 ---
 
