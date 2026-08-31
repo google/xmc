@@ -322,6 +322,7 @@ def run_command(
     capture_output: bool = False,
     log_on_error: bool = True,
     log_cmd: bool = True,
+    cwd: Path | str | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -332,6 +333,7 @@ def run_command(
         capture_output: Whether to capture stdout/stderr.
         log_on_error: Whether to log errors on failure.
         log_cmd: Whether to log the command being executed.
+        cwd: Optional working directory for subprocess execution.
 
     Returns:
         A subprocess.CompletedProcess object.
@@ -351,6 +353,7 @@ def run_command(
             check=check,
             text=True,
             capture_output=capture_output,
+            cwd=str(cwd) if cwd else None,
         )
     except subprocess.CalledProcessError:
         if log_on_error:
