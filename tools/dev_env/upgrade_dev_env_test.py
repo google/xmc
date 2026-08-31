@@ -249,8 +249,8 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        # Default config has rod_deployment_enabled=False (9 base targets)
-        self.assertEqual(mock_run.call_count, 9)
+        # Default config has rod_deployment_enabled=False (10 base targets)
+        self.assertEqual(mock_run.call_count, 10)
 
     @mock.patch.object(Path, "exists", return_value=True)
     @mock.patch("tools.common.tool_utils.run_command")
@@ -270,8 +270,8 @@ class TestStepSubprocesses(unittest.TestCase):
             rod_deployment_enabled=True,
         )
         upgrade_dev_env.step_images(config)
-        # Should push 10 targets when rod is enabled (9 base + rod_data_provider)
-        self.assertEqual(mock_run.call_count, 10)
+        # Should push 11 targets when rod is enabled (10 base + rod_data_provider)
+        self.assertEqual(mock_run.call_count, 11)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
