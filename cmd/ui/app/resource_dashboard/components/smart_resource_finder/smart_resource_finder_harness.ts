@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
+import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 /** Harness for interacting with <xmc-smart-resource-finder> in tests. */
 export class SmartResourceFinderHarness extends ComponentHarness {
@@ -24,6 +25,7 @@ export class SmartResourceFinderHarness extends ComponentHarness {
   private readonly selectBoxes = this.locatorForAll('.query-select-box');
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
+  private readonly dominantHelpIcons = this.locatorForAll('.dominant-help-icon');
 
   /** Gets all option labels available in the resource type dropdowns. */
   async getResourceTypeOptions(): Promise<string[]> {
@@ -114,6 +116,17 @@ export class SmartResourceFinderHarness extends ComponentHarness {
   async getDominantBadgeText(): Promise<string | null> {
     const texts = await this.dominantTexts();
     return texts.length > 0 ? (await texts[0].text()).trim() : null;
+  }
+
+  /** Gets whether the dominant help icon is present. */
+  async hasDominantHelpIcon(): Promise<boolean> {
+    const icons = await this.dominantHelpIcons();
+    return icons.length > 0;
+  }
+
+  /** Gets the dominant help icon tooltip harness. */
+  async getDominantHelpTooltip(): Promise<MatTooltipHarness | null> {
+    return this.locatorForOptional(MatTooltipHarness.with({ selector: '.dominant-help-icon' }))();
   }
 
   /** Returns whether the select box at the given index has the dominant class. */
