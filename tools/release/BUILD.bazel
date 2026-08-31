@@ -22,11 +22,108 @@ exports_files([
 ])
 
 py_library(
+    name = "models_lib",
+    srcs = ["models.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "yaml_parser_lib",
+    srcs = ["yaml_parser.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "git_ops_lib",
+    srcs = ["git_ops.py"],
+    imports = ["../.."],
+    deps = [
+        ":models_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "feature_flags_lib",
+    srcs = ["feature_flags.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        ":models_lib",
+        ":yaml_parser_lib",
+    ],
+)
+
+py_library(
+    name = "commit_classifier_lib",
+    srcs = ["commit_classifier.py"],
+    imports = ["../.."],
+    deps = [
+        ":feature_flags_lib",
+        ":models_lib",
+    ],
+)
+
+py_library(
+    name = "semver_engine_lib",
+    srcs = ["semver_engine.py"],
+    imports = ["../.."],
+    deps = [
+        ":models_lib",
+    ],
+)
+
+py_library(
     name = "extract_release_metadata_lib",
     srcs = ["extract_release_metadata.py"],
     imports = ["../.."],
     deps = [
+        ":commit_classifier_lib",
+        ":feature_flags_lib",
+        ":git_ops_lib",
+        ":models_lib",
+        ":semver_engine_lib",
+        ":yaml_parser_lib",
         "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "yaml_parser_test",
+    srcs = ["yaml_parser_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":yaml_parser_lib",
+    ],
+)
+
+py_test(
+    name = "feature_flags_test",
+    srcs = ["feature_flags_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":feature_flags_lib",
+        ":models_lib",
+    ],
+)
+
+py_test(
+    name = "commit_classifier_test",
+    srcs = ["commit_classifier_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":commit_classifier_lib",
+        ":models_lib",
+    ],
+)
+
+py_test(
+    name = "semver_engine_test",
+    srcs = ["semver_engine_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":models_lib",
+        ":semver_engine_lib",
     ],
 )
 
@@ -35,7 +132,13 @@ py_test(
     srcs = ["extract_release_metadata_test.py"],
     imports = ["../.."],
     deps = [
+        ":commit_classifier_lib",
         ":extract_release_metadata_lib",
+        ":feature_flags_lib",
+        ":git_ops_lib",
+        ":models_lib",
+        ":semver_engine_lib",
+        ":yaml_parser_lib",
         "//tools/common:tool_utils",
     ],
 )

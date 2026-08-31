@@ -124,7 +124,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertNotIn("blueprint_name", flags)
         self.assertNotIn("taskSignatureTtlSeconds", flags)
 
-    @patch("tools.release.extract_release_metadata.get_git_file_content")
+    @patch("tools.release.feature_flags.get_git_file_content")
     def test_extract_flag_transitions(self, mock_get_content: MagicMock) -> None:
         base_yaml = """
         vars:
@@ -154,7 +154,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertFalse(comp_trans.base_value)
         self.assertTrue(comp_trans.target_value)
 
-    @patch("tools.release.extract_release_metadata.get_git_file_content")
+    @patch("tools.release.feature_flags.get_git_file_content")
     def test_get_current_feature_states(self, mock_get_content: MagicMock) -> None:
         ctk_content = """
         vars:
@@ -515,7 +515,7 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(commits[1].pr_number, 101)
         self.assertEqual(commits[1].files_changed, ["pkg/server/server.go"])
 
-    @patch("tools.release.extract_release_metadata.get_git_file_content")
+    @patch("tools.release.feature_flags.get_git_file_content")
     def test_discover_feature_flags_dynamic_services(self, mock_get_content: MagicMock) -> None:
         ctk_content = """
         vars:
