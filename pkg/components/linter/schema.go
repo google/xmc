@@ -116,7 +116,12 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 }
 
 func is1PComponent(ct string) bool {
-	return strings.TrimSpace(ct) == "CUSTOM_1P_COMPONENT" || strings.TrimSpace(ct) == ""
+	switch strings.TrimSpace(ct) {
+	case "CUSTOM_1P_COMPONENT", "UNSPECIFIED", "":
+		return true
+	default:
+		return false
+	}
 }
 
 func is3PWrapper(ct string) bool {
@@ -129,7 +134,7 @@ func isValidComponentType(ct string) bool {
 
 func isValidDeletionPolicy(dp string) bool {
 	switch strings.TrimSpace(dp) {
-	case "DELETE", "ORPHAN", "":
+	case "DELETE", "ORPHAN", "UNSPECIFIED", "":
 		return true
 	default:
 		return false

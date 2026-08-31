@@ -423,6 +423,22 @@ spec:
 			wantValid: false,
 			wantRules: []string{"INVALID_DELETION_POLICY"},
 		},
+		{
+			name:  "explicit UNSPECIFIED componentType and deletionPolicy is valid",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: unspecified-comp
+spec:
+  componentType: "UNSPECIFIED"
+  deletionPolicy: "UNSPECIFIED"
+`,
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {
