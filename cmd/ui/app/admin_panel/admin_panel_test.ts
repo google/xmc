@@ -265,4 +265,38 @@ describe('AdminPanelPage Component', () => {
     expect(await cardHarness!.hasErrorBanner()).toBeFalse();
     expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Retried Config Group']);
   });
+
+  it('should display toast and preserve old configs if subsequent refresh fails', async () => {
+    const healthService = get(HealthService);
+    const snackbarService = get(SnackbarService);
+    const openSpy = spyOn(snackbarService, 'open');
+    const firstConfigs = {
+      configGroups: [
+        {
+          displayName: 'Initial Group',
+          configs: [{ key: 'init.key', value: 'init.val' }],
+        },
+      ],
+    };
+    spyOn(healthService, 'getHealthConfigs').and.returnValues(
+      of(firstConfigs as any),
+      throwError(() => new Error('Refresh configs error')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const cardHarness = await harness.getConfigEntriesCard();
+    expect(cardHarness).not.toBeNull();
+    expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
+
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    await healthStatusSectionHarness!.clickRefresh();
+    await flush();
+
+    expect(openSpy).toHaveBeenCalledWith('Failed to refresh configuration entries.');
+    expect(await cardHarness!.hasErrorBanner()).toBeFalse();
+    expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
+  });
 });
