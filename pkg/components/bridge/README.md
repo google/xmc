@@ -80,6 +80,19 @@ Production-grade lifecycle controls and graceful deactivation policies for first
 
 ---
 
+## Third-Party (3P) CRD Dynamic Status Detection (`status_detector.go`)
+
+Third-party components (e.g. Ray Cluster, ClickHouse Operator, Redis) are managed by external Kubernetes operators and CRDs. The bridge uses a dynamic JSONPath query engine and RESTMapper resolution to inspect unstructured CRDs without requiring static compile-time Go structs:
+
+- **Dynamic GVR Resolution (`ResolveGVR`)**: Resolves Group, Version, Kind to GroupVersionResource using the cluster `RESTMapper` with heuristic pluralization fallbacks.
+- **Normalized JSONPath Engine (`EvaluateJSONPath`)**: Safely evaluates expressions across root or nested subtrees (`{.status.conditions[?(@.type=="Ready")].status}`, `$.status.phase`, `status.readyReplicas`).
+- **`StatusDetector` Interface**:
+  - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
+  - `ExtractResourceStatus(unstr *unstructured.Unstructured, ref WrapperRef) (*ResourceStatus, error)`
+- **`FakeStatusDetector`**: Mock double for simulating healthy, unready, and degraded CRD conditions in unit tests.
+
+---
+
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
@@ -89,4 +102,5 @@ Production-grade lifecycle controls and graceful deactivation policies for first
 - **Dynamic ConfigMap Management**: Automates persistence and synchronization of active Helm parameters into cluster-level ConfigMaps.
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
+- **Dynamic 3P CRD Status Detection**: Query third-party operator CRDs dynamically using normalized JSONPath queries without compile-time Go types.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
