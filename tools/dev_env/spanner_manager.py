@@ -19,7 +19,6 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import re
-import time
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
@@ -141,6 +140,19 @@ class SpannerManager:
             cwd=str(self.repo_root),
         )
 
+    def _create_and_init_database(
+        self,
+        instance: str,
+        db_name: str,
+        ddl_file: str | None = None,
+        proto_desc_file: str | None = None,
+        mig_dir: str | None = None,
+    ) -> None:
+        """Creates a database and immediately stamps its schema migration version."""
+        self._create_database(instance, db_name, ddl_file, proto_desc_file)
+        if mig_dir:
+            self._init_migration_version(instance, db_name, mig_dir)
+
     def ensure_databases_exist(
         self,
         instance: str | None = None,
@@ -171,15 +183,13 @@ class SpannerManager:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(missing_targets)) as executor:
             futures = [
-                executor.submit(self._create_database, target_instance, db_name, ddl, proto)
-                for db_name, ddl, proto, _ in missing_targets
+                executor.submit(
+                    self._create_and_init_database, target_instance, db_name, ddl, proto, mig_dir
+                )
+                for db_name, ddl, proto, mig_dir in missing_targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
-
-        for db_name, _, _, mig_dir in missing_targets:
-            if mig_dir:
-                self._init_migration_version(target_instance, db_name, mig_dir)
 
         log_success(f"Spanner databases created: {', '.join(missing_names)}")
         return set(missing_names)
@@ -226,36 +236,23 @@ class SpannerManager:
         is_dirty = dirty_match.group(1).lower() == "true" if dirty_match else False
         return current_version, is_dirty
 
-    def _apply_database_migration(
-        self, instance: str, db_name: str, mig_dir: str, max_attempts: int = 3
-    ) -> None:
-        """Applies schema migrations for a single database with retries."""
+    def _apply_database_migration(self, instance: str, db_name: str, mig_dir: str) -> None:
+        """Applies schema migrations for a single database."""
         log_info(f"Applying schema migrations for '{db_name}' (dir: '{mig_dir}')...")
-        for attempt in range(1, max_attempts + 1):
-            try:
-                run_command(
-                    [
-                        "bazel",
-                        "run",
-                        "//internal/storage/spanner/migrations:migrations",
-                        "--",
-                        f"-project={self.config.project_id}",
-                        f"-instance={instance}",
-                        f"-database={db_name}",
-                        f"-migrations_dir={mig_dir}",
-                        "-command=up",
-                    ],
-                    cwd=str(self.repo_root),
-                    log_on_error=(attempt == max_attempts),
-                )
-                return
-            except Exception as e:
-                if attempt == max_attempts:
-                    raise ValueError(
-                        f"Migration failed for '{db_name}' after {max_attempts} attempts: {e}"
-                    ) from e
-                log_info(f"Migration attempt {attempt} failed, retrying in 5s...")
-                time.sleep(5)
+        run_command(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/spanner/migrations:migrations",
+                "--",
+                f"-project={self.config.project_id}",
+                f"-instance={instance}",
+                f"-database={db_name}",
+                f"-migrations_dir={mig_dir}",
+                "-command=up",
+            ],
+            cwd=str(self.repo_root),
+        )
 
     def apply_migrations(
         self,

@@ -288,31 +288,11 @@ class SpannerManagerTest(unittest.TestCase):
         self.manager.apply_migrations(force=True)
         self.assertEqual(mock_run.call_count, 2)
 
-    @mock.patch("tools.dev_env.spanner_manager.time.sleep")
     @mock.patch("tools.dev_env.spanner_manager.run_command")
-    def test_apply_migrations_retries_on_failure(
-        self, mock_run: mock.MagicMock, mock_sleep: mock.MagicMock
-    ) -> None:
-        mock_run.side_effect = [
-            RuntimeError("transient lock"),
-            subprocess.CompletedProcess(args=[], returncode=0),
-            subprocess.CompletedProcess(args=[], returncode=0),
-        ]
-        self.manager.apply_migrations()
-        self.assertEqual(mock_run.call_count, 3)
-        mock_sleep.assert_called_once_with(5)
-
-    @mock.patch("tools.dev_env.spanner_manager.time.sleep")
-    @mock.patch("tools.dev_env.spanner_manager.run_command")
-    def test_apply_migrations_retries_exhausted_raises_value_error(
-        self, mock_run: mock.MagicMock, mock_sleep: mock.MagicMock
-    ) -> None:
-        mock_run.side_effect = RuntimeError("persistent failure")
-        with self.assertRaises(ValueError) as cm:
+    def test_apply_migrations_failure_raises_error(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = RuntimeError("migration failed")
+        with self.assertRaises(RuntimeError):
             self.manager.apply_migrations()
-        self.assertIn("Migration failed for 'test-ess-db' after 3 attempts", str(cm.exception))
-        self.assertEqual(mock_run.call_count, 3)
-        self.assertEqual(mock_sleep.call_count, 2)
 
     def test_setup_orchestration(self) -> None:
         with (
