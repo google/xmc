@@ -80,6 +80,9 @@ func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*Resourc
 	if m.nilStatus {
 		return nil, nil
 	}
+	if m.resStatus != nil {
+		return m.resStatus, nil
+	}
 	if m.hasStatus || m.status != nil {
 		return m.status, nil
 	}
