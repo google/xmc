@@ -22,10 +22,11 @@ export class SmartResourceFinderHarness extends ComponentHarness {
 
   private readonly amountInputs = this.locatorForAll('.query-amount-input');
   private readonly selectHarnesses = this.locatorForAll(MatSelectHarness);
-  private readonly selectBoxes = this.locatorForAll('.query-select-box');
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
-  private readonly dominantHelpIcons = this.locatorForAll('.dominant-help-icon');
+  private readonly amountLegends = this.locatorForAll('.amount-box .box-legend');
+  private readonly resourceLegends = this.locatorForAll('.resource-select-box .box-legend');
+  private readonly primaryHelpIcons = this.locatorForAll('.primary-resource-help-icon');
 
   /** Gets all option labels available in the resource type dropdowns. */
   async getResourceTypeOptions(): Promise<string[]> {
@@ -103,10 +104,6 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     }
     await removeBtns[index].click();
   }
-
-  private readonly amountLegends = this.locatorForAll('.amount-box .box-legend');
-  private readonly resourceLegends = this.locatorForAll('.resource-select-box .box-legend');
-  private readonly primaryHelpIcons = this.locatorForAll('.primary-resource-help-icon');
 
   /** Gets the Amount box legend label. */
   async getAmountBoxLabel(): Promise<string> {

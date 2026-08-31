@@ -70,7 +70,9 @@
             type="button"
             mat-icon-button
             class="remove-resource-btn"
-            aria-label="Remove resource filter"
+            [attr.aria-label]="
+              'Remove ' + (row.resourceType || 'resource filter') + ' (row ' + ($index + 1) + ')'
+            "
             (click)="removeRow($index)"
           >
             <mat-icon class="remove-icon">close</mat-icon>
