@@ -68,6 +68,10 @@ def _make_tree_writable(dir_path: Path) -> None:
     """Recursively adds write permissions to all directories and files in tree."""
     if not dir_path.exists():
         return
+    try:
+        os.chmod(dir_path, 0o755)
+    except OSError:
+        pass
     for root, dirs, files in os.walk(dir_path):
         for d in dirs:
             try:
@@ -383,8 +387,23 @@ class HelmDeployer:
             )
             return diag_file
 
-        lines: list[str] = []
         ctx = self.kube_context
+        # Verify cluster reachability first to avoid cascading timeouts
+        reachability = run_command(
+            ["kubectl", "--context", ctx, "--request-timeout=3s", "get", "nodes"],
+            capture_output=True,
+            check=False,
+            log_cmd=False,
+        )
+        if reachability.returncode != 0:
+            log_error("Kubernetes cluster is unreachable. Skipping detailed diagnostics.")
+            diag_file.write_text(
+                f"Cluster unreachable: {reachability.stderr or reachability.stdout or 'connection failed'}",
+                encoding="utf-8",
+            )
+            return diag_file
+
+        lines: list[str] = []
         namespaces = (namespace, "dex") if namespace != "dex" else ("dex",)
 
         for ns in namespaces:

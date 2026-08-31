@@ -27,6 +27,7 @@ from tools.dev_env.config import LocalDevConfig
 from tools.dev_env.helm_deployer import (
     HelmDeployer,
     _dump_yaml,
+    _make_tree_writable,
     service_to_deployment_key,
     service_to_image_key,
 )
@@ -228,6 +229,29 @@ class TestHelmDeployer(unittest.TestCase):
         content = diag_path.read_text(encoding="utf-8")
         self.assertIn("kubectl CLI not found", content)
         mock_run.assert_not_called()
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_capture_diagnostics_unreachable_cluster(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["kubectl", "get", "nodes"], 1, stdout="", stderr="connection refused"
+        )
+        diag_path = self.deployer.capture_diagnostics()
+        self.assertTrue(diag_path.is_file())
+        content = diag_path.read_text(encoding="utf-8")
+        self.assertIn("Cluster unreachable: connection refused", content)
+        self.assertEqual(mock_run.call_count, 1)
+
+    def test_make_tree_writable(self) -> None:
+        test_dir = self.temp_path / "readonly_test"
+        test_dir.mkdir(parents=True, exist_ok=True)
+        sub_file = test_dir / "file.txt"
+        sub_file.write_text("hello", encoding="utf-8")
+        sub_dir = test_dir / "subdir"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
+        _make_tree_writable(test_dir)
+        self.assertTrue(test_dir.exists())
+        self.assertTrue(sub_file.exists())
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:
