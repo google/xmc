@@ -121,3 +121,9 @@ graph TD
   var _ storage.WorkUnitStore = (*Repository)(nil)
   ```
 
+## 12. Storage Drivers, Snapshot Isolation & Logging Conventions
+- **Multi-Table Read Transaction Snapshot Isolation**: Operations that query both live entity rows and associated historical snapshot tables (e.g. `ResolveComponentSnapshot`) **MUST** execute within a single `ReadOnlyTransaction` snapshot to guarantee atomic point-in-time isolation across all participating tables.
+- **Defensive Snapshot State Isolation**: When cloning live records to construct historical snapshots, mutable status fields (e.g. `rec.Status`) **MUST** be explicitly reset to `nil` before unmarshaling snapshot byte payloads. This guarantees that missing or empty optional payloads in historical snapshots never leak state from the current generation clone.
+- **Fallback Logging Convention**: In server initialization entrypoints (`main.go` / `run()`), fallback instantiations to in-memory test doubles (e.g. `MemoryStore` when a primary `spanner.Client` is nil) **MUST** log at warning level (`logging.Warn(ctx, ...)`), rather than `logging.Info`, to maintain operational visibility in production runtime environments.
+
+
