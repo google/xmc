@@ -12,71 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helm chart values generation, sanitization, and diagnostics for local dev."""
+"""Helm chart values generation, release orchestration, and deployment for local dev."""
+
+from __future__ import annotations
 
 import getpass
 import json
 import logging
 import os
-import re
-import shutil
 from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import log_error, log_info, log_success, run_command
+from tools.dev_env.chart_sanitizer import ChartSanitizer
+from tools.dev_env.cluster_diagnostics import ClusterDiagnostics
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.helm_deployer")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-UNSUPPORTED_LOCAL_API_GROUPS: tuple[str, ...] = (
-    "cloud.google.com",
-    "networking.gke.io",
-    "secrets-store.csi.x-k8s.io",
-    "cert-manager.io",
-    "acme.cert-manager.io",
-    "gateway.networking.k8s.io",
-    "autoscaling.k8s.io",
-    "kueue.x-k8s.io",
-)
-
-UNSUPPORTED_LOCAL_KINDS: tuple[str, ...] = (
-    "BackendConfig",
-    "ManagedCertificate",
-    "HealthCheckPolicy",
-    "SecretProviderClass",
-    "VerticalPodAutoscaler",
-    "HorizontalPodAutoscaler",
-    "Gateway",
-    "HTTPRoute",
-    "Issuer",
-    "ClusterIssuer",
-    "Certificate",
-    "LocalQueue",
-    "ClusterQueue",
-    "ResourceFlavor",
-    "WorkloadPriorityClass",
-)
-
-
-def is_unsupported_kubernetes_doc(doc: str) -> bool:
-    """Checks if a YAML document declares an unsupported cloud-only API group or Kind."""
-    api_match = re.search(r'^\s*apiVersion:\s*["\']?([^"\'\s]+)', doc, re.MULTILINE)
-    kind_match = re.search(r'^\s*kind:\s*["\']?([^"\'\s]+)', doc, re.MULTILINE)
-
-    if api_match:
-        api_val = api_match.group(1)
-        if any(group in api_val for group in UNSUPPORTED_LOCAL_API_GROUPS):
-            return True
-
-    if kind_match:
-        kind_val = kind_match.group(1)
-        if kind_val in UNSUPPORTED_LOCAL_KINDS:
-            return True
-
-    return False
-
 
 try:
     import yaml
@@ -91,27 +45,6 @@ def _dump_yaml(data: dict[str, Any]) -> str:
     if _HAS_YAML:
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
     return json.dumps(data, indent=2)
-
-
-def _make_tree_writable(dir_path: Path) -> None:
-    """Recursively adds write permissions to all directories and files in tree."""
-    if not dir_path.exists():
-        return
-    try:
-        os.chmod(dir_path, 0o755)
-    except OSError:
-        pass
-    for root, dirs, files in os.walk(dir_path):
-        for d in dirs:
-            try:
-                os.chmod(os.path.join(root, d), 0o755)
-            except OSError:
-                pass
-        for f in files:
-            try:
-                os.chmod(os.path.join(root, f), 0o644)
-            except OSError:
-                pass
 
 
 def service_to_deployment_key(service: str) -> str:
@@ -151,13 +84,15 @@ def service_to_image_key(service: str) -> str:
 
 
 class HelmDeployer:
-    """Manages Helm release sanitization, values generation, and deployment."""
+    """Manages Helm release values generation, deployment orchestration, and rollout verification."""
 
     def __init__(
         self,
         config: LocalDevConfig,
         repo_root: Path | None = None,
         temp_dir: Path | None = None,
+        sanitizer: ChartSanitizer | None = None,
+        diagnostics: ClusterDiagnostics | None = None,
     ) -> None:
         """Initializes HelmDeployer with development configuration."""
         self.config, self.repo_root = config, repo_root or _REPO_ROOT
@@ -175,6 +110,14 @@ class HelmDeployer:
         )
         self.helm_dir = self.temp_dir / "helm"
         self.values_file = self.temp_dir / "values.yaml"
+        self.sanitizer = sanitizer or ChartSanitizer(
+            source_chart=self.repo_root / "deploy" / "helm",
+            target_dir=self.helm_dir,
+        )
+        self.diagnostics = diagnostics or ClusterDiagnostics(
+            kube_context=self.kube_context,
+            output_dir=self.temp_dir,
+        )
 
     @property
     def kube_context(self) -> str:
@@ -182,75 +125,12 @@ class HelmDeployer:
         return f"kind-{self.config.cluster_name}"
 
     def prepare_local_chart(self) -> Path:
-        """Copies Helm chart to temp dir and prunes cloud-only GKE resources.
+        """Copies and sanitizes Helm chart templates for local development."""
+        return self.sanitizer.prepare_sanitized_chart()
 
-        Removes GKE-specific resources (Cloud Armor, BackendConfig, ManagedCertificates,
-        GCP SecretProviderClass, external Kueue/WPC definitions) and patches
-        imagePullPolicy from Always to IfNotPresent so KinD uses locally loaded images.
-
-        Returns:
-            Path to the sanitized temporary Helm chart directory.
-        """
-        _LOGGER.debug("Preparing local Helm chart copy at %s", self.helm_dir)
-        if self.helm_dir.exists():
-            _make_tree_writable(self.helm_dir)
-            shutil.rmtree(self.helm_dir)
-        source_chart = self.repo_root / "deploy" / "helm"
-        if not source_chart.is_dir():
-            raise FileNotFoundError(f"Source Helm chart directory not found at '{source_chart}'")
-        shutil.copytree(source_chart, self.helm_dir)
-        _make_tree_writable(self.helm_dir)
-
-        templates_dir = self.helm_dir / "templates"
-        self._sanitize_templates(templates_dir)
-        self._patch_image_pull_policy()
-        return self.helm_dir
-
-    def _sanitize_templates(self, templates_dir: Path) -> None:
-        """Dynamically filters out cloud-only manifests based on apiVersion and kind."""
-        if not templates_dir.is_dir():
-            return
-
-        for path in list(templates_dir.rglob("*.yaml")) + list(templates_dir.rglob("*.yml")):
-            try:
-                content = path.read_text(encoding="utf-8")
-                docs = re.split(r"(?m)^---\s*$", content)
-                kept_docs = [d for d in docs if d.strip() and not is_unsupported_kubernetes_doc(d)]
-                path.chmod(path.stat().st_mode | 0o200)
-                if not kept_docs:
-                    _LOGGER.debug("Pruning cloud-only template file: %s", path.name)
-                    path.unlink()
-                else:
-                    path.write_text("\n---\n".join(kept_docs) + "\n", encoding="utf-8")
-            except OSError as e:
-                _LOGGER.warning("Failed to sanitize template file %s: %s", path, e)
-
-        # Remove empty subdirectories recursively
-        for directory in sorted(templates_dir.rglob("*"), key=lambda x: len(str(x)), reverse=True):
-            if directory.is_dir() and not any(directory.iterdir()):
-                try:
-                    directory.rmdir()
-                except OSError:
-                    pass
-
-    def _patch_image_pull_policy(self) -> None:
-        """Replaces imagePullPolicy Always with IfNotPresent in local templates."""
-        total_patched = 0
-        for path in self.helm_dir.rglob("*.yaml"):
-            try:
-                text = path.read_text(encoding="utf-8")
-                patched, count = re.subn(
-                    r'\bimagePullPolicy:\s*["\']?Always\b["\']?',
-                    "imagePullPolicy: IfNotPresent",
-                    text,
-                )
-                if count > 0:
-                    total_patched += count
-                    path.chmod(path.stat().st_mode | 0o200)
-                    path.write_text(patched, encoding="utf-8")
-            except OSError as e:
-                _LOGGER.warning("Failed to process or patch file %s: %s", path, e)
-        _LOGGER.debug("Patched imagePullPolicy: IfNotPresent across %d locations", total_patched)
+    def capture_diagnostics(self, namespace: str = "xmc") -> Path:
+        """Captures diagnostic telemetry across namespaces on failure."""
+        return self.diagnostics.capture_diagnostics(namespace=namespace)
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
@@ -308,158 +188,6 @@ class HelmDeployer:
         _LOGGER.debug("Wrote Helm values (%d bytes) to %s", len(content), target_path)
         log_info(f"Generated Helm values file: '{target_path}'")
         return target_path
-
-    def _capture_pods(self, ctx: str, ns: str) -> list[str]:
-        """Captures wide pod listing in a given namespace."""
-        lines = [f"=== PODS (namespace: {ns}) ==="]
-        res = run_command(
-            [
-                "kubectl",
-                "--context",
-                ctx,
-                "--request-timeout=10s",
-                "get",
-                "pods",
-                "-n",
-                ns,
-                "-o",
-                "wide",
-            ],
-            capture_output=True,
-            check=False,
-            log_cmd=False,
-        )
-        lines.append(res.stdout or res.stderr or "")
-        return lines
-
-    def _capture_pod_descriptions(self, ctx: str, ns: str) -> list[str]:
-        """Captures detailed pod descriptions in a given namespace."""
-        lines = [f"=== POD DESCRIPTIONS (namespace: {ns}) ==="]
-        desc_res = run_command(
-            ["kubectl", "--context", ctx, "--request-timeout=10s", "describe", "pods", "-n", ns],
-            capture_output=True,
-            check=False,
-            log_cmd=False,
-        )
-        lines.append(desc_res.stdout or desc_res.stderr or "")
-        return lines
-
-    def _capture_events(self, ctx: str, ns: str) -> list[str]:
-        """Captures recent Kubernetes events in a given namespace."""
-        lines = [f"=== EVENTS (namespace: {ns}) ==="]
-        ev_res = run_command(
-            [
-                "kubectl",
-                "--context",
-                ctx,
-                "--request-timeout=10s",
-                "get",
-                "events",
-                "-n",
-                ns,
-                "--sort-by=.metadata.creationTimestamp",
-            ],
-            capture_output=True,
-            check=False,
-            log_cmd=False,
-        )
-        lines.append(ev_res.stdout or ev_res.stderr or "")
-        return lines
-
-    def _capture_pod_logs(self, ctx: str, ns: str) -> list[str]:
-        """Captures tail logs for all containers in each pod in a namespace."""
-        lines: list[str] = []
-        pods_res = run_command(
-            [
-                "kubectl",
-                "--context",
-                ctx,
-                "--request-timeout=10s",
-                "get",
-                "pods",
-                "-n",
-                ns,
-                "-o",
-                "jsonpath={.items[*].metadata.name}",
-            ],
-            capture_output=True,
-            check=False,
-            log_cmd=False,
-        )
-        if pods_res.returncode == 0:
-            for pod in (pods_res.stdout or "").split()[:15]:
-                lines.append(f"--- Logs for pod: {pod} (ns: {ns}) ---")
-                log_res = run_command(
-                    [
-                        "kubectl",
-                        "--context",
-                        ctx,
-                        "--request-timeout=10s",
-                        "logs",
-                        "-n",
-                        ns,
-                        pod,
-                        "--all-containers=true",
-                        "--tail=100",
-                    ],
-                    capture_output=True,
-                    check=False,
-                    log_cmd=False,
-                )
-                lines.append(log_res.stdout or log_res.stderr or "")
-        return lines
-
-    def capture_diagnostics(self, namespace: str = "xmc") -> Path:
-        """Captures pod descriptions, cluster events, and container logs on rollout failure.
-
-        Saves detailed cluster diagnostics across 'dex' and the target XMC namespace to
-        `k8s_diagnostics.log` for troubleshooting failed deployments.
-
-        Args:
-            namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
-
-        Returns:
-            Path to the generated diagnostic log file.
-        """
-        log_error("Rollout failure detected. Capturing diagnostic telemetry...")
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        diag_file = self.temp_dir / "k8s_diagnostics.log"
-
-        if not shutil.which("kubectl"):
-            log_error("kubectl CLI not found. Skipping diagnostic capture.")
-            diag_file.write_text(
-                "kubectl CLI not found. Diagnostics could not be captured.", encoding="utf-8"
-            )
-            return diag_file
-
-        ctx = self.kube_context
-        # Verify cluster reachability first to avoid cascading timeouts
-        reachability = run_command(
-            ["kubectl", "--context", ctx, "--request-timeout=3s", "get", "nodes"],
-            capture_output=True,
-            check=False,
-            log_cmd=False,
-        )
-        if reachability.returncode != 0:
-            log_error("Kubernetes cluster is unreachable. Skipping detailed diagnostics.")
-            diag_file.write_text(
-                f"Cluster unreachable: {reachability.stderr or reachability.stdout or 'connection failed'}",
-                encoding="utf-8",
-            )
-            return diag_file
-
-        lines: list[str] = []
-        namespaces = (namespace, "dex") if namespace != "dex" else ("dex",)
-
-        for ns in namespaces:
-            lines.extend(self._capture_pods(ctx, ns))
-            lines.extend(self._capture_pod_descriptions(ctx, ns))
-            lines.extend(self._capture_events(ctx, ns))
-            lines.extend(self._capture_pod_logs(ctx, ns))
-
-        diag_file.write_text("\n".join(lines), encoding="utf-8")
-        log_info(f"Diagnostic logs saved to: '{diag_file}'")
-        return diag_file
 
     def _check_dex_rollout(self, ctx: str, timeout_flag: str) -> None:
         """Checks rollout status for Dex in the 'dex' namespace if present."""

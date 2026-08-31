@@ -148,6 +148,26 @@ alias(
 )
 
 alias(
+    name = "chart_sanitizer_lib",
+    actual = "//tools/dev_env:chart_sanitizer_lib",
+)
+
+alias(
+    name = "chart_sanitizer_test",
+    actual = "//tools/dev_env:chart_sanitizer_test",
+)
+
+alias(
+    name = "cluster_diagnostics_lib",
+    actual = "//tools/dev_env:cluster_diagnostics_lib",
+)
+
+alias(
+    name = "cluster_diagnostics_test",
+    actual = "//tools/dev_env:cluster_diagnostics_test",
+)
+
+alias(
     name = "helm_deployer_lib",
     actual = "//tools/dev_env:helm_deployer_lib",
 )
