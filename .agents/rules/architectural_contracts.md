@@ -36,7 +36,7 @@ This document defines core architectural contracts and invariants across the XMC
 ## 3. Relational Storage & Lifecycle Safety Contracts
 
 1. **Soft-Deletion Relational Join Integrity**:
-   - In database schemas utilizing soft-deletion with generated columns (e.g. `ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED`), all SQL queries joining child dependency tables (such as `ComponentDependencies`) against parent or target tables **MUST** filter on active states on both joined entities (e.g. `WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL`).
+   - In database schemas utilizing soft-deletion with generated columns (e.g. `ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED`, where state `5` represents `COMPONENT_STATE_DELETED`), all SQL queries joining child dependency tables (such as `ComponentDependencies`) against parent or target tables **MUST** filter on active states on both joined entities (e.g. `WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL`).
    - This prevents soft-deleted foreign keys and inactive dependency edges from contaminating active catalogs or causing invalid graph traversals.
 
 2. **Transitive DAG Evaluation for Lifecycle Safety**:
