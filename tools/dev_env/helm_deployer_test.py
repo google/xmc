@@ -23,7 +23,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tools.dev_env.config import LocalDevConfig
-from tools.dev_env.helm_deployer import HelmDeployer
+from tools.dev_env.helm_deployer import HelmDeployer, _dump_yaml
 
 
 class TestHelmDeployer(unittest.TestCase):
@@ -51,6 +51,14 @@ class TestHelmDeployer(unittest.TestCase):
         self.tmp_dir.cleanup()
         super().tearDown()
 
+    def test_dump_yaml_json_fallback(self) -> None:
+        data = {"key": "val", "number": 42, "items": ["a", "b"]}
+        with patch("tools.dev_env.helm_deployer._HAS_YAML", False):
+            result = _dump_yaml(data)
+            self.assertIn('"key": "val"', result)
+            self.assertIn('"number": 42', result)
+            self.assertIn('"items": [', result)
+
     def test_kube_context(self) -> None:
         self.assertEqual(self.deployer.kube_context, "kind-test-kind-cluster")
 
@@ -58,8 +66,8 @@ class TestHelmDeployer(unittest.TestCase):
         val_path = self.deployer.generate_values_file()
         self.assertTrue(val_path.is_file())
         content = val_path.read_text(encoding="utf-8")
-        self.assertIn('projectId: "test-proj"', content)
-        self.assertIn('environment: "local-dev"', content)
+        self.assertIn("test-proj", content)
+        self.assertIn("local-dev", content)
         self.assertIn("test-instance", content)
         self.assertIn("test_ess_db", content)
         self.assertIn("test_xid_db", content)
@@ -84,15 +92,15 @@ class TestHelmDeployer(unittest.TestCase):
         )
         val_path = self.deployer.generate_values_file(config=cfg)
         content = val_path.read_text(encoding="utf-8")
-        self.assertIn("dashboardServiceDeployment:", content)
-        self.assertIn('dashboard_service_custom_image: "dashboard_service_image:latest"', content)
-        self.assertIn("healthServiceDeployment:", content)
-        self.assertIn('health_service_custom_image: "health_service_image:latest"', content)
-        self.assertIn("componentsDeployment:", content)
-        self.assertIn("rodDeployment:", content)
-        self.assertIn('rod_custom_image: "rod_data_provider_image:latest"', content)
-        self.assertIn("ingestionGatewayDeployment:", content)
-        self.assertIn('ingestion_gateway_custom_image: "ingestion_gateway_image:latest"', content)
+        self.assertIn("dashboardServiceDeployment", content)
+        self.assertIn("dashboard_service_image:latest", content)
+        self.assertIn("healthServiceDeployment", content)
+        self.assertIn("health_service_image:latest", content)
+        self.assertIn("componentsDeployment", content)
+        self.assertIn("rodDeployment", content)
+        self.assertIn("rod_data_provider_image:latest", content)
+        self.assertIn("ingestionGatewayDeployment", content)
+        self.assertIn("ingestion_gateway_image:latest", content)
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:
@@ -160,19 +168,22 @@ class TestHelmDeployer(unittest.TestCase):
             self.assertNotIn("status", cmd)
 
     @patch("tools.dev_env.helm_deployer.run_command")
-    def test_wait_for_rollouts_discovery_failure_logs_warning(self, mock_run: MagicMock) -> None:
+    def test_wait_for_rollouts_discovery_failure_raises(self, mock_run: MagicMock) -> None:
         mock_res = MagicMock()
         mock_res.returncode = 1
         mock_res.stdout = b""
         mock_res.stderr = b"Connection refused"
         mock_run.return_value = mock_res
 
-        with self.assertLogs("xmc.dev_env.helm_deployer", level="WARNING") as log_cm:
+        with self.assertRaises(RuntimeError) as ctx:
             self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=120)
-        self.assertTrue(any("Failed to discover deployments" in msg for msg in log_cm.output))
+        self.assertIn("Failed to discover deployments", str(ctx.exception))
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_deploy(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = b"gateway-proxy"
+        mock_run.return_value.stderr = b""
         chart_dir = self.temp_path / "deploy" / "helm"
         chart_dir.mkdir(parents=True, exist_ok=True)
         self.deployer.deploy(chart_path=chart_dir, timeout=60)
@@ -212,6 +223,9 @@ class TestHelmDeployer(unittest.TestCase):
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_deploy_with_values_local_yaml(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = b"gateway-proxy"
+        mock_run.return_value.stderr = b""
         chart_dir = self.temp_path / "deploy" / "helm"
         chart_dir.mkdir(parents=True, exist_ok=True)
         (chart_dir / "values-local.yaml").write_text("isDevEnvironment: true\n", encoding="utf-8")

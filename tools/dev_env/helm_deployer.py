@@ -15,6 +15,7 @@
 """Helm chart values generation and deployment manager for local KinD dev."""
 
 import getpass
+import json
 import logging
 import os
 from pathlib import Path
@@ -36,24 +37,11 @@ except ImportError:
     _HAS_YAML = False
 
 
-def _dump_yaml(data: dict[str, Any], indent: int = 0) -> str:
-    """Serializes a dictionary to YAML format using PyYAML or a clean stdlib formatter."""
+def _dump_yaml(data: dict[str, Any]) -> str:
+    """Serializes a dictionary to YAML format using PyYAML or a clean JSON fallback."""
     if _HAS_YAML:
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
-
-    lines: list[str] = []
-    prefix = " " * indent
-    for k, v in data.items():
-        if isinstance(v, dict):
-            lines.append(f"{prefix}{k}:")
-            lines.append(_dump_yaml(v, indent + 2))
-        elif isinstance(v, bool):
-            lines.append(f"{prefix}{k}: {'true' if v else 'false'}")
-        elif isinstance(v, (int, float)):
-            lines.append(f"{prefix}{k}: {v}")
-        else:
-            lines.append(f'{prefix}{k}: "{v}"')
-    return "\n".join(lines)
+    return json.dumps(data, indent=2)
 
 
 class HelmDeployer:
@@ -210,20 +198,17 @@ class HelmDeployer:
                 if isinstance(res.stderr, bytes)
                 else str(res.stderr or "")
             )
-            _LOGGER.warning(
-                "Failed to discover deployments in namespace %s (exit code %d): %s",
-                namespace,
-                res.returncode,
-                stderr_str,
+            raise RuntimeError(
+                f"Failed to discover deployments in namespace {namespace} "
+                f"(exit code {res.returncode}): {stderr_str}"
             )
-            deployments: list[str] = []
-        else:
-            stdout = (
-                res.stdout.decode("utf-8", errors="replace")
-                if isinstance(res.stdout, bytes)
-                else (res.stdout or "")
-            )
-            deployments = stdout.split() if stdout.strip() else []
+
+        stdout = (
+            res.stdout.decode("utf-8", errors="replace")
+            if isinstance(res.stdout, bytes)
+            else (res.stdout or "")
+        )
+        deployments = stdout.split() if stdout.strip() else []
 
         for dep in sorted(deployments):
             _LOGGER.debug(
