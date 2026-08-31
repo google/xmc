@@ -146,7 +146,7 @@ describe('SmartResourceFinderComponent', () => {
     expect(tooltipHarness).not.toBeNull();
     await tooltipHarness!.show();
     expect(await tooltipHarness!.getTooltipText()).toBe(
-      'A dominant resource is a resource that determines the unit of velocity of queue predictability',
+      'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
     );
 
     // Add row 1 with 'cpu'
@@ -183,7 +183,7 @@ describe('SmartResourceFinderComponent', () => {
     expect(tooltipHarness).not.toBeNull();
     await tooltipHarness!.show();
     expect(await tooltipHarness!.getTooltipText()).toBe(
-      'A dominant resource is a resource that determines the unit of velocity of queue predictability',
+      'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
     );
   });
 
