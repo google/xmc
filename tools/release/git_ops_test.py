@@ -56,10 +56,18 @@ class GitOpsTest(unittest.TestCase):
         def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
             if "describe" in cmd:
                 raise subprocess.CalledProcessError(1, cmd)
-            return MagicMock(stdout="0.6.0\n0.5.0\n0.4.0\n", returncode=0)
+            if "tag" in cmd:
+                return MagicMock(stdout="0.6.0\n0.5.0\n0.4.0\n", returncode=0)
+            if "rev-parse" in cmd:
+                ref = cmd[2]
+                if ref.startswith("HEAD") or ref.startswith("0.6.0"):
+                    return MagicMock(stdout="hash-060\n", returncode=0)
+                if ref.startswith("0.5.0"):
+                    return MagicMock(stdout="hash-050\n", returncode=0)
+            return MagicMock(stdout="", returncode=0)
 
         mock_run.side_effect = side_effect
-        tag = get_latest_tag_before("0.6.0", Path("."))
+        tag = get_latest_tag_before("HEAD", Path("."))
         self.assertEqual(tag, "0.5.0")
 
     @patch("tools.release.git_ops.subprocess.run")
@@ -74,11 +82,11 @@ class GitOpsTest(unittest.TestCase):
     @patch("tools.release.git_ops.subprocess.run")
     def test_get_git_commits_parsing(self, mock_run: MagicMock) -> None:
         raw_log = """---XMC_COMMIT_DELIMITER---
-11111111---XMC_FIELD_SEP---1111---XMC_FIELD_SEP---feat(ui): add dashboard (#123)---XMC_FIELD_SEP---Author One---XMC_FIELD_SEP---2026-08-21
+11111111---XMC_FIELD_SEP---1111---XMC_FIELD_SEP---Author One---XMC_FIELD_SEP---2026-08-21---XMC_FIELD_SEP---feat(ui): add dashboard (#123)
 ui/app.ts
 ui/index.html
 ---XMC_COMMIT_DELIMITER---
-22222222---XMC_FIELD_SEP---2222---XMC_FIELD_SEP---fix(core): resolve crash---XMC_FIELD_SEP---Author Two---XMC_FIELD_SEP---2026-08-20
+22222222---XMC_FIELD_SEP---2222---XMC_FIELD_SEP---Author Two---XMC_FIELD_SEP---2026-08-20---XMC_FIELD_SEP---fix(core): resolve race: delimiter check
 pkg/core/server.go
 """
         mock_run.return_value = MagicMock(stdout=raw_log, returncode=0)
@@ -91,6 +99,7 @@ pkg/core/server.go
         self.assertEqual(commits[0].files_changed, ["ui/app.ts", "ui/index.html"])
 
         self.assertEqual(commits[1].short_hash, "2222")
+        self.assertEqual(commits[1].subject, "fix(core): resolve race: delimiter check")
         self.assertIsNone(commits[1].pr_number)
 
     @patch("tools.release.git_ops.subprocess.run")
@@ -103,6 +112,7 @@ pkg/core/server.go
 
     def test_parse_remote_url(self) -> None:
         self.assertEqual(parse_remote_url("git@github.com:google/xmc.git"), ("google", "xmc"))
+        self.assertEqual(parse_remote_url("https://github.com/google/xmc/"), ("google", "xmc"))
         self.assertEqual(parse_remote_url("https://github.com/google/xmc"), ("google", "xmc"))
         self.assertEqual(parse_remote_url("invalid"), ("google", "xmc"))
 

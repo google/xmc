@@ -47,8 +47,34 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
         cmd = ["git", "tag", "--sort=-v:refname"]
         res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
         tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
+
+        target_hash = None
+        try:
+            target_hash = subprocess.run(
+                ["git", "rev-parse", f"{target_ref}^{{commit}}"],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=cwd,
+            ).stdout.strip()
+        except subprocess.CalledProcessError:
+            pass
+
         for t in tags:
             if t != target_ref:
+                if target_hash:
+                    try:
+                        tag_hash = subprocess.run(
+                            ["git", "rev-parse", f"{t}^{{commit}}"],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                            cwd=cwd,
+                        ).stdout.strip()
+                        if tag_hash == target_hash:
+                            continue
+                    except subprocess.CalledProcessError:
+                        pass
                 return t
     except subprocess.CalledProcessError:
         pass
@@ -74,7 +100,7 @@ def get_git_commits(
     cwd = str(repo_dir) if repo_dir else None
     delimiter = "---XMC_COMMIT_DELIMITER---"
     field_sep = "---XMC_FIELD_SEP---"
-    log_format = f"{delimiter}%n%H{field_sep}%h{field_sep}%s{field_sep}%an{field_sep}%ad"
+    log_format = f"{delimiter}%n%H{field_sep}%h{field_sep}%an{field_sep}%ad{field_sep}%s"
 
     cmd = [
         "git",
@@ -108,11 +134,11 @@ def get_git_commits(
         header_line = lines[0]
         files = [line.strip() for line in lines[1:] if line.strip()]
 
-        parts = header_line.split(field_sep)
+        parts = header_line.split(field_sep, 4)
         if len(parts) < 5:
             continue
 
-        commit_hash, short_hash, subject, author, date = parts[:5]
+        commit_hash, short_hash, author, date, subject = parts
         pr_number: int | None = None
         pr_match = re.search(r"\(#(\d+)\)\s*$", subject)
         if pr_match:
@@ -135,7 +161,7 @@ def get_git_commits(
 
 def parse_remote_url(remote_url: str) -> tuple[str, str]:
     """Parses owner and repo name from git remote url."""
-    clean = remote_url.strip()
+    clean = str(remote_url).strip().rstrip("/")
     if clean.endswith(".git"):
         clean = clean[:-4]
     match = re.search(r"[:/]([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$", clean)
