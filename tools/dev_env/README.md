@@ -210,6 +210,30 @@ python3 tools/dev_env/dev_env.py upgrade --target gke --config ...
 
 ---
 
+## Helm Deployment Layer (`HelmDeployer`)
+
+The `tools/dev_env/helm_deployer.py` module encapsulates Helm chart rendering, local values generation, and rollout orchestration for the XMC application stack on Kubernetes.
+
+### Local Values Overlay (`deploy/helm/values-local.yaml`)
+To adapt the production XMC Helm chart for local development, `values-local.yaml` overrides cloud-specific configurations:
+- Disables GCP Ingress and Workload Identity annotations.
+- Routes backend traffic through local HTTP Gateway Proxy (`localhost:8080`) and Dex OIDC (`localhost:5556`).
+- Enables development-mode authentication and CORS policies.
+
+### Dynamic Values Generation
+`HelmDeployer.generate_local_values()` dynamically renders a unified values file by combining:
+1. **Base Values**: Loaded from `deploy/helm/values-local.yaml`.
+2. **Spanner Configuration**: Local Spanner instance, databases (`ess_database`, `xid_database`), and emulator endpoints.
+3. **Container Images**: Local image repositories and image tags (`local-dev`) side-loaded via KinD.
+4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `enable_components`, `rod_deployment_enabled`).
+
+### Deployment & Rollout Monitoring
+`HelmDeployer.deploy()` applies the Helm release (`xmc`) and invokes `wait_for_rollouts()`:
+- Automatically discovers all active deployments in the target namespace (`kubectl get deployments`).
+- Monitors rollout status (`kubectl rollout status`) with configurable timeouts to ensure all microservices transition to ready state.
+
+---
+
 ## Configuration Architecture (`LocalDevConfig`)
 
 The `tools/dev_env/config.py` module defines `LocalDevConfig` and provides unified configuration discovery and resolution.
