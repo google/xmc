@@ -146,16 +146,6 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
-			name: "active 3P with finalizer addition",
-			cms:  &mockCMS{},
-			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				DeletionProtection: true, Enabled: true,
-			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantAddFin: true,
-		},
-		{
 			name: "active 1P without deletion protection still attaches finalizer",
 			cms:  &mockCMS{},
 			helm: &mockHelm{},

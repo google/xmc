@@ -45,12 +45,12 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
 First-party (1P) components are managed natively through XMC Helm charts. Rather than constructing duplicate Kubernetes `Deployment` and `Service` manifests in Go code, the bridge translates Component CR specifications directly into structured Helm parameter values:
 
-- **`HelmOptions`**: Encapsulates component parameters, image tags, replica counts, port bindings, and lifecycle controls.
-- **`SynthesizeHelmValues(opts HelmOptions) (map[string]any, error)`**: Translates declarative component options into hierarchical Helm parameter maps (e.g., enabling `<component>Deployment.enabled: true`, setting custom images, and binding ports).
+- **`HelmComponentOptions`**: Encapsulates component parameters, image tags, replica counts, port bindings, and lifecycle controls.
+- **`BuildHelmValues(opts HelmComponentOptions) map[string]any`**: Translates declarative component options into hierarchical Helm parameter maps (e.g., enabling `<component>Deployment.enabled: true`, setting custom images, and binding ports).
 - **`HelmManager` Interface**: Declarative contract for applying and removing synthesized 1P values:
-  - `Ensure1PComponent(ctx context.Context, opts HelmOptions) error`
-  - `Delete1PComponent(ctx context.Context, name, namespace string, policy DeletionPolicy) error`
-  - `IsComponentActive(ctx context.Context, name, namespace string) (bool, error)`
+  - `Ensure1PComponent(ctx context.Context, namespace string, componentName string, opts HelmComponentOptions) error`
+  - `Delete1PComponent(ctx context.Context, namespace string, componentName string) error`
+  - `IsComponentActive(componentName string) bool`
 - **`FakeHelmManager`**: In-memory test double supporting concurrent testing and error injection.
 
 ---

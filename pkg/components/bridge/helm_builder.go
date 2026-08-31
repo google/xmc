@@ -63,6 +63,10 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	compValues := make(map[string]any)
 	compValues["enabled"] = opts.Enabled
 
+	if opts.DrainTimeoutSeconds > 0 {
+		compValues["drainTimeoutSeconds"] = opts.DrainTimeoutSeconds
+	}
+
 	if opts.ImageTag != "" {
 		values["global"] = map[string]any{
 			"imageTag": opts.ImageTag,

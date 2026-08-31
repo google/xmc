@@ -27,10 +27,11 @@ import (
 func TestBuildHelmValues(t *testing.T) {
 	t.Run("basic 1p component with parameters and image tag", func(t *testing.T) {
 		opts := HelmComponentOptions{
-			ComponentName: "ingestion-gateway",
-			Namespace:     "xmc",
-			Enabled:       true,
-			ImageTag:      "v1.2.3",
+			ComponentName:       "ingestion-gateway",
+			Namespace:           "xmc",
+			Enabled:             true,
+			ImageTag:            "v1.2.3",
+			DrainTimeoutSeconds: 30,
 			Parameters: map[string]string{
 				"minPartitions": "128",
 				"tlsEnabled":    "true",
@@ -55,6 +56,9 @@ func TestBuildHelmValues(t *testing.T) {
 
 		if depValues["enabled"] != true {
 			t.Errorf("expected enabled = true, got %v", depValues["enabled"])
+		}
+		if depValues["drainTimeoutSeconds"] != int32(30) {
+			t.Errorf("expected drainTimeoutSeconds = 30, got %v (%T)", depValues["drainTimeoutSeconds"], depValues["drainTimeoutSeconds"])
 		}
 		if depValues["minPartitions"] != int64(128) {
 			t.Errorf("expected minPartitions = 128, got %v (%T)", depValues["minPartitions"], depValues["minPartitions"])
