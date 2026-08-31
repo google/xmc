@@ -64,6 +64,23 @@ def _dump_yaml(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=2)
 
 
+def _make_tree_writable(dir_path: Path) -> None:
+    """Recursively adds write permissions to all directories and files in tree."""
+    if not dir_path.exists():
+        return
+    for root, dirs, files in os.walk(dir_path):
+        for d in dirs:
+            try:
+                os.chmod(os.path.join(root, d), 0o755)
+            except OSError:
+                pass
+        for f in files:
+            try:
+                os.chmod(os.path.join(root, f), 0o644)
+            except OSError:
+                pass
+
+
 def service_to_deployment_key(service: str) -> str:
     """Converts a snake_case service name to camelCase Helm deployment key.
 
@@ -143,11 +160,13 @@ class HelmDeployer:
         """
         _LOGGER.debug("Preparing local Helm chart copy at %s", self.helm_dir)
         if self.helm_dir.exists():
+            _make_tree_writable(self.helm_dir)
             shutil.rmtree(self.helm_dir)
         source_chart = self.repo_root / "deploy" / "helm"
         if not source_chart.is_dir():
             raise FileNotFoundError(f"Source Helm chart directory not found at '{source_chart}'")
         shutil.copytree(source_chart, self.helm_dir)
+        _make_tree_writable(self.helm_dir)
 
         templates_dir = self.helm_dir / "templates"
         for prune in _PRUNE_TARGETS:
@@ -319,7 +338,7 @@ class HelmDeployer:
             log_cmd=False,
         )
         if pods_res.returncode == 0:
-            for pod in (pods_res.stdout or "").split():
+            for pod in (pods_res.stdout or "").split()[:15]:
                 lines.append(f"--- Logs for pod: {pod} (ns: {ns}) ---")
                 log_res = run_command(
                     [
