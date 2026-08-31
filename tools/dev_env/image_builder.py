@@ -26,6 +26,7 @@ Note on OCI Image Build Architecture:
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
@@ -35,50 +36,43 @@ _LOGGER = logging.getLogger("xmc.dev_env.image_builder")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-_SERVICE_TARGET_MAP: dict[str, tuple[str, str, str]] = {
-    "actuator": ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest"),
-    "experiment_state_server": (
-        "cmd/experiment_state_server",
-        "experiment_state_server_image_tarball",
-        "experiment_state_server_image:latest",
-    ),
-    "log_monitor": (
-        "cmd/log_monitor",
-        "log_monitor_image_tarball",
-        "log_monitor_image:latest",
-    ),
-    "reconciler": (
-        "cmd/reconciler",
-        "reconciler_image_tarball",
-        "reconciler_image:latest",
-    ),
-    "ui": ("cmd/ui", "ui_image_tarball", "ui_image:latest"),
-    "xid_service": (
-        "cmd/xid_service",
-        "xid_service_image_tarball",
-        "xid_service_image:latest",
-    ),
-    "health_service": (
-        "cmd/health_service",
-        "health_service_image_tarball",
-        "health_service_image:latest",
-    ),
-    "dashboard_service": (
-        "cmd/dashboard_service",
-        "dashboard_service_image_tarball",
-        "dashboard_service_image:latest",
-    ),
-    "ingestion_gateway": (
-        "cmd/ingestion_gateway",
-        "ingestion_gateway_image_tarball",
-        "ingestion_gateway_image:latest",
-    ),
-    "rod_data_provider": (
-        "cmd/rod_data_provider",
-        "rod_data_provider_image_tarball",
-        "rod_data_provider_image:latest",
-    ),
-}
+
+def discover_buildable_services(repo_root: Path | None = None) -> list[str]:
+    """Discovers all buildable services with OCI tarball targets in cmd/*/BUILD.bazel.
+
+    Scans the `cmd/` directory tree for subpackages containing a `BUILD.bazel` or `BUILD`
+    file that defines an OCI image target via `oci_image_for_service` or `_image_tarball`.
+
+    Args:
+        repo_root: Optional repository root path. Defaults to repository root.
+
+    Returns:
+        Sorted list of buildable service names (e.g. ['actuator', 'reconciler', 'ui', ...]).
+    """
+    root = repo_root or _REPO_ROOT
+    cmd_dir = root / "cmd"
+    if not cmd_dir.is_dir():
+        return []
+
+    services: list[str] = []
+    for entry in sorted(cmd_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        build_file = entry / "BUILD.bazel"
+        if not build_file.is_file():
+            build_file = entry / "BUILD"
+        if not build_file.is_file():
+            continue
+        try:
+            content = build_file.read_text(encoding="utf-8")
+        except OSError as e:
+            _LOGGER.debug("Could not read build file %s: %s", build_file, e)
+            continue
+
+        if "oci_image_for_service" in content or "_image_tarball" in content:
+            services.append(entry.name)
+
+    return services
 
 
 class ImageBuilder:
@@ -100,22 +94,32 @@ class ImageBuilder:
     ) -> list[tuple[str, str, str]]:
         """Resolves Bazel package, tarball target, and image tag specifications.
 
-        Maps service identifiers to known package definitions or falls back to
-        the standard naming convention (cmd/{service}:{service}_image_tarball).
+        Derives build parameters using the standard repository convention:
+        - Bazel package: `cmd/{service}`
+        - Bazel target: `{service}_image_tarball`
+        - Docker tag: `{service.lower()}_image:latest`
+
         Deduplicates service names while preserving order and validates that
         service names contain only safe alphanumeric and dash/underscore characters.
 
         Args:
             services: Optional list of service names. If None, defaults to
-                self.config.enabled_services.
+                self.config.enabled_services. If `["all"]`, discovers all
+                buildable services in the repository.
 
         Returns:
             List of tuples: (bazel_package, bazel_target, docker_image_tag).
 
         Raises:
-            ValueError: If any service name contains invalid or potentially unsafe characters.
+            ValueError: If any service name contains invalid characters.
         """
-        active_services = self.config.enabled_services if services is None else services
+        if services == ["all"]:
+            active_services = discover_buildable_services(self.repo_root)
+        elif services is None:
+            active_services = self.config.enabled_services
+        else:
+            active_services = services
+
         active_services = list(dict.fromkeys(active_services))
         specs: list[tuple[str, str, str]] = []
         for s in active_services:
@@ -124,11 +128,7 @@ class ImageBuilder:
                     f"Invalid service name '{s}'. Service names must only contain "
                     "alphanumeric characters, underscores, or dashes."
                 )
-            if s in _SERVICE_TARGET_MAP:
-                specs.append(_SERVICE_TARGET_MAP[s])
-            else:
-                log_info(f"Custom service '{s}' detected, using convention cmd/{s}...")
-                specs.append((f"cmd/{s}", f"{s}_image_tarball", f"{s.lower()}_image:latest"))
+            specs.append((f"cmd/{s}", f"{s}_image_tarball", f"{s.lower()}_image:latest"))
         return specs
 
     def _resolve_tarball_path(self, bazel_bin: Path, pkg: str, target: str) -> Path:
@@ -212,7 +212,6 @@ class ImageBuilder:
         _LOGGER.debug("Resolved bazel-bin directory: %s", bazel_bin)
 
         log_info("Loading built image tarballs into Docker daemon in parallel...")
-        from concurrent.futures import ThreadPoolExecutor
 
         def load_image(spec: tuple[str, str, str]) -> None:
             pkg, target, _ = spec

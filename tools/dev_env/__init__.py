@@ -14,8 +14,13 @@
 
 """Development environment deployment and upgrade tools."""
 
-from tools.dev_env.image_builder import ImageBuilder
+from tools.dev_env.image_builder import ImageBuilder, discover_buildable_services
 from tools.dev_env.kind_manager import KindManager
 from tools.dev_env.spanner_manager import SpannerManager
 
-__all__ = ["ImageBuilder", "KindManager", "SpannerManager"]
+__all__ = [
+    "ImageBuilder",
+    "KindManager",
+    "SpannerManager",
+    "discover_buildable_services",
+]

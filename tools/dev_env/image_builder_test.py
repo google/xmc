@@ -15,12 +15,13 @@
 """Unit tests for tools.dev_env.image_builder."""
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from tools.dev_env.config import LocalDevConfig
-from tools.dev_env.image_builder import ImageBuilder
+from tools.dev_env.image_builder import ImageBuilder, discover_buildable_services
 
 
 class ImageBuilderTest(unittest.TestCase):
@@ -34,6 +35,40 @@ class ImageBuilderTest(unittest.TestCase):
             enabled_services=["experiment_state_server", "ui", "custom_svc"],
         )
         self.builder = ImageBuilder(config=self.config)
+
+    def test_discover_buildable_services(self) -> None:
+        services = discover_buildable_services()
+        self.assertIn("actuator", services)
+        self.assertIn("experiment_state_server", services)
+        self.assertIn("ui", services)
+        self.assertIn("reconciler", services)
+
+    def test_discover_buildable_services_temp_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmproot = Path(tmpdir)
+            cmd_dir = tmproot / "cmd"
+            cmd_dir.mkdir()
+            (cmd_dir / "svc_a").mkdir()
+            (cmd_dir / "svc_a" / "BUILD.bazel").write_text(
+                'oci_image_for_service(name="svc_a_image", binary=":svc_a")'
+            )
+            (cmd_dir / "svc_b").mkdir()
+            (cmd_dir / "svc_b" / "BUILD").write_text('genrule(name="svc_b_image_tarball")')
+            (cmd_dir / "non_image_svc").mkdir()
+            (cmd_dir / "non_image_svc" / "BUILD.bazel").write_text('go_binary(name="cli")')
+
+            discovered = discover_buildable_services(tmproot)
+            self.assertEqual(discovered, ["svc_a", "svc_b"])
+
+    def test_discover_buildable_services_no_cmd_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.assertEqual(discover_buildable_services(Path(tmpdir)), [])
+
+    def test_get_service_specs_all(self) -> None:
+        specs = self.builder.get_service_specs(services=["all"])
+        service_names = [pkg.replace("cmd/", "") for pkg, _, _ in specs]
+        self.assertIn("actuator", service_names)
+        self.assertIn("ui", service_names)
 
     def test_get_service_specs(self) -> None:
         specs = self.builder.get_service_specs()
