@@ -44,7 +44,7 @@
               placeholder="-"
               [panelWidth]="null"
               [id]="'resource-type-select-' + row.id"
-              [ariaLabelledby]="'resource-label-' + row.id"
+              [attr.aria-labelledby]="'resource-label-' + row.id"
               [value]="row.resourceType"
               (selectionChange)="onResourceTypeChange($index, $event.value)"
             >
