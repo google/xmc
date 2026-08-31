@@ -162,61 +162,31 @@ kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
 ```
 ---
 
-## 5. Local KinD Development Environment Configuration
+## 5. Local KinD Development Quickstart
 
-When spinning up a local KinD development cluster via `python3 tools/dev_env/dev_env.py cluster create`, configuration values are resolved using the following order of precedence:
+For detailed CLI options, configuration resolution precedence, dynamic service discovery, and architecture specifications, refer to the [Development Environment Tooling Guide](../../tools/dev_env/README.md).
 
-1. **CLI Arguments** (`--project-id / -p`, `--environment / -e`, `--cluster-name`, `--spanner-instance`, `--ess-db`, `--xid-db`, `--auto-migrate / --no-auto-migrate`, `--config / -c`)
-2. **Environment Variables** (`PROJECT_ID` / `GCP_PROJECT_ID`, `XMANAGER_ENV`, `CLUSTER_NAME` / `KIND_CLUSTER_NAME`, `SPANNER_INSTANCE`, `ESS_DATABASE`, `XID_DATABASE`, `AUTO_MIGRATE`)
-3. **YAML Configuration File**:
-   - Explicit path via `--config <path>` / `-c <path>` (must exist if passed)
-   - `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (if present)
-   - `deploy/local/xmanager-cloud-local.yaml` (if present)
-4. **Built-in Defaults**:
-   - `environment`: `dev`
-   - `cluster_name`: `xmc-dev`
-   - `spanner_instance`: `xmc-{environment}`
-   - `ess_database`: `dev-{environment}-local-ess`
-   - `xid_database`: `dev-{environment}-local-xid`
-   - `auto_migrate`: `true`
-   - `enabled_services`: Base microservices (`actuator`, `experiment_state_server`, `log_monitor`, `reconciler`, `ui`, `xid_service`, `health_service`, `dashboard_service`), plus conditional feature services.
-
-### Local KinD Commands
-
-| Command | Usage | Description |
-| :--- | :--- | :--- |
-| **`cluster create`** | `python3 tools/dev_env/dev_env.py cluster create` | Provisions the local KinD cluster, applies support manifests, and configures secrets. |
-| **`cluster delete`** | `python3 tools/dev_env/dev_env.py cluster delete` | Destroys the local KinD cluster and cleans up temporary state. |
-| **`build-images`** | `python3 tools/dev_env/dev_env.py build-images [services...] [--load-kind]` | Builds Bazel OCI container images in parallel and loads into Docker (and optionally into KinD nodes). |
-| **`status`** | `python3 tools/dev_env/dev_env.py status` | Inspects KinD cluster health, pod statuses, and UI/Dex endpoint responsiveness. |
-| **`logs`** | `python3 tools/dev_env/dev_env.py logs [service] [-f]` | Views or live tails container logs from local service pods. |
-
-### Cloud Spanner Database Management
-
-Manage Cloud Spanner development databases directly using `dev_env.py spanner`:
+### Quickstart Workflow
 
 ```bash
-# Provision databases if missing (uses fast DDL & proto descriptor batch schema init)
+# 1. Provision local KinD cluster, support manifests, and secrets
+python3 tools/dev_env/dev_env.py cluster create
+
+# 2. Provision Cloud Spanner development databases (batch DDL & proto descriptors)
 python3 tools/dev_env/dev_env.py spanner ensure
 
-# Apply pending schema migrations
-python3 tools/dev_env/dev_env.py spanner migrate
-
-# Drop development databases
-python3 tools/dev_env/dev_env.py spanner drop
-```
-
-### OCI Image Compilation & Loading
-
-Compile and load microservice container images into Docker or KinD. `ImageBuilder` dynamically scans `cmd/*/BUILD.bazel` for `oci_image_for_service` and `_image_tarball` targets, deriving build targets (`//cmd/<service>:<service>_image_tarball`) and Docker tags (`<service>_image:latest`) automatically:
-
-```bash
-# Build all enabled microservice images in parallel
-python3 tools/dev_env/dev_env.py build-images
-
-# Build all discovered microservices in the repo and load into local KinD
+# 3. Build microservice container images in parallel and load into KinD nodes
 python3 tools/dev_env/dev_env.py build-images all --load-kind
 
-# Build specific services and load into local KinD cluster
-python3 tools/dev_env/dev_env.py build-images reconciler ui --load-kind
+# 4. Check cluster health and service pod readiness
+python3 tools/dev_env/dev_env.py status
+
+# 5. Stream container logs for troubleshooting
+python3 tools/dev_env/dev_env.py logs experiment_state_server -f
+
+# 6. Teardown local cluster when finished
+python3 tools/dev_env/dev_env.py cluster delete
 ```
+
+> [!TIP]
+> Configuration parameters (such as project ID, Spanner instance, and microservices) can be configured via `deploy/local/xmanager-cloud-local.yaml`, environment variables, or CLI flags. See the [Configuration Architecture Guide](../../tools/dev_env/README.md#configuration-architecture-localdevconfig) for the full configuration reference and resolution precedence rules.

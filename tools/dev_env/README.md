@@ -130,6 +130,9 @@ python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
      - `redis-secret`: Local Redis cache authentication credentials.
 - `delete`: Safely deletes the local KinD cluster and its underlying containers.
 
+> [!NOTE]
+> For step-by-step developer verification workflows, port-forwarding, and manual testing procedures on developer clusters, see the [Developer Cluster Setup & Manual Testing Guide](../../deploy/local/README.md).
+
 ---
 
 ### 5. `status` (Cluster Status & Health Inspection)
