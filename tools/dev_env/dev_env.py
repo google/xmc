@@ -71,13 +71,106 @@ def handle_upgrade(args: argparse.Namespace) -> None:
     handle_gke_upgrade(args)
 
 
+def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
+    """Adds common configuration override flags."""
+    p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
+    p.add_argument("-e", "--environment", help="Target environment override.")
+    p.add_argument("--spanner-instance", help="Cloud Spanner instance override.")
+    p.add_argument("--ess-db", dest="ess_database", help="ESS database override.")
+    p.add_argument("--xid-db", dest="xid_database", help="XID database override.")
+    p.add_argument("--cluster-name", help="Kubernetes cluster name override.")
+    p.add_argument(
+        "--auto-migrate",
+        dest="auto_migrate",
+        action="store_true",
+        default=None,
+        help="Enable automatic database migrations.",
+    )
+    p.add_argument(
+        "--no-auto-migrate",
+        dest="auto_migrate",
+        action="store_false",
+        default=None,
+        help="Disable automatic database migrations.",
+    )
+    p.add_argument(
+        "--enable-metrics",
+        dest="enable_metrics",
+        action="store_true",
+        default=None,
+        help="Enable metrics ingestion service.",
+    )
+    p.add_argument(
+        "--no-enable-metrics",
+        dest="enable_metrics",
+        action="store_false",
+        default=None,
+        help="Disable metrics ingestion service.",
+    )
+    p.add_argument(
+        "--enable-components",
+        dest="enable_components",
+        action="store_true",
+        default=None,
+        help="Enable components service.",
+    )
+    p.add_argument(
+        "--no-enable-components",
+        dest="enable_components",
+        action="store_false",
+        default=None,
+        help="Disable components service.",
+    )
+    p.add_argument(
+        "--rod-deployment-enabled",
+        dest="rod_deployment_enabled",
+        action="store_true",
+        default=None,
+        help="Enable ROD data provider service.",
+    )
+    p.add_argument(
+        "--no-rod-deployment-enabled",
+        dest="rod_deployment_enabled",
+        action="store_false",
+        default=None,
+        help="Disable ROD data provider service.",
+    )
+    p.add_argument(
+        "--enable-health-service",
+        dest="enable_health_service",
+        action="store_true",
+        default=None,
+        help="Enable health monitoring service.",
+    )
+    p.add_argument(
+        "--no-enable-health-service",
+        dest="enable_health_service",
+        action="store_false",
+        default=None,
+        help="Disable health monitoring service.",
+    )
+    p.add_argument(
+        "--enable-dashboard-service",
+        dest="enable_dashboard_service",
+        action="store_true",
+        default=None,
+        help="Enable dashboard service.",
+    )
+    p.add_argument(
+        "--no-enable-dashboard-service",
+        dest="enable_dashboard_service",
+        action="store_false",
+        default=None,
+        help="Disable dashboard service.",
+    )
+
+
 def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     """Configures CLI flags for deployment commands."""
     if not is_gke:
         p.add_argument("-t", "--target", choices=["gke"], default="gke", help="Deployment target.")
     p.add_argument("-c", "--config", required=is_gke, help="Path to deployment YAML config.")
-    p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
-    p.add_argument("-e", "--environment", help="Target environment override.")
+    _add_common_config_flags(p)
     p.add_argument("--dns-project", required=is_gke, help="GCP Project ID hosting DNS zone.")
     p.add_argument("--dns-zone", required=is_gke, help="Cloud DNS Managed Zone name.")
     group = p.add_mutually_exclusive_group()
@@ -90,8 +183,7 @@ def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     if not is_gke:
         p.add_argument("-t", "--target", choices=["gke"], default="gke", help="Upgrade target.")
     p.add_argument("-c", "--config", default=upgrade_dev_env.DEFAULT_CONFIG, help="Config path.")
-    p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
-    p.add_argument("-e", "--environment", help="Target environment override.")
+    _add_common_config_flags(p)
     p.add_argument("--run-migrations", action="store_true", help="Run pending migrations.")
     group = p.add_mutually_exclusive_group()
     group.add_argument("-s", "--start-from", choices=upgrade_dev_env.STEPS, help="Start from step.")
