@@ -84,7 +84,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
   ## Assumptions
   - <Assumption made during development> — <why it was assumed> — <impact if wrong>
   - <Deferred scope or unresolved open question, if any>
-  (State `None — requirements were fully specified.` when no assumptions were made.)
+  <Replace the bullets above with `None — requirements were fully specified.` when no assumptions were made.>
 
   ## Verification & Testing
   - **Commands Executed**: `<bazel test / go test / ./tools/run_affected_tests.py>`
