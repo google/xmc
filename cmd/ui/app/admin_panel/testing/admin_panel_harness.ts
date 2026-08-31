@@ -14,6 +14,8 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { ErrorBannerHarness } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner_harness';
+
 import { ConfigEntriesCardHarness } from '../components/config_entries_card/testing/config_entries_card_harness';
 import { HealthStatusSectionHarness } from '../components/health_status_section/testing/health_status_section_harness';
 import { SystemInfoCardHarness } from '../components/system_info_card/testing/system_info_card_harness';
@@ -23,12 +25,7 @@ export class AdminPanelHarness extends ComponentHarness {
   static hostSelector = 'xmc-admin-panel, [data-component-selector="xmc-admin-panel"]';
 
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
-  private readonly _pageErrorBanner = this.locatorForOptional(
-    '.page-error-container xmc-error-banner',
-  );
-  private readonly _pageErrorRetryButton = this.locatorForOptional(
-    '.page-error-container .retry-button',
-  );
+  private readonly _pageErrorBanner = this.locatorForOptional(ErrorBannerHarness);
   private readonly _spinner = this.locatorForOptional('mat-spinner');
 
   async getTimestampText(): Promise<string | null> {
@@ -37,21 +34,21 @@ export class AdminPanelHarness extends ComponentHarness {
   }
 
   async getErrorText(): Promise<string | null> {
-    const el = await this._pageErrorBanner();
-    return el ? el.text() : null;
+    const banner = await this._pageErrorBanner();
+    return banner ? banner.getMessage() : null;
   }
 
   async hasPageErrorBanner(): Promise<boolean> {
-    const el = await this._pageErrorBanner();
-    return el !== null;
+    const banner = await this._pageErrorBanner();
+    return banner !== null;
   }
 
   async clickPageErrorRetry(): Promise<void> {
-    const button = await this._pageErrorRetryButton();
-    if (!button) {
-      throw new Error('Page error retry button not found');
+    const banner = await this._pageErrorBanner();
+    if (!banner) {
+      throw new Error('Page error banner not found');
     }
-    await button.click();
+    await banner.clickRetry();
   }
 
   async hasSpinner(): Promise<boolean> {

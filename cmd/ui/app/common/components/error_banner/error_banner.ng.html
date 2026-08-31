@@ -17,12 +17,18 @@
 @if (message()) {
   <div class="error-banner" role="alert">
     <div class="error-content">
-      <mat-icon class="error-icon">error_outline</mat-icon>
+      <mat-icon class="error-icon" aria-hidden="true">error_outline</mat-icon>
       <span class="error-text">{{ message() }}</span>
     </div>
     @if (showRetry()) {
-      <button mat-stroked-button class="retry-button" type="button" (click)="onRetry()">
-        <mat-icon class="retry-icon">refresh</mat-icon>
+      <button
+        mat-stroked-button
+        color="warn"
+        class="retry-button"
+        type="button"
+        (click)="onRetry()"
+      >
+        <mat-icon class="retry-icon" aria-hidden="true">refresh</mat-icon>
         {{ retryText() }}
       </button>
     }
