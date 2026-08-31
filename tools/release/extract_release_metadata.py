@@ -184,17 +184,53 @@ def parse_conventional_commit(subject: str) -> tuple[str, str, str, int | None]:
 
 
 def parse_yaml_booleans(yaml_content: str) -> dict[str, bool]:
-    """Extracts boolean flags from YAML content using resilient line scanning."""
+    """Extracts boolean flags from YAML content, supporting nested keys."""
+    try:
+        import yaml
+
+        data = yaml.safe_load(yaml_content)
+        if isinstance(data, dict):
+
+            def flatten(d: dict[str, Any], prefix: str = "") -> dict[str, bool]:
+                flat: dict[str, bool] = {}
+                for k, v in d.items():
+                    key = f"{prefix}.{k}" if prefix else str(k)
+                    if isinstance(v, dict):
+                        flat.update(flatten(v, key))
+                    elif isinstance(v, bool):
+                        if key.startswith("vars."):
+                            key = key[5:]
+                        flat[key] = v
+                return flat
+
+            return flatten(data)
+    except Exception:
+        pass
+
     flags: dict[str, bool] = {}
+    stack: list[tuple[int, str]] = []
     for line in yaml_content.splitlines():
-        trimmed = line.strip()
-        if not trimmed or trimmed.startswith("#"):
+        if not line.strip() or line.strip().startswith("#"):
             continue
-        match = re.match(r"^\s*([a-zA-Z0-9_.-]+):\s*(true|false)\b", trimmed, re.IGNORECASE)
+        indent = len(line) - len(line.lstrip())
+        trimmed = line.strip()
+        match = re.match(r"^([a-zA-Z0-9_.-]+):\s*(true|false)\b", trimmed, re.IGNORECASE)
         if match:
             key = match.group(1)
             val = match.group(2).lower() == "true"
-            flags[key] = val
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            full_key = ".".join([p[1] for p in stack] + [key])
+            if full_key.startswith("vars."):
+                full_key = full_key[5:]
+            flags[full_key] = val
+        else:
+            parent_match = re.match(r"^([a-zA-Z0-9_.-]+):", trimmed)
+            if parent_match:
+                key = parent_match.group(1)
+                while stack and stack[-1][0] >= indent:
+                    stack.pop()
+                stack.append((indent, key))
     return flags
 
 
@@ -629,12 +665,13 @@ def classify_commit(
 
 
 def get_git_commits(base_ref: str, target_ref: str, repo_dir: Path) -> list[CommitInfo]:
-    """Retrieves and parses all git commits between base_ref and target_ref."""
+    """Retrieves and parses all git commits between base_ref and target_ref in a single git log invocation."""
     log_cmd = [
         "git",
         "log",
-        "--pretty=format:%H%x09%h%x09%s%x09%an%x09%ad",
+        "--pretty=format:COMMIT:%H%x09%h%x09%s%x09%an%x09%ad",
         "--date=short",
+        "--name-only",
         f"{base_ref}..{target_ref}",
     ]
     try:
@@ -651,42 +688,32 @@ def get_git_commits(base_ref: str, target_ref: str, repo_dir: Path) -> list[Comm
             "Verify that both git references (tags/branches/hashes) exist in the repository.",
         )
 
-    lines = [line.strip() for line in log_res.stdout.splitlines() if line.strip()]
     commits: list[CommitInfo] = []
+    current_commit: CommitInfo | None = None
+    current_files: list[str] = []
 
-    for line in lines:
-        parts = line.split("\t")
-        if len(parts) < 5:
+    for line in log_res.stdout.splitlines():
+        line = line.strip()
+        if not line:
             continue
-        full_hash, short_hash, subject, author, commit_date = (
-            parts[0],
-            parts[1],
-            parts[2],
-            parts[3],
-            parts[4],
-        )
-
-        commit_type, scope, desc, pr_number = parse_conventional_commit(subject)
-
-        # Get changed files for commit
-        show_cmd = [
-            "git",
-            "show",
-            "--name-only",
-            "--format=",
-            full_hash,
-        ]
-        show_res = subprocess.run(
-            show_cmd,
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        files = [f.strip() for f in show_res.stdout.splitlines() if f.strip()]
-
-        commits.append(
-            CommitInfo(
+        if line.startswith("COMMIT:"):
+            if current_commit:
+                current_commit.files_changed = current_files
+                commits.append(current_commit)
+                current_files = []
+            parts = line[len("COMMIT:") :].split("\t")
+            if len(parts) < 5:
+                current_commit = None
+                continue
+            full_hash, short_hash, subject, author, commit_date = (
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+                parts[4],
+            )
+            commit_type, scope, desc, pr_number = parse_conventional_commit(subject)
+            current_commit = CommitInfo(
                 commit_hash=full_hash,
                 short_hash=short_hash,
                 subject=subject,
@@ -696,9 +723,14 @@ def get_git_commits(base_ref: str, target_ref: str, repo_dir: Path) -> list[Comm
                 scope=scope,
                 description=desc,
                 pr_number=pr_number,
-                files_changed=files,
+                files_changed=[],
             )
-        )
+        elif current_commit:
+            current_files.append(line)
+
+    if current_commit:
+        current_commit.files_changed = current_files
+        commits.append(current_commit)
 
     return commits
 

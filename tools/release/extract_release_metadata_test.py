@@ -34,6 +34,7 @@ try:
         extract_flag_transitions,
         extract_release_metadata,
         get_current_feature_states,
+        get_git_commits,
         parse_conventional_commit,
         parse_semver,
         parse_yaml_booleans,
@@ -47,6 +48,7 @@ except ImportError:
         extract_flag_transitions,
         extract_release_metadata,
         get_current_feature_states,
+        get_git_commits,
         parse_conventional_commit,
         parse_semver,
         parse_yaml_booleans,
@@ -100,11 +102,21 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
           # health_service_deployment_enabled: true
           use_redis_queue: true
           taskSignatureTtlSeconds: 86400
+        componentsDeployment:
+          enabled: false
+        rodDeployment:
+          enabled: true
+        healthService:
+          deployment:
+            enabled: false
         """
         flags = parse_yaml_booleans(sample_yaml)
         self.assertEqual(flags.get("enable_components"), False)
         self.assertEqual(flags.get("enable_metrics"), True)
         self.assertEqual(flags.get("use_redis_queue"), True)
+        self.assertEqual(flags.get("componentsDeployment.enabled"), False)
+        self.assertEqual(flags.get("rodDeployment.enabled"), True)
+        self.assertEqual(flags.get("healthService.deployment.enabled"), False)
         self.assertNotIn("blueprint_name", flags)
         self.assertNotIn("taskSignatureTtlSeconds", flags)
 
@@ -458,6 +470,33 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(rec.recommended_bump, "minor")
         self.assertEqual(rec.recommended_version, "0.7.0")
         self.assertTrue(rec.has_approved_features)
+
+    @patch("subprocess.run")
+    def test_get_git_commits(self, mock_subprocess: MagicMock) -> None:
+        mock_output = (
+            "COMMIT:1111222233334444\t1111222\tfeat(ui): add dashboard (#100)\tAlice\t2026-08-30\n"
+            "ui/src/app.ts\n"
+            "ui/src/app.html\n"
+            "COMMIT:5555666677778888\t5555666\tfix: resolve race (#101)\tBob\t2026-08-31\n"
+            "pkg/server/server.go\n"
+        )
+        mock_subprocess.return_value = MagicMock(
+            stdout=mock_output,
+            returncode=0,
+        )
+        commits = get_git_commits("0.7.0", "0.8.0", Path("."))
+        self.assertEqual(len(commits), 2)
+        self.assertEqual(commits[0].commit_hash, "1111222233334444")
+        self.assertEqual(commits[0].short_hash, "1111222")
+        self.assertEqual(commits[0].commit_type, "feat")
+        self.assertEqual(commits[0].scope, "ui")
+        self.assertEqual(commits[0].pr_number, 100)
+        self.assertEqual(commits[0].files_changed, ["ui/src/app.ts", "ui/src/app.html"])
+
+        self.assertEqual(commits[1].commit_hash, "5555666677778888")
+        self.assertEqual(commits[1].commit_type, "fix")
+        self.assertEqual(commits[1].pr_number, 101)
+        self.assertEqual(commits[1].files_changed, ["pkg/server/server.go"])
 
 
 if __name__ == "__main__":
