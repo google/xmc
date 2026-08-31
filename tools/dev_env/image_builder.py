@@ -128,8 +128,38 @@ class ImageBuilder:
                 specs.append(_SERVICE_TARGET_MAP[s])
             else:
                 log_info(f"Custom service '{s}' detected, using convention cmd/{s}...")
-                specs.append((f"cmd/{s}", f"{s}_image_tarball", f"{s}_image:latest"))
+                specs.append((f"cmd/{s}", f"{s}_image_tarball", f"{s.lower()}_image:latest"))
         return specs
+
+    def _resolve_tarball_path(self, bazel_bin: Path, pkg: str, target: str) -> Path:
+        """Resolves path to the built image tarball under bazel-bin or bazel-out fallback.
+
+        Args:
+            bazel_bin: Path to resolved bazel-bin directory.
+            pkg: Bazel package path relative to repo root (e.g. 'cmd/ui').
+            target: Bazel tarball target name (e.g. 'ui_image_tarball').
+
+        Returns:
+            Path to the existing tarball file.
+
+        Raises:
+            FileNotFoundError: If the tarball cannot be found under bazel-bin or bazel-out.
+        """
+        tar_path = bazel_bin / pkg / f"{target}.tar"
+        if tar_path.is_file():
+            return tar_path
+
+        # Fallback: search under bazel-out to handle platform transitions and cross-compilation
+        bazel_out = self.repo_root / "bazel-out"
+        if bazel_out.is_dir():
+            candidates = list(bazel_out.glob(f"**/{pkg}/{target}.tar"))
+            if candidates:
+                return candidates[0]
+
+        raise FileNotFoundError(
+            f"Could not find built image tarball for {pkg}:{target}. "
+            f"Expected at {tar_path} or under bazel-out/."
+        )
 
     def build_images(
         self,
@@ -181,11 +211,17 @@ class ImageBuilder:
         bazel_bin = Path(raw_bazel_bin)
         _LOGGER.debug("Resolved bazel-bin directory: %s", bazel_bin)
 
-        log_info("Loading built image tarballs into Docker daemon...")
-        for pkg, target, _ in specs:
-            tar_path = bazel_bin / pkg / f"{target}.tar"
+        log_info("Loading built image tarballs into Docker daemon in parallel...")
+        from concurrent.futures import ThreadPoolExecutor
+
+        def load_image(spec: tuple[str, str, str]) -> None:
+            pkg, target, _ = spec
+            tar_path = self._resolve_tarball_path(bazel_bin, pkg, target)
             _LOGGER.debug("Loading image tarball into Docker: %s", tar_path)
-            run_command(["docker", "load", "-i", str(tar_path)])
+            run_command(["docker", "load", "-i", str(tar_path)], log_cmd=False)
+
+        with ThreadPoolExecutor() as executor:
+            list(executor.map(load_image, specs))
 
         log_success(f"Successfully built and loaded {len(image_tags)} container images.")
         return image_tags

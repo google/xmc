@@ -16,6 +16,7 @@
 
 import subprocess
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tools.dev_env.config import LocalDevConfig
@@ -74,8 +75,48 @@ class ImageBuilderTest(unittest.TestCase):
             ],
         )
 
+    def test_get_service_specs_custom_mixed_case_lowercased(self) -> None:
+        specs = self.builder.get_service_specs(services=["MixedCaseSvc"])
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(
+            specs[0],
+            ("cmd/MixedCaseSvc", "MixedCaseSvc_image_tarball", "mixedcasesvc_image:latest"),
+        )
+
+    def test_resolve_tarball_path_default_exists(self) -> None:
+        with mock.patch.object(Path, "is_file", return_value=True):
+            tar = self.builder._resolve_tarball_path(Path("/fake/bazel-bin"), "cmd/ui", "ui_tar")
+            self.assertEqual(tar, Path("/fake/bazel-bin/cmd/ui/ui_tar.tar"))
+
+    def test_resolve_tarball_path_bazel_out_fallback(self) -> None:
+        def fake_is_file(path_self: Path) -> bool:
+            return "/bazel-out/" in str(path_self)
+
+        def fake_is_dir(path_self: Path) -> bool:
+            return "bazel-out" in str(path_self)
+
+        fallback_path = Path("/repo/bazel-out/k8-opt/bin/cmd/ui/ui_tar.tar")
+        with (
+            mock.patch.object(Path, "is_file", fake_is_file),
+            mock.patch.object(Path, "is_dir", fake_is_dir),
+            mock.patch.object(Path, "glob", return_value=[fallback_path]),
+        ):
+            tar = self.builder._resolve_tarball_path(Path("/fake/bazel-bin"), "cmd/ui", "ui_tar")
+            self.assertEqual(tar, fallback_path)
+
+    def test_resolve_tarball_path_not_found_raises(self) -> None:
+        with (
+            mock.patch.object(Path, "is_file", return_value=False),
+            mock.patch.object(Path, "is_dir", return_value=False),
+        ):
+            with self.assertRaises(FileNotFoundError):
+                self.builder._resolve_tarball_path(Path("/fake/bazel-bin"), "cmd/ui", "ui_tar")
+
+    @mock.patch.object(ImageBuilder, "_resolve_tarball_path", return_value=Path("/fake/tar.tar"))
     @mock.patch("tools.dev_env.image_builder.run_command")
-    def test_build_images_execute(self, mock_run: mock.MagicMock) -> None:
+    def test_build_images_execute(
+        self, mock_run: mock.MagicMock, mock_resolve: mock.MagicMock
+    ) -> None:
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=["bazel", "build"], returncode=0),
             subprocess.CompletedProcess(
@@ -90,6 +131,7 @@ class ImageBuilderTest(unittest.TestCase):
         images = self.builder.build_images(skip_build=False)
         self.assertEqual(len(images), 3)
         self.assertTrue(mock_run.called)
+        self.assertEqual(mock_resolve.call_count, 3)
 
     @mock.patch("tools.dev_env.image_builder.run_command")
     def test_build_images_empty_specs(self, mock_run: mock.MagicMock) -> None:
@@ -97,8 +139,11 @@ class ImageBuilderTest(unittest.TestCase):
         self.assertEqual(images, [])
         mock_run.assert_not_called()
 
+    @mock.patch.object(ImageBuilder, "_resolve_tarball_path", return_value=Path("/fake/tar.tar"))
     @mock.patch("tools.dev_env.image_builder.run_command")
-    def test_build_images_bytes_stdout(self, mock_run: mock.MagicMock) -> None:
+    def test_build_images_bytes_stdout(
+        self, mock_run: mock.MagicMock, mock_resolve: mock.MagicMock
+    ) -> None:
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=["bazel", "build"], returncode=0),
             subprocess.CompletedProcess(
@@ -112,6 +157,7 @@ class ImageBuilderTest(unittest.TestCase):
         ]
         images = self.builder.build_images(skip_build=False)
         self.assertEqual(len(images), 3)
+        self.assertEqual(mock_resolve.call_count, 3)
 
     @mock.patch("tools.dev_env.image_builder.run_command")
     def test_build_images_empty_bazel_bin(self, mock_run: mock.MagicMock) -> None:

@@ -164,7 +164,7 @@ kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
 
 ## 5. Local KinD Development Environment Configuration
 
-When spinning up a local KinD development cluster via `python3 tools/dev_env/dev_env.py up`, configuration values are resolved using the following order of precedence:
+When spinning up a local KinD development cluster via `python3 tools/dev_env/dev_env.py cluster create`, configuration values are resolved using the following order of precedence:
 
 1. **CLI Arguments** (`--project-id / -p`, `--environment / -e`, `--cluster-name`, `--spanner-instance`, `--ess-db`, `--xid-db`, `--auto-migrate / --no-auto-migrate`, `--config / -c`)
 2. **Environment Variables** (`PROJECT_ID` / `GCP_PROJECT_ID`, `XMANAGER_ENV`, `CLUSTER_NAME` / `KIND_CLUSTER_NAME`, `SPANNER_INSTANCE`, `ESS_DATABASE`, `XID_DATABASE`, `AUTO_MIGRATE`)
@@ -185,8 +185,9 @@ When spinning up a local KinD development cluster via `python3 tools/dev_env/dev
 
 | Command | Usage | Description |
 | :--- | :--- | :--- |
+| **`cluster create`** | `python3 tools/dev_env/dev_env.py cluster create` | Provisions the local KinD cluster, applies support manifests, and configures secrets. |
+| **`cluster delete`** | `python3 tools/dev_env/dev_env.py cluster delete` | Destroys the local KinD cluster and cleans up temporary state. |
 | **`build-images`** | `python3 tools/dev_env/dev_env.py build-images [services...] [--load-kind]` | Builds Bazel OCI container images in parallel and loads into Docker (and optionally into KinD nodes). |
-| **`down`** | `python3 tools/dev_env/dev_env.py down [--drop-db]` | Destroys the local KinD cluster and cleans up temporary state. With `--drop-db`, also deletes local Cloud Spanner databases. |
 | **`status`** | `python3 tools/dev_env/dev_env.py status` | Inspects KinD cluster health, pod statuses, and UI/Dex endpoint responsiveness. |
 | **`logs`** | `python3 tools/dev_env/dev_env.py logs [service] [-f]` | Views or live tails container logs from local service pods. |
 
