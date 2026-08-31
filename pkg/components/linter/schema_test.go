@@ -391,6 +391,38 @@ spec:
 			wantValid: false,
 			wantRules: []string{"INVALID_DELETION_POLICY"},
 		},
+		{
+			name:  "proto-prefixed componentType COMPONENT_TYPE_CUSTOM_1P_COMPONENT is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-type
+spec:
+  componentType: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_COMPONENT_TYPE"},
+		},
+		{
+			name:  "proto-prefixed deletionPolicy DELETION_POLICY_DELETE is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-policy
+spec:
+  deletionPolicy: "DELETION_POLICY_DELETE"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_DELETION_POLICY"},
+		},
 	}
 
 	for _, tc := range tests {

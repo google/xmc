@@ -116,22 +116,11 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 }
 
 func is1PComponent(ct string) bool {
-	switch strings.ToUpper(strings.TrimSpace(ct)) {
-	case "COMPONENT_TYPE_UNSPECIFIED",
-		"COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT":
-		return true
-	default:
-		return false
-	}
+	return strings.TrimSpace(ct) == "CUSTOM_1P_COMPONENT" || strings.TrimSpace(ct) == ""
 }
 
 func is3PWrapper(ct string) bool {
-	switch strings.ToUpper(strings.TrimSpace(ct)) {
-	case "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "CUSTOM_3P_WRAPPER":
-		return true
-	default:
-		return false
-	}
+	return strings.TrimSpace(ct) == "CUSTOM_3P_WRAPPER"
 }
 
 func isValidComponentType(ct string) bool {
@@ -139,10 +128,8 @@ func isValidComponentType(ct string) bool {
 }
 
 func isValidDeletionPolicy(dp string) bool {
-	switch strings.ToUpper(strings.TrimSpace(dp)) {
-	case "DELETION_POLICY_UNSPECIFIED",
-		"DELETION_POLICY_DELETE", "DELETE",
-		"DELETION_POLICY_ORPHAN", "ORPHAN":
+	switch strings.TrimSpace(dp) {
+	case "DELETE", "ORPHAN", "":
 		return true
 	default:
 		return false
