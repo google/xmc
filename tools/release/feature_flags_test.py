@@ -60,47 +60,48 @@ class FeatureFlagsTest(unittest.TestCase):
     def test_derive_flag_tokens(self) -> None:
         rod_tokens = derive_flag_tokens("rod_deployment_enabled")
         self.assertIn("rod", rod_tokens)
-        self.assertIn("rod_data_provider", rod_tokens)
+        self.assertIn("rods", rod_tokens)
 
         comp_tokens = derive_flag_tokens("enable_components")
         self.assertIn("components", comp_tokens)
         self.assertIn("component", comp_tokens)
-        self.assertIn("cms", comp_tokens)
 
         health_tokens = derive_flag_tokens("health_service_deployment_enabled")
         self.assertIn("health", health_tokens)
+        self.assertIn("service", health_tokens)
         self.assertIn("health_service", health_tokens)
-        self.assertIn("admin_panel", health_tokens)
 
         dash_tokens = derive_flag_tokens("dashboard_service_deployment_enabled")
         self.assertIn("dashboard", dash_tokens)
-        self.assertIn("xdash", dash_tokens)
+        self.assertIn("service", dash_tokens)
+        self.assertIn("dashboard_service", dash_tokens)
 
-        metrics_tokens = derive_flag_tokens("enable_metrics")
-        self.assertIn("metrics", metrics_tokens)
-        self.assertIn("ingestion_gateway", metrics_tokens)
+        batch_tokens = derive_flag_tokens("enable_batch_evaluator")
+        self.assertIn("batch", batch_tokens)
+        self.assertIn("evaluator", batch_tokens)
+        self.assertIn("batch_evaluator", batch_tokens)
 
     def test_derive_display_name(self) -> None:
         self.assertEqual(
             derive_display_name("rod_deployment_enabled"),
-            "Resource Observability Dashboard (ROD)",
+            "ROD",
         )
         self.assertEqual(
             derive_display_name("cms_enabled"),
-            "Component Management Service (CMS)",
+            "CMS",
         )
         self.assertEqual(
             derive_display_name("dashboard_service_deployment_enabled"),
-            "Dashboard Service & xdash SDK",
+            "Dashboard Service",
         )
         self.assertEqual(
             derive_display_name("health_service_deployment_enabled"),
-            "Health Service & Admin Panel",
+            "Health Service",
         )
-        self.assertEqual(derive_display_name("enable_components"), "Components Engine")
+        self.assertEqual(derive_display_name("enable_components"), "Components")
         self.assertEqual(
             derive_display_name("enable_metrics"),
-            "Metrics & Ingestion Gateway",
+            "Metrics",
         )
         self.assertEqual(derive_display_name("enable_batch_evaluator"), "Batch Evaluator")
 

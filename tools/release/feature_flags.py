@@ -58,82 +58,35 @@ def normalize_flag_name(flag: str) -> str:
 
 
 def derive_flag_tokens(flag_name: str) -> set[str]:
-    """Generates matching tokens and search terms for a given feature flag name."""
+    """Generates matching tokens and search terms dynamically for a given feature flag name."""
     core = normalize_flag_name(flag_name)
     tokens = {core, core.replace("_", "-"), core.replace("-", "_")}
-    if core.endswith("s"):
-        tokens.add(core[:-1])
-    else:
-        tokens.add(f"{core}s")
 
-    if "rod" in core:
-        tokens.update(
-            [
-                "rod",
-                "rod_data_provider",
-                "rod-data-provider",
-                "rod-ui",
-                "rod-backend",
-            ]
-        )
-    if "health" in core:
-        tokens.update(
-            [
-                "health",
-                "health_service",
-                "health-service",
-                "admin_panel",
-                "admin-panel",
-            ]
-        )
-    if "dashboard" in core or "dash" in core:
-        tokens.update(
-            [
-                "dashboard",
-                "dashboards",
-                "xdash",
-                "dashboard_service",
-                "dashboard-service",
-            ]
-        )
-    if "metric" in core or "ingestion" in core:
-        tokens.update(
-            [
-                "metrics",
-                "metric",
-                "ingestion",
-                "ingestion_gateway",
-                "metrics_ingestion",
-            ]
-        )
-    if "component" in core:
-        tokens.update(["component", "components", "cms"])
+    # Add individual word segments (e.g. "health_service" -> "health", "service")
+    sub_words = [w for w in re.split(r"[_.-]", core) if len(w) >= 2]
+    tokens.update(sub_words)
+
+    # Add singular and plural forms for core identifier and its sub-words
+    for word in [core] + sub_words:
+        if word.endswith("s") and len(word) > 3:
+            tokens.add(word[:-1])
+        elif not word.endswith("s"):
+            tokens.add(f"{word}s")
 
     return {t for t in tokens if t}
 
 
 def derive_display_name(flag_name: str) -> str:
-    """Derives a human-readable title from a flag name."""
+    """Derives a human-readable title dynamically from a flag name."""
     core = normalize_flag_name(flag_name)
-    special_cases = {
-        "rod": "Resource Observability Dashboard (ROD)",
-        "cms": "Component Management Service (CMS)",
-        "xdash": "Dashboard Service & xdash SDK",
-        "dashboard_service": "Dashboard Service & xdash SDK",
-        "dashboard": "Dashboard Service & xdash SDK",
-        "health_service": "Health Service & Admin Panel",
-        "health": "Health Service & Admin Panel",
-        "components": "Components Engine",
-        "component": "Components Engine",
-        "metrics": "Metrics & Ingestion Gateway",
-        "metric": "Metrics & Ingestion Gateway",
-        "ingestion": "Metrics & Ingestion Gateway",
-    }
-    if core in special_cases:
-        return special_cases[core]
-
-    words = [w.capitalize() for w in re.split(r"[_.-]", core) if w]
-    return " ".join(words)
+    words = [w for w in re.split(r"[_.-]", core) if w]
+    formatted_words = []
+    for w in words:
+        if len(w) <= 3 and w.lower() not in {"and", "for", "the", "in", "to", "of"}:
+            formatted_words.append(w.upper())
+        else:
+            formatted_words.append(w.capitalize())
+    return " ".join(formatted_words)
 
 
 def _load_flags_from_ref(ref: str, repo_dir: Path) -> tuple[dict[str, bool], dict[str, bool]]:
