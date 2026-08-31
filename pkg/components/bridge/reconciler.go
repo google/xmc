@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -52,10 +53,41 @@ type CMSClient interface {
 	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
 }
 
-// StatusDetectorHealthProber defines the health checking interface for custom resources.
+// StatusDetectorHealthProber defines the health checking and dynamic status detection interface for custom resources.
 type StatusDetectorHealthProber interface {
+	StatusDetector
 	// ProbeHealth evaluates the runtime health of a component based on its spec, returning health status and message.
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string)
+}
+
+// BridgeProber aggregates dynamic status detection and active health probing.
+type BridgeProber struct {
+	detector StatusDetector
+}
+
+var _ StatusDetectorHealthProber = (*BridgeProber)(nil)
+
+// NewBridgeProber creates a new BridgeProber instance.
+func NewBridgeProber(detector StatusDetector) *BridgeProber {
+	return &BridgeProber{
+		detector: detector,
+	}
+}
+
+// DetectStatus delegates status detection to the underlying StatusDetector.
+func (p *BridgeProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+	if p == nil || p.detector == nil {
+		return nil, errors.New("bridge prober detector is uninitialized")
+	}
+	return p.detector.DetectStatus(ctx, ref)
+}
+
+// ProbeHealth evaluates basic component spec health.
+func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
+	if spec == nil {
+		return false, "Component spec is nil"
+	}
+	return true, "Component is active"
 }
 
 type serverClientAdapter struct {
@@ -154,6 +186,7 @@ type ReconcileComponentInput struct {
 	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
 	HelmOpts           HelmComponentOptions
+	WrapperOpts        WrapperRef
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -163,7 +196,7 @@ type ReconcileComponentInput struct {
 // 3. Attaches deletion protection finalizer if not already present.
 // 4. Synchronizes declarative intent with CMS via applyIntent.
 // 5. If !Enabled, handles deactivation via reconcileDisabled.
-// 6. Ensures 1P child workloads via ensureWorkload.
+// 6. Ensures 1P child workloads via ensure1PComponent or 3P wrapper reconciliation.
 // 7. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
@@ -187,6 +220,9 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	}
 	if !in.Enabled {
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
+	}
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		return r.reconcile3PWrapper(ctx, in, canonicalName, res)
 	}
 	if err := r.ensure1PComponent(ctx, in, res); err != nil {
 		return res, err
@@ -381,6 +417,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 	}
 	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
 	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
+	wopts := ParseWrapperRef(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:          obj.GetNamespace(),
 		Name:               obj.GetName(),
@@ -392,6 +429,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 		HelmOpts:           opts,
+		WrapperOpts:        wopts,
 	})
 }
 
@@ -564,4 +602,126 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 		}
 	}
 	*conditions = append(*conditions, newCond)
+}
+
+// reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
+// querying the dynamic StatusDetector to evaluate CR readiness and reporting state to CMS.
+func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if r.prober == nil {
+		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+	}
+	ref := in.WrapperOpts
+	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
+		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
+	}
+	if ref.Name == "" {
+		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+	}
+
+	resStatus, err := r.prober.DetectStatus(ctx, ref)
+	if err != nil {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", err.Error())
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	if resStatus == nil {
+		errmsg := "status detector returned nil status"
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", errmsg)
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", errmsg)
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	}
+	if !resStatus.Found {
+		reason := "ResourceNotFound"
+		if strings.Contains(resStatus.Message, "CRD not installed") {
+			reason = "CRDNotFound"
+		}
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, resStatus.Message)
+	}
+	if !resStatus.Ready {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "ResourceNotReady", resStatus.Message)
+	}
+
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
+// reconcile3PWrapperFallback performs health evaluation when no dynamic status detector is configured.
+func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	isHealthy, healthMsg := true, "Component is active"
+	if r.prober != nil {
+		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec)
+	}
+	if !isHealthy {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "HealthProbeFailed", healthMsg)
+	}
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
+}
+
+// handle3PUnreadyStatus sets Ready=False and Degraded=True status conditions when 3P health or readiness fails.
+func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, message string) (*ReconcileResult, error) {
+	if message == "" {
+		message = fmt.Sprintf("3P wrapper %s is not ready: %s", in.Name, reason)
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
+}
+
+// handle3PReadyStatus transitions component state to COMPONENT_STATE_ENABLED and populates Ready=True conditions.
+func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *ResourceStatus) (*ReconcileResult, error) {
+	msg := "3P wrapper resource is operational and ready"
+	if resStatus != nil && resStatus.Message != "" {
+		msg = resStatus.Message
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, "ComponentHealthy", msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentHealthy", msg)
+
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	return res, nil
+}
+
+// ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
+func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {
+	specMap, ok := specObj.(map[string]any)
+	if !ok || specMap == nil {
+		return WrapperRef{}
+	}
+	wrapperRaw, ok := specMap["wrapperRef"].(map[string]any)
+	if !ok || wrapperRaw == nil {
+		return WrapperRef{}
+	}
+	getString := func(keys ...string) string {
+		for _, k := range keys {
+			if v, exists := wrapperRaw[k].(string); exists && v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	ns := getString("targetNamespace", "namespace")
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	return WrapperRef{
+		Group:                    getString("crdGroup", "group"),
+		Version:                  getString("crdVersion", "version"),
+		Kind:                     getString("crdKind", "kind"),
+		Name:                     getString("targetName", "name"),
+		Namespace:                ns,
+		ObservedGenerationPath:   getString("observedGenerationPath", "observed_generation_path"),
+		ReadyConditionPath:       getString("readyConditionPath", "ready_condition_path", "readyPath"),
+		ExpectedReadyValue:       getString("expectedReadyValue", "expected_ready_value"),
+		EndpointJSONPath:         getString("endpointJsonPath", "endpoint_json_path", "endpointJsonpath"),
+		ConnectionSecretJSONPath: getString("connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath"),
+	}
 }

@@ -56,8 +56,23 @@ func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteD
 }
 
 type mockProber struct {
-	healthy bool
-	msg     string
+	healthy   bool
+	msg       string
+	resStatus *ResourceStatus
+	detectErr error
+}
+
+func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+	if m == nil {
+		return &ResourceStatus{Found: true, Ready: true}, nil
+	}
+	if m.detectErr != nil {
+		return nil, m.detectErr
+	}
+	if m.resStatus != nil {
+		return m.resStatus, nil
+	}
+	return &ResourceStatus{Found: true, Ready: m.healthy, Message: m.msg}, nil
 }
 
 func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
@@ -175,7 +190,16 @@ func TestReconcileComponent_Validation(t *testing.T) {
 func TestReconcileComponent_Scenarios(t *testing.T) {
 	ctx := context.Background()
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
-	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER}
+	spec3P := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{
+			CrdGroup:        "clickhouse.altinity.com",
+			CrdVersion:      "v1",
+			CrdKind:         "ClickHouseInstallation",
+			TargetName:      "clickhouse",
+			TargetNamespace: "xmc",
+		},
+	}
 
 	tests := []struct {
 		name          string
@@ -189,13 +213,48 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		wantRemoveFin bool
 	}{
 		{
-			name: "active 3P with finalizer addition",
-			cms:  &mockCMS{},
+			name:   "active 3P with status detector ready",
+			cms:    &mockCMS{},
+			prober: &mockProber{resStatus: &ResourceStatus{Found: true, Ready: true, Message: "Operational"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
 				DeletionProtection: true, Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
+		},
+		{
+			name:   "active 3P with status detector not ready",
+			cms:    &mockCMS{},
+			prober: &mockProber{resStatus: &ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantAddFin: true,
+		},
+		{
+			name:   "active 3P with status detector resource not found",
+			cms:    &mockCMS{},
+			prober: &mockProber{resStatus: &ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantAddFin: true,
+		},
+		{
+			name:   "active 3P with status detector error",
+			cms:    &mockCMS{},
+			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantErr:    true,
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantAddFin: true,
 		},
 		{
@@ -932,5 +991,64 @@ func TestReconciler_DeleteDisabledHelmComponent_SkipsWhenInactive(t *testing.T) 
 	}
 	if helm.deleteCalled {
 		t.Errorf("expected Delete1PComponent NOT to be called when component is inactive")
+	}
+}
+
+func TestBridgeProber_StatusDetector(t *testing.T) {
+	ctx := context.Background()
+	t.Run("nil detector error", func(t *testing.T) {
+		p := NewBridgeProber(nil)
+		if _, err := p.DetectStatus(ctx, WrapperRef{}); err == nil {
+			t.Error("expected error with nil detector")
+		}
+	})
+
+	t.Run("successful status detection", func(t *testing.T) {
+		fakeDetector := &FakeStatusDetector{
+			Statuses: map[string]*ResourceStatus{
+				"xmc/clickhouse": {
+					Found: true,
+					Ready: true,
+				},
+			},
+		}
+		p := NewBridgeProber(fakeDetector)
+		res, err := p.DetectStatus(ctx, WrapperRef{Namespace: "xmc", Name: "clickhouse"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res == nil || !res.Found || !res.Ready {
+			t.Fatalf("unexpected status: %+v", res)
+		}
+	})
+
+	t.Run("probe health evaluates spec", func(t *testing.T) {
+		p := NewBridgeProber(nil)
+		if ok, _ := p.ProbeHealth(ctx, nil); ok {
+			t.Error("expected nil spec to be unhealthy")
+		}
+		if ok, _ := p.ProbeHealth(ctx, &componentspb.ComponentSpec{}); !ok {
+			t.Error("expected valid spec to be healthy")
+		}
+	})
+}
+
+func TestParseWrapperRef(t *testing.T) {
+	if (ParseWrapperRef(nil, "default") != WrapperRef{}) {
+		t.Error("expected empty WrapperRef for nil input")
+	}
+
+	specMap := map[string]any{
+		"wrapperRef": map[string]any{
+			"crdGroup":        "clickhouse.altinity.com",
+			"crdVersion":      "v1",
+			"crdKind":         "ClickHouseInstallation",
+			"targetName":      "chi-prod",
+			"targetNamespace": "analytics",
+		},
+	}
+	ref := ParseWrapperRef(specMap, "default")
+	if ref.Group != "clickhouse.altinity.com" || ref.Name != "chi-prod" || ref.Namespace != "analytics" {
+		t.Errorf("unexpected parsed ref: %+v", ref)
 	}
 }
