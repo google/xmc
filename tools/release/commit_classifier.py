@@ -64,7 +64,7 @@ def parse_conventional_commit(
     else:
         clean_subject = subject.strip()
 
-    conv_match = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?!?:\s*(.*)$", clean_subject)
+    conv_match = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?\!?:\s*(.*)$", clean_subject)
     if conv_match:
         commit_type = conv_match.group(1).lower()
         scope = conv_match.group(2).lower() if conv_match.group(2) else ""
