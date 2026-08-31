@@ -93,6 +93,18 @@ Third-party components (e.g. Ray Cluster, ClickHouse Operator, Redis) are manage
 
 ---
 
+## Active Network Health Probing & Coordinate Parsing (`health_prober.go`)
+
+To supplement Kubernetes CR condition checks with real data plane health verification, the bridge performs active network health probes:
+
+- **Bounded HTTP GET Probing (`ProbeHTTP`)**: Executes HTTP/HTTPS health checks with context timeouts, closing connections cleanly and draining response bodies up to a bounded 64KB limit.
+- **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
+- **Protocol-Agnostic Probing (`ProbeHealth`)**: Automatically sniffs URL schemes (`http://`, `https://`, `tcp://`, or bare `host:port`) and dispatches to the appropriate probe implementation.
+- **Coordinate Parsing (`ParseCoordinates`)**: Standardizes bare host:port addresses, URLs, and Kubernetes ClusterIP/FQDN names (`<svc>.<ns>.svc.cluster.local`) into structured hostname, port, and scheme tuples.
+- **`HealthProber` Interface & `FakeHealthProber`**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
+
+---
+
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
@@ -103,4 +115,5 @@ Third-party components (e.g. Ray Cluster, ClickHouse Operator, Redis) are manage
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
 - **Dynamic 3P CRD Status Detection**: Query third-party operator CRDs dynamically using normalized JSONPath queries without compile-time Go types.
+- **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
