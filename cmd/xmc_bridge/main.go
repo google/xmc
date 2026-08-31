@@ -431,7 +431,8 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
 	detector := bridge.NewK8sStatusDetector(dynamicClient, mapper)
-	prober := bridge.NewBridgeProber(detector)
+	netProber := bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(cfg.ProbeTimeout))
+	bridgeProber := bridge.NewBridgeProber(detector, netProber, cfg.ProbeTimeout)
 
 	helmOpts := []bridge.HelmManagerOption{
 		bridge.WithKubeconfig(cfg.Kubeconfig),
@@ -441,7 +442,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	}
 	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
 	defer helmMgr.Close()
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), prober, helmMgr)
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), bridgeProber, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
