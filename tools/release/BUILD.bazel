@@ -1,0 +1,107 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "commit_classifier.py",
+    "extract_release_metadata.py",
+    "git_ops.py",
+    "models.py",
+])
+
+py_library(
+    name = "models_lib",
+    srcs = ["models.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "git_ops_lib",
+    srcs = ["git_ops.py"],
+    imports = ["../.."],
+    deps = [
+        ":models_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "commit_classifier_lib",
+    srcs = ["commit_classifier.py"],
+    imports = ["../.."],
+    deps = [
+        ":models_lib",
+    ],
+)
+
+py_library(
+    name = "extract_release_metadata_lib",
+    srcs = ["extract_release_metadata.py"],
+    imports = ["../.."],
+    deps = [
+        ":commit_classifier_lib",
+        ":git_ops_lib",
+        ":models_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "extract_release_metadata",
+    srcs = ["extract_release_metadata.py"],
+    imports = ["../.."],
+    main = "extract_release_metadata.py",
+    deps = [
+        ":extract_release_metadata_lib",
+    ],
+)
+
+py_test(
+    name = "git_ops_test",
+    srcs = ["git_ops_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        ":models_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "commit_classifier_test",
+    srcs = ["commit_classifier_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":commit_classifier_lib",
+        ":models_lib",
+    ],
+)
+
+py_test(
+    name = "extract_release_metadata_test",
+    srcs = ["extract_release_metadata_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":commit_classifier_lib",
+        ":extract_release_metadata_lib",
+        ":git_ops_lib",
+        ":models_lib",
+        "//tools/common:tool_utils",
+    ],
+)
