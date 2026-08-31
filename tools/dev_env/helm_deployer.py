@@ -110,28 +110,8 @@ class HelmDeployer:
         """Returns the kubectl context name for this KinD cluster."""
         return f"kind-{self.config.cluster_name}"
 
-    def generate_values_file(
-        self,
-        config: LocalDevConfig | None = None,
-        output_path: Path | None = None,
-    ) -> Path:
-        """Generates dynamic Helm values connecting to local Dex, Redis, and Spanner.
-
-        Interpolates configuration settings into the local development values dictionary,
-        wiring endpoints for local in-cluster services (Dex OIDC issuer, Redis address,
-        and Cloud Spanner database paths).
-
-        Args:
-            config: Optional LocalDevConfig override; defaults to self.config.
-            output_path: Optional destination Path for values.yaml; defaults to self.values_file.
-
-        Returns:
-            Absolute Path to the written Helm values YAML file.
-        """
-        cfg = config or self.config
-        target_path = output_path or self.values_file
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-
+    def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
+        """Constructs the dictionary of Helm values for local deployment."""
         values: dict[str, Any] = {
             "projectId": cfg.project_id,
             "environment": cfg.environment,
@@ -156,26 +136,39 @@ class HelmDeployer:
             values[dep_key] = {"enabled": True}
             values[img_key] = f"{s.lower()}_image:latest"
 
+        return values
+
+    def generate_values_file(
+        self,
+        config: LocalDevConfig | None = None,
+        output_path: Path | None = None,
+    ) -> Path:
+        """Generates dynamic Helm values connecting to local Dex, Redis, and Spanner.
+
+        Interpolates configuration settings into the local development values dictionary,
+        wiring endpoints for local in-cluster services (Dex OIDC issuer, Redis address,
+        and Cloud Spanner database paths).
+
+        Args:
+            config: Optional LocalDevConfig override; defaults to self.config.
+            output_path: Optional destination Path for values.yaml; defaults to self.values_file.
+
+        Returns:
+            Absolute Path to the written Helm values YAML file.
+        """
+        cfg = config or self.config
+        target_path = output_path or self.values_file
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        values = self._build_values_dict(cfg)
         content = _dump_yaml(values) + "\n"
         target_path.write_text(content, encoding="utf-8")
         _LOGGER.debug("Wrote Helm values (%d bytes) to %s", len(content), target_path)
         log_info(f"Generated Helm values file: '{target_path}'")
         return target_path
 
-    def wait_for_rollouts(self, namespace: str = "xmc", timeout_seconds: int = 180) -> None:
-        """Waits for core deployments across namespaces to complete rollouts.
-
-        Monitors rollout status sequentially:
-        1. Dex deployment in the 'dex' namespace.
-        2. Core XMC workloads in the target namespace (gateway-proxy, xid-service,
-           experiment-state-server, ui-deployment).
-
-        Args:
-            namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
-            timeout_seconds: Maximum seconds to wait for each individual deployment rollout.
-        """
-        log_info(f"Waiting for rollout in namespace '{namespace}' ({timeout_seconds}s)...")
-        ctx, t = self.kube_context, f"--timeout={timeout_seconds}s"
+    def _check_dex_rollout(self, ctx: str, timeout_flag: str) -> None:
+        """Checks rollout status for Dex in the 'dex' namespace if present."""
         check_dex_cmd = [
             "kubectl",
             "--context",
@@ -200,13 +193,14 @@ class HelmDeployer:
                     "deployment/dex",
                     "-n",
                     "dex",
-                    t,
+                    timeout_flag,
                 ]
             )
         else:
             _LOGGER.debug("Deployment dex not found in namespace dex, skipping rollout check")
 
-        # Dynamically discover all deployments in the target namespace
+    def _discover_namespace_deployments(self, ctx: str, namespace: str) -> list[str]:
+        """Discovers all deployment names in the specified namespace."""
         get_deps_cmd = [
             "kubectl",
             "--context",
@@ -235,9 +229,25 @@ class HelmDeployer:
             if isinstance(res.stdout, bytes)
             else (res.stdout or "")
         )
-        deployments = stdout.split() if stdout.strip() else []
+        return sorted(stdout.split()) if stdout.strip() else []
 
-        for dep in sorted(deployments):
+    def wait_for_rollouts(self, namespace: str = "xmc", timeout_seconds: int = 180) -> None:
+        """Waits for core deployments across namespaces to complete rollouts.
+
+        Monitors rollout status sequentially:
+        1. Dex deployment in the 'dex' namespace.
+        2. Core XMC workloads in the target namespace.
+
+        Args:
+            namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
+            timeout_seconds: Maximum seconds to wait for each individual deployment rollout.
+        """
+        log_info(f"Waiting for rollout in namespace '{namespace}' ({timeout_seconds}s)...")
+        ctx, timeout_flag = self.kube_context, f"--timeout={timeout_seconds}s"
+        self._check_dex_rollout(ctx, timeout_flag)
+
+        deployments = self._discover_namespace_deployments(ctx, namespace)
+        for dep in deployments:
             _LOGGER.debug(
                 "Checking rollout status for deployment/%s in namespace %s", dep, namespace
             )
@@ -251,7 +261,7 @@ class HelmDeployer:
                     f"deployment/{dep}",
                     "-n",
                     namespace,
-                    t,
+                    timeout_flag,
                 ]
             )
         log_success("All core deployments rolled out successfully.")

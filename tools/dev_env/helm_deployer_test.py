@@ -206,6 +206,25 @@ class TestHelmDeployer(unittest.TestCase):
             self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=120)
         self.assertIn("Failed to discover deployments", str(ctx.exception))
 
+    def test_build_values_dict_direct(self) -> None:
+        values = self.deployer._build_values_dict(self.config)
+        self.assertEqual(values["projectId"], "test-proj")
+        self.assertEqual(values["environment"], "local-dev")
+        self.assertIn(
+            "projects/test-proj/instances/test-instance/databases/test_ess_db",
+            values["experimentStateServer"]["spannerDatabaseName"],
+        )
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_discover_namespace_deployments_success(self, mock_run: MagicMock) -> None:
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = b"b-dep a-dep c-dep"
+        mock_run.return_value = mock_res
+
+        deps = self.deployer._discover_namespace_deployments("kind-test", "xmc")
+        self.assertEqual(deps, ["a-dep", "b-dep", "c-dep"])
+
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_deploy(self, mock_run: MagicMock) -> None:
         mock_run.return_value.returncode = 0
