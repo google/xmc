@@ -81,9 +81,10 @@ Your Task:
 1. Conduct a strict Single Responsibility Principle (SRP) audit of the changes.
 2. Evaluate whether this change can be vertically split into 2 or more smaller, cohesive layers.
 3. Prioritize VERTICAL SPLITS (slicing by end-to-end user flow / feature slice) over horizontal architectural layers (slicing DB vs API vs UI).
-4. Verify the Dead Code & Reachability Invariant: Intermediate PRs MUST NOT introduce dead, uncalled, or unreachable code. Every slice must be independently tested via unit/integration/E2E tests.
-5. If splittable, produce a concrete `gh-stack` execution plan with branch names, commit messages, and file allocations.
-6. If the change is an indivisible exception (e.g. monolithic deletion/migration), provide a rigorous technical justification.
+4. For standalone CLI tools or scripts exceeding 400 production lines, evaluate progressive functional depth decomposition (e.g. Minimal Runnable Core Entrypoint -> Subsystem/Config Dynamic Discovery -> Advanced Engine/Analytics) before considering exception justifications.
+5. Verify the Dead Code & Reachability Invariant: Intermediate PRs MUST NOT introduce dead, uncalled, or unreachable code. Every slice must be independently tested via unit/integration/E2E tests.
+6. If splittable, produce a concrete `gh-stack` execution plan with branch names, commit messages, and file allocations.
+7. If the change is an indivisible exception (e.g. monolithic deletion/migration), provide a rigorous technical justification.
 ```
 
 ---
@@ -100,6 +101,7 @@ The verification subagent must evaluate the diff against the following four core
 * **Production Caller Required**: Every intermediate or standalone PR merged to `main` MUST have an active production call site. Submitting uncalled helpers, orphaned utilities, or unused classes (even with 100% unit tests in a planned stack) is prohibited because stacks can stall or change, leaving dead code in `main`.
 * **Functional Thin Slices over Layer Splits**: Decompose oversized work by functional depth (e.g. Slice 1: minimal happy-path caller + basic helper + tests; Slice 2: advanced options, caching, and error recovery) rather than by structural layers.
 * **Standalone Entrypoint Exception**: Self-contained executable entrypoints (such as scaffolding a new CLI tool under `cmd/`, a new service binary, or a standalone utility under `tools/`) are permitted without external callers because they are directly runnable and testable on their own.
+* **Progressive Entrypoint Depth (Oversized Standalone Tools)**: When a standalone CLI tool, binary, or script exceeds the 400 production lines threshold, agents MUST NOT treat it as an indivisible monolithic exception. Instead, decompose the tool across vertical slices by progressive functional depth (e.g., Slice 1: Minimal Runnable Core Entrypoint & Base Processing -> Slice 2: Subsystem/Config Dynamic Discovery & Enrichment -> Slice 3: Advanced Recommendation/Analytics Engine). Each slice must be an end-to-end executable, testable entrypoint with zero dead code in trunk.
 * **End-to-End Testability**: Each slice must pass local test matrices (`bazel test //...`) and include dedicated unit/integration tests exercising the new functionality.
 
 ### Pillar 3: Documentation & Rule Modularity (for Markdown diffs)
