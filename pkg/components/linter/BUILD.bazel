@@ -21,10 +21,15 @@ go_library(
         "linter.go",
         "manifest.go",
         "manifest_decoder.go",
+        "rules.go",
+        "schema.go",
     ],
     importpath = "xmanager_cloud/pkg/components/linter",
     visibility = ["//visibility:public"],
-    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+    deps = [
+        "//pkg/components/store",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
 )
 
 go_test(
@@ -34,7 +39,12 @@ go_test(
         "linter_test.go",
         "manifest_decoder_test.go",
         "manifest_test.go",
+        "rules_test.go",
+        "schema_test.go",
     ],
     embed = [":linter"],
-    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+    deps = [
+        "//pkg/components/store",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
 )

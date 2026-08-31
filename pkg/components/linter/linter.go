@@ -28,11 +28,16 @@ import (
 )
 
 // Linter executes multi-pass static validation against manifest directories.
-type Linter struct{}
+type Linter struct {
+	rules *RulesConfig
+}
 
-// NewLinter creates a new static linter instance.
-func NewLinter() *Linter {
-	return &Linter{}
+// NewLinter creates a new static linter with the provided rules configuration.
+func NewLinter(rules *RulesConfig) *Linter {
+	if rules == nil {
+		rules = &RulesConfig{}
+	}
+	return &Linter{rules: rules}
 }
 
 // ValidateDirectory validates all YAML manifests located within the specified directory.
@@ -49,9 +54,11 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 	}
 
 	res := NewValidationResult()
-	if _, _, err := l.collectManifests(dir, res); err != nil {
+	rawManifests, compManifests, err := l.collectManifests(dir, res)
+	if err != nil {
 		return nil, err
 	}
+	l.validateSchema(rawManifests, compManifests, res)
 	return res, nil
 }
 

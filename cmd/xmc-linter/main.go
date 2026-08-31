@@ -43,13 +43,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	lint := linter.NewLinter()
+	var rules *linter.RulesConfig
+	if *rulesConfig != "" {
+		r, err := linter.LoadRules(*rulesConfig)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error loading rules config %q: %v\n", *rulesConfig, err)
+			return 1
+		}
+		rules = r
+	}
+
+	lint := linter.NewLinter(rules)
 	res, err := lint.ValidateDirectory(*manifestsDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error running linter on %q: %v\n", *manifestsDir, err)
 		return 1
 	}
-	_ = rulesConfig
 	return printReport(res, *outputFormat, stdout, stderr)
 }
 
