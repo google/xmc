@@ -230,8 +230,11 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("kubectl CLI not found", content)
         mock_run.assert_not_called()
 
+    @patch("tools.dev_env.helm_deployer.shutil.which", return_value="/usr/bin/kubectl")
     @patch("tools.dev_env.helm_deployer.run_command")
-    def test_capture_diagnostics_unreachable_cluster(self, mock_run: MagicMock) -> None:
+    def test_capture_diagnostics_unreachable_cluster(
+        self, mock_run: MagicMock, mock_which: MagicMock
+    ) -> None:
         mock_run.return_value = subprocess.CompletedProcess(
             ["kubectl", "get", "nodes"], 1, stdout="", stderr="connection refused"
         )
