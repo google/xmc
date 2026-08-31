@@ -69,10 +69,31 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 ---
 
+## Advanced 1P Lifecycle Policies (`helm_builder.go`, `helm_manager.go`)
+
+Production-grade lifecycle controls and graceful deactivation policies for first-party components:
+
+- **4-Tier Image Resolution Precedence**: Deterministically resolves container image overrides:
+  1. `opts.Parameters["image"]` (highest priority explicit container image override)
+  2. `opts.Parameters["imageRepository"]` + `opts.ImageTag` (repository customization)
+  3. `defaultImage` + `opts.ImageTag` (standard component image with version override)
+  4. `defaultImage:latest` (fallback default)
+- **Graceful Connection Draining**: Automatically injects a `preStop` sleep hook (`/bin/sleep <seconds>`) and clamps `TerminationGracePeriodSeconds` to at least 5s greater than the drain timeout to guarantee pod termination ordering.
+- **`Orphan` Deletion Policy**: Supports `spec.deletionPolicy: Orphan`, preserving live configuration during component de-registration while still deactivating managed controllers.
+
+---
+
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
+<<<<<<< HEAD
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
+=======
+- **1P Helm Values Synthesis Engine**: Synthesizes structured Helm values and enablement toggles (`<component>Deployment.enabled = true`, `global.imageTag`, `parameters`) from component specifications for Helm release actuation.
+- **Dynamic ConfigMap Management**: Automates persistence and synchronization of active Helm parameters into cluster-level ConfigMaps.
+- **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
+- **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
+>>>>>>> 957f6c50 (docs(components): document advanced 1p lifecycle policies and image overrides)
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
