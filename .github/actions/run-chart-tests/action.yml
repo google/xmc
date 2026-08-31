@@ -42,6 +42,7 @@ runs:
             - 'deploy/ctk_v2/xmanager-cloud.yaml'
             - 'test/helm/**'
             - '.github/workflows/unit-tests.yml'
+            - '.github/actions/run-chart-tests/**'
 
     - name: 'Install Helm'
       if: steps.changes.outputs.chart == 'true'

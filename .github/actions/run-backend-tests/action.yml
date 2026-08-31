@@ -112,6 +112,7 @@ runs:
         TARGETS: ${{ steps.scope.outputs.bazel_targets }}
         REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
+        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
       shell: bash
       run: |
         RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
