@@ -1,0 +1,286 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Unit tests for HelmDeployer."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from tools.dev_env.config import LocalDevConfig
+from tools.dev_env.helm_deployer import HelmDeployer
+
+
+class TestHelmDeployer(unittest.TestCase):
+    """Test suite for HelmDeployer."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.temp_path = Path(self.tmp_dir.name)
+        self.config = LocalDevConfig(
+            project_id="test-proj",
+            environment="local-dev",
+            spanner_instance="test-instance",
+            ess_database="test_ess_db",
+            xid_database="test_xid_db",
+            cluster_name="test-kind-cluster",
+        )
+        self.deployer = HelmDeployer(
+            config=self.config,
+            repo_root=self.temp_path,
+            temp_dir=self.temp_path,
+        )
+
+    def tearDown(self) -> None:
+        self.tmp_dir.cleanup()
+        super().tearDown()
+
+    def test_kube_context(self) -> None:
+        self.assertEqual(self.deployer.kube_context, "kind-test-kind-cluster")
+
+    def test_generate_values_file_default(self) -> None:
+        val_path = self.deployer.generate_values_file()
+        self.assertTrue(val_path.is_file())
+        content = val_path.read_text(encoding="utf-8")
+        self.assertIn('projectId: "test-proj"', content)
+        self.assertIn('environment: "local-dev"', content)
+        self.assertIn("test-instance", content)
+        self.assertIn("test_ess_db", content)
+        self.assertIn("test_xid_db", content)
+
+    def test_generate_values_file_custom_output(self) -> None:
+        custom_path = self.temp_path / "custom_values" / "val.yaml"
+        result_path = self.deployer.generate_values_file(output_path=custom_path)
+        self.assertEqual(result_path, custom_path)
+        self.assertTrue(custom_path.is_file())
+
+    def test_generate_values_file_with_auxiliary_services(self) -> None:
+        cfg = LocalDevConfig(
+            project_id="test-proj",
+            enabled_services=[
+                "experiment_state_server",
+                "dashboard_service",
+                "health_service",
+                "components",
+                "rod_data_provider",
+                "ingestion_gateway",
+            ],
+        )
+        val_path = self.deployer.generate_values_file(config=cfg)
+        content = val_path.read_text(encoding="utf-8")
+        self.assertIn("dashboardServiceDeployment:", content)
+        self.assertIn('dashboard_service_custom_image: "dashboard_service_image:latest"', content)
+        self.assertIn("healthServiceDeployment:", content)
+        self.assertIn('health_service_custom_image: "health_service_image:latest"', content)
+        self.assertIn("componentsDeployment:", content)
+        self.assertIn("rodDeployment:", content)
+        self.assertIn('rod_custom_image: "rod_data_provider_image:latest"', content)
+        self.assertIn("ingestionGatewayDeployment:", content)
+        self.assertIn('ingestion_gateway_custom_image: "ingestion_gateway_image:latest"', content)
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> MagicMock:
+            mock_res = MagicMock()
+            if "get" in cmd and "deployments" in cmd:
+                mock_res.returncode = 0
+                mock_res.stdout = b"gateway-proxy actuator-deployment xid-service-deployment"
+            elif "get" in cmd and "deployment/dex" in cmd:
+                mock_res.returncode = 0
+                mock_res.stdout = b"deployment.apps/dex"
+            else:
+                mock_res.returncode = 0
+                mock_res.stdout = b""
+            return mock_res
+
+        mock_run.side_effect = fake_run
+        self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=120)
+
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-kind-cluster",
+                "rollout",
+                "status",
+                "deployment/dex",
+                "-n",
+                "dex",
+                "--timeout=120s",
+            ]
+        )
+        for dep in ("actuator-deployment", "gateway-proxy", "xid-service-deployment"):
+            mock_run.assert_any_call(
+                [
+                    "kubectl",
+                    "--context",
+                    "kind-test-kind-cluster",
+                    "rollout",
+                    "status",
+                    f"deployment/{dep}",
+                    "-n",
+                    "xmc",
+                    "--timeout=120s",
+                ]
+            )
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_wait_for_rollouts_skips_when_no_deployments(self, mock_run: MagicMock) -> None:
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> MagicMock:
+            mock_res = MagicMock()
+            if "deployment/dex" in cmd:
+                mock_res.returncode = 1
+                mock_res.stdout = b""
+            else:
+                mock_res.returncode = 0
+                mock_res.stdout = b""
+            return mock_res
+
+        mock_run.side_effect = fake_run
+        self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=120)
+
+        for call_item in mock_run.call_args_list:
+            cmd = call_item[0][0]
+            self.assertNotIn("status", cmd)
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_wait_for_rollouts_discovery_failure_logs_warning(self, mock_run: MagicMock) -> None:
+        mock_res = MagicMock()
+        mock_res.returncode = 1
+        mock_res.stdout = b""
+        mock_res.stderr = b"Connection refused"
+        mock_run.return_value = mock_res
+
+        with self.assertLogs("xmc.dev_env.helm_deployer", level="WARNING") as log_cm:
+            self.deployer.wait_for_rollouts(namespace="xmc", timeout_seconds=120)
+        self.assertTrue(any("Failed to discover deployments" in msg for msg in log_cm.output))
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_deploy(self, mock_run: MagicMock) -> None:
+        chart_dir = self.temp_path / "deploy" / "helm"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        self.deployer.deploy(chart_path=chart_dir, timeout=60)
+
+        # Verify helm upgrade command was run
+        mock_run.assert_any_call(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                "xmc",
+                str(chart_dir),
+                "--kube-context",
+                "kind-test-kind-cluster",
+                "--create-namespace",
+                "-n",
+                "xmc",
+                "-f",
+                str(self.deployer.values_file),
+            ]
+        )
+
+        # Verify gateway-proxy restart
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-kind-cluster",
+                "rollout",
+                "restart",
+                "deployment/gateway-proxy",
+                "-n",
+                "xmc",
+            ],
+            check=False,
+        )
+
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_deploy_with_values_local_yaml(self, mock_run: MagicMock) -> None:
+        chart_dir = self.temp_path / "deploy" / "helm"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        (chart_dir / "values-local.yaml").write_text("isDevEnvironment: true\n", encoding="utf-8")
+        self.deployer.deploy(chart_path=chart_dir, timeout=60)
+
+        mock_run.assert_any_call(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                "xmc",
+                str(chart_dir),
+                "--kube-context",
+                "kind-test-kind-cluster",
+                "--create-namespace",
+                "-f",
+                str(chart_dir / "values-local.yaml"),
+                "-n",
+                "xmc",
+                "-f",
+                str(self.deployer.values_file),
+            ]
+        )
+
+    def test_deploy_nonexistent_chart_dir_raises(self) -> None:
+        nonexistent = self.temp_path / "nonexistent" / "helm"
+        with self.assertRaises(FileNotFoundError) as ctx:
+            self.deployer.deploy(chart_path=nonexistent)
+        self.assertIn("Helm chart directory not found", str(ctx.exception))
+
+    def test_deploy_nonexistent_custom_values_file_raises(self) -> None:
+        chart_dir = self.temp_path / "deploy" / "helm"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        nonexistent_values = self.temp_path / "nonexistent" / "values.yaml"
+        with self.assertRaises(FileNotFoundError) as ctx:
+            self.deployer.deploy(chart_path=chart_dir, values_path=nonexistent_values)
+        self.assertIn("Custom values file not found", str(ctx.exception))
+
+    @patch("getpass.getuser", return_value="testuser")
+    def test_default_temp_dir_user_specific(self, mock_getuser: MagicMock) -> None:
+        deployer = HelmDeployer(config=self.config, repo_root=self.temp_path)
+        expected_path = self.temp_path / ".xmc_dev" / f"testuser_{self.config.cluster_name}"
+        self.assertEqual(deployer.temp_dir, expected_path)
+
+    @patch("getpass.getuser", side_effect=KeyError("No username found"))
+    @patch.dict("os.environ", {"USER": "fallback_user"})
+    def test_default_temp_dir_fallback_user_env(self, mock_getuser: MagicMock) -> None:
+        deployer = HelmDeployer(config=self.config, repo_root=self.temp_path)
+        expected_path = self.temp_path / ".xmc_dev" / f"fallback_user_{self.config.cluster_name}"
+        self.assertEqual(deployer.temp_dir, expected_path)
+
+    @patch("getpass.getuser", side_effect=KeyError("No username found"))
+    @patch("os.getuid", return_value=1001, create=True)
+    def test_default_temp_dir_fallback_getuid(
+        self, mock_getuid: MagicMock, mock_getuser: MagicMock
+    ) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            deployer = HelmDeployer(config=self.config, repo_root=self.temp_path)
+            expected_path = self.temp_path / ".xmc_dev" / f"1001_{self.config.cluster_name}"
+            self.assertEqual(deployer.temp_dir, expected_path)
+
+    @patch("getpass.getuser", side_effect=KeyError("No username found"))
+    def test_default_temp_dir_fallback_unknown(self, mock_getuser: MagicMock) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with patch.object(os, "getuid", side_effect=OSError("no uid"), create=True):
+                deployer = HelmDeployer(config=self.config, repo_root=self.temp_path)
+                expected_path = self.temp_path / ".xmc_dev" / f"unknown_{self.config.cluster_name}"
+                self.assertEqual(deployer.temp_dir, expected_path)
+
+
+if __name__ == "__main__":
+    unittest.main()
