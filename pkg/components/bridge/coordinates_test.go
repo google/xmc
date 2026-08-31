@@ -124,6 +124,62 @@ func TestParseCoordinates(t *testing.T) {
 				RawEndpoint:      "redis-master:6379",
 			},
 		},
+		{
+			name:       "bracketed ipv6 address without port",
+			endpoint:   "[::1]",
+			secretName: "",
+			want: ResolvedComponentCoordinates{
+				Scheme:           "",
+				Host:             "::1",
+				Port:             "",
+				ServiceNamespace: "",
+				ServiceName:      "",
+				SecretName:       "",
+				RawEndpoint:      "[::1]",
+			},
+		},
+		{
+			name:       "bracketed ipv6 address with port",
+			endpoint:   "http://[2001:db8::1]:8080",
+			secretName: "",
+			want: ResolvedComponentCoordinates{
+				Scheme:           "http",
+				Host:             "2001:db8::1",
+				Port:             "8080",
+				ServiceNamespace: "",
+				ServiceName:      "",
+				SecretName:       "",
+				RawEndpoint:      "http://[2001:db8::1]:8080",
+			},
+		},
+		{
+			name:       "ipv4 address endpoint",
+			endpoint:   "http://127.0.0.1:9090",
+			secretName: "",
+			want: ResolvedComponentCoordinates{
+				Scheme:           "http",
+				Host:             "127.0.0.1",
+				Port:             "9090",
+				ServiceNamespace: "",
+				ServiceName:      "",
+				SecretName:       "",
+				RawEndpoint:      "http://127.0.0.1:9090",
+			},
+		},
+		{
+			name:       "service with svc suffix without namespace",
+			endpoint:   "http://my-service.svc.cluster.local:8080",
+			secretName: "",
+			want: ResolvedComponentCoordinates{
+				Scheme:           "http",
+				Host:             "my-service.svc.cluster.local",
+				Port:             "8080",
+				ServiceNamespace: "",
+				ServiceName:      "my-service",
+				SecretName:       "",
+				RawEndpoint:      "http://my-service.svc.cluster.local:8080",
+			},
+		},
 	}
 
 	for _, tt := range tests {

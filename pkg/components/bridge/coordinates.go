@@ -75,17 +75,36 @@ func extractHostAndPort(hostPart string) (string, string) {
 	if h, p, err := net.SplitHostPort(hostPart); err == nil {
 		return h, p
 	}
+	if strings.HasPrefix(hostPart, "[") && strings.HasSuffix(hostPart, "]") {
+		return hostPart[1 : len(hostPart)-1], ""
+	}
 	return hostPart, ""
 }
 
 func parseServiceAndNamespace(host string) (string, string) {
+	if net.ParseIP(host) != nil {
+		return "", ""
+	}
 	cleanHost := strings.TrimSuffix(host, ".")
 	parts := strings.Split(cleanHost, ".")
-	if strings.Contains(cleanHost, ".svc") {
-		if len(parts) >= 2 {
-			return parts[0], parts[1]
+
+	svcIdx := -1
+	for i, part := range parts {
+		if strings.ToLower(part) == "svc" {
+			svcIdx = i
+			break
 		}
 	}
+
+	if svcIdx != -1 {
+		if svcIdx >= 2 {
+			return parts[0], parts[1]
+		}
+		if svcIdx == 1 {
+			return parts[0], ""
+		}
+	}
+
 	if len(parts) == 2 {
 		tlds := map[string]bool{"com": true, "io": true, "net": true, "org": true, "ai": true, "dev": true, "edu": true, "gov": true}
 		if !tlds[strings.ToLower(parts[1])] {
