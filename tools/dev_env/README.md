@@ -31,53 +31,139 @@ python3 tools/dev_env/dev_env.py [command] [options...]
 
 ## Subcommands Reference
 
-### 1. `gke-deploy` (Deploy Remote GKE Environment)
-Compiles Cluster Toolkit (`gcluster`) blueprints and orchestrates step-by-step remote infrastructure and service deployment.
+### Local KinD Environment Commands
+
+#### 1. `up` (Complete Local Environment Bootstrap)
+Bootstraps the entire end-to-end local XMC developer stack in a single automated command:
+1. Provisions Cloud Spanner databases (ESS & XID) with compiled protobuf descriptor sets.
+2. Creates the local KinD cluster with ingress port mappings (`8080`, `5556`).
+3. Injects host ADC credentials, Dex client secrets, and self-signed TLS certificates.
+4. Applies support manifests (Dex OIDC, Redis, Gateway Proxy, dummy CRDs).
+5. Compiles Bazel OCI image tarballs in parallel and side-loads them into KinD nodes.
+6. Synthesizes Helm `values.yaml` and deploys the XMC Helm chart into KinD.
 
 ```bash
-python3 tools/dev_env/dev_env.py gke-deploy \
-  --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
-  --project-id <PROJECT_ID> \
-  --environment <ENV_NAME> \
-  --dns-project <DNS_PROJECT_ID> \
-  --dns-zone <DNS_ZONE_NAME>
+# Bootstrap local environment with default configuration
+python3 tools/dev_env/dev_env.py up
+
+# Recreate KinD cluster and rebuild all images
+python3 tools/dev_env/dev_env.py up --recreate-cluster
+
+# Skip image compilation (e.g. if images are already loaded)
+python3 tools/dev_env/dev_env.py up --no-build-images
 ```
 
-#### Options
-- `--config`, `-c`: Path to the Cluster Toolkit deployment YAML configuration file (required).
-- `--project-id`, `-p`: Google Cloud project ID (required, or via `PROJECT_ID` env var).
-- `--environment`, `-e`: Deployment environment name (required, or via `XMANAGER_ENV` env var).
-- `--dns-project`: Google Cloud project hosting Cloud DNS (required).
-- `--dns-zone`: Cloud DNS managed zone name (required).
-- `--start-from`: Start execution from a specific step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
-- `--only`: Execute only a single step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
-- `--auto-approve`, `-y`: Automatically approve Terraform and Cluster Toolkit prompts.
-- `--skip-terraform-init`: Skip `terraform init` during deployment.
+##### Options
+- `--config`, `-c`: Path to YAML deployment configuration.
+- `--cluster-name`: KinD cluster name (defaults to dynamic `xmc-<environment>`).
+- `--recreate-cluster`: Delete and recreate the KinD cluster if it already exists.
+- `--no-build-images`: Skip OCI image compilation and side-loading.
+- `--no-deploy-helm`: Skip Helm chart deployment.
+- `--no-auto-migrate`: Skip automatic Cloud Spanner schema migration execution.
 
 ---
 
-### 2. `gke-upgrade` (Upgrade Remote GKE Services)
-Incrementally rebuilds changed microservices, pushes OCI container images to Artifact Registry, and rolls out Helm chart updates or Spanner migrations without destroying infrastructure.
+#### 2. `down` (Tear Down Local Environment)
+Tears down the local KinD cluster and releases local Docker and system resources.
 
 ```bash
-python3 tools/dev_env/dev_env.py gke-upgrade \
-  --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
-  --project-id <PROJECT_ID> \
-  --environment <ENV_NAME>
+# Delete local KinD cluster
+python3 tools/dev_env/dev_env.py down
+
+# Delete local KinD cluster and drop Spanner databases
+python3 tools/dev_env/dev_env.py down --drop-db
 ```
 
-#### Options
-- `--config`, `-c`: Path to deployment YAML configuration file.
-- `--project-id`, `-p`: Google Cloud project ID.
-- `--environment`, `-e`: Deployment environment name.
-- `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
-- `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
-- `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
+##### Options
+- `--cluster-name`: KinD cluster name to delete.
+- `--drop-db`: Also drop Cloud Spanner databases associated with the local environment.
 
 ---
 
-### 3. `spanner` (Cloud Spanner Database Management)
-Automates verification, single-batch DDL schema creation with compiled protobuf descriptor sets, and teardown for Cloud Spanner databases used by XMC microservices.
+#### 3. `status` (Cluster Status & Health Inspection)
+Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
+
+```bash
+python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
+```
+
+##### Output Sections
+- **Cluster & Node Readiness**: KinD cluster control-plane and worker node readiness.
+- **Support & Service Pods**: Pod status table for core services and dependencies (`dex`, `redis`, `gateway-proxy`, `experiment_state_server`, `ui`, etc.).
+- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080`) and Dex OIDC (`http://localhost:5556/dex/.well-known/openid-configuration`).
+
+---
+
+#### 4. `logs` (Stream Microservice Logs)
+Streams or tails container stdout/stderr logs from a specific microservice running in the local KinD cluster.
+
+```bash
+# Tail last 50 lines of logs for experiment_state_server
+python3 tools/dev_env/dev_env.py logs experiment_state_server --lines 50
+
+# Follow continuous logs in real-time
+python3 tools/dev_env/dev_env.py logs ui -f
+```
+
+---
+
+#### 5. `build-images` (Parallel OCI Container Builds & KinD Side-Loading)
+Compiles Bazel OCI image tarballs in parallel and side-loads them directly into the local KinD cluster nodes without remote container registry pushes.
+
+```bash
+# Build and load all enabled microservice images into KinD
+python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local
+
+# Build all discovered buildable services across the repository
+python3 tools/dev_env/dev_env.py build-images all --cluster-name xmc-local
+
+# Build and load specific microservices
+python3 tools/dev_env/dev_env.py build-images \
+  --services experiment_state_server ui \
+  --cluster-name xmc-local
+```
+
+##### Dynamic Service Discovery & OCI Conventions
+`ImageBuilder` relies on dynamic repository discovery rather than hardcoded service dictionaries:
+- **Automatic Discovery**: Scans `cmd/*/BUILD.bazel` for `oci_image_for_service` or `_image_tarball` definitions.
+- **Convention Derivation**:
+  - **Bazel Package**: `cmd/<service>`
+  - **Bazel Tarball Target**: `//cmd/<service>:<service>_image_tarball`
+  - **Output Archive**: `<service>_image_tarball.tar` (under `bazel-bin/` or cross-platform fallback `bazel-out/`)
+  - **Docker Tag**: `<service>_image:latest`
+- **Extensibility**: Adding a new Go or UI microservice under `cmd/<service>` with an OCI target works immediately with `dev_env.py build-images` without requiring tooling modifications.
+
+##### Options
+- `--services`, `-s`: Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
+- `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
+- `--tag`: Image tag applied to local container images (defaults to `local-dev`).
+- `--push`: Push built container images to remote Artifact Registry (used for GKE deployments).
+- `--no-load-kind`: Skip loading built container images into KinD nodes.
+
+---
+
+#### 6. `cluster` (Local KinD Cluster Management)
+Manages the lifecycle of the local Kubernetes-in-Docker (KinD) cluster, verifies pre-flight dependencies, configures port mappings, and injects host authentication credentials and TLS certificates.
+
+```bash
+# Verify prerequisites and create the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster create --cluster-name xmc-local
+
+# Tear down the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
+```
+
+##### Actions
+- `create`:
+  1. Validates host prerequisites (`docker`, `kind`, `kubectl`, `helm`, `openssl`, `gcloud`, `bazel`).
+  2. Provisions a KinD cluster configured with extra port mappings (`8080`, `5556`).
+  3. Injects Kubernetes secrets from host ADC, Dex client credentials, and self-signed TLS certificates.
+- `delete`: Safely deletes the local KinD cluster and its underlying containers.
+
+---
+
+#### 7. `spanner` (Cloud Spanner Database Management)
+Automates verification, single-batch DDL schema creation with compiled protobuf descriptor sets, schema migrations, and teardown for Cloud Spanner databases.
 
 ```bash
 # Create all required Spanner databases for the local environment
@@ -99,105 +185,64 @@ python3 tools/dev_env/dev_env.py spanner drop \
   --xid-db xid-local
 ```
 
-#### Actions
+##### Actions
 - `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_messages_descriptor`, `//api/protos/xid:xid_messages_descriptor`), and creates databases with single-batch DDL in parallel.
 - `migrate`: Executes idempotent SDL database schema migrations against existing Cloud Spanner databases. Automatically skips schema migrations if a database was newly created (as initial DDL already contains full schema).
 - `drop`: Drops the specified databases from the Cloud Spanner instance.
 
 ---
 
-### 4. `cluster` (Local KinD Cluster Management)
-Manages the lifecycle of the local Kubernetes-in-Docker (KinD) cluster, verifies pre-flight dependencies, configures port mappings, and injects host authentication credentials and TLS certificates.
+### Remote GKE Deployment Commands
+
+#### 8. `gke-deploy` (Deploy Remote GKE Environment)
+Compiles Cluster Toolkit (`gcluster`) blueprints and orchestrates step-by-step remote infrastructure and service deployment.
 
 ```bash
-# Verify prerequisites and create the local KinD cluster
-python3 tools/dev_env/dev_env.py cluster create --cluster-name xmc-local
-
-# Tear down the local KinD cluster
-python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
+python3 tools/dev_env/dev_env.py gke-deploy \
+  --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+  --project-id <PROJECT_ID> \
+  --environment <ENV_NAME> \
+  --dns-project <DNS_PROJECT_ID> \
+  --dns-zone <DNS_ZONE_NAME>
 ```
 
-#### Actions
-- `create`:
-  1. Validates host prerequisites (`docker`, `kind`, `kubectl`, `helm`, `openssl`, `gcloud`, `bazel`).
-  2. Provisions a KinD cluster configured with extra port mappings:
-     - `8080` (Local HTTP Gateway Proxy)
-     - `5556` (Dex OIDC Identity Provider)
-  3. Injects Kubernetes secrets from the host environment:
-     - `gcp-sa-key`: Extracted from active `gcloud auth application-default` ADC credentials.
-     - `backend-oauth-secrets`: Shared OIDC client credentials for Dex authentication.
-     - `validation-secret`: Self-signed SAN TLS certificate for webhook validation and token signing.
-     - `redis-secret`: Local Redis cache authentication credentials.
-- `delete`: Safely deletes the local KinD cluster and its underlying containers.
+##### Options
+- `--config`, `-c`: Path to the Cluster Toolkit deployment YAML configuration file (required).
+- `--project-id`, `-p`: Google Cloud project ID (required, or via `PROJECT_ID` env var).
+- `--environment`, `-e`: Deployment environment name (required, or via `XMANAGER_ENV` env var).
+- `--dns-project`: Google Cloud project hosting Cloud DNS (required).
+- `--dns-zone`: Cloud DNS managed zone name (required).
+- `--start-from`: Start execution from a specific step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
+- `--only`: Execute only a single step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
+- `--auto-approve`, `-y`: Automatically approve Terraform and Cluster Toolkit prompts.
+- `--skip-terraform-init`: Skip `terraform init` during deployment.
 
 > [!NOTE]
 > For step-by-step developer verification workflows, port-forwarding, and manual testing procedures on developer clusters, see the [Developer Cluster Setup & Manual Testing Guide](../../deploy/local/README.md).
 
 ---
 
-### 5. `status` (Cluster Status & Health Inspection)
-Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
+#### 9. `gke-upgrade` (Upgrade Remote GKE Services)
+Incrementally rebuilds changed microservices, pushes OCI container images to Artifact Registry, and rolls out Helm chart updates or Spanner migrations without destroying infrastructure.
 
 ```bash
-python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
+python3 tools/dev_env/dev_env.py gke-upgrade \
+  --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+  --project-id <PROJECT_ID> \
+  --environment <ENV_NAME>
 ```
 
-#### Output Sections
-- **Cluster & Node Readiness**: KinD cluster control-plane and worker node readiness.
-- **Support & Service Pods**: Pod status table for core services and dependencies (`dex`, `redis`, `gateway-proxy`, `experiment_state_server`, `ui`, etc.).
-- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080/healthz`) and Dex OIDC (`http://localhost:5556/dex/healthz`).
+##### Options
+- `--config`, `-c`: Path to deployment YAML configuration file.
+- `--project-id`, `-p`: Google Cloud project ID.
+- `--environment`, `-e`: Deployment environment name.
+- `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
+- `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
+- `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
 
 ---
 
-### 6. `logs` (Stream Microservice Logs)
-Streams or tails container stdout/stderr logs from a specific microservice running in the local KinD cluster.
-
-```bash
-# Tail last 50 lines of logs for experiment_state_server
-python3 tools/dev_env/dev_env.py logs experiment_state_server --lines 50
-
-# Follow continuous logs in real-time
-python3 tools/dev_env/dev_env.py logs ui -f
-```
-
----
-
-### 7. `build-images` (Parallel OCI Container Builds & KinD Side-Loading)
-Compiles Bazel OCI image tarballs in parallel and side-loads them directly into the local KinD cluster nodes without remote container registry pushes.
-
-```bash
-# Build and load all enabled microservice images into KinD
-python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local --load-kind
-
-# Build all discovered buildable services across the repository
-python3 tools/dev_env/dev_env.py build-images all --cluster-name xmc-local --load-kind
-
-# Build and load specific microservices
-python3 tools/dev_env/dev_env.py build-images \
-  experiment_state_server ui \
-  --cluster-name xmc-local \
-  --load-kind
-```
-
-#### Dynamic Service Discovery & OCI Conventions
-`ImageBuilder` relies on dynamic repository discovery rather than hardcoded service dictionaries:
-- **Automatic Discovery**: Scans `cmd/*/BUILD.bazel` for `oci_image_for_service` or `_image_tarball` definitions.
-- **Convention Derivation**:
-  - **Bazel Package**: `cmd/<service>`
-  - **Bazel Tarball Target**: `//cmd/<service>:<service>_image_tarball`
-  - **Output Archive**: `<service>_image_tarball.tar` (under `bazel-bin/` or cross-platform fallback `bazel-out/`)
-  - **Docker Tag**: `<service>_image:latest`
-- **Extensibility**: Adding a new Go or UI microservice under `cmd/<service>` with an OCI target works immediately with `dev_env.py build-images` without requiring tooling modifications.
-
-#### Options
-- `services`: Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
-- `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
-- `--load-kind`: Also load compiled container images into the local KinD cluster.
-- `--skip-build`: Skip compilation step and only load existing local Docker images.
-
----
-
-### 8. Generic Aliases (`deploy` / `upgrade`)
+### 10. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash

@@ -39,6 +39,8 @@ class DevEnvCliTest(unittest.TestCase):
                 self.parser.parse_args(["--help"])
         self.assertEqual(cm.exception.code, 0)
         output = help_stream.getvalue()
+        self.assertIn("up", output)
+        self.assertIn("down", output)
         self.assertIn("gke-deploy", output)
         self.assertIn("gke-upgrade", output)
         self.assertIn("deploy", output)
@@ -535,6 +537,35 @@ class DevEnvCliTest(unittest.TestCase):
         mock_build.assert_called_once_with(services=["reconciler"], skip_build=False)
         mock_load_kind.assert_called_once_with(["reconciler_image:latest"])
 
+    @patch("tools.dev_env.local_runner.LocalRunner.up")
+    @patch("tools.dev_env.config.load_config")
+    def test_up_action(self, mock_load_config: MagicMock, mock_up: MagicMock) -> None:
+        """Verifies 'dev_env up' dispatches to LocalRunner.up."""
+        args = self.parser.parse_args(
+            ["up", "--recreate-cluster", "--no-build-images", "--no-deploy-helm"]
+        )
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_up.assert_called_once_with(recreate=True, skip_build=True, skip_helm=True)
+
+    @patch("tools.dev_env.local_runner.LocalRunner.up")
+    @patch("tools.dev_env.config.load_config")
+    def test_up_action_aliases(self, mock_load_config: MagicMock, mock_up: MagicMock) -> None:
+        """Verifies 'dev_env up' aliases dispatch to LocalRunner.up."""
+        args = self.parser.parse_args(["up", "--recreate", "--skip-build", "--skip-helm"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_up.assert_called_once_with(recreate=True, skip_build=True, skip_helm=True)
+
+    @patch("tools.dev_env.local_runner.LocalRunner.down")
+    @patch("tools.dev_env.config.load_config")
+    def test_down_action(self, mock_load_config: MagicMock, mock_down: MagicMock) -> None:
+        """Verifies 'dev_env down' dispatches to LocalRunner.down."""
+        args = self.parser.parse_args(["down", "--drop-db"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_down.assert_called_once_with(drop_db=True)
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
@@ -549,6 +580,21 @@ class DevEnvCliTest(unittest.TestCase):
             dev_env.main(["gke-upgrade"])
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with("Invalid config parameter")
+
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    @patch("tools.dev_env.dev_env.log_error")
+    @patch(
+        "tools.dev_env.upgrade_dev_env.run_upgrade",
+        side_effect=RuntimeError("Cluster preflight failed"),
+    )
+    def test_main_handles_runtime_error(
+        self, mock_upgrade: MagicMock, mock_log_error: MagicMock, mock_venv: MagicMock
+    ) -> None:
+        """Verifies main() handles RuntimeError gracefully and exits with code 1."""
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.main(["gke-upgrade"])
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Cluster preflight failed")
 
     def test_parser_service_feature_flags(self) -> None:
         """Verifies health-service and dashboard-service flags parse into namespace."""

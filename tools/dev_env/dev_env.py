@@ -164,6 +164,26 @@ def handle_build_images(args: argparse.Namespace) -> None:
         builder.load_images_into_kind(image_tags)
 
 
+def handle_up(args: argparse.Namespace) -> None:
+    """Handler for local KinD development environment bootstrap."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).up(
+        recreate=getattr(args, "recreate", False),
+        skip_build=getattr(args, "skip_build", False),
+        skip_helm=getattr(args, "skip_helm", False),
+    )
+
+
+def handle_down(args: argparse.Namespace) -> None:
+    """Handler for local KinD development environment teardown."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).down(drop_db=getattr(args, "drop_db", False))
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -392,6 +412,44 @@ def _add_build_images_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_build_images)
 
 
+def _add_up_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'up' subcommand parser for full local environment provisioning."""
+    p = subparsers.add_parser("up", help="Bootstrap local KinD environment.")
+    p.add_argument(
+        "--recreate-cluster",
+        "--recreate",
+        dest="recreate",
+        action="store_true",
+        help="Recreate cluster if present.",
+    )
+    p.add_argument(
+        "--no-build-images",
+        "--skip-build",
+        dest="skip_build",
+        action="store_true",
+        help="Skip Bazel image compilation.",
+    )
+    p.add_argument(
+        "--no-deploy-helm",
+        "--skip-helm",
+        dest="skip_helm",
+        action="store_true",
+        help="Skip Helm chart deployment.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_up)
+
+
+def _add_down_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'down' subcommand parser for local environment teardown."""
+    p = subparsers.add_parser("down", help="Tear down local KinD environment.")
+    p.add_argument("--drop-db", action="store_true", help="Drop Spanner dev databases.")
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_down)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -399,6 +457,8 @@ def create_parser() -> argparse.ArgumentParser:
         description="XMC Development Environment Management CLI Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
+  python3 tools/dev_env/dev_env.py up --recreate
+  python3 tools/dev_env/dev_env.py down --drop-db
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
@@ -432,6 +492,9 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="<command>",
         required=True,
     )
+
+    _add_up_parser(subparsers)
+    _add_down_parser(subparsers)
 
     gke_deploy_p = subparsers.add_parser(
         "gke-deploy",
@@ -503,7 +566,7 @@ def main(argv: list[str] | None = None) -> None:
             args.func(args)
         else:
             parser.print_help()
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
         log_error(str(e))
         sys.exit(1)
 
