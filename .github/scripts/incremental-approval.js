@@ -17,8 +17,27 @@ const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
 
+// Default maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
+const DEFAULT_MAX_OWNER_GRACE_LINES = 10;
+
+/**
+ * Pure function: Resolves maximum owner grace lines from env or fallback default.
+ * @param {string|number|undefined} [envVal] - Raw value from environment variable.
+ * @param {number} [defaultValue=DEFAULT_MAX_OWNER_GRACE_LINES] - Fallback default.
+ * @returns {number}
+ */
+function getMaxOwnerGraceLines(envVal, defaultValue = DEFAULT_MAX_OWNER_GRACE_LINES) {
+  if (envVal !== undefined && envVal !== null && envVal !== '') {
+    const parsed = parseInt(String(envVal), 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return defaultValue;
+}
+
 // Maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
-const MAX_OWNER_GRACE_LINES = 10;
+const MAX_OWNER_GRACE_LINES = getMaxOwnerGraceLines(process.env.MAX_OWNER_GRACE_LINES);
 
 // Maximum execution duration (60s) for git child processes (range-diff, fetch) before timing out to prevent hanging runner jobs.
 const GIT_EXEC_TIMEOUT_MS = 60000;
@@ -139,6 +158,31 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
 }
 
 /**
+ * Pure function: Selects the latest active approval from a map of normalized reviewer states.
+ * Returns null if any reviewer has an active CHANGES_REQUESTED or no approvals exist.
+ * @param {Map<string, Object>} latestByReviewer - Map of reviewer username to latest review state.
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ */
+function resolveActiveApproval(latestByReviewer) {
+  const activeReviews = Array.from(latestByReviewer.values());
+  if (activeReviews.some(r => r.state === 'CHANGES_REQUESTED')) {
+    return null;
+  }
+
+  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
+  if (approvals.length === 0) {
+    return null;
+  }
+
+  approvals.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+  return {
+    approver: approvals[0].approver,
+    approvedSha: approvals[0].approvedSha,
+    submittedAt: approvals[0].submittedAt
+  };
+}
+
+/**
  * Pure function: Reconstructs latest active approval from timeline events.
  * Honors dismissed reviews and checks for active blocking CHANGES_REQUESTED.
  * @param {Array<Object>} timelineEvents - List of timeline events from GitHub API.
@@ -167,23 +211,7 @@ function findLatestApprovalFromTimeline(timelineEvents, prAuthor = '') {
     }
   }
 
-  const activeReviews = Array.from(latestByReviewer.values());
-  const hasBlockingChanges = activeReviews.some(r => r.state === 'CHANGES_REQUESTED');
-  if (hasBlockingChanges) {
-    return null;
-  }
-
-  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
-  if (approvals.length === 0) {
-    return null;
-  }
-
-  approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-  return {
-    approver: approvals[0].approver,
-    approvedSha: approvals[0].approvedSha,
-    submittedAt: approvals[0].submittedAt
-  };
+  return resolveActiveApproval(latestByReviewer);
 }
 
 /**
@@ -204,7 +232,6 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
   );
 
   const latestByReviewer = new Map();
-
   for (const review of sortedReviews) {
     if (!review.user || !review.commit_id) {
       continue;
@@ -225,23 +252,7 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
     });
   }
 
-  const activeReviews = Array.from(latestByReviewer.values());
-  const hasBlockingChanges = activeReviews.some(r => r.state === 'CHANGES_REQUESTED');
-  if (hasBlockingChanges) {
-    return null;
-  }
-
-  const approvals = activeReviews.filter(r => r.state === 'APPROVED' && r.approvedSha);
-  if (approvals.length === 0) {
-    return null;
-  }
-
-  approvals.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-  return {
-    approver: approvals[0].approver,
-    approvedSha: approvals[0].approvedSha,
-    submittedAt: approvals[0].submittedAt
-  };
+  return resolveActiveApproval(latestByReviewer);
 }
 
 /**
@@ -259,13 +270,36 @@ function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
 }
 
 /**
+ * Pure function: Checks if a trimmed line is a metadata or commit header line in git range-diff.
+ * @param {string} trimmedLine - Cleaned, trimmed line.
+ * @returns {boolean}
+ */
+function isIgnoredRangeDiffHeader(trimmedLine) {
+  return (
+    trimmedLine.startsWith('@@ Metadata') ||
+    trimmedLine.startsWith('Author:') ||
+    trimmedLine.startsWith('Commit:') ||
+    trimmedLine === '## Commit message ##' ||
+    trimmedLine.startsWith('## Notes')
+  );
+}
+
+/**
  * Pure function: Parses git range-diff output using Column 1 (outer diff) to detect line changes.
  * @param {string} output - Raw output of `git range-diff`.
- * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean, hasRemovedCommits: boolean, addedCommitShas: Array<string> }}
  */
 function parseRangeDiff(output) {
   if (!output || typeof output !== 'string' || output.trim() === '') {
-    return { additions: 0, deletions: 0, totalDelta: 0, isCleanRebase: true, hasUnmatchedCommits: false };
+    return {
+      additions: 0,
+      deletions: 0,
+      totalDelta: 0,
+      isCleanRebase: true,
+      hasUnmatchedCommits: false,
+      hasRemovedCommits: false,
+      addedCommitShas: []
+    };
   }
 
   const lines = output.split(/\r?\n/);
@@ -273,7 +307,8 @@ function parseRangeDiff(output) {
   let deletions = 0;
   let inCodeDiffHunk = false;
   let hasModifiedCommits = false;
-  let hasUnmatchedCommits = false;
+  let hasRemovedCommits = false;
+  const addedCommitShas = [];
 
   for (const line of lines) {
     const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
@@ -283,31 +318,25 @@ function parseRangeDiff(output) {
       if (status !== '=') {
         hasModifiedCommits = true;
       }
-      if (status === '<' || status === '>') {
-        hasUnmatchedCommits = true;
+      if (status === '<') {
+        hasRemovedCommits = true;
+      } else if (status === '>') {
+        const addedSha = commitMatch[3];
+        if (addedSha && addedSha !== '--------') {
+          addedCommitShas.push(addedSha);
+        }
       }
       inCodeDiffHunk = false;
       continue;
     }
 
     const trimmed = cleanLine.trim();
-    if (
-      trimmed.startsWith('@@ Metadata') ||
-      trimmed.startsWith('Author:') ||
-      trimmed.startsWith('Commit:') ||
-      trimmed === '## Commit message ##' ||
-      trimmed.startsWith('## Notes')
-    ) {
+    if (isIgnoredRangeDiffHeader(trimmed)) {
       inCodeDiffHunk = false;
       continue;
     }
 
-    if (trimmed.startsWith('## ') && trimmed.endsWith(' ##')) {
-      inCodeDiffHunk = true;
-      continue;
-    }
-
-    if (trimmed.startsWith('@@')) {
+    if ((trimmed.startsWith('## ') && trimmed.endsWith(' ##')) || trimmed.startsWith('@@')) {
       inCodeDiffHunk = true;
       continue;
     }
@@ -334,9 +363,16 @@ function parseRangeDiff(output) {
   }
 
   const totalDelta = additions + deletions;
-  const isCleanRebase = !hasModifiedCommits && !hasUnmatchedCommits && totalDelta === 0;
+  const isCleanRebase = !hasModifiedCommits && !hasRemovedCommits && addedCommitShas.length === 0 && totalDelta === 0;
 
-  return { additions, deletions, totalDelta, isCleanRebase, hasUnmatchedCommits };
+  return {
+    additions,
+    deletions,
+    totalDelta,
+    isCleanRebase,
+    hasRemovedCommits,
+    addedCommitShas
+  };
 }
 
 /**
@@ -348,7 +384,8 @@ function parseRangeDiff(output) {
  * @param {boolean} params.isAuthorOwner
  * @param {number} params.deltaLines
  * @param {boolean} params.isCleanRebase
- * @param {boolean} [params.hasUnmatchedCommits=false]
+ * @param {boolean} [params.hasRemovedCommits=false]
+ * @param {boolean} [params.hasProtectedFileChanges=false]
  * @param {number} [params.maxGraceLines=10]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
@@ -359,7 +396,8 @@ function evaluateIncrementalApproval({
   isAuthorOwner,
   deltaLines,
   isCleanRebase,
-  hasUnmatchedCommits = false,
+  hasRemovedCommits = false,
+  hasProtectedFileChanges = false,
   maxGraceLines = MAX_OWNER_GRACE_LINES
 }) {
   if (!hasPriorApproval || !approvedSha) {
@@ -378,6 +416,14 @@ function evaluateIncrementalApproval({
     };
   }
 
+  if (hasProtectedFileChanges) {
+    return {
+      shouldReapprove: false,
+      reason: 'PR modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS, .githooks/). Manual human review is required.',
+      trigger: 'PROTECTED_FILES_MODIFIED'
+    };
+  }
+
   const validDelta = typeof deltaLines === 'number' && !isNaN(deltaLines) && deltaLines >= 0;
   if (!validDelta) {
     return {
@@ -387,7 +433,7 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (isCleanRebase && validDelta && deltaLines === 0 && !hasUnmatchedCommits) {
+  if (isCleanRebase && validDelta && deltaLines === 0 && !hasRemovedCommits) {
     return {
       shouldReapprove: true,
       reason: 'Clean rebase detected with zero semantic patch lines changed.',
@@ -395,11 +441,11 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (hasUnmatchedCommits) {
+  if (hasRemovedCommits) {
     return {
       shouldReapprove: false,
-      reason: 'PR contains added, removed, or rewritten commits that could not be paired. Manual review required.',
-      trigger: 'UNMATCHED_COMMITS'
+      reason: 'PR contains removed or rewritten commits that were dropped from the approved history. Manual review required.',
+      trigger: 'REMOVED_COMMITS'
     };
   }
 
@@ -526,6 +572,168 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
 }
 
 /**
+ * Shell Helper: Calculates line additions and deletions for a single commit.
+ * @param {string} commitSha - Commit SHA to inspect.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {{ additions: number, deletions: number, totalDelta: number }}
+ */
+function getCommitLineDelta(commitSha, execOptions = {}) {
+  const opts = {
+    encoding: 'utf8',
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+    timeout: GIT_EXEC_TIMEOUT_MS,
+    stdio: ['pipe', 'pipe', 'ignore'],
+    ...execOptions
+  };
+
+  try {
+    const numstat = execFileSync('git', ['diff-tree', '--numstat', '-r', '--no-renames', commitSha], opts);
+    let additions = 0;
+    let deletions = 0;
+    for (const line of numstat.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        const a = parseInt(parts[0], 10);
+        const d = parseInt(parts[1], 10);
+        if (!isNaN(a)) additions += a;
+        if (!isNaN(d)) deletions += d;
+      }
+    }
+    return { additions, deletions, totalDelta: additions + deletions };
+  } catch (error) {
+    console.log(`[incremental-approval] Failed to get line delta for commit ${commitSha}: ${error.message}`);
+    return { additions: 0, deletions: 0, totalDelta: 0 };
+  }
+}
+
+/**
+ * Shell Helper: Aggregates line additions and deletions across all newly added commits.
+ * @param {Array<string>} addedCommitShas - List of added commit SHAs.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {{ additions: number, deletions: number, totalDelta: number }}
+ */
+function computeAddedCommitsDelta(addedCommitShas, execOptions = {}) {
+  let additions = 0;
+  let deletions = 0;
+  for (const sha of addedCommitShas) {
+    const delta = getCommitLineDelta(sha, execOptions);
+    additions += delta.additions;
+    deletions += delta.deletions;
+  }
+  return { additions, deletions, totalDelta: additions + deletions };
+}
+
+const GRAPHQL_TIMELINE_QUERY = `query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
+      timelineItems(first: 100, itemTypes: [PULL_REQUEST_REVIEW, REVIEW_DISMISSED_EVENT]) {
+        nodes {
+          __typename
+          ... on PullRequestReview {
+            databaseId
+            author { login }
+            state
+            commit { oid }
+            submittedAt
+          }
+          ... on ReviewDismissedEvent {
+            previousReviewState
+            review {
+              databaseId
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * GitHub API Helper: Fetches timeline items via GraphQL, falling back to REST timeline API.
+ * @param {Object} github - Octokit instance.
+ * @param {string} owner - Repository owner.
+ * @param {string} repo - Repository name.
+ * @param {number} prNumber - Pull request number.
+ * @param {Object} core - Actions core logger.
+ * @returns {Promise<Array<Object>>}
+ */
+async function fetchTimelineEvents(github, owner, repo, prNumber, core) {
+  try {
+    const graphqlResponse = await github.graphql(GRAPHQL_TIMELINE_QUERY, { owner, repo, prNumber });
+    return graphqlResponse?.repository?.pullRequest?.timelineItems?.nodes || [];
+  } catch (graphqlErr) {
+    try {
+      return await github.paginate(github.rest.issues.listEventsForTimeline, {
+        owner,
+        repo,
+        issue_number: prNumber,
+        per_page: 100
+      });
+    } catch (timelineError) {
+      core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
+      return [];
+    }
+  }
+}
+
+/**
+ * Pure function: Formats markdown comment body for automated re-approval reviews.
+ * @param {string} reason - Justification for re-approval.
+ * @param {string} approver - Original approving reviewer login.
+ * @param {string} approvedSha - Previously approved commit SHA.
+ * @returns {string} Formatted review comment body.
+ */
+function formatReapprovalReviewBody(reason, approver, approvedSha) {
+  return `🤖 **Incremental PR Approval**\n\n${reason}\n\n*Preserving prior approval by @${approver} on commit \`${approvedSha.slice(0, 7)}\`.*`;
+}
+
+const PROTECTED_FILE_PATTERNS = [
+  /^\.github\//i,
+  /^OWNERS$/i,
+  /^\.githooks\//i
+];
+
+/**
+ * Pure function: Checks if a file path is a sensitive CI/security configuration file.
+ * @param {string} filePath - Path of modified file.
+ * @returns {boolean}
+ */
+function isProtectedFile(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return false;
+  }
+  const normalized = filePath.replace(/\\/g, '/').trim();
+  return PROTECTED_FILE_PATTERNS.some(pattern => pattern.test(normalized));
+}
+
+/**
+ * Shell Helper: Checks if any protected files were modified between approved commit and current commit.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {boolean} True if any sensitive file was modified.
+ */
+function checkProtectedFileChanges(approvedSha, currentSha, execOptions = {}) {
+  const opts = {
+    encoding: 'utf8',
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+    timeout: GIT_EXEC_TIMEOUT_MS,
+    stdio: ['pipe', 'pipe', 'ignore'],
+    ...execOptions
+  };
+
+  try {
+    const diffOutput = execFileSync('git', ['diff', '--name-only', approvedSha, currentSha], opts);
+    const files = diffOutput.split(/\r?\n/).filter(f => f.trim().length > 0);
+    return files.some(isProtectedFile);
+  } catch (error) {
+    console.log(`[incremental-approval] Failed to check modified files between ${approvedSha}..${currentSha}: ${error.message}`);
+    // Fail-safe: assume protected changes exist if diff cannot be verified
+    return true;
+  }
+}
+
+/**
  * Orchestrator: Fetches PR reviews, calculates semantic delta, evaluates grace policy, and auto-reapproves.
  * @param {Object} params - Injected by actions/github-script.
  */
@@ -567,49 +775,7 @@ async function run({ github, context, core }) {
     return;
   }
 
-  let timelineEvents = [];
-  try {
-    const graphqlResponse = await github.graphql(
-      `query($owner: String!, $repo: String!, $prNumber: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $prNumber) {
-            timelineItems(first: 100, itemTypes: [PULL_REQUEST_REVIEW, REVIEW_DISMISSED_EVENT]) {
-              nodes {
-                __typename
-                ... on PullRequestReview {
-                  databaseId
-                  author { login }
-                  state
-                  commit { oid }
-                  submittedAt
-                }
-                ... on ReviewDismissedEvent {
-                  previousReviewState
-                  review {
-                    databaseId
-                  }
-                }
-              }
-            }
-          }
-        }
-      }`,
-      { owner, repo, prNumber }
-    );
-    timelineEvents = graphqlResponse?.repository?.pullRequest?.timelineItems?.nodes || [];
-  } catch (graphqlErr) {
-    try {
-      timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
-        owner,
-        repo,
-        issue_number: prNumber,
-        per_page: 100
-      });
-    } catch (timelineError) {
-      core.info(`Timeline API not available (${timelineError.message}), falling back to reviews list.`);
-    }
-  }
-
+  const timelineEvents = await fetchTimelineEvents(github, owner, repo, prNumber, core);
   const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
   if (!latestApproval) {
     core.info(`PR #${prNumber} does not have any prior active approvals or has blocking change requests. Skipping auto-reapproval.`);
@@ -627,6 +793,11 @@ async function run({ github, context, core }) {
   const isAuthorOwner = isAuthorCodeOwner(prAuthor, ownersList);
   core.info(`PR Author @${prAuthor} is code owner: ${isAuthorOwner}`);
 
+  const hasProtectedFileChanges = checkProtectedFileChanges(latestApproval.approvedSha, currentSha);
+  if (hasProtectedFileChanges) {
+    core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS). Skipping auto-reapproval.`);
+  }
+
   let rangeDiffOutput = '';
   try {
     rangeDiffOutput = runGitRangeDiff(baseRef, latestApproval.approvedSha, currentSha);
@@ -635,8 +806,16 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const { totalDelta, isCleanRebase, hasUnmatchedCommits } = parseRangeDiff(rangeDiffOutput);
-  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, totalDelta=${totalDelta} lines, hasUnmatchedCommits=${hasUnmatchedCommits}`);
+  const {
+    totalDelta: hunkDelta,
+    isCleanRebase,
+    hasRemovedCommits,
+    addedCommitShas
+  } = parseRangeDiff(rangeDiffOutput);
+
+  const addedDelta = computeAddedCommitsDelta(addedCommitShas);
+  const totalDelta = hunkDelta + addedDelta.totalDelta;
+  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedDelta.totalDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines, hasRemovedCommits=${hasRemovedCommits}, hasProtectedFileChanges=${hasProtectedFileChanges}`);
 
   const decision = evaluateIncrementalApproval({
     hasPriorApproval: true,
@@ -645,7 +824,8 @@ async function run({ github, context, core }) {
     isAuthorOwner,
     deltaLines: totalDelta,
     isCleanRebase,
-    hasUnmatchedCommits
+    hasRemovedCommits,
+    hasProtectedFileChanges
   });
 
   if (!decision.shouldReapprove) {
@@ -655,8 +835,6 @@ async function run({ github, context, core }) {
 
   core.info(`Decision: ${decision.reason} Auto-reapproving PR #${prNumber}...`);
 
-  const reviewBody = `🤖 **Incremental PR Approval**\n\n${decision.reason}\n\n*Preserving prior approval by @${latestApproval.approver} on commit \`${latestApproval.approvedSha.slice(0, 7)}\`.*`;
-
   try {
     await github.rest.pulls.createReview({
       owner,
@@ -664,7 +842,7 @@ async function run({ github, context, core }) {
       pull_number: prNumber,
       commit_id: currentSha,
       event: 'APPROVE',
-      body: reviewBody
+      body: formatReapprovalReviewBody(decision.reason, latestApproval.approver, latestApproval.approvedSha)
     });
     core.info(`Successfully auto-reapproved PR #${prNumber}`);
   } catch (error) {
@@ -673,17 +851,27 @@ async function run({ github, context, core }) {
 }
 
 module.exports = {
+  DEFAULT_MAX_OWNER_GRACE_LINES,
   MAX_OWNER_GRACE_LINES,
+  getMaxOwnerGraceLines,
   validateGitRefs,
   isBotUser,
   extractDismissalContext,
   parseTimelineReviewEvent,
+  resolveActiveApproval,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
+  isIgnoredRangeDiffHeader,
   parseRangeDiff,
+  getCommitLineDelta,
+  computeAddedCommitsDelta,
+  isProtectedFile,
+  checkProtectedFileChanges,
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  fetchTimelineEvents,
+  formatReapprovalReviewBody,
   run
 };
