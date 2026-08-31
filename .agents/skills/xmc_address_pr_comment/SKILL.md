@@ -184,7 +184,7 @@ git add .
 git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
-git push origin <branch_name>
+git push origin HEAD
 ```
 
 > [!CAUTION]
