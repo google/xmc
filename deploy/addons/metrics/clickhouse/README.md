@@ -145,6 +145,24 @@ Read the addon-generated password to populate `metrics.clickhouse.password`:
 kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode
 ```
 
+##### Sourcing the password from Secret Manager
+
+`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and leave the value empty:
+
+```bash
+printf '%s' "$CLICKHOUSE_PASSWORD" | gcloud secrets create clickhouse-password --data-file=-
+```
+
+```yaml
+secrets:
+  csi:
+    enabled: true
+    projectNumber: "123456789"
+    clickhousePasswordSecretName: "clickhouse-password"
+```
+
+The Secret Manager entry named there must exist, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing. The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
+
 Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
 
 > [!IMPORTANT]

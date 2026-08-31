@@ -61,6 +61,8 @@ metrics:
     port: "9000"
     database: "default"
     user: "default"
+    # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
+    # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
 
 ingestionGatewayDeployment:
@@ -178,6 +180,9 @@ secrets:
     projectNumber: "YOUR_GCP_PROJECT_NUMBER"
     jwtSecretName: "backend-jwt-secret"
     oauthClientSecretName: "gcp-oauth-client-secret"
+    # Only read when metrics are enabled; the Secret Manager entry must exist in that case,
+    # because a missing entry fails the CSI mount for every service sharing this provider class.
+    clickhousePasswordSecretName: "clickhouse-password"
   development:
     # A placeholder for default JWT secret key for development environments.
     jwtSecret: "YOUR_JWT_SECRET"

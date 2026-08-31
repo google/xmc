@@ -29,20 +29,25 @@ from typing import NoReturn
 from unittest import mock
 
 # Environment variables read by pkg/clickhouse.GetOptions. CLICKHOUSE_DSN is deliberately
-# excluded: it is an alternative to these and the chart does not render it.
+# excluded: it is an alternative to these and the chart does not render it. The password is not
+# listed here because its variable differs by secret backend; see PASSWORD_ENV_VAR_BY_BACKEND.
 REQUIRED_CLICKHOUSE_ENV_VARS = frozenset(
     {
         "CLICKHOUSE_HOST",
         "CLICKHOUSE_PORT",
         "CLICKHOUSE_DATABASE",
         "CLICKHOUSE_USER",
-        "CLICKHOUSE_PASSWORD",
     }
 )
+
+# The chart renders the password as a Secret reference for a plain release, and as a path into the
+# Secret Manager CSI mount when the driver is enabled.
+PASSWORD_ENV_VAR_BY_BACKEND = {False: "CLICKHOUSE_PASSWORD", True: "CLICKHOUSE_PASSWORD_FILE"}
 
 DASHBOARD_DEPLOYMENT = "templates/dashboard-service/deployment.yaml"
 DASHBOARD_CONFIGMAP = "templates/dashboard-service/configmap.yaml"
 CLICKHOUSE_SECRET = "templates/metrics/clickhouse-secret.yaml"
+SECRET_PROVIDER_CLASS = "templates/ess/secretproviderclass.yaml"
 
 ENV_VAR_NAME_PATTERN = re.compile(r"^\s*- name: (CLICKHOUSE_\w+)$", re.MULTILINE)
 
@@ -92,6 +97,11 @@ def rendered_clickhouse_env_vars(manifest: str) -> set[str]:
     return set(ENV_VAR_NAME_PATTERN.findall(manifest))
 
 
+def expected_clickhouse_env_vars(csi_enabled: bool = False) -> set[str]:
+    """Returns the full variable set the dashboard service needs under the given secret backend."""
+    return REQUIRED_CLICKHOUSE_ENV_VARS | {PASSWORD_ENV_VAR_BY_BACKEND[csi_enabled]}
+
+
 class SkipUnlessRequiredTest(unittest.TestCase):
     """Covers the guard that stops a missing helm binary from silently greening a CI run."""
 
@@ -134,7 +144,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             {"dashboardServiceDeployment.enabled": "true", "metrics.enabled": "true"},
         )
 
-        missing = REQUIRED_CLICKHOUSE_ENV_VARS - rendered_clickhouse_env_vars(manifest)
+        missing = expected_clickhouse_env_vars() - rendered_clickhouse_env_vars(manifest)
 
         self.assertEqual(
             missing, set(), f"dashboard service is missing ClickHouse config: {missing}"
@@ -180,6 +190,68 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             manifest,
         )
 
+    def test_clickhouse_password_is_read_from_csi_mount_when_enabled(self) -> None:
+        """With the CSI driver on, the password must be a file path, never a value in the pod spec."""
+        manifest = render_template(
+            DASHBOARD_DEPLOYMENT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "metrics.enabled": "true",
+                "metrics.clickhouse.password": "s3cret",
+                "secrets.csi.enabled": "true",
+            },
+        )
+
+        missing = expected_clickhouse_env_vars(csi_enabled=True) - rendered_clickhouse_env_vars(
+            manifest
+        )
+
+        self.assertEqual(missing, set(), f"CSI path is missing ClickHouse config: {missing}")
+        self.assertNotIn("s3cret", manifest)
+        self.assertNotIn("- name: CLICKHOUSE_PASSWORD\n", manifest)
+        self.assertIn(
+            '- name: CLICKHOUSE_PASSWORD_FILE\n          value: "/etc/gcp-secrets/clickhouse-password"',
+            manifest,
+        )
+
+    def test_secret_provider_class_supplies_clickhouse_password(self) -> None:
+        """The file the deployment reads must be one the provider class actually mounts."""
+        manifest = render_template(
+            SECRET_PROVIDER_CLASS,
+            {
+                "metrics.enabled": "true",
+                "secrets.csi.enabled": "true",
+                "secrets.csi.projectNumber": "123456789",
+                "secrets.csi.clickhousePasswordSecretName": "xmc-clickhouse-password",
+            },
+        )
+
+        self.assertIn(
+            '- resourceName: "projects/123456789/secrets/xmc-clickhouse-password/versions/latest"',
+            manifest,
+        )
+        self.assertIn('path: "clickhouse-password"', manifest)
+
+    def test_secret_provider_class_omits_clickhouse_password_without_metrics(self) -> None:
+        """A secret listed but absent from Secret Manager fails the mount for every service."""
+        manifest = render_template(SECRET_PROVIDER_CLASS, {"secrets.csi.enabled": "true"})
+
+        self.assertNotIn("clickhouse-password", manifest)
+
+    def test_clickhouse_secret_is_not_rendered_when_csi_enabled(self) -> None:
+        """The Helm-value copy of the password must disappear once Secret Manager supplies it."""
+        manifest = render_template(
+            CLICKHOUSE_SECRET,
+            {
+                "metrics.enabled": "true",
+                "metrics.clickhouse.password": "s3cret",
+                "secrets.csi.enabled": "true",
+            },
+        )
+
+        self.assertNotIn("kind: Secret", manifest)
+        self.assertNotIn("s3cret", manifest)
+
     def test_clickhouse_secret_carries_configured_password(self) -> None:
         """The referenced Secret must exist and hold the configured password."""
         manifest = render_template(
@@ -201,7 +273,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             },
         )
 
-        missing = REQUIRED_CLICKHOUSE_ENV_VARS - rendered_clickhouse_env_vars(manifest)
+        missing = expected_clickhouse_env_vars() - rendered_clickhouse_env_vars(manifest)
 
         self.assertEqual(missing, set(), f"fallback path dropped ClickHouse config: {missing}")
         self.assertIn(
