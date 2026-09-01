@@ -63,6 +63,7 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 	l.validateSchema(rawManifests, compManifests, res)
 	compMap := l.buildComponentMap(compManifests, res)
 	l.validateDAG(compManifests, compMap, res)
+	l.validateMatrix(compManifests, compMap, res)
 	return res, nil
 }
 

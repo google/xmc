@@ -17,11 +17,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "linter",
     srcs = [
+        "constraints.go",
         "dag.go",
         "diagnostic.go",
         "linter.go",
         "manifest.go",
         "manifest_decoder.go",
+        "matrix.go",
         "rules.go",
         "schema.go",
     ],
@@ -29,6 +31,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/components/store",
+        "@com_github_masterminds_semver_v3//:semver",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
@@ -36,17 +39,18 @@ go_library(
 go_test(
     name = "linter_test",
     srcs = [
+        "constraints_test.go",
         "dag_test.go",
         "diagnostic_test.go",
         "linter_test.go",
         "manifest_decoder_test.go",
         "manifest_test.go",
+        "matrix_test.go",
         "rules_test.go",
         "schema_test.go",
     ],
-    embed = [":linter"],
     deps = [
-        "//pkg/components/store",
+        ":linter",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )

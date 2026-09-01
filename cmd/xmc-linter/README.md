@@ -211,7 +211,24 @@ flowchart LR
 
 ---
 
-## 8. Running Tests
+## 8. SemVer 2.0.0 Constraint Algebra Engine (`constraints.go`, `matrix.go`)
+
+The version validation layer (`pkg/components/linter/constraints.go`, `matrix.go`) validates manifest-level dependency constraints (`spec.dependencies[].version`) using a full SemVer 2.0.0 constraint algebra engine.
+
+### Supported Constraint Operators
+
+| Operator | Notation Example | Meaning / Evaluation Rule |
+| :--- | :--- | :--- |
+| **Caret (`^`)** | `^1.2.3` | Allows updates without changing the left-most non-zero digit ($\ge 1.2.3 \text{ and } < 2.0.0$). For `^0.2.3`, allows $< 0.3.0$. For `^0.0.3`, allows exact `=0.0.3`. |
+| **Tilde (`~`)** | `~1.2.3`<br>`~1.2`<br>`~1` | `~1.2.3` allows patch updates ($\ge 1.2.3 \text{ and } < 1.3.0$).<br>`~1.2` allows patch updates ($\ge 1.2.0 \text{ and } < 1.3.0$).<br>`~1` allows minor and patch updates ($\ge 1.0.0 \text{ and } < 2.0.0$). |
+| **Relational** | `>=1.0.0 <2.0.0`<br>`>1.5.0`<br>`<=3.0.0` | Explicit lower and upper bounds. Whitespace joins multiple constraints as conjunctions (AND). |
+| **Hyphen Range** | `1.0.0 - 2.5.0` | Inclusive range ($\ge 1.0.0 \text{ and } \le 2.5.0$). |
+| **Wildcards** | `1.2.x`, `1.*`, `*` | Matches any version within the specified prefix or any version overall. |
+| **Disjunction (`\|\|`)** | `^1.0.0 \|\| ^2.0.0` | Logical OR across multiple constraint clauses. |
+
+---
+
+## 9. Running Tests
 
 Run all unit and integration tests across the CLI binary and linter packages:
 
