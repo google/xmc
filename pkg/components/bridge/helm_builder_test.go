@@ -54,7 +54,7 @@ func TestBuildHelmValues(t *testing.T) {
 			t.Fatalf("expected ingestionGatewayDeployment key in values, got %+v", values)
 		}
 
-		if depValues["enabled"] != true {
+		if enabled, ok := depValues["enabled"].(bool); !ok || !enabled {
 			t.Errorf("expected enabled = true, got %v", depValues["enabled"])
 		}
 		if depValues["drainTimeoutSeconds"] != int32(30) {
@@ -63,7 +63,7 @@ func TestBuildHelmValues(t *testing.T) {
 		if depValues["minPartitions"] != int64(128) {
 			t.Errorf("expected minPartitions = 128, got %v (%T)", depValues["minPartitions"], depValues["minPartitions"])
 		}
-		if depValues["tlsEnabled"] != true {
+		if tlsEnabled, ok := depValues["tlsEnabled"].(bool); !ok || !tlsEnabled {
 			t.Errorf("expected tlsEnabled = true, got %v (%T)", depValues["tlsEnabled"], depValues["tlsEnabled"])
 		}
 		if depValues["topicName"] != "custom-metrics" {
@@ -152,7 +152,8 @@ func TestParseHelmComponentOptions(t *testing.T) {
 	if opts.Parameters["port"] != "8080" || opts.Parameters["replicas"] != "3" {
 		t.Errorf("unexpected parameters in %+v", opts.Parameters)
 	}
-	if hpa, ok := opts.RawValues["hpa"].(map[string]any); !ok || hpa["enabled"] != true {
+	hpa, ok := opts.RawValues["hpa"].(map[string]any)
+	if !ok || hpa["enabled"] != any(true) {
 		t.Errorf("unexpected raw values in %+v", opts.RawValues)
 	}
 

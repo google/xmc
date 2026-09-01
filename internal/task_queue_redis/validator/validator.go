@@ -129,12 +129,11 @@ func main() {
 		}
 	}
 
-	if allPassed {
-		logging.Info(ctx, "All validation tests passed!")
-	} else {
+	if !allPassed {
 		logging.Error(ctx, "SOME VALIDATION TESTS FAILED.")
 		os.Exit(1)
 	}
+	logging.Info(ctx, "All validation tests passed!")
 }
 
 // setupRedis resets Redis state for a test run.
