@@ -17,8 +17,10 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import logging
 import os
+import threading
 import time
 
 from test.e2e.lib.command import run_cmd
@@ -234,11 +236,14 @@ class SpannerManager:
                 else:
                     raise
 
+    _bazel_run_lock = threading.Lock()
+
     def _init_migration_version(self, db_name: str, mig_dir: str) -> None:
         """Initializes SchemaMigrations version tracking table without re-running DDLs."""
         logger.info("Initializing migration version for %s (%s)...", db_name, mig_dir)
         mig_binary = self._resolve_migration_binary()
         if not mig_binary:
+            lock = self._bazel_run_lock
             mig_cmd = [
                 "bazel",
                 "run",
@@ -246,24 +251,26 @@ class SpannerManager:
                 "--",
             ]
         else:
+            lock = contextlib.nullcontext()
             mig_cmd = [mig_binary]
 
         max_attempts = 5
         base_delay = 5
         for attempt in range(1, max_attempts + 1):
             try:
-                run_cmd(
-                    [
-                        *mig_cmd,
-                        f"-project={self.cfg.project_id}",
-                        f"-instance={self.cfg.spanner_instance}",
-                        f"-database={db_name}",
-                        f"-migrations_dir={mig_dir}",
-                        "-command=init",
-                    ],
-                    cwd=self.cfg.workspace_root,
-                    capture_output=True,
-                )
+                with lock:
+                    run_cmd(
+                        [
+                            *mig_cmd,
+                            f"-project={self.cfg.project_id}",
+                            f"-instance={self.cfg.spanner_instance}",
+                            f"-database={db_name}",
+                            f"-migrations_dir={mig_dir}",
+                            "-command=init",
+                        ],
+                        cwd=self.cfg.workspace_root,
+                        capture_output=True,
+                    )
                 return
             except Exception as e:
                 err_str = _extract_error_details(e)
