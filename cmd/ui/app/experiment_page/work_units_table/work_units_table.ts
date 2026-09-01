@@ -55,6 +55,7 @@ enum WorkUnitColumn {
   TAGS = 'Tags',
   CREATED = 'Created',
   COMPLETED = 'Completed',
+  PERFORMANCE = 'Performance',
   URLS = 'Urls',
 }
 
@@ -111,6 +112,7 @@ export class WorkUnitsTable implements OnInit {
     WorkUnitColumn.TAGS,
     WorkUnitColumn.CREATED,
     WorkUnitColumn.COMPLETED,
+    WorkUnitColumn.PERFORMANCE,
     WorkUnitColumn.URLS,
   ];
   private readonly severities = toSignal(this.filterService.severities$);
@@ -217,6 +219,10 @@ export class WorkUnitsTable implements OnInit {
   onPageSizeChange(pageSize: number) {
     this.store.setPageSize(pageSize);
     this.store.fetchPage();
+  }
+
+  getPerformanceUrl(workUnit: WorkUnit): string | undefined {
+    return workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined;
   }
 
   shouldDisableUrl(url: ProcessedUrl, workUnit: WorkUnitView): string | null {

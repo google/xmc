@@ -25,7 +25,13 @@ import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import {
+  bootstrap,
+  cleanState,
+  getEl,
+  getEls,
+  setupModule,
+} from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';
@@ -43,6 +49,10 @@ const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
       currentWorkUnitExecution: {
         status: {
           state: 'RUNNING',
+        },
+        metadata: {
+          mlrunUrl:
+            'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
         },
       },
     },
@@ -206,6 +216,38 @@ describe('WorkUnitsTable Component', () => {
       expect(await tooltip.getTooltipText()).toBe(
         'There are no GKE resources for stopped work units',
       );
+    });
+  });
+
+  describe('Performance link', () => {
+    it('should render view performance link for work unit with mlrunUrl', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const rows = await harness.getRows(ROW_SELECTOR);
+      const cells = await rows[0].getCells({ columnName: 'Performance' });
+      expect(cells.length).toBe(1);
+
+      const button = await cells[0].getHarness(MatButtonHarness.with({ text: /View performance/ }));
+      expect(await button.getText()).toContain('View performance');
+
+      const linkEl = getEl<HTMLAnchorElement>('td.mat-column-Performance a[mat-button]');
+      expect(linkEl).toBeTruthy();
+      expect(linkEl.getAttribute('href')).toBe(
+        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
+      );
+      expect(linkEl.getAttribute('target')).toBe('_blank');
+      expect(linkEl.getAttribute('rel')).toBe('noreferrer');
+
+      const iconEl = linkEl.querySelector('mat-icon');
+      expect(iconEl?.textContent?.trim()).toBe('analytics');
+    });
+
+    it('should render dash for work unit without mlrunUrl', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const rows = await harness.getRows(ROW_SELECTOR);
+      const cells = await rows[1].getCellTextByColumnName();
+      expect(cells['Performance']).toBe('-');
     });
   });
 
