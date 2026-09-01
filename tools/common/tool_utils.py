@@ -40,10 +40,19 @@ class DeploymentConfig:
     namespace: str = "xmc"
     domain_name: str | None = None
     rod_deployment_enabled: bool = False
+    gke_cluster_name: str = ""
 
     @property
     def gke_cluster(self) -> str:
-        """Returns the GKE cluster name."""
+        """Returns the GKE cluster name, preferring an explicit override.
+
+        The derived name is what the blueprint calls the cluster it creates. A cluster that
+        already existed before XMC was installed is named whatever its owner named it, and every
+        step that reaches the cluster by name -- get-credentials, the Gateway API check,
+        verification -- looks it up wrongly without the override.
+        """
+        if self.gke_cluster_name:
+            return self.gke_cluster_name
         return f"xmc-{self.deployment_name}-{self.environment}"
 
     @property
@@ -179,6 +188,15 @@ CONFIG_VALIDATION_SCHEMAS = {
     "image_tag": r"^[a-zA-Z0-9_.-]+$",
 }
 
+# Validated the same way as the schemas above, but absence is not an error. An empty value means
+# "not set" and falls back to the derived default, so it is skipped rather than rejected.
+OPTIONAL_CONFIG_VALIDATION_SCHEMAS = {
+    # GKE's own naming rule for clusters: lowercase alphanumerics and hyphens, starting with a
+    # letter and ending alphanumeric. Rejecting a malformed name here beats a gcloud NOT_FOUND
+    # several minutes into a deployment.
+    "gke_cluster_name": r"^[a-z]([-a-z0-9]*[a-z0-9])?$",
+}
+
 # Environment variable overrides mapping
 ENV_VAR_MAPPING = {
     "PROJECT_ID": "project_id",
@@ -190,6 +208,7 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
+    "XMC_GKE_CLUSTER_NAME": "gke_cluster_name",
 }
 
 
@@ -242,6 +261,21 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
     return _parse_yaml_vars_line_fallback(content)
 
 
+def _validate_field(key: str, val: Any, pattern: str) -> None:
+    """Raises when a configuration value does not match its schema.
+
+    Args:
+        key: Configuration field name, used in the error message.
+        val: Value to check.
+        pattern: Regular expression the value must match.
+
+    Raises:
+        ValueError: If the value does not match the pattern.
+    """
+    if pattern and not re.match(pattern, str(val)):
+        raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
+
+
 def load_and_validate_config(
     config_file: str,
     defaults: dict[str, str] | None = None,
@@ -269,14 +303,17 @@ def load_and_validate_config(
         if val:
             config[config_key] = val
 
-    for key in CONFIG_VALIDATION_SCHEMAS:
+    for key, pattern in CONFIG_VALIDATION_SCHEMAS.items():
         val = config.get(key)
         if val is None:
             raise ValueError(f"Required configuration field '{key}' is missing.")
+        _validate_field(key, val, pattern)
 
-        pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
-        if pattern and not re.match(pattern, str(val)):
-            raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
+    for key, pattern in OPTIONAL_CONFIG_VALIDATION_SCHEMAS.items():
+        val = config.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        _validate_field(key, val, pattern)
 
     rod_deployment_enabled = str(config.get("rod_deployment_enabled", False)).lower() == "true"
 
@@ -290,6 +327,7 @@ def load_and_validate_config(
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
         rod_deployment_enabled=rod_deployment_enabled,
+        gke_cluster_name=str(config.get("gke_cluster_name", "") or "").strip(),
     )
 
 
