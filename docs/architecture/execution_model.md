@@ -141,8 +141,11 @@ An experiment aggregates its work units rather than having its own execution.
 
 ## 3. Long-Running Operations
 
-`CreateWorkUnit`, `StopWorkUnit`, `RestartWorkUnit`, and their `Batch*` variants return a
-`google.longrunning.Operation` rather than a finished result.
+`CreateWorkUnit`, `StopWorkUnit`, `RestartWorkUnit`, `BatchStopWorkUnits`, and
+`BatchRestartWorkUnits` return a `google.longrunning.Operation` rather than a finished result.
+(`UpdateWorkUnit` is asynchronous too, but returns the updated `WorkUnit` — see
+[Work Unit Lifecycle §5](../flows/work_unit_lifecycle.md#5-update-work-unit). Stop and restart are
+the only operations with batch variants.)
 
 None of these RPCs touch the cluster. What they do is durably record an intent that *will* change
 it: ESS commits the state change, hands a signed actuation payload to the Actuator through Redis,

@@ -36,8 +36,14 @@ sequenceDiagram
     ESS-->>Client: Response
 ```
 
-Fully synchronous, strongly consistent, no cluster involvement. `GetExperiment`, `ListWorkUnits`,
-`ListStatusMessages`, and every `Search*` RPC take this shape.
+Fully synchronous, no cluster involvement. `GetExperiment`, `ListWorkUnits`, `ListStatusMessages`,
+and every `Search*` RPC take this shape.
+
+Read consistency is the one thing that varies within it. `Get*` and `List*` issue strong Spanner
+reads (staleness `0`), so a write that has returned is guaranteed to be visible. Every `Search*`
+RPC reads with a 15-second bounded staleness instead, trading immediacy for cheaper scans on the
+filtered path — `experimentSearchStaleness`, `workUnitSearchStaleness`, `artifactSearchStaleness`,
+and `statusMessageSearchStaleness` are all 15s.
 
 ### Shape 2 — Synchronous write
 
@@ -72,9 +78,16 @@ sequenceDiagram
 ```
 
 Any RPC that must change the cluster takes this shape: `CreateWorkUnit`, `StopWorkUnit`,
-`RestartWorkUnit`, `UpdateWorkUnit`, and their `Batch*` variants. The client's response arrives
-before the cluster has changed; convergence is observed either by polling the returned
-`google.longrunning.Operation` or by watching the work unit's state.
+`RestartWorkUnit`, `UpdateWorkUnit`, and the two batch variants `BatchStopWorkUnits` and
+`BatchRestartWorkUnits`. The client's response arrives before the cluster has changed; convergence
+is observed either by polling the returned `google.longrunning.Operation` or by watching the work
+unit's state.
+
+`UpdateWorkUnit` is the exception on the return type: it answers with the updated `WorkUnit`, not
+an `Operation`, because the metadata change is committed synchronously and only the consequence —
+re-labelling the JobSet's priority class — is queued. The asynchrony is real, but there is no
+operation to poll. See
+[Work Unit Lifecycle §5](work_unit_lifecycle.md#5-update-work-unit).
 
 ---
 

@@ -91,7 +91,9 @@ size in terms of XID round trips.
 `ListExperiments` and `SearchExperiments` share this implementation; `Search*` additionally accepts
 an AIP-160 filter expression, compiled by
 [`internal/query_generator`](../../internal/query_generator). The same `List`/`Search` pairing
-exists for work units, artifacts, and status messages.
+exists for work units, artifacts, and status messages — and in all four cases the `Search*` half
+reads with a 15-second bounded staleness while the `List*` half reads strongly, so a filtered query
+can lag a write that a plain list would already show.
 
 ---
 
