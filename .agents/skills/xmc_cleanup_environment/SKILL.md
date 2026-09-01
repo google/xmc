@@ -14,13 +14,18 @@ This skill guides you through destroying an XManager on Cloud (XMC) environment 
 > **DESTRUCTIVE WORKFLOW**: This cleanup workflow is intended for developer environments. It will **permanently delete** all deployed cloud resources, including GKE clusters, VPC networks, and **all Cloud Spanner databases and backups**. Data recovery is not possible.
 
 > [!CAUTION]
-> A deployment compiled from `deploy/ctk_v2/xmanager-cloud-existing-infra.yaml` runs on a GKE cluster and a VPC it does **not** own; they may be shared with unrelated production workloads. Establish which blueprint the deployment came from (Step 1 below) before planning or executing anything, and **never** delete a cluster or network that the deployment only looked up.
+> A deployment compiled from `deploy/ctk_v2/xmanager-cloud-existing-infra.yaml` runs on a GKE cluster and a VPC it does **not** own; they may be shared with unrelated production workloads. Establish which blueprint the deployment came from (Section 1, *Determine What the Deployment Owns*) before planning or executing anything, and **never** delete a cluster or network that the deployment only looked up.
 
 ## 1. Prerequisites & Context Check
 
 Before starting the teardown, verify you are operating on the correct environment:
 
-1.  **Determine What the Deployment Owns** (do this first: it decides what the rest of the workflow may touch, including the wording of the confirmation below):
+1.  **Locate the Deployment Directory**:
+    *   Check for the deployment directory in the current working directory under `./ctk-out/` (e.g., `./ctk-out/my-dev`).
+        > [!IMPORTANT]
+        > **Strict Path Lock Policy**: You must **only** look for the `ctk-out/` folder in the immediate working directory. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints) for directory scope restrictions.
+    *   If no `./ctk-out/` directory exists in your immediate directory, note that no active cloud environment was deployed from this folder and stop execution. Every step below reads from it.
+2.  **Determine What the Deployment Owns** (before anything else destructive: it decides what the rest of the workflow may touch, including the wording of the confirmation below):
     *   Read the blueprint the deployment was compiled from:
         ```bash
         cat ctk-out/<deployment_name>/.xmc-blueprint
@@ -31,23 +36,19 @@ Before starting the teardown, verify you are operating on the correct environmen
         ```
     *   If either says the deployment came from `xmanager-cloud-existing-infra.yaml`, or the grep matches, the **GKE cluster and the VPC are pre-existing**: the deployment looked them up and does not manage them. Treat them as out of scope for the whole of this workflow, tell the user so, and continue with the resources the deployment did create.
     *   If you cannot tell which blueprint was used, **stop and ask the user** whether the cluster and network were created by this deployment. Do not guess: the cost of guessing wrong is deleting someone else's cluster.
-2.  **Context Check & Spanner Warning**:
+3.  **Context Check & Spanner Warning**:
     *   **Always explicitly confirm** with the user before starting. Use the `ask_question` tool to ask the user to confirm: *"Are you sure you want to clean up the environment '<environment_name>'? **This will permanently delete the GKE cluster and the Cloud Spanner instance, including all databases and all backups.**"*
     *   For a deployment on pre-existing infrastructure, drop the GKE cluster from that sentence: *"Are you sure you want to clean up the environment '<environment_name>'? **This will permanently delete the Cloud Spanner instance, including all databases and all backups. The GKE cluster and the VPC are pre-existing and will be left in place.**"*
-3.  **Formulate & Present a Cleanup Plan**:
-    *   Check for the deployment directory in the current working directory under `./ctk-out/` (e.g., `./ctk-out/my-dev`).
-        > [!IMPORTANT]
-        > **Strict Path Lock Policy**: You must **only** look for the `ctk-out/` folder in the immediate working directory. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints) for directory scope restrictions.
-    *   If no `./ctk-out/` directory exists in your immediate directory, note that no active cloud environment was deployed from this folder and stop execution.
+4.  **Formulate & Present a Cleanup Plan**:
     *   Present a clear plan to the user listing exactly what will be deleted:
         *   **Cloud Spanner**: The instance `xmc-<environment>`, all databases, and **all active backups** (backups must be deleted first to allow instance teardown).
         *   **GKE Cluster**: The GKE cluster and all running applications. *Omit this line for a pre-existing cluster, and state instead that the cluster survives and only the XMC namespace and Helm releases are removed from it.*
         *   **VPC Network**: VPC network, subnetworks, routers, and static IPs. *Omit the network and subnetworks for a pre-existing VPC; the static IP is created by the deployment either way and is deleted.*
         *   **Local Config / Deployment Directory** (e.g., `ctk-out/<deployment_name>` and Kubeconfig contexts)
     *   Ask for explicit user approval on this plan using the `ask_question` tool before executing any destructive commands.
-4.  **Verify Cluster Connection** (if cloud cleanup is needed): Run `kubectl get nodes` to ensure you are targeting the correct active cluster.
-5.  **Identify GCP Project** (if cloud cleanup is needed): Open the compiled configuration file at `ctk-out/<deployment_name>/primary/terraform.tfvars` to identify the target `project_id`.
-6.  **Check Deletion Protection** (if cloud cleanup is needed):
+5.  **Verify Cluster Connection** (if cloud cleanup is needed): Run `kubectl get nodes` to ensure you are targeting the correct active cluster.
+6.  **Identify GCP Project** (if cloud cleanup is needed): Open the compiled configuration file at `ctk-out/<deployment_name>/primary/terraform.tfvars` to identify the target `project_id`.
+7.  **Check Deletion Protection** (if cloud cleanup is needed):
     *   Check if `deletion_protection = true` is configured in `ctk-out/<deployment_name>/primary/terraform.tfvars` (or any other `*.tfvars` file in the deployment directory).
     *   If `deletion_protection` is set to `true`:
         *   **Stop execution and warn the user**: *"Deletion protection is enabled in this deployment's Terraform state. The standard destroy command will fail. You must either set `deletion_protection: false` in your configuration, run gcluster compile/deploy to apply the change, or manually clean up the protected resources after standard destroy fails."*
@@ -136,7 +137,7 @@ If the destroy gets stuck on the `xmc_app` group (often due to Helm release dele
 ### Scenario B: GKE Node Pool stuck in `STOPPING` state
 
 > [!CAUTION]
-> **This scenario applies only to a cluster the deployment created.** If Step 2 of Section 1 identified the cluster as pre-existing, deleting it would destroy infrastructure this deployment does not own and may take unrelated workloads down with it. There is also nothing here to fix: the deployment created no node pool and no subnetwork, so neither can be blocking its teardown. Do not run the command below — report the failure and its cause to the user instead.
+> **This scenario applies only to a cluster the deployment created.** If *Determine What the Deployment Owns* in Section 1 identified the cluster as pre-existing, deleting it would destroy infrastructure this deployment does not own and may take unrelated workloads down with it. There is also nothing here to fix: the deployment created no node pool and no subnetwork, so neither can be blocking its teardown. Do not run the command below — report the failure and its cause to the user instead.
 
 If the destroy fails because GKE node pools are stuck deleting (which prevents subnetwork deletion):
 1.  **Confirm the cluster belongs to this deployment**. Re-check `ctk-out/<deployment_name>/.xmc-blueprint`; the command below is permitted only when the deployment was compiled from `xmanager-cloud.yaml`. If in any doubt, stop and ask the user.
