@@ -116,6 +116,28 @@ py_test(
     deps = [":chart_test_lib"],
 )
 
+# Compares the two blueprints and their deployment templates against each other, so like
+# redis_endpoint_wiring_test it needs no helm binary and no chart.
+py_test(
+    name = "existing_infra_blueprint_test",
+    srcs = ["existing_infra_blueprint_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/ctk_v2:deployment_templates",
+        "//deploy/ctk_v2:existing_infra_blueprint",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "existing_infra_blueprint_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
 py_test(
     name = "vertical_pod_autoscaler_test",
     srcs = ["vertical_pod_autoscaler_test.py"],
