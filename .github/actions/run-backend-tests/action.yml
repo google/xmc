@@ -101,7 +101,7 @@ runs:
         bazel test \
           --config=ci \
           --remote_upload_local_results="${REMOTE_UPLOAD}" \
-          --repository_cache=~/.cache/bazel-repo \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
           --experimental_repository_cache_hardlinks \
           --test_output=errors \
           --experimental_ui_max_stdouterr_bytes=2097152 \

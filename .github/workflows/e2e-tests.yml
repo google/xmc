@@ -103,6 +103,7 @@ jobs:
         run: |
           mkdir -p "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          export PATH="${HOME}/.local/bin:${PATH}"
 
           if ! command -v kubectl &>/dev/null; then
             curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"

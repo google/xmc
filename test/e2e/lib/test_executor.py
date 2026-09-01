@@ -49,6 +49,7 @@ class PlaywrightTestExecutor:
                         "/ms-playwright",
                         os.path.expanduser("~/.cache/ms-playwright"),
                         os.path.expanduser("~/Library/Caches/ms-playwright"),
+                        os.path.expanduser("~/AppData/Local/ms-playwright"),
                     ]
                 )
 
@@ -97,7 +98,7 @@ class PlaywrightTestExecutor:
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (
-            f"{self.cfg.workspace_root}:{existing_pythonpath}"
+            f"{self.cfg.workspace_root}{os.pathsep}{existing_pythonpath}"
             if existing_pythonpath
             else self.cfg.workspace_root
         )

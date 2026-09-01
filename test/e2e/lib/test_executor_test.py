@@ -82,6 +82,56 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
             py_bin = self.executor.setup_venv()
             self.assertEqual(py_bin, "/usr/bin/python3")
 
+    @patch("os.path.isdir")
+    @patch("os.listdir")
+    @patch("os.path.exists")
+    @patch("test.e2e.lib.test_executor.sys")
+    def test_setup_venv_uses_browsers_path_env_override(
+        self, mock_sys, mock_exists, mock_listdir, mock_isdir
+    ):
+        mock_exists.return_value = True
+        mock_isdir.return_value = True
+        mock_listdir.return_value = ["chromium-1234"]
+        mock_sys.executable = "/usr/bin/python3"
+
+        from unittest.mock import MagicMock
+
+        with (
+            patch.dict(os.environ, {"PLAYWRIGHT_BROWSERS_PATH": "/custom/browsers"}),
+            patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}),
+        ):
+            py_bin = self.executor.setup_venv()
+            self.assertEqual(py_bin, "/usr/bin/python3")
+
+    @patch("os.path.exists")
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_setup_venv_skips_pip_install_when_venv_already_exists(self, mock_run, mock_exists):
+        # Browser path missing (forces venv path), but venv binary already exists
+        def mock_exists_fn(path):
+            return path.endswith("python")
+
+        mock_exists.side_effect = mock_exists_fn
+
+        py_bin = self.executor.setup_venv()
+        expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
+        self.assertEqual(py_bin, expected_py)
+        mock_run.assert_not_called()
+
+    @patch("os.listdir", side_effect=PermissionError("Permission denied"))
+    @patch("os.path.exists", return_value=True)
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_setup_venv_handles_permission_error_gracefully(
+        self, mock_run, mock_exists, mock_listdir
+    ):
+        from unittest.mock import MagicMock
+
+        with (
+            patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}),
+        ):
+            py_bin = self.executor.setup_venv()
+            expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
+            self.assertEqual(py_bin, expected_py)
+
     @patch.object(PlaywrightTestExecutor, "setup_venv", return_value="/mock/venv/bin/python")
     @patch("test.e2e.lib.test_executor.run_cmd")
     def test_execute_runs_test_script(self, mock_run, mock_venv):

@@ -27,6 +27,39 @@ from test.e2e.lib.config import E2EConfig
 logger = logging.getLogger("xmc_e2e_runner")
 
 
+def _extract_error_details(e: Exception) -> str:
+    """Extracts combined stderr, stdout, and message from exception in lowercase."""
+    stdout = getattr(e, "stdout", "") or getattr(e, "output", "") or ""
+    stderr = getattr(e, "stderr", "") or ""
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="ignore")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", errors="ignore")
+    return f"{stderr}\n{stdout}\n{e}".lower()
+
+
+def _is_retryable_spanner_error(err_str: str) -> bool:
+    """Returns True if error string contains transient Spanner quota or rate limit errors."""
+    retryable_markers = (
+        "resource_exhausted",
+        "resourceexhausted",
+        "quota exceeded",
+        "rate limit",
+        "429",
+        "503",
+        "unavailable",
+        "504",
+        "deadline_exceeded",
+        "deadlineexceeded",
+        "aborted",
+        "409",
+        "maximum database limit",
+        "too many concurrent",
+        "pending ddl operations",
+    )
+    return any(marker in err_str for marker in retryable_markers)
+
+
 class SpannerManager:
     """Manages ephemeral Cloud Spanner databases and schema provisioning."""
 
@@ -88,6 +121,7 @@ class SpannerManager:
 
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
+        binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
         mig_dir = os.path.join(
             self.cfg.workspace_root,
             "bazel-bin",
@@ -96,13 +130,15 @@ class SpannerManager:
             "spanner",
             "migrations",
         )
-        mig_binary = os.path.join(mig_dir, "migrations_", "migrations")
-        if os.path.isfile(mig_binary):
-            return mig_binary
+        for name in binary_names:
+            mig_binary = os.path.join(mig_dir, "migrations_", name)
+            if os.path.isfile(mig_binary) and os.access(mig_binary, os.X_OK):
+                return mig_binary
+
         if os.path.isdir(mig_dir):
-            for root, _, files in os.walk(mig_dir):
+            for root, _, files in os.walk(mig_dir, followlinks=True):
                 for f in files:
-                    if f in ("migrations", "migrations.exe"):
+                    if f in binary_names:
                         candidate = os.path.join(root, f)
                         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                             return candidate
@@ -128,7 +164,9 @@ class SpannerManager:
         )
         mig_binary = self._resolve_migration_binary()
         targets = []
-        if not (os.path.isfile(ess_desc) and os.path.isfile(xid_desc)):
+        ess_valid = os.path.isfile(ess_desc) and os.path.getsize(ess_desc) > 0
+        xid_valid = os.path.isfile(xid_desc) and os.path.getsize(xid_desc) > 0
+        if not (ess_valid and xid_valid):
             targets.extend(
                 [
                     "//api/protos/experiment:experiment_messages_descriptor",
@@ -177,17 +215,8 @@ class SpannerManager:
                 )
                 return
             except Exception as e:
-                err_raw = getattr(e, "stderr", "") or str(e)
-                err_str = (
-                    err_raw.decode("utf-8", errors="ignore")
-                    if isinstance(err_raw, bytes)
-                    else str(err_raw)
-                )
-                if (
-                    "RESOURCE_EXHAUSTED" in err_str
-                    or "429" in err_str
-                    or "maximum database limit" in err_str
-                ) and attempt < max_attempts:
+                err_str = _extract_error_details(e)
+                if _is_retryable_spanner_error(err_str) and attempt < max_attempts:
                     delay = min(base_delay * (2 ** (attempt - 1)), 120)
                     logger.warning(
                         "Database creation hit resource quota (attempt %d/%d). "
@@ -232,17 +261,8 @@ class SpannerManager:
                 )
                 return
             except Exception as e:
-                err_raw = getattr(e, "stderr", "") or str(e)
-                err_str = (
-                    err_raw.decode("utf-8", errors="ignore")
-                    if isinstance(err_raw, bytes)
-                    else str(err_raw)
-                )
-                if (
-                    "RESOURCE_EXHAUSTED" in err_str
-                    or "429" in err_str
-                    or "rate limit" in err_str.lower()
-                ) and attempt < max_attempts:
+                err_str = _extract_error_details(e)
+                if _is_retryable_spanner_error(err_str) and attempt < max_attempts:
                     delay = min(base_delay * (2 ** (attempt - 1)), 60)
                     logger.warning(
                         "Migration init hit rate limit (attempt %d/%d). Retrying in %ds...",

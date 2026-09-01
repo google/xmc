@@ -188,6 +188,51 @@ class TestSpannerManager(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 2)
         mock_sleep.assert_called_once_with(15)
 
+    @patch("os.access", return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
+        binary = self.mgr._resolve_migration_binary()
+        self.assertIsNotNone(binary)
+        self.assertTrue(binary.endswith("migrations") or binary.endswith("migrations.exe"))
+
+    @patch("os.path.isdir", return_value=False)
+    @patch("os.path.isfile", return_value=False)
+    def test_resolve_migration_binary_returns_none_when_missing(self, mock_isfile, mock_isdir):
+        binary = self.mgr._resolve_migration_binary()
+        self.assertIsNone(binary)
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_retries_on_grpc_resource_exhausted(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["migrations"],
+                stderr=b"rpc error: code = ResourceExhausted desc = Quota exceeded for quota metric ...",
+            ),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+
+        with patch.object(
+            self.mgr, "_resolve_migration_binary", return_value="/workspace/bazel-bin/migrations"
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once_with(5)
+
+    @patch("os.path.getsize", return_value=1024)
+    @patch("os.path.isfile", return_value=True)
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_build_prerequisites_skips_when_all_targets_present(
+        self, mock_run, mock_isfile, mock_getsize
+    ):
+        with patch.object(
+            self.mgr, "_resolve_migration_binary", return_value="/workspace/bazel-bin/migrations"
+        ):
+            self.mgr._build_prerequisites()
+            mock_run.assert_not_called()
+
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):
         self.mgr.teardown()

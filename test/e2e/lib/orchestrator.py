@@ -56,15 +56,21 @@ class E2EOrchestrator:
             yield
         finally:
             logger.info("=== Executing Teardown ===")
-            self.kind.teardown()
-            if not self.cfg.keep_cluster:
-                self.spanner.teardown()
-            else:
-                logger.info(
-                    "[Spanner] Preserving ephemeral databases %s and %s for debugging.",
-                    self.cfg.ess_db,
-                    self.cfg.xid_db,
-                )
+            try:
+                self.kind.teardown()
+            except Exception as e:
+                logger.warning("Kind teardown failed: %s", e)
+            try:
+                if not self.cfg.keep_cluster:
+                    self.spanner.teardown()
+                else:
+                    logger.info(
+                        "[Spanner] Preserving ephemeral databases %s and %s for debugging.",
+                        self.cfg.ess_db,
+                        self.cfg.xid_db,
+                    )
+            except Exception as e:
+                logger.warning("Spanner teardown failed: %s", e)
             if not self.cfg.keep_cluster and os.path.exists(self.cfg.temp_dir):
                 logger.info("Cleaning up temporary directory %s...", self.cfg.temp_dir)
                 shutil.rmtree(self.cfg.temp_dir, ignore_errors=True)
