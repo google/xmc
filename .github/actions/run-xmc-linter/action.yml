@@ -72,7 +72,7 @@ runs:
           --repository_cache=~/.cache/bazel-repo \
           --experimental_repository_cache_hardlinks \
           //cmd/xmc-linter:xmc-linter
-        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/xmc-linter:xmc-linter 2>/dev/null | head -n1)
+        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/xmc-linter:xmc-linter 2>/dev/null | head -n1 || true)
         if [ -z "${LINTER_BIN}" ] || [ ! -x "${LINTER_BIN}" ]; then
           LINTER_BIN="bazel-bin/cmd/xmc-linter/xmc-linter_/xmc-linter"
         fi
@@ -101,10 +101,13 @@ runs:
         if [ "${STRICT_FLAG}" = "true" ]; then
           EXTRA_ARGS+=("--strict")
         fi
+        if [ -n "${SCAN_ROOTS}" ]; then
+          read -r -a ROOTS_ARR <<< "${SCAN_ROOTS}"
+          EXTRA_ARGS+=("--scan-roots" "${ROOTS_ARR[@]}")
+        fi
         python3 tools/components/run_linter.py \
           --linter-binary="${LINTER_BIN}" \
           --output="${OUTPUT_FORMAT}" \
-          --scan-roots ${SCAN_ROOTS} \
           "${EXTRA_ARGS[@]}"
 
     - name: 'Log Linter Skip Summary'
