@@ -85,33 +85,11 @@ jobs:
 
       - name: 'Install & Run golangci-lint'
         run: |
-          GOPATH_BIN="$(go env GOPATH)/bin"
-          mkdir -p "$GOPATH_BIN"
-
-          if [ -f "$GOPATH_BIN/golangci-lint" ]; then
-            GOLANGCI_BIN="$GOPATH_BIN/golangci-lint"
-          elif command -v golangci-lint &>/dev/null; then
-            GOLANGCI_BIN="golangci-lint"
-          else
-            GOLANGCI_VERSION="v1.64.6"
-            ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-            echo "--> Downloading pre-compiled golangci-lint (${GOLANGCI_VERSION} linux-${ARCH})..."
-            if curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_VERSION}/golangci-lint-${GOLANGCI_VERSION#v}-linux-${ARCH}.tar.gz" \
-                | tar -xz -C "$GOPATH_BIN" --strip-components=1 "golangci-lint-${GOLANGCI_VERSION#v}-linux-${ARCH}/golangci-lint" 2>/dev/null; then
-              chmod +x "$GOPATH_BIN/golangci-lint"
-              GOLANGCI_BIN="$GOPATH_BIN/golangci-lint"
-            else
-              echo "--> Binary download failed; compiling with Go toolchain..."
-              go install "github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_VERSION}"
-              GOLANGCI_BIN="$GOPATH_BIN/golangci-lint"
-            fi
-          fi
-
-          "$GOLANGCI_BIN" run --timeout=5m || {
-            echo "--> Recompiling golangci-lint with Go toolchain..."
+          if ! command -v golangci-lint &>/dev/null; then
+            echo "--> Installing golangci-lint (v1.64.6)..."
             go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
-            "$GOPATH_BIN/golangci-lint" run --timeout=5m
-          }
+          fi
+          golangci-lint run --timeout=5m
 
       - name: 'Install & Run Buildifier'
         run: |
@@ -121,13 +99,10 @@ jobs:
             echo "--> Downloading buildifier (v8.0.3)..."
             curl -sSfL https://github.com/bazelbuild/buildtools/releases/download/v8.0.3/buildifier-linux-amd64 -o "$GOPATH_BIN/buildifier"
             chmod +x "$GOPATH_BIN/buildifier"
-            BUILDIFIER="$GOPATH_BIN/buildifier"
-          else
-            BUILDIFIER="buildifier"
           fi
           BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
           if [ -n "$BAZEL_FILES" ]; then
-            "$BUILDIFIER" -mode=check $BAZEL_FILES
+            buildifier -mode=check $BAZEL_FILES
           fi
 
       - name: 'Install & Run addlicense'
@@ -138,11 +113,8 @@ jobs:
             echo "--> Downloading addlicense (v1.1.1)..."
             curl -sSfL https://github.com/google/addlicense/releases/download/v1.1.1/addlicense_1.1.1_Linux_x86_64.tar.gz | tar -xz -C "$GOPATH_BIN" addlicense
             chmod +x "$GOPATH_BIN/addlicense"
-            ADDLICENSE="$GOPATH_BIN/addlicense"
-          else
-            ADDLICENSE="addlicense"
           fi
-          "$ADDLICENSE" -check -c "Google LLC" -l apache \
+          addlicense -check -c "Google LLC" -l apache \
             -ignore "third_party/**" \
             -ignore "**/third_party/**" \
             -ignore "**/node_modules/**" \
