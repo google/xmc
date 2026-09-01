@@ -27,7 +27,17 @@ try:
 except ImportError:
     from models import CommitInfo  # type: ignore[no-redef]
 
-_DEV_VELOCITY_TYPES = {"chore", "ci", "perf", "test", "docs", "refactor"}
+_DEV_VELOCITY_TYPES = {
+    "chore",
+    "ci",
+    "perf",
+    "test",
+    "docs",
+    "refactor",
+    "build",
+    "style",
+    "revert",
+}
 _DEV_VELOCITY_SCOPES = {
     "lint",
     "deps",
@@ -100,6 +110,7 @@ def _is_dev_file(f: str) -> bool:
         }
         or path.suffix == ".bzl"
         or f.endswith(("_test.go", "_test.py", ".spec.ts", "_test.ts"))
+        or (path.name.startswith("test_") and path.suffix == ".py")
     )
 
 
@@ -145,8 +156,8 @@ def classify_commit(commit: CommitInfo) -> None:
         if pr is not None and commit.pr_number is None:
             commit.pr_number = pr
 
-    c_type = commit.commit_type
-    scope = commit.scope
+    c_type = (commit.commit_type or "").lower()
+    scope = (commit.scope or "").lower()
 
     if c_type in _DEV_VELOCITY_TYPES or scope in _DEV_VELOCITY_SCOPES:
         commit.category = "developer_velocity"

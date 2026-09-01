@@ -167,8 +167,8 @@ class CommitClassifierTest(unittest.TestCase):
             subject="manual subject",
             author="Dev",
             date="2026-08-21",
-            commit_type="feat",
-            scope="ui",
+            commit_type="FEAT",
+            scope="UI",
             description="pre-parsed feature",
             pr_number=500,
         )
@@ -177,10 +177,21 @@ class CommitClassifierTest(unittest.TestCase):
         self.assertEqual(commit.description, "pre-parsed feature")
         self.assertEqual(commit.pr_number, 500)
 
+        commit_revert = CommitInfo(
+            commit_hash="7778",
+            short_hash="7778",
+            subject="revert: rollback bad commit",
+            author="Dev",
+            date="2026-08-21",
+        )
+        classify_commit(commit_revert)
+        self.assertEqual(commit_revert.category, "developer_velocity")
+
     def test_helper_predicates(self) -> None:
         self.assertFalse(_is_dev_velocity_files([]))
         self.assertTrue(_is_dev_velocity_files(["scripts/deploy.py", "docs/guide.md"]))
         self.assertTrue(_is_dev_velocity_files(["tests/integration/test_pipeline.py"]))
+        self.assertTrue(_is_dev_velocity_files(["pkg/auth/test_auth_helper.py"]))
         self.assertTrue(_is_dev_velocity_files(["pkg/server/go.mod", "pkg/server/BUILD.bazel"]))
         self.assertFalse(_is_dev_velocity_files(["pkg/server/handler.go"]))
         self.assertTrue(_is_infra_or_auth_files(["config/default.json"]))
