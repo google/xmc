@@ -210,7 +210,7 @@ def create_experiment_dashboard(
         .build()
     )
 
-    if dashboard_endpoint.startswith("http://") or dashboard_endpoint.startswith("https://"):
+    if dashboard_endpoint.startswith(("http://", "https://")):
         print(
             f"--> Publishing Dashboard '{dashboard.title}' to HTTP REST endpoint {dashboard_endpoint}..."
         )

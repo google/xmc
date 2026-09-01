@@ -22,18 +22,41 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # Pyflakes
-    "I",    # isort (import sorting)
-    "D417", # Missing argument description in docstrings
-    "B",    # flake8-bugbear (bug prevention & exception handling)
-    "RET",  # flake8-return (early returns & linear control flow)
-    "UP",   # pyupgrade (Python 3.10+ syntax modernization)
-    "SIM",  # flake8-simplify (code simplification)
-    "C4",   # flake8-comprehensions (better list/dict comprehensions)
+    "E",       # pycodestyle errors
+    "W",       # pycodestyle warnings
+    "F",       # Pyflakes
+    "I",       # isort (import sorting)
+    "D417",    # Missing argument description in docstrings
+    "B",       # flake8-bugbear (bug prevention & exception handling)
+    "PERF",    # perflint (performance anti-patterns & loop allocations)
+    "RET",     # flake8-return (early returns & linear control flow)
+    "UP",      # pyupgrade (Python 3.10+ syntax modernization)
+    "SIM",     # flake8-simplify (code simplification)
+    "C4",      # flake8-comprehensions (better list/dict comprehensions)
+    "PLW1510", # Pylint: Subprocess run without check=True
+    "PIE800",  # flake8-pie: Unnecessary dict kwargs spread
+    "PIE804",  # flake8-pie: Unnecessary dict unpack in function call
+    "PIE810",  # flake8-pie: Single starts/endswith with tuple
+    "TID252",  # flake8-tidy-imports: Ban relative imports from parent modules
+    "A001",    # flake8-builtins: Variable shadowing built-in
+    "A002",    # flake8-builtins: Argument shadowing built-in
+    "A003",    # flake8-builtins: Class attribute shadowing built-in
+    "N801",    # pep8-naming: Class name should use CapWords
+    "N803",    # pep8-naming: Argument name should be lowercase
+    "N806",    # pep8-naming: Variable in function should be lowercase
+    "N818",    # pep8-naming: Exception name should end with Error
+    "G001",    # flake8-logging-format: Logging format with str.format
+    "G002",    # flake8-logging-format: Logging format with %
+    "G003",    # flake8-logging-format: Logging format with +
+    "G004",    # flake8-logging-format: Logging format with f-string
+    "RUF008",  # Ruff: Do not use mutable default values in dataclasses
+    "RUF009",  # Ruff: Do not call function in dataclass default
+    "RUF013",  # Ruff: Implicit Optional in type annotations
+    "RUF015",  # Ruff: Prefer next(iter()) over list()[0]
+    "RUF019",  # Ruff: Unnecessary key check before dictionary access
+    "S506",    # Bandit: Probable use of unsafe yaml.load
 ]
-ignore = ["B904", "SIM102", "SIM105", "SIM117", "E501"]
+ignore = ["B904", "SIM102", "SIM105", "SIM117", "E501", "PERF203"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -61,5 +84,3 @@ exclude = [
     '(^|/)ctk-out/',
     '(^|/)test/regression/',
 ]
-
-

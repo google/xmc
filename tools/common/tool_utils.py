@@ -374,7 +374,7 @@ def configure_docker_auth(config: DeploymentConfig) -> None:
     log_info("Configuring Docker registry authorization...")
     registry_host = image_registry.split("/")[0]
 
-    if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
+    if registry_host.endswith(("gcr.io", ".pkg.dev")):
         run_command(["gcloud", "auth", "configure-docker", registry_host, "--quiet"])
     else:
         log_info(f"Non-GCP registry detected ({registry_host}). Skipping gcloud credential helper.")
