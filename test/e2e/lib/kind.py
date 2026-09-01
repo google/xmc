@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
@@ -198,20 +199,35 @@ class KindClusterManager:
         run_cmd(cmd)
 
     def load_images(self, images: list[str]) -> None:
-        """Loads Docker images into KinD nodes."""
+        """Loads Docker images into KinD nodes with retry."""
         if not images:
             return
         logger.info("=== [KinD] Loading container images into cluster ===")
-        run_cmd(
-            [
-                self.cfg.kind_bin,
-                "load",
-                "docker-image",
-                *images,
-                "--name",
-                self.cfg.cluster_name,
-            ]
-        )
+        for img in images:
+            logger.info("[KinD] Loading image %s...", img)
+            for attempt in range(1, 4):
+                try:
+                    run_cmd(
+                        [
+                            self.cfg.kind_bin,
+                            "load",
+                            "docker-image",
+                            img,
+                            "--name",
+                            self.cfg.cluster_name,
+                        ]
+                    )
+                    break
+                except Exception as e:
+                    if attempt == 3:
+                        raise
+                    logger.warning(
+                        "[KinD] Image %s load failed (attempt %d/3): %s. Retrying in 2s...",
+                        img,
+                        attempt,
+                        e,
+                    )
+                    time.sleep(2)
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""

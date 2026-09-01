@@ -128,19 +128,40 @@ class TestKindClusterManager(unittest.TestCase):
         )
 
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_load_images_batches_all_images(self, mock_run):
+    def test_load_images_loads_each_image_sequentially(self, mock_run):
         self.mgr.load_images(["img1:latest", "img2:latest"])
-        mock_run.assert_called_once_with(
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_any_call(
             [
                 "kind",
                 "load",
                 "docker-image",
                 "img1:latest",
+                "--name",
+                "test-cluster",
+            ]
+        )
+        mock_run.assert_any_call(
+            [
+                "kind",
+                "load",
+                "docker-image",
                 "img2:latest",
                 "--name",
                 "test-cluster",
             ]
         )
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_load_images_retries_on_failure(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, ["kind", "load"]),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+        self.mgr.load_images(["img1:latest"])
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once_with(2)
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_load_images_skips_when_empty(self, mock_run):
