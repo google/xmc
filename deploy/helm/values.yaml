@@ -50,6 +50,15 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+# VerticalPodAutoscaler objects for the actuator and the reconciler. These require the
+# autoscaling.k8s.io CRDs, which GKE installs only on clusters created with Vertical Pod
+# Autoscaling enabled. Installing into a pre-existing cluster that never enabled it fails the
+# release on "no matches for kind VerticalPodAutoscaler", so set this to false there -- or
+# enable VPA on the cluster, which is the recommended fix, since the two deployments are sized
+# on the assumption that something is right-sizing them.
+verticalPodAutoscaler:
+  enabled: true
+
 metrics:
   enabled: false
   # ClickHouse is Bring-Your-Own (BYO) infrastructure deployed out-of-band via

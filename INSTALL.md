@@ -320,6 +320,28 @@ For direct control over your infrastructure:
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
 
+### Vertical Pod Autoscaling on a cluster you did not create
+
+The chart ships `VerticalPodAutoscaler` objects for the actuator and the reconciler. These need
+the `autoscaling.k8s.io` CRDs, which GKE installs only on clusters created with Vertical Pod
+Autoscaling enabled. Installing into a cluster that never enabled it fails the release with
+`no matches for kind "VerticalPodAutoscaler"`.
+
+Enabling VPA on the cluster is the recommended fix, because both deployments are sized on the
+assumption that something is right-sizing them:
+
+```bash
+gcloud container clusters update <cluster> --enable-vertical-pod-autoscaling \
+  --location=<location> --project=<project_id>
+```
+
+Where that is not an option, drop the objects instead:
+
+```yaml
+verticalPodAutoscaler:
+  enabled: false
+```
+
 ---
 
 ## Upgrading an Existing Installation
@@ -585,3 +607,4 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
+| `verticalPodAutoscaler.enabled` (Helm) | No | `true` | Renders the actuator and reconciler `VerticalPodAutoscaler` objects. Set `false` on clusters without the `autoscaling.k8s.io` CRDs |
