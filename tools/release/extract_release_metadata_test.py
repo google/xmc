@@ -98,16 +98,18 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
             tmp_path = tmp.name
 
-        args = argparse.Namespace(
-            base_ref="0.5.0",
-            target_ref="0.6.0",
-            repo_dir=".",
-            output=tmp_path,
-        )
-        res = extract_release_metadata(args)
-        self.assertEqual(res["metadata"]["commit_count"], 0)
-        self.assertTrue(Path(tmp_path).exists())
-        Path(tmp_path).unlink(missing_ok=True)
+        try:
+            args = argparse.Namespace(
+                base_ref="0.5.0",
+                target_ref="0.6.0",
+                repo_dir=".",
+                output=tmp_path,
+            )
+            res = extract_release_metadata(args)
+            self.assertEqual(res["metadata"]["commit_count"], 0)
+            self.assertTrue(Path(tmp_path).exists())
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     @patch("tools.release.extract_release_metadata.get_latest_tag_before")
     def test_extract_release_metadata_auto_base_ref_error(self, mock_get_latest: MagicMock) -> None:

@@ -109,7 +109,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
+def main() -> None:
     """Entry point executing the metadata extraction CLI tool."""
     parser = create_parser()
     run_tool(parser, extract_release_metadata)

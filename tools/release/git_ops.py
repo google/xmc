@@ -50,7 +50,8 @@ def get_git_file_content(ref: str, file_path: str, repo_dir: Path | None = None)
     """Reads a file's content from a specific git revision."""
     cwd = str(repo_dir) if repo_dir else None
     try:
-        cmd = ["git", "show", f"{ref}:{file_path}"]
+        posix_path = Path(file_path).as_posix()
+        cmd = ["git", "show", f"{ref}:{posix_path}"]
         res = subprocess.run(
             cmd,
             capture_output=True,
@@ -114,6 +115,7 @@ def get_git_commits(
 
         parts = header_line.split(field_sep, 4)
         if len(parts) < 5:
+            sys.stderr.write(f"Warning: Skipping malformed commit entry: {header_line}\n")
             continue
 
         commit_hash, short_hash, author, date, subject = parts
@@ -125,11 +127,11 @@ def get_git_commits(
         commit_type = "other"
         scope = ""
         description = subject
-        cc_match = re.match(r"^([a-zA-Z0-9_-]+)(?:\(([a-zA-Z0-9_-]+)\))?:\s*(.*)$", subject)
+        cc_match = re.match(r"^([a-zA-Z0-9_-]+)(?:\(([a-zA-Z0-9_-]+)\))?(!)?:\s*(.*)$", subject)
         if cc_match:
             commit_type = cc_match.group(1)
             scope = cc_match.group(2) or ""
-            description = cc_match.group(3)
+            description = cc_match.group(4)
             if pr_match:
                 description = re.sub(r"\s*\(#\d+\)\s*$", "", description)
 

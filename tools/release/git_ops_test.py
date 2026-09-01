@@ -75,11 +75,16 @@ ui/index.html
 ---XMC_COMMIT_DELIMITER---
 22222222---XMC_FIELD_SEP---2222---XMC_FIELD_SEP---Author Two---XMC_FIELD_SEP---2026-08-20---XMC_FIELD_SEP---fix(core): resolve race: delimiter check
 pkg/core/server.go
+---XMC_COMMIT_DELIMITER---
+33333333---XMC_FIELD_SEP---3333---XMC_FIELD_SEP---Author Three---XMC_FIELD_SEP---2026-08-19---XMC_FIELD_SEP---feat(api)!: breaking api change (#124)
+pkg/api/v1.go
+---XMC_COMMIT_DELIMITER---
+malformed_line_with_missing_separators
 """
         mock_run.return_value = MagicMock(stdout=raw_log, returncode=0)
         commits = get_git_commits("0.5.0", "0.6.0", Path("."))
 
-        self.assertEqual(len(commits), 2)
+        self.assertEqual(len(commits), 3)
         self.assertEqual(commits[0].short_hash, "1111")
         self.assertEqual(commits[0].author, "Author One")
         self.assertEqual(commits[0].commit_type, "feat")
@@ -94,6 +99,12 @@ pkg/core/server.go
         self.assertEqual(commits[1].scope, "core")
         self.assertEqual(commits[1].description, "resolve race: delimiter check")
         self.assertIsNone(commits[1].pr_number)
+
+        self.assertEqual(commits[2].short_hash, "3333")
+        self.assertEqual(commits[2].commit_type, "feat")
+        self.assertEqual(commits[2].scope, "api")
+        self.assertEqual(commits[2].description, "breaking api change")
+        self.assertEqual(commits[2].pr_number, 124)
 
     @patch("tools.release.git_ops.subprocess.run")
     def test_get_git_commits_error(self, mock_run: MagicMock) -> None:
