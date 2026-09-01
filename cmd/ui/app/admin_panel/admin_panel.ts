@@ -56,7 +56,6 @@ export class AdminPanelPage {
   protected readonly isConfigLoading = signal<boolean>(false);
 
   private lastKnownStatus: HealthStatusResponse | null = null;
-  private lastKnownConfigs: ListConfigEntriesResponse | null = null;
 
   protected readonly isRefreshing = signal<boolean>(false);
 
@@ -95,17 +94,12 @@ export class AdminPanelPage {
       }),
       switchMap(() =>
         this.healthService.getHealthConfigs().pipe(
-          tap((configs) => {
-            this.lastKnownConfigs = configs;
+          tap(() => {
             this.isConfigLoading.set(false);
           }),
           catchError((error) => {
             console.error('Failed to fetch health configs', error);
             this.isConfigLoading.set(false);
-            if (this.lastKnownConfigs) {
-              this.snackbarService.open('Failed to refresh configuration entries.');
-              return of(this.lastKnownConfigs);
-            }
             this.configEntriesError.set(error);
             return of({} as ListConfigEntriesResponse);
           }),
@@ -138,7 +132,6 @@ export class AdminPanelPage {
 
   protected onRefresh(): void {
     this.refreshTrigger$.next(true);
-    this.configRefreshTrigger$.next();
   }
 
   protected onRetryConfigs(): void {

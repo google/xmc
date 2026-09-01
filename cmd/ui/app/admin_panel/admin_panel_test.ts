@@ -266,22 +266,20 @@ describe('AdminPanelPage Component', () => {
     expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Retried Config Group']);
   });
 
-  it('should display toast and preserve old configs if subsequent refresh fails', async () => {
+  it('should not re-fetch configs when refreshing health status', async () => {
     const healthService = get(HealthService);
-    const snackbarService = get(SnackbarService);
-    const openSpy = spyOn(snackbarService, 'open');
-    const firstConfigs = {
-      configGroups: [
-        {
-          displayName: 'Initial Group',
-          configs: [{ key: 'init.key', value: 'init.val' }],
-        },
-      ],
-    };
-    spyOn(healthService, 'getHealthConfigs').and.returnValues(
-      of(firstConfigs as any),
-      throwError(() => new Error('Refresh configs error')),
-    );
+    let configFetchCount = 0;
+    spyOn(healthService, 'getHealthConfigs').and.callFake(() => {
+      configFetchCount++;
+      return of({
+        configGroups: [
+          {
+            displayName: 'Initial Group',
+            configs: [{ key: 'init.key', value: 'init.val' }],
+          },
+        ],
+      });
+    });
 
     bootstrap(AdminPanelPage);
     await flush();
@@ -290,13 +288,13 @@ describe('AdminPanelPage Component', () => {
     const cardHarness = await harness.getConfigEntriesCard();
     expect(cardHarness).not.toBeNull();
     expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
+    expect(configFetchCount).toBe(1);
 
     const healthStatusSectionHarness = await harness.getHealthStatusSection();
     await healthStatusSectionHarness!.clickRefresh();
     await flush();
 
-    expect(openSpy).toHaveBeenCalledWith('Failed to refresh configuration entries.');
-    expect(await cardHarness!.hasErrorBanner()).toBeFalse();
+    expect(configFetchCount).toBe(1);
     expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
   });
 });
