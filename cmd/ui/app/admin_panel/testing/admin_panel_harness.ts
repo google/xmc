@@ -35,7 +35,7 @@ export class AdminPanelHarness extends ComponentHarness {
 
   async getErrorText(): Promise<string | null> {
     const banner = await this._pageErrorBanner();
-    return banner ? banner.getMessage() : null;
+    return (await banner?.getMessage()) ?? null;
   }
 
   async hasPageErrorBanner(): Promise<boolean> {
