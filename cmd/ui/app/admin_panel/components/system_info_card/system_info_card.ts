@@ -41,18 +41,18 @@ export class SystemInfoCardComponent {
     this.formatSchemaVersion(this.systemInfo().xidDbSchemaVersion),
   );
 
-  protected readonly isEssUnavailable = computed(() =>
-    this.isSchemaUnavailable(this.systemInfo().essDbSchemaVersion),
+  protected readonly isEssUnavailable = computed(
+    () => !this.isSchemaAvailable(this.systemInfo().essDbSchemaVersion),
   );
-  protected readonly isXidUnavailable = computed(() =>
-    this.isSchemaUnavailable(this.systemInfo().xidDbSchemaVersion),
+  protected readonly isXidUnavailable = computed(
+    () => !this.isSchemaAvailable(this.systemInfo().xidDbSchemaVersion),
   );
 
   private formatSchemaVersion(version: string | undefined | null): string {
-    return this.isSchemaUnavailable(version) ? PLACEHOLDER_VERSION : version;
+    return this.isSchemaAvailable(version) ? version : PLACEHOLDER_VERSION;
   }
 
-  private isSchemaUnavailable(version: string | undefined | null): boolean {
-    return !version || version === UNAVAILABLE_SCHEMA_VERSION;
+  private isSchemaAvailable(version: string | undefined | null): version is string {
+    return Boolean(version) && version !== UNAVAILABLE_SCHEMA_VERSION;
   }
 }
