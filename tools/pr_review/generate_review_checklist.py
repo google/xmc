@@ -33,6 +33,20 @@ from tools.pr_review.github_utils import (  # noqa: E402
 )
 
 
+def extract_severity(body: str) -> str | None:
+    """Extracts severity level from comment body (detecting SVG badges or explicit tags)."""
+    body_lower = body.lower()
+    if "critical-priority.svg" in body_lower or "[critical]" in body_lower:
+        return "CRITICAL"
+    if "high-priority.svg" in body_lower or "[high]" in body_lower:
+        return "HIGH"
+    if "medium-priority.svg" in body_lower or "[medium]" in body_lower:
+        return "MEDIUM"
+    if "low-priority.svg" in body_lower or "[low]" in body_lower:
+        return "LOW"
+    return None
+
+
 def _parse_graphql_nodes(nodes: Sequence[dict[str, Any] | None]) -> list[dict[str, Any]]:
     """Extracts unresolved comment items from GraphQL thread nodes."""
     items = []
@@ -50,14 +64,16 @@ def _parse_graphql_nodes(nodes: Sequence[dict[str, Any] | None]) -> list[dict[st
             continue
         author_dict = first_comment.get("author")
         author = author_dict.get("login") if author_dict else "unknown"
+        body = first_comment.get("body") or ""
         items.append(
             {
                 "comment_id": first_comment.get("databaseId") or first_comment.get("id"),
                 "author": author,
                 "file_path": path,
                 "line": line,
-                "body": first_comment.get("body") or "",
+                "body": body,
                 "url": first_comment.get("url") or "",
+                "severity": extract_severity(body),
             }
         )
     return items
@@ -130,13 +146,15 @@ def _parse_rest_comment(comment: dict[str, Any]) -> dict[str, Any]:
     user = comment.get("user")
     author = user.get("login") if user else "unknown"
     line = comment.get("line") or comment.get("original_line")
+    body = comment.get("body") or ""
     return {
         "comment_id": comment.get("id"),
         "author": author,
         "file_path": comment.get("path") or "Unknown",
         "line": line,
-        "body": comment.get("body") or "",
+        "body": body,
         "url": comment.get("html_url") or "",
+        "severity": extract_severity(body),
     }
 
 
@@ -187,10 +205,11 @@ def format_checklist_markdown(
     owner: str, repo: str, pr_number: int, comments: list[dict[str, Any]]
 ) -> str:
     """Formats unresolved review comments into a markdown checklist string."""
+    high_critical = sum(1 for c in comments if c.get("severity") in ("HIGH", "CRITICAL"))
     lines = [
         f"# PR Review Checklist: {owner}/{repo}#{pr_number}",
         "",
-        f"Total Unresolved Comments: {len(comments)}",
+        f"Total Unresolved Comments: {len(comments)} (High/Critical: {high_critical})",
         "",
     ]
 
@@ -207,11 +226,13 @@ def format_checklist_markdown(
         url = comment.get("url") or "#"
         author = comment.get("author") or "unknown"
         body = comment.get("body") or ""
+        severity = comment.get("severity")
 
         location = f"{path}:{line}" if line is not None else path
         comment_id = comment.get("comment_id")
         comment_id_str = f" (Comment ID {comment_id})" if comment_id is not None else ""
-        lines.append(f"- [ ] **[{location}]({url})** (@{author}){comment_id_str}")
+        severity_str = f" [{severity}]" if severity else ""
+        lines.append(f"- [ ] **[{location}]({url})**{severity_str} (@{author}){comment_id_str}")
         for body_line in body.strip().splitlines():
             lines.append(f"  > {body_line}")
         lines.append("")
@@ -241,12 +262,15 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
             "Ensure parent directories exist and you have write permissions.",
         )
 
+    high_critical_count = sum(1 for c in comments if c.get("severity") in ("HIGH", "CRITICAL"))
     return {
         "owner": args.owner,
         "repo": args.repo,
         "pr_number": pr_num,
         "output_file": output_path,
         "unresolved_comment_count": len(comments),
+        "high_critical_count": high_critical_count,
+        "needs_rereview": high_critical_count > 0 or len(comments) >= 3,
     }
 
 
