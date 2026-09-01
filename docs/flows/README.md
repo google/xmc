@@ -80,23 +80,16 @@ before the cluster has changed; convergence is observed either by polling the re
 
 ## Reading the Diagrams
 
-The diagrams on these pages are kept in sync with the Mermaid sources in
-[`artifacts/`](artifacts), which also hold pre-rendered SVGs. Many flows exist there in three
-variants:
+Every diagram on these pages is a fenced ` ```mermaid ` block, which GitHub renders natively. The
+block *is* the source — there is no separate diagram file to keep in step, so a flow change is one
+edit to one file, and the diagram cannot silently disagree with the prose beside it.
 
-| Suffix | Contents |
-| :--- | :--- |
-| `_sync` | Only the synchronous, client-facing half of the flow. |
-| `_async` | Only the asynchronous, Actuator-side half. |
-| `_single` | Both halves in one diagram. |
+Flows that have both a synchronous client-facing half and an asynchronous Actuator-side half are
+drawn as a single diagram rather than split in two, because the seam between the halves is usually
+the thing worth seeing.
 
-These pages generally embed the `_single` variant, since it shows the complete path.
-
-The `.mmd` files are the canonical sources. When you change one, update the diagram embedded in the
-corresponding page to match — GitHub renders the fenced ` ```mermaid ` blocks natively, so the
-pages do not depend on the SVGs.
-
-The checked-in SVGs are produced by
-[`artifacts/render_mermaid.ts`](artifacts/render_mermaid.ts), which takes an input `.mmd` and an
-output `.svg`. It depends on the `beautiful_mermaid` package and there is no build target for it in
-this repository, so regenerating SVGs is not part of the normal local workflow.
+The three shapes above are the canonical drawings. A flow that is one of them unmodified is not
+redrawn on its own page — it links back here, and the page spends its words on what is specific to
+that RPC. A diagram appears where the flow genuinely departs from the shape: `CreateExperiment`
+allocating an `xid` before the row exists, `ListExperiments` inverting the authorization order, and
+every actuation path in [Work Unit Lifecycle](work_unit_lifecycle.md).

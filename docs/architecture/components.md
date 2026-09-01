@@ -9,11 +9,11 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 
 | Component | Source | Runs on | Protocol & port | Helm values gate |
 | :--- | :--- | :--- | :--- | :--- |
-| Experiment State Server (ESS) | [`cmd/experiment_state_server`](../../cmd/experiment_state_server) | GKE `Deployment` (HPA) | gRPC `50051`, HTTP `8080` | always |
+| Experiment State Server (ESS) | [`cmd/experiment_state_server`](../../cmd/experiment_state_server) | GKE `Deployment` (HPA) | gRPC `50051`, HTTP `8080` | `essDeployment.enabled` (default `true`) |
 | XID Service | [`cmd/xid_service`](../../cmd/xid_service) | GKE `Deployment` (HPA) | gRPC `50051` | always |
 | Actuator | [`cmd/actuator`](../../cmd/actuator) | GKE `Deployment` (VPA) | HTTP `8080` (health & metrics) | always |
 | Reconciler | [`cmd/reconciler`](../../cmd/reconciler) | GKE `Deployment` (VPA) | HTTP `8080` (health & metrics) | always |
-| Web UI | [`cmd/ui`](../../cmd/ui) | GKE `Deployment` (Nginx) | HTTP `80` | always |
+| Web UI | [`cmd/ui`](../../cmd/ui) | GKE `Deployment` (Nginx) | HTTP `80` | `ui.enabled` (default `true`) |
 | Health Service | [`cmd/health_service`](../../cmd/health_service) | GKE `Deployment` | HTTP `8080`, gRPC | `healthServiceDeployment.enabled` |
 | Dashboard Service | [`cmd/dashboard_service`](../../cmd/dashboard_service) | GKE `Deployment` | HTTP `8080`, gRPC | `dashboardServiceDeployment.enabled` |
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
@@ -124,10 +124,10 @@ Backend for the Resource Observability Dashboard — the `/resources` view in th
 `BatchGetQueueSecondaryData`.
 
 Rather than querying the Kubernetes API on every request, it runs its own controller-runtime
-reconciler over Kueue `ClusterQueue` resources and maintains warm caches
-([`cmd/rod_data_provider/cache`](../../cmd/rod_data_provider/cache)) of queue inventory and
-accumulated resource usage. Secondary data — the experiment and work unit context behind a queued
-job — is joined in from Spanner.
+reconcilers over Kueue `ClusterQueue`, `LocalQueue`, and `ResourceFlavor` resources and maintains
+warm caches ([`cmd/rod_data_provider/cache`](../../cmd/rod_data_provider/cache)) of queue
+inventory and accumulated resource usage. Secondary data — the experiment and work unit context
+behind a queued job — is joined in from Spanner.
 
 **Depends on:** Kubernetes API (Kueue resources), Cloud Spanner.
 
@@ -215,16 +215,25 @@ races between sources. See [Reconciliation Flows](../flows/reconciliation.md).
 **Detail:** [component README](../../cmd/ingestion_gateway/README.md)
 
 Accepts metric batches at `POST /api/v1/metrics` as a JSON array or NDJSON, tokenises and validates
-them in constant memory, and produces protobuf records to the `xmc-metrics` Kafka topic through a
-franz-go async producer. Records are keyed `xid:work_unit_id`, which guarantees ordering within a
-work unit while allowing partition-level parallelism. Clients get `202 Accepted` as soon as the
-record is buffered.
+them in constant memory, and produces protobuf records to the `xmc-metrics` topic. Clients get
+`202 Accepted` as soon as the record is buffered.
+
+The message bus behind it is selectable with `-message_bus`:
+
+| Backend | Producer | Notes |
+| :--- | :--- | :--- |
+| `redpanda` (default) | franz-go async Kafka producer | Asserts partition and replica topology on startup; optional SASL and TLS. |
+| `pubsub` | Cloud Pub/Sub publisher | Requires `-project_id`. SASL and TLS are rejected, being Kafka wire-protocol concepts. |
+
+Records are keyed `xid:work_unit_id` on both backends, which is what guarantees FIFO ordering
+within a work unit while letting different work units proceed in parallel — Redpanda partitions by
+the key, Pub/Sub orders by it.
 
 It is a `ClusterIP` service fronted by a `NetworkPolicy` that only admits in-cluster pods — it is
 not published through the GKE Gateway. Training jobs reach it directly by service DNS; developers
 reach it with `kubectl port-forward` (see [`deploy/local`](../../deploy/local)).
 
-**Depends on:** Redpanda/Kafka.
+**Depends on:** Redpanda/Kafka or Cloud Pub/Sub, depending on `-message_bus`.
 
 ### 4.2 Log Monitor
 

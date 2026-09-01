@@ -76,24 +76,30 @@ want per-replica series.
 ### 1.2 Ingestion — the Gateway
 
 `POST /api/v1/metrics` accepts a JSON array or an NDJSON stream. The gateway tokenises the request
-body as it arrives rather than buffering it, giving O(1) memory regardless of batch size, and
-returns `202 Accepted` once records are handed to the async producer.
+body as it arrives rather than buffering it, giving O(1) memory regardless of batch size. Records
+are produced asynchronously, but the handler waits on every in-flight publish before it answers, so
+a `202` means the broker took them — not merely that they were queued in the client.
 
 | Status | Meaning |
 | :--- | :--- |
-| `202` | Batch decoded, validated, and acknowledged by Redpanda. |
+| `202` | Batch decoded, validated, and acknowledged by the message bus. |
 | `400` | Malformed JSON or empty body. |
 | `422` | Valid JSON, but records failed field validation (empty `metric_name`, non-finite value, negative `step`) — the response names them. |
 | `503` | Producer unavailable or a terminal broker error. |
+| `504` | The request deadline elapsed while publishes were still in flight. |
 
 The distinction between `400` and `422` matters in practice: `422` returns the specific failed
 records, so a mostly-good batch tells the user exactly which metrics were dropped.
 
 Records are keyed `"<xid>:<work_unit_id>"` and partitioned with a sticky-key partitioner. That
-single choice delivers the pipeline's central guarantee: **all metrics for one work unit land on
-one partition in FIFO order**, so a loss curve can never arrive out of order, while different work
-units still spread across brokers. The producer batches with Zstd compression, a 15 ms linger, and
+single choice delivers the pipeline's central guarantee: **all metrics for one work unit stay in
+FIFO order**, so a loss curve can never arrive out of order, while different work units still
+spread across brokers. The Redpanda producer batches with Zstd compression, a 15 ms linger, and
 `acks=all`.
+
+Redpanda is the default backend but not the only one: `-message_bus pubsub` publishes to a Cloud
+Pub/Sub topic instead, using the same composite key for ordering. The rest of this section
+describes the Redpanda path, which is what the ClickHouse consumer below expects.
 
 The Gateway is deliberately unreachable from outside the cluster — a `ClusterIP` service behind a
 `NetworkPolicy`, with no `HTTPRoute`. Its clients are pods.
@@ -211,6 +217,7 @@ The Health Service answers "is XMC working?" for the UI's status page and for op
 | Reconciler | HTTP `GET /readyz` |
 | XID Service | gRPC health check on `xmc.XidService` |
 | Log Monitor | Cloud Run service state |
+| Redis | `PING` |
 | Spanner ESS / Spanner XID | Connectivity **plus schema version comparison** |
 
 The Spanner checks are the interesting ones. They compare the live schema version against the

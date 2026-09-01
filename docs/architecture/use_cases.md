@@ -90,6 +90,29 @@ Which state it is stuck in tells you which subsystem to look at:
 All three land in the same place — the work unit's status messages — so the UI answers "why is this
 not working?" without cluster access.
 
+**When the status messages are not enough.** They are a summary, and a summary can be missing the
+detail you need. With cluster access, the chain from work unit to pod is:
+
+```bash
+# The JobSet for a work unit — xmc stamps its identity onto the objects it creates
+kubectl get jobset -A -l xmc.google.com/experiment-id=<xid>,xmc.google.com/work-unit-id=<wid>
+
+# Its pods, and why one is not scheduling or not pulling — pods are found by JobSet name,
+# not by xmc labels
+kubectl get pod -n <ns> -l jobset.sigs.k8s.io/jobset-name=<jobset>
+kubectl describe pod -n <ns> -l jobset.sigs.k8s.io/jobset-name=<jobset>
+
+# What Kueue decided, and whether the queue had room for it
+kubectl describe workload -n <ns> <workload>
+kubectl describe clusterqueue <queue>
+```
+
+Container logs outlive the pod in Cloud Logging, which is where to look once a failed attempt has
+been cleaned up. The UI's per-work-unit deep links go there directly — they are built from the
+cluster, location, and namespace recorded alongside each execution, and query on the same
+`jobset-name` pod label
+([`internal/toollibs/execution_environments/gke.go`](../../internal/toollibs/execution_environments/gke.go)).
+
 **Read more.** [Metrics & Observability §3](../flows/metrics_and_observability.md#3-log-monitoring-pipeline),
 [Reconciliation §2–3](../flows/reconciliation.md#2-jobset-reconciler).
 
@@ -282,6 +305,33 @@ health check, submitting metric payloads by hand, and verifying them with ClickH
 `docs/developer.md` has the authoritative commands. The general shape: Bazel for Go and Python,
 component-specific targets for the UI, and pre-commit hooks running `gofmt`, `ruff`, `prettier`,
 `eslint`, `buildifier`, and `addlicense`.
+
+### 3.7 Work with the repo's agent skills
+
+Much of the above is encoded for coding agents under [`.agents/`](../../.agents), and it is worth
+knowing about even if you never invoke an agent — it is the most precise statement of how this repo
+expects work to be done.
+
+[`.agents/AGENTS.md`](../../.agents/AGENTS.md) is the entry point. It carries two routing matrices:
+one maps a touched file's extension to a mandatory language guideline under
+[`.agents/rules/languages/`](../../.agents/rules/languages), the other maps a task intent to the
+skill and rule file that govern it. Everything else hangs off those tables.
+
+[`.agents/skills/`](../../.agents/skills) holds the playbooks themselves. The ones a contributor
+meets first:
+
+| Skill | Covers |
+| :--- | :--- |
+| `xmc_feature_development` | Requirements scoping, affected-test matrices, coverage, pre-commit verification. |
+| `xmc_create_pr` | Branch naming, PR body template, the confirmation gates before a PR is opened or un-drafted. |
+| `xmc_review_pr` | The review checklist applied to incoming PRs. |
+| `xmc_address_pr_comment` | How review comments are resolved and replied to. |
+| `xmc_deploy`, `xmc_upgrade`, `xmc_cleanup_environment` | Bringing a development environment up, forward, and down. |
+
+The rules under [`.agents/rules/`](../../.agents/rules) are where the non-negotiables live —
+[`architectural_contracts.md`](../../.agents/rules/architectural_contracts.md) restates the two
+invariants in §3.4, and [`github_authoring_and_prs.md`](../../.agents/rules/github_authoring_and_prs.md)
+covers branch prefixes, Conventional Commits, and PR sizing gates.
 
 ---
 

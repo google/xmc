@@ -34,6 +34,10 @@ Four nested concepts carry almost all of XMC's behaviour. They are defined preci
 - **JobSet** — the Kubernetes resource that physically runs an execution. Exactly one JobSet
   backs one WorkUnitExecution, and it runs from start to finish without cluster-level restarts.
 
+One more resource sits beside the chain rather than inside it: an **Artifact** (`aid`) is a named
+output or reference attached to an experiment or work unit — a checkpoint path, a dataset URI, a
+link to an external system. It is pure Spanner CRUD and never reaches the cluster.
+
 ```mermaid
 graph LR
     E["Experiment<br/>(xid)"] --> W1["WorkUnit<br/>(wid=1)"]
@@ -87,14 +91,23 @@ graph TD
 
     GW --> CP
     CP <--> EP
-    CP --> SP
-    EP --> SP
-    CP --> RD
-    EP --> RD
+    CP <--> SP
+    EP <--> SP
+    CP <--> RD
+    EP <--> RD
+    TP --> SP
     TP --> RP
     RP --> CH
-    TP --> CH
+    CP --> CH
 ```
+
+Spanner and Redis are drawn bidirectionally on purpose: the control and execution planes both read
+and write each of them. ESS writes experiment state and reads it back on every request; the
+Actuator consumes from the Redis stream and writes operation results to Spanner; the Reconciler
+writes execution updates and reads what it needs to convert them. The one-way arrows are the paths
+that genuinely only flow one direction — the Ingestion Gateway produces to Redpanda without
+consuming, ClickHouse consumes from Redpanda without producing, and the Log Monitor writes status
+messages to Spanner without reading them back.
 
 The Gateway is the only externally reachable component. Everything else is cluster-internal and
 reached through Kubernetes `Service` objects. The routing table that maps external paths onto
@@ -110,54 +123,59 @@ the training jobs XMC itself launched — can post metrics to it.
 ## 3. The Four Planes
 
 XMC's services group into four planes with distinct responsibilities and failure characteristics.
+This section is the conceptual map; the per-binary reference — ports, scaling profiles, Helm value
+gates, dependencies — lives in [Component Reference](components.md) and is not repeated here.
 
 ### 3.1 Control Plane — authoritative state and public APIs
 
-| Service | Binary | Responsibility |
-| :--- | :--- | :--- |
-| Experiment State Server (ESS) | [`cmd/experiment_state_server`](../../cmd/experiment_state_server) | The main API surface. Owns experiments, work units, executions, artifacts, and status messages. Also hosts the Component Manager Service (CMS). |
-| XID Service | [`cmd/xid_service`](../../cmd/xid_service) | Allocates monotonic experiment IDs and answers authorization questions (`CheckUserAuthorization`) for every mutating ESS call. |
-| Health Service | [`cmd/health_service`](../../cmd/health_service) | Aggregates liveness of Spanner databases, Redis, and peer services; exposes schema versions, effective config, and caller identity. |
-| Dashboard Service | [`cmd/dashboard_service`](../../cmd/dashboard_service) | Stores dashboard/chart definitions in Spanner and evaluates chart queries against ClickHouse. |
-| ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | Resource Observability Dashboard backend: cluster queue inventory, running/pending jobs, submit queue. |
+The **Experiment State Server (ESS)**, **XID Service**, **Health Service**, **Dashboard Service**,
+and **ROD Data Provider**. Between them they serve every public API surface and own all
+authoritative state: experiments, work units, executions, artifacts, and status messages; the
+allocation of experiment IDs and the authorization decisions attached to them; platform health;
+dashboard and chart definitions; and cluster capacity views.
 
 The control plane is stateless — all durable state lives in Cloud Spanner. ESS and XID scale
-horizontally behind HPAs.
+horizontally behind HPAs, since XID is on the critical path of every ESS mutation.
+
+**Reference:** [Component Reference §2](components.md#2-control-plane).
 
 ### 3.2 Execution Plane — turning intent into running pods
 
-| Service | Binary | Responsibility |
-| :--- | :--- | :--- |
-| Actuator | [`cmd/actuator`](../../cmd/actuator) | Consumes actuation tasks from a Redis stream and creates, deletes, restarts, or re-prioritises `JobSet` resources in the cluster. |
-| Reconciler | [`cmd/reconciler`](../../cmd/reconciler) | A controller-runtime manager watching `JobSet`, Kueue `Workload`, and `ClusterQueue` resources; converts cluster state into work unit execution updates and batches them into Spanner. |
-
-The split is deliberate: the Actuator is the only component that *writes* workload resources to
-the cluster, and the Reconciler is the only component that *derives state* from them. Neither
-talks to the other directly — they meet in Spanner and in the Kubernetes API.
+The **Actuator** and the **Reconciler**, and the split between them is the point. The Actuator is
+the only component that *writes* workload resources to the cluster: it consumes actuation tasks
+from a Redis stream and creates, deletes, restarts, or re-prioritises `JobSet` resources. The
+Reconciler is the only component that *derives state* from them, watching `JobSet`, Kueue
+`Workload`, and `ClusterQueue` resources and batching the results into Spanner. Neither talks to
+the other directly — they meet in Spanner and in the Kubernetes API.
 
 Scheduling itself is delegated to third-party controllers: **Kueue** admits workloads against
 `ClusterQueue` quota, and the **JobSet controller** expands a JobSet into Jobs and Pods.
 
+**Reference:** [Component Reference §3](components.md#3-execution-plane).
+
 ### 3.3 Telemetry Plane — metrics and logs
 
-| Service | Binary | Responsibility |
-| :--- | :--- | :--- |
-| Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | High-throughput HTTP endpoint receiving metric batches from training jobs; publishes protobuf records to Redpanda/Kafka. Runs in GKE. |
-| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | Pulls filtered workload log entries from a Pub/Sub subscription, parses them into structured status messages, and writes them to Spanner. Runs on **Cloud Run**, outside the GKE cluster. |
+The **Ingestion Gateway** receives metric batches from training jobs over HTTP and publishes them
+to the metrics message bus; it runs in GKE. The **Log Monitor** pulls filtered workload log entries
+from a Pub/Sub subscription, parses them into structured status messages, and writes them to
+Spanner; it runs on **Cloud Run**, outside the GKE cluster.
 
 Metrics never transit the control plane: the SDK writes straight to the Ingestion Gateway, and
-ClickHouse consumes from Kafka on its own. See
+ClickHouse consumes from the bus on its own. See
 [Metrics & Observability Flows](../flows/metrics_and_observability.md).
+
+**Reference:** [Component Reference §4](components.md#4-telemetry-plane).
 
 ### 3.4 Components Subsystem — platform capability catalog
 
-| Service | Binary | Responsibility |
-| :--- | :--- | :--- |
-| Component Manager Service (CMS) | hosted inside ESS ([`pkg/components/cms`](../../pkg/components/cms)) | Control plane for reusable platform components: registration, dependency DAG validation, snapshot resolution, lifecycle intents. |
-| XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | Reconciles `Component.xmc.dev/v1alpha1` custom resources against CMS, bridging GitOps manifests and the Spanner catalog. |
-| XMC Linter | [`cmd/xmc-linter`](../../cmd/xmc-linter) | Standalone CLI performing offline static validation of component manifests in CI, before they reach a cluster. |
+The **Component Manager Service (CMS)**, hosted inside the ESS gRPC server, is the control plane
+for reusable platform components: registration, dependency DAG validation, snapshot resolution, and
+lifecycle intents. **XMC Bridge** reconciles `Component.xmc.dev/v1alpha1` custom resources against
+it, bridging GitOps manifests and the Spanner catalog. **XMC Linter** is a standalone CLI that
+statically validates component manifests in CI, before they reach a cluster.
 
-Details live in the [Components Subsystem README](../../pkg/components/README.md).
+**Reference:** [Components Subsystem README](../../pkg/components/README.md),
+[Component Reference §5](components.md#5-components-subsystem).
 
 ---
 
@@ -291,7 +309,7 @@ their sub-paths before the ESS catch-all sees them. Full routing, TLS, and IAM d
 | **Cloud Spanner** (ESS database) | Source of truth for experiments, work units, executions, operations, artifacts, status messages, dashboards, components. | ESS, Actuator, Reconciler, Log Monitor, Dashboard Service | ESS, Health Service, ROD, Dashboard Service |
 | **Cloud Spanner** (XID database) | Experiment ID allocation and authorization records. | XID Service | XID Service, Health Service |
 | **Redis** (Memorystore or in-cluster) | Actuation task stream (`xmc-tasks-stream`), dead-letter stream (`xmc-dlq-stream`), OAuth2 session cache. | ESS, Actuator | Actuator, ESS, Health Service |
-| **Redpanda / Kafka** | Durable buffer for the metrics firehose (topic `xmc-metrics`). | Ingestion Gateway | ClickHouse |
+| **Redpanda / Kafka** | Durable buffer for the metrics firehose (topic `xmc-metrics`). Cloud Pub/Sub is a supported alternative backend, chosen with the Ingestion Gateway's `-message_bus` flag. | Ingestion Gateway | ClickHouse |
 | **ClickHouse** | Analytical store for time-series metrics (`xmc_metrics` table). | ClickHouse Kafka engine + materialized view | Dashboard Service |
 | **Pub/Sub** | Transport for workload log entries exported from Cloud Logging. | Cloud Logging sink | Log Monitor |
 | **Google Cloud Storage** | Managed profiling (`xprof`) artifacts written by training jobs. | Training job pods | Users, profiling tooling |
@@ -366,8 +384,9 @@ and gRPC surfaces cannot drift.
 
 XMC ships as a Helm chart ([`deploy/helm`](../../deploy/helm)) normally applied through a Cluster
 Toolkit blueprint. Every in-cluster service is a `Deployment` with a dedicated `ServiceAccount`;
-the Actuator and Reconciler additionally hold `ClusterRole` bindings for `JobSet`, Kueue, and
-namespace resources, since they are the components that read and write workload objects.
+the Actuator, Reconciler, and ROD Data Provider additionally hold `ClusterRole` bindings for
+`JobSet`, Kueue, and namespace resources, since they are the components that read or write
+cluster-scoped workload and quota objects.
 
 Two pieces sit outside the chart. The **Log Monitor** is provisioned as a Cloud Run service by the
 Terraform module [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor),

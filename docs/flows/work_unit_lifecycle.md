@@ -50,10 +50,6 @@ as a trust boundary, not as internal plumbing.
 
 ## 2. Create Work Unit
 
-Source diagrams: [`create_wu_single.mmd`](artifacts/create_wu_single.mmd) (combined),
-[`create_wu_sync.mmd`](artifacts/create_wu_sync.mmd),
-[`create_wu_async.mmd`](artifacts/create_wu_async.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -119,10 +115,6 @@ recorded and queued.
 
 ## 3. Stop Work Unit
 
-Source diagrams: [`stop_wu_single.mmd`](artifacts/stop_wu_single.mmd),
-[`stop_wu_sync.mmd`](artifacts/stop_wu_sync.mmd),
-[`stop_wu_async.mmd`](artifacts/stop_wu_async.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -164,10 +156,6 @@ followed by gradual convergence.
 ---
 
 ## 4. Restart Work Unit
-
-Source diagrams: [`restart_wu_single.mmd`](artifacts/restart_wu_single.mmd),
-[`restart_wu_sync.mmd`](artifacts/restart_wu_sync.mmd),
-[`restart_wu_async.mmd`](artifacts/restart_wu_async.mmd)
 
 ```mermaid
 sequenceDiagram
@@ -214,10 +202,6 @@ action — which is exactly the property the contract requires.
 
 ## 5. Update Work Unit
 
-Source diagrams: [`update_wu_single.mmd`](artifacts/update_wu_single.mmd),
-[`update_wu_sync.mmd`](artifacts/update_wu_sync.mmd),
-[`update_wu_async.mmd`](artifacts/update_wu_async.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -254,26 +238,11 @@ never interrupts running work.
 
 ## 6. Reading Work Unit State
 
-Source diagrams: [`get_wu.mmd`](artifacts/get_wu.mmd), [`list_wu.mmd`](artifacts/list_wu.mmd)
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ESS as ESS (Exp State Server)
-    participant XID as XID Service
-    participant Spanner as Spanner (Storage)
-
-    Client->>ESS: 1. GetWorkUnit/Execution(req)
-    ESS->>ESS: 2. Authenticate & Validate
-    ESS->>XID: 3. CheckAuth(READER)
-    XID-->>ESS: 4. Authorized
-    ESS->>Spanner: 5. Fetch WorkUnit / Execution
-    Spanner-->>ESS: 6. Data
-    ESS-->>Client: 7. Response
-```
+After five diagrams of queues, signatures, and Kubernetes calls, the read path is a plain
+[Shape 1 — synchronous read](README.md#shape-1--synchronous-read), and that contrast is the point.
 
 `GetWorkUnit`, `GetCurrentWorkUnitExecution`, `ListWorkUnits`, `SearchWorkUnits`, and
-`ListWorkUnitExecutions` all take this shape. None of them query the Kubernetes API — they read
+`ListWorkUnitExecutions` all take that shape. None of them query the Kubernetes API — they read
 state that the Reconciler already persisted. That is what keeps read latency flat regardless of
 cluster size, and why a Reconciler outage shows up as *stale* state rather than unavailable state.
 
@@ -290,8 +259,8 @@ current one marked `ACTIVE`.
 | Actuator crashes mid-task | Message is unacknowledged in the Redis stream. | Reclaimed after the 5-minute abandoned-message timeout and redelivered to another consumer. |
 | Task fails repeatedly | Retried up to 5 times with a 2-minute processing timeout each. | After exhaustion, moved to `xmc-dlq-stream` for operator inspection. |
 | Kubernetes rejects the JobSet | Actuator records the failure on the operation. | Surfaced to the user as a status message; requires a corrected resubmission. |
-| Kueue never admits the workload | Work unit sits in `SCHEDULING`. | With `detectInadmissibleWorkUnits` enabled, the reason is surfaced as a status message rather than silence. |
-| Pods fail to start | Work unit sits in `STARTING`. | With `startupPodErrorCheckEnabled`, the JobSet reconciler inspects pods after a delay and reports image pull or scheduling errors. |
+| Kueue never admits the workload | Work unit sits in `SCHEDULING`. | The Workload reconciler surfaces the `Inadmissible` reason as a status message rather than leaving it silent. |
+| Pods fail to start | Work unit sits in `STARTING`. | The JobSet reconciler inspects the pods after a delay and reports image pull or scheduling errors. |
 | Reconciler is down | Cluster keeps running; Spanner state stops advancing. | State catches up on restart — the reconcilers re-list all watched resources. |
 
 ---

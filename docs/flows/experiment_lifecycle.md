@@ -11,8 +11,6 @@ For anything that starts, stops, or restarts actual work, see
 
 ## 1. Create Experiment
 
-Source diagram: [`artifacts/create_experiment.mmd`](artifacts/create_experiment.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -46,8 +44,6 @@ Domain rules for assembling the experiment — defaults, derived fields, validat
 
 ### Get a single experiment
 
-Source diagram: [`artifacts/get_experiment.mmd`](artifacts/get_experiment.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -70,8 +66,6 @@ see the experiment) and supplies the ACL data attached to the response, so the U
 whether to render stop/restart controls without a second round trip.
 
 ### List or search experiments
-
-Source diagram: [`artifacts/list_experiments.mmd`](artifacts/list_experiments.mmd)
 
 ```mermaid
 sequenceDiagram
@@ -103,8 +97,6 @@ exists for work units, artifacts, and status messages.
 
 ## 3. Update Experiment
 
-Source diagram: [`artifacts/update_experiment.mmd`](artifacts/update_experiment.mmd)
-
 ```mermaid
 sequenceDiagram
     participant Client
@@ -131,35 +123,20 @@ so an update that touches them writes to both stores. Fields that exist only in 
 conditional branch.
 
 > [!NOTE]
-> Changing an experiment's **priority** is an exception to "experiment updates do not touch the
-> cluster": priority feeds the Kueue `WorkloadPriorityClass` label on every child work unit's
-> JobSet, so it propagates through the actuation path described in
-> [Work Unit Lifecycle §5](work_unit_lifecycle.md#5-update-work-unit).
+> Changing an experiment's **priority** is not an exception to "none of this touches the cluster".
+> `UpdateExperiment` enqueues no actuation task. The new value is read from Spanner the next time a
+> work unit in that experiment is created, restarted, or re-prioritised — that is when the
+> experiment/work-unit priority pair is resolved into a Kueue `WorkloadPriorityClass`. JobSets
+> already in the cluster keep the class they were labelled with. See
+> [Execution Model §6](../architecture/execution_model.md#6-scheduling-and-priority).
 
 ---
 
 ## 4. Update Launch State
 
-Source diagram: [`artifacts/update_launch_state.mmd`](artifacts/update_launch_state.mmd)
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ESS as ESS (Exp State Server)
-    participant XID as XID Service
-    participant Spanner as Spanner (Storage)
-
-    Client->>ESS: 1. UpdateLaunchState(req)
-    ESS->>ESS: 2. Authenticate & Validate
-    ESS->>XID: 3. CheckAuth(WRITER)
-    XID-->>ESS: 4. Authorized
-    ESS->>Spanner: 5. UpdateLaunchState
-    Spanner-->>ESS: 6. Experiment (updated)
-    ESS->>XID: 7. GetXidEntry
-    XID-->>ESS: 8. XidEntry (for ACLs)
-    ESS->>ESS: 9. Populate ACLs
-    ESS-->>Client: 10. Experiment
-```
+`UpdateExperimentLaunchState` is a plain
+[Shape 2 — synchronous write](README.md#shape-2--synchronous-write): `WRITER` check, Spanner commit,
+a `GetXidEntry` to populate ACLs on the response, done.
 
 Launching an experiment is a client-side loop: create the experiment, then create each work unit,
 then declare the launch finished. `UpdateExperimentLaunchState` is how the client reports where it
@@ -174,23 +151,8 @@ abandoned launches.
 
 ## 5. Get Experiment Status
 
-Source diagram: [`artifacts/get_status.mmd`](artifacts/get_status.mmd)
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ESS as ESS (Exp State Server)
-    participant XID as XID Service
-    participant Spanner as Spanner (Storage)
-
-    Client->>ESS: 1. GetStatus(req)
-    ESS->>ESS: 2. Authenticate & Validate
-    ESS->>XID: 3. CheckAuth(READER)
-    XID-->>ESS: 4. Authorized
-    ESS->>Spanner: 5. FetchExperimentStatus
-    Spanner-->>ESS: 6. ExperimentStatus
-    ESS-->>Client: 7. ExperimentStatus
-```
+Another plain [Shape 1 — synchronous read](README.md#shape-1--synchronous-read). What is
+interesting here is not the path but the payload.
 
 `GetExperimentStatus` returns the aggregate rollup rather than the experiment resource: active
 state, launch state, per-`WorkUnitState` counts, and per-severity status message counts. It is the
@@ -206,60 +168,29 @@ The counts it aggregates are written by the observation loop described in
 
 Artifacts are named outputs and references attached to experiments and work units — checkpoint
 paths, dataset URIs, links to external systems. They are pure Spanner CRUD with no cluster
-involvement.
+involvement — [Shape 1](README.md#shape-1--synchronous-read) for the reads and
+[Shape 2](README.md#shape-2--synchronous-write) for the writes, with nothing bolted on.
 
-Source diagrams: [`create_artifact.mmd`](artifacts/create_artifact.mmd),
-[`get_artifact.mmd`](artifacts/get_artifact.mmd),
-[`list_artifacts.mmd`](artifacts/list_artifacts.mmd),
-[`delete_artifact.mmd`](artifacts/delete_artifact.mmd)
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ESS
-    participant XID
-    participant Spanner
-
-    Client->>ESS: CreateArtifact(req)
-    ESS->>XID: CheckAuth(WRITER)
-    XID-->>ESS: Authorized
-    ESS->>Spanner: CreateArtifact
-    Spanner-->>ESS: Artifact
-    ESS-->>Client: Artifact
-```
-
-All six artifact RPCs follow this shape, differing only in the role they require:
+All six artifact RPCs follow that shape, differing only in the role they require:
 
 | RPC | Required role |
 | :--- | :--- |
-| `GetArtifact`, `ListArtifacts`, `SearchArtifacts` | `READER` |
-| `CreateArtifact`, `UpdateArtifact` | `WRITER` |
+| `GetArtifact`, `ListArtifacts`, `SearchArtifacts`, `CreateArtifact` | `READER` |
+| `UpdateArtifact` | `WRITER` |
 | `DeleteArtifact` | `OWNER` |
 
-Deletion requiring `OWNER` rather than `WRITER` is deliberate: a collaborator who can add outputs
-to an experiment should not be able to remove someone else's.
+The ladder is not the obvious one. `CreateArtifact` requires only `READER`
+([`createartifact.go`](../../cmd/experiment_state_server/server/createartifact.go)) — anyone who can
+see an experiment can attach an output to it — while *changing* an existing artifact requires
+`WRITER`. Deletion then requires `OWNER` rather than `WRITER`, so a collaborator who can add
+outputs cannot remove someone else's.
 
 ---
 
 ## 7. Status Messages
 
-Source diagram: [`artifacts/list_status_messages.mmd`](artifacts/list_status_messages.mmd)
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ESS as ESS (Exp State Server)
-    participant XID as XID Service
-    participant Spanner as Spanner (Storage)
-
-    Client->>ESS: 1. ListStatusMessages(req) / SearchStatusMessages(req)
-    ESS->>ESS: 2. Authenticate & Validate (Check Parent & Page Size)
-    ESS->>XID: 3. CheckAuth(READER)
-    XID-->>ESS: 4. Authorized
-    ESS->>Spanner: 5. FetchStatusMessages (with staleness)
-    Spanner-->>ESS: 6. StatusMessages & NextPageToken
-    ESS-->>Client: 7. ListStatusMessagesResponse
-```
+`ListStatusMessages` and `SearchStatusMessages` are
+[Shape 1](README.md#shape-1--synchronous-read) reads, paginated and parent-scoped.
 
 Status messages are the human-readable narrative attached to a work unit: scheduling explanations
 from Kueue, bring-up errors from the JobSet reconciler, and parsed application errors from the

@@ -21,7 +21,12 @@ conventions; the fourth is the Kubernetes object that physically runs the work.
 | WorkUnit | `experiments/{xid}/workUnits/{wid}` | `wid` | One logical run. This is what users start, stop, and restart. |
 | WorkUnitExecution | `experiments/{xid}/workUnits/{wid}/executions/{execution_id}` | `eid` | One *attempt* at running the WorkUnit. |
 | JobSet | Kubernetes object in a namespace | — | The concrete workload: replicated jobs, pods, containers. |
-| Artifact | `artifacts/{aid}` | `aid` | A named output or reference attached to experiments and work units. |
+
+A fifth resource hangs off the hierarchy rather than sitting inside it:
+
+| Resource | Resource name pattern | Identifier | Meaning |
+| :--- | :--- | :--- | :--- |
+| Artifact | `artifacts/{aid}` | `aid` | A named output or reference attached to an experiment or work unit — a checkpoint path, a dataset URI, a link to an external system. Pure Spanner CRUD; it never reaches the cluster. |
 
 The relationship that matters most:
 
@@ -107,13 +112,16 @@ in [`status.proto`](../../api/protos/experiment/status.proto).
 Two derived signals matter operationally:
 
 - **`SCHEDULING` that never advances** usually means Kueue cannot admit the workload — insufficient
-  quota, no matching resource flavor, or an inadmissible request. When
-  `detectInadmissibleWorkUnits` is enabled, the Reconciler's Workload reconciler surfaces the
-  reason as a status message rather than leaving the work unit silently pending.
-- **`STARTING` that never advances** is caught by the startup pod error check. When
-  `startupPodErrorCheckEnabled` is set, the JobSet reconciler waits
-  `startup_pod_error_check_time` (2m) after JobSet creation and then inspects the pods for image
-  pull failures, scheduling errors, and similar bring-up problems.
+  quota, no matching resource flavor, or an inadmissible request. The Reconciler's Workload
+  reconciler surfaces the reason as a status message rather than leaving the work unit silently
+  pending.
+- **`STARTING` that never advances** is caught by the startup pod error check: the JobSet
+  reconciler waits `startup_pod_error_check_time` (2m) after JobSet creation, then inspects the
+  pods for image pull failures, scheduling errors, and similar bring-up problems.
+
+Both diagnostics are on in every deployment. `detectInadmissibleWorkUnits` and
+`startupPodErrorCheckEnabled` still exist as kill switches and both default to `true`, so read
+them as "how to turn this off", not as something an operator has to turn on.
 
 ### Experiment-level state
 
@@ -133,17 +141,26 @@ An experiment aggregates its work units rather than having its own execution.
 
 ## 3. Long-Running Operations
 
-Anything that must change the cluster is asynchronous. `CreateWorkUnit`, `StopWorkUnit`,
-`RestartWorkUnit`, and their `Batch*` variants return a `google.longrunning.Operation` rather than
-a finished result.
+`CreateWorkUnit`, `StopWorkUnit`, `RestartWorkUnit`, and their `Batch*` variants return a
+`google.longrunning.Operation` rather than a finished result.
+
+None of these RPCs touch the cluster. What they do is durably record an intent that *will* change
+it: ESS commits the state change, hands a signed actuation payload to the Actuator through Redis,
+and returns. The Actuator is the only component that talks to the Kubernetes API, and it does so
+after the RPC has already answered.
 
 The sequence is always the same:
 
 1. ESS authorizes the call against the XID Service.
-2. ESS writes the state change and an `Operation` row to Spanner in the same transaction.
+2. ESS writes the state change to Spanner, then records an `Operation` row for the caller to poll.
 3. ESS enqueues a signed actuation payload to the Redis stream.
 4. ESS returns the `Operation` — typically within milliseconds, and before any pod exists.
 5. The Actuator performs the cluster mutation and marks the `Operation` done.
+
+Steps 2 and 3 are separate writes rather than one atomic commit, so a crash between them can leave
+an operation with no queued task — see
+[Work Unit Lifecycle §7](../flows/work_unit_lifecycle.md#7-failure-handling-along-the-path) for how
+that case is recovered.
 
 Clients poll the operation, or simply watch the work unit's state converge. The decoupling is what
 lets a `BatchStopWorkUnits` call over hundreds of work units return promptly, and what makes the
@@ -264,8 +281,18 @@ dominating:
 > find nothing — look for `exp-medium-wu-medium`.
 
 The 300-point gaps mean *any* high-priority experiment outranks *every* work unit in a
-normal-priority experiment. Changing an experiment's priority re-labels the JobSets of its work
-units in place (`updateJobSetPriority`) rather than recreating them.
+normal-priority experiment.
+
+The pair is resolved when an actuation task is enqueued, not when the JobSet is built, and the two
+halves of it behave differently once work is already running:
+
+- Changing a **work unit's** priority (`UpdateWorkUnit`) enqueues an update task, and the Actuator
+  patches `kueue.x-k8s.io/priority-class` on the existing JobSet in place (`updateJobSetPriority`)
+  rather than recreating it, so re-prioritising never interrupts running work.
+- Changing an **experiment's** priority (`UpdateExperiment`) enqueues nothing. It is read from
+  Spanner by the next `CreateWorkUnit`, `RestartWorkUnit`, or `UpdateWorkUnit` in that experiment,
+  so it governs work actuated after the change; JobSets already in the cluster keep the class they
+  were labelled with until something re-enqueues them.
 
 ### Queue observability
 
