@@ -98,11 +98,11 @@ func (c *Config) registerConfigs() {
 func (c Config) validate() error {
 	portNum, err := strconv.Atoi(c.Port)
 	if err != nil {
-		logging.Error(context.Background(), fmt.Sprintf("Invalid port %q: must be a number", c.Port))
+		logging.Error(context.Background(), "Invalid port: must be a number", "port", c.Port, "error", err)
 		return fmt.Errorf("invalid port %q: must be a number", c.Port)
 	}
 	if portNum < 1 || portNum > 65535 {
-		logging.Error(context.Background(), fmt.Sprintf("Invalid port %d: must be between 1 and 65535", portNum))
+		logging.Error(context.Background(), "Invalid port: must be between 1 and 65535", "port", portNum)
 		return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
 	}
 

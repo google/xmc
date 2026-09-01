@@ -623,11 +623,11 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	// Iterate over user filters removing tables that don't have the fields to satisfy filters.
-	logging.Info(context.Background(), fmt.Sprintf("We have user filters %v and available tables %v. Removing tables that don't have the fields to satisfy filters...", filterNames(userFilters), tableNames(candidateTables)))
+	logging.Info(context.Background(), "Removing tables that don't have the fields to satisfy filters", "userFilters", filterNames(userFilters), "candidateTables", tableNames(candidateTables))
 	for _, filter := range userFilters {
 		removeTableIfMissingField(filter, candidateTables)
 	}
-	logging.Info(context.Background(), fmt.Sprintf("We now have available tables %v", tableNames(candidateTables)))
+	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
 		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v and base filters %v", userFilters, q.baseFilters)
@@ -635,11 +635,11 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 
 	// Iterate over fields in the requested page token to ensure that we select the same table as
 	// previously selected.
-	logging.Info(context.Background(), fmt.Sprintf("We have page token fields %v and available tables %v. Removing tables that don't satisfy the page token...", pageTokenNames(ptFields), tableNames(candidateTables)))
+	logging.Info(context.Background(), "Removing tables that don't satisfy the page token", "pageTokenFields", pageTokenNames(ptFields), "candidateTables", tableNames(candidateTables))
 	for k := range ptFields {
 		removeTableIfMissingField(k, candidateTables)
 	}
-	logging.Info(context.Background(), fmt.Sprintf("We now have available tables %v", tableNames(candidateTables)))
+	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
 		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
@@ -649,7 +649,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	// user filters.
 	logging.Info(context.Background(), "Removing tables with null filtered fields that aren't satisfied by the base or user filters...")
 	removeIfNullFilterUnsatisfied(candidateTables, q.baseFilters, userFilters)
-	logging.Info(context.Background(), fmt.Sprintf("We now have available tables %v", tableNames(candidateTables)))
+	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
 		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
@@ -661,27 +661,27 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	updateNumFiltersIndexed(candidateTables, q.baseFilters, userFilters)
 
 	// Determine the best table to select from.
-	logging.Info(context.Background(), fmt.Sprintf("Finding the best table to select from based on available tables %v", tableNames(candidateTables)))
+	logging.Info(context.Background(), "Finding the best table to select from based on available tables", "candidateTables", tableNames(candidateTables))
 	var bestTable *candidateTable
 	for _, ct := range candidateTables {
 		if bestTable == nil {
-			logging.Info(context.Background(), fmt.Sprintf("No current best table, setting %q as the best table", ct.t.Name))
+			logging.Info(context.Background(), "Setting table as best table", "bestTable", ct.t.Name)
 			bestTable = ct
 			continue
 		}
 
 		if ct.numFiltersIndexed > bestTable.numFiltersIndexed {
-			logging.Info(context.Background(), fmt.Sprintf("Table %q has ordered indexes on %d filter fields whereas current best table %q has %d, setting %q as the best table", ct.t.Name, ct.numFiltersIndexed, bestTable.t.Name, bestTable.numFiltersIndexed, ct.t.Name))
+			logging.Info(context.Background(), "Setting table with more ordered indexes as best table", "candidateTable", ct.t.Name, "candidateNumFiltersIndexed", ct.numFiltersIndexed, "currentBestTable", bestTable.t.Name, "currentBestNumFiltersIndexed", bestTable.numFiltersIndexed)
 			bestTable = ct
 			continue
 		}
 
 		if ct.numFiltersIndexed == bestTable.numFiltersIndexed && ct.t.Cost < bestTable.t.Cost {
-			logging.Info(context.Background(), fmt.Sprintf("Table %q and current best table %q have ordered indexes on the same number of filter fields, but table %q costs less (%d versus %d), setting table %q as best table", ct.t.Name, bestTable.t.Name, ct.t.Name, ct.t.Cost, bestTable.t.Cost, ct.t.Name))
+			logging.Info(context.Background(), "Setting table with lower cost as best table", "candidateTable", ct.t.Name, "candidateCost", ct.t.Cost, "currentBestTable", bestTable.t.Name, "currentBestCost", bestTable.t.Cost)
 			bestTable = ct
 		}
 
-		logging.Info(context.Background(), fmt.Sprintf("Table %q isn't better than current best table %q, skipping it", ct.t.Name, bestTable.t.Name))
+		logging.Info(context.Background(), "Skipping candidate table", "candidateTable", ct.t.Name, "currentBestTable", bestTable.t.Name)
 	}
 	fromTable := bestTable.t
 	q.lastFromTable = fromTable.Name
@@ -703,30 +703,30 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	// Iterate over joinFields to figure out what joins we need to perform.
-	logging.Info(context.Background(), fmt.Sprintf("We have the following join fields: %v", joinFields))
+	logging.Info(context.Background(), "Processing join fields", "joinFields", joinFields)
 	var joins []Join
 	for _, sf := range joinFields {
-		logging.Info(context.Background(), fmt.Sprintf("Looking for join field %q", sf))
+		logging.Info(context.Background(), "Looking for join field", "joinField", sf)
 		m, ok := fromTable.Fields[sf]
 		if ok && m.Selectable {
 			// This field is selectable in fromTable.
-			logging.Info(context.Background(), fmt.Sprintf("Join field %q is selectable from table %q", sf, fromTable.Name))
+			logging.Info(context.Background(), "Join field is selectable from table", "joinField", sf, "table", fromTable.Name)
 			if sfs[sf] {
-				logging.Info(context.Background(), fmt.Sprintf("Join field %q is in select fields, adding it to select members", sf))
+				logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
 				selectMembers = append(selectMembers, m)
 			}
 			continue
 		}
 
 		found := false
-		logging.Info(context.Background(), fmt.Sprintf("Join field %q is not selectable from table %q, seeing if it's available in any of the existing joins %v", sf, fromTable.Name, relationshipTableNames(joins)))
+		logging.Info(context.Background(), "Join field not selectable from table, checking existing joins", "joinField", sf, "fromTable", fromTable.Name, "existingJoins", relationshipTableNames(joins))
 		for _, jt := range joins {
 			// Is it available in any existing joins?
 			m, ok = jt.T.Fields[sf]
 			if ok && m.Selectable {
-				logging.Info(context.Background(), fmt.Sprintf("Join field %q is selectable from join table %q", sf, jt.T.Name))
+				logging.Info(context.Background(), "Join field is selectable from join table", "joinField", sf, "joinTable", jt.T.Name)
 				if sfs[sf] {
-					logging.Info(context.Background(), fmt.Sprintf("Join field %q is in select fields, adding it to select members", sf))
+					logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
 					selectMembers = append(selectMembers, m)
 				}
 				found = true
@@ -1066,7 +1066,7 @@ func removeIfNullFilterUnsatisfied(candidateTables map[TableName]*candidateTable
 			}
 		}
 		if hasNullFiltered && !isFilteringOnNF {
-			logging.Info(context.Background(), fmt.Sprintf("There are no filters on any of table %q's null filtered fields, removing it from candidate tables", ct.t.Name))
+			logging.Info(context.Background(), "Removing table without filters on null filtered fields", "table", ct.t.Name)
 			delete(candidateTables, i)
 		}
 	}
@@ -1101,7 +1101,7 @@ func updateNumFiltersIndexed(candidateTables map[TableName]*candidateTable, base
 			// order, we stop counting.
 			break
 		}
-		logging.Info(context.Background(), fmt.Sprintf("Candidate table %q has %d filter field(s) that make up the prefix of its index", ct.t.Name, ct.numFiltersIndexed))
+		logging.Info(context.Background(), "Candidate table index prefix count", "table", ct.t.Name, "numFiltersIndexed", ct.numFiltersIndexed)
 	}
 }
 
@@ -1109,7 +1109,7 @@ func updateNumFiltersIndexed(candidateTables map[TableName]*candidateTable, base
 func removeTableIfMissingField(filter TableField, candidateTables map[TableName]*candidateTable) {
 	for i, ct := range candidateTables {
 		if _, ok := ct.t.Fields[filter]; !ok {
-			logging.Info(context.Background(), fmt.Sprintf("Table %q does not contain field %q, removing it", ct.t.Name, filter))
+			logging.Info(context.Background(), "Table does not contain field, removing it", "table", ct.t.Name, "field", filter)
 			delete(candidateTables, i)
 			continue
 		}
@@ -1186,14 +1186,14 @@ func checkCandidateTableOrderBy(t TableView, userOrderBy []UserOrderedIndex, opt
 }
 
 func resolveJoinFieldFromRelationships(sf TableField, sfs map[TableField]bool, fromTable TableView, joins *[]Join, selectMembers *[]Member) (bool, error) {
-	logging.Info(context.Background(), fmt.Sprintf("Join field %q is not available in any existing joins, see if it's available in any of the prospective joins %v", sf, relationshipTableNames(fromTable.Relationships)))
+	logging.Info(context.Background(), "Join field not in existing joins, checking prospective joins", "joinField", sf, "prospectiveJoins", relationshipTableNames(fromTable.Relationships))
 	for _, jt := range fromTable.Relationships {
 		m, ok := jt.T.Fields[sf]
 		if ok && m.Selectable {
 			*joins = append(*joins, jt)
-			logging.Info(context.Background(), fmt.Sprintf("Join field %q is selectable from join table %q", sf, jt.T.Name))
+			logging.Info(context.Background(), "Join field is selectable from join table", "joinField", sf, "joinTable", jt.T.Name)
 			if sfs[sf] {
-				logging.Info(context.Background(), fmt.Sprintf("Join field %q is in select fields, adding it to select members", sf))
+				logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
 				*selectMembers = append(*selectMembers, m)
 			}
 			return true, nil

@@ -223,7 +223,7 @@ func (r *runner) close() {
 }
 
 func (r *runner) execCommand(ctx context.Context, cmd string, arg *int) error {
-	logging.Info(ctx, fmt.Sprintf("Executing command: %q", cmd))
+	logging.Info(ctx, "Executing command", "command", cmd)
 	switch cmd {
 	case upCmd:
 		return commands.Up(ctx, r.migrator, r.dataClient, arg)

@@ -87,7 +87,7 @@ func (s *Spanner) Run(migration io.Reader) error {
 	}
 	stmts := spannerutils.ParseDDL(string(migr))
 	ctx := context.Background()
-	logging.Info(ctx, fmt.Sprintf("Applying the following DDL statements:\n%v;", strings.Join(stmts, ";\n")))
+	logging.Info(ctx, "Applying DDL statements", "statements", strings.Join(stmts, ";\n"))
 
 	op, err := s.options.AdminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:         s.options.DatabasePath,
