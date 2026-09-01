@@ -46,6 +46,10 @@ _MODULE_BLOCK = re.compile(
 _SETTING_KEY = re.compile(r"^      ([a-z_]+):", re.MULTILINE)
 _MODULE_REFERENCE = re.compile(rf"\$\({MODULE_ID}\.([a-z_]+)\)")
 _TERRAFORM_VARIABLE = re.compile(r'^variable "([a-z_]+)"', re.MULTILINE)
+_TERRAFORM_VARIABLE_BLOCK = re.compile(
+    r'^variable "([a-z_]+)" \{$\n(.*?)^\}$', re.MULTILINE | re.DOTALL
+)
+_NULLABLE_FALSE = re.compile(r"^\s*nullable\s*=\s*false\s*$", re.MULTILINE)
 _TERRAFORM_OUTPUT = re.compile(r'^output "([a-z_]+)"', re.MULTILINE)
 _BLUEPRINT_VAR = re.compile(r"^  ([a-z_]+):", re.MULTILINE)
 
@@ -72,9 +76,8 @@ class RedisEndpointWiringTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.blueprint = read_repo_file(BLUEPRINT_PATH)
-        cls.declared_variables = set(
-            _TERRAFORM_VARIABLE.findall(read_repo_file(os.path.join(MODULE_DIR, "variables.tf")))
-        )
+        cls.variables_document = read_repo_file(os.path.join(MODULE_DIR, "variables.tf"))
+        cls.declared_variables = set(_TERRAFORM_VARIABLE.findall(cls.variables_document))
         cls.declared_outputs = set(
             _TERRAFORM_OUTPUT.findall(read_repo_file(os.path.join(MODULE_DIR, "outputs.tf")))
         )
@@ -118,6 +121,19 @@ class RedisEndpointWiringTest(unittest.TestCase):
         self.assertLessEqual(
             {"external_host", "external_port", "external_auth_string"}, self.passed_settings
         )
+
+    def test_the_external_override_variables_reject_null(self) -> None:
+        """Null is not "", so it would select the external branch and then resolve to nothing.
+
+        The module reads "" as "not set". A deployment file that names external_redis_host without
+        giving it a value passes null instead, which is not equal to "" and so takes the override
+        branch, past a precondition that only compares against "". Declaring these non-nullable
+        turns that into the default rather than an error deep in the resolver.
+        """
+        blocks = dict(_TERRAFORM_VARIABLE_BLOCK.findall(self.variables_document))
+
+        for name in ("external_host", "external_port", "external_auth_string"):
+            self.assertRegex(blocks[name], _NULLABLE_FALSE, f"{name} accepts null")
 
     def test_chart_address_comes_from_the_resolver(self) -> None:
         """Reading redis.redis_host directly is what pinned the chart to the provisioned VPC."""

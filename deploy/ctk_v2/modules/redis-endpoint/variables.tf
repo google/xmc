@@ -31,16 +31,22 @@ variable "provisioned_auth_string" {
   sensitive   = true
 }
 
+# Unlike the provisioned_* variables above, these are not nullable: "" is how the module spells
+# "not set", and a deployment file that names the key without a value would otherwise pass null
+# through. Null is not "", so it would select the external branch and then fail somewhere in the
+# string interpolation rather than at the precondition that explains what to do about it.
 variable "external_host" {
   description = "Host of a Redis instance supplied by the operator. Overrides the provisioned instance when set."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "external_port" {
   description = "Port of the operator-supplied Redis instance. Read only when external_host is set."
   type        = string
   default     = "6379"
+  nullable    = false
 }
 
 variable "external_auth_string" {
@@ -48,4 +54,5 @@ variable "external_auth_string" {
   type        = string
   default     = ""
   sensitive   = true
+  nullable    = false
 }
