@@ -134,7 +134,7 @@ class TestLocalRunner(unittest.TestCase):
         self.assertIn("admin@xmc.local", output)
 
     def test_service_to_k8s_deployment_name(self) -> None:
-        from tools.dev_env.local_runner import (
+        from tools.dev_env.service_resolver import (
             resolve_service_names,
             service_to_k8s_deployment_name,
         )

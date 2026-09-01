@@ -24,57 +24,15 @@ from tools.dev_env.config import LocalDevConfig
 from tools.dev_env.helm_deployer import HelmDeployer
 from tools.dev_env.image_builder import ImageBuilder
 from tools.dev_env.kind_manager import KindManager, check_preflight_tools
+from tools.dev_env.service_resolver import (
+    resolve_target_services,
+    service_to_k8s_deployment_name,
+)
 from tools.dev_env.spanner_manager import SpannerManager
 
 _LOGGER = logging.getLogger("xmc.dev_env.local_runner")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-SERVICE_ALIASES: dict[str, str] = {
-    "ess": "experiment_state_server",
-    "xid": "xid_service",
-    "rod": "rod_data_provider",
-    "gw": "ingestion_gateway",
-    "gateway": "ingestion_gateway",
-    "frontend": "ui",
-    "web": "ui",
-    "dash": "dashboard_service",
-    "dashboard": "dashboard_service",
-    "health": "health_service",
-    "comp": "components",
-}
-
-
-def resolve_service_name(alias_or_name: str) -> str:
-    """Resolves service aliases to canonical snake_case service names."""
-    normalized = alias_or_name.strip().lower().replace("-", "_")
-    return SERVICE_ALIASES.get(normalized, normalized)
-
-
-def resolve_service_names(names: list[str]) -> list[str]:
-    """Resolves a list of service names or aliases to canonical service names."""
-    return list(dict.fromkeys(resolve_service_name(n) for n in names if n and n.strip()))
-
-
-def service_to_k8s_deployment_name(service: str) -> str:
-    """Converts a service name or alias to Kubernetes Deployment name.
-
-    Converts underscores to dashes and adds '-deployment' suffix, with exceptions
-    for special gateway components.
-
-    Examples:
-        'dashboard_service' -> 'dashboard-service-deployment'
-        'experiment_state_server' -> 'experiment-state-server-deployment'
-        'ingestion_gateway' -> 'gateway-proxy'
-        'ui' -> 'ui-deployment'
-    """
-    canonical = resolve_service_name(service)
-    svc_lower = canonical.lower().replace("_", "-")
-    if svc_lower in ("ingestion-gateway", "gateway-proxy"):
-        return "gateway-proxy"
-    if svc_lower.endswith("-deployment"):
-        return svc_lower
-    return f"{svc_lower}-deployment"
 
 
 class LocalRunner:
@@ -154,50 +112,6 @@ class LocalRunner:
                 f"'{self.config.xid_database}'). Use --drop-db to delete them."
             )
         log_success("Local KinD development environment teardown complete.")
-
-    def _resolve_target_services(
-        self,
-        services: list[str] | None = None,
-        helm: bool = False,
-    ) -> tuple[set[str], bool]:
-        """Resolves target services and Helm requirement from explicit arguments."""
-        target_services: set[str] = set()
-        helm_needed = helm
-        raw_services = services or []
-        lowercase_services = {s.strip().lower() for s in raw_services if s and s.strip()}
-
-        if not raw_services and not helm:
-            raise ValueError(
-                "No services specified to reload. Specify microservice names (e.g. 'ess', 'ui', 'all') or use --helm."
-            )
-
-        if any(
-            s.strip().lower() in ("helm", "chart", "charts")
-            for s in raw_services
-            if s and s.strip()
-        ):
-            helm_needed = True
-
-        explicit_services = [
-            s.strip()
-            for s in raw_services
-            if s and s.strip() and s.strip().lower() not in ("all", "helm", "chart", "charts")
-        ]
-        if explicit_services:
-            resolved = resolve_service_names(explicit_services)
-            invalid_or_disabled = [s for s in resolved if s not in self.config.enabled_services]
-            if invalid_or_disabled:
-                raise ValueError(
-                    "The following services are invalid or not enabled in the current"
-                    f" configuration: {', '.join(invalid_or_disabled)}. Enabled services:"
-                    f" {', '.join(self.config.enabled_services)}"
-                )
-            target_services.update(resolved)
-
-        if "all" in lowercase_services:
-            target_services.update(self.config.enabled_services)
-
-        return target_services, helm_needed
 
     def _rebuild_and_load_services(self, sorted_targets: list[str]) -> None:
         """Compiles image tarballs and imports them into the KinD cluster."""
@@ -297,7 +211,9 @@ class LocalRunner:
                 "Run 'python3 tools/dev_env/dev_env.py up' first."
             )
 
-        target_services, helm_needed = self._resolve_target_services(services, helm=helm)
+        target_services, helm_needed = resolve_target_services(
+            services, self.config.enabled_services, helm=helm
+        )
         start_time = time.perf_counter()
         sorted_targets = sorted(target_services)
 

@@ -178,6 +178,16 @@ alias(
 )
 
 alias(
+    name = "service_resolver_lib",
+    actual = "//tools/dev_env:service_resolver_lib",
+)
+
+alias(
+    name = "service_resolver_test",
+    actual = "//tools/dev_env:service_resolver_test",
+)
+
+alias(
     name = "local_runner_lib",
     actual = "//tools/dev_env:local_runner_lib",
 )

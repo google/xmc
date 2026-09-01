@@ -29,6 +29,7 @@ exports_files([
     "image_builder.py",
     "kind_manager.py",
     "local_runner.py",
+    "service_resolver.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
@@ -97,6 +98,21 @@ py_test(
 )
 
 py_library(
+    name = "service_resolver_lib",
+    srcs = ["service_resolver.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "service_resolver_test",
+    srcs = ["service_resolver_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":service_resolver_lib",
+    ],
+)
+
+py_library(
     name = "local_runner_lib",
     srcs = ["local_runner.py"],
     imports = ["../.."],
@@ -105,6 +121,7 @@ py_library(
         ":helm_deployer_lib",
         ":image_builder_lib",
         ":kind_manager_lib",
+        ":service_resolver_lib",
         ":spanner_manager_lib",
         "//tools/common:tool_utils",
     ],
@@ -120,6 +137,7 @@ py_test(
         ":image_builder_lib",
         ":kind_manager_lib",
         ":local_runner_lib",
+        ":service_resolver_lib",
         ":spanner_manager_lib",
         "//tools/common:tool_utils",
     ],
