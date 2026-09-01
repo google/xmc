@@ -140,46 +140,45 @@ class SpannerManager:
             return self._cached_mig_binary
 
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
-        mig_dir = os.path.join(
-            self._get_bazel_bin(),
-            "internal",
-            "storage",
-            "spanner",
-            "migrations",
-        )
-        for name in binary_names:
-            mig_binary = os.path.join(mig_dir, "migrations_", name)
-            if os.path.isfile(mig_binary) and os.access(mig_binary, os.X_OK):
-                self._cached_mig_binary = mig_binary
-                return mig_binary
+        search_dirs = [
+            os.path.join(
+                self.cfg.workspace_root, "bazel-bin", "internal", "storage", "spanner", "migrations"
+            ),
+            os.path.join(self._get_bazel_bin(), "internal", "storage", "spanner", "migrations"),
+        ]
 
-        if os.path.isdir(mig_dir):
-            for root, _, files in os.walk(mig_dir, followlinks=True):
-                for f in files:
-                    if f in binary_names:
-                        candidate = os.path.join(root, f)
-                        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                            self._cached_mig_binary = candidate
-                            return candidate
+        for mig_dir in search_dirs:
+            for name in binary_names:
+                mig_binary = os.path.join(mig_dir, "migrations_", name)
+                if os.path.isfile(mig_binary) and os.access(mig_binary, os.X_OK):
+                    self._cached_mig_binary = mig_binary
+                    return mig_binary
+
+            if os.path.isdir(mig_dir):
+                for root, _, files in os.walk(mig_dir, followlinks=True):
+                    for f in files:
+                        if f in binary_names:
+                            candidate = os.path.join(root, f)
+                            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                                self._cached_mig_binary = candidate
+                                return candidate
         return None
+
+    def _resolve_descriptor(self, pkg: str, filename: str) -> str:
+        """Resolves path to compiled proto descriptor file."""
+        candidates = [
+            os.path.join(self.cfg.workspace_root, "bazel-bin", "api", "protos", pkg, filename),
+            os.path.join(self._get_bazel_bin(), "api", "protos", pkg, filename),
+        ]
+        for c in candidates:
+            if os.path.isfile(c) and os.path.getsize(c) > 0:
+                return c
+        return candidates[0]
 
     def _build_prerequisites(self) -> None:
         """Builds protobuf descriptor sets and migration binary required for Spanner if not already present."""
-        bazel_bin = self._get_bazel_bin()
-        ess_desc = os.path.join(
-            bazel_bin,
-            "api",
-            "protos",
-            "experiment",
-            "experiment_messages_descriptor.pb",
-        )
-        xid_desc = os.path.join(
-            bazel_bin,
-            "api",
-            "protos",
-            "xid",
-            "xid_messages_descriptor.pb",
-        )
+        ess_desc = self._resolve_descriptor("experiment", "experiment_messages_descriptor.pb")
+        xid_desc = self._resolve_descriptor("xid", "xid_messages_descriptor.pb")
         mig_binary = self._resolve_migration_binary()
         targets = []
         ess_valid = os.path.isfile(ess_desc) and os.path.getsize(ess_desc) > 0
@@ -308,20 +307,17 @@ class SpannerManager:
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
         self._build_prerequisites()
-        bazel_bin = self._get_bazel_bin()
         targets = [
             (
                 self.cfg.ess_db,
                 "internal/storage/spanner/schema/ess-schema.sql",
-                os.path.join(
-                    bazel_bin, "api", "protos", "experiment", "experiment_messages_descriptor.pb"
-                ),
+                self._resolve_descriptor("experiment", "experiment_messages_descriptor.pb"),
                 "ess",
             ),
             (
                 self.cfg.xid_db,
                 "internal/storage/spanner/schema/xid-schema.sql",
-                os.path.join(bazel_bin, "api", "protos", "xid", "xid_messages_descriptor.pb"),
+                self._resolve_descriptor("xid", "xid_messages_descriptor.pb"),
                 "xid",
             ),
         ]
