@@ -112,7 +112,7 @@ export default tseslint.config(
       '@angular-eslint/no-empty-lifecycle-method': 'error',
       '@angular-eslint/contextual-lifecycle': 'error',
       '@angular-eslint/no-pipe-impure': 'error',
-      '@angular-eslint/directive-class-suffix': ['error', { suffixes: ['Directive'] }],
+      '@angular-eslint/directive-class-suffix': 'error',
 
       'no-restricted-syntax': [
         'error',
