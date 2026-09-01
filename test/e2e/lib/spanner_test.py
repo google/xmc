@@ -39,6 +39,7 @@ class TestSpannerManager(unittest.TestCase):
             temp_dir="/tmp/e2e_test",
         )
         self.mgr = SpannerManager(self.cfg)
+        self.mgr._cached_bazel_bin = "/workspace/bazel-bin"
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_cleanup_stale_databases_deletes_expired_databases(self, mock_run):
@@ -235,6 +236,19 @@ class TestSpannerManager(unittest.TestCase):
         ):
             self.mgr._build_prerequisites()
             mock_run.assert_not_called()
+
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_get_bazel_bin_queries_bazel_info(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="/custom/bazel-bin\n"
+        )
+        mgr = SpannerManager(self.cfg)
+        self.assertEqual(mgr._get_bazel_bin(), "/custom/bazel-bin")
+
+    @patch("test.e2e.lib.spanner.run_cmd", side_effect=RuntimeError("bazel not found"))
+    def test_get_bazel_bin_falls_back_on_error(self, mock_run):
+        mgr = SpannerManager(self.cfg)
+        self.assertEqual(mgr._get_bazel_bin(), "/workspace/bazel-bin")
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):

@@ -57,7 +57,10 @@ class E2EOrchestrator:
         finally:
             logger.info("=== Executing Teardown ===")
             try:
-                self.kind.teardown()
+                if not self.cfg.keep_cluster:
+                    self.kind.teardown()
+                else:
+                    logger.info("Preserving KinD cluster %s for debugging.", self.cfg.cluster_name)
             except Exception as e:
                 logger.warning("Kind teardown failed: %s", e)
             try:

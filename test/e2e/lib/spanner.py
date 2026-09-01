@@ -121,6 +121,19 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
+    def _get_bazel_bin(self) -> str:
+        """Resolves the actual bazel-bin directory path dynamically."""
+        if getattr(self, "_cached_bazel_bin", None) is not None:
+            return self._cached_bazel_bin
+        try:
+            res = run_cmd(
+                ["bazel", "info", "bazel-bin"], cwd=self.cfg.workspace_root, capture_output=True
+            )
+            self._cached_bazel_bin = res.stdout.strip()
+        except Exception:
+            self._cached_bazel_bin = os.path.join(self.cfg.workspace_root, "bazel-bin")
+        return self._cached_bazel_bin
+
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
         if getattr(self, "_cached_mig_binary", None) is not None:
@@ -128,8 +141,7 @@ class SpannerManager:
 
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
         mig_dir = os.path.join(
-            self.cfg.workspace_root,
-            "bazel-bin",
+            self._get_bazel_bin(),
             "internal",
             "storage",
             "spanner",
@@ -153,17 +165,16 @@ class SpannerManager:
 
     def _build_prerequisites(self) -> None:
         """Builds protobuf descriptor sets and migration binary required for Spanner if not already present."""
+        bazel_bin = self._get_bazel_bin()
         ess_desc = os.path.join(
-            self.cfg.workspace_root,
-            "bazel-bin",
+            bazel_bin,
             "api",
             "protos",
             "experiment",
             "experiment_messages_descriptor.pb",
         )
         xid_desc = os.path.join(
-            self.cfg.workspace_root,
-            "bazel-bin",
+            bazel_bin,
             "api",
             "protos",
             "xid",
@@ -194,8 +205,14 @@ class SpannerManager:
 
     def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
         """Creates a single Spanner database with retries on RESOURCE_EXHAUSTED / 429."""
-        ddl_path = os.path.join(self.cfg.workspace_root, ddl_file)
-        proto_desc_path = os.path.join(self.cfg.workspace_root, proto_desc_file)
+        ddl_path = (
+            ddl_file if os.path.isabs(ddl_file) else os.path.join(self.cfg.workspace_root, ddl_file)
+        )
+        proto_desc_path = (
+            proto_desc_file
+            if os.path.isabs(proto_desc_file)
+            else os.path.join(self.cfg.workspace_root, proto_desc_file)
+        )
         logger.info(
             "Creating Spanner database %s with schema from %s and descriptors from %s...",
             db_name,
@@ -291,17 +308,20 @@ class SpannerManager:
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
         self._build_prerequisites()
+        bazel_bin = self._get_bazel_bin()
         targets = [
             (
                 self.cfg.ess_db,
                 "internal/storage/spanner/schema/ess-schema.sql",
-                "bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
+                os.path.join(
+                    bazel_bin, "api", "protos", "experiment", "experiment_messages_descriptor.pb"
+                ),
                 "ess",
             ),
             (
                 self.cfg.xid_db,
                 "internal/storage/spanner/schema/xid-schema.sql",
-                "bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
+                os.path.join(bazel_bin, "api", "protos", "xid", "xid_messages_descriptor.pb"),
                 "xid",
             ),
         ]

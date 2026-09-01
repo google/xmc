@@ -74,6 +74,16 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
 
+    def test_managed_lifecycle_preserves_cluster_when_keep_cluster_set(self):
+        self.cfg.keep_cluster = True
+        self.orch.spanner = MagicMock()
+        self.orch.kind = MagicMock()
+        with self.orch.managed_lifecycle():
+            pass
+
+        self.orch.kind.teardown.assert_not_called()
+        self.orch.spanner.teardown.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
