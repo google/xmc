@@ -56,8 +56,8 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/compat/google",
-        "//internal/compat/log",
         "//internal/compat/spanner",
+        "//internal/logging",
         "//internal/storage/spanner/migrations/commands",
         "//internal/storage/spanner/migrations/driver",
         "@com_github_golang_migrate_migrate_v4//:go_default_library",

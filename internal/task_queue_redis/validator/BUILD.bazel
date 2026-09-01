@@ -9,7 +9,7 @@ go_library(
     importpath = "xmanager_cloud/internal/task_queue_redis/validator",
     deps = [
         "//internal/compat/google",
-        "//internal/compat/log",
+        "//internal/logging",
         "//internal/task_queue_redis/redisclient",
         "@com_github_redis_go_redis_v9//:go-redis",
     ],

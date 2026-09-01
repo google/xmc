@@ -15,12 +15,13 @@ package redisclient
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go/log"
+	"xmanager_cloud/logging/logging"
 )
 
 const (
@@ -64,7 +65,7 @@ func defaultTaskHandler(ctx context.Context, workerID string, data string) TaskR
 // SetTaskHandler sets the task handler function for the client.
 func (c *ConsumerClient) SetTaskHandler(taskHandler func(ctx context.Context, workerID string, data string) TaskResult) {
 	if c.TaskHandler != nil {
-		log.Warningf("Client.SetTaskHandler: overwriting existing task handler function")
+		logging.Warn(context.Background(), "Client.SetTaskHandler: overwriting existing task handler function")
 	}
 	c.TaskHandler = taskHandler
 }
@@ -73,21 +74,21 @@ func (c *ConsumerClient) SetTaskHandler(taskHandler func(ctx context.Context, wo
 func (c *ConsumerClient) InitializeClient(ctx context.Context) {
 	err := c.Client.XGroupCreateMkStream(ctx, c.StreamName, c.GroupName, "0").Err()
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
-		log.ErrorContextf(ctx, "Failed to create stream and group: %v", err)
+		logging.Error(ctx, fmt.Sprintf("Failed to create stream and group: %v", err))
 	}
 }
 
 // Reset flushes all data from Redis.
 func (c *ConsumerClient) Reset(ctx context.Context) {
 	if err := c.FlushAll(ctx).Err(); err != nil {
-		log.ErrorContextf(ctx, "Failed to flush redis: %v", err)
+		logging.Error(ctx, fmt.Sprintf("Failed to flush redis: %v", err))
 	}
 }
 
 // DeleteStream deletes a stream from Redis.
 func (c *ConsumerClient) DeleteStream(ctx context.Context, streamName string) {
 	if err := c.Del(ctx, streamName).Err(); err != nil {
-		log.ErrorContextf(ctx, "Failed to delete stream %s: %v", streamName, err)
+		logging.Error(ctx, fmt.Sprintf("Failed to delete stream %s: %v", streamName, err))
 	}
 }
 
@@ -120,7 +121,7 @@ func increaseFailedCount(ctx context.Context, msg redis.XMessage) redis.XMessage
 func (c *ConsumerClient) StartWorker(ctx context.Context, workerID string) {
 	c.InitializeClient(ctx)
 
-	log.InfoContextf(ctx, "Worker %s started", workerID)
+	logging.Info(ctx, fmt.Sprintf("Worker %s started", workerID))
 	for ctx.Err() == nil {
 		entries, err := c.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    c.GroupName,
@@ -137,7 +138,7 @@ func (c *ConsumerClient) StartWorker(ctx context.Context, workerID string) {
 			if ctx.Err() != nil {
 				break
 			}
-			log.ErrorContextf(ctx, "Worker %s error reading stream: %v", workerID, err)
+			logging.Error(ctx, fmt.Sprintf("Worker %s error reading stream: %v", workerID, err))
 			time.Sleep(1 * time.Second) // back off on other errors
 			continue
 		}
@@ -148,7 +149,7 @@ func (c *ConsumerClient) StartWorker(ctx context.Context, workerID string) {
 			}
 		}
 	}
-	log.InfoContextf(ctx, "Worker %s shutting down", workerID)
+	logging.Info(ctx, fmt.Sprintf("Worker %s shutting down", workerID))
 }
 
 // processMessage processes a single message from the Redis stream.
@@ -192,7 +193,7 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 }
 
 func (c *ConsumerClient) moveToDLQ(ctx context.Context, msg redis.XMessage, reason string) {
-	log.WarningContextf(ctx, "🚨 Task %s moving to DLQ. Reason: %s", msg.ID, reason)
+	logging.Warn(ctx, fmt.Sprintf("🚨 Task %s moving to DLQ. Reason: %s", msg.ID, reason))
 	c.XAdd(ctx, &redis.XAddArgs{
 		Stream: c.DLQStreamName,
 		MaxLen: DefaultMaxLen,
@@ -218,7 +219,7 @@ func (c *ConsumerClient) handleCrashedTask(ctx context.Context, msg redis.XMessa
 		c.moveToDLQ(ctx, msg, reason)
 	} else {
 		// --- CASE: RETRY ---
-		log.WarningContextf(ctx, "🔄 Task %s failed (%s). Retry attempt: %d", msg.ID, reason, failedCount)
+		logging.Warn(ctx, fmt.Sprintf("🔄 Task %s failed (%s). Retry attempt: %d", msg.ID, reason, failedCount))
 
 		c.XAdd(ctx, &redis.XAddArgs{
 			Stream: c.StreamName,
@@ -240,13 +241,13 @@ func (c *ConsumerClient) handleCrashedTask(ctx context.Context, msg redis.XMessa
 // RunCleanup runs a cleanup goroutine that claims abandoned messages and re-processes them.
 // Meant to be called by the message consumer
 func (c *ConsumerClient) RunCleanup(ctx context.Context, workerID string) {
-	log.InfoContextf(ctx, "Cleanup worker %s started", workerID)
+	logging.Info(ctx, fmt.Sprintf("Cleanup worker %s started", workerID))
 	ticker := time.NewTicker(cleanupInterval) // Tick frequently for responsiveness
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			log.InfoContextf(ctx, "Cleanup worker %s shutting down", workerID)
+			logging.Info(ctx, fmt.Sprintf("Cleanup worker %s shutting down", workerID))
 			return
 		case <-ticker.C:
 			claimed, _, err := c.XAutoClaim(ctx, &redis.XAutoClaimArgs{
@@ -259,9 +260,9 @@ func (c *ConsumerClient) RunCleanup(ctx context.Context, workerID string) {
 			}).Result()
 
 			if err != nil && err != redis.Nil {
-				log.ErrorContextf(ctx, "Cleanup worker %s XAutoClaim error: %v", workerID, err)
+				logging.Error(ctx, fmt.Sprintf("Cleanup worker %s XAutoClaim error: %v", workerID, err))
 			} else if len(claimed) > 0 {
-				log.InfoContextf(ctx, "Cleanup: Claimed %d abandoned tasks", len(claimed))
+				logging.Info(ctx, fmt.Sprintf("Cleanup: Claimed %d abandoned tasks", len(claimed)))
 				for _, msg := range claimed {
 					c.processMessage(ctx, msg, workerID)
 				}

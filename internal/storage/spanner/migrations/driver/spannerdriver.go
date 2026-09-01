@@ -21,11 +21,11 @@ import (
 	"io"
 	"strings"
 
-	"go/log"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	migratedb "golang/github_com/golang_migrate/migrate/v/v4/database/database"
 	migratespanner "golang/github_com/golang_migrate/migrate/v/v4/database/spanner/spanner"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
@@ -87,7 +87,7 @@ func (s *Spanner) Run(migration io.Reader) error {
 	}
 	stmts := spannerutils.ParseDDL(string(migr))
 	ctx := context.Background()
-	log.InfoContextf(ctx, "Applying the following DDL statements:\n%v;", strings.Join(stmts, ";\n"))
+	logging.Info(ctx, fmt.Sprintf("Applying the following DDL statements:\n%v;", strings.Join(stmts, ";\n")))
 
 	op, err := s.options.AdminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:         s.options.DatabasePath,

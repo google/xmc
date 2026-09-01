@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 
-	"go/log"
 	"task/go/status"
 )
 
@@ -26,7 +25,6 @@ import (
 func validateStringID(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID <= 0 {
-		log.Warningf("ID must be a positive integer: %s, error: %v", ID, err)
 		return 0, fmt.Errorf("id must be a positive integer: %w (%v)", status.ErrInvalidArgument, err)
 	}
 
@@ -49,7 +47,6 @@ func ValidateWorkUnitNameAllowZeroWID(name string) (xid int64, wid int64, err er
 func validateStringIDAllowZero(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID < 0 {
-		log.Warningf("ID must be a non-negative integer: %s, error: %v", ID, err)
 		return 0, fmt.Errorf("id must be a non-negative integer: %w (%v)", status.ErrInvalidArgument, err)
 	}
 
@@ -200,7 +197,6 @@ func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, e
 	const separator = "/operations/"
 	index := strings.LastIndex(name, separator)
 	if index == -1 {
-		log.Warningf("Invalid resource name format: got %q, want '%s'", name, format)
 		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s': %w", format, status.ErrInvalidArgument)
 	}
 	workUnitName := name[:index]
@@ -212,7 +208,6 @@ func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, e
 	}
 
 	if uuid == "" {
-		log.Warningf("Invalid resource name format: got %q, want '%s'. UUID part is empty.", name, format)
 		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s', uuid cannot be empty: %w", format, status.ErrInvalidArgument)
 	}
 

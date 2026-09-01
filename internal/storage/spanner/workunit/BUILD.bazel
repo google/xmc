@@ -95,7 +95,6 @@ compat_go_test(
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/cmp",
         "//internal/compat/field_mask",
-        "//internal/compat/log",
         "//internal/compat/proto",
         "//internal/compat/protocmp",
         "//internal/compat/status",
