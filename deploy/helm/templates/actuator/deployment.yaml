@@ -56,6 +56,10 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
+        {{- if or .Values.auth.googleApplicationCredentials .Values.googleApplicationCredentials }}
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ default .Values.googleApplicationCredentials .Values.auth.googleApplicationCredentials | quote }}
+        {{- end }}
         {{- if .Values.managedXprofGcsBucket }}
         - name: MANAGED_XPROF_GCS_PATH
           valueFrom:
@@ -96,6 +100,11 @@ spec:
         - name: validation-public-key-volume
           mountPath: /etc/verification-key
           readOnly: true
+        {{- if not .Values.secrets.csi.enabled }}
+        - name: gcp-secrets-fallback
+          mountPath: /etc/gcp-secrets
+          readOnly: true
+        {{- end }}
       volumes:
       - name: validation-public-key-volume
         secret:
@@ -103,3 +112,11 @@ spec:
           items:
           - key: tls.crt
             path: tls.crt
+      {{- if not .Values.secrets.csi.enabled }}
+      - name: gcp-secrets-fallback
+        secret:
+          secretName: gcp-sa-key
+          items:
+          - key: key.json
+            path: key.json
+      {{- end }}

@@ -189,7 +189,7 @@ class KindManagerTest(unittest.TestCase):
             ["xmc"],
             literals=["jwt-secret=complex=base64=value=="],
         )
-        create_cmd = mock_run.call_args[0][0]
+        create_cmd = next(c[0][0] for c in mock_run.call_args_list if "create" in c[0][0])
         self.assertIn("--from-literal=jwt-secret=complex=base64=value==", create_cmd)
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
@@ -200,7 +200,7 @@ class KindManagerTest(unittest.TestCase):
             files=["key.json=/path/to/key.json"],
             literals=["client-secret=my-secret"],
         )
-        create_cmd = mock_run.call_args[0][0]
+        create_cmd = next(c[0][0] for c in mock_run.call_args_list if "create" in c[0][0])
         self.assertIn("--from-file=key.json=/path/to/key.json", create_cmd)
         self.assertIn("--from-literal=client-secret=my-secret", create_cmd)
 

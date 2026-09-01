@@ -137,6 +137,7 @@ class HelmDeployer:
         values: dict[str, Any] = {
             "projectId": cfg.project_id,
             "environment": cfg.environment,
+            "clusterName": cfg.cluster_name,
             "gcpServiceAccount": f"xmc-dev-sa@{cfg.project_id}.iam.gserviceaccount.com",
             "experimentStateServer": {
                 "spannerDatabaseName": (
