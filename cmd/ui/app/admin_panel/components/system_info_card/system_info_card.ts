@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
 import { HealthStatusResponse } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 export type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
+
+export const UNAVAILABLE_SCHEMA_VERSION = 'UNAVAILABLE';
+const PLACEHOLDER_VERSION = '-';
 
 /** A component showing system version info and external monitoring links. */
 @Component({
@@ -30,4 +33,26 @@ export type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
 })
 export class SystemInfoCardComponent {
   systemInfo = input.required<SystemInfo>();
+
+  protected readonly essDbSchemaVersion = computed(() =>
+    this.formatSchemaVersion(this.systemInfo().essDbSchemaVersion),
+  );
+  protected readonly xidDbSchemaVersion = computed(() =>
+    this.formatSchemaVersion(this.systemInfo().xidDbSchemaVersion),
+  );
+
+  protected readonly isEssUnavailable = computed(
+    () => !this.isSchemaAvailable(this.systemInfo().essDbSchemaVersion),
+  );
+  protected readonly isXidUnavailable = computed(
+    () => !this.isSchemaAvailable(this.systemInfo().xidDbSchemaVersion),
+  );
+
+  private formatSchemaVersion(version: string | undefined | null): string {
+    return this.isSchemaAvailable(version) ? version : PLACEHOLDER_VERSION;
+  }
+
+  private isSchemaAvailable(version: string | undefined | null): version is string {
+    return Boolean(version) && version !== UNAVAILABLE_SCHEMA_VERSION;
+  }
 }

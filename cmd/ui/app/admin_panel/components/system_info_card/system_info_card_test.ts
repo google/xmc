@@ -25,7 +25,11 @@ import {
   setupModule,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { SystemInfo, SystemInfoCardComponent } from './system_info_card';
+import {
+  SystemInfo,
+  SystemInfoCardComponent,
+  UNAVAILABLE_SCHEMA_VERSION,
+} from './system_info_card';
 import { SystemInfoCardHarness } from './testing/system_info_card_harness';
 
 @Component({
@@ -63,6 +67,27 @@ describe('SystemInfoCardComponent', () => {
     expect(await harness.getAppVersionText()).toBe('test-version');
     expect(await harness.getEssSchemaText()).toBe('12');
     expect(await harness.getXidSchemaText()).toBe('34');
+    expect(await harness.isEssSchemaPlaceholder()).toBeFalse();
+    expect(await harness.isXidSchemaPlaceholder()).toBeFalse();
+  });
+
+  it('should display - with is-placeholder class for UNAVAILABLE schema versions', async () => {
+    const mockSystemInfo: SystemInfo = {
+      appVersion: 'test-version',
+      essDbSchemaVersion: UNAVAILABLE_SCHEMA_VERSION,
+      xidDbSchemaVersion: UNAVAILABLE_SCHEMA_VERSION,
+    };
+
+    const host = bootstrap(TestHostComponent);
+    host.info.set(mockSystemInfo);
+    await flush();
+
+    const harness = await getHarness(SystemInfoCardHarness);
+    expect(await harness.getAppVersionText()).toBe('test-version');
+    expect(await harness.getEssSchemaText()).toBe('-');
+    expect(await harness.getXidSchemaText()).toBe('-');
+    expect(await harness.isEssSchemaPlaceholder()).toBeTrue();
+    expect(await harness.isXidSchemaPlaceholder()).toBeTrue();
   });
 
   it('should display observability link if present', async () => {
