@@ -48,14 +48,12 @@
       (refresh)="onRefresh()"
     />
 
-    @if (healthConfigs(); as configs) {
-      <xmc-config-entries-card [configGroups]="configs.configGroups" />
-    } @else {
-      <div class="loading-container config-loading-container">
-        <mat-spinner diameter="32" aria-label="Loading Configuration" />
-        <p>Loading Configuration...</p>
-      </div>
-    }
+    <xmc-config-entries-card
+      [configGroups]="healthConfigs()?.configGroups"
+      [errorMessage]="configEntriesError() ? 'Failed to load configuration entries.' : null"
+      [loading]="isConfigLoading()"
+      (retry)="onRetryConfigs()"
+    />
 
     @if (healthStatus()?.systemInfo; as systemInfo) {
       <footer class="admin-panel-footer">

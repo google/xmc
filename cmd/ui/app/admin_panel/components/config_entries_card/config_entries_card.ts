@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+
+import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
 
 export interface ConfigInfo {
   key?: string;
@@ -26,6 +29,7 @@ export interface ConfigGroup {
 }
 
 export interface ConfigGroupItem extends ConfigGroup {
+  id: string;
   displayName: string;
   isCollapsed: boolean;
 }
@@ -36,13 +40,16 @@ export interface ConfigGroupItem extends ConfigGroup {
 @Component({
   selector: 'xmc-config-entries-card',
   standalone: true,
-  imports: [MatIconModule],
+  imports: [MatIconModule, ErrorBannerComponent, MatProgressSpinnerModule],
   templateUrl: './config_entries_card.ng.html',
   styleUrl: './config_entries_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConfigEntriesCardComponent {
-  configGroups = input<ConfigGroup[] | undefined>();
+  readonly configGroups = input<ConfigGroup[] | undefined>();
+  readonly errorMessage = input<string | null>(null);
+  readonly loading = input<boolean>(false);
+  readonly retry = output<void>();
 
   protected readonly searchTerm = signal<string>('');
   protected readonly collapsedGroups = signal<Set<string>>(new Set());
@@ -56,14 +63,18 @@ export class ConfigEntriesCardComponent {
     this.searchTerm.set(inputElement.value);
   }
 
-  protected toggleGroup(groupName?: string): void {
-    if (!groupName) return;
+  protected onRetry(): void {
+    this.retry.emit();
+  }
+
+  protected toggleGroup(groupId?: string): void {
+    if (!groupId) return;
     this.collapsedGroups.update((current) => {
       const next = new Set(current);
-      if (next.has(groupName)) {
-        next.delete(groupName);
+      if (next.has(groupId)) {
+        next.delete(groupId);
       } else {
-        next.add(groupName);
+        next.add(groupId);
       }
       return next;
     });
@@ -78,8 +89,9 @@ export class ConfigEntriesCardComponent {
     const searchTerm = term.trim().toLowerCase();
 
     return groups
-      .map((group) => {
+      .map((group, index) => {
         const displayName = group.displayName || 'Configuration';
+        const id = `config-group-${index}-${displayName}`;
         const filteredConfigs = (group.configs || []).filter(
           (c) =>
             !searchTerm ||
@@ -88,8 +100,9 @@ export class ConfigEntriesCardComponent {
         );
         return {
           ...group,
+          id,
           displayName,
-          isCollapsed: collapsed.has(displayName),
+          isCollapsed: collapsed.has(id),
           configs: filteredConfigs,
         };
       })

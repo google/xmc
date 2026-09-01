@@ -52,12 +52,15 @@ export class AdminPanelPage {
   private readonly snackbarService = inject(SnackbarService);
 
   protected readonly healthStatusError = signal<unknown>(null);
+  protected readonly configEntriesError = signal<unknown>(null);
+  protected readonly isConfigLoading = signal<boolean>(false);
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
   protected readonly isRefreshing = signal<boolean>(false);
 
   private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
+  private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   protected readonly healthStatus = toSignal(
     this.refreshTrigger$.pipe(
@@ -84,11 +87,24 @@ export class AdminPanelPage {
   );
 
   protected readonly healthConfigs = toSignal(
-    this.healthService.getHealthConfigs().pipe(
-      catchError((error) => {
-        console.error('Failed to fetch health configs', error);
-        return of({} as ListConfigEntriesResponse);
+    this.configRefreshTrigger$.pipe(
+      tap(() => {
+        this.isConfigLoading.set(true);
+        this.configEntriesError.set(null);
       }),
+      switchMap(() =>
+        this.healthService.getHealthConfigs().pipe(
+          tap(() => {
+            this.isConfigLoading.set(false);
+          }),
+          catchError((error) => {
+            console.error('Failed to fetch health configs', error);
+            this.isConfigLoading.set(false);
+            this.configEntriesError.set(error);
+            return of({} as ListConfigEntriesResponse);
+          }),
+        ),
+      ),
     ),
   );
 
@@ -116,5 +132,9 @@ export class AdminPanelPage {
 
   protected onRefresh(): void {
     this.refreshTrigger$.next(true);
+  }
+
+  protected onRetryConfigs(): void {
+    this.configRefreshTrigger$.next();
   }
 }
