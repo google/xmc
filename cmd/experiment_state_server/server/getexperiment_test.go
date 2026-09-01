@@ -60,7 +60,7 @@ func TestGetExperiment_HappyPath(t *testing.T) {
 
 func TestGetExperiment_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	server, _ := createExperimentStateServer(ctx, t)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string

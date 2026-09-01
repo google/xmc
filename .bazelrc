@@ -16,3 +16,8 @@ build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:
 build:ci --remote_upload_local_results=false
 build:ci --remote_download_toplevel
 build:ci --experimental_remote_cache_compression=true
+# CI runner pods are provisioned with 15-core limits on 16-core (n2-standard-16) nodes.
+# Setting --jobs=14 maximizes parallel action execution across test shards while reserving
+# headroom (1-2 cores) for the Spanner emulator service container and system daemons.
+build:ci --jobs=14
+

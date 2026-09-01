@@ -73,6 +73,9 @@ compat_go_test(
         "updatedashboard_test.go",
     ],
     embed = [":dashboard"],
+    # Shard across 4 parallel executors to divide heavy Spanner emulator database
+    # setup, DDL schema creation, and live CRUD queries from ~45s down to ~12s.
+    shard_count = 4,
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//internal/compat/field_mask",
