@@ -25,6 +25,15 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# The local module the blueprint resolves the Redis endpoint through, exposed so that tests can
+# assert the blueprint passes settings the module actually declares. Terraform would catch a
+# mismatch, but not until the primary group applies against a real project.
+filegroup(
+    name = "redis_endpoint_module",
+    srcs = glob(["modules/redis-endpoint/*.tf"]),
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "verify_xmc_lib",
     srcs = ["verify_xmc.py"],

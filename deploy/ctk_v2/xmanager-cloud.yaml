@@ -54,6 +54,13 @@ vars:
   use_redis_queue: true
   deploy_redis: true
   redis_region:
+  # Bring-your-own Redis. When external_redis_host is set the application is pointed at it and
+  # the provisioned Memorystore instance, if any, is ignored -- required when the cluster sits on
+  # a network the blueprint's instance cannot be reached from. Pair with deploy_redis: false to
+  # skip provisioning an instance that would go unused.
+  external_redis_host: ""
+  external_redis_port: "6379"
+  external_redis_auth_string: ""
   status_message_history_enabled: true
   enable_metrics: false
   # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
@@ -220,6 +227,16 @@ deployment_groups:
       environment: $(vars.environment)
       region: $(vars.redis_region)
       deploy_redis: $(vars.deploy_redis)
+
+  - id: redis_endpoint
+    source: ./deploy/ctk_v2/modules/redis-endpoint
+    settings:
+      provisioned_host: $(redis.redis_host)
+      provisioned_port: $(redis.redis_port)
+      provisioned_auth_string: $(redis.auth_string)
+      external_host: $(vars.external_redis_host)
+      external_port: $(vars.external_redis_port)
+      external_auth_string: $(vars.external_redis_auth_string)
 
   - id: xmc_cert_manager
     source: ./deploy/ctk_v2/modules/cert-manager
@@ -429,9 +446,9 @@ deployment_groups:
         value: $(vars.task_signature_ttl_seconds)
         type: auto
       - name: redisAddr
-        value: "$(redis.redis_host):$(redis.redis_port)"
+        value: $(redis_endpoint.redis_addr)
       - name: redisPassword
-        value: $(redis.auth_string)
+        value: $(redis_endpoint.redis_auth_string)
       - name: certs.type
         value: "gts"
       - name: certs.email

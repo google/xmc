@@ -90,6 +90,16 @@ vars:
   deploy_redis: true
   redis_region: us-central1
 
+  # Bring-your-own Redis. Leave external_redis_host empty to use the Memorystore instance
+  # deploy_redis provisions. Set it to point the application at your own instance instead --
+  # necessary when the cluster runs on a network the provisioned instance cannot be reached from,
+  # because a Memorystore instance only accepts traffic from its single authorized network and
+  # Private Service Access peering is not transitive. Set deploy_redis: false alongside it to
+  # avoid paying for an instance nothing connects to.
+  external_redis_host: ""
+  external_redis_port: "6379"
+  external_redis_auth_string: ""
+
   # Validity duration of task signature tokens
   task_signature_ttl_seconds: 86400
 
