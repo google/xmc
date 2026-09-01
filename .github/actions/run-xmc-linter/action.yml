@@ -72,12 +72,13 @@ runs:
           --repository_cache=~/.cache/bazel-repo \
           --experimental_repository_cache_hardlinks \
           //cmd/xmc-linter:xmc-linter
-        LINTER_BIN=$(bazel cquery --output=files //cmd/xmc-linter:xmc-linter 2>/dev/null | head -n1)
+        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/xmc-linter:xmc-linter 2>/dev/null | head -n1)
         if [ -z "${LINTER_BIN}" ] || [ ! -x "${LINTER_BIN}" ]; then
           LINTER_BIN="bazel-bin/cmd/xmc-linter/xmc-linter_/xmc-linter"
         fi
         if [ ! -x "${LINTER_BIN}" ]; then
-          LINTER_BIN=""
+          echo "Error: Built linter binary not found or not executable!" >&2
+          exit 1
         fi
         echo "LINTER_BIN=${LINTER_BIN}" >> "${GITHUB_ENV}"
 
