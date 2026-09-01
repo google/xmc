@@ -207,6 +207,12 @@ class LocalRunner:
                     time.sleep(0.5)  # debounce rapid filesystem events
                     current_sig = self._get_workspace_signature()
                     if not current_sig:
+                        if last_sig:
+                            delta_files = list(last_sig.keys())
+                            try:
+                                self._reload_once(services=services, changed_files=delta_files)
+                            except Exception as e:
+                                log_error(f"Reload failed: {e}. Watching for next save...")
                         last_sig = {}
                         continue
                     delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
@@ -219,6 +225,11 @@ class LocalRunner:
                         log_error(f"Reload failed: {e}. Watching for next save...")
                     last_sig = current_sig
                 elif not current_sig and last_sig:
+                    delta_files = list(last_sig.keys())
+                    try:
+                        self._reload_once(services=services, changed_files=delta_files)
+                    except Exception as e:
+                        log_error(f"Reload failed: {e}. Watching for next save...")
                     last_sig = {}
         except KeyboardInterrupt:
             log_info("\n🛑 Stopped watching workspace.")

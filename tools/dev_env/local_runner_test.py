@@ -554,8 +554,29 @@ class TestLocalRunner(unittest.TestCase):
             mock_build_load.assert_not_called()
 
     @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_revert_workspace_triggers_reload(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop triggers reload with reverted files when workspace becomes clean."""
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"cmd/reconciler/main.go": (1, 10)},  # initial sig
+                    {},  # developer reverted all changes (clean)
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 2)
+            mock_reload.assert_called_with(
+                services=["reconciler"], changed_files=["cmd/reconciler/main.go"]
+            )
+
+    @patch("tools.dev_env.local_runner.time.sleep")
     def test_watch_loop_debounce_clean_workspace(self, mock_sleep: MagicMock) -> None:
-        """Verifies watch loop safely skips reload if workspace becomes clean during debounce."""
+        """Verifies watch loop triggers reload with previous dirty files if workspace becomes clean during debounce."""
         with (
             patch.object(self.runner, "_reload_once") as mock_reload,
             patch.object(
@@ -570,7 +591,8 @@ class TestLocalRunner(unittest.TestCase):
             ),
         ):
             self.runner._watch_loop(services=["reconciler"], interval=1.0)
-            self.assertEqual(mock_reload.call_count, 1)
+            self.assertEqual(mock_reload.call_count, 2)
+            mock_reload.assert_called_with(services=["reconciler"], changed_files=["f.go"])
 
 
 if __name__ == "__main__":

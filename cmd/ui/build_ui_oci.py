@@ -181,6 +181,7 @@ def main() -> None:
     index_html = os.path.join(dist_browser_src, "index.html")
     has_prebuilt_dist = os.path.isdir(dist_browser_src) and os.path.isfile(index_html)
 
+<<<<<<< HEAD
     # Use an isolated temporary directory for the Docker build context.
     # This prevents polluting the repository workspace and avoids concurrent write
     # conflicts during parallel Bazel actions.
@@ -214,6 +215,8 @@ CMD ["nginx", "-g", "daemon off;"]
             print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
             copy_flat(ui_src_dir, temp_build_dir)
             ui_build_config = os.environ.get("XMC_UI_BUILD_CONFIG", "development")
+            if not all(c.isalnum() or c in "-_" for c in ui_build_config):
+                raise ValueError(f"Invalid XMC_UI_BUILD_CONFIG: {ui_build_config}")
             with open(dockerfile_path, "w") as f:
                 f.write(f"""FROM node:22-alpine AS builder
 WORKDIR /app
