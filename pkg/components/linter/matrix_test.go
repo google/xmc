@@ -25,12 +25,14 @@ func TestMatrix_SemVerCompatibility(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		rules     *linter.RulesConfig
 		manifests map[string]string
 		wantValid bool
 		wantRule  string
 	}{
 		{
-			name: "satisfies manifest-level SemVer constraint",
+			name:  "satisfies manifest-level SemVer constraint",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.2.0 <2.0.0\" }] }\n",
 				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.4.2\" }\n",
@@ -38,7 +40,8 @@ func TestMatrix_SemVerCompatibility(t *testing.T) {
 			wantValid: true,
 		},
 		{
-			name: "fails manifest-level SemVer constraint",
+			name:  "fails manifest-level SemVer constraint",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": `
 apiVersion: components.xmc.dev/v1alpha1
@@ -64,7 +67,275 @@ spec:
 			wantRule:  "VERSION_INCOMPATIBILITY",
 		},
 		{
-			name: "invalid SemVer version in component manifest",
+			name: "satisfies matrix rules requirement with caret constraint",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   "^1.12.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+				"cert-manager.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: cert-manager
+spec:
+  version: "1.12.4"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "fails matrix rules requirement with caret constraint",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   "^1.12.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+				"cert-manager.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: cert-manager
+spec:
+  version: "2.0.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "VERSION_INCOMPATIBILITY",
+		},
+		{
+			name: "missing required component in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">=1.0.0",
+									Optional:  false,
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "REQUIRED_COMPONENT_MISSING",
+		},
+		{
+			name: "missing optional component in matrix rules is ignored",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">=1.0.0",
+									Optional:  true,
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "component version filtering in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component:        "jobset",
+							ComponentVersion: ">=2.0.0",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "kueue",
+									Version:   ">=0.8.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				// jobset version is 1.0.0, so rule for >=2.0.0 should NOT trigger
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "1.0.0"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "component with empty version skips version-specific matrix rule",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component:        "jobset",
+							ComponentVersion: ">=2.0.0",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "kueue",
+									Version:   ">=0.8.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				// jobset has no version declared, so version-specific rule for >=2.0.0 should NOT trigger
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec: {}
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "disabled requiring component skips matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "kueue",
+									Version:   ">=0.8.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  enabled: false
+  version: "1.0.0"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "disabled required component triggers error in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "kueue",
+									Version:   ">=0.8.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  enabled: true
+  version: "1.0.0"
+`,
+				"kueue.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: kueue
+spec:
+  enabled: false
+  version: "0.8.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "REQUIRED_COMPONENT_MISSING",
+		},
+		{
+			name:  "invalid SemVer version in component manifest",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
 apiVersion: components.xmc.dev/v1alpha1
@@ -79,7 +350,8 @@ spec:
 			wantRule:  "INVALID_VERSION",
 		},
 		{
-			name: "invalid version constraint in dependency manifest",
+			name:  "invalid version constraint in dependency manifest",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">>bad\" }] }\n",
 				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.0.0\" }\n",
@@ -88,7 +360,50 @@ spec:
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
 		},
 		{
-			name: "dependency component has empty version string",
+			name: "invalid componentVersion in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component:        "jobset",
+							ComponentVersion: ">>bad",
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "invalid requires version constraint in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">>bad",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.0.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name:  "dependency component has empty version string",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
 				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: {}\n",
@@ -96,7 +411,31 @@ spec:
 			wantValid: true,
 		},
 		{
-			name: "disabled requiring component in manifest dependencies is skipped",
+			name: "matrix rule requires component with empty version string",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">=1.0.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: {}\n",
+			},
+			wantValid: true,
+		},
+		{
+			name:  "disabled requiring component in manifest dependencies is skipped",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: false, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\" }] }\n",
 				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.8.0\" }\n",
@@ -104,7 +443,8 @@ spec:
 			wantValid: true,
 		},
 		{
-			name: "disabled target dependency component in manifest dependencies is skipped",
+			name:  "disabled target dependency component in manifest dependencies is skipped",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\", optional: true }] }\n",
 				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { enabled: false, version: \"1.8.0\" }\n",
@@ -112,12 +452,110 @@ spec:
 			wantValid: true,
 		},
 		{
-			name: "dependency with unversioned requirement passes",
+			name:  "invalid version on target dependency emits INVALID_VERSION and skips constraint evaluation",
+			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { enabled: true, version: \"1.0.0\" }\n",
+				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"invalid-semver\" }\n",
 			},
-			wantValid: true,
+			wantValid: false,
+			wantRule:  "INVALID_VERSION",
+		},
+		{
+			name: "invalid version on component in matrix rules emits INVALID_VERSION and skips rule matching",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component:        "jobset",
+							ComponentVersion: ">=1.0.0",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   "^1.12.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"invalid-semver\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION",
+		},
+		{
+			name: "invalid version on required component in matrix rules emits INVALID_VERSION and skips constraint evaluation",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   "^1.12.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"invalid-semver\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION",
+		},
+		{
+			name: "missing component requirement with empty version and reason formats message cleanly",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Reason:    "certificate generation required",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "REQUIRED_COMPONENT_MISSING",
+		},
+		{
+			name: "version incompatibility reports custom reason",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component: "jobset",
+							Requires: []linter.DependencyRequirement{
+								{
+									Component: "cert-manager",
+									Version:   ">=2.0.0",
+									Reason:    "API v2 is required for webhook support",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.4.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "VERSION_INCOMPATIBILITY",
 		},
 	}
 
@@ -129,7 +567,7 @@ spec:
 			for fname, content := range tc.manifests {
 				writeTestManifest(t, dir, fname, content)
 			}
-			l := linter.NewLinter(nil)
+			l := linter.NewLinter(tc.rules)
 			res, err := l.ValidateDirectory(dir)
 			if err != nil {
 				t.Fatalf("ValidateDirectory() unexpected error: %v", err)

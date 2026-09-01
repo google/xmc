@@ -24,6 +24,9 @@ import (
 func (l *Linter) validateMatrix(compManifests []*ComponentManifest, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	validateComponentVersions(compManifests, res)
 	validateManifestDependencies(compManifests, compMap, res)
+	if l.rules != nil {
+		l.evaluateMatrixRules(compMap, res)
+	}
 }
 
 // validateComponentVersions parses and validates all declared Component.spec.version strings
@@ -78,4 +81,97 @@ func validateSingleDependency(c *ComponentManifest, line int, cName string, dep 
 	if !satisfied {
 		res.AddError(c.FilePath, line, "VERSION_INCOMPATIBILITY", fmt.Sprintf("component %q (version %s) does not satisfy dependency constraint %q required by %q", depName, depComp.Spec.Version, dep.Version, cName))
 	}
+}
+
+// evaluateMatrixRules evaluates profile-level compatibility matrix rules configured in rules.yaml.
+func (l *Linter) evaluateMatrixRules(compMap map[string]*ComponentManifest, res *ValidationResult) {
+	l.evaluateComponentDependencies(compMap, res)
+}
+
+// evaluateComponentDependencies iterates through all ComponentDependencies rules defined in rules.yaml,
+// applying each rule to enabled target components that match the rule's version filter.
+func (l *Linter) evaluateComponentDependencies(compMap map[string]*ComponentManifest, res *ValidationResult) {
+	for _, rule := range l.rules.CompatibilityMatrix.ComponentDependencies {
+		ruleCompName := store.CanonicalComponentName(rule.Component)
+		comp, exists := compMap[ruleCompName]
+		if !exists || comp == nil || !comp.IsEnabled() {
+			continue
+		}
+		line := comp.Line
+		if line <= 0 {
+			line = 1
+		}
+		if !shouldEvaluateRule(comp, line, rule, ruleCompName, res) {
+			continue
+		}
+		for _, req := range rule.Requires {
+			evaluateDependencyRequirement(comp, line, ruleCompName, req, compMap, res)
+		}
+	}
+}
+
+// shouldEvaluateRule reports whether a compatibility rule applies to the given component,
+// evaluating the optional rule.ComponentVersion SemVer constraint filter against comp.Spec.Version.
+func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDependencyRule, ruleCompName string, res *ValidationResult) bool {
+	if rule.ComponentVersion == "" {
+		return true
+	}
+	if comp.Spec.Version == "" {
+		return false
+	}
+	if _, err := store.Parse(comp.Spec.Version); err != nil {
+		return false
+	}
+	match, err := MatchConstraint(comp.Spec.Version, rule.ComponentVersion)
+	if err != nil {
+		res.AddError(comp.FilePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid componentVersion constraint %q in compatibility rule for %q: %v", rule.ComponentVersion, ruleCompName, err))
+		return false
+	}
+	return match
+}
+
+// evaluateDependencyRequirement validates a single dependency requirement against the component map,
+// asserting presence (unless optional: true), enabled status, and SemVer compatibility.
+func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompName string, req DependencyRequirement, compMap map[string]*ComponentManifest, res *ValidationResult) {
+	reqCompName := store.CanonicalComponentName(req.Component)
+	reqComp, reqExists := compMap[reqCompName]
+	if !reqExists || reqComp == nil || !reqComp.IsEnabled() {
+		if !req.Optional {
+			reportMissingRequiredComponent(comp.FilePath, line, ruleCompName, reqCompName, req, res)
+		}
+		return
+	}
+	if req.Version == "" || reqComp.Spec.Version == "" {
+		return
+	}
+	if _, err := store.Parse(reqComp.Spec.Version); err != nil {
+		return
+	}
+	satisfied, err := MatchConstraint(reqComp.Spec.Version, req.Version)
+	if err != nil {
+		res.AddError(comp.FilePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid version constraint %q for dependency %q in compatibility rule for %q: %v", req.Version, reqCompName, ruleCompName, err))
+		return
+	}
+	if !satisfied {
+		reportVersionIncompatibility(comp.FilePath, line, ruleCompName, reqCompName, req, reqComp.Spec.Version, res)
+	}
+}
+
+func reportMissingRequiredComponent(filePath string, line int, ruleCompName, reqCompName string, req DependencyRequirement, res *ValidationResult) {
+	msg := fmt.Sprintf("component %q requires missing or disabled component %q", ruleCompName, reqCompName)
+	if req.Version != "" {
+		msg = fmt.Sprintf("component %q requires missing or disabled component %q (%s)", ruleCompName, reqCompName, req.Version)
+	}
+	if req.Reason != "" {
+		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
+	}
+	res.AddError(filePath, line, "REQUIRED_COMPONENT_MISSING", msg)
+}
+
+func reportVersionIncompatibility(filePath string, line int, ruleCompName, reqCompName string, req DependencyRequirement, actualVersion string, res *ValidationResult) {
+	msg := fmt.Sprintf("component %q requires %q version %q, but found version %q", ruleCompName, reqCompName, req.Version, actualVersion)
+	if req.Reason != "" {
+		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
+	}
+	res.AddError(filePath, line, "VERSION_INCOMPATIBILITY", msg)
 }
