@@ -30,3 +30,16 @@ This document defines core architectural contracts and invariants across the XMC
    - In production environments, services validate standard OpenID Connect (OIDC) tokens against enterprise Identity Providers (Google IAP, Google Workspace, Okta, Azure AD).
    - In ephemeral testing environments (KinD, CI/CD, local development), services validate standard OIDC tokens against an in-cluster CNCF Dex instance with pre-configured static test personas (`admin@xmc.local`, `viewer@xmc.local`).
    - This ensures real cryptographic token verification, session lifecycle management, and multi-user RBAC boundary enforcement run identically in all environments without introducing dangerous production backdoors.
+
+---
+
+## 3. Relational Storage & Lifecycle Safety Contracts
+
+1. **Soft-Deletion Relational Join Integrity**:
+   - In database schemas utilizing soft-deletion with generated columns (e.g. `ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED`, where state `5` represents `COMPONENT_STATE_DELETED`), all SQL queries joining child dependency tables (such as `ComponentDependencies`) against parent or target tables **MUST** filter on active states on both joined entities (e.g. `WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL`).
+   - This prevents soft-deleted foreign keys and inactive dependency edges from contaminating active catalogs or causing invalid graph traversals.
+
+2. **Transitive DAG Evaluation for Lifecycle Safety**:
+   - All lifecycle state operations (`PrepareDeactivation`, `CompleteDeactivation`, `ExecuteDeletion`) **MUST** evaluate safety across the entire transitive reverse-dependency DAG rather than single-hop indexed joins.
+   - Inactive or disabled intermediate nodes (e.g. `A (active) -> B (disabled) -> C (disabling)`) must **never** mask upstream active dependents from blocking downstream deactivations. Deactivation completion requires all transitive upstream dependents to reach terminal disabled/deleted states.
+
