@@ -76,7 +76,7 @@ class HelmDeployer:
         """Replaces imagePullPolicy: Always with IfNotPresent so KinD uses local images."""
         for root, _, files in os.walk(self.helm_dir):
             for file in files:
-                if file.endswith(".yaml") or file.endswith(".tpl"):
+                if file.endswith((".yaml", ".tpl")):
                     file_path = os.path.join(root, file)
                     with open(file_path, encoding="utf-8") as f:
                         content = f.read()

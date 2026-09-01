@@ -142,16 +142,16 @@ def _parse_rest_comment(comment: dict[str, Any]) -> dict[str, Any]:
 
 def _fetch_rest_comments(owner: str, repo: str, pr_number: int) -> list[dict[str, Any]]:
     """Fetches review comments using GitHub REST API."""
-    comments = []
+    comments: list[dict[str, Any]] = []
     page = 1
     while True:
         endpoint = f"/repos/{owner}/{repo}/pulls/{pr_number}/comments?per_page=100&page={page}"
         batch = call_github_api(endpoint, user_agent="XMC-Checklist-Generator")
         if not batch or not isinstance(batch, list):
             break
-        for item in batch:
-            if not item.get("in_reply_to_id"):
-                comments.append(_parse_rest_comment(item))
+        comments.extend(
+            _parse_rest_comment(item) for item in batch if not item.get("in_reply_to_id")
+        )
         if len(batch) < 100:
             break
         page += 1
@@ -212,8 +212,7 @@ def format_checklist_markdown(
         comment_id = comment.get("comment_id")
         comment_id_str = f" (Comment ID {comment_id})" if comment_id is not None else ""
         lines.append(f"- [ ] **[{location}]({url})** (@{author}){comment_id_str}")
-        for body_line in body.strip().splitlines():
-            lines.append(f"  > {body_line}")
+        lines.extend(f"  > {body_line}" for body_line in body.strip().splitlines())
         lines.append("")
 
     return "\n".join(lines)

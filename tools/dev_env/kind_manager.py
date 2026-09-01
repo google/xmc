@@ -372,11 +372,9 @@ class KindManager:
                 ns,
             ]
             if files:
-                for f in files:
-                    create_cmd.append(f"--from-file={f}")
+                create_cmd.extend(f"--from-file={f}" for f in files)
             if literals:
-                for lit in literals:
-                    create_cmd.append(f"--from-literal={lit}")
+                create_cmd.extend(f"--from-literal={lit}" for lit in literals)
             try:
                 run_command(create_cmd, check=True, log_cmd=False, log_on_error=False)
             except subprocess.CalledProcessError:
