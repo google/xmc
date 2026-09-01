@@ -12,11 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { BehaviorSubject, of } from 'rxjs';
-import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
+import { finalize } from 'rxjs/operators';
 
 import {
   HealthStatusResponse,
@@ -50,67 +56,18 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
   private readonly snackbarService = inject(SnackbarService);
+  private readonly destroyRef = inject(DestroyRef);
 
+  // Health Status state (Fetchable, Refreshable, Stale-Preserving on error)
+  protected readonly healthStatus = signal<HealthStatusResponse | null>(null);
   protected readonly healthStatusError = signal<unknown>(null);
-  protected readonly configEntriesError = signal<unknown>(null);
-  protected readonly isConfigLoading = signal<boolean>(false);
-
-  private lastKnownStatus: HealthStatusResponse | null = null;
-
+  protected readonly isLoading = signal<boolean>(true);
   protected readonly isRefreshing = signal<boolean>(false);
 
-  private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
-  private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
-
-  protected readonly healthStatus = toSignal(
-    this.refreshTrigger$.pipe(
-      tap(() => this.isRefreshing.set(true)),
-      switchMap((forceRefresh) =>
-        this.healthService.getHealthStatus(forceRefresh).pipe(
-          tap((status) => {
-            this.lastKnownStatus = status;
-            this.healthStatusError.set(null);
-          }),
-          catchError((error) => {
-            console.error('Failed to fetch health status', error);
-            if (this.lastKnownStatus) {
-              this.snackbarService.open('Failed to refresh health status.');
-              return of(this.lastKnownStatus);
-            }
-            this.healthStatusError.set(error);
-            return of(undefined);
-          }),
-          finalize(() => this.isRefreshing.set(false)),
-        ),
-      ),
-    ),
-  );
-
-  protected readonly healthConfigs = toSignal(
-    this.configRefreshTrigger$.pipe(
-      tap(() => {
-        this.isConfigLoading.set(true);
-        this.configEntriesError.set(null);
-      }),
-      switchMap(() =>
-        this.healthService.getHealthConfigs().pipe(
-          tap(() => {
-            this.isConfigLoading.set(false);
-          }),
-          catchError((error) => {
-            console.error('Failed to fetch health configs', error);
-            this.isConfigLoading.set(false);
-            this.configEntriesError.set(error);
-            return of({} as ListConfigEntriesResponse);
-          }),
-        ),
-      ),
-    ),
-  );
-
-  protected readonly isLoading = computed(
-    () => this.healthStatus() === undefined && !this.healthStatusError(),
-  );
+  // Config Entries state (Fetched once on page load, retriable only on error)
+  protected readonly healthConfigs = signal<ListConfigEntriesResponse | null>(null);
+  protected readonly configEntriesError = signal<unknown>(null);
+  protected readonly isConfigLoading = signal<boolean>(true);
 
   protected readonly lastUpdated = computed(() => {
     const status = this.healthStatus();
@@ -125,16 +82,76 @@ export class AdminPanelPage {
     return '';
   });
 
-  protected onRetry(): void {
-    this.healthStatusError.set(null);
-    this.refreshTrigger$.next(true);
+  constructor() {
+    this.loadHealthStatus(false);
+    this.loadHealthConfigs();
   }
 
   protected onRefresh(): void {
-    this.refreshTrigger$.next(true);
+    this.loadHealthStatus(true);
+  }
+
+  protected onRetry(): void {
+    this.healthStatusError.set(null);
+    this.loadHealthStatus(false);
   }
 
   protected onRetryConfigs(): void {
-    this.configRefreshTrigger$.next();
+    this.loadHealthConfigs();
+  }
+
+  private loadHealthStatus(forceRefresh = false): void {
+    if (forceRefresh) {
+      this.isRefreshing.set(true);
+    } else {
+      this.isLoading.set(true);
+    }
+
+    this.healthService
+      .getHealthStatus(forceRefresh)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.isLoading.set(false);
+          this.isRefreshing.set(false);
+        }),
+      )
+      .subscribe({
+        next: (status) => {
+          this.healthStatus.set(status);
+          this.healthStatusError.set(null);
+        },
+        error: (error) => {
+          console.error('Failed to fetch health status', error);
+          if (this.healthStatus()) {
+            this.snackbarService.open('Failed to refresh health status.');
+          } else {
+            this.healthStatusError.set(error);
+          }
+        },
+      });
+  }
+
+  private loadHealthConfigs(): void {
+    this.isConfigLoading.set(true);
+    this.configEntriesError.set(null);
+
+    this.healthService
+      .getHealthConfigs()
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.isConfigLoading.set(false)),
+      )
+      .subscribe({
+        next: (configs) => {
+          this.healthConfigs.set(configs);
+          this.configEntriesError.set(null);
+        },
+        error: (error) => {
+          console.error('Failed to fetch health configs', error);
+          this.healthConfigs.set(null);
+          this.configEntriesError.set(error);
+        },
+      });
   }
 }
