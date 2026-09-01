@@ -56,6 +56,20 @@ class CommitClassifierTest(unittest.TestCase):
         self.assertEqual(desc, "resolve crash")
         self.assertIsNone(pr)
 
+        c_type, scope, desc, pr = parse_conventional_commit(
+            "security-fix(auth): patch vulnerability (#124)"
+        )
+        self.assertEqual(c_type, "security-fix")
+        self.assertEqual(scope, "auth")
+        self.assertEqual(desc, "patch vulnerability")
+        self.assertEqual(pr, 124)
+
+        c_type, scope, desc, pr = parse_conventional_commit("v2(api): new endpoint")
+        self.assertEqual(c_type, "v2")
+        self.assertEqual(scope, "api")
+        self.assertEqual(desc, "new endpoint")
+        self.assertIsNone(pr)
+
         c_type, scope, desc, pr = parse_conventional_commit("Non-conventional raw commit summary")
         self.assertEqual(c_type, "other")
         self.assertEqual(scope, "")
@@ -146,9 +160,27 @@ class CommitClassifierTest(unittest.TestCase):
         classify_commit(commit_fallback)
         self.assertEqual(commit_fallback.category, "developer_velocity")
 
+    def test_classify_commit_pre_parsed(self) -> None:
+        commit = CommitInfo(
+            commit_hash="7777",
+            short_hash="7777",
+            subject="manual subject",
+            author="Dev",
+            date="2026-08-21",
+            commit_type="feat",
+            scope="ui",
+            description="pre-parsed feature",
+            pr_number=500,
+        )
+        classify_commit(commit)
+        self.assertEqual(commit.category, "user_facing_features")
+        self.assertEqual(commit.description, "pre-parsed feature")
+        self.assertEqual(commit.pr_number, 500)
+
     def test_helper_predicates(self) -> None:
         self.assertFalse(_is_dev_velocity_files([]))
         self.assertTrue(_is_dev_velocity_files(["scripts/deploy.py", "docs/guide.md"]))
+        self.assertTrue(_is_dev_velocity_files(["tests/integration/test_pipeline.py"]))
         self.assertTrue(_is_dev_velocity_files(["pkg/server/go.mod", "pkg/server/BUILD.bazel"]))
         self.assertFalse(_is_dev_velocity_files(["pkg/server/handler.go"]))
         self.assertTrue(_is_infra_or_auth_files(["config/default.json"]))

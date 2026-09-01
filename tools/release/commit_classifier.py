@@ -64,7 +64,7 @@ def parse_conventional_commit(
     else:
         clean_subject = subject.strip()
 
-    conv_match = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?\!?:\s*(.*)$", clean_subject)
+    conv_match = re.match(r"^([a-zA-Z0-9_-]+)(?:\(([^)]+)\))?\!?:\s*(.*)$", clean_subject)
     if conv_match:
         commit_type = conv_match.group(1).lower()
         scope = conv_match.group(2).lower() if conv_match.group(2) else ""
@@ -84,6 +84,7 @@ def _is_dev_file(f: str) -> bool:
         "scripts/",
         "docs/",
         "test/",
+        "tests/",
     )
     path = Path(f)
     return (
@@ -136,12 +137,16 @@ def _is_infra_or_auth_files(files: list[str]) -> bool:
 
 def classify_commit(commit: CommitInfo) -> None:
     """Classifies a commit into an audience-segmented release category."""
-    c_type, scope, desc, pr = parse_conventional_commit(commit.subject)
-    commit.commit_type = c_type
-    commit.scope = scope
-    commit.description = desc
-    if pr is not None and commit.pr_number is None:
-        commit.pr_number = pr
+    if commit.commit_type == "other" and not commit.scope:
+        c_type, scope, desc, pr = parse_conventional_commit(commit.subject)
+        commit.commit_type = c_type
+        commit.scope = scope
+        commit.description = desc
+        if pr is not None and commit.pr_number is None:
+            commit.pr_number = pr
+
+    c_type = commit.commit_type
+    scope = commit.scope
 
     if c_type in _DEV_VELOCITY_TYPES or scope in _DEV_VELOCITY_SCOPES:
         commit.category = "developer_velocity"
