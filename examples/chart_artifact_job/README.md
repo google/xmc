@@ -65,7 +65,9 @@ flowchart TD
 - **`worker.py`**: WorkUnit container script emitting one sample per metric per step via
   `xmc.log_metric()`.
 - **`Dockerfile`**: Container image definition for the worker. Its build context is the
-  repository root, so `sdks/python/xmc` is visible to `COPY`.
+  repository root, so `sdks/python/xmc` is visible to `COPY`. A builder stage compiles
+  `api/protos/metrics/metrics.proto` with `protoc`, because the `xmc` SDK imports the
+  generated `metrics_pb2` module and neither the repository nor the SDK wheel ships it.
 - **`build_and_push.sh`**: Helper script to build and push the worker image to Google
   Cloud Artifact Registry.
 - **`requirements.txt`**: Python dependencies list.
