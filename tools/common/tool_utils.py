@@ -191,10 +191,11 @@ CONFIG_VALIDATION_SCHEMAS = {
 # Validated the same way as the schemas above, but absence is not an error. An empty value means
 # "not set" and falls back to the derived default, so it is skipped rather than rejected.
 OPTIONAL_CONFIG_VALIDATION_SCHEMAS = {
-    # GKE's own naming rule for clusters: lowercase alphanumerics and hyphens, starting with a
-    # letter and ending alphanumeric. Rejecting a malformed name here beats a gcloud NOT_FOUND
-    # several minutes into a deployment.
-    "gke_cluster_name": r"^[a-z]([-a-z0-9]*[a-z0-9])?$",
+    # GKE's own naming rule for clusters: 1-40 lowercase alphanumerics and hyphens, starting with
+    # a letter and ending alphanumeric. Rejecting a malformed name here beats a gcloud NOT_FOUND
+    # several minutes into a deployment -- and a name over the limit can name no cluster at all,
+    # since GKE would have refused to create it.
+    "gke_cluster_name": r"^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$",
 }
 
 # Environment variable overrides mapping
@@ -313,7 +314,10 @@ def load_and_validate_config(
         val = config.get(key)
         if val is None or str(val).strip() == "":
             continue
-        _validate_field(key, val, pattern)
+        # Checked stripped, because that is the form the field is stored in below. Validating the
+        # raw value would reject a quoted name with surrounding whitespace that the constructor
+        # would then have accepted.
+        _validate_field(key, str(val).strip(), pattern)
 
     rod_deployment_enabled = str(config.get("rod_deployment_enabled", False)).lower() == "true"
 

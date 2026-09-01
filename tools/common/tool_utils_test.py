@@ -466,6 +466,28 @@ class TestGkeClusterNameOverride(unittest.TestCase):
 
         self.assertIn("'gke_cluster_name' value 'Bad_Cluster' is invalid", str(cm.exception))
 
+    def test_override_at_the_length_limit_is_accepted(self):
+        name = "c" + "x" * 39
+
+        config = load_and_validate_config(self.write_config(f"  gke_cluster_name: {name}\n"))
+
+        self.assertEqual(config.gke_cluster, name)
+
+    def test_override_over_the_length_limit_is_rejected(self):
+        """GKE caps cluster names at 40 characters, so a longer one can name no cluster."""
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(self.write_config(f"  gke_cluster_name: {'c' * 41}\n"))
+
+        self.assertIn("'gke_cluster_name'", str(cm.exception))
+
+    def test_surrounding_whitespace_is_stripped_rather_than_rejected(self):
+        """The field is stored stripped, so validating it unstripped rejected what it accepts."""
+        config = load_and_validate_config(
+            self.write_config('  gke_cluster_name: "  platform-prod-usc1  "\n')
+        )
+
+        self.assertEqual(config.gke_cluster, "platform-prod-usc1")
+
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""
