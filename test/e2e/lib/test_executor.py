@@ -39,12 +39,25 @@ class PlaywrightTestExecutor:
             import playwright  # noqa: F401
             import requests  # noqa: F401
 
-            browser_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright")
-            if os.path.exists(browser_path) and os.listdir(browser_path):
-                logger.info(
-                    "Using pre-baked Playwright environment at %s (0s setup).", sys.executable
+            browser_paths = []
+            env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+            if env_path:
+                browser_paths.append(env_path)
+            else:
+                browser_paths.extend(
+                    [
+                        "/ms-playwright",
+                        os.path.expanduser("~/.cache/ms-playwright"),
+                        os.path.expanduser("~/Library/Caches/ms-playwright"),
+                    ]
                 )
-                return sys.executable
+
+            for path in browser_paths:
+                if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
+                    logger.info(
+                        "Using pre-baked Playwright environment at %s (0s setup).", sys.executable
+                    )
+                    return sys.executable
         except (ImportError, OSError):
             pass
 

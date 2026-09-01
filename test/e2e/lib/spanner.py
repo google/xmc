@@ -86,6 +86,28 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
+    def _resolve_migration_binary(self) -> str | None:
+        """Resolves path to compiled migrations binary under bazel-bin."""
+        mig_dir = os.path.join(
+            self.cfg.workspace_root,
+            "bazel-bin",
+            "internal",
+            "storage",
+            "spanner",
+            "migrations",
+        )
+        mig_binary = os.path.join(mig_dir, "migrations_", "migrations")
+        if os.path.isfile(mig_binary):
+            return mig_binary
+        if os.path.isdir(mig_dir):
+            for root, _, files in os.walk(mig_dir):
+                for f in files:
+                    if f in ("migrations", "migrations.exe"):
+                        candidate = os.path.join(root, f)
+                        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                            return candidate
+        return None
+
     def _build_prerequisites(self) -> None:
         """Builds protobuf descriptor sets and migration binary required for Spanner if not already present."""
         ess_desc = os.path.join(
@@ -104,16 +126,7 @@ class SpannerManager:
             "xid",
             "xid_messages_descriptor.pb",
         )
-        mig_binary = os.path.join(
-            self.cfg.workspace_root,
-            "bazel-bin",
-            "internal",
-            "storage",
-            "spanner",
-            "migrations",
-            "migrations_",
-            "migrations",
-        )
+        mig_binary = self._resolve_migration_binary()
         targets = []
         if not (os.path.isfile(ess_desc) and os.path.isfile(xid_desc)):
             targets.extend(
@@ -122,7 +135,7 @@ class SpannerManager:
                     "//api/protos/xid:xid_messages_descriptor",
                 ]
             )
-        if not os.path.exists(mig_binary):
+        if not mig_binary:
             targets.append("//internal/storage/spanner/migrations:migrations")
 
         if not targets:
@@ -164,7 +177,12 @@ class SpannerManager:
                 )
                 return
             except Exception as e:
-                err_str = getattr(e, "stderr", "") or str(e)
+                err_raw = getattr(e, "stderr", "") or str(e)
+                err_str = (
+                    err_raw.decode("utf-8", errors="ignore")
+                    if isinstance(err_raw, bytes)
+                    else str(err_raw)
+                )
                 if (
                     "RESOURCE_EXHAUSTED" in err_str
                     or "429" in err_str
@@ -185,17 +203,8 @@ class SpannerManager:
     def _init_migration_version(self, db_name: str, mig_dir: str) -> None:
         """Initializes SchemaMigrations version tracking table without re-running DDLs."""
         logger.info("Initializing migration version for %s (%s)...", db_name, mig_dir)
-        mig_binary = os.path.join(
-            self.cfg.workspace_root,
-            "bazel-bin",
-            "internal",
-            "storage",
-            "spanner",
-            "migrations",
-            "migrations_",
-            "migrations",
-        )
-        if not os.path.exists(mig_binary):
+        mig_binary = self._resolve_migration_binary()
+        if not mig_binary:
             mig_cmd = [
                 "bazel",
                 "run",
@@ -223,7 +232,12 @@ class SpannerManager:
                 )
                 return
             except Exception as e:
-                err_str = getattr(e, "stderr", "") or str(e)
+                err_raw = getattr(e, "stderr", "") or str(e)
+                err_str = (
+                    err_raw.decode("utf-8", errors="ignore")
+                    if isinstance(err_raw, bytes)
+                    else str(err_raw)
+                )
                 if (
                     "RESOURCE_EXHAUSTED" in err_str
                     or "429" in err_str

@@ -64,11 +64,15 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
             ]
         )
 
+    @patch("os.path.isdir")
     @patch("os.listdir")
     @patch("os.path.exists")
     @patch("test.e2e.lib.test_executor.sys")
-    def test_setup_venv_uses_prebaked_environment(self, mock_sys, mock_exists, mock_listdir):
+    def test_setup_venv_uses_prebaked_environment(
+        self, mock_sys, mock_exists, mock_listdir, mock_isdir
+    ):
         mock_exists.return_value = True
+        mock_isdir.return_value = True
         mock_listdir.return_value = ["chromium-1234"]
         mock_sys.executable = "/usr/bin/python3"
 
