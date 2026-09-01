@@ -17,7 +17,7 @@ import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
-import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
 import { map, shareReplay } from 'rxjs/operators';
 
 import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
@@ -26,11 +26,16 @@ import {
   groupAndSortArtifacts,
   toTypedArtifact,
 } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import {
+  ArtifactListItem,
+  ChartTypedArtifact,
+  PayloadType,
+} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
 
 import { ArtifactsColumn } from './artifacts_column/artifacts_column';
+import { ChartArtifactView } from './chart_artifact_view/chart_artifact_view';
 
 /** Artifact filter options. */
 enum ArtifactFilter {
@@ -46,7 +51,14 @@ enum ArtifactFilter {
   standalone: true,
   templateUrl: './artifacts_list.ng.html',
   styleUrl: './artifacts_list.scss',
-  imports: [AsyncPipe, MatIconModule, ArtifactsColumn, MatButtonToggleModule, FormsModule],
+  imports: [
+    AsyncPipe,
+    MatIconModule,
+    ArtifactsColumn,
+    ChartArtifactView,
+    MatButtonToggleModule,
+    FormsModule,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArtifactsList implements OnInit {
@@ -61,15 +73,18 @@ export class ArtifactsList implements OnInit {
   protected inputArtifacts$!: Observable<readonly ArtifactListItem[]>;
   protected executionArtifacts$!: Observable<readonly ArtifactListItem[]>;
   protected outputArtifacts$!: Observable<readonly ArtifactListItem[]>;
+  protected chartArtifacts$!: Observable<readonly ChartTypedArtifact[]>;
   protected nextPageToken$!: Observable<string | undefined>;
   protected showTruncationMessage$!: Observable<boolean>;
 
   protected artifactFilter = new BehaviorSubject<ArtifactFilter[]>([ArtifactFilter.EXPERIMENT]);
   protected readonly ArtifactFilter = ArtifactFilter;
   protected showFilterToggle = false;
+  protected isWorkUnitPage = false;
 
   ngOnInit() {
-    this.showFilterToggle = parseWorkUnitName(this.parentName()) === null;
+    this.isWorkUnitPage = parseWorkUnitName(this.parentName()) !== null;
+    this.showFilterToggle = !this.isWorkUnitPage;
     this.initializeArtifactStreams();
   }
 
@@ -83,6 +98,32 @@ export class ArtifactsList implements OnInit {
         const typed = artifacts.filter((a) => phaseCheck(a.lifecyclePhase)).map(toTypedArtifact);
         return groupAndSortArtifacts(typed, phaseLabel, threshold);
       }),
+    );
+  }
+
+  /**
+   * Selects the chart artifacts that get a full-width band of their own.
+   *
+   * A chart artifact is also rendered as a card in whichever pipeline column its lifecycle
+   * phase puts it, but a third of the tab is too narrow to plot anything in. The band goes
+   * above the pipeline and the card stays where it is, as the index entry.
+   *
+   * Only on a work unit page: each band costs one GetChartData, and an experiment lists the
+   * artifacts of every one of its work units, so drawing them all there would fan out to a
+   * request per work unit on a page that never asked for plots.
+   */
+  private createChartArtifactStream(
+    artifacts$: Observable<readonly Artifact[]>,
+  ): Observable<readonly ChartTypedArtifact[]> {
+    if (!this.isWorkUnitPage) {
+      return of([]);
+    }
+    return artifacts$.pipe(
+      map((artifacts) =>
+        artifacts
+          .map(toTypedArtifact)
+          .filter((typed): typed is ChartTypedArtifact => typed.type === PayloadType.CHART),
+      ),
     );
   }
 
@@ -103,6 +144,7 @@ export class ArtifactsList implements OnInit {
     this.showTruncationMessage$ = combineLatest([this.nextPageToken$, filteredArtifacts$]).pipe(
       map(([token, artifacts]) => !!token && artifacts.length > 0),
     );
+    this.chartArtifacts$ = this.createChartArtifactStream(filteredArtifacts$);
 
     this.inputArtifacts$ = this.createPhaseStream(
       filteredArtifacts$,

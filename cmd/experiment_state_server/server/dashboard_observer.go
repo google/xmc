@@ -17,6 +17,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,10 +33,74 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
+const (
+	// maxProvisionedMetrics bounds how many of a ChartArtifact's metric_names become plots.
+	// The list is client-supplied and the data engine runs one query per plot, so an
+	// unbounded list turns a single GetChartData into a proportionally expensive fan-out.
+	maxProvisionedMetrics = 20
+
+	// plotLayoutColumns lays the derived plots out two to a row, which keeps the summary
+	// boxes side by side rather than stacked down a single column.
+	plotLayoutColumns = 2
+)
+
+// nonPlotIDChars matches every run of characters that cannot appear in a plot ID. Metric
+// names are path-like ("chart_demo/loss"), so they need slugifying before use as an ID.
+var nonPlotIDChars = regexp.MustCompile(`[^a-z0-9]+`)
+
 type dashboardObserver struct {
 	client  *toollibs.DashboardToolClient
 	storage storage.Storage
 	wg      *sync.WaitGroup
+}
+
+// uniquePlotID slugifies a metric name into a plot ID, disambiguating names that slugify to
+// the same string ("train/loss" and "train_loss") with a counter suffix. seen is mutated.
+func uniquePlotID(metric string, seen map[string]int) string {
+	slug := strings.Trim(nonPlotIDChars.ReplaceAllString(strings.ToLower(metric), "_"), "_")
+	if slug == "" {
+		slug = "metric"
+	}
+	seen[slug]++
+	if n := seen[slug]; n > 1 {
+		return fmt.Sprintf("%s_%d", slug, n)
+	}
+	return slug
+}
+
+// plotSpecsForMetrics derives a plot specification from a ChartArtifact's metric names: a
+// summary box holding the latest value plus a step-indexed curve, per metric. A chart with
+// no plots is not an empty chart to the data engine, it is a chart with nothing to query,
+// so it renders blank however much data the work unit logged.
+func plotSpecsForMetrics(metricNames []string) []*dashboard_apipb.PlotSpec {
+	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*len(metricNames))
+	seen := make(map[string]int, len(metricNames))
+	for _, metric := range metricNames {
+		metric = strings.TrimSpace(metric)
+		if metric == "" {
+			continue
+		}
+		if len(plots) >= 2*maxProvisionedMetrics {
+			break
+		}
+		id := uniquePlotID(metric, seen)
+		plots = append(plots,
+			&dashboard_apipb.PlotSpec{
+				PlotId: id + "_latest",
+				Title:  fmt.Sprintf("%s (latest)", metric),
+				Type:   dashboard_apipb.PlotType_SUMMARY_BOX,
+				Data:   &dashboard_apipb.DataSpec{Metrics: []string{metric}},
+			},
+			&dashboard_apipb.PlotSpec{
+				PlotId:  id + "_curve",
+				Title:   fmt.Sprintf("%s vs steps", metric),
+				Type:    dashboard_apipb.PlotType_SCATTER,
+				Data:    &dashboard_apipb.DataSpec{Metrics: []string{metric}},
+				Mapping: &dashboard_apipb.MappingSpec{X: "step"},
+			},
+		)
+	}
+	return plots
 }
 
 // NewDashboardObserver creates an ArtifactObserver that provisions charts on Dashboard.
@@ -75,12 +141,17 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		}
 
 		// Call Dashboard service.
-		_, err := o.client.CreateChart(ctxBg, &dashboard_pb.CreateChartRequest{
+		created, err := o.client.CreateChart(ctxBg, &dashboard_pb.CreateChartRequest{
 			Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 			Chart: &dashboard_apipb.Chart{
 				Title: title,
 				Xid:   xid,
 				Wid:   wid,
+				Plots: plotSpecsForMetrics(cArtifact.GetMetricNames()),
+				PlotLayout: &dashboard_apipb.LayoutSpec{
+					Type:    dashboard_apipb.LayoutSpec_GRID,
+					Columns: plotLayoutColumns,
+				},
 			},
 		})
 
@@ -91,6 +162,10 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		} else {
 			logging.Info(ctxBg, "Background Chart provisioning succeeded")
 			cArtifact.Status = essmsgpb.ChartArtifact_SUCCESS
+			// Record the chart the service assigned. It is the only link from the artifact to
+			// its plots: without the server-assigned resource name a reader holds a list of
+			// metric names and no way to find the chart that draws them.
+			cArtifact.Chart = created
 		}
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())

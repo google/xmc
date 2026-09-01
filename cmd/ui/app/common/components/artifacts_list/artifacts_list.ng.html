@@ -32,6 +32,12 @@ limitations under the License.
     A maximum of 950 artifacts are shown, so lower priority artifacts have been truncated.
   </div>
 }
+@for (
+  chartArtifact of (chartArtifacts$ | async) ?? [];
+  track chartArtifact.artifact.name ?? $index
+) {
+  <xmc-chart-artifact-view [artifact]="chartArtifact" />
+}
 <div class="pipeline-container">
   <div class="pipeline-column">
     <xmc-artifacts-column
