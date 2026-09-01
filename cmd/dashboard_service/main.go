@@ -334,6 +334,7 @@ func run() int {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
 	authenticator, oauthCfg, err := initAuthenticator(ctx, cfg.ProjectID)

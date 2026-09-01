@@ -16,58 +16,71 @@ package log
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"os"
 )
 
 func Infof(format string, v ...interface{}) {
-	log.Printf("INFO: "+format, v...)
+	slog.Default().Info(fmt.Sprintf(format, v...))
 }
 
 func Info(v ...interface{}) {
-	log.Println(append([]interface{}{"INFO: "}, v...)...)
+	slog.Default().Info(fmt.Sprint(v...))
 }
 
 func Warningf(format string, v ...interface{}) {
-	log.Printf("WARNING: "+format, v...)
+	slog.Default().Warn(fmt.Sprintf(format, v...))
 }
 
 func Warning(v ...interface{}) {
-	log.Println(append([]interface{}{"WARNING: "}, v...)...)
+	slog.Default().Warn(fmt.Sprint(v...))
 }
 
 func Errorf(format string, v ...interface{}) {
-	log.Printf("ERROR: "+format, v...)
+	slog.Default().Error(fmt.Sprintf(format, v...))
 }
 
 func Error(v ...interface{}) {
-	log.Println(append([]interface{}{"ERROR: "}, v...)...)
+	slog.Default().Error(fmt.Sprint(v...))
 }
 
 func Fatalf(format string, v ...interface{}) {
-	log.Printf("FATAL: "+format, v...)
+	slog.Default().Error(fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
 func Fatal(v ...interface{}) {
-	log.Println(append([]interface{}{"FATAL: "}, v...)...)
+	slog.Default().Error(fmt.Sprint(v...))
 	os.Exit(1)
 }
 
 func Exitf(format string, v ...interface{}) {
-	log.Printf("EXIT: "+format, v...)
+	slog.Default().Error(fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
 func Exit(v ...interface{}) {
-	log.Println(append([]interface{}{"EXIT: "}, v...)...)
+	slog.Default().Error(fmt.Sprint(v...))
 	os.Exit(1)
 }
 
-func InfoContextf(ctx context.Context, format string, v ...interface{})    { Infof(format, v...) }
-func WarningContextf(ctx context.Context, format string, v ...interface{}) { Warningf(format, v...) }
-func ErrorContextf(ctx context.Context, format string, v ...interface{})   { Errorf(format, v...) }
-func FatalContextf(ctx context.Context, format string, v ...interface{})   { Fatalf(format, v...) }
+func InfoContextf(ctx context.Context, format string, v ...interface{}) {
+	slog.Default().InfoContext(ctx, fmt.Sprintf(format, v...))
+}
+
+func WarningContextf(ctx context.Context, format string, v ...interface{}) {
+	slog.Default().WarnContext(ctx, fmt.Sprintf(format, v...))
+}
+
+func ErrorContextf(ctx context.Context, format string, v ...interface{}) {
+	slog.Default().ErrorContext(ctx, fmt.Sprintf(format, v...))
+}
+
+func FatalContextf(ctx context.Context, format string, v ...interface{}) {
+	slog.Default().ErrorContext(ctx, fmt.Sprintf(format, v...))
+	os.Exit(1)
+}
 
 type Verbose bool
 
