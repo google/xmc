@@ -27,7 +27,6 @@ from tools.dev_env.image_builder import ImageBuilder
 from tools.dev_env.kind_manager import KindManager, check_preflight_tools
 from tools.dev_env.service_resolver import (
     resolve_service_names,
-    resolve_target_services,
     service_to_k8s_deployment_name,
 )
 from tools.dev_env.spanner_manager import SpannerManager
