@@ -77,11 +77,13 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         mock_sys.executable = "/usr/bin/python3"
 
         with (
-            patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}),
+            patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}, clear=False),
             patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}),
         ):
+            os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
             py_bin = self.executor.setup_venv()
             self.assertEqual(py_bin, "/usr/bin/python3")
+            self.assertIn("PLAYWRIGHT_BROWSERS_PATH", os.environ)
 
     @patch("os.path.isdir")
     @patch("os.listdir")

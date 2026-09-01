@@ -64,8 +64,10 @@ class PlaywrightTestExecutor:
                             "Using pre-baked Playwright environment at %s (0s setup).",
                             sys.executable,
                         )
+                        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+                            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
                         return sys.executable
-            except (ImportError, OSError):
+            except Exception:
                 pass
 
         python_bin = sys.executable
