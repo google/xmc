@@ -153,7 +153,8 @@ func TestParseHelmComponentOptions(t *testing.T) {
 		t.Errorf("unexpected parameters in %+v", opts.Parameters)
 	}
 	hpa, ok := opts.RawValues["hpa"].(map[string]any)
-	if !ok || hpa["enabled"] != any(true) {
+	enabled, _ := hpa["enabled"].(bool)
+	if !ok || !enabled {
 		t.Errorf("unexpected raw values in %+v", opts.RawValues)
 	}
 
