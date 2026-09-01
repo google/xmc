@@ -369,6 +369,22 @@ alias(
     actual = "//tools/benchmark:analyze_ci_performance_test",
 )
 
+# Components
+alias(
+    name = "run_linter_lib",
+    actual = "//tools/components:run_linter_lib",
+)
+
+alias(
+    name = "run_linter",
+    actual = "//tools/components:run_linter",
+)
+
+alias(
+    name = "run_linter_test",
+    actual = "//tools/components:run_linter_test",
+)
+
 py_library(
     name = "analyze_diff_size_lib",
     srcs = ["analyze_diff_size.py"],
