@@ -139,7 +139,8 @@ class TestKindClusterManager(unittest.TestCase):
                 "img1:latest",
                 "--name",
                 "test-cluster",
-            ]
+            ],
+            timeout=180.0,
         )
         mock_run.assert_any_call(
             [
@@ -149,24 +150,43 @@ class TestKindClusterManager(unittest.TestCase):
                 "img2:latest",
                 "--name",
                 "test-cluster",
-            ]
+            ],
+            timeout=180.0,
         )
 
-    @patch("time.sleep")
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/valid/key.json"})
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(KindClusterManager, "exists", return_value=False)
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_load_images_retries_on_failure(self, mock_run, mock_sleep):
-        mock_run.side_effect = [
-            subprocess.CalledProcessError(1, ["kind", "load"]),
-            subprocess.CompletedProcess(args=[], returncode=0),
-        ]
-        self.mgr.load_images(["img1:latest"])
-        self.assertEqual(mock_run.call_count, 2)
-        mock_sleep.assert_called_once_with(2)
+    def test_setup_provisions_cluster_with_custom_node_image(
+        self, mock_run, mock_exists, mock_isfile
+    ):
+        self.cfg.kind_node_image = "us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1"
+        self.mgr.setup()
+        mock_run.assert_any_call(
+            [
+                "kind",
+                "create",
+                "cluster",
+                "--name",
+                "test-cluster",
+                f"--config={os.path.join('/workspace', 'test', 'e2e', 'manifests', 'kind_config.yaml')}",
+                "--image=us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1",
+            ]
+        )
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_load_images_skips_when_empty(self, mock_run):
         self.mgr.load_images([])
         mock_run.assert_not_called()
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_load_images_raises_on_fatal_error(self, mock_run, mock_sleep):
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["kind", "load"])
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.mgr.load_images(["img1:latest"])
+        self.assertEqual(mock_run.call_count, 3)
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_apply_manifests_batches_arguments(self, mock_run):

@@ -61,6 +61,10 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}'
 
+      - name: 'Configure Docker Auth for GCP Artifact Registry'
+        run: |
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+
       - name: 'Set up Cloud SDK'
         run: |
           if ! command -v gcloud &>/dev/null; then
@@ -132,6 +136,8 @@ jobs:
           GCP_PROJECT_ID: '${{ secrets.GCP_E2E_PROJECT_ID }}'
           SPANNER_INSTANCE: '${{ secrets.GCP_E2E_SPANNER_INSTANCE }}'
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+          XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
+          XMC_IMAGE_LOAD_WORKERS: '2'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
