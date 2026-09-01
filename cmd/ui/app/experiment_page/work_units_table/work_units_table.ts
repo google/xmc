@@ -69,6 +69,7 @@ interface WorkUnitView extends WorkUnit {
   processedUrls: ProcessedUrl[];
   statusMessages: StructuredMessage[];
   isStatusMessageVisible: boolean;
+  performanceUrl?: string;
 }
 
 /**
@@ -140,6 +141,7 @@ export class WorkUnitsTable implements OnInit {
         processedUrls: processUrls(workUnit.urls ?? [], workUnit).slice(0, MAX_URLS_DISPLAYED),
         statusMessages: messages,
         isStatusMessageVisible,
+        performanceUrl: workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined,
       };
     });
   });
@@ -219,10 +221,6 @@ export class WorkUnitsTable implements OnInit {
   onPageSizeChange(pageSize: number) {
     this.store.setPageSize(pageSize);
     this.store.fetchPage();
-  }
-
-  getPerformanceUrl(workUnit: WorkUnit): string | undefined {
-    return workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined;
   }
 
   shouldDisableUrl(url: ProcessedUrl, workUnit: WorkUnitView): string | null {

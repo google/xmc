@@ -70,9 +70,8 @@ limitations under the License.
     <ng-container [matColumnDef]="WorkUnitColumn.PERFORMANCE">
       <th mat-header-cell *matHeaderCellDef>Performance</th>
       <td mat-cell *matCellDef="let workUnit">
-        @let performanceUrl = getPerformanceUrl(workUnit);
-        @if (performanceUrl) {
-          <a mat-button target="_blank" rel="noreferrer" [href]="performanceUrl">
+        @if (workUnit.performanceUrl) {
+          <a mat-button target="_blank" rel="noreferrer" [href]="workUnit.performanceUrl">
             <mat-icon>analytics</mat-icon>
             View performance
           </a>
