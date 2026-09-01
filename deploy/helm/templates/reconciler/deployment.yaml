@@ -50,7 +50,7 @@ spec:
         # metrics, e.g. jobset_reconciler_mlrun_*). The manager's built-in
         # server (":8081") serves only the controller-runtime registry and is
         # not scraped. Named so PodMonitoring can reference it.
-        - containerPort: {{ (.Values.reconciler | default dict).monitoring | default dict | dig "port" 8082 }}
+        - containerPort: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 }}
           name: metrics
         envFrom:
         - configMapRef:

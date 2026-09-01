@@ -24,7 +24,6 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-
 // newMetricsHandler returns an HTTP handler that exposes the union of the given
 // gatherers. It is kept separate from the server wiring so the gathering
 // behavior can be unit tested with arbitrary registries.
