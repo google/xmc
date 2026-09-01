@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""A raw-JAX workload that captures a profile programmatically (SDK-less).
+
+Instead of instrumenting the workload with the Diagon SDK, this worker relies
+solely on the environment variables injected by the XMC Actuator. It reads the
+per-work-unit GCS destination from ``XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`` and
+uses native ``jax.profiler`` tracing to write the profile there directly. The
+Diagon backend then discovers and loads the profile from that GCS folder using
+the customized ManagedXprof MLRun labels, without the workload depending on the
+Diagon SDK.
+
+After the trace is captured the workload idles for the remainder of
+``SLEEP_SECONDS`` so the enclosing JobSet stays alive long enough for the Diagon
+reconciler to create the MLRun from the attached ManagedXprof artifact.
+"""
+
+import os
+import time
+
+import jax
+import jax.numpy as jnp
+import jax.profiler
+from absl import app, flags
+
+_PROFILE_DURATION_SECONDS = flags.DEFINE_integer(
+    "profile_duration_seconds",
+    15,
+    "How long to run the traced JAX computation while the profile is captured.",
+)
+_MATRIX_SIZE = flags.DEFINE_integer(
+    "matrix_size",
+    5000,
+    "Side length of the square matrices multiplied during profiling.",
+)
+
+# Environment variable injected by the XMC Actuator into every container. It
+# holds the full gs:// destination folder for this work unit's profile, e.g.
+# gs://<bucket>/xmc-<xid>-<wid>-<timestamp>.
+_XPROF_GCS_FOLDER_ENV = "XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER"
+
+# Fallback used only when the managed-xprof env var is absent (e.g. local runs),
+# so the example remains runnable outside a managed-xprof-configured cluster.
+_LOCAL_FALLBACK_ENV = "XPROF_LOCAL_DIR"
+_LOCAL_FALLBACK_DEFAULT = "/tmp/xmc-programmatic-xprof"
+
+
+def _resolve_profile_dir() -> str:
+    """Resolves the profile destination from the Actuator-injected env var.
+
+    Returns:
+      The GCS folder (``gs://...``) injected by the XMC Actuator when managed
+      xprof is configured, or a local fallback directory otherwise.
+    """
+    profile_dir = os.environ.get(_XPROF_GCS_FOLDER_ENV)
+    if profile_dir:
+        return profile_dir
+
+    fallback = os.environ.get(_LOCAL_FALLBACK_ENV, _LOCAL_FALLBACK_DEFAULT)
+    print(
+        f"{_XPROF_GCS_FOLDER_ENV} is not set; writing the profile to local path"
+        f" {fallback!r}. In a managed-xprof cluster the XMC Actuator injects this"
+        " variable with the per-work-unit GCS folder.",
+        flush=True,
+    )
+    return fallback
+
+
+def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: int) -> None:
+    """Runs matrix multiplications while a JAX profile trace is active.
+
+    Args:
+      profile_dir: Destination directory (local path or ``gs://`` URL) that the
+        JAX profiler writes the captured trace to.
+      duration_seconds: Minimum wall-clock time to keep the traced computation
+        running so the profile captures representative steady-state work.
+      matrix_size: Side length of the square matrices multiplied each step.
+    """
+    key = jax.random.PRNGKey(0)
+
+    # Warm up first so the trace captures steady-state execution rather than
+    # one-time JIT compilation.
+    warmup = jnp.dot(
+        jax.random.normal(key, (matrix_size, matrix_size)),
+        jax.random.normal(key, (matrix_size, matrix_size)),
+    )
+    warmup.block_until_ready()
+
+    print(f"Starting programmatic JAX profile trace to: {profile_dir}", flush=True)
+    jax.profiler.start_trace(profile_dir)
+    try:
+        deadline = time.time() + duration_seconds
+        while time.time() < deadline:
+            key, subkey = jax.random.split(key)
+            x = jax.random.normal(key, (matrix_size, matrix_size))
+            y = jax.random.normal(subkey, (matrix_size, matrix_size))
+            jnp.dot(x, y).block_until_ready()
+    finally:
+        jax.profiler.stop_trace()
+    print(f"Profile trace written to: {profile_dir}", flush=True)
+
+
+def main(argv):
+    if len(argv) > 1:
+        raise app.UsageError("Too many command-line arguments.")
+
+    profile_dir = _resolve_profile_dir()
+    _run_traced_workload(
+        profile_dir,
+        _PROFILE_DURATION_SECONDS.value,
+        _MATRIX_SIZE.value,
+    )
+
+    # Keep the JobSet alive long enough for the Diagon reconciler to create the
+    # MLRun from the attached ManagedXprof artifact before the container exits.
+    run_seconds = int(os.environ.get("SLEEP_SECONDS", "300"))
+    remaining = run_seconds - _PROFILE_DURATION_SECONDS.value
+    if remaining > 0:
+        print(f"Idling for {remaining}s so the JobSet stays alive.", flush=True)
+        time.sleep(remaining)
+
+    print("Workload finished successfully.", flush=True)
+
+
+if __name__ == "__main__":
+    app.run(main)
