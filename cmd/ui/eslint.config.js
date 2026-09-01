@@ -37,6 +37,12 @@ export default tseslint.config(
       '@angular-eslint': angular,
     },
     rules: {
+      // General JavaScript / TypeScript Quality & Immutability
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+      'prefer-const': ['error', { destructuring: 'all' }],
+      'no-var': 'error',
+      'no-console': ['error', { allow: ['warn', 'error', 'info'] }],
+
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
@@ -45,6 +51,19 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-duplicate-enum-values': 'error',
+      '@typescript-eslint/no-non-null-asserted-optional-chain': 'error',
+      '@typescript-eslint/no-unnecessary-type-constraint': 'error',
+      '@typescript-eslint/prefer-as-const': 'error',
+      '@typescript-eslint/prefer-for-of': 'error',
+      '@typescript-eslint/no-inferrable-types': [
+        'error',
+        { ignoreParameters: true, ignoreProperties: true },
+      ],
+      '@typescript-eslint/no-empty-object-type': 'error',
+      '@typescript-eslint/no-wrapper-object-types': 'error',
+
       'simple-import-sort/imports': [
         'error',
         {
@@ -79,8 +98,7 @@ export default tseslint.config(
       complexity: ['error', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
 
-      '@typescript-eslint/no-explicit-any': 'error',
-
+      // Angular Component & Lifecycle Rules
       '@angular-eslint/directive-selector': 'off',
       '@angular-eslint/component-selector': 'off',
       '@angular-eslint/no-output-on-prefix': 'error',
@@ -91,6 +109,10 @@ export default tseslint.config(
       '@angular-eslint/use-lifecycle-interface': 'error',
       '@angular-eslint/use-pipe-transform-interface': 'error',
       '@angular-eslint/prefer-standalone': 'error',
+      '@angular-eslint/no-empty-lifecycle-method': 'error',
+      '@angular-eslint/contextual-lifecycle': 'error',
+      '@angular-eslint/no-pipe-impure': 'error',
+      '@angular-eslint/directive-class-suffix': ['error', { suffixes: ['Directive'] }],
 
       'no-restricted-syntax': [
         'error',
@@ -189,6 +211,8 @@ export default tseslint.config(
       '@angular-eslint/template/no-empty-control-flow': 'error',
       '@angular-eslint/template/alt-text': 'error',
       '@angular-eslint/template/valid-aria': 'error',
+      '@angular-eslint/template/elements-content': 'error',
+      '@angular-eslint/template/no-positive-tabindex': 'error',
     },
   },
   eslintConfigPrettier,
