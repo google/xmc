@@ -138,14 +138,9 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
             if has_manifests:
                 resolved = dir_path.resolve()
                 if resolved not in discovered:
-                    rules_file = None
-                    for f in filenames:
-                        if f.lower() in ("rules.yaml", "rules.yml"):
-                            rules_file = dir_path / f
-                            break
                     discovered[resolved] = LintTarget(
                         manifests_dir=dir_path,
-                        rules_config=rules_file,
+                        rules_config=find_rules_config(dir_path),
                     )
     return sorted(discovered.values(), key=lambda t: str(t.manifests_dir))
 
@@ -184,6 +179,7 @@ def run_linter_on_target(
             text=True,
             check=False,
             cwd=str(work_dir),
+            encoding="utf-8",
         )
     except OSError as e:
         return LintResult(
