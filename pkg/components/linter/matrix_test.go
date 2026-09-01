@@ -557,6 +557,423 @@ spec:
 			wantValid: false,
 			wantRule:  "VERSION_INCOMPATIBILITY",
 		},
+		{
+			name: "valid platform requirements in matrix rules",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion:     "1.28.0",
+								KubernetesVersion: ">=1.28.0",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid platform requirements minK8sVersion",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion: "invalid.k8s.version",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "invalid platform kubernetesVersion constraint",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								KubernetesVersion: ">>bad",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "platform requirements for disabled component is skipped",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								KubernetesVersion: ">=1.28.0",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { enabled: false, version: \"1.0.0\" }\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "valid platform requirements with maxK8sVersion and requiredCRDs",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion:     "1.28.0",
+								MaxK8sVersion:     "1.32.0",
+								KubernetesVersion: ">=1.28.0 <1.32.0",
+								RequiredCRDs:      []string{"jobsets.jobset.x-k8s.io"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid platform requirements maxK8sVersion",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MaxK8sVersion: "invalid.k8s.version",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "minK8sVersion greater than maxK8sVersion in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion: "1.32.0",
+								MaxK8sVersion: "1.28.0",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "empty requiredCRD in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{""},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: jobset
+spec:
+  version: "0.2.0"
+`,
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "whitespace requiredCRD in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{"   "},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "requiredCRD without dot in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{"jobsets"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "requiredCRD with uppercase characters in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{"Jobsets.x-k8s.io"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "requiredCRD with invalid special characters in platform requirements",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{"jobsets@x-k8s.io"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "valid platform requirements with 2-segment k8s versions",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion: "1.28",
+								MaxK8sVersion: "1.32",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid platform requirements 2-segment minK8s greater than maxK8s",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								MinK8sVersion: "1.32",
+								MaxK8sVersion: "1.28",
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "invalid requiredCRD with leading dot or trailing hyphen",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								RequiredCRDs: []string{".invalid.group", "jobsets.-k8s.io", "foo.bar_baz"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "invalid requiredCRD segment exceeding 63 characters",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 64 'a' characters in first segment
+								RequiredCRDs: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.k8s.io"},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "invalid requiredCRD total length exceeding 253 characters",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 4 segments of 63 'a' characters separated by dots = 255 characters total
+								RequiredCRDs: []string{
+									"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_CRD_REQUIREMENT",
+		},
+		{
+			name: "valid requiredCRD with maximum allowed RFC-1123 lengths",
+			rules: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					PlatformRequirements: []linter.PlatformIntegrationRule{
+						{
+							Component: "jobset",
+							Platform: linter.PlatformRequirementConfig{
+								// 3 segments of 63 chars + 1 segment of 61 chars separated by 3 dots = exactly 253 characters
+								RequiredCRDs: []string{
+									"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." +
+										"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								},
+							},
+						},
+					},
+				},
+			},
+			manifests: map[string]string{
+				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {

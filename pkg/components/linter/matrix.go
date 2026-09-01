@@ -16,6 +16,9 @@ package linter
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
 
 	"xmanager_cloud/pkg/components/store"
 )
@@ -86,6 +89,7 @@ func validateSingleDependency(c *ComponentManifest, line int, cName string, dep 
 // evaluateMatrixRules evaluates profile-level compatibility matrix rules configured in rules.yaml.
 func (l *Linter) evaluateMatrixRules(compMap map[string]*ComponentManifest, res *ValidationResult) {
 	l.evaluateComponentDependencies(compMap, res)
+	l.evaluatePlatformRequirements(compMap, res)
 }
 
 // evaluateComponentDependencies iterates through all ComponentDependencies rules defined in rules.yaml,
@@ -174,4 +178,107 @@ func reportVersionIncompatibility(filePath string, line int, ruleCompName, reqCo
 		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
 	}
 	res.AddError(filePath, line, "VERSION_INCOMPATIBILITY", msg)
+}
+
+// evaluatePlatformRequirements iterates over PlatformRequirements rules in rules.yaml,
+// validating Kubernetes version bounds and required CRD specifications for all enabled components.
+func (l *Linter) evaluatePlatformRequirements(compMap map[string]*ComponentManifest, res *ValidationResult) {
+	for _, rule := range l.rules.CompatibilityMatrix.PlatformRequirements {
+		ruleCompName := store.CanonicalComponentName(rule.Component)
+		comp, exists := compMap[ruleCompName]
+		if !exists || !comp.IsEnabled() {
+			continue
+		}
+		line := comp.Line
+		if line <= 0 {
+			line = 1
+		}
+		validatePlatformRule(comp.FilePath, line, ruleCompName, rule.Platform, res)
+	}
+}
+
+// validatePlatformRule orchestrates K8s version bounds, constraint syntax, and CRD format checks for a platform rule.
+func validatePlatformRule(filePath string, line int, compName string, p PlatformRequirementConfig, res *ValidationResult) {
+	validateK8sVersions(filePath, line, compName, p.MinK8sVersion, p.MaxK8sVersion, res)
+	validateK8sConstraint(filePath, line, compName, p.KubernetesVersion, res)
+	validateRequiredCRDs(filePath, line, compName, p.RequiredCRDs, res)
+}
+
+// validateK8sVersions validates the SemVer syntax of minK8sVersion and maxK8sVersion,
+// and asserts that minK8sVersion is not greater than maxK8sVersion.
+func validateK8sVersions(filePath string, line int, compName, minK8s, maxK8s string, res *ValidationResult) {
+	var minVer, maxVer *semver.Version
+	if minK8s != "" {
+		v, err := semver.NewVersion(strings.TrimSpace(minK8s))
+		if err != nil {
+			res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid minK8sVersion %q for component %q: %v", minK8s, compName, err))
+		} else {
+			minVer = v
+		}
+	}
+	if maxK8s != "" {
+		v, err := semver.NewVersion(strings.TrimSpace(maxK8s))
+		if err != nil {
+			res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid maxK8sVersion %q for component %q: %v", maxK8s, compName, err))
+		} else {
+			maxVer = v
+		}
+	}
+	if minVer != nil && maxVer != nil && minVer.GreaterThan(maxVer) {
+		res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("minK8sVersion %q cannot be greater than maxK8sVersion %q for component %q", minK8s, maxK8s, compName))
+	}
+}
+
+// validateK8sConstraint verifies that the kubernetesVersion SemVer constraint expression is syntactically valid.
+func validateK8sConstraint(filePath string, line int, compName, k8sConstraint string, res *ValidationResult) {
+	if k8sConstraint == "" {
+		return
+	}
+	// Use a dummy version to validate that the constraint string is syntactically correct,
+	// as the linter doesn't have access to the target cluster's Kubernetes version.
+	if _, err := MatchConstraint("1.0.0", k8sConstraint); err != nil {
+		res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid kubernetesVersion constraint %q for component %q: %v", k8sConstraint, compName, err))
+	}
+}
+
+// validateRequiredCRDs validates all required CRD identifier strings in a platform requirement rule.
+func validateRequiredCRDs(filePath string, line int, compName string, requiredCRDs []string, res *ValidationResult) {
+	for _, crd := range requiredCRDs {
+		validateSingleRequiredCRD(filePath, line, compName, crd, res)
+	}
+}
+
+// validateSingleRequiredCRD enforces Kubernetes RFC-1123 DNS subdomain label format (<plural>.<group>)
+// and length limits (<= 253 chars total, <= 63 chars per segment) on a required CRD string.
+func validateSingleRequiredCRD(filePath string, line int, compName, crd string, res *ValidationResult) {
+	trimmed := strings.TrimSpace(crd)
+	if trimmed == "" {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("empty requiredCRD in platform rule for component %q", compName))
+		return
+	}
+	if len(trimmed) > 253 {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: total length cannot exceed 253 characters", trimmed, compName))
+		return
+	}
+	parts := strings.Split(trimmed, ".")
+	if len(parts) < 2 {
+		res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: must be in <plural>.<group> format", trimmed, compName))
+		return
+	}
+	for _, part := range parts {
+		if len(part) > 63 {
+			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segment %q exceeds 63 characters", trimmed, compName, part))
+			return
+		}
+		if part == "" || strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
+			res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segments must be non-empty and cannot start or end with '-'", trimmed, compName))
+			return
+		}
+		for _, r := range part {
+			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+				res.AddError(filePath, line, "INVALID_CRD_REQUIREMENT", fmt.Sprintf("invalid requiredCRD %q for component %q: segments must contain only lowercase alphanumeric characters or '-'", trimmed, compName))
+				return
+			}
+		}
+	}
 }
