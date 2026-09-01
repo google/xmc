@@ -93,9 +93,19 @@ class KindClusterManager:
                 run_cmd(base_cmd + [f"--image={self.cfg.kind_node_image}"])
             except Exception as e:
                 logger.warning(
-                    "Custom KinD node image %s failed to load (%s). Falling back to upstream default...",
+                    "Custom KinD node image %s failed to load (%s). Cleaning up stale cluster state and falling back to upstream default...",
                     self.cfg.kind_node_image,
                     e,
+                )
+                run_cmd(
+                    [
+                        self.cfg.kind_bin,
+                        "delete",
+                        "cluster",
+                        "--name",
+                        self.cfg.cluster_name,
+                    ],
+                    check=False,
                 )
                 run_cmd(base_cmd)
         else:

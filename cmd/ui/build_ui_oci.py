@@ -59,9 +59,9 @@ def copy_flat(src_dir: str, dest_dir: str):
         shutil.rmtree(dest_dir)
     os.makedirs(dest_dir, exist_ok=True)
 
-    for root, _, files in os.walk(src_dir, followlinks=True):
-        if "build_tmp" in root:
-            continue
+    ignored_dirs = {"build_tmp", "node_modules", ".angular", "dist", ".git"}
+    for root, dirs, files in os.walk(src_dir, followlinks=True):
+        dirs[:] = [d for d in dirs if d not in ignored_dirs]
         for file in files:
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, src_dir)
@@ -104,7 +104,7 @@ RUN npm ci --legacy-peer-deps && npx ng build --configuration production
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/browser /usr/share/nginx/html
-RUN chmod -R o+rX /usr/share/nginx/html
+RUN chmod -R o+rX /usr/share/nginx/html && rm -f /usr/share/nginx/html/*.map
 COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
 RUN chmod +x /docker-entrypoint.d/generate_config.sh
 EXPOSE 8080
