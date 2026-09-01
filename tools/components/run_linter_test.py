@@ -70,6 +70,13 @@ class RunLinterTest(unittest.TestCase):
         self.assertEqual(len(manifests), 2)
         self.assertEqual([m.name for m in manifests], ["logging.yml", "storage.yaml"])
 
+    @patch("pathlib.Path.iterdir")
+    def test_find_manifest_files_oserror(self, mock_iterdir: MagicMock) -> None:
+        """Tests that find_manifest_files handles OSError gracefully."""
+        mock_iterdir.side_effect = PermissionError("Access denied")
+        manifests = run_linter.find_manifest_files(self.temp_dir)
+        self.assertEqual(manifests, [])
+
     def test_find_rules_config(self) -> None:
         """Tests finding co-located rules.yaml and rules.yml."""
         sub1 = self.temp_dir / "p1"
@@ -220,6 +227,17 @@ class RunLinterTest(unittest.TestCase):
         self.assertFalse(res.success)
         self.assertIsNone(res.json_data)
         self.assertEqual(res.stdout, "non-json output")
+
+    @patch("subprocess.run")
+    def test_run_linter_on_target_oserror(self, mock_run: MagicMock) -> None:
+        """Tests handling of OSError (e.g. missing executable) when running linter."""
+        mock_run.side_effect = FileNotFoundError("Executable not found")
+        target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
+        res = run_linter.run_linter_on_target(target, "/nonexistent/xmc-linter", "text")
+
+        self.assertFalse(res.success)
+        self.assertEqual(res.returncode, -1)
+        self.assertIn("Failed to execute linter command", res.stderr)
 
     def test_format_text_report(self) -> None:
         """Tests formatting aggregated text output."""

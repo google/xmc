@@ -102,10 +102,13 @@ def find_manifest_files(directory: Path) -> list[Path]:
     if not directory.is_dir():
         return []
     manifests: list[Path] = []
-    for item in directory.iterdir():
-        if item.is_file() and item.suffix.lower() in (".yaml", ".yml"):
-            if item.name.lower() not in ("rules.yaml", "rules.yml"):
-                manifests.append(item)
+    try:
+        for item in directory.iterdir():
+            if item.is_file() and item.suffix.lower() in (".yaml", ".yml"):
+                if item.name.lower() not in ("rules.yaml", "rules.yml"):
+                    manifests.append(item)
+    except OSError:
+        pass
     return sorted(manifests)
 
 
@@ -124,15 +127,25 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
     for root in scan_roots:
         if not root.exists() or not root.is_dir():
             continue
-        for current_dir, dirnames, _ in os.walk(root):
+        for current_dir, dirnames, filenames in os.walk(root):
             dirnames.sort()
             dir_path = Path(current_dir)
-            if find_manifest_files(dir_path):
+            has_manifests = any(
+                f.lower().endswith((".yaml", ".yml"))
+                and f.lower() not in ("rules.yaml", "rules.yml")
+                for f in filenames
+            )
+            if has_manifests:
                 resolved = dir_path.resolve()
                 if resolved not in discovered:
+                    rules_file = None
+                    for f in filenames:
+                        if f.lower() in ("rules.yaml", "rules.yml"):
+                            rules_file = dir_path / f
+                            break
                     discovered[resolved] = LintTarget(
                         manifests_dir=dir_path,
-                        rules_config=find_rules_config(dir_path),
+                        rules_config=rules_file,
                     )
     return sorted(discovered.values(), key=lambda t: str(t.manifests_dir))
 
@@ -164,13 +177,23 @@ def run_linter_on_target(
     """Executes the xmc-linter against a single lint target directory."""
     work_dir = cwd if cwd is not None else get_base_directory()
     cmd = build_linter_command(target, linter_binary, output_format)
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(work_dir),
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(work_dir),
+        )
+    except OSError as e:
+        return LintResult(
+            manifests_dir=str(target.manifests_dir),
+            rules_config=str(target.rules_config) if target.rules_config else None,
+            success=False,
+            returncode=-1,
+            stdout="",
+            stderr=f"Failed to execute linter command: {e}",
+        )
 
     json_data: dict[str, Any] | None = None
     if output_format == "json" and proc.stdout.strip():
@@ -236,7 +259,7 @@ def format_json_report(
     """Formats aggregated lint results into a structured dictionary for JSON output."""
     passed = sum(1 for r in results if r.success)
     failed = sum(1 for r in results if not r.success)
-    all_valid = (failed == 0 and notice is None) or (len(results) == 0 and notice is not None)
+    all_valid = failed == 0
 
     serialized_results: list[dict[str, Any]] = []
     for r in results:
