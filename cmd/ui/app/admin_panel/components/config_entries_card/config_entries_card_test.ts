@@ -233,4 +233,48 @@ describe('ConfigEntriesCardComponent', () => {
     expect(await harness.hasSpinner()).toBeTrue();
     expect(await harness.hasErrorBanner()).toBeFalse();
   });
+
+  it('should collapse and expand identically named groups independently', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.groups.set([
+      {
+        displayName: 'Identical Group',
+        configs: [{ key: 'first.key', value: 'first.value' }],
+      },
+      {
+        displayName: 'Identical Group',
+        configs: [{ key: 'second.key', value: 'second.value' }],
+      },
+    ]);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.getGroupDisplayNames()).toEqual(['Identical Group', 'Identical Group']);
+
+    // Collapse only the first group
+    await harness.toggleGroup(0);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeTrue();
+    expect(await harness.isGroupCollapsed(1)).toBeFalse();
+
+    const entries = await harness.getConfigEntries();
+    expect(entries).toEqual([{ key: 'second.key', value: 'second.value' }]);
+
+    // Collapse the second group as well
+    await harness.toggleGroup(1);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeTrue();
+    expect(await harness.isGroupCollapsed(1)).toBeTrue();
+    expect(await harness.getConfigEntries()).toEqual([]);
+
+    // Expand only the first group back
+    await harness.toggleGroup(0);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeFalse();
+    expect(await harness.isGroupCollapsed(1)).toBeTrue();
+    expect(await harness.getConfigEntries()).toEqual([{ key: 'first.key', value: 'first.value' }]);
+  });
 });

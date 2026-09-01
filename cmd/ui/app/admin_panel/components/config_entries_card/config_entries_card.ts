@@ -29,6 +29,7 @@ export interface ConfigGroup {
 }
 
 export interface ConfigGroupItem extends ConfigGroup {
+  id: string;
   displayName: string;
   isCollapsed: boolean;
 }
@@ -66,14 +67,14 @@ export class ConfigEntriesCardComponent {
     this.retry.emit();
   }
 
-  protected toggleGroup(groupName?: string): void {
-    if (!groupName) return;
+  protected toggleGroup(groupId?: string): void {
+    if (!groupId) return;
     this.collapsedGroups.update((current) => {
       const next = new Set(current);
-      if (next.has(groupName)) {
-        next.delete(groupName);
+      if (next.has(groupId)) {
+        next.delete(groupId);
       } else {
-        next.add(groupName);
+        next.add(groupId);
       }
       return next;
     });
@@ -88,8 +89,9 @@ export class ConfigEntriesCardComponent {
     const searchTerm = term.trim().toLowerCase();
 
     return groups
-      .map((group) => {
+      .map((group, index) => {
         const displayName = group.displayName || 'Configuration';
+        const id = `config-group-${index}-${displayName}`;
         const filteredConfigs = (group.configs || []).filter(
           (c) =>
             !searchTerm ||
@@ -98,8 +100,9 @@ export class ConfigEntriesCardComponent {
         );
         return {
           ...group,
+          id,
           displayName,
-          isCollapsed: collapsed.has(displayName),
+          isCollapsed: collapsed.has(id),
           configs: filteredConfigs,
         };
       })

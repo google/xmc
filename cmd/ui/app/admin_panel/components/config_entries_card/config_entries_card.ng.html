@@ -53,15 +53,15 @@
           </tr>
         </thead>
         <tbody>
-          @for (group of filteredGroups(); track group.displayName) {
+          @for (group of filteredGroups(); track group.id) {
             <tr
               class="group-header-row"
               tabindex="0"
               role="button"
               [attr.aria-expanded]="!group.isCollapsed"
-              (click)="toggleGroup(group.displayName)"
-              (keydown.enter)="toggleGroup(group.displayName)"
-              (keydown.space)="toggleGroup(group.displayName); $event.preventDefault()"
+              (click)="toggleGroup(group.id)"
+              (keydown.enter)="toggleGroup(group.id)"
+              (keydown.space)="toggleGroup(group.id); $event.preventDefault()"
             >
               <td colspan="2" class="group-header-cell">
                 <div class="group-header-content">
