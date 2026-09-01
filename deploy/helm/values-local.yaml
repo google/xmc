@@ -22,6 +22,10 @@ taskSignatureTtlSeconds: 300
 statusMessageHistoryEnabled: false
 redisAddr: "redis-service.xmc.svc.cluster.local:6379"
 
+# Local container image tags loaded directly into KinD nodes via ImageBuilder.
+# In local KinD deployments, ChartSanitizer patches imagePullPolicy from Always to IfNotPresent.
+# If an image is not built/loaded into KinD, containerd will attempt to pull the unqualified
+# name from Docker Hub, failing with ImagePullBackOff and triggering automated diagnostics.
 xid_custom_image: "xid_service_image:latest"
 actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
