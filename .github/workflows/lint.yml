@@ -85,14 +85,21 @@ jobs:
 
       - name: 'Install & Run golangci-lint'
         run: |
-          if ! command -v golangci-lint &>/dev/null; then
-            GOPATH_BIN="$(go env GOPATH)/bin"
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          if [ -f "$GOPATH_BIN/golangci-lint" ]; then
+            GOLANGCI_BIN="$GOPATH_BIN/golangci-lint"
+          elif command -v golangci-lint &>/dev/null; then
+            GOLANGCI_BIN="golangci-lint"
+          else
             echo "--> Installing golangci-lint (v1.64.6)..."
             go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
-            "$GOPATH_BIN/golangci-lint" run --timeout=5m
-          else
-            golangci-lint run --timeout=5m
+            GOLANGCI_BIN="$GOPATH_BIN/golangci-lint"
           fi
+          "$GOLANGCI_BIN" run --timeout=5m || {
+            echo "--> Recompiling golangci-lint with Go toolchain..."
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
+            "$GOPATH_BIN/golangci-lint" run --timeout=5m
+          }
 
       - name: 'Install & Run Buildifier'
         run: |
