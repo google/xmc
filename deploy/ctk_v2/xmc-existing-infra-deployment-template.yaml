@@ -41,7 +41,9 @@ vars:
   # enough spare capacity for the XMC workloads and must have Workload Identity enabled.
   existing_cluster_name: YOUR_CLUSTER_NAME
 
-  # Region of that cluster. Set only if it differs from `region`.
+  # Where that cluster lives, used as its location for the lookup. A regional cluster takes its
+  # region; a zonal cluster takes its zone (e.g. us-central1-a), or the lookup finds nothing. Set
+  # only if it differs from `region`.
   cluster_region: us-central1
 
   # VerticalPodAutoscaler objects for the actuator and the reconciler. Set to false if the cluster

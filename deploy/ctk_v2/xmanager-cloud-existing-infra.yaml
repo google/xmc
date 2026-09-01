@@ -47,7 +47,7 @@ vars:
   existing_network_name:     # VPC network name
   existing_subnetwork_name:  # Subnetwork in `region`, must have Private Google Access enabled
   existing_cluster_name:     # GKE cluster name
-  cluster_region: $(vars.region) # Set only if the cluster is not in `region`
+  cluster_region: $(vars.region) # Cluster location: its region, or its zone if it is zonal
 
   domain_name:          # Base domain name (e.g. example.com)
   iap_client_id: ""     # Client ID for internal app OAuth2 flow

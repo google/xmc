@@ -391,7 +391,8 @@ flag on the first.
     cannot reach Google APIs.
 *   **A GKE cluster with Workload Identity enabled.** No node pool is created, so the cluster must
     have enough spare capacity for the XMC workloads, or an autoscaling pool that can grow into
-    them.
+    them. `cluster_region` is used verbatim as the cluster's location, so a zonal cluster needs
+    its zone there (e.g. `us-central1-a`) rather than a region.
 Nothing else is assumed. In particular the blueprint neither creates nor edits the VPC's Private
 Service Access connection, so networks that already peer with `servicenetworking.googleapis.com`
 for other services are left as they are.
@@ -414,7 +415,7 @@ vars:
   existing_network_name: my-vpc
   existing_subnetwork_name: my-subnet
   existing_cluster_name: my-cluster
-  cluster_region: us-central1 # only if the cluster is not in `region`
+  cluster_region: us-central1 # only if the cluster is not in `region`; a zone if it is zonal
 
   # The tooling looks the cluster up by this name; it must match existing_cluster_name, because
   # the default derives xmc-<deployment_name>-<environment>, the cluster Approach 2 would create.
@@ -426,7 +427,7 @@ Then compile and deploy as in Approach 2, substituting the blueprint path:
 ```bash
 ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud-existing-infra.yaml \
   -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force
-./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name>
 ```
 
 Driving it through the tooling instead, pass the same path once — `gke-upgrade` reuses it from
