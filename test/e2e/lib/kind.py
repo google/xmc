@@ -76,7 +76,7 @@ class KindClusterManager:
         """Provisions KinD cluster and configures kubectl context."""
         manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
         kind_config = os.path.join(manifests_dir, "kind_config.yaml")
-        cmd = [
+        base_cmd = [
             self.cfg.kind_bin,
             "create",
             "cluster",
@@ -85,10 +85,22 @@ class KindClusterManager:
             f"--config={kind_config}",
         ]
         if self.cfg.kind_node_image:
-            logger.info("Using custom KinD node image: %s", self.cfg.kind_node_image)
-            cmd.append(f"--image={self.cfg.kind_node_image}")
+            logger.info(
+                "Attempting cluster creation with custom KinD node image: %s",
+                self.cfg.kind_node_image,
+            )
+            try:
+                run_cmd(base_cmd + [f"--image={self.cfg.kind_node_image}"])
+            except Exception as e:
+                logger.warning(
+                    "Custom KinD node image %s failed to load (%s). Falling back to upstream default...",
+                    self.cfg.kind_node_image,
+                    e,
+                )
+                run_cmd(base_cmd)
+        else:
+            run_cmd(base_cmd)
 
-        run_cmd(cmd)
         run_cmd(["kubectl", "config", "use-context", f"kind-{self.cfg.cluster_name}"])
         logger.info("Creating namespace 'xmc'...")
         run_cmd(["kubectl", "create", "namespace", "xmc"])

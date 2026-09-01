@@ -136,7 +136,6 @@ jobs:
           GCP_PROJECT_ID: '${{ secrets.GCP_E2E_PROJECT_ID }}'
           SPANNER_INSTANCE: '${{ secrets.GCP_E2E_SPANNER_INSTANCE }}'
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
-          XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
           XMC_IMAGE_LOAD_WORKERS: '2'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
