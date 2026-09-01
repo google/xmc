@@ -86,8 +86,8 @@ class SpannerManager:
         except Exception as e:
             logger.warning("Stale database cleanup failed: %s", e)
 
-    def _build_proto_descriptors(self) -> None:
-        """Builds protobuf descriptor sets required for Spanner PROTO BUNDLE if not already present."""
+    def _build_prerequisites(self) -> None:
+        """Builds protobuf descriptor sets and migration binary required for Spanner if not already present."""
         ess_desc = os.path.join(
             self.cfg.workspace_root,
             "bazel-bin",
@@ -104,20 +104,35 @@ class SpannerManager:
             "xid",
             "xid_messages_descriptor.pb",
         )
-        if os.path.isfile(ess_desc) and os.path.isfile(xid_desc):
-            logger.info("Protobuf descriptor sets already built; skipping Bazel build.")
+        mig_binary = os.path.join(
+            self.cfg.workspace_root,
+            "bazel-bin",
+            "internal",
+            "storage",
+            "spanner",
+            "migrations",
+            "migrations_",
+            "migrations",
+        )
+        targets = []
+        if not (os.path.isfile(ess_desc) and os.path.isfile(xid_desc)):
+            targets.extend(
+                [
+                    "//api/protos/experiment:experiment_messages_descriptor",
+                    "//api/protos/xid:xid_messages_descriptor",
+                ]
+            )
+        if not os.path.exists(mig_binary):
+            targets.append("//internal/storage/spanner/migrations:migrations")
+
+        if not targets:
+            logger.info(
+                "Protobuf descriptor sets and migration binary already built; skipping Bazel build."
+            )
             return
 
-        logger.info("Building protobuf descriptor sets with Bazel...")
-        run_cmd(
-            [
-                "bazel",
-                "build",
-                "//api/protos/experiment:experiment_messages_descriptor",
-                "//api/protos/xid:xid_messages_descriptor",
-            ],
-            cwd=self.cfg.workspace_root,
-        )
+        logger.info("Building prerequisites %s with Bazel...", targets)
+        run_cmd(["bazel", "build", *targets], cwd=self.cfg.workspace_root)
 
     def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
         """Creates a single Spanner database with retries on RESOURCE_EXHAUSTED / 429."""
@@ -229,7 +244,7 @@ class SpannerManager:
         """Creates ephemeral databases and initializes schemas concurrently."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
         self._cleanup_stale_databases()
-        self._build_proto_descriptors()
+        self._build_prerequisites()
         targets = [
             (
                 self.cfg.ess_db,

@@ -97,13 +97,14 @@ class TestSpannerManager(unittest.TestCase):
 
         mock_cleanup.assert_called_once()
 
-        # Check proto descriptors build call
+        # Check prerequisites build call
         mock_run.assert_any_call(
             [
                 "bazel",
                 "build",
                 "//api/protos/experiment:experiment_messages_descriptor",
                 "//api/protos/xid:xid_messages_descriptor",
+                "//internal/storage/spanner/migrations:migrations",
             ],
             cwd="/workspace",
         )

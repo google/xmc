@@ -64,6 +64,20 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
             ]
         )
 
+    @patch("os.listdir")
+    @patch("os.path.exists")
+    @patch("test.e2e.lib.test_executor.sys")
+    def test_setup_venv_uses_prebaked_environment(self, mock_sys, mock_exists, mock_listdir):
+        mock_exists.return_value = True
+        mock_listdir.return_value = ["chromium-1234"]
+        mock_sys.executable = "/usr/bin/python3"
+
+        from unittest.mock import MagicMock
+
+        with patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}):
+            py_bin = self.executor.setup_venv()
+            self.assertEqual(py_bin, "/usr/bin/python3")
+
     @patch.object(PlaywrightTestExecutor, "setup_venv", return_value="/mock/venv/bin/python")
     @patch("test.e2e.lib.test_executor.run_cmd")
     def test_execute_runs_test_script(self, mock_run, mock_venv):
