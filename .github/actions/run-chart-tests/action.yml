@@ -37,9 +37,14 @@ runs:
         filters: |
           chart:
             - 'deploy/helm/**'
-            # The suite also asserts the chart agrees with the deployment blueprint, so a
-            # blueprint-only edit can break it just as a chart-only edit can.
+            # The suite also asserts the chart agrees with the deployment blueprints, that the two
+            # blueprints agree with each other, and that each deployment template names only
+            # variables its blueprint declares. Any of those files can break it on its own.
             - 'deploy/ctk_v2/xmanager-cloud.yaml'
+            - 'deploy/ctk_v2/xmanager-cloud-existing-infra.yaml'
+            - 'deploy/ctk_v2/xmc-deployment-template.yaml'
+            - 'deploy/ctk_v2/xmc-existing-infra-deployment-template.yaml'
+            - 'deploy/ctk_v2/modules/redis-endpoint/**'
             - 'test/helm/**'
             - '.github/workflows/unit-tests.yml'
             - '.github/actions/run-chart-tests/**'
