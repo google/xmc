@@ -11,7 +11,8 @@ The Components subsystem coordinates component definitions, versioning, and runt
 - **Source of Truth (SOT)**: Google Cloud Spanner acts as the authoritative relational database storing the global component catalog, versions, dependencies, and rollout states.
 - **Component Manager Service (CMS)**: A gRPC service hosted within the Experiment Service Server (ESS) providing control plane APIs for component registration, dependency validation, and lifecycle operations.
 - **GitOps Bridge (`cmd/xmc-bridge`)**: A bidirectional synchronizer reconciling Kubernetes Custom Resources (`Component.xmc.dev`) with the authoritative Spanner catalog.
-- **In-Memory Store (`pkg/components/store`)**: A thread-safe in-memory cache and graph validation engine with prospective DAG cycle detection, fast lookups, and snapshot resolution.
+- **Production Spanner Store (`pkg/components/store/spanner_store.go`)**: A production Cloud Spanner persistence driver with ACID read-write transactions, prospective cycle checking, soft-deletion active name index release, and snapshot queries.
+- **In-Memory Store (`pkg/components/store/memory_store.go`)**: A thread-safe in-memory cache and test double implementation.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -21,10 +22,12 @@ The Components subsystem coordinates component definitions, versioning, and runt
 │  └─────────────────────────┬─────────────────────────┘  │
 │                            │                            │
 │  ┌─────────────────────────▼─────────────────────────┐  │
-│  │             Storage Engine / MemoryStore          │  │
+│  │         Storage Engine (SpannerStore / Memory)    │  │
 │  │   ┌─────────────────────┬─────────────────────┐   │  │
 │  │   │ Dependency Parser   │ Graph Validator     │   │  │
 │  │   │ & Normalization     │ (3-Color DFS)       │   │  │
+│  │   ├─────────────────────┼─────────────────────┤   │  │
+│  │   │ Deactivation Engine │ Snapshot Resolver   │   │  │
 │  │   └─────────────────────┴─────────────────────┘   │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -110,6 +113,27 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
 - `ExecuteDeletion(ctx, req *ExecuteDeletionRequest) (*ExecuteDeletionResponse, error)`:
   - Enforces deletion protection labels and active dependent safety.
   - Transitions component to `COMPONENT_STATE_DELETED` and records deletion timestamp.
+
+---
+
+### 5. Production Cloud Spanner Persistence Driver (`pkg/components/store/spanner_store.go`)
+
+`SpannerStore` provides the production database persistence layer implementing the `store.Store` interface against Cloud Spanner.
+
+#### Relational Table Schema
+- **`Components`**: Stores component intent and status (`ComponentId`, `Name`, `ComponentClass`, `ConfigProto`, `AccessPayload`, `State`, `Generation`, `ObservedGeneration`, `CreateTime`, `UpdateTime`, `ActiveName`).
+- **`ComponentDependencies`**: Relational dependency graph (`ComponentId`, `DependencyComponentId`) interleaved in `Components` with `ON DELETE CASCADE` and foreign key constraints.
+- **`ExperimentComponentSnapshots`**: Immutable historical generation snapshots locked to experiment runs (`ComponentId`, `LockedGeneration`, `ConfigProto`, `AccessPayload`).
+
+#### Key Architectural Invariants
+1. **Strict Query Parameterization**: All queries use static statements with `@parameter` binding (`spanner.Statement`), eliminating SQL injection risks.
+2. **Soft-Deletion & ActiveName Unique Index Release**:
+   - Schema defines: `ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED` with `CREATE UNIQUE NULL_FILTERED INDEX Idx_Components_ActiveName ON Components(ActiveName)`.
+   - When a component is soft-deleted (`State = 5`), Spanner evaluates `ActiveName` to `NULL`, immediately releasing the unique index constraint to allow reusing the component name with a new `ComponentId` while preserving historical snapshot references and foreign keys.
+3. **Lock Footprint Optimization**:
+   - Frequent controller synchronization loops (`UpdateObservedGeneration`) and deactivation status checks use targeted parameterized queries (`queryComponentWithDeps`, `queryActiveDependents`), preventing table-wide shared locks and transaction contention.
+4. **Historical Generation Snapshots**:
+   - Resolves live generation coordinates from `Components` or historical pinned coordinates from `ExperimentComponentSnapshots`.
 
 ---
 

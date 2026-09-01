@@ -31,6 +31,7 @@ import (
 	"syscall"
 
 	"go/google"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
@@ -103,7 +104,7 @@ func main() {
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
 	if cfg.EnableComponents {
-		initCMS(ctx, s, healthServer)
+		initCMS(ctx, s, healthServer, prodServer.SpannerClient())
 	}
 
 	reflection.Register(s)
@@ -164,10 +165,16 @@ func main() {
 	logging.Info(ctx, "Server gracefully stopped")
 }
 
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server) {
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
-	// TODO: Initialize with a concrete store implementation.
 	var cmsStore store.Store
+	if spannerClient != nil {
+		cmsStore = store.NewSpannerStore(spannerClient)
+		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
+	} else {
+		cmsStore = store.NewMemoryStore()
+		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
+	}
 	cmsServer := cms.NewServer(cmsStore)
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
 	healthServer.SetServingStatus("cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
