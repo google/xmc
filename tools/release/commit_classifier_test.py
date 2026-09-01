@@ -177,15 +177,17 @@ class CommitClassifierTest(unittest.TestCase):
         self.assertEqual(commit.description, "pre-parsed feature")
         self.assertEqual(commit.pr_number, 500)
 
-        commit_revert = CommitInfo(
-            commit_hash="7778",
-            short_hash="7778",
-            subject="revert: rollback bad commit",
+        commit_breaking = CommitInfo(
+            commit_hash="7779",
+            short_hash="7779",
+            subject="feat!: breaking api change (#999)",
             author="Dev",
             date="2026-08-21",
         )
-        classify_commit(commit_revert)
-        self.assertEqual(commit_revert.category, "developer_velocity")
+        classify_commit(commit_breaking)
+        self.assertEqual(commit_breaking.category, "user_facing_features")
+        self.assertEqual(commit_breaking.commit_type, "feat")
+        self.assertEqual(commit_breaking.pr_number, 999)
 
     def test_helper_predicates(self) -> None:
         self.assertFalse(_is_dev_velocity_files([]))
@@ -196,6 +198,8 @@ class CommitClassifierTest(unittest.TestCase):
         self.assertFalse(_is_dev_velocity_files(["pkg/server/handler.go"]))
         self.assertTrue(_is_infra_or_auth_files(["config/default.json"]))
         self.assertTrue(_is_infra_or_auth_files(["pkg/auth/token.go", "tools/release/BUILD.bazel"]))
+        self.assertTrue(_is_infra_or_auth_files(["pkg/auth/token_test.go", "pkg/auth/token.go"]))
+        self.assertFalse(_is_infra_or_auth_files(["pkg/auth/token_test.go"]))
         self.assertFalse(_is_infra_or_auth_files(["pkg/auth/token.go", "pkg/server/handler.go"]))
         self.assertFalse(_is_infra_or_auth_files(["ui/index.html"]))
 

@@ -139,17 +139,19 @@ def _is_infra_or_auth_files(files: list[str]) -> bool:
         return False
     has_infra = False
     for f in files:
+        if _is_dev_file(f):
+            continue
         if _is_infra_file(f):
             has_infra = True
-        elif not _is_dev_file(f):
+        else:
             return False
     return has_infra
 
 
 def classify_commit(commit: CommitInfo) -> None:
     """Classifies a commit into an audience-segmented release category."""
-    if commit.commit_type == "other" and not commit.scope:
-        c_type, scope, desc, pr = parse_conventional_commit(commit.subject)
+    c_type, scope, desc, pr = parse_conventional_commit(commit.subject)
+    if c_type != "other" or (commit.commit_type == "other" and not commit.scope):
         commit.commit_type = c_type
         commit.scope = scope
         commit.description = desc
