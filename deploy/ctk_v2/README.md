@@ -62,6 +62,8 @@ Navigate into your master directory containing the `cluster-toolkit` folder and 
 ```
 This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code.
 
+`xmanager-cloud.yaml` is the default blueprint. When driving the deployment through `tools/dev_env/dev_env.py gke-deploy`, a different blueprint is selected with `--blueprint <path>`; the choice is written to `ctk-out/<deployment_name>/.xmc-blueprint` so that `gke-upgrade`, which re-compiles before applying, reuses it instead of falling back to the default.
+
 ### Step 2: Provision the Infrastructure
 Execute the deployment to begin provisioning:
 

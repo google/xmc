@@ -251,6 +251,7 @@ Instruct the agent:
    ```bash
    ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
    ```
+   `deploy/ctk_v2/xmanager-cloud.yaml` is the default blueprint. To compile a different one, pass `--blueprint <path>` to `gke-deploy`; the choice is recorded under `ctk-out/<deployment_name>/.xmc-blueprint` so later upgrades re-compile the same blueprint.
 3. **Deploy APIs (`apis` group)**:
    ```bash
    ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
@@ -386,6 +387,8 @@ To upgrade an existing running XMC development environment on GKE to the latest 
 #### Using the Upgrade Command Directly
 
 By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag.
+
+The `app` step re-compiles the Cluster Toolkit blueprint before applying it. The upgrade reuses whichever blueprint the deployment was originally compiled from — `gke-deploy` records that under `ctk-out/<deployment_name>/.xmc-blueprint` — so a deployment built from a non-default blueprint is not silently re-compiled from the default one. Deployments created before this was recorded fall back to `deploy/ctk_v2/xmanager-cloud.yaml`; pass `--blueprint` to correct them, which also updates the record.
 
 > [!TIP]
 > You can optionally define environment variable overrides (e.g., `PROJECT_ID`, `K8S_NAMESPACE`, `XMANAGER_ENV`) in your active shell before running the script to bypass values defined in the YAML configuration. You can copy `.env.example` to `.env` and export them:

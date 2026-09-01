@@ -18,6 +18,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -33,12 +34,17 @@ class TestParseArgs(unittest.TestCase):
         self.assertIsNone(args.start_from)
         self.assertIsNone(args.only)
         self.assertFalse(args.run_migrations)
+        self.assertIsNone(args.blueprint)
 
     def test_custom_flags(self):
         args = upgrade_dev_env.parse_args(["-c", "custom.yaml", "-s", "images", "--run-migrations"])
         self.assertEqual(args.config, "custom.yaml")
         self.assertEqual(args.start_from, "images")
         self.assertTrue(args.run_migrations)
+
+    def test_blueprint_flag(self):
+        args = upgrade_dev_env.parse_args(["--blueprint", "deploy/ctk_v2/other.yaml"])
+        self.assertEqual(args.blueprint, "deploy/ctk_v2/other.yaml")
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:
@@ -91,6 +97,32 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(config.project_id, "env-project")
         self.assertEqual(config.deployment_name, "env-deploy")
         self.assertEqual(config.region, "us-west1")
+
+    @mock.patch("tools.dev_env.blueprint_selection.recorded_blueprint", return_value=None)
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_blueprint_defaults_to_greenfield(self, _mock_recorded):
+        config = upgrade_dev_env.load_config(str(self.config_path))
+        self.assertEqual(config.blueprint_path, "deploy/ctk_v2/xmanager-cloud.yaml")
+
+    @mock.patch(
+        "tools.dev_env.blueprint_selection.recorded_blueprint",
+        return_value="deploy/ctk_v2/other-blueprint.yaml",
+    )
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_blueprint_reuses_recorded_choice(self, _mock_recorded):
+        config = upgrade_dev_env.load_config(str(self.config_path))
+        self.assertEqual(config.blueprint_path, "deploy/ctk_v2/other-blueprint.yaml")
+
+    @mock.patch(
+        "tools.dev_env.blueprint_selection.recorded_blueprint",
+        return_value="deploy/ctk_v2/other-blueprint.yaml",
+    )
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_blueprint_flag_overrides_recorded_choice(self, _mock_recorded):
+        config = upgrade_dev_env.load_config(
+            str(self.config_path), blueprint="deploy/ctk_v2/custom.yaml"
+        )
+        self.assertEqual(config.blueprint_path, "deploy/ctk_v2/custom.yaml")
 
     @mock.patch.dict(os.environ, {}, clear=True)
     def test_missing_required_project_id_raises(self):
@@ -273,9 +305,10 @@ class TestStepSubprocesses(unittest.TestCase):
         # Should push 10 targets when rod is enabled (9 base + rod_data_provider)
         self.assertEqual(mock_run.call_count, 10)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.record_blueprint")
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_app(self, mock_run, _mock_dir):
+    def test_step_app(self, mock_run, _mock_dir, _mock_record):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -330,6 +363,19 @@ class TestStepSubprocesses(unittest.TestCase):
             ],
             calls,
         )
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.record_blueprint")
+    @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_step_app_recompiles_configured_blueprint(self, mock_run, _mock_dir, mock_record):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        blueprint = "deploy/ctk_v2/other-blueprint.yaml"
+        upgrade_dev_env.step_app(replace(self.config, blueprint_path=blueprint))
+        calls = [call_args[0][0] for call_args in mock_run.call_args_list]
+        self.assertIn(["./cluster-toolkit/gcluster", "create", blueprint], [c[:3] for c in calls])
+        mock_record.assert_called_once_with("deploy-456", blueprint)
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
