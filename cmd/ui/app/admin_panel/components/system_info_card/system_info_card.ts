@@ -49,7 +49,7 @@ export class SystemInfoCardComponent {
   );
 
   private formatSchemaVersion(version: string | undefined | null): string {
-    return !version || version === UNAVAILABLE_SCHEMA_VERSION ? PLACEHOLDER_VERSION : version;
+    return this.isSchemaUnavailable(version) ? PLACEHOLDER_VERSION : version;
   }
 
   private isSchemaUnavailable(version: string | undefined | null): boolean {
