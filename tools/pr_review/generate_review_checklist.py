@@ -36,17 +36,13 @@ from tools.pr_review.github_utils import (  # noqa: E402
 def extract_severity(body: str) -> str | None:
     """Extracts severity level from comment body (detecting SVG badges or explicit tags)."""
     body_lower = body.lower()
-    if (
-        "critical-priority.svg" in body_lower
-        or "![critical]" in body_lower
-        or "[critical]" in body_lower
-    ):
+    if "critical-priority.svg" in body_lower or "[critical]" in body_lower:
         return "CRITICAL"
-    if "high-priority.svg" in body_lower or "![high]" in body_lower or "[high]" in body_lower:
+    if "high-priority.svg" in body_lower or "[high]" in body_lower:
         return "HIGH"
-    if "medium-priority.svg" in body_lower or "![medium]" in body_lower or "[medium]" in body_lower:
+    if "medium-priority.svg" in body_lower or "[medium]" in body_lower:
         return "MEDIUM"
-    if "low-priority.svg" in body_lower or "![low]" in body_lower or "[low]" in body_lower:
+    if "low-priority.svg" in body_lower or "[low]" in body_lower:
         return "LOW"
     return None
 
