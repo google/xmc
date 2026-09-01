@@ -96,10 +96,10 @@ def _is_dev_file(f: str) -> bool:
         "test/",
         "tests/",
     )
-    path = Path(f)
+    name = f.split("/")[-1]
     return (
         f.startswith(dev_paths)
-        or path.name
+        or name
         in {
             "BUILD.bazel",
             "WORKSPACE",
@@ -108,9 +108,9 @@ def _is_dev_file(f: str) -> bool:
             "go.sum",
             "pyproject.toml",
         }
-        or path.suffix == ".bzl"
+        or name.endswith(".bzl")
         or f.endswith(("_test.go", "_test.py", ".spec.ts", "_test.ts"))
-        or (path.name.startswith("test_") and path.suffix == ".py")
+        or (name.startswith("test_") and name.endswith(".py"))
     )
 
 
