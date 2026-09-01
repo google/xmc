@@ -152,6 +152,7 @@ class TestSpannerManager(unittest.TestCase):
                 "-command=init",
             ],
             cwd="/workspace",
+            capture_output=True,
         )
         mock_run.assert_any_call(
             [
@@ -166,6 +167,7 @@ class TestSpannerManager(unittest.TestCase):
                 "-command=init",
             ],
             cwd="/workspace",
+            capture_output=True,
         )
 
     @patch("time.sleep")

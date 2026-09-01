@@ -46,19 +46,25 @@ class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
     _SERVICES = _get_service_specs()
+    _EXTRA_BUILD_TARGETS = [
+        "//api/protos/experiment:experiment_messages_descriptor",
+        "//api/protos/xid:xid_messages_descriptor",
+        "//internal/storage/spanner/migrations:migrations",
+    ]
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
 
     def build_all(self) -> list[str]:
-        """Builds all backend and frontend images."""
+        """Builds all backend and frontend images and required test binaries."""
         if self.cfg.skip_build:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
             return [tag for _, _, tag in self._SERVICES]
 
-        logger.info("=== [Bazel] Building OCI images ===")
-        logger.info("Building all service images in parallel with Bazel...")
-        bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES]
+        logger.info("=== [Bazel] Building OCI images and test prerequisites in parallel ===")
+        bazel_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES
+        ] + self._EXTRA_BUILD_TARGETS
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
         bazel_bin_res = run_cmd(

@@ -42,8 +42,12 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
+    @patch("os.path.exists")
     @patch("test.e2e.lib.test_executor.run_cmd")
-    def test_setup_venv_creates_venv_and_installs(self, mock_run):
+    def test_setup_venv_creates_venv_and_installs_when_fallback_needed(self, mock_run, mock_exists):
+        # Simulate browser path missing so fallback venv path is exercised
+        mock_exists.side_effect = lambda p: False
+
         py_bin = self.executor.setup_venv()
         expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
         self.assertEqual(py_bin, expected_py)

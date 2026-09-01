@@ -54,14 +54,6 @@ jobs:
             exit 1
           fi
 
-      - name: 'Start Async Disk Space Cleanup'
-        run: |
-          echo "=== Starting background cleanup of unnecessary files ==="
-          if [ -d /usr/local/lib/android ] || [ -d /usr/share/dotnet ]; then
-            sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
-            echo "CLEANUP_PID=$!" >> $GITHUB_ENV
-          fi
-
       - name: 'Authenticate to Google Cloud via Workload Identity Federation'
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
         with:
@@ -70,7 +62,13 @@ jobs:
           service_account: '${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}'
 
       - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f' # v2.2.1
+        run: |
+          if ! command -v gcloud &>/dev/null; then
+            curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends google-cloud-cli
+          fi
+          gcloud version | head -n 1
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
@@ -106,48 +104,27 @@ jobs:
           mkdir -p "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
 
-          echo "=== Installing Kubectl, KinD, and Helm in Parallel ==="
-          (
-            if ! command -v kubectl &>/dev/null; then
-              curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
-              chmod +x "${HOME}/.local/bin/kubectl"
-            fi
-          ) &
-          PID_KUBECTL=$!
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
+            chmod +x "${HOME}/.local/bin/kubectl"
+          fi
 
-          (
-            if ! command -v kind &>/dev/null; then
-              curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
-              chmod +x "${HOME}/.local/bin/kind"
-            fi
-          ) &
-          PID_KIND=$!
+          if ! command -v kind &>/dev/null; then
+            curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
+            chmod +x "${HOME}/.local/bin/kind"
+          fi
 
-          (
-            if ! command -v helm &>/dev/null; then
-              HELM_VERSION="v3.17.1"
-              curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
-              tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
-              mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
-              rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
-            fi
-          ) &
-          PID_HELM=$!
-
-          wait "${PID_KUBECTL}" "${PID_KIND}" "${PID_HELM}"
+          if ! command -v helm &>/dev/null; then
+            HELM_VERSION="v3.20.1"
+            curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+            mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
+            rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+          fi
 
           kubectl version --client
           kind --version
-          helm version
-
-      - name: 'Wait for Disk Space Cleanup'
-        run: |
-          if [ -n "${CLEANUP_PID:-}" ]; then
-            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
-            wait "${CLEANUP_PID}" || true
-          fi
-          echo "=== Available Disk Space Before E2E Test Execution ==="
-          df -h /
+          helm version --short
 
       - name: 'Run E2E Test Suite'
         env:

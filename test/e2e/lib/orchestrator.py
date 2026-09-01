@@ -90,18 +90,18 @@ class E2EOrchestrator:
         signal.signal(signal.SIGTERM, _signal_handler)
 
         with self.managed_lifecycle():
-            logger.info("=== Provisioning Ephemeral Environment Concurrently ===")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            logger.info("=== Provisioning Ephemeral Environment & Building Images Concurrently ===")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                builder_future = executor.submit(self.builder.build_all)
                 spanner_future = executor.submit(self.spanner.setup)
                 kind_future = executor.submit(self.kind.setup)
 
-                spanner_future.result()
+                images = builder_future.result()
                 kind_future.result()
+                self.kind.load_images(images)
 
-            logger.info("=== Building OCI Container Images ===")
-            images = self.builder.build_all()
+                spanner_future.result()
 
-            self.kind.load_images(images)
             self.helm.deploy()
             self.tester.execute()
 

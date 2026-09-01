@@ -54,8 +54,10 @@ class TestImageBuilder(unittest.TestCase):
         builder = ImageBuilder(cfg)
         images = builder.build_all()
 
-        # Check that Bazel build was invoked with all configured image tarballs
-        expected_targets = [f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._SERVICES]
+        # Check that Bazel build was invoked with all configured image tarballs and extra targets
+        expected_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._SERVICES
+        ] + ImageBuilder._EXTRA_BUILD_TARGETS
         mock_run.assert_any_call(
             ["bazel", "build", *expected_targets],
             cwd="/workspace",
