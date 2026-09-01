@@ -71,6 +71,8 @@ def main() -> None:
     print(f"XMC_WORK_UNIT_ID: {os.environ.get('XMC_WORK_UNIT_ID')}")
     print(f"XMC_EXECUTION_ID: {os.environ.get('XMC_EXECUTION_ID')}")
 
+    # launch.py always forwards CHART_DEMO_SEED, drawing one if it was not configured, so
+    # that the seed is printed by the launcher. The fallback only covers a manual run.
     total_steps = _read_positive_int("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
     seed = _read_positive_int("CHART_DEMO_SEED", random.randrange(1, 1_000_000))
 

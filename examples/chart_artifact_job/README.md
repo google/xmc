@@ -104,7 +104,7 @@ the `xmcv2` environment. A `.env` file in the repo root takes precedence over it
 | :----------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------ |
 | `XMC_GATEWAY_URL`        | Ingestion Gateway endpoint the `xmc` SDK posts metrics to.   | `http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics` |
 | `CHART_DEMO_TOTAL_STEPS` | Total training steps to simulate.                            | `60`                                                                       |
-| `CHART_DEMO_SEED`        | Sampler seed, set it to reproduce a run.                     | Random                                                                     |
+| `CHART_DEMO_SEED`        | Sampler seed. Drawn by `launch.py` and printed in its banner when unset; set it to that value to reproduce a run. | Random per run                              |
 
 ---
 
@@ -146,6 +146,7 @@ Example output:
 Worker Image       : us-docker.pkg.dev/my-project/xmc/chart-artifact-job:latest
 Queue Name         : cpu-queue
 Dashboard Endpoint : localhost:50051
+Sampler Seed       : 484217
 ==================================================
 
 [1/4] Created Experiment successfully: experiments/234911125 (XID: 234911125)

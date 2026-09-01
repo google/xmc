@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from collections.abc import Sequence
 
 import dotenv
@@ -123,14 +124,57 @@ def build_training_chart(xid: int, wid: int):
     )
 
 
-def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2.WorkUnit:
+def _resolve_seed() -> str:
+    """Resolves the sampler seed, drawing a random one when none is configured.
+
+    The seed is drawn by the launcher rather than the worker so that its value is known
+    up front and can be printed: a run is only reproducible if its seed is visible
+    without digging through pod logs.
+    """
+    return os.environ.get("CHART_DEMO_SEED", "").strip() or str(random.randrange(1, 1_000_000))
+
+
+def build_worker_env(xid: int, seed: str) -> list[work_unit_pb2.EnvVar]:
+    """Resolves the environment the worker container runs with.
+
+    The pod never sees `worker.env` or `.env`, so every knob the worker reads has to be
+    forwarded explicitly. The actuator injects `XMC_WORK_UNIT_ID` and `XMC_EXECUTION_ID`,
+    but not `XMC_XID`, so the launcher supplies it alongside the gateway address.
+
+    Args:
+        xid: Experiment ID the worker tags its metrics with.
+        seed: Sampler seed, as resolved by `_resolve_seed`.
+
+    Returns:
+        The environment variables to pass to the worker container.
+    """
+    return [
+        work_unit_pb2.EnvVar(
+            name="XMC_GATEWAY_URL",
+            value=os.environ.get("XMC_GATEWAY_URL", _DEFAULT_GATEWAY_URL),
+        ),
+        work_unit_pb2.EnvVar(name="XMC_XID", value=str(xid)),
+        work_unit_pb2.EnvVar(
+            name="CHART_DEMO_TOTAL_STEPS",
+            value=os.environ.get("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS),
+        ),
+        work_unit_pb2.EnvVar(name="CHART_DEMO_SEED", value=seed),
+    ]
+
+
+def build_work_unit(
+    image_path: str, queue_name: str, worker_env: Sequence[work_unit_pb2.EnvVar]
+) -> work_unit_pb2.WorkUnit:
     """Builds the single-job WorkUnit whose worker streams metrics into ClickHouse.
 
-    The actuator injects `XMC_WORK_UNIT_ID` and `XMC_EXECUTION_ID`, but not `XMC_XID`,
-    so the launcher supplies it alongside the ingestion gateway address.
+    Args:
+        image_path: Container image holding worker.py.
+        queue_name: Target Kueue queue.
+        worker_env: Environment variables passed to the worker container.
+
+    Returns:
+        The WorkUnit message to create.
     """
-    gateway_url = os.environ.get("XMC_GATEWAY_URL", _DEFAULT_GATEWAY_URL)
-    total_steps = os.environ.get("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
     return work_unit_pb2.WorkUnit(
         work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
         priority=priority_pb2.Priority.NORMAL,
@@ -153,13 +197,7 @@ def build_work_unit(image_path: str, queue_name: str, xid: int) -> work_unit_pb2
                                     memory_bytes=512 * 1024 * 1024,
                                 ),
                             ),
-                            env=[
-                                work_unit_pb2.EnvVar(name="XMC_GATEWAY_URL", value=gateway_url),
-                                work_unit_pb2.EnvVar(name="XMC_XID", value=str(xid)),
-                                work_unit_pb2.EnvVar(
-                                    name="CHART_DEMO_TOTAL_STEPS", value=total_steps
-                                ),
-                            ],
+                            env=worker_env,
                         ),
                     ),
                 ]
@@ -266,6 +304,7 @@ def main(argv: Sequence[str]) -> None:
     queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
     ui_base_url = _resolve_ui_base_url()
     dashboard_endpoint = os.environ.get("XMC_DASHBOARD_ENDPOINT", _DEFAULT_DASHBOARD_ENDPOINT)
+    seed = _resolve_seed()
 
     print("==================================================")
     print("  XMC Chart Artifact WorkUnit Launch Script       ")
@@ -273,6 +312,7 @@ def main(argv: Sequence[str]) -> None:
     print(f"Worker Image       : {image_path}")
     print(f"Queue Name         : {queue_name}")
     print(f"Dashboard Endpoint : {dashboard_endpoint}")
+    print(f"Sampler Seed       : {seed}")
     print("==================================================")
 
     with xm_cloud.create_experiment(
@@ -288,7 +328,7 @@ def main(argv: Sequence[str]) -> None:
         created_wu = stub.create_work_unit(
             ess_api_pb2.CreateWorkUnitRequest(
                 parent=experiment.resource_name,
-                work_unit=build_work_unit(image_path, queue_name, xid),
+                work_unit=build_work_unit(image_path, queue_name, build_worker_env(xid, seed)),
             )
         )
         # created_wu is an Operation named experiments/{xid}/workUnits/{wid}/operations/{op}.
