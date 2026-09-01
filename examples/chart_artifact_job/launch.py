@@ -30,13 +30,18 @@ on the Dashboard, and the companion URL artifact is the one-click route to them.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
+import sys
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 
 import dotenv
 from absl import app
+from google.protobuf import json_format
 from training_metrics import (
     ACCURACY_METRIC,
     LEARNING_RATE_METRIC,
@@ -66,7 +71,6 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 _DEFAULT_GATEWAY_URL = "http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics"
-_DEFAULT_DASHBOARD_ENDPOINT = "localhost:50051"
 _DEFAULT_TOTAL_STEPS = "60"
 _EXPERIMENT_TITLE = "Chart Artifact Experiment"
 _CHART_TITLE = "Randomized Training Run"
@@ -78,6 +82,97 @@ def _require_env(name: str) -> str:
     if not value:
         raise app.UsageError(f"{name} must be set in your environment or .env file.")
     return value
+
+
+def _get_env_bool(key: str, default: bool = True) -> bool:
+    """Parses a boolean value from environment variables."""
+    val = os.environ.get(key, "").strip().lower()
+    if not val:
+        return default
+    return val in {"1", "true", "yes", "t", "y"}
+
+
+def _resolve_dashboard_endpoint() -> str:
+    """Resolves the dashboard service endpoint URL from environment variables.
+
+    Derives the endpoint from XMC_DASHBOARD_ENDPOINT, XMANAGER_UI_URL, or
+    XMANAGER_ENDPOINT (stripping gRPC/DNS prefixes and appending /v1/dashboards).
+    """
+    if custom_endpoint := os.environ.get("XMC_DASHBOARD_ENDPOINT") or os.environ.get(
+        "DASHBOARD_ENDPOINT"
+    ):
+        return custom_endpoint
+
+    if ui_url := os.environ.get("XMANAGER_UI_URL"):
+        return f"{ui_url.rstrip('/')}/v1/dashboards"
+
+    xmanager_endpoint = os.environ.get("XMANAGER_ENDPOINT", "")
+    if not xmanager_endpoint:
+        return "http://localhost:8080/v1/dashboards"
+
+    endpoint = xmanager_endpoint
+    for prefix in ("dns:///", "dns://", "grpc://", "https://", "http://"):
+        if endpoint.startswith(prefix):
+            endpoint = endpoint[len(prefix) :]
+    endpoint = endpoint.split(":")[0]  # Remove port if present
+
+    if endpoint.startswith("grpc.api."):
+        endpoint = endpoint[len("grpc.api.") :]
+    elif endpoint.startswith("grpc."):
+        endpoint = endpoint[len("grpc.") :]
+
+    scheme = "http" if endpoint in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} else "https"
+    return f"{scheme}://{endpoint}/v1/dashboards"
+
+
+def _get_auth_headers() -> dict[str, str]:
+    """Generates authentication headers for HTTP requests to the XMC Gateway.
+
+    Attempts to fetch a Google OIDC ID token using IAM credentials impersonation
+    (XMC_CLIENT_SA and IAP_CLIENT_ID), direct id_token fetch, or an explicit
+    AUTH_TOKEN/XMC_AUTH_TOKEN environment variable.
+    """
+    headers = {"Content-Type": "application/json"}
+    if auth_token := os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN"):
+        headers["Authorization"] = f"Bearer {auth_token}"
+        return headers
+
+    iap_client_id = os.environ.get("IAP_CLIENT_ID") or os.environ.get("CLIENT_ID")
+    client_sa = os.environ.get("XMC_CLIENT_SA")
+
+    if not iap_client_id:
+        return headers
+
+    try:
+        import google.auth
+        from google.auth.transport import requests as google_requests
+
+        credentials, _ = google.auth.default()
+        if client_sa:
+            authed_session = google_requests.AuthorizedSession(credentials)
+            url = (
+                "https://iamcredentials.googleapis.com/v1/projects/-/"
+                f"serviceAccounts/{client_sa}:generateIdToken"
+            )
+            body = {"audience": iap_client_id, "includeEmail": True}
+            response = authed_session.post(url, json=body, timeout=10)
+            response.raise_for_status()
+            token = response.json().get("token")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                return headers
+        else:
+            from google.oauth2 import id_token
+
+            req = google_requests.Request()
+            token = id_token.fetch_id_token(req, iap_client_id)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                return headers
+    except Exception as err:  # pylint: disable=broad-except
+        sys.stderr.write(f"⚠️ Warning: Could not retrieve OIDC ID token: {err}\n")
+
+    return headers
 
 
 def _resolve_ui_base_url() -> str:
@@ -206,18 +301,61 @@ def build_work_unit(
     )
 
 
-def publish_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> str:
-    """Creates the Dashboard and, in the same transaction, the Chart it renders.
+def dashboard_id_for(xid: int, wid: int) -> str:
+    """Returns the deterministic dashboard resource ID for a work unit.
+
+    Derived rather than read back from the server so the artifacts can link to the
+    dashboard even when its creation was skipped or failed.
+    """
+    return f"chart_artifact_x{xid}_w{wid}"
+
+
+def _publish_dashboard_over_rest(
+    dashboard_endpoint: str, dashboard, dashboard_id: str, chart
+) -> None:
+    """Creates the Dashboard and its Chart through the transcoded REST route."""
+    print(f"--> Publishing Dashboard '{dashboard.title}' to HTTP REST {dashboard_endpoint}...")
+    payload = {
+        "dashboard": json_format.MessageToDict(dashboard, preserving_proto_field_name=False),
+        "dashboard_id": dashboard_id,
+        "charts": [json_format.MessageToDict(chart, preserving_proto_field_name=False)],
+    }
+    req = urllib.request.Request(
+        dashboard_endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_get_auth_headers(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            created = json.loads(resp.read().decode("utf-8"))
+            print(f"--> Created Dashboard successfully: {dashboard.name} (HTTP {resp.status})")
+            print(f"--> Server-assigned chart IDs: {created.get('chartIds', [])}")
+    except urllib.error.HTTPError as http_err:
+        err_msg = http_err.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {http_err.code} {http_err.reason}: {err_msg}") from http_err
+
+
+def _publish_dashboard_over_grpc(
+    dashboard_endpoint: str, dashboard, dashboard_id: str, chart
+) -> None:
+    """Creates the Dashboard and its Chart through the Dashboard Service gRPC port."""
+    print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
+    with DashboardClient(endpoint=dashboard_endpoint) as client:
+        created = client.create_dashboard(dashboard, dashboard_id=dashboard_id, charts=[chart])
+        print(f"--> Created Dashboard successfully: {created.name}")
+        print(f"--> Server-assigned chart IDs: {list(created.chart_ids)}")
+
+
+def create_experiment_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> None:
+    """Builds and publishes the Dashboard and, in one transaction, the Chart it renders.
 
     Args:
-        dashboard_endpoint: gRPC target address of the Dashboard Service.
+        dashboard_endpoint: HTTP REST URL or gRPC target address of the Dashboard Service.
         xid: Experiment ID owning the work unit.
         wid: Work unit ID the chart belongs to.
-
-    Returns:
-        The dashboard resource ID, for building the UI deep link.
     """
-    dashboard_id = f"chart_artifact_x{xid}_w{wid}"
+    dashboard_id = dashboard_id_for(xid, wid)
     dashboard = (
         DashboardBuilder(name=f"dashboards/{dashboard_id}")
         .set_title(f"{_EXPERIMENT_TITLE} {xid}")
@@ -225,17 +363,12 @@ def publish_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> str:
         .set_grid_layout(columns=1)
         .build()
     )
+    chart = build_training_chart(xid, wid)
 
-    print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
-    with DashboardClient(endpoint=dashboard_endpoint) as client:
-        created = client.create_dashboard(
-            dashboard,
-            dashboard_id=dashboard_id,
-            charts=[build_training_chart(xid, wid)],
-        )
-    print(f"--> Created Dashboard successfully: {created.name}")
-    print(f"--> Server-assigned chart IDs: {list(created.chart_ids)}")
-    return dashboard_id
+    if dashboard_endpoint.startswith(("http://", "https://")):
+        _publish_dashboard_over_rest(dashboard_endpoint, dashboard, dashboard_id, chart)
+    else:
+        _publish_dashboard_over_grpc(dashboard_endpoint, dashboard, dashboard_id, chart)
 
 
 def create_chart_artifact(stub, work_unit_name: str, dashboard_url: str):
@@ -303,7 +436,8 @@ def main(argv: Sequence[str]) -> None:
     image_path = _resolve_image_path()
     queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
     ui_base_url = _resolve_ui_base_url()
-    dashboard_endpoint = os.environ.get("XMC_DASHBOARD_ENDPOINT", _DEFAULT_DASHBOARD_ENDPOINT)
+    dashboard_endpoint = _resolve_dashboard_endpoint()
+    create_dash = _get_env_bool("CREATE_DASHBOARD", default=True)
     seed = _resolve_seed()
 
     print("==================================================")
@@ -336,9 +470,16 @@ def main(argv: Sequence[str]) -> None:
         work_unit_name = f"experiments/{xid}/workUnits/{wid}"
         print(f"[2/4] Created WorkUnit successfully: {work_unit_name} (WID: {wid})")
 
-        print("\n[3/4] Creating Dashboard and Chart for the generated metrics...")
-        dashboard_id = publish_dashboard(dashboard_endpoint, xid, wid)
-        dashboard_url = f"{ui_base_url}/dashboards/{dashboard_id}"
+        dashboard_url = f"{ui_base_url}/dashboards/{dashboard_id_for(xid, wid)}"
+        if create_dash:
+            print("\n[3/4] Creating Dashboard and Chart for the generated metrics...")
+            try:
+                create_experiment_dashboard(dashboard_endpoint, xid, wid)
+            except Exception as err:  # pylint: disable=broad-except
+                sys.stderr.write(f"⚠️ Warning: Could not create dashboard: {err}\n")
+                print("You can create the dashboard manually once the service is reachable.")
+        else:
+            print("\n[3/4] Skipping dashboard creation (CREATE_DASHBOARD=false).")
 
         print("\n[4/4] Attaching artifacts to the WorkUnit...")
         chart_artifact = create_chart_artifact(stub, work_unit_name, dashboard_url)

@@ -8,6 +8,10 @@ This example demonstrates an end-to-end workflow for:
    (`launch.py`).
 3. Registering an **XMC Dashboard** with KPI cards and scatter plots for those metric
    names via the `xdash` Python SDK, in the same transaction that creates its Chart.
+   The endpoint resolution, auth and transport selection match
+   [`clickhouse_metrics_job`](../clickhouse_metrics_job): an `http(s)://` endpoint uses
+   the transcoded REST route with an OIDC bearer token, anything else uses the
+   Dashboard Service gRPC port via `xdash`'s `DashboardClient`.
 4. Attaching a **ChartArtifact** to the WorkUnit's **Artifacts** tab, plus a companion
    **UrlArtifact** that deep-links to the dashboard.
 
@@ -95,7 +99,8 @@ the `xmcv2` environment. A `.env` file in the repo root takes precedence over it
 | `IMAGE_PATH`             | Worker image to run.                                             | `us-docker.pkg.dev/<PROJECT_ID>/xmc/chart-artifact-job:latest` |
 | `XMANAGER_ENDPOINT`      | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.xmanageriso.dev`). | Loaded from `.env`                                             |
 | `XMANAGER_UI_URL`        | Base URL of the XMC UI, used for the printed deep links.         | Derived from `XMC_DOMAIN`                                      |
-| `XMC_DASHBOARD_ENDPOINT` | gRPC target of the Dashboard Service.                            | `localhost:50051`                                              |
+| `XMC_DASHBOARD_ENDPOINT` | Optional override for the Dashboard REST/gRPC endpoint.          | Derived from `XMANAGER_ENDPOINT`/`XMANAGER_UI_URL` (`https://<domain>/v1/dashboards`) |
+| `CREATE_DASHBOARD`       | Whether to automatically register the dashboard and its chart.   | `true`                                                         |
 | `QUEUE_NAME`             | Kueue queue the WorkUnit is submitted to.                        | `cpu-queue`                                                    |
 
 ### In-Cluster Worker Configuration (Passed to the WorkUnit / from `worker.env`)
@@ -123,15 +128,7 @@ source .venv/bin/activate
 ./build_and_push.sh
 ```
 
-### 3. Forward the Dashboard Service gRPC Port
-
-`xdash` talks gRPC, and that port is cluster-internal:
-
-```bash
-kubectl port-forward -n xmc svc/dashboard-service 50051:50051
-```
-
-### 4. Run the Launch Script
+### 3. Run the Launch Script
 
 ```bash
 python3 launch.py
@@ -145,7 +142,7 @@ Example output:
 ==================================================
 Worker Image       : us-docker.pkg.dev/my-project/xmc/chart-artifact-job:latest
 Queue Name         : cpu-queue
-Dashboard Endpoint : localhost:50051
+Dashboard Endpoint : https://xmcv2.dev.xmanageriso.dev/v1/dashboards
 Sampler Seed       : 484217
 ==================================================
 
@@ -153,8 +150,8 @@ Sampler Seed       : 484217
 [2/4] Created WorkUnit successfully: experiments/234911125/workUnits/1 (WID: 1)
 
 [3/4] Creating Dashboard and Chart for the generated metrics...
---> Connecting to Dashboard Service gRPC at localhost:50051...
---> Created Dashboard successfully: dashboards/chart_artifact_x234911125_w1
+--> Publishing Dashboard 'Chart Artifact Experiment 234911125' to HTTP REST https://xmcv2.dev.xmanageriso.dev/v1/dashboards...
+--> Created Dashboard successfully: dashboards/chart_artifact_x234911125_w1 (HTTP 200)
 --> Server-assigned chart IDs: ['b6f1c0a2-3d5e-4f18-9c47-2a0e8d3b7f91']
 
 [4/4] Attaching artifacts to the WorkUnit...
