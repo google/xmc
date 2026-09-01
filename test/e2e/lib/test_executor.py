@@ -35,32 +35,38 @@ class PlaywrightTestExecutor:
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
-        try:
-            import playwright  # noqa: F401
-            import requests  # noqa: F401
+        if (
+            os.environ.get("GITHUB_ACTIONS") == "true"
+            or os.environ.get("XMC_USE_PREBAKED_ENV") == "true"
+            or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        ):
+            try:
+                import playwright  # noqa: F401
+                import requests  # noqa: F401
 
-            browser_paths = []
-            env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-            if env_path:
-                browser_paths.append(env_path)
-            else:
-                browser_paths.extend(
-                    [
-                        "/ms-playwright",
-                        os.path.expanduser("~/.cache/ms-playwright"),
-                        os.path.expanduser("~/Library/Caches/ms-playwright"),
-                        os.path.expanduser("~/AppData/Local/ms-playwright"),
-                    ]
-                )
-
-            for path in browser_paths:
-                if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
-                    logger.info(
-                        "Using pre-baked Playwright environment at %s (0s setup).", sys.executable
+                browser_paths = []
+                env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+                if env_path:
+                    browser_paths.append(env_path)
+                else:
+                    browser_paths.extend(
+                        [
+                            "/ms-playwright",
+                            os.path.expanduser("~/.cache/ms-playwright"),
+                            os.path.expanduser("~/Library/Caches/ms-playwright"),
+                            os.path.expanduser("~/AppData/Local/ms-playwright"),
+                        ]
                     )
-                    return sys.executable
-        except (ImportError, OSError):
-            pass
+
+                for path in browser_paths:
+                    if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
+                        logger.info(
+                            "Using pre-baked Playwright environment at %s (0s setup).",
+                            sys.executable,
+                        )
+                        return sys.executable
+            except (ImportError, OSError):
+                pass
 
         python_bin = sys.executable
         if not os.path.exists(os.path.join(self.venv_dir, "bin", "python")):

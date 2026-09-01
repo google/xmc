@@ -90,9 +90,12 @@ class TestSpannerManager(unittest.TestCase):
             check=False,
         )
 
+    @patch("os.path.isfile", return_value=False)
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(self, mock_run, mock_cleanup):
+    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(
+        self, mock_run, mock_cleanup, mock_isfile
+    ):
         self.mgr.setup()
 
         mock_cleanup.assert_called_once()

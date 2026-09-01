@@ -17,7 +17,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.test_executor import PlaywrightTestExecutor
@@ -76,9 +76,10 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         mock_listdir.return_value = ["chromium-1234"]
         mock_sys.executable = "/usr/bin/python3"
 
-        from unittest.mock import MagicMock
-
-        with patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}):
+        with (
+            patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}),
+            patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}),
+        ):
             py_bin = self.executor.setup_venv()
             self.assertEqual(py_bin, "/usr/bin/python3")
 

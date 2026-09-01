@@ -121,6 +121,9 @@ class SpannerManager:
 
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
+        if getattr(self, "_cached_mig_binary", None) is not None:
+            return self._cached_mig_binary
+
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
         mig_dir = os.path.join(
             self.cfg.workspace_root,
@@ -133,6 +136,7 @@ class SpannerManager:
         for name in binary_names:
             mig_binary = os.path.join(mig_dir, "migrations_", name)
             if os.path.isfile(mig_binary) and os.access(mig_binary, os.X_OK):
+                self._cached_mig_binary = mig_binary
                 return mig_binary
 
         if os.path.isdir(mig_dir):
@@ -141,6 +145,7 @@ class SpannerManager:
                     if f in binary_names:
                         candidate = os.path.join(root, f)
                         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                            self._cached_mig_binary = candidate
                             return candidate
         return None
 
