@@ -279,9 +279,9 @@ class KindClusterManager:
             futures = {executor.submit(self._load_single_image, img): img for img in images}
             for future in concurrent.futures.as_completed(futures):
                 future.result()
-        except Exception:
+        except BaseException:
             logger.error("[KinD] Image loading encountered an error. Cancelling pending loads...")
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=True, cancel_futures=True)
             raise
         executor.shutdown(wait=True)
 

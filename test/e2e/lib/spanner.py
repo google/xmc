@@ -330,8 +330,8 @@ class SpannerManager:
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
-        except Exception:
-            executor1.shutdown(wait=False, cancel_futures=True)
+        except BaseException:
+            executor1.shutdown(wait=True, cancel_futures=True)
             raise
         executor1.shutdown(wait=True)
 
@@ -344,8 +344,8 @@ class SpannerManager:
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
-        except Exception:
-            executor2.shutdown(wait=False, cancel_futures=True)
+        except BaseException:
+            executor2.shutdown(wait=True, cancel_futures=True)
             raise
         executor2.shutdown(wait=True)
 
@@ -372,10 +372,15 @@ class SpannerManager:
     def teardown(self) -> None:
         """Drops ephemeral databases safely in parallel."""
         logger.info("=== [Spanner] Cleaning up ephemeral databases ===")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        try:
             futures = [
                 executor.submit(self._drop_database, db_name)
                 for db_name in [self.cfg.ess_db, self.cfg.xid_db]
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
+        except BaseException:
+            executor.shutdown(wait=True, cancel_futures=True)
+            raise
+        executor.shutdown(wait=True)

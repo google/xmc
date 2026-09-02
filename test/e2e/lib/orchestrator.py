@@ -106,8 +106,8 @@ class E2EOrchestrator:
                 kind_future = executor1.submit(self.kind.setup)
                 images = builder_future.result()
                 kind_future.result()
-            except Exception:
-                executor1.shutdown(wait=False, cancel_futures=True)
+            except BaseException:
+                executor1.shutdown(wait=True, cancel_futures=True)
                 raise
             executor1.shutdown(wait=True)
 
@@ -120,8 +120,8 @@ class E2EOrchestrator:
                 spanner_future = executor2.submit(self.spanner.setup)
                 load_future.result()
                 spanner_future.result()
-            except Exception:
-                executor2.shutdown(wait=False, cancel_futures=True)
+            except BaseException:
+                executor2.shutdown(wait=True, cancel_futures=True)
                 raise
             executor2.shutdown(wait=True)
 
