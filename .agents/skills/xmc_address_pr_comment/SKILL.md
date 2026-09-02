@@ -9,7 +9,7 @@ This document defines a structured agent workflow that automates the process of 
 
 ```mermaid
 graph TD
-    A["User provides PR / comment link"] --> B["Phase 1: Run generate_review_checklist.py (-o brain/<conv_id>/pr_review_checklist.md)"]
+    A["User provides PR / comment link"] --> B["Phase 1: Run generate_review_checklist.py (-o <appDataDir>/brain/<conv_id>/pr_review_checklist.md)"]
     B --> C["Phase 2: Fetch comment context (fetch_pr_comment.py) & Impact Mapping"]
     C --> D["Phase 2: Prepare pr_comment_resolution_plan.md artifact"]
     D --> E{"Phase 3: Mandatory Human Confirmation Gate (Stop Execution)"}
@@ -67,7 +67,7 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
     "owner": "google",
     "repo": "xmc",
     "pr_number": 145,
-    "output_file": "/usr/local/google/home/vluk/.gemini/jetski/brain/<conv_id>/pr_review_checklist.md",
+    "output_file": "<appDataDir>/brain/<conv_id>/pr_review_checklist.md",
     "unresolved_comment_count": 3
   }
 }
@@ -363,7 +363,7 @@ Here is a step-by-step example of how this skill executes:
    - Edits the approved files.
    - Runs unit tests and coverage calculations.
    - Builds the affected targets locally.
-   - Commits changes to the branch (`TAG=agy`, `CONV=<conv_id>`).
+   - Commits changes to the branch (`TAG=agy`, `CONV=<conversation_id>`).
    - Posts reply comments for approved comment IDs on GitHub using `reply_pr_comment.py --message-file`.
    - Pushes updated OCI containers via `bazel run //cmd/xid_service:xid_service_image_push`.
    - Restarts GKE pods: `kubectl rollout restart deployment/xid-service-deployment -n xmc`.
