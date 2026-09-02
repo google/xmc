@@ -93,3 +93,19 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "vertical_pod_autoscaler_test",
+    srcs = ["vertical_pod_autoscaler_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "vertical_pod_autoscaler_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
