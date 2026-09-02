@@ -38,9 +38,19 @@ INVALID_LINE_WITHOUT_EQUALS
 	// Preset one env var to ensure existing vars are not overwritten
 	t.Setenv("TEST_CLICKHOUSE_HOST", "existing-host")
 
+	origPort, portExists := os.LookupEnv("TEST_CLICKHOUSE_PORT")
+	origUser, userExists := os.LookupEnv("TEST_CLICKHOUSE_USER")
 	t.Cleanup(func() {
-		_ = os.Unsetenv("TEST_CLICKHOUSE_PORT")
-		_ = os.Unsetenv("TEST_CLICKHOUSE_USER")
+		if portExists {
+			_ = os.Setenv("TEST_CLICKHOUSE_PORT", origPort) // nolint:determinism // restoring original pre-existing env state
+		} else {
+			_ = os.Unsetenv("TEST_CLICKHOUSE_PORT")
+		}
+		if userExists {
+			_ = os.Setenv("TEST_CLICKHOUSE_USER", origUser) // nolint:determinism // restoring original pre-existing env state
+		} else {
+			_ = os.Unsetenv("TEST_CLICKHOUSE_USER")
+		}
 	})
 
 	if err := LoadEnvFile(envPath); err != nil {
