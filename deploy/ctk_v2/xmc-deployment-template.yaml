@@ -82,6 +82,9 @@ vars:
   # Enable Foundational Component Controllers
   enable_components: false
 
+  # Enable Google Cloud Managed ML Diagnostics integration (Hypercompute Cluster ML Runs & Connection Operator)
+  enable_managed_mldiagnostics: false
+
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0
 

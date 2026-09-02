@@ -41,6 +41,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
+*   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics integration (Hypercompute Cluster MachineLearningRuns and Connection Operator).
 
 ### ClickHouse Connection (Metrics Pipeline)
 ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). These variables are applied only when `enable_metrics` is `true`, and the dashboard service requires them to serve chart data. Enabling metrics also makes ClickHouse a readiness dependency: dashboard service pods stay out of service until they can reach it, so point these at an instance that is actually up.

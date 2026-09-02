@@ -136,6 +136,12 @@ Confirm that compilation completes successfully and generates the deployment fol
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
 ```
 
+> [!NOTE]
+> **Managed ML Diagnostics API**: If enabling Managed ML Diagnostics (`enable_managed_mldiagnostics: true`), also ensure the Hypercompute Cluster API is enabled:
+> ```bash
+> gcloud services enable hypercomputecluster.googleapis.com --project=<project_id>
+> ```
+
 ### Step 3: Deploy Core Infrastructure & IP (`primary` group)
 ```bash
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only primary --auto-approve
@@ -176,6 +182,21 @@ Confirm that compilation completes successfully and generates the deployment fol
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only compute --auto-approve
 ```
 
+> [!NOTE]
+> **Managed ML Diagnostics IAM Roles**: When `enable_managed_mldiagnostics: true` is enabled:
+> 1. **GKE Nodes GCS Writer**: Grant `roles/storage.objectCreator` to the GKE node pool service account (`xmc-np-sa-<environment>`):
+>    ```bash
+>    gcloud projects add-iam-policy-binding <project_id> \
+>      --member="serviceAccount:<node_pool_sa_email>" \
+>      --role="roles/storage.objectCreator"
+>    ```
+> 2. **Reconciler Workload Identity**: Grant `roles/hypercomputecluster.editor` to the Reconciler Workload Identity principal:
+>    ```bash
+>    gcloud projects add-iam-policy-binding <project_id> \
+>      --member="serviceAccount:<project_id>.svc.id.goog[<namespace>/reconciler-service-account]" \
+>      --role="roles/hypercomputecluster.editor"
+>    ```
+
 ### Step 6: Enable GKE Gateway API standard channel
 Since GKE has Gateway API disabled by default, you must enable it on the newly created GKE cluster before deploying the application (which relies on `Gateway` and `HTTPRoute` resources). Run:
 
@@ -193,10 +214,22 @@ gcloud container clusters update <cluster_name> \
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
 ```
 
+> [!NOTE]
+> **Optional Managed ML Diagnostics Connection Operator**: If `enable_managed_mldiagnostics: true` is enabled, install the Google-managed connection operator into the `gke-mldiagnostics` namespace:
+> ```bash
+> helm upgrade --install mldiagnostics-connection-operator \
+>   oci://us-docker.pkg.dev/ai-on-gke/mldiagnostics-webhook-and-operator-helm/mldiagnostics-connection-operator \
+>   --namespace=gke-mldiagnostics \
+>   --create-namespace \
+>   --wait --timeout 300s
+> ```
+
 ### Step 8: Build and Push XMC Service Images
 Before deploying the application Helm chart, build and push all service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
 > [!NOTE]
 > **Feature Flag Awareness**: `deploy_dev_env.py` and manual step 8 check feature flags in the deployment configuration YAML (such as `rod_deployment_enabled: false`). If a feature is disabled (e.g. `rod_deployment_enabled: false`), the corresponding image target (e.g. `//cmd/rod_data_provider:rod_data_provider_image_push`) is skipped.
+>
+> **ML Diagnostics Control Plane**: The reconciler microservice connects to the Hypercompute Cluster ML Run control plane. By default, it targets `--mldiagnostics_environment=prod` (`https://hypercomputecluster.googleapis.com/v1alpha`).
 
 ```bash
 export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
@@ -222,7 +255,27 @@ bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 
 ---
 
-## 4. Verification and Validation
+## 4. Optional Feature: Managed ML Diagnostics (`enable_managed_mldiagnostics`)
+
+Managed ML Diagnostics integrates XMC with Google Cloud Hypercompute Cluster MachineLearningRuns and installs the GKE ML Diagnostics Connection Operator to automatically mutate workload pods for diagnostics trace dumps and populate MLRun console URLs on WorkUnits.
+
+### Summary of Requirements
+
+| Requirement | Target | Configuration / Role |
+| :--- | :--- | :--- |
+| **GCP Cloud API** | Project | `hypercomputecluster.googleapis.com` |
+| **GKE Nodes IAM** | Node Pool Service Account | `roles/storage.objectCreator` |
+| **Reconciler Workload Identity** | `xmc/reconciler-service-account` | `roles/hypercomputecluster.editor` |
+| **Kubernetes Operator** | GKE Cluster (`gke-mldiagnostics`) | `mldiagnostics-connection-operator` (Helm OCI) |
+| **Reconciler Control Plane** | Reconciler Container | `--mldiagnostics_environment=prod` (default) |
+
+### How to Enable
+* **Option 1 (Automated Dev Setup)**: Set `enable_managed_mldiagnostics: true` in your deployment configuration YAML (e.g. `deploy/ctk_v2/xmanager-cloud-deployment.yaml`).
+* **Option 2 (Manual Step-by-Step Deployment)**: Follow the optional notes in Step 2, Step 5, and Step 7 above.
+
+---
+
+## 5. Verification and Validation
 
 Verify the health, certificate readiness, and routing of the environment:
 
@@ -243,6 +296,17 @@ Poll until the Google-managed certificate state reports `ACTIVE`:
 ```bash
 gcloud certificate-manager certificates describe xmc-cert-<environment> --project=<project_id> --format='value(managed.state)'
 ```
+
+### Step 4: Managed ML Diagnostics Verification (Optional)
+If Managed ML Diagnostics is enabled:
+1. Verify the connection operator controller pod is running:
+   ```bash
+   kubectl get pods -n gke-mldiagnostics
+   ```
+2. Verify reconciler MLRun creation in reconciler logs:
+   ```bash
+   kubectl logs -n xmc deployment/reconciler-deployment -c reconciler | grep -i "mlrun"
+   ```
 
 > [!TIP]
 > Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.

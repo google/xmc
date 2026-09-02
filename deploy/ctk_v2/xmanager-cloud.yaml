@@ -64,6 +64,7 @@ vars:
   clickhouse_user: "default"
   clickhouse_password: ""
   enable_components: false
+  enable_managed_mldiagnostics: false
   health_service_deployment_enabled: false
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
