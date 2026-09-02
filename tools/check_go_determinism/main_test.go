@@ -168,6 +168,61 @@ func TestDiv(t *testing.T) {
 			wantSubstr:    "arbitrary second-level time.Sleep in test",
 		},
 		{
+			name: "parenthesized sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestParen(t *testing.T) {
+	time.Sleep((15 * time.Second))
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
+			name: "bare second sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestBare(t *testing.T) {
+	time.Sleep(time.Second)
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
+			name: "type conversion sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestConversion(t *testing.T) {
+	time.Sleep(time.Duration(5 * time.Second))
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
+			name: "sleep with nolint:determinism is suppressed",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestSuppressedSleep(t *testing.T) {
+	time.Sleep(15 * time.Second) // nolint:determinism
+}
+`,
+			wantViolation: false,
+		},
+		{
 			name: "millisecond sleep passes",
 			src: `package main
 import (
@@ -305,6 +360,7 @@ func TestIsExcluded(t *testing.T) {
 		{"bazel-my-custom-workspace/foo_test.go", true},
 		{"cmd/health_service/server_test.go", false},
 		{"pkg/auth/oauth2/config_test.go", false},
+		{"pkg/build/bazel-runner_test.go", false},
 	}
 
 	for _, tc := range tests {

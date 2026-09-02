@@ -43,7 +43,11 @@ var excludedDirs = map[string]bool{
 
 func isExcluded(path string) bool {
 	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
-	for _, part := range parts {
+	for i, part := range parts {
+		isLast := i == len(parts)-1
+		if isLast && strings.HasSuffix(part, ".go") {
+			continue
+		}
 		if excludedDirs[part] || strings.HasPrefix(part, "bazel-") {
 			return true
 		}
@@ -73,11 +77,20 @@ func isLongSleepExpr(expr ast.Expr) bool {
 	case *ast.SelectorExpr:
 		return isTimeUnit(e)
 	case *ast.BinaryExpr:
-		if e.Op == token.MUL || e.Op == token.ADD || e.Op == token.SUB || e.Op == token.QUO {
+		if e.Op == token.MUL || e.Op == token.ADD || e.Op == token.SUB {
 			return isLongSleepExpr(e.X) || isLongSleepExpr(e.Y)
+		}
+		if e.Op == token.QUO {
+			return isLongSleepExpr(e.X)
 		}
 	case *ast.ParenExpr:
 		return isLongSleepExpr(e.X)
+	case *ast.CallExpr:
+		for _, arg := range e.Args {
+			if isLongSleepExpr(arg) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -101,6 +114,7 @@ func extractSuppressionLines(node *ast.File, fset *token.FileSet) (map[int]bool,
 			if strings.Contains(c.Text, "nolint:determinism") {
 				for l := startLine; l <= endLine; l++ {
 					nolintDetLines[l] = true
+					nolintSleepLines[l] = true
 				}
 			}
 			if strings.Contains(c.Text, "nolint:sleep") {
