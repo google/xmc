@@ -519,6 +519,15 @@ func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	}), nil
 }
 
+// UnmarshalPlotSpec decodes a stored PlotSpec, naming the chart it belongs to when it cannot.
+func UnmarshalPlotSpec(chartID string, plotSpecBytes []byte) (*dpb.PlotSpec, error) {
+	var plotSpec dpb.PlotSpec
+	if err := proto.Unmarshal(plotSpecBytes, &plotSpec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal plot spec for chart %q: %w", chartID, err)
+	}
+	return &plotSpec, nil
+}
+
 // ChartPlotsToDeleteMutation creates a Spanner mutation to delete all plot specifications for a Chart.
 func ChartPlotsToDeleteMutation(chartID string) *spanner.Mutation {
 	return spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chartID}.AsPrefix())

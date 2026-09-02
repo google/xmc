@@ -30,7 +30,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
 		writeTestManifest(t, dir, "c2.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 2.0.0 }\n")
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil || !res.Valid {
 			t.Fatalf("ValidateDirectory() failed: err=%v, errors=%v", err, res.Errors)
@@ -41,7 +41,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "broken.yaml", ":::invalid: yaml:")
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil || res.Valid {
 			t.Fatalf("expected validation failure for syntax error, got err=%v, valid=%v", err, res.Valid)
@@ -51,7 +51,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 
 	t.Run("edge directories", func(t *testing.T) {
 		t.Parallel()
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		if _, err := l.ValidateDirectory(""); err == nil {
 			t.Errorf("expected error for empty directory path")
 		}
@@ -73,7 +73,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "components.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-1 }\nspec: { version: 1.0.0 }\n---\napiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-2 }\nspec: { version: 1.2.0 }\n---\n# Comment only\n")
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		if res, err := l.ValidateDirectory(dir); err != nil || !res.Valid {
 			t.Fatalf("expected multi-doc directory to be valid, got err=%v, errors=%v", err, res.Errors)
 		}
@@ -84,7 +84,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "list.yaml", "- item1\n- item2\n")
 		writeTestManifest(t, dir, "dapr-comp.yaml", "apiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata: { name: statestore }\nspec: { type: state.redis }\n")
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		if res, err := l.ValidateDirectory(dir); err != nil || !res.Valid {
 			t.Fatalf("expected non-mapping and 3P components to be skipped safely, got err=%v, errors=%v", err, res.Errors)
 		}
@@ -96,7 +96,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		writeTestManifest(t, dir, "empty.yaml", "foo: bar\n---\nmetadata: 123\n")
 		writeTestManifest(t, dir, "invalid-group-kind.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: InvalidKind\nmetadata: { name: invalid }\n")
 		writeTestManifest(t, dir, "decode-error.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nspec: [invalid_seq]\n")
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -115,12 +115,100 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 			t.Fatalf("write failed: %v", err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(filePath, 0644) })
-		l := linter.NewLinter()
+		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil || res.Valid {
 			t.Fatalf("expected read error on unreadable file, got valid=%v, err=%v", res.Valid, err)
 		}
 		assertDiagnosticRule(t, res, "FILE_READ_ERROR")
+	})
+
+	t.Run("end-to-end semver dependency constraints across files", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeTestManifest(t, dir, "comp-a.yaml", `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata: { name: comp-a }
+spec:
+  version: "1.0.0"
+  dependencies:
+    - name: comp-b
+      version: ">=2.0.0 <3.0.0"
+`)
+		writeTestManifest(t, dir, "comp-b.yaml", `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata: { name: comp-b }
+spec:
+  version: "2.4.1"
+`)
+		l := linter.NewLinter(nil)
+		res, err := l.ValidateDirectory(dir)
+		if err != nil || !res.Valid {
+			t.Fatalf("expected valid multi-component directory with semver constraints, got err=%v, errors=%v", err, res.Errors)
+		}
+	})
+
+	t.Run("end-to-end semver version incompatibility across files", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeTestManifest(t, dir, "comp-a.yaml", `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata: { name: comp-a }
+spec:
+  version: "1.0.0"
+  dependencies:
+    - name: comp-b
+      version: "^3.0.0"
+`)
+		writeTestManifest(t, dir, "comp-b.yaml", `
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata: { name: comp-b }
+spec:
+  version: "2.4.1"
+`)
+		l := linter.NewLinter(nil)
+		res, err := l.ValidateDirectory(dir)
+		if err != nil {
+			t.Fatalf("unexpected execution error: %v", err)
+		}
+		if res.Valid {
+			t.Fatalf("expected validation failure for incompatible SemVer versions")
+		}
+		assertDiagnosticRule(t, res, "VERSION_INCOMPATIBILITY")
+	})
+
+	t.Run("mixed yaml yml and non-manifest file extensions", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeTestManifest(t, dir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "notes.txt", "this is a text file")
+		writeTestManifest(t, dir, "config.json", "{}")
+		l := linter.NewLinter(nil)
+		res, err := l.ValidateDirectory(dir)
+		if err != nil || !res.Valid {
+			t.Fatalf("expected valid directory ignoring non-yaml files, got err=%v, errors=%v", err, res.Errors)
+		}
+	})
+
+	t.Run("nested subdirectories manifest discovery", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "nested", "sub")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("failed to create subDir: %v", err)
+		}
+		writeTestManifest(t, subDir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
+		l := linter.NewLinter(nil)
+		res, err := l.ValidateDirectory(dir)
+		if err != nil || !res.Valid {
+			t.Fatalf("expected valid nested directories, got err=%v, errors=%v", err, res.Errors)
+		}
 	})
 }
 

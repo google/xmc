@@ -30,6 +30,7 @@ func main() {
 
 	cfg := Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.RuntimeConfig.QuotaProjectID)
+	slog.SetDefault(logger)
 	ctx = logging.WithLogger(ctx, logger)
 
 	if err := run(ctx, cfg); err != nil {

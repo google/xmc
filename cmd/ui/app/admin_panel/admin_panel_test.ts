@@ -127,7 +127,44 @@ describe('AdminPanelPage Component', () => {
     await flush();
 
     const harness = await getHarness(AdminPanelHarness);
-    expect(await harness.getErrorText()).toContain('Failed to load health status');
+    expect(await harness.getErrorText()).toContain('Failed to load admin panel');
+    expect(await harness.hasPageErrorBanner()).toBeTrue();
+  });
+
+  it('should retry loading health status when clicking retry on page error banner', async () => {
+    const healthService = get(HealthService);
+    let attempts = 0;
+    const mockStatus = {
+      healthState: 'HEALTH_STATE_HEALTHY',
+      systemInfo: {
+        appVersion: 'mock-app-version-1.0.0',
+        essDbSchemaVersion: '6',
+        xidDbSchemaVersion: '1',
+      },
+      components: [],
+      healthCheckTime: { seconds: 1717804800, nanos: 0 },
+    };
+    spyOn(healthService, 'getHealthStatus').and.callFake(() => {
+      attempts++;
+      if (attempts === 1) {
+        return throwError(() => new Error('Initial load failed'));
+      }
+      return of(mockStatus as any);
+    });
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.hasPageErrorBanner()).toBeTrue();
+    expect(await harness.getErrorText()).toContain('Failed to load admin panel.');
+
+    await harness.clickPageErrorRetry();
+    await flush();
+
+    expect(attempts).toBe(2);
+    expect(await harness.hasPageErrorBanner()).toBeFalse();
+    expect(await harness.getHealthStatusSection()).not.toBeNull();
   });
 
   it('should display toast and preserve old health status if subsequent refresh fails', async () => {
@@ -174,5 +211,90 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     expect(await harness.hasSpinner()).toBeTrue();
+  });
+
+  it('should display error banner in config entries card if health configs fail to load', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthConfigs').and.returnValue(
+      throwError(() => new Error('Configs load failed')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const configEntriesCardHarness = await harness.getConfigEntriesCard();
+    expect(configEntriesCardHarness).not.toBeNull();
+    expect(await configEntriesCardHarness!.hasErrorBanner()).toBeTrue();
+    expect(await configEntriesCardHarness!.getErrorBannerText()).toContain(
+      'Failed to load configuration entries.',
+    );
+  });
+
+  it('should retry fetching health configs when clicking retry in config entries error banner', async () => {
+    const healthService = get(HealthService);
+    let attempts = 0;
+    spyOn(healthService, 'getHealthConfigs').and.callFake(() => {
+      attempts++;
+      if (attempts === 1) {
+        return throwError(() => new Error('First attempt failed'));
+      }
+      return of({
+        configGroups: [
+          {
+            displayName: 'Retried Config Group',
+            configs: [{ key: 'retried.key', value: 'retried.value' }],
+          },
+        ],
+      });
+    });
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const cardHarness = await harness.getConfigEntriesCard();
+    expect(cardHarness).not.toBeNull();
+    expect(await cardHarness!.hasErrorBanner()).toBeTrue();
+    expect(await cardHarness!.hasRetryButton()).toBeTrue();
+
+    await cardHarness!.clickRetry();
+    await flush();
+
+    expect(attempts).toBe(2);
+    expect(await cardHarness!.hasErrorBanner()).toBeFalse();
+    expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Retried Config Group']);
+  });
+
+  it('should not re-fetch configs when refreshing health status', async () => {
+    const healthService = get(HealthService);
+    let configFetchCount = 0;
+    spyOn(healthService, 'getHealthConfigs').and.callFake(() => {
+      configFetchCount++;
+      return of({
+        configGroups: [
+          {
+            displayName: 'Initial Group',
+            configs: [{ key: 'init.key', value: 'init.val' }],
+          },
+        ],
+      });
+    });
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const cardHarness = await harness.getConfigEntriesCard();
+    expect(cardHarness).not.toBeNull();
+    expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
+    expect(configFetchCount).toBe(1);
+
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    await healthStatusSectionHarness!.clickRefresh();
+    await flush();
+
+    expect(configFetchCount).toBe(1);
+    expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
   });
 });

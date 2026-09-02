@@ -64,6 +64,11 @@
         font-weight: 600;
         font-size: 14px;
         margin-top: 2px;
+
+        &.is-placeholder {
+          color: #5f6368;
+          font-weight: 500;
+        }
       }
     }
   }

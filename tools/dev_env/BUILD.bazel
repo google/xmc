@@ -23,8 +23,52 @@ exports_files([
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
+    "kind_manager.py",
+    "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "kind_manager_lib",
+    srcs = ["kind_manager.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "kind_manager_test",
+    srcs = ["kind_manager_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":kind_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "spanner_manager_lib",
+    srcs = ["spanner_manager.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "spanner_manager_test",
+    srcs = ["spanner_manager_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":spanner_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "config_lib",
@@ -54,6 +98,8 @@ py_library(
     deps = [
         ":config_lib",
         ":deploy_dev_env_lib",
+        ":kind_manager_lib",
+        ":spanner_manager_lib",
         ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",
     ],

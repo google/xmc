@@ -221,8 +221,8 @@ func TestGetHealthStatus(t *testing.T) {
 				AppVersion:         "unknown",
 				BuildVersion:       "unknown",
 				ObservabilityUrl:   "",
-				EssDbSchemaVersion: "unknown",
-				XidDbSchemaVersion: "unknown",
+				EssDbSchemaVersion: "UNAVAILABLE",
+				XidDbSchemaVersion: "UNAVAILABLE",
 			},
 			expectedComponents: map[string]spb.HealthState{
 				"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,

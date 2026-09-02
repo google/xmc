@@ -15,18 +15,27 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  DEFAULT_MAX_OWNER_GRACE_LINES,
+  MAX_OWNER_GRACE_LINES,
+  getMaxOwnerGraceLines,
   validateGitRefs,
   isBotUser,
   extractDismissalContext,
   parseTimelineReviewEvent,
+  resolveActiveApproval,
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
+  isIgnoredRangeDiffHeader,
   parseRangeDiff,
+  getCommitLineDelta,
+  computeAddedCommitsDelta,
+  isProtectedFile,
+  checkProtectedFileChanges,
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
-  MAX_OWNER_GRACE_LINES
+  formatReapprovalReviewBody
 } = require('./incremental-approval');
 
 test('validateGitRefs accepts valid git refs and commit SHAs', () => {
@@ -140,6 +149,23 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     state: 'approved',
     commit_id: 'sha1'
   }, context), null);
+});
+
+test('resolveActiveApproval returns latest approval and blocks on CHANGES_REQUESTED', () => {
+  const reviewerMap = new Map();
+  reviewerMap.set('alice', { approver: 'alice', state: 'APPROVED', approvedSha: 'sha1', submittedAt: '2026-08-20T10:00:00Z' });
+  reviewerMap.set('bob', { approver: 'bob', state: 'APPROVED', approvedSha: 'sha2', submittedAt: '2026-08-21T10:00:00Z' });
+
+  const latest = resolveActiveApproval(reviewerMap);
+  assert.strictEqual(latest.approver, 'bob');
+  assert.strictEqual(latest.approvedSha, 'sha2');
+
+  // Blocking change request from another reviewer
+  reviewerMap.set('charlie', { approver: 'charlie', state: 'CHANGES_REQUESTED', approvedSha: 'sha3', submittedAt: '2026-08-22T10:00:00Z' });
+  assert.strictEqual(resolveActiveApproval(reviewerMap), null);
+
+  // Empty map returns null
+  assert.strictEqual(resolveActiveApproval(new Map()), null);
 });
 
 test('findLatestApproval ignores approvals from bot users', () => {
@@ -333,7 +359,7 @@ test('parseRangeDiff identifies pure rebase with zero delta', () => {
 
   const result = parseRangeDiff(sampleOutput);
   assert.strictEqual(result.isCleanRebase, true);
-  assert.strictEqual(result.hasUnmatchedCommits, false);
+  assert.strictEqual(result.hasRemovedCommits, false);
   assert.strictEqual(result.totalDelta, 0);
   assert.strictEqual(result.additions, 0);
   assert.strictEqual(result.deletions, 0);
@@ -390,7 +416,7 @@ test('parseRangeDiff ignores Commit message hunks', () => {
   assert.strictEqual(result.totalDelta, 1);
 });
 
-test('parseRangeDiff identifies added, removed, or squashed commits as unmatched', () => {
+test('parseRangeDiff identifies added commits and captures addedCommitShas', () => {
   const sampleAdded = [
     '1:  a1b2c3d = 1:  e5f6g7h First commit',
     '-:  ------- > 2:  89abcdef Added new commit'
@@ -398,7 +424,8 @@ test('parseRangeDiff identifies added, removed, or squashed commits as unmatched
 
   const resultAdded = parseRangeDiff(sampleAdded);
   assert.strictEqual(resultAdded.isCleanRebase, false);
-  assert.strictEqual(resultAdded.hasUnmatchedCommits, true);
+  assert.strictEqual(resultAdded.hasRemovedCommits, false);
+  assert.deepStrictEqual(resultAdded.addedCommitShas, ['89abcdef']);
   assert.strictEqual(resultAdded.totalDelta, 0);
 
   const sampleRemoved = [
@@ -407,7 +434,170 @@ test('parseRangeDiff identifies added, removed, or squashed commits as unmatched
 
   const resultRemoved = parseRangeDiff(sampleRemoved);
   assert.strictEqual(resultRemoved.isCleanRebase, false);
-  assert.strictEqual(resultRemoved.hasUnmatchedCommits, true);
+  assert.strictEqual(resultRemoved.hasRemovedCommits, true);
+  assert.deepStrictEqual(resultRemoved.addedCommitShas, []);
+});
+
+test('isProtectedFile accurately identifies sensitive repository files', () => {
+  assert.strictEqual(isProtectedFile('.github/workflows/unit-tests.yml'), true);
+  assert.strictEqual(isProtectedFile('.github/scripts/incremental-approval.js'), true);
+  assert.strictEqual(isProtectedFile('OWNERS'), true);
+  assert.strictEqual(isProtectedFile('.githooks/pre-commit'), true);
+  assert.strictEqual(isProtectedFile('pkg/service/data_engine.go'), false);
+  assert.strictEqual(isProtectedFile('README.md'), false);
+  assert.strictEqual(isProtectedFile(''), false);
+  assert.strictEqual(isProtectedFile(null), false);
+});
+
+test('checkProtectedFileChanges detects sensitive modifications and handles git failure', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  // Sensitive file modified
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      return 'pkg/main.go\n.github/workflows/ci.yml\n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: mockedCheckProtectedFileChanges } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedCheckProtectedFileChanges('sha1', 'sha2'), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+
+  // Safe files modified
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      return 'pkg/main.go\nREADME.md\n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: safeCheck } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(safeCheck('sha1', 'sha2'), false);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+
+  // Subprocess error fail-safe returns true
+  childProcess.execFileSync = () => {
+    throw new Error('Fatal git error');
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: errorCheck } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(errorCheck('sha1', 'sha2'), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('getCommitLineDelta parses numstat additions and deletions correctly', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      return '94d6450805df211f728adf73e0c98b8419e22005\n3\t1\t.github/workflows/unit-tests.yml\n1\t0\tREADME.md\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
+
+  try {
+    const delta = mockedGetCommitLineDelta('94d64508');
+    assert.strictEqual(delta.additions, 4);
+    assert.strictEqual(delta.deletions, 1);
+    assert.strictEqual(delta.totalDelta, 5);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('getCommitLineDelta handles subprocess failure gracefully', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = () => {
+    throw new Error('Fatal git error');
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
+
+  try {
+    const delta = mockedGetCommitLineDelta('invalid-sha');
+    assert.strictEqual(delta.additions, 0);
+    assert.strictEqual(delta.deletions, 0);
+    assert.strictEqual(delta.totalDelta, 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('isIgnoredRangeDiffHeader detects metadata and header lines', () => {
+  assert.strictEqual(isIgnoredRangeDiffHeader('@@ Metadata'), true);
+  assert.strictEqual(isIgnoredRangeDiffHeader('Author: Alice <alice@google.com>'), true);
+  assert.strictEqual(isIgnoredRangeDiffHeader('Commit: Bob <bob@google.com>'), true);
+  assert.strictEqual(isIgnoredRangeDiffHeader('## Commit message ##'), true);
+  assert.strictEqual(isIgnoredRangeDiffHeader('## Notes (main) ##'), true);
+  assert.strictEqual(isIgnoredRangeDiffHeader('func main() {'), false);
+  assert.strictEqual(isIgnoredRangeDiffHeader('## pkg/foo/bar.go ##'), false);
+});
+
+test('computeAddedCommitsDelta sums additions and deletions across multiple commits', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      const sha = args[args.length - 1];
+      if (sha === 'sha-1') {
+        return 'sha-1\n2\t1\tfile1.go\n';
+      }
+      if (sha === 'sha-2') {
+        return 'sha-2\n3\t0\tfile2.go\n';
+      }
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { computeAddedCommitsDelta: mockedComputeAddedCommitsDelta } = require('./incremental-approval');
+
+  try {
+    const delta = mockedComputeAddedCommitsDelta(['sha-1', 'sha-2']);
+    assert.strictEqual(delta.additions, 5);
+    assert.strictEqual(delta.deletions, 1);
+    assert.strictEqual(delta.totalDelta, 6);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('formatReapprovalReviewBody formats markdown body accurately', () => {
+  const body = formatReapprovalReviewBody('Clean rebase detected.', 'alice', 'abcdef1234567890');
+  assert.match(body, /🤖 \*\*Incremental PR Approval\*\*/);
+  assert.match(body, /Clean rebase detected\./);
+  assert.match(body, /\*Preserving prior approval by @alice on commit `abcdef1`\.\*/);
 });
 
 test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
@@ -436,7 +626,7 @@ test('evaluateIncrementalApproval skips if PR is already approved at current SHA
   assert.strictEqual(result.trigger, 'ALREADY_APPROVED');
 });
 
-test('evaluateIncrementalApproval rejects unmatched/added commits even if deltaLines is 0', () => {
+test('evaluateIncrementalApproval rejects removed commits even if deltaLines is 0', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-111',
@@ -444,10 +634,25 @@ test('evaluateIncrementalApproval rejects unmatched/added commits even if deltaL
     isAuthorOwner: false,
     deltaLines: 0,
     isCleanRebase: false,
-    hasUnmatchedCommits: true
+    hasRemovedCommits: true
   });
   assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'UNMATCHED_COMMITS');
+  assert.strictEqual(result.trigger, 'REMOVED_COMMITS');
+});
+
+test('evaluateIncrementalApproval rejects when sensitive CI/ownership files are modified', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 1,
+    isCleanRebase: false,
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: true
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
 });
 
 test('evaluateIncrementalApproval auto-reapproves pure clean rebase with 0 delta', () => {
@@ -458,7 +663,8 @@ test('evaluateIncrementalApproval auto-reapproves pure clean rebase with 0 delta
     isAuthorOwner: false,
     deltaLines: 0,
     isCleanRebase: true,
-    hasUnmatchedCommits: false
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, true);
   assert.strictEqual(result.trigger, 'CLEAN_REBASE');
@@ -472,7 +678,8 @@ test('evaluateIncrementalApproval auto-reapproves code owner within 10-line grac
     isAuthorOwner: true,
     deltaLines: 8,
     isCleanRebase: false,
-    hasUnmatchedCommits: false
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, true);
   assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
@@ -484,9 +691,10 @@ test('evaluateIncrementalApproval auto-reapproves code owner with exactly 10 lin
     approvedSha: 'sha-111',
     currentSha: 'sha-222',
     isAuthorOwner: true,
-    deltaLines: MAX_OWNER_GRACE_LINES,
+    deltaLines: DEFAULT_MAX_OWNER_GRACE_LINES,
     isCleanRebase: false,
-    hasUnmatchedCommits: false
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, true);
   assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
@@ -500,7 +708,8 @@ test('evaluateIncrementalApproval rejects code owner when delta exceeds 10 lines
     isAuthorOwner: true,
     deltaLines: 11,
     isCleanRebase: false,
-    hasUnmatchedCommits: false
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
@@ -514,7 +723,8 @@ test('evaluateIncrementalApproval rejects non-owner when delta > 0', () => {
     isAuthorOwner: false,
     deltaLines: 1,
     isCleanRebase: false,
-    hasUnmatchedCommits: false
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'NON_OWNER_MODIFICATION');
@@ -638,4 +848,15 @@ test('runGitRangeDiff executes range-diff without usage errors', () => {
   const headSha = require('child_process').execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
   const output = runGitRangeDiff('main', headSha, headSha);
   assert.strictEqual(typeof output, 'string');
+});
+
+test('getMaxOwnerGraceLines resolves custom env or fallback default', () => {
+  assert.strictEqual(getMaxOwnerGraceLines('25'), 25);
+  assert.strictEqual(getMaxOwnerGraceLines(15), 15);
+  assert.strictEqual(getMaxOwnerGraceLines('0'), 0);
+  assert.strictEqual(getMaxOwnerGraceLines(''), DEFAULT_MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(getMaxOwnerGraceLines(undefined), DEFAULT_MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(getMaxOwnerGraceLines(null), DEFAULT_MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(getMaxOwnerGraceLines('invalid'), DEFAULT_MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(getMaxOwnerGraceLines('-5'), DEFAULT_MAX_OWNER_GRACE_LINES);
 });

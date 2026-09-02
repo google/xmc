@@ -21,6 +21,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.dev_env import dev_env
+from tools.dev_env.config import LocalDevConfig
 
 
 class DevEnvCliTest(unittest.TestCase):
@@ -42,6 +43,9 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertIn("gke-upgrade", output)
         self.assertIn("deploy", output)
         self.assertIn("upgrade", output)
+        self.assertIn("cluster", output)
+        self.assertIn("status", output)
+        self.assertIn("logs", output)
         self.assertIn("--verbose", output)
         self.assertIn("--quiet", output)
         self.assertIn("--version", output)
@@ -76,6 +80,16 @@ class DevEnvCliTest(unittest.TestCase):
             "test-p",
             "--environment",
             "staging",
+            "--spanner-instance",
+            "test-sp",
+            "--ess-db",
+            "test-ess",
+            "--xid-db",
+            "test-xid",
+            "--cluster-name",
+            "test-cluster",
+            "--auto-migrate",
+            "--enable-metrics",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -90,6 +104,12 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
         self.assertEqual(called_args.project_id, "test-p")
         self.assertEqual(called_args.environment, "staging")
+        self.assertEqual(called_args.spanner_instance, "test-sp")
+        self.assertEqual(called_args.ess_database, "test-ess")
+        self.assertEqual(called_args.xid_database, "test-xid")
+        self.assertEqual(called_args.cluster_name, "test-cluster")
+        self.assertTrue(called_args.auto_migrate)
+        self.assertTrue(called_args.enable_metrics)
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")
@@ -131,7 +151,7 @@ class DevEnvCliTest(unittest.TestCase):
 
     @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
     def test_gke_upgrade_valid_args(self, mock_run: MagicMock) -> None:
-        """Verifies gke-upgrade dispatches with valid arguments."""
+        """Verifies gke-upgrade dispatches with valid arguments and override flags."""
         args = [
             "gke-upgrade",
             "--config",
@@ -140,6 +160,7 @@ class DevEnvCliTest(unittest.TestCase):
             "test-p",
             "--environment",
             "staging",
+            "--no-auto-migrate",
             "--run-migrations",
             "--only",
             "images",
@@ -151,6 +172,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.config, "deploy/ctk_v2/test.yaml")
         self.assertEqual(called_args.project_id, "test-p")
         self.assertEqual(called_args.environment, "staging")
+        self.assertFalse(called_args.auto_migrate)
         self.assertTrue(called_args.run_migrations)
         self.assertEqual(called_args.only, "images")
         self.assertIsNone(called_args.start_from)
@@ -343,6 +365,172 @@ class DevEnvCliTest(unittest.TestCase):
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
         mock_upgrade.assert_called_once()
+
+    @patch("tools.dev_env.spanner_manager.SpannerManager.ensure_databases_exist")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_create_action(
+        self, mock_load_config: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """Verifies 'dev_env spanner create' dispatches to SpannerManager.ensure_databases_exist."""
+        args = self.parser.parse_args(["spanner", "create", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_ensure.assert_called_once()
+
+    @patch("tools.dev_env.spanner_manager.SpannerManager.apply_migrations")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_migrate_action(
+        self, mock_load_config: MagicMock, mock_migrate: MagicMock
+    ) -> None:
+        """Verifies 'dev_env spanner migrate' dispatches to SpannerManager.apply_migrations."""
+        args = self.parser.parse_args(["spanner", "migrate", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_migrate.assert_called_once_with(force=True)
+
+    @patch("tools.dev_env.spanner_manager.SpannerManager.drop_databases")
+    @patch("tools.dev_env.config.load_config")
+    def test_spanner_drop_action(self, mock_load_config: MagicMock, mock_drop: MagicMock) -> None:
+        """Verifies 'dev_env spanner drop' dispatches to SpannerManager.drop_databases."""
+        args = self.parser.parse_args(["spanner", "drop", "--project-id", "my-p"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_drop.assert_called_once()
+
+    @patch("tools.dev_env.config.load_config")
+    @patch("tools.dev_env.dev_env.log_error")
+    def test_spanner_unknown_action(
+        self, mock_log_error: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Verifies unknown spanner action exits with error code 1."""
+        args = self.parser.parse_args(["spanner"])
+        args.spanner_action = "invalid"
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.handle_spanner(args)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.apply_manifests")
+    @patch("tools.dev_env.kind_manager.KindManager.ensure_secrets")
+    @patch("tools.dev_env.kind_manager.KindManager.create_cluster")
+    @patch("tools.dev_env.kind_manager.KindManager.check_prerequisites")
+    @patch("tools.dev_env.config.load_config")
+    def test_cluster_create_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_check_pre: MagicMock,
+        mock_create: MagicMock,
+        mock_ensure: MagicMock,
+        mock_apply: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env cluster create' executes preflight, cluster creation, secrets, and manifests."""
+        args = self.parser.parse_args(
+            ["cluster", "create", "--cluster-name", "my-kind", "--recreate"]
+        )
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_check_pre.assert_called_once()
+        mock_create.assert_called_once_with(recreate=True)
+        mock_ensure.assert_called_once()
+        mock_apply.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.delete_cluster")
+    @patch("tools.dev_env.config.load_config")
+    def test_cluster_delete_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_delete: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env cluster delete' dispatches to KindManager.delete_cluster."""
+        mock_load_config.return_value = LocalDevConfig(
+            project_id="test-p",
+            cluster_name="my-kind",
+        )
+        args = self.parser.parse_args(["cluster", "delete", "--cluster-name", "my-kind"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_delete.assert_called_once()
+
+    @patch("tools.dev_env.config.load_config")
+    @patch("tools.dev_env.dev_env.log_error")
+    def test_cluster_unknown_action(
+        self,
+        mock_log_error: MagicMock,
+        mock_load_config: MagicMock,
+    ) -> None:
+        """Verifies unknown cluster action exits with error code 1."""
+        mock_load_config.return_value = LocalDevConfig(
+            project_id="test-p",
+            cluster_name="my-kind",
+        )
+        args = self.parser.parse_args(["cluster"])
+        args.cluster_action = "invalid"
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.handle_cluster(args)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.get_status")
+    @patch("tools.dev_env.config.load_config")
+    def test_status_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_get_status: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env status' dispatches to KindManager.get_status."""
+        args = self.parser.parse_args(["status", "--cluster-name", "my-kind"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_get_status.assert_called_once()
+
+    @patch("tools.dev_env.kind_manager.KindManager.stream_logs")
+    @patch("tools.dev_env.config.load_config")
+    def test_logs_action(
+        self,
+        mock_load_config: MagicMock,
+        mock_stream_logs: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env logs' dispatches to KindManager.stream_logs."""
+        args = self.parser.parse_args(
+            ["logs", "reconciler", "--follow", "--tail", "50", "-n", "custom-ns"]
+        )
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_stream_logs.assert_called_once_with(
+            service_name="reconciler",
+            follow=True,
+            lines=50,
+            namespace="custom-ns",
+        )
+
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    @patch("tools.dev_env.dev_env.log_error")
+    @patch(
+        "tools.dev_env.upgrade_dev_env.run_upgrade",
+        side_effect=ValueError("Invalid config parameter"),
+    )
+    def test_main_handles_value_error(
+        self, mock_upgrade: MagicMock, mock_log_error: MagicMock, mock_venv: MagicMock
+    ) -> None:
+        """Verifies main() handles ValueError gracefully and exits with code 1."""
+        with self.assertRaises(SystemExit) as cm:
+            dev_env.main(["gke-upgrade"])
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Invalid config parameter")
+
+    def test_parser_service_feature_flags(self) -> None:
+        """Verifies health-service and dashboard-service flags parse into namespace."""
+        parsed = self.parser.parse_args(
+            ["gke-upgrade", "--enable-health-service", "--enable-dashboard-service"]
+        )
+        self.assertTrue(parsed.enable_health_service)
+        self.assertTrue(parsed.enable_dashboard_service)
+
+        parsed_neg = self.parser.parse_args(
+            ["gke-upgrade", "--no-enable-health-service", "--no-enable-dashboard-service"]
+        )
+        self.assertFalse(parsed_neg.enable_health_service)
+        self.assertFalse(parsed_neg.enable_dashboard_service)
 
 
 if __name__ == "__main__":

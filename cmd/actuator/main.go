@@ -39,6 +39,7 @@ func main() {
 	projectID := gceMeta.ProjectID
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, projectID)
+	slog.SetDefault(logger)
 	ctx = logging.WithLogger(ctx, logger)
 
 	prodServer, err := NewProd(ctx, &cfg, projectID)

@@ -76,7 +76,90 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 
 ---
 
-### 3. Generic Aliases (`deploy` / `upgrade`)
+### 3. `spanner` (Cloud Spanner Database Management)
+Automates verification, single-batch DDL schema creation with compiled protobuf descriptor sets, and teardown for Cloud Spanner databases used by XMC microservices.
+
+```bash
+# Create all required Spanner databases for the local environment
+python3 tools/dev_env/dev_env.py spanner create \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+
+# Run SDL schema migrations against existing Spanner databases
+python3 tools/dev_env/dev_env.py spanner migrate \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+
+# Drop/delete Spanner databases during local environment cleanup
+python3 tools/dev_env/dev_env.py spanner drop \
+  --spanner-instance xmc-local \
+  --ess-db ess-local \
+  --xid-db xid-local
+```
+
+#### Actions
+- `create`: Checks for database existence, builds protobuf descriptor binary sets (`//api/protos/experiment:experiment_messages_descriptor`, `//api/protos/xid:xid_messages_descriptor`), and creates databases with single-batch DDL in parallel.
+- `migrate`: Executes idempotent SDL database schema migrations against existing Cloud Spanner databases. Automatically skips schema migrations if a database was newly created (as initial DDL already contains full schema).
+- `drop`: Drops the specified databases from the Cloud Spanner instance.
+
+---
+
+### 4. `cluster` (Local KinD Cluster Management)
+Manages the lifecycle of the local Kubernetes-in-Docker (KinD) cluster, verifies pre-flight dependencies, configures port mappings, and injects host authentication credentials and TLS certificates.
+
+```bash
+# Verify prerequisites and create the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster create --cluster-name xmc-local
+
+# Tear down the local KinD cluster
+python3 tools/dev_env/dev_env.py cluster delete --cluster-name xmc-local
+```
+
+#### Actions
+- `create`:
+  1. Validates host prerequisites (`docker`, `kind`, `kubectl`, `helm`, `openssl`, `gcloud`, `bazel`).
+  2. Provisions a KinD cluster configured with extra port mappings:
+     - `8080` (Local HTTP Gateway Proxy)
+     - `5556` (Dex OIDC Identity Provider)
+  3. Injects Kubernetes secrets from the host environment:
+     - `gcp-sa-key`: Extracted from active `gcloud auth application-default` ADC credentials.
+     - `backend-oauth-secrets`: Shared OIDC client credentials for Dex authentication.
+     - `validation-secret`: Self-signed SAN TLS certificate for webhook validation and token signing.
+     - `redis-secret`: Local Redis cache authentication credentials.
+- `delete`: Safely deletes the local KinD cluster and its underlying containers.
+
+---
+
+### 5. `status` (Cluster Status & Health Inspection)
+Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
+
+```bash
+python3 tools/dev_env/dev_env.py status --cluster-name xmc-local
+```
+
+#### Output Sections
+- **Cluster & Node Readiness**: KinD cluster control-plane and worker node readiness.
+- **Support & Service Pods**: Pod status table for core services and dependencies (`dex`, `redis`, `gateway-proxy`, `experiment_state_server`, `ui`, etc.).
+- **Endpoint Health**: HTTP probes verifying local Gateway Proxy (`http://localhost:8080/healthz`) and Dex OIDC (`http://localhost:5556/dex/healthz`).
+
+---
+
+### 6. `logs` (Stream Microservice Logs)
+Streams or tails container stdout/stderr logs from a specific microservice running in the local KinD cluster.
+
+```bash
+# Tail last 50 lines of logs for experiment_state_server
+python3 tools/dev_env/dev_env.py logs experiment_state_server --lines 50
+
+# Follow continuous logs in real-time
+python3 tools/dev_env/dev_env.py logs ui -f
+```
+
+---
+
+### 7. Generic Aliases (`deploy` / `upgrade`)
 For convenience, generic `deploy` and `upgrade` commands are supported and forward to their respective target handlers:
 
 ```bash
@@ -117,6 +200,41 @@ A sample local configuration template is provided at [`deploy/local/xmanager-clo
 
 ```bash
 cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-local.yaml
+```
+
+### Feature Flags & Enabled Services
+
+`LocalDevConfig` dynamically evaluates feature flags from YAML configuration to compute the list of enabled microservices (`enabled_services`):
+
+| Feature Flag in YAML | Enabled Microservice Target | Default |
+| :--- | :--- | :--- |
+| `enable_metrics: true` | `ingestion_gateway` | `true` |
+| `enable_components: true` | `components` | `false` |
+| `rod_deployment_enabled: true` | `rod_data_provider` | `false` |
+
+*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `dashboard_service`, `health_service`) are enabled by default.
+
+### Dynamic Resource Naming Rules
+
+When resource names are omitted from the YAML configuration, `LocalDevConfig` automatically derives dynamic naming conventions from the active `environment`:
+
+- **Cloud Spanner Instance**: `xmc-<environment>` (e.g. `xmc-local`)
+- **ESS Database**: `ess-<environment>` (e.g. `ess-local`)
+- **XID Database**: `xid-<environment>` (e.g. `xid-local`)
+- **KinD Cluster Name**: `xmc-<environment>` (e.g. `xmc-local`)
+
+### CLI Configuration Overrides
+
+Override configuration settings for local development directly from the command line:
+
+```bash
+# Override Spanner instance, databases, and cluster name
+python3 tools/dev_env/dev_env.py \
+  --spanner-instance custom-instance \
+  --ess-db custom-ess-db \
+  --xid-db custom-xid-db \
+  --cluster-name custom-kind-cluster \
+  --auto-migrate
 ```
 
 ---

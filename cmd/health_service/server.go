@@ -137,12 +137,12 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 
 	essDbSchemaVersionStr := res.EssDbSchemaVersion
 	if essDbSchemaVersionStr == "" {
-		essDbSchemaVersionStr = "unknown"
+		essDbSchemaVersionStr = "UNAVAILABLE"
 	}
 
 	xidDbSchemaVersionStr := res.XidDbSchemaVersion
 	if xidDbSchemaVersionStr == "" {
-		xidDbSchemaVersionStr = "unknown"
+		xidDbSchemaVersionStr = "UNAVAILABLE"
 	}
 
 	appVersionStr := s.cfg.AppVersion

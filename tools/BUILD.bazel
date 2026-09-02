@@ -127,6 +127,26 @@ alias(
     actual = "//tools/dev_env:upgrade_dev_env_test",
 )
 
+alias(
+    name = "kind_manager_lib",
+    actual = "//tools/dev_env:kind_manager_lib",
+)
+
+alias(
+    name = "kind_manager_test",
+    actual = "//tools/dev_env:kind_manager_test",
+)
+
+alias(
+    name = "spanner_manager_lib",
+    actual = "//tools/dev_env:spanner_manager_lib",
+)
+
+alias(
+    name = "spanner_manager_test",
+    actual = "//tools/dev_env:spanner_manager_test",
+)
+
 # PR Review
 alias(
     name = "github_utils_lib",

@@ -33,6 +33,9 @@ export const ROD_TERM_TOOLTIPS = {
 
   pendingResourceRequests:
     'The cumulative amount of hardware resources (e.g., GPUs) requested by all currently pending workloads.\n\nIt represents the total backlog demand waiting to be admitted to the queue. Comparing this number to your Total Capacity and Resource Velocity helps you estimate how many full cycles of the hardware pool are required to clear the current backlog.',
+
+  dominantResource:
+    'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
 } as const;
 
 export type RodTooltipKey = keyof typeof ROD_TERM_TOOLTIPS;

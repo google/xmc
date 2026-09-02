@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
+import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 /** Harness for interacting with <xmc-smart-resource-finder> in tests. */
 export class SmartResourceFinderHarness extends ComponentHarness {
@@ -21,9 +22,11 @@ export class SmartResourceFinderHarness extends ComponentHarness {
 
   private readonly amountInputs = this.locatorForAll('.query-amount-input');
   private readonly selectHarnesses = this.locatorForAll(MatSelectHarness);
-  private readonly selectBoxes = this.locatorForAll('.query-select-box');
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
+  private readonly amountLegends = this.locatorForAll('.amount-box .box-legend');
+  private readonly resourceLegends = this.locatorForAll('.resource-select-box .box-legend');
+  private readonly primaryHelpIcons = this.locatorForAll('.primary-resource-help-icon');
 
   /** Gets all option labels available in the resource type dropdowns. */
   async getResourceTypeOptions(): Promise<string[]> {
@@ -102,27 +105,35 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     await removeBtns[index].click();
   }
 
-  private readonly dominantTexts = this.locatorForAll('.dominant-text');
-
-  /** Gets whether a dominant label text is present. */
-  async hasDominantBadge(): Promise<boolean> {
-    const texts = await this.dominantTexts();
-    return texts.length > 0;
-  }
-
-  /** Gets the text of the dominant label if present. */
-  async getDominantBadgeText(): Promise<string | null> {
-    const texts = await this.dominantTexts();
-    return texts.length > 0 ? (await texts[0].text()).trim() : null;
-  }
-
-  /** Returns whether the select box at the given index has the dominant class. */
-  async isDominantSelectBox(index: number): Promise<boolean> {
-    const selects = await this.selectBoxes();
-    if (!selects[index]) {
-      throw new Error(`No resource type select found at index ${index}`);
+  /** Gets the Amount box legend label. */
+  async getAmountBoxLabel(): Promise<string> {
+    const legends = await this.amountLegends();
+    if (legends.length === 0) {
+      throw new Error('No amount legend found');
     }
-    return selects[index].hasClass('dominant-select-box');
+    return (await legends[0].text()).trim();
+  }
+
+  /** Gets the resource type box legend label at the given index. */
+  async getResourceBoxLabel(index = 0): Promise<string> {
+    const legends = await this.resourceLegends();
+    if (!legends[index]) {
+      throw new Error(`No resource legend found at index ${index}`);
+    }
+    return (await legends[index].text()).trim();
+  }
+
+  /** Gets whether the primary resource help icon is present. */
+  async hasPrimaryResourceHelpIcon(): Promise<boolean> {
+    const icons = await this.primaryHelpIcons();
+    return icons.length > 0;
+  }
+
+  /** Gets the primary resource help icon tooltip harness. */
+  async getPrimaryResourceHelpTooltip(): Promise<MatTooltipHarness | null> {
+    return this.locatorForOptional(
+      MatTooltipHarness.with({ selector: '.primary-resource-help-icon' }),
+    )();
   }
 
   /** Clicks the + Add resource type button. */

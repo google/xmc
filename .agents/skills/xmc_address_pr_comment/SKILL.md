@@ -178,13 +178,19 @@ bazel build //cmd/xid_service:xid_service
 ```
 
 ### Git Commit to Current Branch
-The agent stages all changes and commits them with a message that includes a description of the changes and the URL of the original comment:
+The agent stages all changes and commits them as a new, distinct follow-up commit with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
 git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
+git push origin HEAD
 ```
+
+> [!CAUTION]
+> **Strict Prohibition of Force-Pushing on Active PRs**:
+> NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
+> Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
 ### Post GitHub Comment Notification
 The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made:

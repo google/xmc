@@ -184,6 +184,16 @@ func TestController_RunReconcilePass(t *testing.T) {
 		t.Fatalf("failed to fetch updated resource: %v", err)
 	}
 
+	hasFin := false
+	for _, f := range updated.GetFinalizers() {
+		if f == bridge.FinalizerDeletionProtection {
+			hasFin = true
+			break
+		}
+	}
+	if !hasFin {
+		t.Errorf("expected finalizer %s on resource, got %v", bridge.FinalizerDeletionProtection, updated.GetFinalizers())
+	}
 	status, ok := updated.Object["status"].(map[string]any)
 	if !ok || status == nil {
 		t.Fatal("expected status on updated resource")
@@ -373,4 +383,53 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 	if !ok || len(conds) == 0 {
 		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
 	}
+}
+func TestController_SyncFinalizers_NilResult(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
+	ctrl := NewController(fakeDynamic, nil, "xmc", time.Second, time.Second)
+
+	item := &unstructured.Unstructured{
+		Object: map[string]any{
+			"metadata": map[string]any{
+				"name":      "test-item",
+				"namespace": "xmc",
+			},
+		},
+	}
+
+	got, err := ctrl.syncFinalizers(ctx, item, nil)
+	if err != nil {
+		t.Fatalf("syncFinalizers returned unexpected error: %v", err)
+	}
+	if got != item {
+		t.Errorf("expected original item returned on nil res, got %v", got)
+	}
+}
+
+func TestController_ReconcileItem(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
+	r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+
+	item := &unstructured.Unstructured{
+		Object: map[string]any{
+			"metadata": map[string]any{
+				"name":      "test-item",
+				"namespace": "xmc",
+			},
+			"spec": map[string]any{
+				"enabled": true,
+			},
+		},
+	}
+
+	// Should safely reconcile without panicking
+	ctrl.reconcileItem(ctx, item)
 }

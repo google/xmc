@@ -38,6 +38,16 @@ export class SystemInfoCardHarness extends ComponentHarness {
     return el ? el.text() : null;
   }
 
+  async isEssSchemaPlaceholder(): Promise<boolean> {
+    const el = await this._essSchema();
+    return el ? el.hasClass('is-placeholder') : false;
+  }
+
+  async isXidSchemaPlaceholder(): Promise<boolean> {
+    const el = await this._xidSchema();
+    return el ? el.hasClass('is-placeholder') : false;
+  }
+
   async getObservabilityLinkHref(): Promise<string | null> {
     const el = await this._observabilityLink();
     return el ? el.getAttribute('href') : null;

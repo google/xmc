@@ -159,15 +159,156 @@ Lifecycle durations (`spec.lifecycleControl.drainTimeoutSeconds` and `spec.lifec
 
 ---
 
-## 6. Running Tests
+## 6. Schema Conformance Validation (`schema.go`)
 
-Run all unit and integration tests across the CLI binary and linter packages:
+The schema validation layer (`pkg/components/linter/schema.go`) verifies baseline Kubernetes YAML correctness and Component CRD schema compliance.
+
+### CRD Schema Checks
+
+- **DNS-1123 RFC-1123 Label Conformance**: Validates that `metadata.name` contains only lowercase alphanumeric characters or `-`, starts and ends with an alphanumeric character, and does not exceed 63 characters (`INVALID_COMPONENT_NAME`).
+- **Component Type Validation**: Asserts `spec.componentType` is one of `CUSTOM_1P_COMPONENT` or `CUSTOM_3P_WRAPPER` (`INVALID_COMPONENT_TYPE`).
+- **3P Wrapper CRD References**: For `CUSTOM_3P_WRAPPER`, requires `spec.wrapperRef.crdGroup`, `crdVersion`, `crdKind`, and `targetName` to be non-empty (`MISSING_WRAPPER_REF`, `INVALID_WRAPPER_REF`). For `CUSTOM_1P_COMPONENT`, forbids `wrapperRef`.
+- **Deletion Policy & Protection**: Asserts `spec.deletionPolicy` is valid (`DELETE`, `ORPHAN`, or `UNSPECIFIED` / `DELETION_POLICY_UNSPECIFIED`). If `staticChecks.enforceDeletionProtection: true` is enabled, asserts `spec.deletionProtection == true` (`DELETION_PROTECTION_REQUIRED`).
+- **Lifecycle Drain Timeout Boundaries**: Validates that `spec.lifecycleControl.drainTimeoutSeconds` is non-negative and does not exceed `staticChecks.maxDrainTimeoutSeconds` (`DRAIN_TIMEOUT_EXCEEDED`).
+
+### Rules Configuration Schema (`rules.yaml`)
+
+```yaml
+staticChecks:
+  enforceDeletionProtection: false
+  maxDrainTimeoutSeconds: 3600
+```
+
+---
+
+## 7. Dependency DAG Construction & Cycle Detection (`dag.go`)
+
+The DAG validation layer (`pkg/components/linter/dag.go`) constructs a directed acyclic graph (DAG) of component dependencies and ensures dependency completeness and acyclicity.
+
+### Dependency Graph & Cycle Detection
+
+The linter traverses the dependency tree using a 3-state Depth First Search (DFS) (`UNVISITED`, `VISITING`, `VISITED`) to detect circular dependency paths across any depth:
+
+```mermaid
+flowchart LR
+    A["Component A"] -->|"requires"| B["Component B"]
+    B -->|"requires"| C["Component C"]
+    C -.->|"CYCLE (Detected)"| A
+```
+
+- **Cycle Path Formatting**: When a cycle is detected, `xmc-linter` reports the exact closed loop traversal path:
+  ```text
+  [ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
+  ```
+- **Rule ID**: `CYCLIC_DEPENDENCY`
+
+### Enabled-State Completeness & Optional Dependencies
+
+- **Missing Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ must exist in the scanned manifest set (`MISSING_DEPENDENCY`).
+- **Disabled Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ cannot have `spec.enabled: false` (`DISABLED_DEPENDENCY`).
+- **Optional Dependencies (`optional: true`)**: Optional dependencies may be omitted or disabled without raising errors. If present and enabled, their version constraints are validated during compatibility matrix checking.
+- **Duplicate Prevention**: Rejects multiple manifests defining the same component `metadata.name` across directories (`DUPLICATE_COMPONENT_NAME`).
+
+---
+
+## 8. Version Compatibility Matrix & SemVer Algebra (`matrix.go`, `constraints.go`)
+
+The matrix validation layer (`pkg/components/linter/matrix.go`, `constraints.go`) validates manifest-level dependency constraints (`spec.dependencies[].version`) and asserts profile-level version compatibility matrices configured in `rules.yaml`.
+
+### SemVer 2.0.0 Constraint Algebra
+
+`xmc-linter` includes a full SemVer 2.0.0 constraint parser supporting standard npm/Go constraint operators:
+
+| Operator | Notation Example | Meaning / Evaluation Rule |
+| :--- | :--- | :--- |
+| **Caret (`^`)** | `^1.2.3` | Allows updates without changing the left-most non-zero digit ($\ge 1.2.3 \text{ and } < 2.0.0$). For `^0.2.3`, allows $< 0.3.0$. For `^0.0.3`, allows exact `=0.0.3`. |
+| **Tilde (`~`)** | `~1.2.3`<br>`~1.2`<br>`~1` | `~1.2.3` allows patch updates ($\ge 1.2.3 \text{ and } < 1.3.0$).<br>`~1.2` allows patch updates ($\ge 1.2.0 \text{ and } < 1.3.0$).<br>`~1` allows minor and patch updates ($\ge 1.0.0 \text{ and } < 2.0.0$). |
+| **Relational** | `>=1.0.0 <2.0.0`<br>`>1.5.0`<br>`<=3.0.0` | Explicit lower and upper bounds. Whitespace joins multiple constraints as conjunctions (AND). |
+| **Hyphen Range** | `1.0.0 - 2.5.0` | Inclusive range ($\ge 1.0.0 \text{ and } \le 2.5.0$). |
+| **Wildcards** | `1.2.x`, `1.*`, `*` | Matches any version within the specified prefix or any version overall. |
+| **Disjunction (`\|\|`)** | `^1.0.0 \|\| ^2.0.0` | Logical OR across multiple constraint clauses. |
+
+### Compatibility Matrix Configuration (`rules.yaml`)
+
+Profile authors configure cross-component version matrix rules and platform compatibility in `rules.yaml`:
+
+```yaml
+staticChecks:
+  enforceNamespaceScope: true
+  enforceDeletionProtection: false
+  maxDrainTimeoutSeconds: 3600
+
+compatibilityMatrix:
+  # Cross-component version compatibility assertions
+  componentDependencies:
+    - component: storage-controller
+      requires:
+        - component: storage-driver
+          version: ">=2.0.0 <3.0.0"
+
+  # Platform-level integration rules
+  platformRequirements:
+    - component: storage-controller
+      platform:
+        minK8sVersion: "1.28.0"
+        kubernetesVersion: ">=1.28.0 <1.32.0"
+```
+
+- **Disabled Component Handling**: If a component declared in `rules.yaml` is present but marked `spec.enabled: false`, it is ignored to prevent false-positive validation errors during gradual rollouts or deprecations.
+
+---
+
+## 9. Multi-Pass Static Validation Pipeline
+
+When `xmc-linter` executes, it coordinates all verification validators in a linear pipeline:
+
+```mermaid
+flowchart TD
+    Scan["Multi-Document YAML Stream Decoding\n(pkg/components/linter/manifest.go)"] --> P1["Schema & Security Scope Validation\n(pkg/components/linter/schema.go)\n• CRD Schema Bounds\n• 23 Cluster-Scoped Kinds Check\n• DNS-1123 RFC-1123 Names"]
+    P1 -->|Pass| P2["Dependency DAG & Cycle Validation\n(pkg/components/linter/dag.go)\n• 3-State DFS Cycle Search\n• Enabled-State Completeness\n• Duplicate Name Detection"]
+    P1 -->|Fail| Diag["Structured Diagnostic Aggregator\n(pkg/components/linter/diagnostic.go)"]
+    P2 -->|Pass| P3["SemVer Matrix & Platform Validation\n(pkg/components/linter/matrix.go)\n• SemVer 2.0.0 Constraint Algebra\n• rules.yaml Compatibility Matrix\n• Platform Requirements"]
+    P2 -->|Fail| Diag
+    P3 --> Diag
+    Diag --> Report["Report Generator\n(Console Text or JSON)"]
+```
+
+### End-to-End Example: Detecting Multi-Pass Failures
 
 ```bash
-# Run all linter tests
+$ bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/test/ --rules-config=deploy/profiles/test/rules.yaml --output=text
+[ERROR] cluster-scoped kind "ClusterRole" is forbidden when namespace scope is enforced
+[ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
+[ERROR] component "storage-driver" (version 1.0.0) does not satisfy dependency constraint "^2.0.0" required by "storage-controller"
+[ERROR] component "storage-controller" requires "storage-driver" version ">=2.0.0", but found version "1.0.0"
+```
+
+---
+
+## 10. Running Tests & Measuring Coverage
+
+### Bazel Test Matrix
+
+```bash
+# Run all unit tests across CLI and linter packages
 bazel test //cmd/xmc-linter/... //pkg/components/linter/...
 
-# Run tests with detailed testlog output
+# Run tests with error verbosity
 bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
 ```
+
+### Code Coverage Measurement
+
+Measure test coverage using Bazel LCOV reports:
+
+```bash
+# Run coverage across all linter targets
+bazel coverage //cmd/xmc-linter/... //pkg/components/linter/... --combined_report=lcov
+
+# Inspect coverage percentage
+genhtml bazel-out/_coverage/_coverage_report.dat -o coverage_html/
+```
+
+
+
 

@@ -144,7 +144,7 @@ class TestResolveTestScope(unittest.TestCase):
             "//pkg/auth/oauth2:oauth2_test //cmd/xid_service/server:server_test",
         )
 
-    @patch("subprocess.run")
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_porcelain_renamed(self, mock_run):
         mock_diff = unittest.mock.Mock(returncode=1)
         mock_status = unittest.mock.Mock(
@@ -158,7 +158,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertIn("new/path.go", files)
         self.assertNotIn("old/path.go -> new/path.go", files)
 
-    @patch("subprocess.run")
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_parsing_and_filtering(self, mock_run):
         mock_run.return_value = unittest.mock.Mock(
             returncode=0,
@@ -177,7 +177,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertIn("//test/local/ui:server_local_test", targets)
         self.assertNotIn("//cmd/ui:ui_unit_tests", targets)
 
-    @patch("subprocess.run")
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
         mock_run.side_effect = Exception("Bazel timeout")
         targets = discover_bazel_rdeps_targets(["nonexistent/path/foo.go"])
@@ -195,12 +195,12 @@ class TestResolveTestScope(unittest.TestCase):
             )
 
             # Test root file does not match all subpackages
-            targets_root = discover_bazel_rdeps_targets(["root_script.py"], cwd=tmppath)
+            targets_root = _discover_static_rdeps_targets(["root_script.py"], cwd=tmppath)
             self.assertIn("//:root_test", targets_root)
             self.assertNotIn("//pkg1:pkg1_test", targets_root)
 
             # Test cmd/ui/server.py matches cmd/ui:server_test but excludes ui_unit_tests
-            targets_ui = discover_bazel_rdeps_targets(["cmd/ui/server.py"], cwd=tmppath)
+            targets_ui = _discover_static_rdeps_targets(["cmd/ui/server.py"], cwd=tmppath)
             self.assertIn("//cmd/ui:server_test", targets_ui)
             self.assertNotIn("//cmd/ui:ui_unit_tests", targets_ui)
 
@@ -224,7 +224,7 @@ class TestResolveTestScope(unittest.TestCase):
             self.assertEqual(targets, ["unit_test", "py_unit_test"])
             self.assertNotIn("manual_test", targets)
 
-    @patch("subprocess.run")
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
         mock_diff = unittest.mock.Mock(
             returncode=0,
