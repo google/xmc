@@ -97,9 +97,9 @@ check_go() {
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 
-  if [ -f "tools/check_go_determinism.py" ]; then
+  if [ -d "tools/check_go_determinism" ]; then
     echo "--> Running Go Test Determinism & State Leakage Checker..."
-    if ! python3 tools/check_go_determinism.py; then
+    if ! go run ./tools/check_go_determinism; then
       FAILED=1
     fi
   fi

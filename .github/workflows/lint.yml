@@ -97,7 +97,7 @@ jobs:
 
       - name: 'Check Go Test Determinism'
         run: |
-          python3 tools/check_go_determinism.py
+          go run ./tools/check_go_determinism
 
       - name: 'Install & Run Buildifier'
         run: |

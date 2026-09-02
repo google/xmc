@@ -1,0 +1,253 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package main implements an AST-based static analyzer for Go test determinism.
+// It checks Go test files for:
+// 1. os.Setenv usage (must use t.Setenv to prevent state leakage).
+// 2. Arbitrary second-level time.Sleep calls (must use short TTLs, synctest, or polling).
+package main
+
+import (
+	"flag"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+var excludedDirs = map[string]bool{
+	"vendor":         true,
+	"third_party":    true,
+	".git":           true,
+	"node_modules":   true,
+	"bazel-bin":      true,
+	"bazel-out":      true,
+	"bazel-testlogs": true,
+	"bazel-xmc":      true,
+}
+
+func isExcluded(path string) bool {
+	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
+	for _, part := range parts {
+		if excludedDirs[part] {
+			return true
+		}
+	}
+	return false
+}
+
+func isTimeUnit(expr ast.Expr) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok || pkg.Name != "time" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Second", "Minute", "Hour":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLongSleepExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		return isTimeUnit(e)
+	case *ast.BinaryExpr:
+		if e.Op == token.MUL {
+			return isTimeUnit(e.X) || isTimeUnit(e.Y)
+		}
+		if e.Op == token.ADD {
+			return isLongSleepExpr(e.X) || isLongSleepExpr(e.Y)
+		}
+	case *ast.ParenExpr:
+		return isLongSleepExpr(e.X)
+	}
+	return false
+}
+
+func isSuppressed(startLine, endLine int, nolintLines map[int]bool) bool {
+	for l := startLine - 1; l <= endLine; l++ {
+		if nolintLines[l] {
+			return true
+		}
+	}
+	return false
+}
+
+func extractSuppressionLines(node *ast.File, fset *token.FileSet) (map[int]bool, map[int]bool) {
+	nolintDetLines := make(map[int]bool)
+	nolintSleepLines := make(map[int]bool)
+	for _, cg := range node.Comments {
+		for _, c := range cg.List {
+			startLine := fset.Position(c.Pos()).Line
+			endLine := fset.Position(c.End()).Line
+			if strings.Contains(c.Text, "nolint:determinism") {
+				for l := startLine; l <= endLine; l++ {
+					nolintDetLines[l] = true
+				}
+			}
+			if strings.Contains(c.Text, "nolint:sleep") {
+				for l := startLine; l <= endLine; l++ {
+					nolintSleepLines[l] = true
+				}
+			}
+		}
+	}
+	return nolintDetLines, nolintSleepLines
+}
+
+func checkSetenvCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr, fset *token.FileSet, suppressed bool) (string, bool) {
+	pkgIdent, ok := sel.X.(*ast.Ident)
+	if !ok || pkgIdent.Name != "os" || sel.Sel.Name != "Setenv" || suppressed {
+		return "", false
+	}
+	line := fset.Position(call.Pos()).Line
+	return fmt.Sprintf("%s:%d: os.Setenv used in test. Use t.Setenv(...) to guarantee cleanup and prevent environment pollution.", filename, line), true
+}
+
+func checkSleepCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr, fset *token.FileSet, suppressed bool) (string, bool) {
+	pkgIdent, ok := sel.X.(*ast.Ident)
+	if !ok || pkgIdent.Name != "time" || sel.Sel.Name != "Sleep" || suppressed {
+		return "", false
+	}
+	if len(call.Args) == 0 || !isLongSleepExpr(call.Args[0]) {
+		return "", false
+	}
+	line := fset.Position(call.Pos()).Line
+	return fmt.Sprintf("%s:%d: arbitrary second-level time.Sleep in test. Inject millisecond TTLs, use synctest, or use wait.Poll.", filename, line), true
+}
+
+// CheckSource parses Go code and returns determinism violations.
+func CheckSource(filename string, src any) ([]string, error) {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", filename, err)
+	}
+
+	detLines, sleepLines := extractSuppressionLines(node, fset)
+	var violations []string
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		start := fset.Position(call.Pos()).Line
+		end := fset.Position(call.End()).Line
+
+		if v, flagged := checkSetenvCall(filename, call, sel, fset, isSuppressed(start, end, detLines)); flagged {
+			violations = append(violations, v)
+		}
+		if v, flagged := checkSleepCall(filename, call, sel, fset, isSuppressed(start, end, sleepLines)); flagged {
+			violations = append(violations, v)
+		}
+		return true
+	})
+
+	return violations, nil
+}
+
+// CheckFile checks a file on disk for determinism violations.
+func CheckFile(filePath string) ([]string, error) {
+	return CheckSource(filePath, nil)
+}
+
+func findTestFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if isExcluded(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), "_test.go") && !isExcluded(path) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
+}
+
+func collectTargetFiles(args []string) ([]string, error) {
+	if len(args) == 0 {
+		return findTestFiles(".")
+	}
+	var files []string
+	for _, arg := range args {
+		info, err := os.Stat(arg)
+		if err != nil || isExcluded(arg) {
+			continue
+		}
+		if info.IsDir() {
+			discovered, err := findTestFiles(arg)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, discovered...)
+			continue
+		}
+		if strings.HasSuffix(info.Name(), "_test.go") {
+			files = append(files, arg)
+		}
+	}
+	return files, nil
+}
+
+func main() {
+	flag.Parse()
+	filesToCheck, err := collectTargetFiles(flag.Args())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error discovering test files: %v\n", err)
+		os.Exit(1)
+	}
+
+	var allViolations []string
+	for _, f := range filesToCheck {
+		violations, err := CheckFile(f)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		allViolations = append(allViolations, violations...)
+	}
+
+	if len(allViolations) > 0 {
+		fmt.Println("❌ Go test determinism violations found:")
+		for _, v := range allViolations {
+			fmt.Printf("  %s\n", v)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Go test determinism check passed (%d files checked).\n", len(filesToCheck))
+}
