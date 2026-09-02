@@ -55,7 +55,6 @@ enum WorkUnitColumn {
   TAGS = 'Tags',
   CREATED = 'Created',
   COMPLETED = 'Completed',
-  PERFORMANCE = 'Performance',
   URLS = 'Urls',
 }
 
@@ -69,7 +68,7 @@ interface WorkUnitView extends WorkUnit {
   processedUrls: ProcessedUrl[];
   statusMessages: StructuredMessage[];
   isStatusMessageVisible: boolean;
-  performanceUrl?: string;
+  runProfileUrl?: string;
 }
 
 /**
@@ -113,7 +112,6 @@ export class WorkUnitsTable implements OnInit {
     WorkUnitColumn.TAGS,
     WorkUnitColumn.CREATED,
     WorkUnitColumn.COMPLETED,
-    WorkUnitColumn.PERFORMANCE,
     WorkUnitColumn.URLS,
   ];
   private readonly severities = toSignal(this.filterService.severities$);
@@ -141,7 +139,7 @@ export class WorkUnitsTable implements OnInit {
         processedUrls: processUrls(workUnit.urls ?? [], workUnit).slice(0, MAX_URLS_DISPLAYED),
         statusMessages: messages,
         isStatusMessageVisible,
-        performanceUrl: workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined,
+        runProfileUrl: workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined,
       };
     });
   });

@@ -114,22 +114,22 @@ test.describe('Work Units Table - Screenshot Tests', () => {
     await setupScreenshotEnvironment(page);
   });
 
-  test('should match baseline screenshot for Work Units table with Performance column', async ({
+  test('should match baseline screenshot for Work Units table with Run Profile action', async ({
     page,
   }) => {
     const tableContainer = page.locator('xmc-work-units-table');
     await expect(tableContainer).toBeVisible();
 
-    // Verify Performance header is rendered
+    // Verify Performance header is not attached
     const performanceHeader = tableContainer.locator('th.mat-column-Performance');
-    await expect(performanceHeader).toBeVisible();
-    await expect(performanceHeader).toContainText('Performance');
+    await expect(performanceHeader).not.toBeAttached();
 
-    // Verify View performance button is rendered in the first row
-    const viewPerformanceBtn = tableContainer.locator(
-      'td.mat-column-Performance a[mat-button]:has-text("View performance")',
+    // Verify troubleshoot button with Run Profile tooltip is visible in the actions cell
+    const troubleshootBtn = tableContainer.locator(
+      'td.mat-column-Urls a[mat-icon-button][matTooltip="Run Profile"]',
     );
-    await expect(viewPerformanceBtn).toBeVisible();
+    await expect(troubleshootBtn).toBeVisible();
+    await expect(troubleshootBtn.locator('mat-icon')).toHaveText('troubleshoot');
 
     // Capture visual golden snapshot of the table component
     await expect(tableContainer).toHaveScreenshot('work-units-table-performance.png');

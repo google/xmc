@@ -40,6 +40,8 @@ const ROW_SELECTOR = {
   selector: ':not(.detail-row)',
 };
 
+const RUN_PROFILE_LINK_SELECTOR = 'td.mat-column-Urls a[mat-icon-button][matTooltip="Run Profile"]';
+
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
     {
@@ -219,18 +221,24 @@ describe('WorkUnitsTable Component', () => {
     });
   });
 
-  describe('Performance link', () => {
-    it('should render view performance link for work unit with mlrunUrl', async () => {
+  describe('Run Profile button', () => {
+    it('should render run profile link for work unit with mlrunUrl', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
       const rows = await harness.getRows(ROW_SELECTOR);
-      const cells = await rows[0].getCells({ columnName: 'Performance' });
+      const cells = await rows[0].getCells({ columnName: 'Urls' });
       expect(cells.length).toBe(1);
 
-      const button = await cells[0].getHarness(MatButtonHarness.with({ text: /View performance/ }));
-      expect(await button.getText()).toContain('View performance');
+      const button = await cells[0].getHarness(MatButtonHarness.with({ text: 'troubleshoot' }));
+      expect(button).toBeTruthy();
 
-      const linkEl = getEl<HTMLAnchorElement>('td.mat-column-Performance a[mat-button]');
+      const tooltip = await cells[0].getHarness(
+        MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }),
+      );
+      await tooltip.show();
+      expect(await tooltip.getTooltipText()).toBe('Run Profile');
+
+      const linkEl = getEl<HTMLAnchorElement>(RUN_PROFILE_LINK_SELECTOR);
       expect(linkEl).toBeTruthy();
       expect(linkEl.getAttribute('href')).toBe(
         'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
@@ -239,15 +247,20 @@ describe('WorkUnitsTable Component', () => {
       expect(linkEl.getAttribute('rel')).toBe('noreferrer');
 
       const iconEl = linkEl.querySelector('mat-icon');
-      expect(iconEl?.textContent?.trim()).toBe('analytics');
+      expect(iconEl?.textContent?.trim()).toBe('troubleshoot');
     });
 
-    it('should render dash for work unit without mlrunUrl', async () => {
+    it('should not render troubleshoot button for work unit without mlrunUrl', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
       const rows = await harness.getRows(ROW_SELECTOR);
-      const cells = await rows[1].getCellTextByColumnName();
-      expect(cells['Performance']).toBe('-');
+      const cells = await rows[1].getCells({ columnName: 'Urls' });
+      expect(cells.length).toBe(1);
+
+      const troubleshootButtons = await cells[0].getAllHarnesses(
+        MatButtonHarness.with({ text: 'troubleshoot' }),
+      );
+      expect(troubleshootButtons.length).toBe(0);
     });
   });
 
