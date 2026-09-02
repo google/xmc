@@ -136,7 +136,7 @@ class SpannerManager:
 
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
-        if hasattr(self, "_cached_mig_binary"):
+        if getattr(self, "_cached_mig_binary", None) is not None:
             return self._cached_mig_binary
 
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
@@ -162,7 +162,6 @@ class SpannerManager:
                             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                                 self._cached_mig_binary = candidate
                                 return candidate
-        self._cached_mig_binary = None
         return None
 
     def _resolve_descriptor(self, pkg: str, filename: str) -> str:
