@@ -55,6 +55,9 @@ vars:
   deploy_redis: true
   redis_region:
   status_message_history_enabled: true
+  # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
+  # Empty (default) leaves managed-xprof GCS wiring disabled on the actuator.
+  managed_xprof_gcs_bucket: ""
   enable_metrics: false
   # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
   # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
@@ -466,6 +469,9 @@ deployment_groups:
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)
         type: auto
+      - name: managedXprofGcsBucket
+        value: $(vars.managed_xprof_gcs_bucket)
+        type: string
       - name: healthServiceDeployment.enabled
         value: $(vars.health_service_deployment_enabled)
         type: auto

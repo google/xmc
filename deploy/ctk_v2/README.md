@@ -41,6 +41,27 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
+*   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
+
+### Managed ML Diagnostics (Managed XProf)
+Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**. On a supported cluster, enable it with `--enable-managed-mldiagnostics` at creation or update time; this lets the reconciler create Hypercompute Cluster ML Runs.
+
+```bash
+# On an existing cluster (must already be on 1.35.0-gke.3065000+):
+gcloud container clusters update <CLUSTER_NAME> \
+  --project <PROJECT_ID> --location <REGION> \
+  --enable-managed-mldiagnostics
+
+# Or at creation time:
+gcloud container clusters create <CLUSTER_NAME> \
+  --project <PROJECT_ID> --location <REGION> \
+  --cluster-version 1.35.0-gke.3065000 \
+  --enable-managed-mldiagnostics
+```
+
+Then set `managed_xprof_gcs_bucket` (see Feature Switches) so profiling captures are written to GCS.
+
+> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
 
 ### ClickHouse Connection (Metrics Pipeline)
 ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). These variables are applied only when `enable_metrics` is `true`, and the dashboard service requires them to serve chart data. Enabling metrics also makes ClickHouse a readiness dependency: dashboard service pods stay out of service until they can reach it, so point these at an instance that is actually up.
