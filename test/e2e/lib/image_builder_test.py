@@ -91,6 +91,66 @@ class TestImageBuilder(unittest.TestCase):
             cwd="/workspace/cmd/ui",
         )
 
+    @patch("shutil.which", return_value="/usr/bin/node")
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(ImageBuilder, "_is_ui_dist_stale", return_value=False)
+    @patch("test.e2e.lib.image_builder.run_cmd")
+    def test_maybe_precompile_ui_skips_when_dist_is_not_stale(
+        self, mock_run, mock_stale, mock_isfile, mock_which
+    ):
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        builder._maybe_precompile_ui()
+        mock_run.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/bin/node")
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(ImageBuilder, "_is_ui_dist_stale", return_value=True)
+    @patch("test.e2e.lib.image_builder.run_cmd")
+    def test_maybe_precompile_ui_recompiles_when_dist_is_stale(
+        self, mock_run, mock_stale, mock_isfile, mock_which
+    ):
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        builder._maybe_precompile_ui()
+        mock_run.assert_any_call(
+            ["npm", "ci", "--legacy-peer-deps"],
+            cwd="/workspace/cmd/ui",
+        )
+
+    @patch("shutil.which", return_value="/usr/bin/node")
+    @patch("shutil.rmtree")
+    @patch("os.path.isfile", return_value=False)
+    @patch("test.e2e.lib.image_builder.run_cmd", side_effect=RuntimeError("npm failed"))
+    def test_maybe_precompile_ui_cleans_dist_on_failure(
+        self, mock_run, mock_isfile, mock_rmtree, mock_which
+    ):
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        builder._maybe_precompile_ui()
+        mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist", ignore_errors=True)
+
     @patch("shutil.which", return_value=None)
     @patch("test.e2e.lib.image_builder.run_cmd")
     def test_maybe_precompile_ui_skips_when_node_missing(self, mock_run, mock_which):

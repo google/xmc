@@ -51,6 +51,25 @@ class ImageBuilder:
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
 
+    def _is_ui_dist_stale(self, ui_dir: str, index_html: str) -> bool:
+        """Returns True if any UI source file is newer than the built index.html."""
+        try:
+            dist_mtime = os.path.getmtime(index_html)
+        except OSError:
+            return True
+
+        ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp"}
+        for root, dirs, files in os.walk(ui_dir):
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    if os.path.getmtime(file_path) > dist_mtime:
+                        return True
+                except OSError:
+                    continue
+        return False
+
     def _maybe_precompile_ui(self) -> None:
         """Pre-compiles Angular UI on host if Node.js and npm are available."""
         if not (shutil.which("node") and shutil.which("npm")):
@@ -58,9 +77,15 @@ class ImageBuilder:
 
         ui_dir = os.path.join(self.cfg.workspace_root, "cmd", "ui")
         dist_dir = os.path.join(ui_dir, "dist", "browser")
-        if os.path.isfile(os.path.join(dist_dir, "index.html")):
-            logger.info("=== [UI] Pre-compiled Angular UI bundle already exists ===")
-            return
+        index_html = os.path.join(dist_dir, "index.html")
+
+        if os.path.isfile(index_html):
+            if not self._is_ui_dist_stale(ui_dir, index_html):
+                logger.info(
+                    "=== [UI] Pre-compiled Angular UI bundle already exists and is up-to-date ==="
+                )
+                return
+            logger.info("=== [UI] UI source files modified since last build. Recompiling... ===")
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         try:
@@ -71,6 +96,7 @@ class ImageBuilder:
             logger.warning(
                 "[UI] Host compilation failed (%s). Falling back to containerized build...", e
             )
+            shutil.rmtree(os.path.join(ui_dir, "dist"), ignore_errors=True)
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images and required test binaries."""
