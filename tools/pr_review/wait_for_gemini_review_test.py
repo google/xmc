@@ -46,12 +46,16 @@ class WaitForGeminiReviewTest(unittest.TestCase):
         self.assertIsNone(result)
 
     @mock.patch("subprocess.run")
-    def test_get_latest_review_trigger_time_found(self, mock_run: mock.MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="2026-09-02T07:50:05Z\n"
-        )
+    def test_run_gh_json_oserror(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError("No gh command")
+        result = wait_for_gemini_review.run_gh_json(["gh", "api"])
+        self.assertIsNone(result)
+
+    @mock.patch("tools.pr_review.wait_for_gemini_review.run_gh_json")
+    def test_get_latest_review_trigger_time_multiline(self, mock_gh: mock.MagicMock) -> None:
+        mock_gh.return_value = "2026-09-02T07:30:00Z\n2026-09-02T08:00:00Z\n"
         result = wait_for_gemini_review.get_latest_review_trigger_time("google", "xmc", 622)
-        self.assertEqual(result, "2026-09-02T07:50:05Z")
+        self.assertEqual(result, "2026-09-02T08:00:00Z")
 
     @mock.patch("subprocess.run")
     def test_get_latest_review_trigger_time_none(self, mock_run: mock.MagicMock) -> None:
@@ -101,6 +105,12 @@ class WaitForGeminiReviewTest(unittest.TestCase):
         review = wait_for_gemini_review.get_matching_review(
             "google", "xmc", 622, "2026-09-02T07:50:00Z"
         )
+        self.assertIsNone(review)
+
+    @mock.patch("tools.pr_review.wait_for_gemini_review.run_gh_json")
+    def test_get_matching_review_handles_null_user(self, mock_gh: mock.MagicMock) -> None:
+        mock_gh.return_value = [{"id": 1, "user": None, "submitted_at": "2026-09-02T08:00:00Z"}]
+        review = wait_for_gemini_review.get_matching_review("google", "xmc", 622, None)
         self.assertIsNone(review)
 
     @mock.patch("time.sleep")

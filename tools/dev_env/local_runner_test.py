@@ -575,6 +575,30 @@ class TestLocalRunner(unittest.TestCase):
             )
 
     @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_commit_workspace_no_reload(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop ignores clean workspace transition when files are committed without disk change."""
+        file_path = self.temp_path / "cmd/reconciler/main.go"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("package main\n")
+        st = file_path.stat()
+        file_sig = (st.st_mtime_ns, st.st_size)
+
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"cmd/reconciler/main.go": file_sig},
+                    {},
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 1)
+
+    @patch("tools.dev_env.local_runner.time.sleep")
     def test_watch_loop_debounce_clean_workspace(self, mock_sleep: MagicMock) -> None:
         """Verifies watch loop triggers reload with previous dirty files if workspace becomes clean during debounce."""
         with (

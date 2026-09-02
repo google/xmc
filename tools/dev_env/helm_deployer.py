@@ -138,6 +138,8 @@ class HelmDeployer:
             "projectId": cfg.project_id,
             "environment": cfg.environment,
             "clusterName": cfg.cluster_name,
+            "isDevEnvironment": True,
+            "googleApplicationCredentials": "/etc/gcp-secrets/key.json",
             "gcpServiceAccount": f"xmc-dev-sa@{cfg.project_id}.iam.gserviceaccount.com",
             "experimentStateServer": {
                 "spannerDatabaseName": (

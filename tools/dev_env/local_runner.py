@@ -210,12 +210,21 @@ class LocalRunner:
                     time.sleep(0.5)  # debounce rapid filesystem events
                     current_sig = self._get_workspace_signature()
 
-                if not current_sig:
-                    changed_files = list(last_sig.keys())
-                else:
-                    delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
-                    deleted_files = [f for f in last_sig if f not in current_sig]
-                    changed_files = sorted(set(delta_files + deleted_files))
+                delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
+                deleted_files: list[str] = []
+                for f in last_sig:
+                    if f not in current_sig:
+                        file_path = self.repo_root / f
+                        try:
+                            if file_path.is_file():
+                                st = file_path.stat()
+                                if (st.st_mtime_ns, st.st_size) == last_sig[f]:
+                                    continue
+                        except OSError:
+                            pass
+                        deleted_files.append(f)
+
+                changed_files = sorted(set(delta_files + deleted_files))
 
                 _LOGGER.debug("Watch detected file delta: %s", changed_files)
                 if changed_files:

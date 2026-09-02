@@ -101,6 +101,8 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("test-instance", content)
         self.assertIn("test_ess_db", content)
         self.assertIn("test_xid_db", content)
+        self.assertIn("isDevEnvironment: true", content)
+        self.assertIn("/etc/gcp-secrets/key.json", content)
 
     def test_prepare_local_chart_delegates_to_sanitizer(self) -> None:
         self.mock_sanitizer.prepare_sanitized_chart.return_value = self.temp_path / "sanitized"

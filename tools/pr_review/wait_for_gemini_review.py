@@ -36,7 +36,7 @@ def run_gh_json(cmd: list[str], timeout: int = 30) -> Any:
             return json.loads(out)
         except json.JSONDecodeError:
             return out
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         return None
 
 
@@ -54,7 +54,8 @@ def get_latest_review_trigger_time(owner: str, repo: str, pr_number: int) -> str
         timeout=30,
     )
     if isinstance(val, str) and val.strip():
-        return val.strip()
+        timestamps = [line.strip() for line in val.strip().splitlines() if line.strip()]
+        return timestamps[-1] if timestamps else None
     return None
 
 
@@ -74,7 +75,7 @@ def get_matching_review(
         return None
 
     for r in reversed(reviews):
-        user_login = r.get("user", {}).get("login", "")
+        user_login = (r.get("user") or {}).get("login", "")
         submitted_at = r.get("submitted_at")
         if user_login in BOT_LOGINS and submitted_at:
             if since_timestamp is None or submitted_at >= since_timestamp:
