@@ -61,7 +61,13 @@ def copy_flat(src_dir: str, dest_dir: str):
 
     ignored_dirs = {"build_tmp", "node_modules", ".angular", "dist", ".git", "__pycache__"}
     ignored_files = {"BUILD.bazel", "BUILD"}
+    visited = set()
     for root, dirs, files in os.walk(src_dir, followlinks=True):
+        real_root = os.path.realpath(root)
+        if real_root in visited:
+            dirs[:] = []
+            continue
+        visited.add(real_root)
         dirs[:] = [d for d in dirs if d not in ignored_dirs]
         for file in files:
             if file.endswith(".py") or file in ignored_files:

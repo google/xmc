@@ -60,7 +60,13 @@ class ImageBuilder:
 
         ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp", "__pycache__"}
         ignored_files = {"BUILD.bazel", "BUILD"}
+        visited = set()
         for root, dirs, files in os.walk(ui_dir, followlinks=True):
+            real_root = os.path.realpath(root)
+            if real_root in visited:
+                dirs[:] = []
+                continue
+            visited.add(real_root)
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
                 if file.endswith(".py") or file in ignored_files:
@@ -118,10 +124,6 @@ class ImageBuilder:
                 "[UI] Host compilation failed (%s). Falling back to containerized build...", e
             )
             shutil.rmtree(os.path.join(ui_dir, "dist"), ignore_errors=True)
-            try:
-                os.remove(node_modules_lock)
-            except OSError:
-                pass
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images and required test binaries."""
