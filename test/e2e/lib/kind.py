@@ -274,17 +274,16 @@ class KindClusterManager:
             len(images),
             workers,
         )
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+        try:
             futures = {executor.submit(self._load_single_image, img): img for img in images}
-            try:
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-            except Exception:
-                logger.error(
-                    "[KinD] Image loading encountered an error. Cancelling pending loads..."
-                )
-                executor.shutdown(wait=False, cancel_futures=True)
-                raise
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+        except Exception:
+            logger.error("[KinD] Image loading encountered an error. Cancelling pending loads...")
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor.shutdown(wait=True)
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""

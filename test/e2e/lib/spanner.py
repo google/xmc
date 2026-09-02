@@ -322,22 +322,32 @@ class SpannerManager:
             ),
         ]
         # Provision both databases concurrently with full schema DDL in a single batch
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        executor1 = concurrent.futures.ThreadPoolExecutor(max_workers=len(targets))
+        try:
             futures = [
-                executor.submit(self._create_database, db_name, ddl_file, proto_file)
+                executor1.submit(self._create_database, db_name, ddl_file, proto_file)
                 for db_name, ddl_file, proto_file, _ in targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
+        except Exception:
+            executor1.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor1.shutdown(wait=True)
 
         # Initialize SchemaMigrations version tracking table concurrently for both databases
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        executor2 = concurrent.futures.ThreadPoolExecutor(max_workers=len(targets))
+        try:
             futures = [
-                executor.submit(self._init_migration_version, db_name, mig_dir)
+                executor2.submit(self._init_migration_version, db_name, mig_dir)
                 for db_name, _, _, mig_dir in targets
             ]
             for future in concurrent.futures.as_completed(futures):
                 future.result()
+        except Exception:
+            executor2.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor2.shutdown(wait=True)
 
     def _drop_database(self, db_name: str) -> None:
         """Drops a single Spanner database safely."""

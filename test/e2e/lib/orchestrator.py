@@ -100,22 +100,30 @@ class E2EOrchestrator:
 
         with self.managed_lifecycle():
             logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                builder_future = executor.submit(self.builder.build_all)
-                kind_future = executor.submit(self.kind.setup)
-
+            executor1 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            try:
+                builder_future = executor1.submit(self.builder.build_all)
+                kind_future = executor1.submit(self.kind.setup)
                 images = builder_future.result()
                 kind_future.result()
+            except Exception:
+                executor1.shutdown(wait=False, cancel_futures=True)
+                raise
+            executor1.shutdown(wait=True)
 
             logger.info(
                 "=== Phase 2: Loading Container Images & Provisioning Spanner Databases ==="
             )
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                load_future = executor.submit(self.kind.load_images, images)
-                spanner_future = executor.submit(self.spanner.setup)
-
+            executor2 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            try:
+                load_future = executor2.submit(self.kind.load_images, images)
+                spanner_future = executor2.submit(self.spanner.setup)
                 load_future.result()
                 spanner_future.result()
+            except Exception:
+                executor2.shutdown(wait=False, cancel_futures=True)
+                raise
+            executor2.shutdown(wait=True)
 
             self.helm.deploy()
             self.tester.execute()
