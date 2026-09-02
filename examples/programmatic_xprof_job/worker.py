@@ -102,8 +102,8 @@ def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: i
     print(f"Starting programmatic JAX profile trace to: {profile_dir}", flush=True)
     jax.profiler.start_trace(profile_dir)
     try:
-        deadline = time.time() + duration_seconds
-        while time.time() < deadline:
+        deadline = time.monotonic() + duration_seconds
+        while time.monotonic() < deadline:
             key, subkey = jax.random.split(key)
             x = jax.random.normal(key, (matrix_size, matrix_size))
             y = jax.random.normal(subkey, (matrix_size, matrix_size))
@@ -126,11 +126,9 @@ def main(argv):
 
     # Keep the JobSet alive long enough for the Diagon reconciler to create the
     # MLRun from the attached ManagedXprof artifact before the container exits.
-    run_seconds = int(os.environ.get("SLEEP_SECONDS", "300"))
-    remaining = run_seconds - _PROFILE_DURATION_SECONDS.value
-    if remaining > 0:
-        print(f"Idling for {remaining}s so the JobSet stays alive.", flush=True)
-        time.sleep(remaining)
+    idle_seconds = 30 * 60
+    print(f"Idling for {idle_seconds}s so the JobSet stays alive.", flush=True)
+    time.sleep(idle_seconds)
 
     print("Workload finished successfully.", flush=True)
 
