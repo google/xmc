@@ -163,10 +163,12 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_skips_npm_ci_when_node_modules_fresh(
         self, mock_run, mock_stale, mock_mtime, mock_isfile, mock_isdir, mock_which
     ):
-        # index.html exists, package-lock exists
+        # index.html exists, package-lock exists, .package-lock.json exists
         mock_isfile.return_value = True
-        # node_modules mtime (200) > package-lock.json mtime (100)
-        mock_mtime.side_effect = lambda p: 100 if "package-lock.json" in p else 200
+        # node_modules/.package-lock.json mtime (200) > package-lock.json mtime (100)
+        mock_mtime.side_effect = lambda p: (
+            200 if p.endswith(".package-lock.json") else (100 if "package" in p else 50)
+        )
         builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
 

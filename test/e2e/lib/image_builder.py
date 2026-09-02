@@ -92,14 +92,15 @@ class ImageBuilder:
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         node_modules_dir = os.path.join(ui_dir, "node_modules")
+        node_modules_lock = os.path.join(node_modules_dir, ".package-lock.json")
         package_json = os.path.join(ui_dir, "package.json")
         package_lock = os.path.join(ui_dir, "package-lock.json")
-        needs_install = not os.path.isdir(node_modules_dir)
+        needs_install = not os.path.isfile(node_modules_lock)
         if not needs_install:
             try:
-                mod_time = os.path.getmtime(node_modules_dir)
+                installed_time = os.path.getmtime(node_modules_lock)
                 if any(
-                    os.path.isfile(p) and os.path.getmtime(p) > mod_time
+                    os.path.isfile(p) and os.path.getmtime(p) > installed_time
                     for p in (package_lock, package_json)
                 ):
                     needs_install = True

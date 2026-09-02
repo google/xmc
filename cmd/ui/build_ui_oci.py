@@ -81,8 +81,9 @@ def copy_flat(src_dir: str, dest_dir: str):
                         f.write(translated)
                 else:
                     shutil.copy2(full_path, dest_path)
-            except OSError:
-                continue
+            except OSError as e:
+                print(f"ERROR: Failed to copy {full_path} to {dest_path}: {e}", file=sys.stderr)
+                raise
 
 
 def main():
@@ -96,9 +97,27 @@ def main():
     ui_src_dir = os.path.join(workspace_dir, "cmd/ui")
 
     dist_browser_src = os.path.join(ui_src_dir, "dist", "browser")
-    has_prebuilt_dist = os.path.isdir(dist_browser_src) and os.path.isfile(
-        os.path.join(dist_browser_src, "index.html")
-    )
+    index_html = os.path.join(dist_browser_src, "index.html")
+    has_prebuilt_dist = False
+    if os.path.isdir(dist_browser_src) and os.path.isfile(index_html):
+        try:
+            dist_mtime = os.path.getmtime(index_html)
+            stale = False
+            ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp", "__pycache__"}
+            ignored_files = {"BUILD.bazel", "BUILD"}
+            for root, dirs, files in os.walk(ui_src_dir, followlinks=True):
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                for file in files:
+                    if file.endswith(".py") or file in ignored_files:
+                        continue
+                    if os.path.getmtime(os.path.join(root, file)) > dist_mtime:
+                        stale = True
+                        break
+                if stale:
+                    break
+            has_prebuilt_dist = not stale
+        except OSError:
+            has_prebuilt_dist = False
 
     with tempfile.TemporaryDirectory() as temp_build_dir:
         dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
