@@ -35,24 +35,10 @@ func writePasswordFile(t *testing.T, content string) string {
 }
 
 func TestGetOptions(t *testing.T) {
-	// Helper to clear env vars after test
+	// Helper to set env vars with automatic cleanup
 	setEnv := func(t *testing.T, key, val string) {
 		t.Helper()
-		old := os.Getenv(key)
-		if err := os.Setenv(key, val); err != nil {
-			t.Fatalf("failed to set env %s: %v", key, err)
-		}
-		t.Cleanup(func() {
-			if old == "" {
-				if err := os.Unsetenv(key); err != nil {
-					t.Errorf("failed to unset env %s: %v", key, err)
-				}
-			} else {
-				if err := os.Setenv(key, old); err != nil {
-					t.Errorf("failed to restore env %s: %v", key, err)
-				}
-			}
-		})
+		t.Setenv(key, val)
 	}
 
 	baseOptions := &clickhouse.Options{

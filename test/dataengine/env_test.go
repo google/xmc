@@ -36,7 +36,7 @@ INVALID_LINE_WITHOUT_EQUALS
 	}
 
 	// Preset one env var to ensure existing vars are not overwritten
-	_ = os.Setenv("TEST_CLICKHOUSE_HOST", "existing-host")
+	t.Setenv("TEST_CLICKHOUSE_HOST", "existing-host")
 
 	if err := LoadEnvFile(envPath); err != nil {
 		t.Fatalf("LoadEnvFile failed: %v", err)

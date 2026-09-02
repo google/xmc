@@ -387,13 +387,13 @@ func TestSetCondition(t *testing.T) {
 
 	// Test 1: Preserves existing timestamp when status matches
 	setCondition(&conds, existing, ConditionTypeReady, ConditionStatusTrue, 1, "R", "M")
-	if len(conds) != 1 || conds[0].LastTransitionTime != prev {
+	if len(conds) != 1 || !conds[0].LastTransitionTime.Equal(prev) {
 		t.Errorf("expected transition time preserved: %+v", conds)
 	}
 
 	// Test 2: Updates condition when status changes
 	setCondition(&conds, existing, ConditionTypeReady, ConditionStatusFalse, 2, "R2", "M2")
-	if len(conds) != 1 || conds[0].Status != ConditionStatusFalse || conds[0].LastTransitionTime == prev {
+	if len(conds) != 1 || conds[0].Status != ConditionStatusFalse || conds[0].LastTransitionTime.Equal(prev) {
 		t.Errorf("expected updated condition with new transition time: %+v", conds)
 	}
 
