@@ -52,7 +52,7 @@ runs:
       run: |
         if ! command -v helm &>/dev/null || [ "$(helm version --template '{{.Version}}' 2>/dev/null)" != "${HELM_VER}" ]; then
           mkdir -p "${RUNNER_TEMP}/helm"
-          curl -sSfL "https://get.helm.sh/helm-${HELM_VER}-linux-amd64.tar.gz" \
+          curl -sSfL --retry 3 "https://get.helm.sh/helm-${HELM_VER}-linux-amd64.tar.gz" \
             | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
           chmod +x "${RUNNER_TEMP}/helm/helm"
           echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
