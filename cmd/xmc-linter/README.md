@@ -309,6 +309,18 @@ bazel coverage //cmd/xmc-linter/... //pkg/components/linter/... --combined_repor
 genhtml bazel-out/_coverage/_coverage_report.dat -o coverage_html/
 ```
 
+---
 
+## 11. Multi-Profile Discovery Runner
 
+For multi-directory scanning and repository-wide profile linting, use the Python discovery runner [`tools/components/run_linter.py`](../../tools/components/README.md):
 
+```bash
+# Scan across standard repository profile directories
+bazel run //tools/components:run_linter
+
+# Scan specific directories in strict mode
+bazel run //tools/components:run_linter -- --scan-roots deploy/profiles --strict
+```
+
+See [`tools/components/README.md`](../../tools/components/README.md) for flag documentation and JSON output formats.

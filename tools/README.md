@@ -11,6 +11,7 @@ The tools suite is organized into domain-focused subpackages:
 ```
 tools/
 ├── common/             # Shared utilities, virtualenv management, and container builders
+├── components/         # XMC component profiles discovery runner and linting harness
 ├── dev_env/            # Developer environment deployment and live upgrade tools
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
@@ -54,7 +55,10 @@ Harness for testing and evaluating skill/rule modifications:
 - [`analyze_diff_and_synthesize.py`](benchmark/analyze_diff_and_synthesize.py): Extracts structured git diffs and categorized changes across `.agents/`.
 - [`extract_telemetry.py`](benchmark/extract_telemetry.py): Extracts usage telemetry embedded in GitHub PR comments.
 - [`resolve_test_scope.py`](benchmark/resolve_test_scope.py): Resolves affected Bazel test scopes from git diffs for CI optimization.
-- [`teardown_benchmark.py`](benchmark/teardown_benchmark.py): Cleans up test PRs, branches, and scratch artifacts generated during benchmark runs.
+### 5. `tools/components/` (Component Manifest Linting & Profile Discovery)
+Harness for automated validation and discovery of XMC component profiles:
+- [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `xmc-linter` with consolidated text/JSON reporting.
+- [`run_linter_test.py`](components/run_linter_test.py): Hermetic unit test suite for directory discovery, rules matching, exit codes, and JSON serialization.
 
 ---
 
