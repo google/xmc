@@ -19,13 +19,18 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 const MOCK_EXPERIMENT = {
   name: 'experiments/10293841',
   title: 'Performance Benchmark Experiment',
+  priority: 'HIGH',
   status: {
     launchState: 'COMPLETED',
-    executionState: 'RUNNING',
+    activeState: 'ACTIVE',
     createTime: '2026-06-01T12:00:00Z',
+    childStateCounts: [
+      { state: 'RUNNING', count: 1 },
+      { state: 'COMPLETED', count: 1 },
+    ],
   },
   tags: ['mlrun', 'benchmark'],
-  notes: 'Visual test for performance column in work units table',
+  notes: 'Visual test for experiment page and work units table actions',
   urls: [],
 };
 
@@ -75,7 +80,7 @@ const MOCK_ARTIFACTS_RESPONSE = {
   artifacts: [],
 };
 
-test.describe('Work Units Table - Screenshot Tests', () => {
+test.describe('Experiment Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await setupMockRoutes(page);
@@ -110,28 +115,30 @@ test.describe('Work Units Table - Screenshot Tests', () => {
     });
 
     await page.goto('/experiments/10293841');
-    await page.waitForSelector('xmc-work-units-table');
+    await page.waitForSelector('xmc-experiment-page');
+    await page.waitForSelector('xmc-work-units-table table');
     await setupScreenshotEnvironment(page);
   });
 
-  test('should match baseline screenshot for Work Units table with Run Profile action', async ({
-    page,
-  }) => {
-    const tableContainer = page.locator('xmc-work-units-table');
-    await expect(tableContainer).toBeVisible();
+  test('should match baseline screenshot for the entire Experiment Page', async ({ page }) => {
+    const experimentPage = page.locator('xmc-experiment-page');
+    await expect(experimentPage).toBeVisible();
 
-    // Verify Performance header is not attached
-    const performanceHeader = tableContainer.locator('th.mat-column-Performance');
-    await expect(performanceHeader).not.toBeAttached();
-
-    // Verify troubleshoot button with Run Profile tooltip is visible in the actions cell
-    const troubleshootBtn = tableContainer.locator(
-      'td.mat-column-Urls a[mat-icon-button][matTooltip="Run Profile"]',
+    // Verify title is rendered
+    await expect(experimentPage.locator('.experiment-title')).toContainText(
+      'Performance Benchmark Experiment',
     );
-    await expect(troubleshootBtn).toBeVisible();
-    await expect(troubleshootBtn.locator('mat-icon')).toHaveText('troubleshoot');
 
-    // Capture visual golden snapshot of the table component
-    await expect(tableContainer).toHaveScreenshot('work-units-table-performance.png');
+    // Verify Performance header is NOT present
+    await expect(experimentPage.locator('th.mat-column-Performance')).not.toBeAttached();
+
+    // Verify Run Profile button is rendered in the first work unit row
+    const runProfileBtn = experimentPage.locator(
+      'td.mat-column-Urls a[mat-icon-button]:has(mat-icon:has-text("troubleshoot"))',
+    );
+    await expect(runProfileBtn).toBeVisible();
+
+    // Capture visual golden snapshot of the entire experiment page
+    await expect(experimentPage).toHaveScreenshot('experiment-page.png');
   });
 });
