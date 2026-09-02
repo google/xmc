@@ -1,6 +1,6 @@
-# Canonical XMC Component Profiles (`examples/components/profiles/`)
+# Canonical Component Profiles (`examples/components/profiles/`)
 
-This directory provides canonical reference profiles and Kubernetes Component CRD manifests used for integration testing, demonstration, and continuous verification with [`xmc-linter`](../../../cmd/xmc-linter/README.md).
+This directory provides canonical reference profiles and Kubernetes Component CRD manifests used for integration testing, demonstration, and continuous verification with [`component-linter`](../../../cmd/component-linter/README.md).
 
 ---
 
@@ -21,7 +21,7 @@ The `default/` directory contains a minimal self-contained component profile dem
 
 ## Local Verification
 
-Validate the canonical profile locally using either the multi-profile discovery runner or the standalone `xmc-linter` binary:
+Validate the canonical profile locally using either the multi-profile discovery runner or the standalone `component-linter` binary:
 
 ### Via Discovery Runner (Recommended)
 
@@ -29,10 +29,10 @@ Validate the canonical profile locally using either the multi-profile discovery 
 bazel run //tools/components:run_linter -- --scan-roots examples/components/profiles/default --strict
 ```
 
-### Via Standalone `xmc-linter`
+### Via Standalone `component-linter`
 
 ```bash
-bazel run //cmd/xmc-linter:xmc-linter -- \
+bazel run //cmd/component-linter:component-linter -- \
   --manifests-dir=examples/components/profiles/default \
   --rules-config=examples/components/profiles/default/rules.yaml \
   --output=text

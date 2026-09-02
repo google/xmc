@@ -329,4 +329,4 @@ See [`tools/components/README.md`](../../tools/components/README.md) for flag do
 
 ## 12. CI/CD Pre-Merge Verification
 
-In pull request workflows, component manifest linting is enforced automatically via the composite GitHub Action [`.github/actions/run-xmc-linter`](../../.github/actions/run-xmc-linter/README.md) and workflow [`.github/workflows/xmc-lint.yml`](../../.github/workflows/xmc-lint.yml). It verifies all profiles across `deploy/profiles/`, `deploy/components/`, and reference profiles under [`examples/components/profiles/`](../../examples/components/profiles/README.md) before PR merge.
+In pull request workflows, component manifest linting is enforced automatically via the composite GitHub Action [`.github/actions/run-component-linter`](../../.github/actions/run-component-linter/README.md) integrated into [`.github/workflows/lint.yml`](../../.github/workflows/lint.yml) (`Code Quality & Linting`). It verifies all profiles across `deploy/profiles/`, `deploy/components/`, and reference profiles under [`examples/components/profiles/`](../../examples/components/profiles/README.md) before PR merge.

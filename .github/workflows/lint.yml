@@ -53,6 +53,16 @@ jobs:
             ui:
               - 'cmd/ui/**'
               - '.github/workflows/lint.yml'
+            components:
+              - 'deploy/profiles/**'
+              - 'deploy/components/**'
+              - 'examples/components/**'
+              - 'api/protos/components/**'
+              - 'pkg/components/**'
+              - 'cmd/component-linter/**'
+              - 'tools/components/**'
+              - '.github/actions/run-component-linter/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff)
       - name: 'Install Ruff'
@@ -193,3 +203,11 @@ jobs:
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
           scan-ref: 'deploy/ctk_v2/modules'
+
+      # 5. Component Manifests & Profiles Linting
+      - name: 'Run Component Manifest Linter'
+        if: steps.changes.outputs.components == 'true'
+        uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
+

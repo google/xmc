@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: 'Run XMC Component Manifest Linter'
-description: 'Validates XMC component manifest profiles and static compatibility rules using xmc-linter'
+name: 'Run Component Manifest Linter'
+description: 'Validates Component manifest profiles and static compatibility rules using component-linter'
 
 inputs:
   scan-roots:
@@ -43,10 +43,10 @@ runs:
             - 'examples/components/**'
             - 'api/protos/components/**'
             - 'pkg/components/**'
-            - 'cmd/xmc-linter/**'
+            - 'cmd/component-linter/**'
             - 'tools/components/**'
-            - '.github/actions/run-xmc-linter/**'
-            - '.github/workflows/xmc-lint.yml'
+            - '.github/actions/run-component-linter/**'
+            - '.github/workflows/lint.yml'
 
     - name: 'Set up Bazel'
       if: steps.changes.outputs.lint == 'true'
@@ -62,19 +62,19 @@ runs:
         restore-keys: |
           bazel-repo-${{ runner.os }}-
 
-    - name: 'Build xmc-linter Binary'
+    - name: 'Build component-linter Binary'
       if: steps.changes.outputs.lint == 'true'
       shell: bash
       run: |
-        echo "Building xmc-linter CLI binary..."
+        echo "Building component-linter CLI binary..."
         bazel build \
           --config=ci \
           --repository_cache=~/.cache/bazel-repo \
           --experimental_repository_cache_hardlinks \
-          //cmd/xmc-linter:xmc-linter
-        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/xmc-linter:xmc-linter 2>/dev/null | head -n1 || true)
+          //cmd/component-linter:component-linter
+        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/component-linter:component-linter 2>/dev/null | head -n1 || true)
         if [ -z "${LINTER_BIN}" ] || [ ! -x "${LINTER_BIN}" ]; then
-          LINTER_BIN="bazel-bin/cmd/xmc-linter/xmc-linter_/xmc-linter"
+          LINTER_BIN="bazel-bin/cmd/component-linter/component-linter_/component-linter"
         fi
         if [ ! -x "${LINTER_BIN}" ]; then
           echo "Error: Built linter binary not found or not executable!" >&2
@@ -89,7 +89,7 @@ runs:
         path: ~/.cache/bazel-repo
         key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
 
-    - name: 'Run XMC Component Manifest Linter'
+    - name: 'Run Component Manifest Linter'
       if: steps.changes.outputs.lint == 'true'
       shell: bash
       env:
@@ -114,4 +114,4 @@ runs:
       if: steps.changes.outputs.lint != 'true'
       shell: bash
       run: |
-        echo "NOTICE: XMC Component manifest linter skipped (no relevant component files modified)."
+        echo "NOTICE: Component manifest linter skipped (no relevant component files modified)."
