@@ -89,6 +89,27 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
     @patch("os.listdir")
     @patch("os.path.exists")
     @patch("test.e2e.lib.test_executor.sys")
+    def test_setup_venv_continues_when_first_browser_path_raises_oserror(
+        self, mock_sys, mock_exists, mock_listdir, mock_isdir
+    ):
+        mock_exists.return_value = True
+        mock_isdir.return_value = True
+        mock_listdir.side_effect = [PermissionError("access denied"), ["chromium-1234"]]
+        mock_sys.executable = "/usr/bin/python3"
+
+        with (
+            patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}, clear=False),
+            patch.dict("sys.modules", {"playwright": MagicMock(), "requests": MagicMock()}),
+        ):
+            os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+            py_bin = self.executor.setup_venv()
+            self.assertEqual(py_bin, "/usr/bin/python3")
+            self.assertIn("PLAYWRIGHT_BROWSERS_PATH", os.environ)
+
+    @patch("os.path.isdir")
+    @patch("os.listdir")
+    @patch("os.path.exists")
+    @patch("test.e2e.lib.test_executor.sys")
     def test_setup_venv_uses_browsers_path_env_override(
         self, mock_sys, mock_exists, mock_listdir, mock_isdir
     ):

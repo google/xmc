@@ -59,14 +59,17 @@ class PlaywrightTestExecutor:
                     )
 
                 for path in browser_paths:
-                    if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
-                        logger.info(
-                            "Using pre-baked Playwright environment at %s (0s setup).",
-                            sys.executable,
-                        )
-                        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
-                            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
-                        return sys.executable
+                    try:
+                        if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
+                            logger.info(
+                                "Using pre-baked Playwright environment at %s (0s setup).",
+                                sys.executable,
+                            )
+                            if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+                                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
+                            return sys.executable
+                    except OSError:
+                        continue
             except Exception:
                 pass
 
