@@ -36,7 +36,6 @@ class E2EConfig:
     workspace_root: str
     screenshots_dir: str
     kind_node_image: str = ""
-    image_load_workers: int = 2
     keep_cluster: bool = False
     skip_build: bool = False
     ess_db: str = ""
@@ -107,12 +106,6 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         help="Custom KinD node container image (default: $XMC_KIND_NODE_IMAGE or upstream default)",
     )
     parser.add_argument(
-        "--image-load-workers",
-        type=int,
-        default=int(os.environ.get("XMC_IMAGE_LOAD_WORKERS", "2")),
-        help="Max workers for concurrent KinD image loading (default: $XMC_IMAGE_LOAD_WORKERS or 2)",
-    )
-    parser.add_argument(
         "--keep-cluster",
         action="store_true",
         help="Keep KinD cluster and Spanner DB intact on exit for debugging",
@@ -132,7 +125,6 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         workspace_root=parsed.workspace_root,
         screenshots_dir=parsed.screenshots_dir,
         kind_node_image=parsed.kind_node_image,
-        image_load_workers=parsed.image_load_workers,
         keep_cluster=parsed.keep_cluster,
         skip_build=parsed.skip_build,
     )

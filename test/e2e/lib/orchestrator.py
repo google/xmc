@@ -100,38 +100,32 @@ class E2EOrchestrator:
 
         with self.managed_lifecycle():
             logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
-            executor1 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-            futures = []
-            try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor1:
                 builder_future = executor1.submit(self.builder.build_all)
                 kind_future = executor1.submit(self.kind.setup)
                 futures = [builder_future, kind_future]
-                images = builder_future.result()
-                kind_future.result()
-            except BaseException:
-                for future in futures:
-                    future.cancel()
-                raise
-            finally:
-                executor1.shutdown(wait=True)
+                try:
+                    images = builder_future.result()
+                    kind_future.result()
+                except BaseException:
+                    for future in futures:
+                        future.cancel()
+                    raise
 
             logger.info(
                 "=== Phase 2: Loading Container Images & Provisioning Spanner Databases ==="
             )
-            executor2 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-            futures = []
-            try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor2:
                 load_future = executor2.submit(self.kind.load_images, images)
                 spanner_future = executor2.submit(self.spanner.setup)
                 futures = [load_future, spanner_future]
-                load_future.result()
-                spanner_future.result()
-            except BaseException:
-                for future in futures:
-                    future.cancel()
-                raise
-            finally:
-                executor2.shutdown(wait=True)
+                try:
+                    load_future.result()
+                    spanner_future.result()
+                except BaseException:
+                    for future in futures:
+                        future.cancel()
+                    raise
 
             self.helm.deploy()
             self.tester.execute()
