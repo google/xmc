@@ -44,7 +44,7 @@ var excludedDirs = map[string]bool{
 func isExcluded(path string) bool {
 	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
 	for _, part := range parts {
-		if excludedDirs[part] {
+		if excludedDirs[part] || strings.HasPrefix(part, "bazel-") {
 			return true
 		}
 	}
@@ -73,10 +73,7 @@ func isLongSleepExpr(expr ast.Expr) bool {
 	case *ast.SelectorExpr:
 		return isTimeUnit(e)
 	case *ast.BinaryExpr:
-		if e.Op == token.MUL {
-			return isTimeUnit(e.X) || isTimeUnit(e.Y)
-		}
-		if e.Op == token.ADD {
+		if e.Op == token.MUL || e.Op == token.ADD {
 			return isLongSleepExpr(e.X) || isLongSleepExpr(e.Y)
 		}
 	case *ast.ParenExpr:

@@ -126,6 +126,20 @@ func TestMinute(t *testing.T) {
 			wantSubstr:    "arbitrary second-level time.Sleep in test",
 		},
 		{
+			name: "nested multiplication sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestNested(t *testing.T) {
+	time.Sleep(5 * time.Second * 2)
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
 			name: "millisecond sleep passes",
 			src: `package main
 import (
@@ -260,6 +274,7 @@ func TestIsExcluded(t *testing.T) {
 		{"node_modules/foo/bar_test.go", true},
 		{"bazel-bin/cmd/foo_test.go", true},
 		{"bazel-out/cmd/foo_test.go", true},
+		{"bazel-my-custom-workspace/foo_test.go", true},
 		{"cmd/health_service/server_test.go", false},
 		{"pkg/auth/oauth2/config_test.go", false},
 	}
