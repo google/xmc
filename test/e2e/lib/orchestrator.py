@@ -101,35 +101,37 @@ class E2EOrchestrator:
         with self.managed_lifecycle():
             logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
             executor1 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            futures = []
             try:
                 builder_future = executor1.submit(self.builder.build_all)
                 kind_future = executor1.submit(self.kind.setup)
+                futures = [builder_future, kind_future]
                 images = builder_future.result()
                 kind_future.result()
             except BaseException:
-                try:
-                    executor1.shutdown(wait=True, cancel_futures=True)
-                except TypeError:
-                    executor1.shutdown(wait=True)
+                for future in futures:
+                    future.cancel()
                 raise
-            executor1.shutdown(wait=True)
+            finally:
+                executor1.shutdown(wait=True)
 
             logger.info(
                 "=== Phase 2: Loading Container Images & Provisioning Spanner Databases ==="
             )
             executor2 = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            futures = []
             try:
                 load_future = executor2.submit(self.kind.load_images, images)
                 spanner_future = executor2.submit(self.spanner.setup)
+                futures = [load_future, spanner_future]
                 load_future.result()
                 spanner_future.result()
             except BaseException:
-                try:
-                    executor2.shutdown(wait=True, cancel_futures=True)
-                except TypeError:
-                    executor2.shutdown(wait=True)
+                for future in futures:
+                    future.cancel()
                 raise
-            executor2.shutdown(wait=True)
+            finally:
+                executor2.shutdown(wait=True)
 
             self.helm.deploy()
             self.tester.execute()

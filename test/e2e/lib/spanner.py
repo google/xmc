@@ -136,7 +136,7 @@ class SpannerManager:
 
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
-        if getattr(self, "_cached_mig_binary", None) is not None:
+        if hasattr(self, "_cached_mig_binary"):
             return self._cached_mig_binary
 
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)
@@ -162,6 +162,7 @@ class SpannerManager:
                             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                                 self._cached_mig_binary = candidate
                                 return candidate
+        self._cached_mig_binary = None
         return None
 
     def _resolve_descriptor(self, pkg: str, filename: str) -> str:
@@ -323,6 +324,7 @@ class SpannerManager:
         ]
         # Provision both databases concurrently with full schema DDL in a single batch
         executor1 = concurrent.futures.ThreadPoolExecutor(max_workers=len(targets))
+        futures = []
         try:
             futures = [
                 executor1.submit(self._create_database, db_name, ddl_file, proto_file)
@@ -331,15 +333,15 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            try:
-                executor1.shutdown(wait=True, cancel_futures=True)
-            except TypeError:
-                executor1.shutdown(wait=True)
+            for future in futures:
+                future.cancel()
             raise
-        executor1.shutdown(wait=True)
+        finally:
+            executor1.shutdown(wait=True)
 
         # Initialize SchemaMigrations version tracking table concurrently for both databases
         executor2 = concurrent.futures.ThreadPoolExecutor(max_workers=len(targets))
+        futures = []
         try:
             futures = [
                 executor2.submit(self._init_migration_version, db_name, mig_dir)
@@ -348,12 +350,11 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            try:
-                executor2.shutdown(wait=True, cancel_futures=True)
-            except TypeError:
-                executor2.shutdown(wait=True)
+            for future in futures:
+                future.cancel()
             raise
-        executor2.shutdown(wait=True)
+        finally:
+            executor2.shutdown(wait=True)
 
     def _drop_database(self, db_name: str) -> None:
         """Drops a single Spanner database safely."""
@@ -379,6 +380,7 @@ class SpannerManager:
         """Drops ephemeral databases safely in parallel."""
         logger.info("=== [Spanner] Cleaning up ephemeral databases ===")
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        futures = []
         try:
             futures = [
                 executor.submit(self._drop_database, db_name)
@@ -387,9 +389,8 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            try:
-                executor.shutdown(wait=True, cancel_futures=True)
-            except TypeError:
-                executor.shutdown(wait=True)
+            for future in futures:
+                future.cancel()
             raise
-        executor.shutdown(wait=True)
+        finally:
+            executor.shutdown(wait=True)
