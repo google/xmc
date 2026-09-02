@@ -13,8 +13,12 @@
 // limitations under the License.
 
 // Package main implements an AST-based static analyzer for Go test determinism.
+// It parses Go syntax trees directly without requiring full Go typechecking,
+// allowing ultra-fast execution (<50ms) in local pre-commit hooks and CI environments
+// without depending on Bazel-generated code.
+//
 // It checks Go test files for:
-// 1. os.Setenv usage (must use t.Setenv to prevent state leakage).
+// 1. os.Setenv usage (must use t.Setenv to prevent test state leakage).
 // 2. Arbitrary second-level time.Sleep calls (must use short TTLs, synctest, or polling).
 package main
 
@@ -30,6 +34,7 @@ import (
 	"strings"
 )
 
+// excludedDirs defines directory names that are excluded from test file scanning.
 var excludedDirs = map[string]bool{
 	"vendor":         true,
 	"third_party":    true,
@@ -41,6 +46,10 @@ var excludedDirs = map[string]bool{
 	"bazel-xmc":      true,
 }
 
+// normalizeRelativePath normalizes path relative to baseDir.
+// If baseDir is empty or if path resolves outside baseDir, it returns the cleaned path.
+// This ensures path filtering functions reliably when repositories are cloned
+// under parent directories containing excluded directory names (e.g. /home/user/vendor/xmc).
 func normalizeRelativePath(path, baseDir string) string {
 	cleaned := filepath.Clean(path)
 	if baseDir == "" {
@@ -61,6 +70,10 @@ func normalizeRelativePath(path, baseDir string) string {
 	return rel
 }
 
+// isExcludedFrom determines whether a file or directory path should be excluded
+// from determinism scanning, evaluated relative to baseDir.
+// It ignores directory components matching excludedDirs or starting with "bazel-",
+// while preserving test files whose file basenames happen to start with "bazel-".
 func isExcludedFrom(path, baseDir string) bool {
 	cleaned := normalizeRelativePath(path, baseDir)
 	parts := strings.Split(cleaned, string(filepath.Separator))
@@ -76,11 +89,15 @@ func isExcludedFrom(path, baseDir string) bool {
 	return false
 }
 
+// isExcluded determines whether a file or directory path should be excluded,
+// evaluated relative to the current working directory.
 func isExcluded(path string) bool {
 	cwd, _ := os.Getwd()
 	return isExcludedFrom(path, cwd)
 }
 
+// isTimeUnit returns true if the AST expression represents a second-or-greater time unit:
+// time.Second, time.Minute, or time.Hour.
 func isTimeUnit(expr ast.Expr) bool {
 	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
@@ -98,6 +115,12 @@ func isTimeUnit(expr ast.Expr) bool {
 	}
 }
 
+// isLongSleepExpr inspects an AST expression passed to time.Sleep and returns true
+// if it evaluates to a second-level or greater sleep duration.
+// It recursively analyzes arithmetic expressions (MUL, ADD, SUB, QUO), parenthesized
+// expressions, and type conversions (e.g. time.Duration(...)).
+// For division (QUO), only the numerator (e.X) is evaluated to prevent false positives
+// when dividing a duration by time units.
 func isLongSleepExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.SelectorExpr:
@@ -121,6 +144,8 @@ func isLongSleepExpr(expr ast.Expr) bool {
 	return false
 }
 
+// isSuppressed returns true if any line from startLine-1 to endLine has an active
+// nolint directive recorded in nolintLines.
 func isSuppressed(startLine, endLine int, nolintLines map[int]bool) bool {
 	for l := startLine - 1; l <= endLine; l++ {
 		if nolintLines[l] {
@@ -130,6 +155,9 @@ func isSuppressed(startLine, endLine int, nolintLines map[int]bool) bool {
 	return false
 }
 
+// extractSuppressionLines extracts line numbers where nolint comments appear in the AST.
+// "nolint:determinism" suppresses both os.Setenv and time.Sleep checks.
+// "nolint:sleep" specifically suppresses time.Sleep checks.
 func extractSuppressionLines(node *ast.File, fset *token.FileSet) (map[int]bool, map[int]bool) {
 	nolintDetLines := make(map[int]bool)
 	nolintSleepLines := make(map[int]bool)
@@ -153,6 +181,8 @@ func extractSuppressionLines(node *ast.File, fset *token.FileSet) (map[int]bool,
 	return nolintDetLines, nolintSleepLines
 }
 
+// checkSetenvCall inspects a function call AST node and returns a formatted violation string
+// if it represents an unsuppressed os.Setenv call in a test file.
 func checkSetenvCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr, fset *token.FileSet, suppressed bool) (string, bool) {
 	pkgIdent, ok := sel.X.(*ast.Ident)
 	if !ok || pkgIdent.Name != "os" || sel.Sel.Name != "Setenv" || suppressed {
@@ -162,6 +192,8 @@ func checkSetenvCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr,
 	return fmt.Sprintf("%s:%d: os.Setenv used in test. Use t.Setenv(...) to guarantee cleanup and prevent environment pollution.", filename, line), true
 }
 
+// checkSleepCall inspects a function call AST node and returns a formatted violation string
+// if it represents an unsuppressed arbitrary second-level time.Sleep call in a test file.
 func checkSleepCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr, fset *token.FileSet, suppressed bool) (string, bool) {
 	pkgIdent, ok := sel.X.(*ast.Ident)
 	if !ok || pkgIdent.Name != "time" || sel.Sel.Name != "Sleep" || suppressed {
@@ -174,7 +206,8 @@ func checkSleepCall(filename string, call *ast.CallExpr, sel *ast.SelectorExpr, 
 	return fmt.Sprintf("%s:%d: arbitrary second-level time.Sleep in test. Inject millisecond TTLs, use synctest, or use wait.Poll.", filename, line), true
 }
 
-// CheckSource parses Go code and returns determinism violations.
+// CheckSource parses Go source code from src and returns all determinism violations found.
+// src can be a string, []byte, io.Reader, or nil (reading from filename).
 func CheckSource(filename string, src any) ([]string, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
@@ -210,11 +243,12 @@ func CheckSource(filename string, src any) ([]string, error) {
 	return violations, nil
 }
 
-// CheckFile checks a file on disk for determinism violations.
+// CheckFile reads a Go source file from disk and returns any determinism violations found.
 func CheckFile(filePath string) ([]string, error) {
 	return CheckSource(filePath, nil)
 }
 
+// findTestFiles walks a directory tree rooted at root and returns all non-excluded *_test.go files.
 func findTestFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -235,6 +269,8 @@ func findTestFiles(root string) ([]string, error) {
 	return files, err
 }
 
+// collectTargetFiles resolves CLI arguments into a flat list of test files to inspect.
+// If no arguments are provided, it discovers all test files across the repository.
 func collectTargetFiles(args []string) ([]string, error) {
 	if len(args) == 0 {
 		return findTestFiles(".")

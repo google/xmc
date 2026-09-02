@@ -97,9 +97,9 @@ check_go() {
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 
-  if [ -d "tools/check_go_determinism" ]; then
+  if [ -d "tools/lint/check_go_determinism" ]; then
     echo "--> Running Go Test Determinism & State Leakage Checker..."
-    if ! go run ./tools/check_go_determinism; then
+    if ! go run ./tools/lint/check_go_determinism; then
       FAILED=1
     fi
   fi

@@ -14,6 +14,7 @@ tools/
 ├── dev_env/            # Developer environment deployment and live upgrade tools
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
+├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
 ├── xmc-diag/           # Cluster diagnostics and health inspection utilities
 └── *.py                # Backward-compatible forwarding wrappers
 ```
@@ -55,6 +56,10 @@ Harness for testing and evaluating skill/rule modifications:
 - [`extract_telemetry.py`](benchmark/extract_telemetry.py): Extracts usage telemetry embedded in GitHub PR comments.
 - [`resolve_test_scope.py`](benchmark/resolve_test_scope.py): Resolves affected Bazel test scopes from git diffs for CI optimization.
 - [`teardown_benchmark.py`](benchmark/teardown_benchmark.py): Cleans up test PRs, branches, and scratch artifacts generated during benchmark runs.
+
+### 5. `tools/lint/` (Static Analyzers & Linters)
+Offline syntax walkers and static validation tooling:
+- [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 
 ---
 

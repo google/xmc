@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 go_library(
     name = "check_go_determinism_lib",
     srcs = ["main.go"],
-    importpath = "xmanager_cloud/tools/check_go_determinism",
+    importpath = "xmanager_cloud/tools/lint/check_go_determinism",
     visibility = ["//visibility:private"],
 )
 
