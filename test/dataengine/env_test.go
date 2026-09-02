@@ -40,6 +40,7 @@ INVALID_LINE_WITHOUT_EQUALS
 
 	// Ensure port and user env vars are backed up and restored after the test
 	for _, envVar := range []string{"TEST_CLICKHOUSE_PORT", "TEST_CLICKHOUSE_USER"} {
+		envVar := envVar
 		if val, ok := os.LookupEnv(envVar); ok {
 			t.Cleanup(func() { _ = os.Setenv(envVar, val) }) // nolint:determinism // restoring original pre-existing env state
 		} else {

@@ -140,6 +140,34 @@ func TestNested(t *testing.T) {
 			wantSubstr:    "arbitrary second-level time.Sleep in test",
 		},
 		{
+			name: "subtraction sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestSub(t *testing.T) {
+	time.Sleep(5*time.Second - 100*time.Millisecond)
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
+			name: "division sleep flags violation",
+			src: `package main
+import (
+	"testing"
+	"time"
+)
+func TestDiv(t *testing.T) {
+	time.Sleep(time.Minute / 2)
+}
+`,
+			wantViolation: true,
+			wantSubstr:    "arbitrary second-level time.Sleep in test",
+		},
+		{
 			name: "millisecond sleep passes",
 			src: `package main
 import (
@@ -284,5 +312,12 @@ func TestIsExcluded(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("isExcluded(%q) = %v, want %v", tc.path, got, tc.want)
 		}
+	}
+}
+
+func TestCollectTargetFilesNonExistent(t *testing.T) {
+	_, err := collectTargetFiles([]string{"non_existent_file_test.go"})
+	if err == nil {
+		t.Errorf("expected error for non-existent file, got nil")
 	}
 }

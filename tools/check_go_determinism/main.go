@@ -73,7 +73,7 @@ func isLongSleepExpr(expr ast.Expr) bool {
 	case *ast.SelectorExpr:
 		return isTimeUnit(e)
 	case *ast.BinaryExpr:
-		if e.Op == token.MUL || e.Op == token.ADD {
+		if e.Op == token.MUL || e.Op == token.ADD || e.Op == token.SUB || e.Op == token.QUO {
 			return isLongSleepExpr(e.X) || isLongSleepExpr(e.Y)
 		}
 	case *ast.ParenExpr:
@@ -201,9 +201,12 @@ func collectTargetFiles(args []string) ([]string, error) {
 	}
 	var files []string
 	for _, arg := range args {
-		info, err := os.Stat(arg)
-		if err != nil || isExcluded(arg) {
+		if isExcluded(arg) {
 			continue
+		}
+		info, err := os.Stat(arg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat %s: %w", arg, err)
 		}
 		if info.IsDir() {
 			discovered, err := findTestFiles(arg)
