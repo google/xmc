@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:private"])
 compat_go_library(
     name = "actuator_lib",
     srcs = [
+        "asynq_server.go",
         "config.go",
         "health.go",
         "main.go",
@@ -29,6 +30,7 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/task_queue_redis/redisclient",
+        "@com_github_hibiken_asynq//:asynq",
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_client_go//kubernetes",
@@ -41,6 +43,7 @@ compat_go_library(
 compat_go_test(
     name = "actuator_test",
     srcs = [
+        "asynq_server_test.go",
         "health_test.go",
         "main_test.go",
         "prod_test.go",
@@ -50,6 +53,7 @@ compat_go_test(
         "//internal/common/health",
         "//internal/storage/spanner/migrations/version",
         "//internal/task_queue_redis/redisclient",
+        "@com_github_hibiken_asynq//:asynq",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/fake",
     ],
