@@ -22,8 +22,9 @@
     </div>
     <span
       class="group-status-badge"
-      [class.status-healthy]="!isDegraded()"
+      [class.status-healthy]="isHealthy()"
       [class.status-degraded]="isDegraded()"
+      [class.status-unknown]="isUnknown()"
     >
       {{ groupStatusText() }}
     </span>

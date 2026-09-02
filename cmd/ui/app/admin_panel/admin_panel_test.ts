@@ -297,4 +297,63 @@ describe('AdminPanelPage Component', () => {
     expect(configFetchCount).toBe(1);
     expect(await cardHarness!.getGroupDisplayNames()).toEqual(['Initial Group']);
   });
+
+  it('should display N/A for build version in footer when buildVersion is empty or undefined', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.getFooterText()).toContain('Build Version: N/A');
+  });
+
+  it('should display build version in footer when buildVersion is provided', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          buildVersion: 'v2026.09.01-prod',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.getFooterText()).toContain('Build Version: v2026.09.01-prod');
+  });
+
+  it('should not display footer when systemInfo is missing', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.getFooterText()).toBeNull();
+  });
 });
