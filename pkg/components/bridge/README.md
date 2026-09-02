@@ -45,20 +45,19 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
 ---
 
-## 3P Custom Wrapper Status Detection (`status_detector.go`)
+## 3P Custom Wrapper Status Detection (`status_detector.go`, `fake_status_detector.go`)
 
-Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler dynamically discovers target custom resources and evaluates their health without hardcoding proprietary schemas:
+Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler defines an extensible status detection contract to evaluate their health without hardcoding proprietary schemas:
 
 - **`WrapperRef` Configuration**:
   - `Group`, `Version`, `Kind`: The target CRD's API GroupVersionKind.
   - `Name`, `Namespace`: The target custom resource's coordinates.
   - `ExpectedReadyValue`: Expected value for standard ready conditions (defaults to `"True"`).
-- **Dynamic GVR Resolution (`ResolveGVR`)**: Resolves the target GroupVersionResource using a cached `RESTMapper`. If `Version` is omitted, the `RESTMapper` automatically resolves the preferred version of the CRD. Falls back to unsafe heuristic pluralization if no RESTMapper is configured.
-- **Fail-Safe Missing Resource & CRD Handling**: If the target CRD is uninstalled (`meta.IsNoMatchError`) or the custom resource does not exist (`apierrors.IsNotFound`), the detector reports `Found=false` and `Ready=false` with a descriptive message rather than failing the reconcile pass with error loops.
-- **Default Readiness Heuristics (`ExtractResourceStatus`)**: Evaluates `.status.conditions[type=Ready]` or `.status.phase` (`Running`, `Ready`, `Active`).
-- **`StatusDetector` Interface & Test Double**:
+- **`StatusDetector` Interface & Implementations**:
   - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
-  - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection.
+  - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation, setting `COMPONENT_STATE_PENDING_RECONCILIATION` and `Ready=False` without pretending success.
+  - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
+- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
 ---
 
