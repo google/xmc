@@ -29,30 +29,31 @@ def run_gh_json(cmd: list[str]) -> Any:
     """Executes a GitHub CLI command and parses JSON output."""
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return json.loads(res.stdout) if res.stdout.strip() else None
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        out = res.stdout.strip()
+        if not out:
+            return None
+        try:
+            return json.loads(out)
+        except json.JSONDecodeError:
+            return out
+    except subprocess.CalledProcessError:
         return None
 
 
 def get_latest_review_trigger_time(owner: str, repo: str, pr_number: int) -> str | None:
     """Finds the timestamp of the latest '/gemini review' comment on the PR."""
-    try:
-        res = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{owner}/{repo}/issues/{pr_number}/comments",
-                "--jq",
-                '[.[] | select(.body | test("/gemini review"))] | reverse | .[0].created_at // empty',
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        val = res.stdout.strip()
-        return val if val else None
-    except subprocess.CalledProcessError:
-        return None
+    val = run_gh_json(
+        [
+            "gh",
+            "api",
+            f"repos/{owner}/{repo}/issues/{pr_number}/comments",
+            "--jq",
+            '[.[] | select(.body | test("/gemini review"))] | reverse | .[0].created_at // empty',
+        ]
+    )
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    return None
 
 
 def get_matching_review(

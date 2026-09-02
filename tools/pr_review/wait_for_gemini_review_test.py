@@ -32,6 +32,14 @@ class WaitForGeminiReviewTest(unittest.TestCase):
         self.assertEqual(result, {"key": "value"})
 
     @mock.patch("subprocess.run")
+    def test_run_gh_json_raw_string_fallback(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="2026-09-02T07:50:05Z\n"
+        )
+        result = wait_for_gemini_review.run_gh_json(["gh", "api"])
+        self.assertEqual(result, "2026-09-02T07:50:05Z")
+
+    @mock.patch("subprocess.run")
     def test_run_gh_json_error(self, mock_run: mock.MagicMock) -> None:
         mock_run.side_effect = subprocess.CalledProcessError(1, ["gh"])
         result = wait_for_gemini_review.run_gh_json(["gh", "api"])

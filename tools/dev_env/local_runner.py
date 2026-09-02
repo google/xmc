@@ -219,10 +219,11 @@ class LocalRunner:
                     deleted_files = [f for f in last_sig if f not in current_sig]
                     changed_delta = sorted(set(delta_files + deleted_files))
                     _LOGGER.debug("Watch detected file delta: %s", changed_delta)
-                    try:
-                        self._reload_once(services=services, changed_files=changed_delta)
-                    except Exception as e:
-                        log_error(f"Reload failed: {e}. Watching for next save...")
+                    if changed_delta:
+                        try:
+                            self._reload_once(services=services, changed_files=changed_delta)
+                        except Exception as e:
+                            log_error(f"Reload failed: {e}. Watching for next save...")
                     last_sig = current_sig
                 elif not current_sig and last_sig:
                     delta_files = list(last_sig.keys())
