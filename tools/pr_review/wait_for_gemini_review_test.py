@@ -121,6 +121,26 @@ class WaitForGeminiReviewTest(unittest.TestCase):
         self.assertEqual(res["result"]["id"], 123)
         mock_sleep.assert_called_once_with(5)
 
+    @mock.patch("time.strftime", return_value="2026-09-02T08:00:00Z")
+    @mock.patch("tools.pr_review.wait_for_gemini_review.get_matching_review")
+    @mock.patch(
+        "tools.pr_review.wait_for_gemini_review.get_latest_review_trigger_time", return_value=None
+    )
+    def test_wait_for_gemini_review_defaults_to_current_utc_time(
+        self,
+        mock_trigger: mock.MagicMock,
+        mock_review: mock.MagicMock,
+        mock_strftime: mock.MagicMock,
+    ) -> None:
+        mock_review.return_value = {
+            "id": 456,
+            "user": "gemini-code-assist[bot]",
+            "submitted_at": "2026-09-02T08:05:00Z",
+        }
+        res = wait_for_gemini_review.wait_for_gemini_review("google", "xmc", 622)
+        self.assertEqual(res["status"], "success")
+        mock_review.assert_called_with("google", "xmc", 622, "2026-09-02T08:00:00Z")
+
     @mock.patch("time.sleep")
     @mock.patch("tools.pr_review.wait_for_gemini_review.get_matching_review", return_value=None)
     @mock.patch(

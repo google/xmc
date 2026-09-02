@@ -25,10 +25,10 @@ from typing import Any
 BOT_LOGINS = {"gemini-code-assist", "gemini-code-assist[bot]"}
 
 
-def run_gh_json(cmd: list[str]) -> Any:
+def run_gh_json(cmd: list[str], timeout: int = 30) -> Any:
     """Executes a GitHub CLI command and parses JSON output."""
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
         out = res.stdout.strip()
         if not out:
             return None
@@ -36,7 +36,7 @@ def run_gh_json(cmd: list[str]) -> Any:
             return json.loads(out)
         except json.JSONDecodeError:
             return out
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
 
 
@@ -46,10 +46,11 @@ def get_latest_review_trigger_time(owner: str, repo: str, pr_number: int) -> str
         [
             "gh",
             "api",
-            f"repos/{owner}/{repo}/issues/{pr_number}/comments",
+            f"repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100&sort=created&direction=desc",
             "--jq",
-            '[.[] | select(.body | test("/gemini review"))] | reverse | .[0].created_at // empty',
-        ]
+            '[.[] | select(.body | test("/gemini review"))] | .[0].created_at // empty',
+        ],
+        timeout=30,
     )
     if isinstance(val, str) and val.strip():
         return val.strip()
@@ -65,7 +66,8 @@ def get_matching_review(
             "gh",
             "api",
             f"repos/{owner}/{repo}/pulls/{pr_number}/reviews",
-        ]
+        ],
+        timeout=30,
     )
     if not isinstance(reviews, list):
         return None
@@ -96,6 +98,8 @@ def wait_for_gemini_review(
 ) -> dict[str, Any]:
     """Polls until gemini-code-assist posts a review summary or timeout expires."""
     since = since_timestamp or get_latest_review_trigger_time(owner, repo, pr_number)
+    if not since:
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     start_time = time.time()
 
     while time.time() - start_time < timeout_seconds:

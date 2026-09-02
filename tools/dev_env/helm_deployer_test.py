@@ -327,3 +327,15 @@ class TestHelmDeployer(unittest.TestCase):
                 values_path=Path("/nonexistent/values.yaml"),
             )
         self.assertIn("Custom values file not found", str(ctx.exception))
+
+    def test_deploy_string_paths_handled(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            self.deployer.deploy(chart_path="/nonexistent/chart/dir")
+
+        chart_dir = self.temp_path / "chart"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        with self.assertRaises(FileNotFoundError):
+            self.deployer.deploy(
+                chart_path=str(chart_dir),
+                values_path="/nonexistent/values.yaml",
+            )
