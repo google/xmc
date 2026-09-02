@@ -42,7 +42,7 @@ import (
 
 var sharedRedisAddr string
 
-func cleanRedis(t *testing.T, ctx context.Context) {
+func cleanRedis(ctx context.Context, t *testing.T) {
 	t.Helper()
 	rdb := redis.NewClient(&redis.Options{Addr: sharedRedisAddr})
 	defer rdb.Close()
@@ -163,7 +163,7 @@ func (k *integrationK8sClient) UpdateWorkUnit(ctx context.Context, payload *actu
 func TestAsynqIntegration_HappyPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanRedis(t, ctx)
+	cleanRedis(ctx, t)
 
 	client, err := tqclient.NewAsynqClient(sharedRedisAddr, "")
 	if err != nil {
@@ -231,7 +231,7 @@ func TestAsynqIntegration_HappyPath(t *testing.T) {
 func TestAsynqIntegration_ExponentialBackoff(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanRedis(t, ctx)
+	cleanRedis(ctx, t)
 
 	client, err := tqclient.NewAsynqClient(sharedRedisAddr, "")
 	if err != nil {
@@ -307,7 +307,7 @@ func TestAsynqIntegration_ExponentialBackoff(t *testing.T) {
 func TestAsynqIntegration_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanRedis(t, ctx)
+	cleanRedis(ctx, t)
 
 	client, err := tqclient.NewAsynqClient(sharedRedisAddr, "")
 	if err != nil {
@@ -378,7 +378,7 @@ func TestAsynqIntegration_ContextCancellation(t *testing.T) {
 func TestAsynqIntegration_Deduplication(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanRedis(t, ctx)
+	cleanRedis(ctx, t)
 
 	client, err := tqclient.NewAsynqClient(sharedRedisAddr, "")
 	if err != nil {
@@ -432,7 +432,7 @@ func TestAsynqIntegration_Deduplication(t *testing.T) {
 func TestAsynqIntegration_DeadLetterArchival(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanRedis(t, ctx)
+	cleanRedis(ctx, t)
 
 	client, err := tqclient.NewAsynqClient(sharedRedisAddr, "")
 	if err != nil {
