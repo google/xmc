@@ -35,6 +35,8 @@ const {
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  execGit,
+  ensureGitRefs,
   GRAPHQL_TIMELINE_QUERY,
   formatReapprovalReviewBody
 } = require('./incremental-approval');
@@ -1008,3 +1010,220 @@ test('getMaxOwnerGraceLines resolves custom env or fallback default', () => {
   assert.strictEqual(getMaxOwnerGraceLines('invalid'), DEFAULT_MAX_OWNER_GRACE_LINES);
   assert.strictEqual(getMaxOwnerGraceLines('-5'), DEFAULT_MAX_OWNER_GRACE_LINES);
 });
+
+test('checkProtectedFileChanges uses 3-dot diff against baseRef and avoids false positives from base branch (PR #559 incident fix)', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  // Simulate PR #559 incident:
+  // Base branch has .github/scripts/incremental-approval.js modified in interim (PR #673)
+  // But PR #559 only touches tools/dev_env/deployer.py
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      const target = args[2];
+      if (target === 'origin/feat/tools-dev-env-helm-deployer...c40cf0f') {
+        // 3-dot diff only shows the PR branch files
+        return 'tools/dev_env/deployer.py\ntools/dev_env/config.yaml\n';
+      }
+      if (target === '8fa2009' && args[3] === 'c40cf0f') {
+        // 2-dot diff would have contained the base branch change!
+        return '.github/scripts/incremental-approval.js\ntools/dev_env/deployer.py\n';
+      }
+    }
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      // Rebase occurred, so 8fa2009 is NOT ancestor of c40cf0f
+      const err = new Error('not ancestor');
+      err.status = 1;
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
+
+  try {
+    const hasProtected = mockedCheck('feat/tools-dev-env-helm-deployer', '8fa2009', 'c40cf0f');
+    assert.strictEqual(hasProtected, false, 'Should NOT flag protected file change when only base branch modified it');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('checkProtectedFileChanges flags sensitive files when PR modifies protected files against baseRef', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      if (args[2] === 'origin/main...head-sha') {
+        return 'src/main.go\n.github/workflows/deploy.yml\n';
+      }
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
+
+  try {
+    const hasProtected = mockedCheck('main', 'approved-sha', 'head-sha');
+    assert.strictEqual(hasProtected, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('checkProtectedFileChanges detects protected file modification in fast-forward follow-up commit', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      if (args[2] === 'origin/main...head-sha') {
+        return 'src/main.go\n';
+      }
+      if (args[2] === 'approved-sha' && args[3] === 'head-sha') {
+        return 'OWNERS\n';
+      }
+    }
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      return ''; // Fast-forward, approved-sha IS ancestor of head-sha
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
+
+  try {
+    const hasProtected = mockedCheck('main', 'approved-sha', 'head-sha');
+    assert.strictEqual(hasProtected, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('ensureGitRefs returns success when all refs exist locally', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--verify') {
+      return 'ok\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
+
+  try {
+    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('ensureGitRefs fetches missing base and approved commits', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+  const fetched = [];
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'c40cf0f') return 'ok\n';
+      const err = new Error('missing ref');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch') {
+      fetched.push(args.slice(1));
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
+
+  try {
+    const res = mockedEnsure('feat/layer', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(fetched.length, 2);
+    assert.deepStrictEqual(fetched[0], ['origin', '+refs/heads/feat/layer:refs/remotes/origin/feat/layer']);
+    assert.deepStrictEqual(fetched[1], ['origin', '8fa2009']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('ensureGitRefs gracefully returns failure when approved commit is GCed on remote', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'refs/remotes/origin/main' || args[3] === 'c40cf0f') return 'ok\n';
+      const err = new Error('missing ref');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch' && args[2] === '8fa2009') {
+      const err = new Error("fatal: couldn't find remote ref 8fa2009");
+      err.status = 128;
+      err.stderr = Buffer.from("fatal: couldn't find remote ref 8fa2009");
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
+
+  try {
+    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.reason, 'APPROVED_SHA_UNREACHABLE');
+    assert.strictEqual(res.unreachableSha, '8fa2009');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('execGit passes GITHUB_TOKEN auth header and terminal security defaults', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+  let capturedOptions = null;
+
+  childProcess.execFileSync = (cmd, args, opts) => {
+    capturedOptions = opts;
+    return 'ok\n';
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  process.env.GITHUB_TOKEN = 'secret-test-token';
+  const { execGit: mockedExecGit } = require('./incremental-approval');
+
+  try {
+    mockedExecGit(['status']);
+    assert.ok(capturedOptions);
+    assert.strictEqual(capturedOptions.env.GIT_TERMINAL_PROMPT, '0');
+    assert.strictEqual(capturedOptions.env.GIT_OPTIONAL_LOCKS, '0');
+    assert.strictEqual(capturedOptions.env.GIT_CONFIG_COUNT, '1');
+    assert.strictEqual(capturedOptions.env.GIT_CONFIG_KEY_0, 'http.extraheader');
+    assert.ok(capturedOptions.env.GIT_CONFIG_VALUE_0.startsWith('Authorization: Basic '));
+  } finally {
+    delete process.env.GITHUB_TOKEN;
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
