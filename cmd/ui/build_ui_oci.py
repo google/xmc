@@ -74,6 +74,8 @@ def copy_flat(src_dir: str, dest_dir: str):
                 continue
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, src_dir)
+            if rel_path.startswith("..") or os.path.isabs(rel_path):
+                continue
             dest_path = os.path.join(dest_dir, rel_path)
             try:
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)

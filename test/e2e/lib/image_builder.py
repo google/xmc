@@ -98,13 +98,13 @@ class ImageBuilder:
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         node_modules_dir = os.path.join(ui_dir, "node_modules")
-        node_modules_lock = os.path.join(node_modules_dir, ".package-lock.json")
+        install_sentinel = os.path.join(node_modules_dir, ".install-success")
         package_json = os.path.join(ui_dir, "package.json")
         package_lock = os.path.join(ui_dir, "package-lock.json")
-        needs_install = not os.path.isfile(node_modules_lock)
+        needs_install = not os.path.isfile(install_sentinel)
         if not needs_install:
             try:
-                installed_time = os.path.getmtime(node_modules_lock)
+                installed_time = os.path.getmtime(install_sentinel)
                 if any(
                     os.path.isfile(p) and os.path.getmtime(p) > installed_time
                     for p in (package_lock, package_json)
@@ -117,6 +117,12 @@ class ImageBuilder:
             if needs_install:
                 logger.info("=== [UI] Installing npm dependencies... ===")
                 run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
+                try:
+                    os.makedirs(node_modules_dir, exist_ok=True)
+                    with open(install_sentinel, "w", encoding="utf-8") as f:
+                        f.write("ok")
+                except OSError:
+                    pass
             run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
             logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
         except Exception as e:
