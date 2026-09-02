@@ -16,10 +16,8 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import os
-import time
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
@@ -224,69 +222,25 @@ class KindClusterManager:
             cmd.extend(["-f", os.path.join(manifests_dir, manifest)])
         run_cmd(cmd)
 
-    def _load_single_image(self, img: str) -> None:
-        """Loads a single image into KinD with exponential backoff retry."""
-        logger.info("[KinD] Loading image %s...", img)
-        max_attempts = 3
-        backoff_seconds = 2.0
-        for attempt in range(1, max_attempts + 1):
-            try:
-                run_cmd(
-                    [
-                        self.cfg.kind_bin,
-                        "load",
-                        "docker-image",
-                        img,
-                        "--name",
-                        self.cfg.cluster_name,
-                    ],
-                    timeout=180.0,
-                )
-                logger.info("[KinD] Successfully loaded image %s", img)
-                return
-            except Exception as e:
-                if attempt == max_attempts:
-                    logger.error(
-                        "[KinD] Failed to load image %s after %d attempts: %s",
-                        img,
-                        max_attempts,
-                        e,
-                    )
-                    raise
-                logger.warning(
-                    "[KinD] Image %s load failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                    img,
-                    attempt,
-                    max_attempts,
-                    e,
-                    backoff_seconds,
-                )
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2.0
-
     def load_images(self, images: list[str]) -> None:
-        """Loads Docker images into KinD nodes concurrently with bounded worker pool."""
+        """Loads Docker images into KinD nodes in a single batch."""
         if not images:
             return
-        workers = max(1, min(self.cfg.image_load_workers, len(images)))
         logger.info(
-            "=== [KinD] Loading %d container images into cluster (concurrency: %d workers) ===",
+            "=== [KinD] Loading %d container images into cluster in a single batch ===",
             len(images),
-            workers,
         )
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
-        futures = []
-        try:
-            futures = [executor.submit(self._load_single_image, img) for img in images]
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
-        except BaseException:
-            logger.error("[KinD] Image loading encountered an error. Cancelling pending loads...")
-            for future in futures:
-                future.cancel()
-            raise
-        finally:
-            executor.shutdown(wait=True)
+        run_cmd(
+            [
+                self.cfg.kind_bin,
+                "load",
+                "docker-image",
+                *images,
+                "--name",
+                self.cfg.cluster_name,
+            ],
+            timeout=300.0,
+        )
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""

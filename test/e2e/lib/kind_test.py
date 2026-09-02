@@ -128,30 +128,19 @@ class TestKindClusterManager(unittest.TestCase):
         )
 
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_load_images_loads_each_image_sequentially(self, mock_run):
+    def test_load_images_batches_all_images(self, mock_run):
         self.mgr.load_images(["img1:latest", "img2:latest"])
-        self.assertEqual(mock_run.call_count, 2)
-        mock_run.assert_any_call(
+        mock_run.assert_called_once_with(
             [
                 "kind",
                 "load",
                 "docker-image",
                 "img1:latest",
-                "--name",
-                "test-cluster",
-            ],
-            timeout=180.0,
-        )
-        mock_run.assert_any_call(
-            [
-                "kind",
-                "load",
-                "docker-image",
                 "img2:latest",
                 "--name",
                 "test-cluster",
             ],
-            timeout=180.0,
+            timeout=300.0,
         )
 
     @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/valid/key.json"})
@@ -207,13 +196,11 @@ class TestKindClusterManager(unittest.TestCase):
         self.mgr.load_images([])
         mock_run.assert_not_called()
 
-    @patch("time.sleep")
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_load_images_raises_on_fatal_error(self, mock_run, mock_sleep):
+    def test_load_images_raises_on_fatal_error(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(1, ["kind", "load"])
         with self.assertRaises(subprocess.CalledProcessError):
             self.mgr.load_images(["img1:latest"])
-        self.assertEqual(mock_run.call_count, 3)
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_apply_manifests_batches_arguments(self, mock_run):
