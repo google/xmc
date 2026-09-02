@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helper script to update Pull Request body/description on GitHub."""
+"""Helper script to update Pull Request title and/or body/description on GitHub."""
 
 import argparse
 import re
@@ -52,32 +52,43 @@ def parse_pr_identifier(pr_arg: str):
     )
 
 
-def update_pr_description(args):
-    """Updates the body/description of a GitHub Pull Request via REST API."""
-    parsed = parse_pr_identifier(args.pr)
-    owner = parsed["owner"]
-    repo = parsed["repo"]
-    pull_number = parsed["pull_number"]
-
-    body_content = ""
-    if args.body_file:
+def _resolve_body_content(args) -> str | None:
+    """Resolves PR body content from file or inline string argument."""
+    if getattr(args, "body_file", None):
         body_path = Path(args.body_file)
         if not body_path.is_file():
             raise HandledError(
                 f"Body file not found or is not a regular file: '{args.body_file}'",
                 "Ensure the specified body markdown file exists and is a regular file.",
             )
-        body_content = body_path.read_text(encoding="utf-8")
-    elif args.body:
-        body_content = args.body
-    else:
+        return body_path.read_text(encoding="utf-8")
+    if getattr(args, "body", None) is not None:
+        return args.body
+    return None
+
+
+def update_pr_description(args):
+    """Updates the title and/or body/description of a GitHub Pull Request via REST API."""
+    parsed = parse_pr_identifier(args.pr)
+    owner = parsed["owner"]
+    repo = parsed["repo"]
+    pull_number = parsed["pull_number"]
+
+    payload: dict[str, str] = {}
+    if getattr(args, "title", None):
+        payload["title"] = args.title
+
+    body_content = _resolve_body_content(args)
+    if body_content is not None:
+        payload["body"] = body_content
+
+    if not payload:
         raise HandledError(
-            "Neither --body nor --body-file was provided.",
-            "Pass the PR description using --body-file <path> or --body <text>.",
+            "None of --title, --body, or --body-file was provided.",
+            "Provide at least one of --title <text>, --body-file <path>, or --body <text>.",
         )
 
     endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}"
-    payload = {"body": body_content}
 
     try:
         response = call_github_api(
@@ -86,12 +97,16 @@ def update_pr_description(args):
             payload=payload,
             user_agent="XMC-PR-Updater-Agent",
         )
-        return {
+        result = {
             "status": "success",
             "pull_number": pull_number,
             "url": response.get("html_url", ""),
-            "updated_body_length": len(body_content),
         }
+        if "title" in payload:
+            result["title"] = payload["title"]
+        if "body" in payload:
+            result["updated_body_length"] = len(payload["body"])
+        return result
     except GithubAuthError as e:
         raise HandledError(
             str(e),
@@ -107,10 +122,16 @@ def update_pr_description(args):
 
 def main():
     """Main entrypoint for update_pr_description tool."""
-    parser = argparse.ArgumentParser(description="Update Pull Request description/body on GitHub.")
+    parser = argparse.ArgumentParser(
+        description="Update Pull Request title or description/body on GitHub."
+    )
     parser.add_argument(
         "pr",
         help="Pull Request number (e.g. '148') or full GitHub PR URL.",
+    )
+    parser.add_argument(
+        "--title",
+        help="New title for the Pull Request.",
     )
     parser.add_argument(
         "--body-file",

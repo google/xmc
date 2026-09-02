@@ -289,3 +289,14 @@ py_binary(
         "//tools/common:tool_utils",
     ],
 )
+
+py_test(
+    name = "update_pr_description_test",
+    srcs = ["update_pr_description_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":update_pr_description_lib",
+        "//tools/common:tool_utils",
+    ],
+)
