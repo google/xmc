@@ -28,7 +28,6 @@ exports_files([
     "review_pr_verify_posted.py",
     "update_pr_description.py",
     "verify_pr_comment_resolution.py",
-    "wait_for_gemini_review.py",
 ])
 
 py_library(
@@ -301,36 +300,3 @@ py_test(
         "//tools/common:tool_utils",
     ],
 )
-
-py_library(
-    name = "wait_for_gemini_review_lib",
-    srcs = ["wait_for_gemini_review.py"],
-    imports = ["../.."],
-    deps = [
-        ":github_utils",
-        "//tools/common:tool_utils",
-    ],
-)
-
-py_binary(
-    name = "wait_for_gemini_review",
-    srcs = ["wait_for_gemini_review.py"],
-    imports = ["../.."],
-    deps = [
-        ":github_utils",
-        ":wait_for_gemini_review_lib",
-        "//tools/common:tool_utils",
-    ],
-)
-
-py_test(
-    name = "wait_for_gemini_review_test",
-    srcs = ["wait_for_gemini_review_test.py"],
-    imports = ["../.."],
-    deps = [
-        ":github_utils",
-        ":wait_for_gemini_review_lib",
-        "//tools/common:tool_utils",
-    ],
-)
-
