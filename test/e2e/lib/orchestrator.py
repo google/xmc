@@ -107,7 +107,10 @@ class E2EOrchestrator:
                 images = builder_future.result()
                 kind_future.result()
             except BaseException:
-                executor1.shutdown(wait=True, cancel_futures=True)
+                try:
+                    executor1.shutdown(wait=True, cancel_futures=True)
+                except TypeError:
+                    executor1.shutdown(wait=True)
                 raise
             executor1.shutdown(wait=True)
 
@@ -121,7 +124,10 @@ class E2EOrchestrator:
                 load_future.result()
                 spanner_future.result()
             except BaseException:
-                executor2.shutdown(wait=True, cancel_futures=True)
+                try:
+                    executor2.shutdown(wait=True, cancel_futures=True)
+                except TypeError:
+                    executor2.shutdown(wait=True)
                 raise
             executor2.shutdown(wait=True)
 

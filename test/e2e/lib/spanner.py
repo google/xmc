@@ -331,7 +331,10 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            executor1.shutdown(wait=True, cancel_futures=True)
+            try:
+                executor1.shutdown(wait=True, cancel_futures=True)
+            except TypeError:
+                executor1.shutdown(wait=True)
             raise
         executor1.shutdown(wait=True)
 
@@ -345,7 +348,10 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            executor2.shutdown(wait=True, cancel_futures=True)
+            try:
+                executor2.shutdown(wait=True, cancel_futures=True)
+            except TypeError:
+                executor2.shutdown(wait=True)
             raise
         executor2.shutdown(wait=True)
 
@@ -381,6 +387,9 @@ class SpannerManager:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         except BaseException:
-            executor.shutdown(wait=True, cancel_futures=True)
+            try:
+                executor.shutdown(wait=True, cancel_futures=True)
+            except TypeError:
+                executor.shutdown(wait=True)
             raise
         executor.shutdown(wait=True)

@@ -60,7 +60,7 @@ class PlaywrightTestExecutor:
 
                 for path in browser_paths:
                     try:
-                        if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
+                        if os.path.isdir(path) and os.listdir(path):
                             logger.info(
                                 "Using pre-baked Playwright environment at %s (0s setup).",
                                 sys.executable,
