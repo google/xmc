@@ -38,13 +38,12 @@ INVALID_LINE_WITHOUT_EQUALS
 	// Preset one env var to ensure existing vars are not overwritten
 	t.Setenv("TEST_CLICKHOUSE_HOST", "existing-host")
 
-	// Ensure port and user env vars are backed up and restored via t.Setenv lifecycle
+	// Ensure port and user env vars are backed up and restored after the test
 	for _, envVar := range []string{"TEST_CLICKHOUSE_PORT", "TEST_CLICKHOUSE_USER"} {
 		if val, ok := os.LookupEnv(envVar); ok {
-			t.Setenv(envVar, val)
+			t.Cleanup(func() { _ = os.Setenv(envVar, val) }) // nolint:determinism // restoring original pre-existing env state
 		} else {
-			t.Setenv(envVar, "")
-			_ = os.Unsetenv(envVar)
+			t.Cleanup(func() { _ = os.Unsetenv(envVar) })
 		}
 	}
 
