@@ -89,18 +89,52 @@ function extractDismissalContext(sortedEvents) {
   const manualDismissalIds = new Set();
 
   for (const event of sortedEvents) {
-    if (event.event === 'dismissed_review') {
-      const reviewId = event.review_id || event.id;
-      if (reviewId) {
-        manualDismissalIds.add(reviewId);
-      }
+    const isRestDismissal = event.event === 'dismissed_review' || event.event === 'review_dismissed';
+    const isGraphqlDismissal = event.__typename === 'ReviewDismissedEvent';
+
+    if (!isRestDismissal && !isGraphqlDismissal && !event.previousReviewState) {
+      continue;
     }
-    // GraphQL ReviewDismissedEvent: records pre-dismissal state (APPROVED vs CHANGES_REQUESTED)
-    if (event.__typename === 'ReviewDismissedEvent' || event.previousReviewState) {
-      const reviewId = (event.review && (event.review.databaseId || event.review.id)) || event.review_id;
-      if (reviewId && event.previousReviewState) {
-        dismissedReviewPreviousStates.set(reviewId, event.previousReviewState.toUpperCase());
-      }
+
+    const reviewId =
+      (event.review && (event.review.databaseId || event.review.id)) ||
+      (event.dismissed_review && event.dismissed_review.review_id) ||
+      event.review_id;
+
+    if (!reviewId) {
+      continue;
+    }
+
+    const reviewIdStr = String(reviewId);
+    const prevState =
+      event.previousReviewState ||
+      (event.dismissed_review && event.dismissed_review.state);
+    if (prevState) {
+      const upperState = String(prevState).toUpperCase();
+      dismissedReviewPreviousStates.set(reviewId, upperState);
+      dismissedReviewPreviousStates.set(reviewIdStr, upperState);
+    }
+
+    // Automatic stale push dismissals reference the new commit that triggered the dismissal
+    // (dismissal_commit_id in REST, or pullRequestCommit/dismissalCommit in GraphQL)
+    // and have no human dismissal message. Manual dismissals have no trigger commit or have a dismissal message.
+    const hasTriggerCommit = Boolean(
+      event.dismissal_commit_id ||
+      (event.dismissed_review && event.dismissed_review.dismissal_commit_id) ||
+      event.pullRequestCommit ||
+      event.dismissalCommit
+    );
+
+    const hasDismissalMessage = Boolean(
+      event.dismissalMessage ||
+      event.dismissal_message ||
+      (event.dismissed_review && event.dismissed_review.dismissal_message)
+    );
+
+    const isManual = !hasTriggerCommit || hasDismissalMessage;
+    if (isManual) {
+      manualDismissalIds.add(reviewId);
+      manualDismissalIds.add(reviewIdStr);
     }
   }
 
@@ -114,7 +148,7 @@ function extractDismissalContext(sortedEvents) {
  * @param {string} context.authorLower - Lowercased PR author username.
  * @param {Set<string|number>} context.manualDismissalIds - Manually dismissed review IDs.
  * @param {Map<string|number, string>} context.dismissedReviewPreviousStates - Pre-dismissal state map.
- * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string } | null}
+ * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string, isDismissed?: boolean } | null}
  */
 function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dismissedReviewPreviousStates }) {
   const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
@@ -134,16 +168,32 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
   }
 
   const reviewId = event.databaseId || event.id || event.review_id;
-  if (reviewId && manualDismissalIds.has(reviewId)) {
-    return null;
+  const reviewIdStr = reviewId ? String(reviewId) : '';
+  const isManuallyDismissed = Boolean(
+    reviewId && (manualDismissalIds.has(reviewId) || manualDismissalIds.has(reviewIdStr))
+  );
+
+  if (isManuallyDismissed) {
+    return {
+      approver: reviewer,
+      state: 'DISMISSED',
+      isDismissed: true,
+      approvedSha: commitSha,
+      submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
+    };
   }
 
+  let isDismissed = false;
   if (state === 'DISMISSED') {
-    const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
+    const prevState = reviewId
+      ? (dismissedReviewPreviousStates.get(reviewId) || dismissedReviewPreviousStates.get(reviewIdStr))
+      : null;
     if (prevState === 'APPROVED') {
       state = 'APPROVED';
+      isDismissed = true;
     } else if (prevState === 'CHANGES_REQUESTED') {
       state = 'CHANGES_REQUESTED';
+      isDismissed = true;
     } else {
       return null;
     }
@@ -152,6 +202,7 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
   return {
     approver: reviewer,
     state,
+    isDismissed,
     approvedSha: commitSha,
     submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
   };
@@ -161,7 +212,7 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
  * Pure function: Selects the latest active approval from a map of normalized reviewer states.
  * Returns null if any reviewer has an active CHANGES_REQUESTED or no approvals exist.
  * @param {Map<string, Object>} latestByReviewer - Map of reviewer username to latest review state.
- * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string, isDismissed: boolean } | null}
  */
 function resolveActiveApproval(latestByReviewer) {
   const activeReviews = Array.from(latestByReviewer.values());
@@ -178,7 +229,8 @@ function resolveActiveApproval(latestByReviewer) {
   return {
     approver: approvals[0].approver,
     approvedSha: approvals[0].approvedSha,
-    submittedAt: approvals[0].submittedAt
+    submittedAt: approvals[0].submittedAt,
+    isDismissed: !!approvals[0].isDismissed
   };
 }
 
@@ -247,6 +299,7 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
     latestByReviewer.set(reviewer.toLowerCase(), {
       approver: reviewer,
       state,
+      isDismissed: false,
       approvedSha: review.commit_id,
       submittedAt: review.submitted_at || review.created_at
     });
@@ -386,6 +439,7 @@ function parseRangeDiff(output) {
  * @param {boolean} params.isCleanRebase
  * @param {boolean} [params.hasRemovedCommits=false]
  * @param {boolean} [params.hasProtectedFileChanges=false]
+ * @param {boolean} [params.isDismissed=false]
  * @param {number} [params.maxGraceLines=10]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
@@ -398,6 +452,7 @@ function evaluateIncrementalApproval({
   isCleanRebase,
   hasRemovedCommits = false,
   hasProtectedFileChanges = false,
+  isDismissed = false,
   maxGraceLines = MAX_OWNER_GRACE_LINES
 }) {
   if (!hasPriorApproval || !approvedSha) {
@@ -408,19 +463,26 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (approvedSha === currentSha) {
-    return {
-      shouldReapprove: false,
-      reason: 'PR HEAD is already approved at this commit.',
-      trigger: 'ALREADY_APPROVED'
-    };
-  }
-
   if (hasProtectedFileChanges) {
     return {
       shouldReapprove: false,
       reason: 'PR modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS, .githooks/). Manual human review is required.',
       trigger: 'PROTECTED_FILES_MODIFIED'
+    };
+  }
+
+  if (approvedSha === currentSha) {
+    if (!isDismissed) {
+      return {
+        shouldReapprove: false,
+        reason: 'PR HEAD is already approved at this commit.',
+        trigger: 'ALREADY_APPROVED'
+      };
+    }
+    return {
+      shouldReapprove: true,
+      reason: 'PR HEAD matches previously approved commit whose approval was dismissed.',
+      trigger: 'RESTORE_DISMISSED_APPROVAL'
     };
   }
 
@@ -638,6 +700,12 @@ const GRAPHQL_TIMELINE_QUERY = `query($owner: String!, $repo: String!, $prNumber
           }
           ... on ReviewDismissedEvent {
             previousReviewState
+            dismissalMessage
+            pullRequestCommit {
+              commit {
+                oid
+              }
+            }
             review {
               databaseId
             }
@@ -825,7 +893,8 @@ async function run({ github, context, core }) {
     deltaLines: totalDelta,
     isCleanRebase,
     hasRemovedCommits,
-    hasProtectedFileChanges
+    hasProtectedFileChanges,
+    isDismissed: latestApproval.isDismissed
   });
 
   if (!decision.shouldReapprove) {
@@ -871,6 +940,7 @@ module.exports = {
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  GRAPHQL_TIMELINE_QUERY,
   fetchTimelineEvents,
   formatReapprovalReviewBody,
   run

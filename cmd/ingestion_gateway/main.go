@@ -43,6 +43,7 @@ func main() {
 	}
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
 	logInitializing(ctx, cfg)

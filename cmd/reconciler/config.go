@@ -36,6 +36,7 @@ type Config struct {
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
 	MldiagnosticsEnvironment         string
+	MetricsPort                      int
 }
 
 // Flags and ConfigMap configurations.
@@ -56,6 +57,7 @@ var (
 	kubeAPIBurst                     int
 	statusMessageHistoryEnabled      bool
 	mldiagnosticsEnvironment         string
+	metricsPort                      int
 )
 
 // init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
@@ -66,6 +68,7 @@ func init() {
 	flag.IntVar(&maxParallelExperiments, "max_parallel_experiments", 10, "The maximum number of goroutines concurrently processing experiment updates.")
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
 	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	flag.IntVar(&metricsPort, "metrics_port", 8082, "The port on which the reconciler serves Prometheus metrics.")
 	registerConfigs()
 }
 
@@ -82,6 +85,7 @@ func registerConfigs() {
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
 	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
+	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.
@@ -105,5 +109,6 @@ func Load() Config {
 		KubeAPIBurst:                     kubeAPIBurst,
 		StatusMessageHistoryEnabled:      statusMessageHistoryEnabled,
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
+		MetricsPort:                      metricsPort,
 	}
 }

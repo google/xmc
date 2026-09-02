@@ -13,7 +13,7 @@ go_library(
     ],
     importpath = "xmanager_cloud/task_queue_redis/redisclient",
     deps = [
-        "//internal/compat/log",
+        "//internal/logging",
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
