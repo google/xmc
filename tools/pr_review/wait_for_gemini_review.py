@@ -36,18 +36,23 @@ def run_gh_json(cmd: list[str]) -> Any:
 
 def get_latest_review_trigger_time(owner: str, repo: str, pr_number: int) -> str | None:
     """Finds the timestamp of the latest '/gemini review' comment on the PR."""
-    comments = run_gh_json(
-        [
-            "gh",
-            "api",
-            f"repos/{owner}/{repo}/issues/{pr_number}/comments",
-            "--jq",
-            '[.[] | select(.body | test("/gemini review"))] | reverse | .[0].created_at // empty',
-        ]
-    )
-    if isinstance(comments, str) and comments.strip():
-        return comments.strip()
-    return None
+    try:
+        res = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{owner}/{repo}/issues/{pr_number}/comments",
+                "--jq",
+                '[.[] | select(.body | test("/gemini review"))] | reverse | .[0].created_at // empty',
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        val = res.stdout.strip()
+        return val if val else None
+    except subprocess.CalledProcessError:
+        return None
 
 
 def get_matching_review(

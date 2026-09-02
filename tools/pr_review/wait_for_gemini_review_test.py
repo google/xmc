@@ -37,15 +37,17 @@ class WaitForGeminiReviewTest(unittest.TestCase):
         result = wait_for_gemini_review.run_gh_json(["gh", "api"])
         self.assertIsNone(result)
 
-    @mock.patch("tools.pr_review.wait_for_gemini_review.run_gh_json")
-    def test_get_latest_review_trigger_time_found(self, mock_gh: mock.MagicMock) -> None:
-        mock_gh.return_value = "2026-09-02T07:50:05Z"
+    @mock.patch("subprocess.run")
+    def test_get_latest_review_trigger_time_found(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="2026-09-02T07:50:05Z\n"
+        )
         result = wait_for_gemini_review.get_latest_review_trigger_time("google", "xmc", 622)
         self.assertEqual(result, "2026-09-02T07:50:05Z")
 
-    @mock.patch("tools.pr_review.wait_for_gemini_review.run_gh_json")
-    def test_get_latest_review_trigger_time_none(self, mock_gh: mock.MagicMock) -> None:
-        mock_gh.return_value = ""
+    @mock.patch("subprocess.run")
+    def test_get_latest_review_trigger_time_none(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="\n")
         result = wait_for_gemini_review.get_latest_review_trigger_time("google", "xmc", 622)
         self.assertIsNone(result)
 
