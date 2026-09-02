@@ -265,6 +265,9 @@ class HelmDeployer:
         try:
             self._check_dex_rollout(ctx, timeout_flag)
             deployments = self._discover_namespace_deployments(ctx, namespace)
+            if not deployments:
+                log_info(f"No deployments found in namespace '{namespace}' to monitor.")
+                return
             for dep in deployments:
                 _LOGGER.debug(
                     "Checking rollout status for deployment/%s in namespace %s", dep, namespace
@@ -312,10 +315,18 @@ class HelmDeployer:
             FileNotFoundError: If the specified Helm chart directory does not exist.
         """
         chart_dir = chart_path or self.prepare_local_chart()
-        if not chart_dir.is_dir():
+        try:
+            is_dir = chart_dir.is_dir()
+        except OSError:
+            is_dir = False
+        if not is_dir:
             raise FileNotFoundError(f"Helm chart directory not found at '{chart_dir}'")
         if values_path:
-            if not values_path.is_file():
+            try:
+                is_file = values_path.is_file()
+            except OSError:
+                is_file = False
+            if not is_file:
                 raise FileNotFoundError(f"Custom values file not found at '{values_path}'")
             val_file = values_path
         else:

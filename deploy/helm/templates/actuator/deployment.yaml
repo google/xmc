@@ -101,7 +101,7 @@ spec:
         - name: validation-public-key-volume
           mountPath: /etc/verification-key
           readOnly: true
-        {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
+        {{- if $gac }}
         - name: gcp-secrets-fallback
           mountPath: /etc/gcp-secrets
           readOnly: true
@@ -113,7 +113,7 @@ spec:
           items:
           - key: tls.crt
             path: tls.crt
-      {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
+      {{- if $gac }}
       - name: gcp-secrets-fallback
         secret:
           secretName: gcp-sa-key

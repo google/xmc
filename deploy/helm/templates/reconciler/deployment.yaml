@@ -90,13 +90,13 @@ spec:
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 20
-        {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
+        {{- if $gac }}
         volumeMounts:
         - name: gcp-secrets-fallback
           mountPath: /etc/gcp-secrets
           readOnly: true
         {{- end }}
-      {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
+      {{- if $gac }}
       volumes:
       - name: gcp-secrets-fallback
         secret:

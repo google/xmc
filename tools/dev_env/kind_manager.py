@@ -388,7 +388,7 @@ class KindManager:
                         "-n",
                         ns,
                         "meta.helm.sh/release-name=xmc",
-                        "meta.helm.sh/release-namespace=xmc",
+                        f"meta.helm.sh/release-namespace={ns}",
                         "--overwrite",
                     ],
                     check=False,

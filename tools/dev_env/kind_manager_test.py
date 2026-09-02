@@ -205,6 +205,22 @@ class KindManagerTest(unittest.TestCase):
         self.assertIn("--from-literal=client-secret=my-secret", create_cmd)
 
     @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_apply_secret_generic_applies_helm_metadata(self, mock_run: mock.MagicMock) -> None:
+        self.manager._apply_secret_generic(
+            "test-secret",
+            ["xmc"],
+            literals=["a=b"],
+        )
+        annotate_cmd = next(c[0][0] for c in mock_run.call_args_list if "annotate" in c[0][0])
+        self.assertIn("meta.helm.sh/release-name=xmc", annotate_cmd)
+        self.assertIn("meta.helm.sh/release-namespace=xmc", annotate_cmd)
+        self.assertIn("--overwrite", annotate_cmd)
+
+        label_cmd = next(c[0][0] for c in mock_run.call_args_list if "label" in c[0][0])
+        self.assertIn("app.kubernetes.io/managed-by=Helm", label_cmd)
+        self.assertIn("--overwrite", label_cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
     def test_apply_secret_generic_failure_raises_runtime_error(
         self, mock_run: mock.MagicMock
     ) -> None:
@@ -439,6 +455,24 @@ class KindManagerTest(unittest.TestCase):
         with mock.patch.object(self.manager, "cluster_exists", return_value=False):
             self.manager.stream_logs(service_name="reconciler")
         mock_run.assert_not_called()
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_xid_service_rewrite(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="xid")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("app=xid-service", cmd)
+
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_stream_logs_default_tail_when_not_follow(self, mock_run: mock.MagicMock) -> None:
+        with mock.patch.object(self.manager, "cluster_exists", return_value=True):
+            self.manager.stream_logs(service_name="reconciler", follow=False, lines=None)
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--tail=100", cmd)
+
+    def test_resolve_manifests_dir_first_candidate(self) -> None:
+        first_candidate = self.manager.manifest_candidate_dirs[0]
+        self.assertEqual(self.manager._resolve_manifests_dir(), first_candidate)
 
 
 if __name__ == "__main__":
