@@ -56,7 +56,8 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
-        {{- $gac := dig "auth" "googleApplicationCredentials" .Values.googleApplicationCredentials .Values.AsMap }}
+        {{- $auth := default (dict) .Values.auth }}
+        {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- if $gac }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: {{ $gac | quote }}

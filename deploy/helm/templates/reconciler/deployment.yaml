@@ -55,7 +55,8 @@ spec:
         envFrom:
         - configMapRef:
             name: reconciler-config
-        {{- $gac := dig "auth" "googleApplicationCredentials" .Values.googleApplicationCredentials .Values.AsMap }}
+        {{- $auth := default (dict) .Values.auth }}
+        {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- if $gac }}
         env:
         - name: GOOGLE_APPLICATION_CREDENTIALS
