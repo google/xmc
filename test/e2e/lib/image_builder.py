@@ -59,9 +59,12 @@ class ImageBuilder:
             return True
 
         ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp"}
+        ignored_files = {"BUILD.bazel"}
         for root, dirs, files in os.walk(ui_dir):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
+                if file.endswith(".py") or file in ignored_files:
+                    continue
                 file_path = os.path.join(root, file)
                 try:
                     if os.path.getmtime(file_path) > dist_mtime:
@@ -88,8 +91,19 @@ class ImageBuilder:
             logger.info("=== [UI] UI source files modified since last build. Recompiling... ===")
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
+        node_modules_dir = os.path.join(ui_dir, "node_modules")
+        package_lock = os.path.join(ui_dir, "package-lock.json")
+        needs_install = not os.path.isdir(node_modules_dir)
+        if not needs_install and os.path.isfile(package_lock):
+            try:
+                needs_install = os.path.getmtime(package_lock) > os.path.getmtime(node_modules_dir)
+            except OSError:
+                needs_install = True
+
         try:
-            run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
+            if needs_install:
+                logger.info("=== [UI] Installing npm dependencies... ===")
+                run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
             run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
             logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
         except Exception as e:

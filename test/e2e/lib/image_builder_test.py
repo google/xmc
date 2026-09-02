@@ -151,6 +151,72 @@ class TestImageBuilder(unittest.TestCase):
         builder._maybe_precompile_ui()
         mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist", ignore_errors=True)
 
+    @patch("os.path.getmtime")
+    @patch("os.walk")
+    def test_is_ui_dist_stale_ignores_python_and_bazel_files(self, mock_walk, mock_mtime):
+        mock_walk.return_value = [
+            ("/workspace/cmd/ui", ["app"], ["BUILD.bazel", "build_ui_oci.py", "server.py"]),
+            ("/workspace/cmd/ui/app", [], ["app.component.ts"]),
+        ]
+
+        # index.html mtime = 100
+        # BUILD.bazel and .py files mtime = 200 (newer, but should be ignored)
+        # app.component.ts mtime = 50 (older, not stale)
+        def mtime_side_effect(path):
+            if path.endswith("index.html"):
+                return 100
+            if path.endswith((".py", "BUILD.bazel")):
+                return 200
+            return 50
+
+        mock_mtime.side_effect = mtime_side_effect
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        is_stale = builder._is_ui_dist_stale(
+            "/workspace/cmd/ui", "/workspace/cmd/ui/dist/browser/index.html"
+        )
+        self.assertFalse(is_stale)
+
+    @patch("shutil.which", return_value="/usr/bin/node")
+    @patch("os.path.isdir", return_value=True)
+    @patch("os.path.isfile")
+    @patch("os.path.getmtime")
+    @patch.object(ImageBuilder, "_is_ui_dist_stale", return_value=True)
+    @patch("test.e2e.lib.image_builder.run_cmd")
+    def test_maybe_precompile_ui_skips_npm_ci_when_node_modules_fresh(
+        self, mock_run, mock_stale, mock_mtime, mock_isfile, mock_isdir, mock_which
+    ):
+        # index.html exists, package-lock exists
+        mock_isfile.return_value = True
+        # node_modules mtime (200) > package-lock.json mtime (100)
+        mock_mtime.side_effect = lambda p: 100 if "package-lock.json" in p else 200
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        builder._maybe_precompile_ui()
+
+        # npm ci should NOT be called
+        for call in mock_run.call_args_list:
+            self.assertNotIn("npm", call[0][0])
+        # ng build SHOULD be called
+        mock_run.assert_called_once_with(
+            ["npx", "ng", "build", "--configuration", "production"],
+            cwd="/workspace/cmd/ui",
+        )
+
     @patch("shutil.which", return_value=None)
     @patch("test.e2e.lib.image_builder.run_cmd")
     def test_maybe_precompile_ui_skips_when_node_missing(self, mock_run, mock_which):
