@@ -59,8 +59,8 @@ def copy_flat(src_dir: str, dest_dir: str):
         shutil.rmtree(dest_dir)
     os.makedirs(dest_dir, exist_ok=True)
 
-    ignored_dirs = {"build_tmp", "node_modules", ".angular", "dist", ".git"}
-    ignored_files = {"BUILD.bazel"}
+    ignored_dirs = {"build_tmp", "node_modules", ".angular", "dist", ".git", "__pycache__"}
+    ignored_files = {"BUILD.bazel", "BUILD"}
     for root, dirs, files in os.walk(src_dir, followlinks=True):
         dirs[:] = [d for d in dirs if d not in ignored_dirs]
         for file in files:
@@ -71,16 +71,19 @@ def copy_flat(src_dir: str, dest_dir: str):
             dest_path = os.path.join(dest_dir, rel_path)
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-            if file.endswith((".scss", ".ts", ".html")):
-                with open(full_path, encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
+            try:
+                if file.endswith((".scss", ".ts", ".html")):
+                    with open(full_path, encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
 
-                translated = translate_imports(content)
+                    translated = translate_imports(content)
 
-                with open(dest_path, "w", encoding="utf-8") as f:
-                    f.write(translated)
-            else:
-                shutil.copy2(full_path, dest_path)
+                    with open(dest_path, "w", encoding="utf-8") as f:
+                        f.write(translated)
+                else:
+                    shutil.copy2(full_path, dest_path)
+            except OSError:
+                continue
 
 
 def main():

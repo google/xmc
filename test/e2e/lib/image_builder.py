@@ -58,8 +58,8 @@ class ImageBuilder:
         except OSError:
             return True
 
-        ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp"}
-        ignored_files = {"BUILD.bazel"}
+        ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp", "__pycache__"}
+        ignored_files = {"BUILD.bazel", "BUILD"}
         for root, dirs, files in os.walk(ui_dir):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
@@ -92,11 +92,16 @@ class ImageBuilder:
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         node_modules_dir = os.path.join(ui_dir, "node_modules")
+        package_json = os.path.join(ui_dir, "package.json")
         package_lock = os.path.join(ui_dir, "package-lock.json")
         needs_install = not os.path.isdir(node_modules_dir)
-        if not needs_install and os.path.isfile(package_lock):
+        if not needs_install:
             try:
-                needs_install = os.path.getmtime(package_lock) > os.path.getmtime(node_modules_dir)
+                mod_time = os.path.getmtime(node_modules_dir)
+                if (os.path.isfile(package_lock) and os.path.getmtime(package_lock) > mod_time) or (
+                    os.path.isfile(package_json) and os.path.getmtime(package_json) > mod_time
+                ):
+                    needs_install = True
             except OSError:
                 needs_install = True
 
