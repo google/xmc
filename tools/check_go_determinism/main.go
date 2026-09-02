@@ -41,8 +41,29 @@ var excludedDirs = map[string]bool{
 	"bazel-xmc":      true,
 }
 
-func isExcluded(path string) bool {
-	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
+func normalizeRelativePath(path, baseDir string) string {
+	cleaned := filepath.Clean(path)
+	if baseDir == "" {
+		return cleaned
+	}
+	abs, err := filepath.Abs(cleaned)
+	if err != nil {
+		return cleaned
+	}
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return cleaned
+	}
+	rel, err := filepath.Rel(baseAbs, abs)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return cleaned
+	}
+	return rel
+}
+
+func isExcludedFrom(path, baseDir string) bool {
+	cleaned := normalizeRelativePath(path, baseDir)
+	parts := strings.Split(cleaned, string(filepath.Separator))
 	for i, part := range parts {
 		isLast := i == len(parts)-1
 		if isLast && strings.HasSuffix(part, ".go") {
@@ -53,6 +74,11 @@ func isExcluded(path string) bool {
 		}
 	}
 	return false
+}
+
+func isExcluded(path string) bool {
+	cwd, _ := os.Getwd()
+	return isExcludedFrom(path, cwd)
 }
 
 func isTimeUnit(expr ast.Expr) bool {

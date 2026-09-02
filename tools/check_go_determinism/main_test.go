@@ -350,24 +350,30 @@ func TestStruct(t *testing.T) {
 
 func TestIsExcluded(t *testing.T) {
 	tests := []struct {
-		path string
-		want bool
+		name    string
+		path    string
+		baseDir string
+		want    bool
 	}{
-		{"vendor/pkg/foo_test.go", true},
-		{"node_modules/foo/bar_test.go", true},
-		{"bazel-bin/cmd/foo_test.go", true},
-		{"bazel-out/cmd/foo_test.go", true},
-		{"bazel-my-custom-workspace/foo_test.go", true},
-		{"cmd/health_service/server_test.go", false},
-		{"pkg/auth/oauth2/config_test.go", false},
-		{"pkg/build/bazel-runner_test.go", false},
+		{"vendor dir", "vendor/pkg/foo_test.go", "", true},
+		{"node_modules dir", "node_modules/foo/bar_test.go", "", true},
+		{"bazel-bin dir", "bazel-bin/cmd/foo_test.go", "", true},
+		{"bazel-out dir", "bazel-out/cmd/foo_test.go", "", true},
+		{"bazel workspace symlink", "bazel-my-custom-workspace/foo_test.go", "", true},
+		{"valid test file", "cmd/health_service/server_test.go", "", false},
+		{"valid auth test", "pkg/auth/oauth2/config_test.go", "", false},
+		{"bazel prefixed test file", "pkg/build/bazel-runner_test.go", "", false},
+		{"parent path contains vendor", "/home/user/vendor/myproject/pkg/foo_test.go", "/home/user/vendor/myproject", false},
+		{"parent path contains vendor but file in vendor", "/home/user/vendor/myproject/vendor/pkg/foo_test.go", "/home/user/vendor/myproject", true},
 	}
 
 	for _, tc := range tests {
-		got := isExcluded(tc.path)
-		if got != tc.want {
-			t.Errorf("isExcluded(%q) = %v, want %v", tc.path, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got := isExcludedFrom(tc.path, tc.baseDir)
+			if got != tc.want {
+				t.Errorf("isExcludedFrom(%q, %q) = %v, want %v", tc.path, tc.baseDir, got, tc.want)
+			}
+		})
 	}
 }
 
