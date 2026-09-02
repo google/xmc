@@ -60,7 +60,7 @@ class ImageBuilder:
 
         ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp", "__pycache__"}
         ignored_files = {"BUILD.bazel", "BUILD"}
-        for root, dirs, files in os.walk(ui_dir):
+        for root, dirs, files in os.walk(ui_dir, followlinks=True):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
                 if file.endswith(".py") or file in ignored_files:
