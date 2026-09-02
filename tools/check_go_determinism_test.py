@@ -151,6 +151,46 @@ func TestBlock(t *testing.T) {
         violations = check_file(file_path)
         self.assertEqual(violations, [])
 
+    def test_multiline_sleep_flags_violation(self) -> None:
+        file_path = self.test_dir / "multiline_sleep_test.go"
+        file_path.write_text(
+            """package main
+
+import (
+	"testing"
+	"time"
+)
+
+func TestMulti(t *testing.T) {
+	time.Sleep(
+		15 * time.Second,
+	)
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("arbitrary second-level time.Sleep in test", violations[0])
+        self.assertIn(":9:", violations[0])
+
+    def test_string_literal_bypasses(self) -> None:
+        file_path = self.test_dir / "string_literal_test.go"
+        file_path.write_text(
+            """package main
+
+import "testing"
+
+func TestString(t *testing.T) {
+	msg := "time.Sleep(15 * time.Second) os.Setenv(a, b)"
+	t.Log(msg)
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(violations, [])
+
     def test_excluded_directories(self) -> None:
         self.assertTrue(is_excluded(Path("vendor/pkg/foo_test.go")))
         self.assertTrue(is_excluded(Path("node_modules/foo/bar_test.go")))

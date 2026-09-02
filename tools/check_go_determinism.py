@@ -53,49 +53,117 @@ def is_excluded(path: Path) -> bool:
     return any(part in EXCLUDED_DIRS for part in path.parts)
 
 
+def mask_comments_and_strings(content: str) -> tuple[str, set[int], set[int]]:
+    """Masks comments and string literals by replacing their contents with spaces.
+
+    Newlines are strictly preserved so that line numbers remain exact.
+
+    Returns:
+        tuple of:
+        - sanitized string with comments/strings blanked out
+        - set of line numbers where nolint:determinism was found
+        - set of line numbers where nolint:sleep was found
+    """
+    chars = list(content)
+    n = len(chars)
+    nolint_determinism_lines: set[int] = set()
+    nolint_sleep_lines: set[int] = set()
+    line_num = 1
+    i = 0
+    while i < n:
+        c = chars[i]
+        if c == "\n":
+            line_num += 1
+            i += 1
+            continue
+
+        # Single-line comment: // ...
+        if c == "/" and i + 1 < n and chars[i + 1] == "/":
+            start = i
+            comment_line = line_num
+            while i < n and chars[i] != "\n":
+                i += 1
+            comment_text = content[start:i]
+            if "nolint:determinism" in comment_text:
+                nolint_determinism_lines.add(comment_line)
+            if "nolint:sleep" in comment_text:
+                nolint_sleep_lines.add(comment_line)
+            for j in range(start, i):
+                chars[j] = " "
+            continue
+
+        # Multi-line block comment: /* ... */
+        if c == "/" and i + 1 < n and chars[i + 1] == "*":
+            start = i
+            start_line = line_num
+            i += 2
+            while i + 1 < n and not (chars[i] == "*" and chars[i + 1] == "/"):
+                if chars[i] == "\n":
+                    line_num += 1
+                i += 1
+            if i + 1 < n:
+                i += 2
+            comment_text = content[start:i]
+            if "nolint:determinism" in comment_text:
+                for l_idx in range(start_line, line_num + 1):
+                    nolint_determinism_lines.add(l_idx)
+            if "nolint:sleep" in comment_text:
+                for l_idx in range(start_line, line_num + 1):
+                    nolint_sleep_lines.add(l_idx)
+            for j in range(start, i):
+                if chars[j] != "\n":
+                    chars[j] = " "
+            continue
+
+        # String literal: "..." or `...`
+        if c in ('"', "`"):
+            quote = c
+            i += 1
+            while i < n:
+                if chars[i] == "\n":
+                    line_num += 1
+                if quote == '"' and chars[i] == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if chars[i] == quote:
+                    i += 1
+                    break
+                chars[i] = " " if chars[i] != "\n" else "\n"
+                i += 1
+            continue
+
+        i += 1
+
+    return "".join(chars), nolint_determinism_lines, nolint_sleep_lines
+
+
 def check_file(file_path: Path) -> list[str]:
     """Scans a single Go test file for determinism violations."""
-    violations: list[str] = []
     try:
         content = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         return [f"{file_path}: Unable to read file: {e}"]
 
-    lines = content.splitlines()
-    in_block_comment = False
-    for idx, line in enumerate(lines):
-        line_num = idx + 1
-        stripped = line.strip()
-        if in_block_comment:
-            if "*/" in stripped:
-                in_block_comment = False
-            continue
-        if stripped.startswith("/*"):
-            if "*/" not in stripped:
-                in_block_comment = True
-            continue
-        if stripped.startswith("//"):
-            continue
+    sanitized, nolint_det, nolint_sleep = mask_comments_and_strings(content)
+    violations: list[str] = []
 
-        prev_line = lines[idx - 1] if idx > 0 else ""
-        if "nolint:determinism" in line or "nolint:determinism" in prev_line:
+    for match in SETENV_PATTERN.finditer(sanitized):
+        line_num = content[: match.start()].count("\n") + 1
+        if line_num in nolint_det or (line_num - 1) in nolint_det:
             continue
+        violations.append(
+            f"{file_path}:{line_num}: "
+            f"os.Setenv used in test. Use t.Setenv(...) to guarantee cleanup and prevent environment pollution."
+        )
 
-        if SETENV_PATTERN.search(line):
-            violations.append(
-                f"{file_path}:{line_num}: "
-                f"os.Setenv used in test. Use t.Setenv(...) to guarantee cleanup and prevent environment pollution."
-            )
-
-        if (
-            LONG_SLEEP_PATTERN.search(line)
-            and "nolint:sleep" not in line
-            and "nolint:sleep" not in prev_line
-        ):
-            violations.append(
-                f"{file_path}:{line_num}: "
-                f"arbitrary second-level time.Sleep in test. Inject millisecond TTLs, use synctest, or use wait.Poll."
-            )
+    for match in LONG_SLEEP_PATTERN.finditer(sanitized):
+        line_num = content[: match.start()].count("\n") + 1
+        if line_num in nolint_sleep or (line_num - 1) in nolint_sleep:
+            continue
+        violations.append(
+            f"{file_path}:{line_num}: "
+            f"arbitrary second-level time.Sleep in test. Inject millisecond TTLs, use synctest, or use wait.Poll."
+        )
 
     return violations
 

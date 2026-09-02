@@ -435,8 +435,8 @@ func TestGetUserInfo(t *testing.T) {
 
 func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		// Use short millisecond durations for fast, deterministic execution (50ms cache, 5 requests per 30ms rate limit)
-		tf := newTestFixture(t, 50*time.Millisecond, 5, 30*time.Millisecond)
+		// Use safe millisecond durations for fast, deterministic execution robust to CI runner jitter (500ms cache, 5 requests per 300ms rate limit)
+		tf := newTestFixture(t, 500*time.Millisecond, 5, 300*time.Millisecond)
 		defer tf.close()
 
 		ctx := context.Background()
@@ -450,8 +450,8 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 			t.Error("expected cached response to have the same health check time")
 		}
 
-		// 3. Sleep past TTL (50ms) to expire cache
-		time.Sleep(60 * time.Millisecond)
+		// 3. Sleep past TTL (500ms) to expire cache
+		time.Sleep(600 * time.Millisecond)
 
 		// 4. Third call - Cache Miss (X-Cache: MISS)
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 2, "MISS")
@@ -466,8 +466,8 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 		// 6. 6th Force refresh immediately - Rate limit exceeded, falls back to cache (X-Cache: HIT)
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "HIT")
 
-		// 7. Sleep past rate limit window (30ms) to reset rate limit
-		time.Sleep(35 * time.Millisecond)
+		// 7. Sleep past rate limit window (300ms) to reset rate limit
+		time.Sleep(350 * time.Millisecond)
 
 		// 8. Force refresh succeeds again
 		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 8)
