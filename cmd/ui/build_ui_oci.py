@@ -69,9 +69,8 @@ def copy_flat(src_dir: str, dest_dir: str):
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, src_dir)
             dest_path = os.path.join(dest_dir, rel_path)
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-
             try:
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 if file.endswith((".scss", ".ts", ".html")):
                     with open(full_path, encoding="utf-8", errors="ignore") as f:
                         content = f.read()
@@ -101,7 +100,7 @@ def main():
         os.path.join(dist_browser_src, "index.html")
     )
 
-    with tempfile.TemporaryDirectory(dir=ui_src_dir) as temp_build_dir:
+    with tempfile.TemporaryDirectory() as temp_build_dir:
         dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
 
         if has_prebuilt_dist:
