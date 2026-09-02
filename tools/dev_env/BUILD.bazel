@@ -41,6 +41,7 @@ py_library(
     imports = ["../.."],
     deps = [
         ":image_builder_lib",
+        ":service_resolver_lib",
         "//tools/common:tool_utils",
     ],
 )

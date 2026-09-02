@@ -26,7 +26,7 @@ from tools.dev_env.helm_deployer import HelmDeployer
 from tools.dev_env.image_builder import ImageBuilder
 from tools.dev_env.kind_manager import KindManager, check_preflight_tools
 from tools.dev_env.service_resolver import (
-    resolve_service_names,
+    resolve_target_services,
     service_to_k8s_deployment_name,
 )
 from tools.dev_env.spanner_manager import SpannerManager
@@ -139,34 +139,17 @@ class LocalRunner:
                 files_str = ", ".join(r[:2]) + ("..." if len(r) > 2 else "")
                 log_info(f"  • {svc}: triggered by {len(r)} file(s) ({files_str})")
 
-        if raw_services:
-            explicit_services = [
-                s.strip()
-                for s in raw_services
-                if s
-                and s.strip()
-                and s.strip().lower() not in ("auto", "all", "helm", "chart", "charts")
-            ]
-            if any(
-                s.strip().lower() in ("helm", "chart", "charts")
-                for s in raw_services
-                if s and s.strip()
-            ):
-                helm_needed = True
-            if explicit_services:
-                resolved = resolve_service_names(explicit_services)
-                invalid_or_disabled = [
-                    s for s in resolved if s not in self.change_detector.enabled_services
-                ]
-                if invalid_or_disabled:
-                    raise ValueError(
-                        "The following services are invalid or not enabled in the current"
-                        f" configuration: {', '.join(invalid_or_disabled)}. Enabled services:"
-                        f" {', '.join(self.change_detector.enabled_services)}"
-                    )
-                target_services.update(resolved)
-            if "all" in lowercase_services:
-                target_services.update(self.change_detector.enabled_services)
+        non_auto_services = [
+            s for s in raw_services if s and s.strip() and s.strip().lower() != "auto"
+        ]
+        if non_auto_services:
+            explicit_targets, explicit_helm = resolve_target_services(
+                services=non_auto_services,
+                enabled_services=self.change_detector.enabled_services,
+                helm=helm_needed,
+            )
+            target_services.update(explicit_targets)
+            helm_needed = explicit_helm
 
         return target_services, helm_needed
 

@@ -14,21 +14,23 @@
 
 """Service aliases, naming normalization, and Kubernetes deployment mapping."""
 
-from __future__ import annotations
-
 SERVICE_ALIASES: dict[str, str] = {
     "ess": "experiment_state_server",
     "xid": "xid_service",
     "rod": "rod_data_provider",
     "gw": "ingestion_gateway",
     "gateway": "ingestion_gateway",
+    "ingestion": "ingestion_gateway",
     "frontend": "ui",
     "web": "ui",
     "dash": "dashboard_service",
     "dashboard": "dashboard_service",
     "health": "health_service",
     "comp": "components",
+    "monitor": "log_monitor",
 }
+
+RESERVED_SERVICE_KEYWORDS: frozenset[str] = frozenset({"auto", "all"})
 
 
 def resolve_service_name(alias_or_name: str) -> str:
@@ -44,16 +46,25 @@ def resolve_service_name(alias_or_name: str) -> str:
     return SERVICE_ALIASES.get(normalized, normalized)
 
 
-def resolve_service_names(names: list[str]) -> list[str]:
+def resolve_service_names(names: list[str] | None = None) -> list[str]:
     """Resolves a list of service names or aliases to canonical service names.
 
     Args:
         names: List of service names or aliases.
 
     Returns:
-        Deduplicated list of canonical snake_case service names preserving order.
+        Deduplicated list of canonical snake_case service names preserving order,
+        excluding reserved keywords ('auto', 'all').
     """
-    return list(dict.fromkeys(resolve_service_name(n) for n in names if n and n.strip()))
+    if not names:
+        return []
+    return list(
+        dict.fromkeys(
+            resolve_service_name(n)
+            for n in names
+            if n and n.strip() and n.strip().lower() not in RESERVED_SERVICE_KEYWORDS
+        )
+    )
 
 
 def service_to_k8s_deployment_name(service: str) -> str:

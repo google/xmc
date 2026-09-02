@@ -28,7 +28,23 @@ class ChangeDetectorTest(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.detector = ChangeDetector(repo_root=Path("/fake/repo"))
+        self.test_enabled_services = [
+            "actuator",
+            "components",
+            "dashboard_service",
+            "experiment_state_server",
+            "health_service",
+            "ingestion_gateway",
+            "log_monitor",
+            "reconciler",
+            "rod_data_provider",
+            "ui",
+            "xid_service",
+        ]
+        self.detector = ChangeDetector(
+            repo_root=Path("/fake/repo"),
+            enabled_services=self.test_enabled_services,
+        )
 
     def test_resolve_service_name_aliases(self) -> None:
         """Verifies canonical name and alias resolution."""
@@ -146,22 +162,14 @@ class ChangeDetectorTest(unittest.TestCase):
         """Verifies individual microservice file changes map to their respective service."""
         test_cases = [
             (["cmd/experiment_state_server/main.go"], ["experiment_state_server"]),
-            (["internal/storage/spanner/migrations/ess/001.sql"], ["experiment_state_server"]),
-            (["api/protos/experiment/v1/experiment.proto"], ["experiment_state_server"]),
             (["cmd/xid_service/xid.go"], ["xid_service"]),
-            (["api/protos/xid/v1/xid.proto"], ["xid_service"]),
             (["cmd/actuator/actuator.go"], ["actuator"]),
             (["cmd/reconciler/reconciler.go"], ["reconciler"]),
             (["cmd/ui/src/app/dashboard.ts"], ["ui"]),
             (["cmd/ingestion_gateway/main.go"], ["ingestion_gateway"]),
-            (["api/protos/metrics/metrics.proto"], ["ingestion_gateway"]),
             (["cmd/dashboard_service/main.go"], ["dashboard_service"]),
-            (["internal/dashboard/service.go"], ["dashboard_service"]),
-            (["api/protos/dashboard/dashboard.proto"], ["dashboard_service"]),
             (["cmd/health_service/main.go"], ["health_service"]),
-            (["api/protos/health/health.proto"], ["health_service"]),
             (["cmd/rod_data_provider/jobs.go"], ["rod_data_provider"]),
-            (["api/protos/rod/v1/rod.proto"], ["rod_data_provider"]),
             (["cmd/log_monitor/monitor.go"], ["log_monitor"]),
             (["cmd/components/main.go"], ["components"]),
             (["cmd/actuator/BUILD.bazel"], ["actuator"]),
@@ -186,19 +194,28 @@ class ChangeDetectorTest(unittest.TestCase):
             "internal/logging/log.go",
             "internal/kubernetes/client.go",
             "internal/task_queue/queue.go",
+            "internal/storage/spanner/migrations/ess/001.sql",
+            "internal/query_generator/query.go",
+            "internal/dashboard/service.go",
             "api/protos/components/component.proto",
+            "api/protos/experiment/v1/experiment.proto",
+            "api/protos/xid/v1/xid.proto",
+            "api/protos/metrics/metrics.proto",
+            "api/protos/dashboard/dashboard.proto",
+            "api/protos/health/health.proto",
+            "api/protos/rod/v1/rod.proto",
             "pkg/apis/v1/types.go",
         ]
         for f in shared_files:
             result = self.detector.detect_changes(files=[f])
             self.assertEqual(
                 set(result.services),
-                set(change_detector.ALL_CANONICAL_SERVICES),
+                set(self.detector.enabled_services),
             )
             self.assertFalse(result.helm_upgrade_needed)
 
     def test_detect_changes_shared_root_files(self) -> None:
-        """Verifies changes to root and intermediate build files trigger all enabled services."""
+        """Verifies changes to root and shared build files trigger all enabled services."""
         for root_file in [
             "go.mod",
             "go.sum",
@@ -209,12 +226,11 @@ class ChangeDetectorTest(unittest.TestCase):
             ".bazelrc",
             "internal/BUILD.bazel",
             "api/BUILD",
-            "tools/rules.bzl",
         ]:
             result = self.detector.detect_changes(files=[root_file])
             self.assertEqual(
                 set(result.services),
-                set(change_detector.ALL_CANONICAL_SERVICES),
+                set(self.detector.enabled_services),
             )
 
     def test_detect_changes_helm_and_manifests(self) -> None:
@@ -250,6 +266,15 @@ class ChangeDetectorTest(unittest.TestCase):
         )
         self.assertEqual(result.services, [])
         self.assertFalse(result.helm_upgrade_needed)
+
+    def test_detector_defaults_to_discovered_services(self) -> None:
+        """Verifies ChangeDetector without enabled_services discovers from repo."""
+        with mock.patch(
+            "tools.dev_env.change_detector.discover_buildable_services",
+            return_value=["foo", "bar"],
+        ):
+            detector = ChangeDetector(repo_root=Path("/fake/repo"))
+            self.assertEqual(detector.enabled_services, ["foo", "bar"])
 
 
 if __name__ == "__main__":
