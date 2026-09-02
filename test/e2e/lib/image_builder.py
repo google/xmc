@@ -118,6 +118,10 @@ class ImageBuilder:
                 "[UI] Host compilation failed (%s). Falling back to containerized build...", e
             )
             shutil.rmtree(os.path.join(ui_dir, "dist"), ignore_errors=True)
+            try:
+                os.remove(node_modules_lock)
+            except OSError:
+                pass
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images and required test binaries."""

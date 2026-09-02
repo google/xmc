@@ -119,15 +119,17 @@ class TestImageBuilder(unittest.TestCase):
         )
 
     @patch("shutil.which", return_value="/usr/bin/node")
+    @patch("os.remove")
     @patch("shutil.rmtree")
     @patch("os.path.isfile", return_value=False)
     @patch("test.e2e.lib.image_builder.run_cmd", side_effect=RuntimeError("npm failed"))
-    def test_maybe_precompile_ui_cleans_dist_on_failure(
-        self, mock_run, mock_isfile, mock_rmtree, mock_which
+    def test_maybe_precompile_ui_cleans_dist_and_lock_on_failure(
+        self, mock_run, mock_isfile, mock_rmtree, mock_remove, mock_which
     ):
         builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist", ignore_errors=True)
+        mock_remove.assert_called_once_with("/workspace/cmd/ui/node_modules/.package-lock.json")
 
     @patch("os.path.getmtime")
     @patch("os.walk")
