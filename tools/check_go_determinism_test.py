@@ -132,6 +132,25 @@ func TestInlineAllowed(t *testing.T) {
         violations = check_file(file_path)
         self.assertEqual(violations, [])
 
+    def test_block_comment_bypasses(self) -> None:
+        file_path = self.test_dir / "block_comment_test.go"
+        file_path.write_text(
+            """package main
+
+import "testing"
+
+func TestBlock(t *testing.T) {
+	/*
+	os.Setenv("FOO", "BAR")
+	time.Sleep(15 * time.Second)
+	*/
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(violations, [])
+
     def test_excluded_directories(self) -> None:
         self.assertTrue(is_excluded(Path("vendor/pkg/foo_test.go")))
         self.assertTrue(is_excluded(Path("node_modules/foo/bar_test.go")))

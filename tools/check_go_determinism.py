@@ -62,9 +62,18 @@ def check_file(file_path: Path) -> list[str]:
         return [f"{file_path}: Unable to read file: {e}"]
 
     lines = content.splitlines()
+    in_block_comment = False
     for idx, line in enumerate(lines):
         line_num = idx + 1
         stripped = line.strip()
+        if in_block_comment:
+            if "*/" in stripped:
+                in_block_comment = False
+            continue
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_block_comment = True
+            continue
         if stripped.startswith("//"):
             continue
 
