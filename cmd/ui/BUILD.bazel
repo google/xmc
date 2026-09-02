@@ -20,17 +20,21 @@ package(default_visibility = ["//visibility:public"])
 # 1. Build the OCI image tarball using the custom python builder
 genrule(
     name = "ui_image_tarball",
-    srcs = glob([
-        "app/**/*",
-        "static/**/*",
-        "*.ts",
-        "*.scss",
-        "*.html",
-        "*.json",
-        "*.svg",
-        "nginx.conf",
-        "generate_config.sh",
-    ]) + [":build_ui_oci.py"],
+    srcs = glob(
+        [
+            "app/**/*",
+            "static/**/*",
+            "dist/**/*",
+            "*.ts",
+            "*.scss",
+            "*.html",
+            "*.json",
+            "*.svg",
+            "nginx.conf",
+            "generate_config.sh",
+        ],
+        allow_empty = True,
+    ) + [":build_ui_oci.py"],
     outs = ["ui_image_tarball.tar"],
     cmd = "python3 $(location :build_ui_oci.py) $@",
     tools = [":build_ui_oci.py"],

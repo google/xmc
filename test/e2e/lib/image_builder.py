@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
@@ -50,14 +51,36 @@ class ImageBuilder:
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
 
+    def _maybe_precompile_ui(self) -> None:
+        """Pre-compiles Angular UI on host if Node.js and npm are available."""
+        if not (shutil.which("node") and shutil.which("npm")):
+            return
+
+        ui_dir = os.path.join(self.cfg.workspace_root, "cmd", "ui")
+        dist_dir = os.path.join(ui_dir, "dist", "browser")
+        if os.path.isfile(os.path.join(dist_dir, "index.html")):
+            logger.info("=== [UI] Pre-compiled Angular UI bundle already exists ===")
+            return
+
+        logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
+        try:
+            run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
+            run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
+            logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
+        except Exception as e:
+            logger.warning(
+                "[UI] Host compilation failed (%s). Falling back to containerized build...", e
+            )
+
     def build_all(self) -> list[str]:
-        """Builds all backend and frontend images."""
+        """Builds all backend and frontend images and required test binaries."""
         if self.cfg.skip_build:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
             return [tag for _, _, tag in self._SERVICES]
 
-        logger.info("=== [Bazel] Building OCI images ===")
-        logger.info("Building all service images in parallel with Bazel...")
+        self._maybe_precompile_ui()
+
+        logger.info("=== [Bazel] Building OCI images in parallel ===")
         bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES]
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
