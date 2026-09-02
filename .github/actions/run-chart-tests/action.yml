@@ -50,11 +50,13 @@ runs:
       env:
         HELM_VER: ${{ inputs.helm-version }}
       run: |
-        mkdir -p "${RUNNER_TEMP}/helm"
-        curl -sSfL "https://get.helm.sh/helm-${HELM_VER}-linux-amd64.tar.gz" \
-          | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
-        chmod +x "${RUNNER_TEMP}/helm/helm"
-        echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
+        if ! command -v helm &>/dev/null || [ "$(helm version --template '{{.Version}}' 2>/dev/null)" != "${HELM_VER}" ]; then
+          mkdir -p "${RUNNER_TEMP}/helm"
+          curl -sSfL "https://get.helm.sh/helm-${HELM_VER}-linux-amd64.tar.gz" \
+            | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
+          chmod +x "${RUNNER_TEMP}/helm/helm"
+          echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
+        fi
 
     - name: 'Run Helm Chart Configuration Tests'
       if: steps.changes.outputs.chart == 'true'
