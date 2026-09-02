@@ -25,11 +25,14 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 
 For detailed comment resolution workflows, including fetching comment context, generating checklist artifacts, running local unit tests, and verifying 1-to-1 thread resolution, follow the mandatory procedures defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md).
 
+- **Mandatory Human Confirmation Gate**: When addressing PR comments, agents MUST extract all unresolved comments, map impacts, prepare a resolution strategy plan, and present a structured summary table to the user for explicit confirmation before modifying any code, committing changes, or posting replies to GitHub. Agents are strictly forbidden from taking unapproved mutating actions or posting to GitHub without user sign-off.
+- **Conversation Directory Artifact Storage**: Always save review checklist artifacts (`pr_review_checklist.md`) and resolution plans (`pr_comment_resolution_plan.md`) directly in the conversation artifact directory (`<appDataDir>/brain/<conversation_id>/`) rather than the workspace root to prevent repository pollution or accidental git commits.
+
 Key tools for PR comment processing:
-- **Generate Review Checklist Artifact**: `./tools/pr_review/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]`
+- **Generate Review Checklist Artifact**: `./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> -o <appDataDir>/brain/<conversation_id>/pr_review_checklist.md`
 - **Fetch Inline Comment Context**: `./tools/pr_review/fetch_pr_comment.py "<comment_url>"`
-- **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>"`
-- **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
+- **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" --message-file <message_file>`
+- **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pr_number> <path_to_checklist_file>`
 
 ---
 

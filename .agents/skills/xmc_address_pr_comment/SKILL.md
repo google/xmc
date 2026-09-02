@@ -1,31 +1,30 @@
 ---
 name: XMC Address PR Comment
-description: Automates addressing PR comments (fetching context, running tests, measuring coverage, and GKE redeployment).
+description: Interactive PR comment resolution workflow enforcing comment integrity, conversation artifact hygiene, mandatory human confirmation gates, zero unapproved posting, and 1-to-1 thread resolution verification.
 ---
 
 # PR Comment-Driven Development Workflow
 
-This document defines a structured agent workflow that automates the process of addressing GitHub Pull Request comments while enforcing comment integrity, programmatic enumeration, and 1-to-1 thread resolution verification.
+This document defines a structured agent workflow that automates the process of addressing GitHub Pull Request comments while enforcing comment integrity, conversation artifact hygiene, mandatory human confirmation gates, and 1-to-1 thread resolution verification.
 
 ```mermaid
 graph TD
-    A["User provides PR / comment link"] --> B["Agent runs generate_review_checklist.py"]
-    B --> C["Agent populates pr_review_checklist.md"]
-    C --> D["Agent runs fetch_pr_comment.py for comment context"]
-    D --> E["Agent extracts: body, file path, line"]
-    E --> F["Agent performs Bazel Query to find affected binaries"]
-    F --> G["Agent prepares Implementation Plan"]
-    G --> H["Agent runs Unit Tests & Coverage"]
-    H --> I["Agent builds affected targets locally"]
-    I --> J["Agent commits changes & replies 'code changed'"]
-    J --> K["Agent builds & pushes OCI Images"]
-    K --> L["Agent performs Kubectl Rollout Restart"]
-    L --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
-    M --> N["Agent conducts Root-Cause Retrospective & Proposes /XMC Iterative Reflection"]
-    N --> O{"User approves reflection?"}
-    O -->|Yes| P["Invoke /XMC Iterative Reflection (Benchmark & Update Rules/Skills)"]
-    P --> Q["Agent reports status & completes task"]
-    O -->|No / Done| Q
+    A["User provides PR / comment link"] --> B["Phase 1: Run generate_review_checklist.py (-o brain/<conv_id>/pr_review_checklist.md)"]
+    B --> C["Phase 2: Fetch comment context (fetch_pr_comment.py) & Impact Mapping"]
+    C --> D["Phase 2: Prepare pr_comment_resolution_plan.md artifact"]
+    D --> E{"Phase 3: Mandatory Human Confirmation Gate (Stop Execution)"}
+    E -->|User confirms / approves plan (Y)| F["Phase 4: Implement Code Changes & Unit Tests"]
+    E -->|User requests adjustments| D
+    E -->|User cancels / rejects| Z["End session without code changes or GitHub posts"]
+    F --> G["Phase 5: Local Commit (Conventional Commit + TAG=agy)"]
+    G --> H["Phase 6: Post Approved Thread Replies (reply_pr_comment.py)"]
+    H --> I["Phase 7: Build & Push OCI Images / GKE Rollout (if applicable)"]
+    I --> J["Phase 8: 1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
+    J --> K["Phase 9: Root-Cause Retrospective & Iterative Reflection Proposal"]
+    K --> L{"User approves reflection?"}
+    L -->|Yes| M["Invoke /XMC Iterative Reflection"]
+    M --> N["Complete"]
+    L -->|No / Done| N
 ```
 
 > [!IMPORTANT]
@@ -39,16 +38,17 @@ When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
-4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+4. **Store Artifacts strictly inside Conversation Directory (`<appDataDir>/brain/<conv_id>/`)**: All generated markdown review checklists (`pr_review_checklist.md`) and resolution plans (`pr_comment_resolution_plan.md`) must be saved in the conversation artifact directory (`<appDataDir>/brain/<conv_id>/`) via `-o` rather than the workspace root to prevent accidental git repository commits or worktree pollution.
+5. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
    - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
 
 
 
 ---
 
-## 1. Automated Review Checklist Generation
+## Phase 1: Automated Review Checklist Generation
 
-When addressing PR review feedback or starting a review pass on a Pull Request, the agent first generates a checklist of all unresolved comments directly from the GitHub API.
+When addressing PR review feedback or starting a review pass on a Pull Request, the agent first generates a checklist of all unresolved comments directly from the GitHub API, saving the artifact directly inside the conversation directory to avoid workspace repository pollution.
 
 ### When to Call
 - **PR Review Start**: Call immediately when beginning to process review comments on a PR.
@@ -56,7 +56,7 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
 
 ### Execution Command
 ```bash
-./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
+./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> -o <appDataDir>/brain/<conversation_id>/pr_review_checklist.md
 ```
 
 ### Result Output Schema
@@ -67,20 +67,20 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
     "owner": "google",
     "repo": "xmc",
     "pr_number": 145,
-    "output_file": "pr_review_checklist.md",
+    "output_file": "/usr/local/google/home/vluk/.gemini/jetski/brain/<conv_id>/pr_review_checklist.md",
     "unresolved_comment_count": 3
   }
 }
 ```
-This generates `pr_review_checklist.md` in the workspace populated with interactive `- [ ]` checkboxes for each unresolved comment.
+This generates `pr_review_checklist.md` inside `<appDataDir>/brain/<conversation_id>/` populated with interactive `- [ ]` checkboxes for each unresolved comment.
 
 ---
 
-## 2. Input & Comment Details Fetching
+## Phase 2: Comment Extraction, Impact Mapping & Resolution Strategy Plan
 
-The agent accepts a comment link or PR number. The helper script `tools/pr_review/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
+The agent accepts a comment link or PR number. The helper script `tools/pr_review/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context for all unresolved items.
 
-### Execution Command
+### Fetch Comment Context
 ```bash
 ./tools/pr_review/fetch_pr_comment.py "<github_comment_url>"
 ```
@@ -99,13 +99,10 @@ The agent accepts a comment link or PR number. The helper script `tools/pr_revie
 }
 ```
 
----
+### Dependency Mapping & Impact Analysis
+To make the workflow precise, the agent figures out which Bazel binaries and Kubernetes deployments are impacted by the changed file.
 
-## 3. Dependency Mapping & Impact Analysis
-
-To make the workflow precise, the agent must figure out which Bazel binaries and Kubernetes deployments are impacted by the changed file.
-
-### Bazel Package Dependency Mapping
+#### Bazel Package Dependency Mapping
 The agent runs `bazel query` to discover all `go_binary` targets that transitively depend on the modified package:
 
 ```bash
@@ -120,7 +117,7 @@ bazel query "kind(go_binary, rdeps(//..., //pkg/auth/oauth2))"
 - `//cmd/xid_service:xid_service`
 - `//cmd/experiment_state_server:experiment_state_server`
 
-### Mapping Binaries to GKE Deployments
+#### Mapping Binaries to GKE Deployments
 Each `go_binary` mapped above is associated with an OCI image builder and GKE deployment:
 
 | Bazel Target | Push Command Target | Helm Template File | GKE Deployment Name |
@@ -134,22 +131,60 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 | `//cmd/health_service:health_service` | `//cmd/health_service:health_service_image_push` | `deploy/helm/templates/health-service/deployment.yaml` | `health-service-deployment` |
 | `//cmd/rod_data_provider:rod_data_provider` | `//cmd/rod_data_provider:rod_data_provider_image_push` | `deploy/helm/templates/rod/deployment.yaml` | `rod-data-provider-deployment` |
 
+### Prepare Resolution Strategy Plan Artifact (`pr_comment_resolution_plan.md`)
+The agent prepares a comprehensive implementation plan formatted as a Markdown artifact inside `<appDataDir>/brain/<conv_id>/pr_comment_resolution_plan.md`.
+
+For each unresolved review comment, classify the proposed resolution strategy into one of three distinct categories:
+1. **`[APPLY FIX]`**: The comment highlights a valid defect or improvement. Specify:
+   - Target file path and exact lines.
+   - Analysis of reviewer concern.
+   - Proposed code changes (git diff snippet).
+   - Affected test packages and deployment targets.
+2. **`[PUSH BACK / DISAGREE]`**: The comment suggests a change that violates codebase contracts, architectural invariants (e.g. Non-Restarting JobSets Contract `MaxRestarts: 0`), or design specifications. Specify:
+   - Specific rule or contract violated.
+   - Proposed technical justification to post as a reply.
+3. **`[CLARIFY / QUESTION]`**: The reviewer request is ambiguous or lacks necessary context. Specify:
+   - Clarifying question to post in reply to the reviewer.
+
 ---
 
-## 4. Implementation Plan Preparation
+## Phase 3: Mandatory Explicit Confirmation Gate (Zero Unapproved Actions)
 
-Based on the parsed review comments and impacted targets, the agent creates a draft implementation plan for user review. It will format the plan as a Markdown artifact in the brain folder:
+> [!WARNING]
+> **Strict Anti-Jumping & No-Unapproved-Action Guardrail**: The agent MUST NEVER edit code, execute tests, commit changes, push commits, build OCI images, rollout restart GKE deployments, or post replies on GitHub (`tools/reply_pr_comment.py`) without explicit human approval.
+>
+> The agent MUST halt execution after preparing the plan and present the comments summary and proposed actions directly in chat, waiting for user confirmation before taking ANY mutating action.
 
-- **Analysis**: Visual code excerpt and summary of the reviewer's concern.
-- **Proposed Code Changes**: Target file path, exact lines to modify, and a git diff style code snippet.
-- **Affected Components list**: Which binaries and deployments need to be verified.
-- **Execution steps**: A sequence of commands to verify and deploy.
+### Present Comments Summary & Await Confirmation
+When Phase 2 plan preparation is complete, the agent presents a structured summary table in chat:
+
+```markdown
+### 📋 PR Review Comments Resolution Plan (PR #<pr_number>)
+
+| Item | Comment ID | Author | Location | Reviewer Feedback Summary | Proposed Action | Proposed Resolution / Reply Preview |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `#1` | `12345678` | `@reviewer` | `pkg/auth/oauth2/handlers.go:150` | Avoid nested if-else checks | `[APPLY FIX]` | Refactor with early return guard clauses |
+| `#2` | `12345679` | `@reviewer` | `deploy/helm/values.yaml:45` | Increase restart count to 3 | `[PUSH BACK]` | Maintain `MaxRestarts: 0` per Non-Restarting JobSets contract |
+| `#3` | `12345680` | `@reviewer` | `pkg/client/client.go:88` | Unclear timeout semantics | `[CLARIFY]` | Ask if 30s context timeout is preferred over retry backoff |
+
+*Detailed implementation plan and proposed diffs saved to `pr_comment_resolution_plan.md` in session artifacts.*
+```
+
+### Explicit Confirmation Prompt
+The agent asks the user for explicit confirmation and **halts execution to await input**:
+
+> *"Please inspect the proposed resolution plan above (and `pr_comment_resolution_plan.md`).*
+> *1. **Shall I proceed with addressing the approved comments (#1 through #N) and implementing the fixes?** (`Y`/`n` / modify `#X`)*
+> *2. **Are there any comments you would like to push back on, modify, or handle differently?**"*
+
+> [!IMPORTANT]
+> The agent MUST STOP here and wait for the human reviewer's response. Do NOT proceed to Phase 4, edit files, or post any replies until the user explicitly responds with approval.
 
 ---
 
-## 5. Test Verification & Code Coverage Check
+## Phase 4: Code Implementation & Test Verification (Post-Approval Only)
 
-To verify code correctness, the agent runs all relevant unit tests and measures code coverage.
+Only after the user approves the resolution plan in Phase 3, the agent implements the agreed code changes and runs tests.
 
 ### Run Unit Tests
 ```bash
@@ -163,13 +198,13 @@ To verify test coverage, the agent runs:
 bazel coverage --combined_report=lcov //pkg/auth/oauth2/...
 ```
 The output coverage file is generated under `bazel-out/_coverage/_coverage_report.dat`.
-The agent will parse this file (or generate a summary) to report the package test coverage percentage and point out any lines missing tests.
+The agent parses this file to report package test coverage percentage and ensure newly added code paths are tested.
 
 ---
 
-## 6. Local Commit & GitHub Notification (On Success)
+## Phase 5: Local Commit & Build Verification
 
-Once local unit tests pass and building the affected binary targets succeeds, the agent commits the code to the current branch and replies to the reviewer's comment on GitHub.
+Once local unit tests pass and building the affected binary targets succeeds, the agent commits the code to the current branch.
 
 ### Build Targets Locally
 Before committing or deploying, verify that the affected binaries build successfully:
@@ -178,12 +213,15 @@ bazel build //cmd/xid_service:xid_service
 ```
 
 ### Git Commit to Current Branch
-The agent stages all changes and commits them as a new, distinct follow-up commit with a message that includes a description of the changes and the URL of the original comment:
+The agent stages only modified source files (ensuring no brain artifacts or temporary scratch files are staged) and commits them as a new, distinct follow-up commit with a Conventional Commit message including `TAG=agy` and `CONV=<conversation_id>`:
 ```bash
-git add .
-git commit -m "<type>(<scope>): address review comment
+git add pkg/auth/oauth2/handlers.go
+git commit -m "fix(auth): address review comment on nested if-else checks
 
-Comment link: <github_comment_url>"
+Comment link: <github_comment_url>
+
+TAG=agy
+CONV=<conversation_id>"
 git push origin HEAD
 ```
 
@@ -192,17 +230,18 @@ git push origin HEAD
 > NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
-### Post GitHub Comment Notification
-The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made:
-```bash
-export GITHUB_TOKEN="your_github_token"
-./tools/pr_review/reply_pr_comment.py "<github_comment_url>" "code changed"
-```
+---
 
-Or pass a file containing the message via `--message-file` (or `-f`):
+## Phase 6: Controlled GitHub Notification & Reply Posting
+
+> [!CAUTION]
+> **Zero Unapproved Posting**: The agent must ONLY reply to comment threads that were explicitly approved in Phase 3. Never post unapproved replies or replies to comments the user asked to skip.
+
+The agent runs `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made or post the approved pushback/clarification:
+
 ```bash
 cat << 'EOF' > reply_message.txt
-Addressed review comment for `handlers.go`.
+Addressed review comment for `handlers.go`: refactored with linear early guard returns per `core_engineering.md`.
 EOF
 ./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
 ```
@@ -223,9 +262,9 @@ To extract this telemetry and output it as a raw JSON dataset, run:
 
 ---
 
-## 7. Build, Push, and GKE Redeployment
+## Phase 7: Build, Push, and GKE Redeployment (When Applicable)
 
-Using the `.env` configuration file, the agent updates the deployment environment.
+Using the `.env` configuration file, the agent updates the deployment environment if the modified components require cluster rollout.
 
 ### Target Environment (Extracted from `.env`)
 - **GCP Project ID**: `xmc-test-project-6`
@@ -263,16 +302,16 @@ kubectl rollout status deployment/xid-service-deployment -n xmc
 
 ---
 
-## 8. 1-to-1 Thread Resolution Verification
+## Phase 8: 1-to-1 Thread Resolution Verification
 
 Before marking the PR review task as complete:
-1. Run `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
-2. Confirm that every single comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
+1. Run `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pr_number> <appDataDir>/brain/<conversation_id>/pr_review_checklist.md` to programmatically verify that 100% of approved comment IDs from the checklist have received dedicated inline replies.
+2. Confirm that every single approved comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
 3. Update the checklist artifact status for each item to `[x] Resolved`.
 
 ---
 
-## 9. Root-Cause Retrospective & Iterative Reflection Proposal
+## Phase 9: Root-Cause Retrospective & Iterative Reflection Proposal
 
 Whenever review comments (from human reviewers or automated review bots) are addressed and verified, the agent must not merely "fix and forget". The agent performs a fast root-cause classification on why the initial PR implementation missed the expected standard and proposes invoking the [Iterative Reflection Skill](../xmc_iterative_reflection/SKILL.md).
 
@@ -300,29 +339,37 @@ If the user approves, proceed to invoke the [XMC Iterative Reflection Skill](../
 
 ---
 
-## 10. Workflow Example
+## Workflow Example
 
-Here is a step-by-step example of how you can invoke this agent:
+Here is a step-by-step example of how this skill executes:
 
 1. **You ask**:
-   > Fix PR comments for: `https://github.com/google/xmc/pull/15`
+   > Address PR comments for: `https://github.com/google/xmc/pull/15`
 
-2. **The agent executes**:
-   - Runs programmatic enumeration via `gh api repos/google/xmc/pulls/15/comments` + Python parsing.
-   - Extracts 100% of open threads (e.g., 3 comments total).
-   - Creates Consolidated Review Checklist Artifact and verifies item count (3 threads).
-   - Identifies code locations and runs `bazel query` to map changes to `//cmd/xid_service` and `//cmd/experiment_state_server`.
-   - Proposes refactored code plan.
+2. **The agent executes (Phase 1 & Phase 2)**:
+   - Runs `./tools/generate_review_checklist.py google xmc 15 -o <appDataDir>/brain/<conv_id>/pr_review_checklist.md`.
+   - Extracts 100% of open threads (e.g., 3 comments total) via `tools/fetch_pr_comment.py`.
+   - Identifies code locations and runs `bazel query` to map changes to affected binaries (`//cmd/xid_service` and `//cmd/experiment_state_server`).
+   - Prepares `pr_comment_resolution_plan.md` inside `<appDataDir>/brain/<conv_id>/`.
 
-3. **You approve the plan**.
-4. **The agent executes**:
-   - Edits the files.
+3. **The agent PAUSES at Phase 3 (Mandatory Confirmation Gate)**:
+   - Displays structured summary table of all 3 comments in chat with proposed actions (`[APPLY FIX]`, `[PUSH BACK]`, `[CLARIFY]`).
+   - Asks: *"Shall I proceed with addressing the approved comments (#1 through #3)? (Y/n / modify #X)"*
+   - **Stops calling tools and waits for your response.**
+
+4. **You approve the plan** (e.g. `Y` or `Proceed, but push back on #2`).
+
+5. **The agent executes (Phase 4, 5, 6, 7 & 8)**:
+   - Edits the approved files.
    - Runs unit tests and coverage calculations.
    - Builds the affected targets locally.
-   - Commits changes to the branch.
-   - Posts reply comments for each comment ID on GitHub.
+   - Commits changes to the branch (`TAG=agy`, `CONV=<conv_id>`).
+   - Posts reply comments for approved comment IDs on GitHub using `reply_pr_comment.py --message-file`.
    - Pushes updated OCI containers via `bazel run //cmd/xid_service:xid_service_image_push`.
    - Restarts GKE pods: `kubectl rollout restart deployment/xid-service-deployment -n xmc`.
-   - Programmatically verifies 1-to-1 thread resolution for all comment IDs against the checklist.
+   - Programmatically verifies 1-to-1 thread resolution for all approved comment IDs:
+     `./tools/verify_pr_comment_resolution.py google xmc 15 <appDataDir>/brain/<conv_id>/pr_review_checklist.md`.
    - Updates checklist artifact and replies with test outputs and rollout status confirmation.
+
+6. **The agent concludes (Phase 9)**:
    - **Presents PR Comment Retrospective table** and proposes invoking `/XMC Iterative Reflection` to codify learnings into `.agents/rules/` and prevent future review feedback.

@@ -199,11 +199,11 @@ When creating and managing Pull Requests, follow this mandatory 5-step lifecycle
 2. **Wait for Automated Review Bot**:
    Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
 3. **Pull Review Comments**:
-   Fetch unresolved review comments and generate the review checklist artifact:
+   Fetch unresolved review comments and generate the review checklist artifact inside the conversation directory:
    ```bash
-   ./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> -o pr_review_checklist.md
+   ./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> -o <appDataDir>/brain/<conversation_id>/pr_review_checklist.md
    ```
-4. **Address Review Comments**:
-   Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/pr_review/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/pr_review/verify_pr_comment_resolution.py`).
+4. **Address Review Comments (Requires Mandatory Human Confirmation Gate)**:
+   Execute the structured workflow defined in [XMC Address PR Comment](../xmc_address_pr_comment/SKILL.md). Present the comments summary and proposed resolution plan to the user, obtain explicit confirmation, implement approved fixes, run tests, commit updates, post approved inline thread replies (`./tools/pr_review/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/pr_review/verify_pr_comment_resolution.py`). Zero unapproved commits or replies.
 5. **Verify CI Checks & Draft Status Report (Requires Explicit Confirmation Gate to Convert)**:
    Verify CI status with `gh pr checks <pr_number>`. When checks pass and all comments are resolved, report the final state to the user. Do NOT automatically convert the PR to open. Explicitly ask for user confirmation per Section 6 ('*Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)*'). Only if explicitly confirmed by the user, execute: `gh pr ready <pr_number>`
