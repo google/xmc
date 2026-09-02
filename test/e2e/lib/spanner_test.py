@@ -197,7 +197,7 @@ class TestSpannerManager(unittest.TestCase):
     def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
         binary = self.mgr._resolve_migration_binary()
         self.assertIsNotNone(binary)
-        self.assertTrue(binary.endswith("migrations") or binary.endswith("migrations.exe"))
+        self.assertTrue(binary.endswith(("migrations", "migrations.exe")))
 
     @patch("os.path.isdir", return_value=False)
     @patch("os.path.isfile", return_value=False)
