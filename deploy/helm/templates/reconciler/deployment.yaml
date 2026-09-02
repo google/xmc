@@ -55,10 +55,11 @@ spec:
         envFrom:
         - configMapRef:
             name: reconciler-config
-        {{- if or .Values.auth.googleApplicationCredentials .Values.googleApplicationCredentials }}
+        {{- $gac := dig "auth" "googleApplicationCredentials" .Values.googleApplicationCredentials .Values.AsMap }}
+        {{- if $gac }}
         env:
         - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: {{ default .Values.googleApplicationCredentials .Values.auth.googleApplicationCredentials | quote }}
+          value: {{ $gac | quote }}
         {{- end }}
         args:
         - "-alsologtostderr"
@@ -89,13 +90,13 @@ spec:
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 20
-        {{- if not .Values.secrets.csi.enabled }}
+        {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
         volumeMounts:
         - name: gcp-secrets-fallback
           mountPath: /etc/gcp-secrets
           readOnly: true
         {{- end }}
-      {{- if not .Values.secrets.csi.enabled }}
+      {{- if not (dig "secrets" "csi" "enabled" false .Values.AsMap) }}
       volumes:
       - name: gcp-secrets-fallback
         secret:
