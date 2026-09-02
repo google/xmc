@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import os
 import shutil
@@ -48,8 +47,6 @@ class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
     _SERVICES = _get_service_specs()
-    _BACKEND_SERVICES = _SERVICES[:-1]
-    _UI_SERVICE = _SERVICES[-1]
     _EXTRA_BUILD_TARGETS = [
         "//api/protos/experiment:experiment_messages_descriptor",
         "//api/protos/xid:xid_messages_descriptor",
@@ -71,32 +68,14 @@ class ImageBuilder:
             return
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
-        node_env = os.environ.copy()
-        node_env["UV_THREADPOOL_SIZE"] = "4"
-        node_env["NODE_OPTIONS"] = "--max-old-space-size=2048"
         try:
-            run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir, env=node_env)
-            run_cmd(
-                ["npx", "ng", "build", "--configuration", "production"],
-                cwd=ui_dir,
-                env=node_env,
-            )
+            run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
+            run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
             logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
         except Exception as e:
             logger.warning(
                 "[UI] Host compilation failed (%s). Falling back to containerized build...", e
             )
-
-    def _compile_backend(self) -> None:
-        """Builds Go backend OCI images and prerequisites via Bazel."""
-        logger.info("=== [Bazel] Compiling Go backend images and prerequisites ===")
-        backend_targets = [
-            f"//{pkg}:{target}" for pkg, target, _ in self._BACKEND_SERVICES
-        ] + self._EXTRA_BUILD_TARGETS
-        run_cmd(
-            ["bazel", "build", "--jobs=4", *backend_targets],
-            cwd=self.cfg.workspace_root,
-        )
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images and required test binaries."""
@@ -104,23 +83,13 @@ class ImageBuilder:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
             return [tag for _, _, tag in self._SERVICES]
 
-        logger.info(
-            "=== [Build] Executing concurrent Go Bazel compilation and Angular UI host build ==="
-        )
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            backend_future = executor.submit(self._compile_backend)
-            ui_future = executor.submit(self._maybe_precompile_ui)
+        self._maybe_precompile_ui()
 
-            backend_future.result()
-            ui_future.result()
-
-        # Build UI OCI tarball sequentially (Bazel allows one active client per output_base)
-        logger.info("=== [Bazel] Packaging UI OCI container image ===")
-        ui_pkg, ui_target, _ = self._UI_SERVICE
-        run_cmd(
-            ["bazel", "build", f"//{ui_pkg}:{ui_target}"],
-            cwd=self.cfg.workspace_root,
-        )
+        logger.info("=== [Bazel] Building OCI images and test prerequisites in parallel ===")
+        bazel_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES
+        ] + self._EXTRA_BUILD_TARGETS
+        run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
         bazel_bin_res = run_cmd(
             ["bazel", "info", "bazel-bin"], cwd=self.cfg.workspace_root, capture_output=True

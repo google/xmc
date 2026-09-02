@@ -56,19 +56,15 @@ class TestImageBuilder(unittest.TestCase):
         images = builder.build_all()
 
         mock_precompile.assert_called_once()
-        expected_backend = [
-            f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._BACKEND_SERVICES
+        expected_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._SERVICES
         ] + ImageBuilder._EXTRA_BUILD_TARGETS
         mock_run.assert_any_call(
-            ["bazel", "build", "--jobs=4", *expected_backend],
-            cwd="/workspace",
-        )
-        mock_run.assert_any_call(
-            ["bazel", "build", "//cmd/ui:ui_image_tarball"],
+            ["bazel", "build", *expected_targets],
             cwd="/workspace",
         )
         self.assertEqual(len(images), 5)
-        self.assertEqual(mock_run.call_count, 8)  # 2 bazel build + 1 bazel info + 5 docker load
+        self.assertEqual(mock_run.call_count, 7)  # 1 bazel build + 1 bazel info + 5 docker load
 
     @patch("shutil.which", return_value="/usr/bin/node")
     @patch("os.path.isfile", return_value=False)
@@ -89,12 +85,10 @@ class TestImageBuilder(unittest.TestCase):
         mock_run.assert_any_call(
             ["npm", "ci", "--legacy-peer-deps"],
             cwd="/workspace/cmd/ui",
-            env=unittest.mock.ANY,
         )
         mock_run.assert_any_call(
             ["npx", "ng", "build", "--configuration", "production"],
             cwd="/workspace/cmd/ui",
-            env=unittest.mock.ANY,
         )
 
     @patch("shutil.which", return_value=None)
