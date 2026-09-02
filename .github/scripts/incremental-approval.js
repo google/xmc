@@ -89,18 +89,49 @@ function extractDismissalContext(sortedEvents) {
   const manualDismissalIds = new Set();
 
   for (const event of sortedEvents) {
-    if (event.event === 'dismissed_review') {
-      const reviewId = event.review_id || event.id;
-      if (reviewId) {
-        manualDismissalIds.add(reviewId);
-      }
+    const isRestDismissal = event.event === 'dismissed_review' || event.event === 'review_dismissed';
+    const isGraphqlDismissal = event.__typename === 'ReviewDismissedEvent';
+
+    if (!isRestDismissal && !isGraphqlDismissal && !event.previousReviewState) {
+      continue;
     }
-    // GraphQL ReviewDismissedEvent: records pre-dismissal state (APPROVED vs CHANGES_REQUESTED)
-    if (event.__typename === 'ReviewDismissedEvent' || event.previousReviewState) {
-      const reviewId = (event.review && (event.review.databaseId || event.review.id)) || event.review_id;
-      if (reviewId && event.previousReviewState) {
-        dismissedReviewPreviousStates.set(reviewId, event.previousReviewState.toUpperCase());
-      }
+
+    const reviewId =
+      (event.review && (event.review.databaseId || event.review.id)) ||
+      (event.dismissed_review && event.dismissed_review.review_id) ||
+      event.review_id ||
+      event.id;
+
+    if (!reviewId) {
+      continue;
+    }
+
+    const prevState =
+      event.previousReviewState ||
+      (event.dismissed_review && event.dismissed_review.state);
+    if (prevState) {
+      dismissedReviewPreviousStates.set(reviewId, String(prevState).toUpperCase());
+    }
+
+    // Automatic stale push dismissals reference the new commit that triggered the dismissal
+    // (dismissal_commit_id in REST, or pullRequestCommit/dismissalCommit in GraphQL)
+    // and have no human dismissal message. Manual dismissals have no trigger commit or have a dismissal message.
+    const hasTriggerCommit = Boolean(
+      event.dismissal_commit_id ||
+      (event.dismissed_review && event.dismissed_review.dismissal_commit_id) ||
+      event.pullRequestCommit ||
+      event.dismissalCommit
+    );
+
+    const hasDismissalMessage = Boolean(
+      event.dismissalMessage ||
+      event.dismissal_message ||
+      (event.dismissed_review && event.dismissed_review.dismissal_message)
+    );
+
+    const isManual = !hasTriggerCommit || hasDismissalMessage;
+    if (isManual) {
+      manualDismissalIds.add(reviewId);
     }
   }
 

@@ -66,22 +66,49 @@ test('isBotUser identifies bot usernames correctly', () => {
 
 test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
   const events = [
-    { event: 'dismissed_review', review_id: 101 },
+    // Manual dismissal via REST (no trigger commit, dismissal message present)
+    { event: 'dismissed_review', review_id: 101, dismissal_message: 'Security issue' },
+    // Automatic stale push dismissal via GraphQL (trigger commit present, no message)
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'APPROVED',
+      pullRequestCommit: { commit: { oid: 'sha-stale' } },
       review: { databaseId: 202 }
     },
+    // Automatic stale push dismissal of changes requested via GraphQL
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'CHANGES_REQUESTED',
+      pullRequestCommit: { commit: { oid: 'sha-stale' } },
       review: { databaseId: 303 }
+    },
+    // Automatic stale push dismissal via REST (dismissal_commit_id present)
+    {
+      event: 'review_dismissed',
+      dismissed_review: {
+        review_id: 404,
+        state: 'approved',
+        dismissal_commit_id: 'sha-rest-commit'
+      }
+    },
+    // Manual dismissal via GraphQL (no trigger commit, dismissal message present)
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'Rejected by security auditor',
+      review: { databaseId: 505 }
     }
   ];
   const ctx = extractDismissalContext(events);
   assert.strictEqual(ctx.manualDismissalIds.has(101), true);
+  assert.strictEqual(ctx.manualDismissalIds.has(202), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(303), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(404), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(505), true);
   assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
   assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(404), 'APPROVED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(505), 'APPROVED');
 });
 
 test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
@@ -268,6 +295,7 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'APPROVED',
+      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
       review: {
         databaseId: 5032149088
       }
@@ -304,6 +332,7 @@ test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'CHANGES_REQUESTED',
+      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
       review: {
         databaseId: 5032149088
       }
@@ -313,7 +342,7 @@ test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_
   assert.strictEqual(result, null);
 });
 
-test('findLatestApproval ignores manually dismissed reviews in timeline', () => {
+test('findLatestApproval ignores manually dismissed reviews in timeline (REST)', () => {
   const reviews = [
     {
       id: 1,
@@ -336,6 +365,37 @@ test('findLatestApproval ignores manually dismissed reviews in timeline', () => 
       event: 'dismissed_review',
       review_id: 1,
       dismissal_message: 'Dismissed by author due to security bug'
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL)', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'Security concern raised by reviewer',
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
     }
   ];
   const result = findLatestApproval(reviews, 'charlie', timelineEvents);
