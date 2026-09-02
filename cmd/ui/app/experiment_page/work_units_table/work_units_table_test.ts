@@ -25,13 +25,7 @@ import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import {
-  bootstrap,
-  cleanState,
-  getEl,
-  getEls,
-  setupModule,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';
@@ -39,8 +33,6 @@ import { WorkUnitsTable } from './work_units_table';
 const ROW_SELECTOR = {
   selector: ':not(.detail-row)',
 };
-
-const RUN_PROFILE_LINK_SELECTOR = 'td.mat-column-Urls a[mat-icon-button][matTooltip="Run Profile"]';
 
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
@@ -225,42 +217,29 @@ describe('WorkUnitsTable Component', () => {
     it('should render run profile link for work unit with mlrunUrl', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
-      const rows = await harness.getRows(ROW_SELECTOR);
-      const cells = await rows[0].getCells({ columnName: 'Urls' });
-      expect(cells.length).toBe(1);
 
-      const button = await cells[0].getHarness(MatButtonHarness.with({ text: 'troubleshoot' }));
-      expect(button).toBeTruthy();
+      const button = await harness.getRunProfileButton(0);
+      expect(button).not.toBeNull();
 
-      const tooltip = await cells[0].getHarness(
-        MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }),
-      );
-      await tooltip.show();
-      expect(await tooltip.getTooltipText()).toBe('Run Profile');
+      const tooltip = await harness.getRunProfileTooltip(0);
+      expect(tooltip).not.toBeNull();
+      await tooltip!.show();
+      expect(await tooltip!.getTooltipText()).toBe('Run Profile');
 
-      const linkEl = getEl<HTMLAnchorElement>(RUN_PROFILE_LINK_SELECTOR);
-      expect(linkEl).toBeTruthy();
-      expect(linkEl.getAttribute('href')).toBe(
-        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
-      );
-      expect(linkEl.getAttribute('target')).toBe('_blank');
-      expect(linkEl.getAttribute('rel')).toBe('noreferrer');
-
-      const iconEl = linkEl.querySelector('mat-icon');
-      expect(iconEl?.textContent?.trim()).toBe('troubleshoot');
+      const link = await harness.getRunProfileLink(0);
+      expect(link).toEqual({
+        href: 'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
+        target: '_blank',
+        rel: 'noreferrer',
+      });
     });
 
     it('should not render troubleshoot button for work unit without mlrunUrl', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
-      const rows = await harness.getRows(ROW_SELECTOR);
-      const cells = await rows[1].getCells({ columnName: 'Urls' });
-      expect(cells.length).toBe(1);
 
-      const troubleshootButtons = await cells[0].getAllHarnesses(
-        MatButtonHarness.with({ text: 'troubleshoot' }),
-      );
-      expect(troubleshootButtons.length).toBe(0);
+      const button = await harness.getRunProfileButton(1);
+      expect(button).toBeNull();
     });
   });
 
