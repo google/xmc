@@ -118,7 +118,7 @@ class RunLinterTest(unittest.TestCase):
         self.assertIsNone(run_linter.resolve_linter_binary(None, base_dir=self.temp_dir))
 
         dummy_bin = self.create_file(
-            "bazel-bin/cmd/xmc-linter/xmc-linter_/xmc-linter", "#!/bin/sh\n"
+            "bazel-bin/cmd/component-linter/component-linter_/component-linter", "#!/bin/sh\n"
         )
         dummy_bin.chmod(0o755)
         self.assertEqual(
@@ -132,11 +132,11 @@ class RunLinterTest(unittest.TestCase):
             manifests_dir=Path("/path/to/profile"),
             rules_config=Path("/path/to/profile/rules.yaml"),
         )
-        cmd = run_linter.build_linter_command(target, "/usr/bin/xmc-linter", "text")
+        cmd = run_linter.build_linter_command(target, "/usr/bin/component-linter", "text")
         self.assertEqual(
             cmd,
             [
-                "/usr/bin/xmc-linter",
+                "/usr/bin/component-linter",
                 "--manifests-dir=/path/to/profile",
                 "--output=text",
                 "--rules-config=/path/to/profile/rules.yaml",
@@ -155,7 +155,7 @@ class RunLinterTest(unittest.TestCase):
             [
                 "bazel",
                 "run",
-                "//cmd/xmc-linter:xmc-linter",
+                "//cmd/component-linter:component-linter",
                 "--",
                 "--manifests-dir=/path/to/profile",
                 "--output=json",

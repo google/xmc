@@ -346,6 +346,25 @@ check_terraform() {
   fi
 }
 
+check_components() {
+  local comp_files
+  if [ "$MODE" = "check" ]; then
+    comp_files=$(find deploy/profiles deploy/components examples/components -type f \( -name "*.yaml" -o -name "*.yml" \) 2>/dev/null || true)
+  else
+    comp_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(deploy/profiles|deploy/components|examples/components)/.*\.(yaml|yml)$' || true)
+  fi
+
+  if [ -z "$comp_files" ]; then
+    return
+  fi
+
+  echo "--> Running Component Manifest Linter..."
+  if ! python3 tools/components/run_linter.py; then
+    echo "❌ Component manifest lint check failed."
+    FAILED=1
+  fi
+}
+
 main() {
   check_bazel
   check_go
@@ -354,6 +373,7 @@ main() {
   check_python
   check_mypy
   check_terraform
+  check_components
 
   if [ "$MODE" = "fix" ]; then
     if ! git diff --quiet; then

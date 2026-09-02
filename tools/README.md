@@ -57,7 +57,7 @@ Harness for testing and evaluating skill/rule modifications:
 - [`resolve_test_scope.py`](benchmark/resolve_test_scope.py): Resolves affected Bazel test scopes from git diffs for CI optimization.
 ### 5. `tools/components/` (Component Manifest Linting & Profile Discovery)
 Harness for automated validation and discovery of XMC component profiles:
-- [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `xmc-linter` with consolidated text/JSON reporting.
+- [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `component-linter` with consolidated text/JSON reporting.
 - [`run_linter_test.py`](components/run_linter_test.py): Hermetic unit test suite for directory discovery, rules matching, exit codes, and JSON serialization.
 
 ---

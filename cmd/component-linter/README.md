@@ -1,18 +1,18 @@
-# Components Static Linter CLI (`cmd/xmc-linter`)
+# Component Static Linter CLI (`cmd/component-linter`)
 
-`xmc-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters.
+`component-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters. (For backward compatibility, the `//cmd/xmc-linter:xmc-linter` Bazel target is maintained as an alias).
 
 ---
 
 ## 1. Overview & Architecture
 
-`xmc-linter` acts as an offline verification gate in local development and CI/CD pull request pipelines to prevent invalid, malformed, or unsafe Component declarations from reaching cluster environments.
+`component-linter` acts as an offline verification gate in local development and CI/CD pull request pipelines to prevent invalid, malformed, or unsafe Component declarations from reaching cluster environments.
 
 ```mermaid
 flowchart LR
     Manifests["Component YAML Manifests\n(deploy/profiles/.../*.yaml)"] --> Scanner["Directory Scanner\n(pkg/components/linter)"]
     Rules["Rules Config\n(rules.yaml)"] --> Scanner
-    Scanner --> CLI["xmc-linter CLI\n(cmd/xmc-linter)"]
+    Scanner --> CLI["component-linter CLI\n(cmd/component-linter)"]
     CLI --> Format{"Output Format"}
     Format -->|"text"| TextReport["Console Text Report\n[ERROR] / [WARN]"]
     Format -->|"json"| JSONReport["Structured JSON Report\n(CI Annotations & Diagnostics)"]
@@ -27,7 +27,7 @@ flowchart LR
 Run the CLI directly using Bazel:
 
 ```bash
-bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/stable-2026a/ [flags]
+bazel run //cmd/component-linter:component-linter -- --manifests-dir=deploy/profiles/stable-2026a/ [flags]
 ```
 
 ### Command-Line Flags

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command xmc-linter executes offline static validation on XMC component manifest directories.
+// Command component-linter executes offline static validation on Component manifest directories.
 package main
 
 import (
@@ -26,7 +26,7 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("xmc-linter", flag.ContinueOnError)
+	fs := flag.NewFlagSet("component-linter", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	manifestsDir := fs.String("manifests-dir", "", "Path to directory containing component YAML manifests")
 	rulesConfig := fs.String("rules-config", "", "Path to rules.yaml defining static checks and compatibility matrix")

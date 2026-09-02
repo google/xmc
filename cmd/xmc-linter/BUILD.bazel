@@ -12,24 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-
-go_library(
-    name = "xmc-linter_lib",
-    srcs = ["main.go"],
-    importpath = "xmanager_cloud/cmd/xmc-linter",
-    visibility = ["//visibility:private"],
-    deps = ["//pkg/components/linter"],
-)
-
-go_binary(
+alias(
     name = "xmc-linter",
-    embed = [":xmc-linter_lib"],
+    actual = "//cmd/component-linter:component-linter",
     visibility = ["//visibility:public"],
-)
-
-go_test(
-    name = "xmc-linter_test",
-    srcs = ["main_test.go"],
-    embed = [":xmc-linter_lib"],
 )

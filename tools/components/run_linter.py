@@ -69,6 +69,8 @@ def resolve_linter_binary(
         return linter_binary
     base = base_dir if base_dir is not None else get_base_directory()
     candidates = [
+        base / "bazel-bin" / "cmd" / "component-linter" / "component-linter_" / "component-linter",
+        base / "bazel-bin" / "cmd" / "component-linter" / "component-linter",
         base / "bazel-bin" / "cmd" / "xmc-linter" / "xmc-linter_" / "xmc-linter",
         base / "bazel-bin" / "cmd" / "xmc-linter" / "xmc-linter",
     ]
@@ -150,7 +152,7 @@ def build_linter_command(
     linter_binary: str | None,
     output_format: str,
 ) -> list[str]:
-    """Constructs the command arguments to execute xmc-linter for a target."""
+    """Constructs the command arguments to execute component-linter for a target."""
     flags = [
         f"--manifests-dir={target.manifests_dir}",
         f"--output={output_format}",
@@ -160,7 +162,7 @@ def build_linter_command(
 
     if linter_binary:
         return [linter_binary, *flags]
-    return ["bazel", "run", "//cmd/xmc-linter:xmc-linter", "--", *flags]
+    return ["bazel", "run", "//cmd/component-linter:component-linter", "--", *flags]
 
 
 def run_linter_on_target(
@@ -298,7 +300,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--linter-binary",
         default=None,
-        help="Path to pre-built xmc-linter executable (optional, falls back to 'bazel run').",
+        help="Path to pre-built component-linter executable (optional, falls back to 'bazel run').",
     )
     parser.add_argument(
         "--output",
