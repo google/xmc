@@ -14,13 +14,13 @@
 
 """Script for compiling Angular UI application into an OCI container tarball."""
 
-import contextlib
 import hashlib
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 def get_sha256(filepath: str) -> str:
@@ -90,13 +90,38 @@ def main():
     workspace_dir = os.getcwd()
     ui_src_dir = os.path.join(workspace_dir, "cmd/ui")
 
-    temp_build_dir = os.path.join(ui_src_dir, "build_tmp")
-    print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
-    copy_flat(ui_src_dir, temp_build_dir)
+    dist_browser_src = os.path.join(ui_src_dir, "dist", "browser")
+    has_prebuilt_dist = os.path.isdir(dist_browser_src) and os.path.isfile(
+        os.path.join(dist_browser_src, "index.html")
+    )
 
-    dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
-    with open(dockerfile_path, "w") as f:
-        f.write("""FROM node:22-alpine AS builder
+    with tempfile.TemporaryDirectory() as temp_build_dir:
+        dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
+
+        if has_prebuilt_dist:
+            print(
+                "Found pre-compiled Angular UI bundle. Using fast single-stage Nginx container"
+                " build..."
+            )
+            dest_dist = os.path.join(temp_build_dir, "dist", "browser")
+            shutil.copytree(dist_browser_src, dest_dist)
+            shutil.copy2(os.path.join(ui_src_dir, "nginx.conf"), temp_build_dir)
+            shutil.copy2(os.path.join(ui_src_dir, "generate_config.sh"), temp_build_dir)
+            with open(dockerfile_path, "w") as f:
+                f.write("""FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY dist/browser /usr/share/nginx/html
+RUN chmod -R o+rX /usr/share/nginx/html
+COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
+RUN chmod +x /docker-entrypoint.d/generate_config.sh
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
+""")
+        else:
+            print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
+            copy_flat(ui_src_dir, temp_build_dir)
+            with open(dockerfile_path, "w") as f:
+                f.write("""FROM node:22-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN npm ci --legacy-peer-deps && npx ng build --configuration production
@@ -104,54 +129,47 @@ RUN npm ci --legacy-peer-deps && npx ng build --configuration production
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/browser /usr/share/nginx/html
-RUN chmod -R o+rX /usr/share/nginx/html && rm -f /usr/share/nginx/html/*.map
+RUN chmod -R o+rX /usr/share/nginx/html
 COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
 RUN chmod +x /docker-entrypoint.d/generate_config.sh
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
 """)
 
-    tag = "ui-image:latest"
-    print("Building Docker OCI frontend image...")
-    build_cmd = ["docker", "build", "--no-cache"]
-    target_platform = os.environ.get("XMC_UI_PLATFORM")
-    if not target_platform and platform.machine().lower() in (
-        "arm64",
-        "aarch64",
-    ):
-        print(
-            "INFO: Building on an ARM host without XMC_UI_PLATFORM set. "
-            "Defaulting target platform to 'linux/amd64' for deployment"
-            " compatibility. To build for a different platform, set"
-            " XMC_UI_PLATFORM (e.g. XMC_UI_PLATFORM=linux/arm64)."
-        )
-        target_platform = "linux/amd64"
+        tag = "ui-image:latest"
+        print("Building Docker OCI frontend image...")
+        build_cmd = ["docker", "build"]
+        target_platform = os.environ.get("XMC_UI_PLATFORM")
+        if not target_platform and platform.machine().lower() in (
+            "arm64",
+            "aarch64",
+        ):
+            print(
+                "INFO: Building on an ARM host without XMC_UI_PLATFORM set. "
+                "Defaulting target platform to 'linux/amd64' for deployment"
+                " compatibility. To build for a different platform, set"
+                " XMC_UI_PLATFORM (e.g. XMC_UI_PLATFORM=linux/arm64)."
+            )
+            target_platform = "linux/amd64"
 
-    if target_platform:
-        build_cmd.extend(["--platform", target_platform])
+        if target_platform:
+            build_cmd.extend(["--platform", target_platform])
 
-    build_cmd.extend(["-t", tag, temp_build_dir])
+        build_cmd.extend(["-t", tag, temp_build_dir])
 
-    try:
-        subprocess.run(build_cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR: Docker build failed: {e}")
-        with contextlib.suppress(Exception):
-            shutil.rmtree(temp_build_dir)
-        sys.exit(1)
+        try:
+            subprocess.run(build_cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Docker build failed: {e}")
+            sys.exit(1)
 
-    print(f"Saving Docker image to {output_tar}...")
-    save_cmd = ["docker", "save", "-o", output_tar, tag]
-    try:
-        subprocess.run(save_cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR: Docker save failed: {e}")
-        sys.exit(1)
-
-    try:
-        shutil.rmtree(temp_build_dir)
-    except Exception as e:
-        print(f"Warning: Cleanup of {temp_build_dir} failed: {e}")
+        print(f"Saving Docker image to {output_tar}...")
+        save_cmd = ["docker", "save", "-o", output_tar, tag]
+        try:
+            subprocess.run(save_cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Docker save failed: {e}")
+            sys.exit(1)
 
     print(f"Successfully built loadable OCI UI tarball: {output_tar}")
 
