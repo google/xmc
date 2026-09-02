@@ -371,6 +371,135 @@ verticalPodAutoscaler:
 
 ---
 
+## Approach 4: Installing onto Existing Infrastructure
+
+Approach 2 creates the VPC, the GKE cluster and its node pool. Where those already exist and are
+managed elsewhere, compile
+[deploy/ctk_v2/xmanager-cloud-existing-infra.yaml](deploy/ctk_v2/xmanager-cloud-existing-infra.yaml)
+instead. It looks the network and the cluster up rather than creating them; Spanner, the service
+accounts, the gateway IP, certificates, the prerequisite charts and the application are wired
+exactly as in Approach 2, and it compiles into the same deployment groups, so the deploy and
+upgrade steps are unchanged.
+
+Cluster Toolkit blueprints have no conditionals, which is why this is a second file rather than a
+flag on the first.
+
+### What must already exist
+
+*   **A VPC and a subnetwork in `region`**, with **Private Google Access enabled** on the
+    subnetwork. The blueprint asserts this during planning: without it, nodes without external IPs
+    cannot reach Google APIs.
+*   **A GKE cluster with Workload Identity enabled.** No node pool is created, so the cluster must
+    have enough spare capacity for the XMC workloads, or an autoscaling pool that can grow into
+    them. `cluster_region` is used verbatim as the cluster's location, so a zonal cluster needs
+    its zone there (e.g. `us-central1-a`) rather than a region.
+Nothing else is assumed. In particular the blueprint neither creates nor edits the VPC's Private
+Service Access connection, so networks that already peer with `servicenetworking.googleapis.com`
+for other services are left as they are.
+
+The blueprint does not touch the cluster's control plane authorization, so
+`gcp_public_cidrs_access_enabled` and `authorized_cidr` are absent from it. Reaching a private
+control plane is the operator's responsibility.
+
+### Configure and compile
+
+```bash
+cp deploy/ctk_v2/xmc-existing-infra-deployment-template.yaml \
+  deploy/ctk_v2/xmanager-cloud-deployment.yaml
+```
+
+Fill in the existing-infrastructure block alongside the usual variables:
+
+```yaml
+vars:
+  existing_network_name: my-vpc
+  existing_subnetwork_name: my-subnet
+  existing_cluster_name: my-cluster
+  cluster_region: us-central1 # only if the cluster is not in `region`; a zone if it is zonal
+
+  # The tooling looks the cluster up by this name; it must match existing_cluster_name, because
+  # the default derives xmc-<deployment_name>-<environment>, the cluster Approach 2 would create.
+  gke_cluster_name: my-cluster
+```
+
+Then compile and deploy as in Approach 2, substituting the blueprint path:
+
+```bash
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud-existing-infra.yaml \
+  -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name>
+```
+
+Driving it through the tooling instead, pass the same path once — `gke-upgrade` reuses it from
+`ctk-out/<deployment_name>/.xmc-blueprint`:
+
+```bash
+python3 tools/dev_env/dev_env.py gke-deploy \
+  --blueprint deploy/ctk_v2/xmanager-cloud-existing-infra.yaml
+```
+
+### Memorystore on a VPC you did not create
+
+Approach 2 reserves a Private Service Access range on the VPC it created and attaches Memorystore
+through it. That is not safe to repeat on a VPC you did not create: a VPC has exactly one service
+networking connection, and reconfiguring it sets the ranges XMC reserved as the *only* reserved
+ranges on it, cutting off any service already peered through it. This blueprint therefore leaves
+that connection alone and, by default, gives the instance its own peering:
+
+```yaml
+vars:
+  deploy_redis: true
+  redis_connect_mode: DIRECT_PEERING # the default
+  redis_reserved_ip_range: null
+```
+
+To use Private Service Access instead, reserve the range yourself — or name one you have already
+reserved — and point the instance at it. The blueprint does not create it:
+
+```bash
+gcloud compute addresses create xmc-psa-range --global --purpose=VPC_PEERING \
+  --prefix-length=16 --network=my-vpc --project=<project_id>
+gcloud services vpc-peerings update --service=servicenetworking.googleapis.com \
+  --network=my-vpc --project=<project_id> \
+  --ranges=<your-existing-ranges>,xmc-psa-range
+```
+
+```yaml
+vars:
+  redis_connect_mode: PRIVATE_SERVICE_ACCESS
+  redis_reserved_ip_range: xmc-psa-range
+```
+
+List the VPC's current ranges with `gcloud services vpc-peerings list --network=my-vpc` first: the
+update above replaces the list, so every range still in use has to appear in it.
+
+If the cluster runs on a different network from a Memorystore instance you already have, point the
+application at that instance and skip provisioning entirely — see
+[Bringing your own Redis](#bringing-your-own-redis). A Memorystore instance accepts traffic only
+from its single authorized network, and PSA peering is not transitive.
+
+### Vertical Pod Autoscaling
+
+A cluster created without Vertical Pod Autoscaling has no `autoscaling.k8s.io` CRDs, and the Helm
+release fails with `no matches for kind "VerticalPodAutoscaler"`. Enabling VPA on the cluster is
+the better fix, for the reason given in
+[Vertical Pod Autoscaling on a cluster you did not create](#vertical-pod-autoscaling-on-a-cluster-you-did-not-create).
+Where that is not an option, this blueprint drops the objects:
+
+```yaml
+vars:
+  vertical_pod_autoscaler_enabled: false
+```
+
+### What teardown does and does not remove
+
+`gcluster destroy` removes only what the deployment created. The network, the subnetwork, the
+cluster and any Private Service Access range you reserved by hand are looked up, not managed, so
+they survive. The Memorystore instance, Spanner databases, service accounts, gateway IP and the
+Helm releases do not.
+
+---
+
 ## Upgrading an Existing Installation
 
 When updating an existing XMC installation to a newer version or release branch, infrastructure resources (such as VPC networks, GKE clusters, Spanner instances, and OAuth configuration) remain in place. Upgrading requires applying incremental database schema migrations, building updated container images, and rolling out application workload updates to your Kubernetes cluster.

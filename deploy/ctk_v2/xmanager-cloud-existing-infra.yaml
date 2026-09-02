@@ -1,0 +1,563 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# XMC on infrastructure that already exists.
+#
+# This is the sibling of xmanager-cloud.yaml. That blueprint creates the VPC, the GKE cluster and
+# its node pool; this one looks them up instead, so XMC can be installed into a project that
+# already runs its own networking and clusters. Everything else -- Spanner, the service accounts,
+# the gateway IP, certificates, the prerequisite Helm charts and the application itself -- is
+# identical, and both compile into the same deployment groups, so the same deploy and upgrade
+# steps apply to either.
+#
+# Cluster Toolkit blueprints have no conditionals, so the two cannot be a single file with a
+# toggle; keeping them separate is the reason for the duplication below. Changes to the shared
+# parts must be made in both.
+#
+# Prerequisites this blueprint assumes and does not create:
+#   * A VPC and a subnetwork in `region`, with Private Google Access enabled on the subnetwork.
+#   * A GKE cluster in `cluster_region` with Workload Identity enabled, holding enough capacity
+#     for the XMC workloads -- no node pool is created here.
+#
+# The VPC's Private Service Access configuration is read-only to this blueprint: it neither
+# creates a service networking connection nor edits one, so Memorystore peers directly by
+# default. See redis_connect_mode.
+# See INSTALL.md, "Approach 4: Installing onto Existing Infrastructure".
+
+blueprint_name: xmanager-on-cloud-v2-existing-infra
+
+vars:
+  deployment_name: xmc-v2-test
+  project_id:
+
+  region:
+
+  # Existing infrastructure XMC is installed onto, all looked up rather than created.
+  existing_network_name:     # VPC network name
+  existing_subnetwork_name:  # Subnetwork in `region`, must have Private Google Access enabled
+  existing_cluster_name:     # GKE cluster name
+  cluster_region: $(vars.region) # Cluster location: its region, or its zone if it is zonal
+
+  domain_name:          # Base domain name (e.g. example.com)
+  iap_client_id: ""     # Client ID for internal app OAuth2 flow
+  iap_client_secret: "" # Client Secret for internal app OAuth2 flow
+  jwt_secret: ""        # Secret key used by backend to sign session tokens
+  allowed_emails: ""    # Comma-separated list of allowed user emails
+  authorized_iam_role:  # GCP IAM Role for cluster workloads access
+  admin_iam_role: "roles/owner" # GCP IAM Role for admin panel access
+  certs_email:          # Email registered with cert-manager/GTS
+  gts_key_id:           # GTS External Account Binding key ID
+  gts_hmac_key:         # GTS External Account Binding HMAC secret
+
+  namespace: xmc
+  environment:
+  deletion_protection: false
+
+  # VerticalPodAutoscaler objects for the actuator and the reconciler. The greenfield blueprint
+  # creates its cluster with Vertical Pod Autoscaling on, so the autoscaling.k8s.io CRDs are always
+  # there; a cluster this blueprint is pointed at may not have them, and the Helm release then
+  # fails on "no matches for kind VerticalPodAutoscaler". Enabling VPA on the cluster is the better
+  # fix -- the two deployments are sized on the assumption that something right-sizes them -- but
+  # set this to false to install without it.
+  vertical_pod_autoscaler_enabled: true
+
+  # Image Settings (Defaults to dynamic paths, overrideable per-service)
+  image_registry:
+  image_tag: latest
+  xid_image: "$(vars.image_registry)/xid-service-$(vars.environment):$(vars.image_tag)"
+  actuator_image: "$(vars.image_registry)/actuator-$(vars.environment):$(vars.image_tag)"
+  ess_image: "$(vars.image_registry)/experiment-state-server-$(vars.environment):$(vars.image_tag)"
+  reconciler_image: "$(vars.image_registry)/reconciler-$(vars.environment):$(vars.image_tag)"
+  ui_image: "$(vars.image_registry)/ui-$(vars.environment):$(vars.image_tag)"
+  health_service_image: "$(vars.image_registry)/health-service-$(vars.environment):$(vars.image_tag)"
+  dashboard_service_image: "$(vars.image_registry)/dashboard-service-$(vars.environment):$(vars.image_tag)"
+  rod_image: "$(vars.image_registry)/rod-data-provider-$(vars.environment):$(vars.image_tag)"
+  ingestion_gateway_image: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
+  log_monitor_image: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
+  
+  task_signature_ttl_seconds: 86400
+  use_redis_queue: true
+  deploy_redis: true
+  redis_region:
+  # How the provisioned Memorystore instance attaches to the network. DIRECT_PEERING gives the
+  # instance its own peering and leaves the VPC's Private Service Access configuration alone,
+  # which is why it is the default here. Set PRIVATE_SERVICE_ACCESS together with
+  # redis_reserved_ip_range to reuse a range already reserved on the VPC's PSA connection; the
+  # range must exist, because nothing here creates or edits that connection.
+  redis_connect_mode: DIRECT_PEERING
+  redis_reserved_ip_range: null
+  # Bring-your-own Redis. When external_redis_host is set the application is pointed at it and
+  # the provisioned Memorystore instance, if any, is ignored -- required when the cluster sits on
+  # a network the blueprint's instance cannot be reached from. Pair with deploy_redis: false to
+  # skip provisioning an instance that would go unused.
+  external_redis_host: ""
+  external_redis_port: "6379"
+  external_redis_auth_string: ""
+  status_message_history_enabled: true
+  enable_metrics: false
+  # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
+  # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
+  enable_components: false
+  health_service_deployment_enabled: false
+  admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
+  dashboard_service_deployment_enabled: false
+  rod_deployment_enabled: false
+  health_status_cache_ttl: 15s
+  health_status_force_refresh_max_requests: 5
+  health_status_force_refresh_window: 5s
+
+deployment_groups:
+- group: apis
+  modules:
+  - id: cloud_api
+    source: community/modules/project/service-enablement
+    settings:
+      gcp_service_list:
+      - compute.googleapis.com
+      - container.googleapis.com
+      - spanner.googleapis.com
+      - redis.googleapis.com
+      - iam.googleapis.com
+      - cloudresourcemanager.googleapis.com
+      - servicenetworking.googleapis.com
+      - certificatemanager.googleapis.com
+
+- group: primary
+  modules:
+  # Looks up the VPC instead of creating one. The module asserts the subnetwork has Private Google
+  # Access enabled; without it, pods without external IPs cannot reach Google APIs.
+  - id: network
+    source: modules/network/pre-existing-vpc
+    settings:
+      project_id: $(vars.project_id)
+      network_name: $(vars.existing_network_name)
+      subnetwork_name: $(vars.existing_subnetwork_name)
+      region: $(vars.region)
+
+  - id: xmc_gateway_ip
+    source: modules/network/global-static-ip
+    settings:
+      ip_names:
+      - xmc-gateway-static-ip-$(vars.environment)
+
+  - id: workload_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-wl-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - monitoring.viewer
+      - stackdriver.resourceMetadata.writer
+      - storage.objectAdmin
+      - artifactregistry.reader
+      - serviceusage.serviceUsageConsumer
+      # Stage 3 of the authorization pipeline falls back to the project IAM policy when a caller
+      # matches neither the email nor the domain allowlist, so every service that serves
+      # authenticated traffic on this account -- the experiment state server, ROD and the
+      # dashboard service -- needs resourcemanager.projects.getIamPolicy. Browser is the smallest
+      # predefined role that carries it. iam.securityReviewer, which xmc-hs-sa uses for the same
+      # need, would additionally hand the actuator and the reconciler read access to the IAM
+      # policies on Spanner, GCS and everything else in the project, which none of them require.
+      - browser
+
+  - id: workload_sa_token_creator
+    source: ./deploy/ctk_v2/modules/self-token-creator
+    use: [workload_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      service_account_email: $(workload_service_account.service_account_email)
+
+  - id: log_monitor_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-lm-sa
+      project_roles:
+      - serviceusage.serviceUsageConsumer
+      - monitoring.metricWriter
+
+  - id: health_service_gcp_sa
+    source: modules/project/service-account
+    settings:
+      name: xmc-hs-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - run.viewer
+      - iam.securityReviewer
+      - serviceusage.serviceUsageConsumer
+
+  - id: db_spanner
+    source: modules/database/spanner
+    settings:
+      instance_name: xmc-$(vars.environment)
+      edition: ENTERPRISE
+      databases:
+        ess:
+          name: experiment-db-$(vars.environment)
+          deletion_protection: $(vars.deletion_protection)
+          iam_members:
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(workload_service_account.service_account_email)"
+          - role: roles/spanner.databaseUser
+            member: $(log_monitor_service_account.service_account_iam_email)
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(health_service_gcp_sa.service_account_email)"
+        xid:
+          name: xids-db-$(vars.environment)
+          deletion_protection: $(vars.deletion_protection)
+          iam_members:
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(workload_service_account.service_account_email)"
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(health_service_gcp_sa.service_account_email)"
+
+  - id: apply_ess_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
+    use: [db_spanner]
+    settings:
+      project_id: $(vars.project_id)
+      instance_name: $(db_spanner.instance_name)
+      database_name: $(db_spanner.database_ids.ess)
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/ess-schema.sql"))
+      db_type: ess
+
+  - id: apply_xid_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
+    use: [db_spanner]
+    settings:
+      project_id: $(vars.project_id)
+      instance_name: $(db_spanner.instance_name)
+      database_name: $(db_spanner.database_ids.xid)
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
+      db_type: xid
+      # Both appliers reach the same Spanner instance, so they run one after the
+      # other rather than at once.
+      depends_on_anchor: $(apply_ess_schema.applied)
+
+  # No private-service-access module here, unlike the greenfield blueprint. A VPC holds one
+  # service networking connection, and the module writes its own range as that connection's only
+  # reserved range, so pointing it at a VPC that already peers with servicenetworking would strip
+  # the ranges other services are using. Memorystore gets its own peering instead, or reuses a
+  # range the operator has already reserved; see redis_connect_mode.
+  - id: redis
+    source: modules/database/redis
+    use: [network]
+    settings:
+      environment: $(vars.environment)
+      region: $(vars.redis_region)
+      deploy_redis: $(vars.deploy_redis)
+      connect_mode: $(vars.redis_connect_mode)
+      reserved_ip_range: $(vars.redis_reserved_ip_range)
+
+  - id: redis_endpoint
+    source: ./deploy/ctk_v2/modules/redis-endpoint
+    settings:
+      provisioned_host: $(redis.redis_host)
+      provisioned_port: $(redis.redis_port)
+      provisioned_auth_string: $(redis.auth_string)
+      external_host: $(vars.external_redis_host)
+      external_port: $(vars.external_redis_port)
+      external_auth_string: $(vars.external_redis_auth_string)
+
+  - id: xmc_cert_manager
+    source: ./deploy/ctk_v2/modules/cert-manager
+    settings:
+      project_id: $(vars.project_id)
+      environment: $(vars.environment)
+      domains:
+      - "$(vars.environment).$(vars.domain_name)"
+      - "api.$(vars.environment).$(vars.domain_name)"
+      - "grpc.$(vars.environment).$(vars.domain_name)"
+
+- group: compute
+  modules:
+  - id: xmc_wi_binding_ess
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: experiment-server
+
+  - id: xmc_wi_binding_actuator
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: actuator-service-account
+
+  - id: xmc_wi_binding_reconciler
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: reconciler-service-account
+
+  - id: xmc_wi_binding_health_service
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(health_service_gcp_sa.service_account_email)
+      k8s_service_account_name: health-service-account
+
+  - id: xmc_wi_binding_rod
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: rod-data-provider-service-account
+
+  # Every Kubernetes service account the chart annotates with iam.gke.io/gcp-service-account needs
+  # a matching binding here, or the pod cannot mint tokens for the account it is annotated with.
+  # test/helm/workload_identity_binding_test.py holds that list and this one in step.
+  - id: xmc_wi_binding_dashboard_service
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: dashboard-service-account
+
+  - id: xmc_wi_binding_xid
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: xid-service
+
+  # Looks up the cluster instead of creating one, and creates no node pool -- capacity, node
+  # configuration, control plane access and Workload Identity are all whoever owns the cluster's
+  # to manage. Everything downstream needs only cluster_id, which this module supplies, and reads
+  # the endpoint and CA certificate from the cluster itself.
+  - id: compute_cluster
+    source: modules/scheduler/pre-existing-gke-cluster
+    settings:
+      project_id: $(vars.project_id)
+      cluster_name: $(vars.existing_cluster_name)
+      region: $(vars.cluster_region)
+
+- group: kubernetes_prereqs
+  modules:
+  - id: install_cert_manager
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: cert-manager
+      chart_name: oci://quay.io/jetstack/charts/cert-manager
+      chart_version: v1.19.2
+      namespace: cert-manager
+      create_namespace: true
+      set_values:
+      - name: crds.enabled
+        value: "true"
+        type: auto
+      - name: extraArgs[0]
+        value: "--enable-gateway-api"
+        type: string
+
+  - id: install_kueue
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: kueue
+      chart_name: oci://registry.k8s.io/kueue/charts/kueue
+      chart_version: 0.18.2
+      namespace: kueue-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+
+  - id: install_jobset
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: jobset
+      chart_name: oci://registry.k8s.io/jobset/charts/jobset
+      chart_version: 0.12.0
+      namespace: jobset-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+      set_values:
+      - name: certs.certManager.enabled
+        value: "true"
+
+- group: xmc_app
+  modules:
+
+  - id: xmc_iap_secret
+    source: modules/security/kubernetes-secret
+    use: [compute_cluster]
+    settings:
+      secret_name: iap-oauth-secret
+      data:
+        client_id: $(vars.iap_client_id)
+        client_secret: $(vars.iap_client_secret)
+
+
+  - id: xmc_app_helm
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster, redis]
+    settings:
+      release_name: xmc-$(vars.deployment_name)-$(vars.environment)
+      chart_name: $(ghpc_stage("../helm"))
+      values_yaml:
+      - $(ghpc_stage("../helm/values.yaml"))
+      create_namespace: false
+      wait: true
+      timeout: 600 # 10 minutes
+      set_values:
+      - name: essDeployment.enabled
+        value: "true"
+        type: auto
+      - name: projectId
+        value: $(vars.project_id)
+      - name: environment
+        value: $(vars.environment)
+      - name: domainSuffix
+        value: $(vars.domain_name)
+      - name: imageTag
+        value: $(vars.image_tag)
+      - name: xid_custom_image
+        value: $(vars.xid_image)
+      - name: actuator_custom_image
+        value: $(vars.actuator_image)
+      - name: ess_custom_image
+        value: $(vars.ess_image)
+      - name: reconciler_custom_image
+        value: $(vars.reconciler_image)
+      - name: ui.image
+        value: $(vars.ui_image)
+      - name: health_service_custom_image
+        value: $(vars.health_service_image)
+      - name: healthService.observabilityUrl
+        value: $(vars.admin_panel_observability_url)
+      - name: healthService.gcpServiceAccount
+        value: $(health_service_gcp_sa.service_account_email)
+      - name: healthService.logMonitorResourceName
+        value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
+      - name: healthService.cacheTTL
+        value: $(vars.health_status_cache_ttl)
+      - name: healthService.forceRefreshMaxRequests
+        value: $(vars.health_status_force_refresh_max_requests)
+        type: auto
+      - name: healthService.forceRefreshWindow
+        value: $(vars.health_status_force_refresh_window)
+      - name: dashboard_service_custom_image
+        value: $(vars.dashboard_service_image)
+      - name: dashboardService.gcpServiceAccount
+        value: $(workload_service_account.service_account_email)
+      - name: rod_custom_image
+        value: $(vars.rod_image)
+      - name: ingestion_gateway_custom_image
+        value: $(vars.ingestion_gateway_image)
+      - name: taskSignatureTtlSeconds
+        value: $(vars.task_signature_ttl_seconds)
+        type: auto
+      - name: redisAddr
+        value: $(redis_endpoint.redis_addr)
+      - name: redisPassword
+        value: $(redis_endpoint.redis_auth_string)
+      - name: certs.type
+        value: "gts"
+      - name: certs.email
+        value: $(vars.certs_email)
+      - name: certs.gts.keyId
+        value: $(vars.gts_key_id)
+      - name: certs.gts.hmacKey
+        value: $(vars.gts_hmac_key)
+      - name: gateway.staticIp
+        value: "xmc-gateway-static-ip-$(vars.environment)"
+      - name: xmcUrl
+        value: "$(vars.environment).$(vars.domain_name)"
+      - name: gateway.certMap
+        value: $(xmc_cert_manager.certificate_map_name)
+      - name: experimentStateServer.spannerDatabaseName
+        value: "projects/$(vars.project_id)/instances/xmc-$(vars.environment)/databases/$(db_spanner.database_ids.ess)"
+      - name: gcpServiceAccount
+        value: $(workload_service_account.service_account_email)
+      - name: secrets.development.jwtSecret
+        value: $(vars.jwt_secret)
+      - name: secrets.development.clientSecret
+        value: $(vars.iap_client_secret)
+      - name: auth.iap.clientId
+        value: $(vars.iap_client_id)
+      - name: auth.allowedEmails
+        value: $(vars.allowed_emails)
+        type: string
+      - name: auth.authorizedIamRole
+        value: $(vars.authorized_iam_role)
+      - name: auth.adminIamRole
+        value: $(vars.admin_iam_role)
+      - name: statusMessageHistoryEnabled
+        value: $(vars.status_message_history_enabled)
+        type: auto
+      - name: healthServiceDeployment.enabled
+        value: $(vars.health_service_deployment_enabled)
+        type: auto
+      - name: dashboardServiceDeployment.enabled
+        value: $(vars.dashboard_service_deployment_enabled)
+        type: auto
+      - name: metrics.enabled
+        value: $(vars.enable_metrics)
+        type: auto
+      - name: metrics.clickhouse.host
+        value: $(vars.clickhouse_host)
+      - name: metrics.clickhouse.port
+        value: $(vars.clickhouse_port)
+      - name: metrics.clickhouse.database
+        value: $(vars.clickhouse_database)
+      - name: metrics.clickhouse.user
+        value: $(vars.clickhouse_user)
+      - name: metrics.clickhouse.password
+        value: $(vars.clickhouse_password)
+      - name: ingestionGatewayDeployment.enabled
+        value: $(vars.enable_metrics)
+        type: auto
+      - name: rodDeployment.enabled
+        value: $(vars.rod_deployment_enabled)
+        type: auto
+      - name: componentsDeployment.enabled
+        value: $(vars.enable_components)
+        type: auto
+      - name: verticalPodAutoscaler.enabled
+        value: $(vars.vertical_pod_autoscaler_enabled)
+        type: auto
+
+  - id: xmc_sa_annotations
+    source: modules/management/kubectl-apply
+    use: [compute_cluster, workload_service_account]
+    settings:
+      cluster_id: $(compute_cluster.cluster_id)
+      project_id: $(vars.project_id)
+      service_account_annotations:
+        actuator-service-account:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+        experiment-server:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+        reconciler-service-account:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+
+  - id: log_monitor
+    source: ./deploy/ctk_v2/modules/log_monitor
+    use: [log_monitor_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      region: $(vars.region)
+      environment: $(vars.environment)
+      image_url: $(vars.log_monitor_image)
+      service_account_email: $(log_monitor_service_account.service_account_email)
+      deletion_protection: $(vars.deletion_protection)
+      status_message_history_enabled: $(vars.status_message_history_enabled)

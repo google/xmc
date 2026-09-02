@@ -10,6 +10,19 @@ This blueprint is created to help deploy XMC leveraging the current topology whi
 3. **App-level OAuth2**: Users are authenticated using OAuth2 client credentials and session JWTs managed by the application itself.
 4. **cert-manager with Google Trust Services (GTS)**: Automates the provisioning of TLS certificates.
 
+### Choosing a blueprint
+
+| Blueprint | Deployment template | Use when |
+| --- | --- | --- |
+| `xmanager-cloud.yaml` | `xmc-deployment-template.yaml` | XMC creates the VPC, the GKE cluster and its node pool. |
+| `xmanager-cloud-existing-infra.yaml` | `xmc-existing-infra-deployment-template.yaml` | The VPC and the GKE cluster already exist and are managed elsewhere. |
+
+The two are separate files because Cluster Toolkit blueprints have no conditionals. They differ
+only in how the network and the cluster are obtained, and compile into the same deployment groups,
+so the steps below apply to either — substitute the blueprint and template paths. See
+[Approach 4 in INSTALL.md](../../INSTALL.md#approach-4-installing-onto-existing-infrastructure)
+for what the existing-infrastructure blueprint expects to find and what it will not touch.
+
 ## Phase 1: Configuration Variables
 
 First, copy the template deployment configuration file and open it to configure deployment variables to match your target environment:

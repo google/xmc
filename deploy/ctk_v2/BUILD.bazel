@@ -25,6 +25,26 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# The blueprint that installs onto a VPC and GKE cluster that already exist. It duplicates most
+# of xmanager-cloud.yaml because blueprints have no conditionals, so it is exposed for the test
+# that holds the two in step.
+filegroup(
+    name = "existing_infra_blueprint",
+    srcs = ["xmanager-cloud-existing-infra.yaml"],
+    visibility = ["//visibility:public"],
+)
+
+# The deployment files an operator copies and fills in. Exposed so that a test can check each
+# names only variables its blueprint declares -- gcluster downgrades the rest to a warning.
+filegroup(
+    name = "deployment_templates",
+    srcs = [
+        "xmc-deployment-template.yaml",
+        "xmc-existing-infra-deployment-template.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # The local module the blueprint resolves the Redis endpoint through, exposed so that tests can
 # assert the blueprint passes settings the module actually declares. Terraform would catch a
 # mismatch, but not until the primary group applies against a real project.

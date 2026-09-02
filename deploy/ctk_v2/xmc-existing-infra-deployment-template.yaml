@@ -1,0 +1,148 @@
+# Copyright 2026 "Google LLC"
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Overrides for deploy/ctk_v2/xmanager-cloud-existing-infra.yaml, the blueprint that installs XMC
+# onto a VPC and GKE cluster that already exist. Use xmc-deployment-template.yaml instead when
+# letting XMC create its own infrastructure.
+
+vars:
+  # Deployment name override to avoid name conflicts
+  deployment_name: my-xmc-ctk
+
+  # The Google Cloud Project ID to deploy into
+  project_id: YOUR_PROJECT_ID
+
+  # The Google Cloud Region to deploy into
+  region: us-central1
+
+  # Suffix for your resources (e.g., dev, staging, prod)
+  environment: dev
+
+  # --- Existing infrastructure ---------------------------------------------------------------
+  # The VPC network XMC runs on. Not created; it must already exist in project_id.
+  existing_network_name: YOUR_NETWORK_NAME
+
+  # A subnetwork of that network in `region`. Private Google Access must be enabled on it, or
+  # pods without external IPs cannot reach Google APIs and the deployment fails its own check.
+  existing_subnetwork_name: YOUR_SUBNETWORK_NAME
+
+  # The GKE cluster to install into. Not created, and no node pool is added, so the cluster needs
+  # enough spare capacity for the XMC workloads and must have Workload Identity enabled.
+  existing_cluster_name: YOUR_CLUSTER_NAME
+
+  # Where that cluster lives, used as its location for the lookup. A regional cluster takes its
+  # region; a zonal cluster takes its zone (e.g. us-central1-a), or the lookup finds nothing. Set
+  # only if it differs from `region`.
+  cluster_region: us-central1
+
+  # VerticalPodAutoscaler objects for the actuator and the reconciler. Set to false if the cluster
+  # was created without Vertical Pod Autoscaling; the autoscaling.k8s.io CRDs are absent there and
+  # the Helm release fails on "no matches for kind VerticalPodAutoscaler". Enabling VPA on the
+  # cluster is the better fix -- both deployments are sized assuming something right-sizes them.
+  vertical_pod_autoscaler_enabled: true
+
+  # -------------------------------------------------------------------------------------------
+
+  # The DNS Domain Name for XMC (e.g., xmc.example.com)
+  # MUST be a real domain for Managed SSL Certs to provision!
+  domain_name: YOUR_DOMAIN_NAME
+
+  # The OAuth 2.0 Web Client ID for application authentication
+  iap_client_id: "YOUR_OAUTH_CLIENT_ID"
+
+  # The OAuth 2.0 Client Secret for application authentication
+  iap_client_secret: "YOUR_OAUTH_CLIENT_SECRET"
+
+  # Secret key used by the backend to sign session JWTs (choose a secure random string)
+  jwt_secret: "YOUR_JWT_SECRET"
+
+  # Comma-separated list of user emails authorized to log in.
+  # Required when authorized_iam_role is not provided.
+  allowed_emails: "user1@example.com,user2@example.com"
+
+  # GCP IAM role granted to GKE workload identities.
+  # Required when allowed_emails is not provided.
+  authorized_iam_role: "roles/viewer"
+
+  # GCP IAM role required for administrative access (Health Service, Admin Panel).
+  # Defaults to roles/owner if not provided.
+  admin_iam_role: "roles/owner"
+
+  # Owner email registered with Google Trust Services (GTS)
+  certs_email: "YOUR_EMAIL@example.com"
+
+  # GTS External Account Binding key ID for certificate issuance
+  gts_key_id: "YOUR_GTS_KEY_ID"
+
+  # GTS External Account Binding HMAC secret for certificate issuance
+  gts_hmac_key: "YOUR_GTS_HMAC_KEY"
+
+  # Target Kubernetes namespace for XMC services
+  namespace: xmc
+
+  # Name of the GKE cluster the tooling talks to. Set this to the same value as
+  # existing_cluster_name -- the default derivation, xmc-<deployment_name>-<environment>, names
+  # the cluster the greenfield blueprint creates, which is not the cluster in use here, so
+  # get-credentials and the Gateway API check would look up a cluster that does not exist.
+  gke_cluster_name: YOUR_CLUSTER_NAME
+
+  # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
+  deletion_protection: false
+
+  # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
+  enable_metrics: false
+
+  # ClickHouse connection backing dashboard chart data. Applied only when enable_metrics is
+  # true. ClickHouse is Bring-Your-Own infrastructure; see deploy/addons/metrics/clickhouse.
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
+
+  # Enable Foundational Component Controllers
+  enable_components: false
+
+  # Redis Configuration
+  use_redis_queue: true
+  deploy_redis: true
+  redis_region: us-central1
+
+  # How the provisioned instance attaches to existing_network_name. DIRECT_PEERING gives it its
+  # own peering and leaves the VPC's Private Service Access configuration untouched. Switch to
+  # PRIVATE_SERVICE_ACCESS only if the VPC already has a service networking connection, and name
+  # a range already reserved on it -- this blueprint does not create or edit that connection.
+  redis_connect_mode: DIRECT_PEERING
+  redis_reserved_ip_range: null
+
+  # Bring-your-own Redis. Leave external_redis_host empty to use the Memorystore instance
+  # deploy_redis provisions on existing_network_name. Set it to point the application at your own
+  # instance instead -- necessary when the cluster runs on a different network from that instance,
+  # because a Memorystore instance only accepts traffic from its single authorized network and
+  # Private Service Access peering is not transitive. Set deploy_redis: false alongside it to
+  # avoid paying for an instance nothing connects to.
+  external_redis_host: ""
+  external_redis_port: "6379"
+  external_redis_auth_string: ""
+
+  # Validity duration of task signature tokens
+  task_signature_ttl_seconds: 86400
+
+  # Enable status message history database persistence
+  status_message_history_enabled: true
+
+  # Target Google Artifact Registry and tag for all XMC microservices.
+  # Optional: You can override individual service images if needed (e.g. actuator_image: "custom-path:tag")
+  image_registry: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc"
+  image_tag: "latest"
