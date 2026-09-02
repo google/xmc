@@ -98,8 +98,9 @@ class ImageBuilder:
         if not needs_install:
             try:
                 mod_time = os.path.getmtime(node_modules_dir)
-                if (os.path.isfile(package_lock) and os.path.getmtime(package_lock) > mod_time) or (
-                    os.path.isfile(package_json) and os.path.getmtime(package_json) > mod_time
+                if any(
+                    os.path.isfile(p) and os.path.getmtime(p) > mod_time
+                    for p in (package_lock, package_json)
                 ):
                     needs_install = True
             except OSError:

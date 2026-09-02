@@ -24,6 +24,16 @@ from test.e2e.lib.image_builder import ImageBuilder
 class TestImageBuilder(unittest.TestCase):
     """Tests for ImageBuilder."""
 
+    def setUp(self) -> None:
+        self.cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+
     def test_build_all_with_skip_build(self):
         cfg = E2EConfig(
             project_id="test-proj",
@@ -72,15 +82,7 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_invokes_npm_when_node_present(
         self, mock_run, mock_isfile, mock_which
     ):
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_run.assert_any_call(
             ["npm", "ci", "--legacy-peer-deps"],
@@ -98,15 +100,7 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_skips_when_dist_is_not_stale(
         self, mock_run, mock_stale, mock_isfile, mock_which
     ):
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_run.assert_not_called()
 
@@ -117,15 +111,7 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_recompiles_when_dist_is_stale(
         self, mock_run, mock_stale, mock_isfile, mock_which
     ):
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_run.assert_any_call(
             ["npm", "ci", "--legacy-peer-deps"],
@@ -139,15 +125,7 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_cleans_dist_on_failure(
         self, mock_run, mock_isfile, mock_rmtree, mock_which
     ):
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist", ignore_errors=True)
 
@@ -170,15 +148,7 @@ class TestImageBuilder(unittest.TestCase):
             return 50
 
         mock_mtime.side_effect = mtime_side_effect
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         is_stale = builder._is_ui_dist_stale(
             "/workspace/cmd/ui", "/workspace/cmd/ui/dist/browser/index.html"
         )
@@ -197,21 +167,9 @@ class TestImageBuilder(unittest.TestCase):
         mock_isfile.return_value = True
         # node_modules mtime (200) > package-lock.json mtime (100)
         mock_mtime.side_effect = lambda p: 100 if "package-lock.json" in p else 200
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
 
-        # npm ci should NOT be called
-        for call in mock_run.call_args_list:
-            self.assertNotIn("npm", call[0][0])
-        # ng build SHOULD be called
         mock_run.assert_called_once_with(
             ["npx", "ng", "build", "--configuration", "production"],
             cwd="/workspace/cmd/ui",
@@ -220,15 +178,7 @@ class TestImageBuilder(unittest.TestCase):
     @patch("shutil.which", return_value=None)
     @patch("test.e2e.lib.image_builder.run_cmd")
     def test_maybe_precompile_ui_skips_when_node_missing(self, mock_run, mock_which):
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_run.assert_not_called()
 
@@ -237,15 +187,7 @@ class TestImageBuilder(unittest.TestCase):
     def test_maybe_precompile_ui_skips_when_npx_missing(self, mock_run, mock_which):
         # node and npm exist, but npx is missing
         mock_which.side_effect = lambda tool: "/usr/bin/" + tool if tool != "npx" else None
-        cfg = E2EConfig(
-            project_id="test-proj",
-            spanner_instance="test-inst",
-            cluster_name="test-cluster",
-            kind_bin="kind",
-            workspace_root="/workspace",
-            screenshots_dir="/screenshots",
-        )
-        builder = ImageBuilder(cfg)
+        builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
         mock_run.assert_not_called()
 
