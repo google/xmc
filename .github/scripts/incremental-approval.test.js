@@ -35,6 +35,7 @@ const {
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  GRAPHQL_TIMELINE_QUERY,
   formatReapprovalReviewBody
 } = require('./incremental-approval');
 
@@ -66,22 +67,49 @@ test('isBotUser identifies bot usernames correctly', () => {
 
 test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
   const events = [
-    { event: 'dismissed_review', review_id: 101 },
+    // Manual dismissal via REST (no trigger commit, dismissal message present)
+    { event: 'dismissed_review', review_id: 101, dismissal_message: 'Security issue' },
+    // Automatic stale push dismissal via GraphQL (trigger commit present, no message)
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'APPROVED',
+      pullRequestCommit: { commit: { oid: 'sha-stale' } },
       review: { databaseId: 202 }
     },
+    // Automatic stale push dismissal of changes requested via GraphQL
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'CHANGES_REQUESTED',
+      pullRequestCommit: { commit: { oid: 'sha-stale' } },
       review: { databaseId: 303 }
+    },
+    // Automatic stale push dismissal via REST (dismissal_commit_id present)
+    {
+      event: 'review_dismissed',
+      dismissed_review: {
+        review_id: 404,
+        state: 'approved',
+        dismissal_commit_id: 'sha-rest-commit'
+      }
+    },
+    // Manual dismissal via GraphQL (no trigger commit, dismissal message present)
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'Rejected by security auditor',
+      review: { databaseId: 505 }
     }
   ];
   const ctx = extractDismissalContext(events);
   assert.strictEqual(ctx.manualDismissalIds.has(101), true);
+  assert.strictEqual(ctx.manualDismissalIds.has(202), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(303), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(404), false);
+  assert.strictEqual(ctx.manualDismissalIds.has(505), true);
   assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
   assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(404), 'APPROVED');
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(505), 'APPROVED');
 });
 
 test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
@@ -102,6 +130,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
   assert.deepStrictEqual(valid, {
     approver: 'reviewer1',
     state: 'APPROVED',
+    isDismissed: false,
     approvedSha: 'sha1',
     submittedAt: undefined
   });
@@ -114,7 +143,8 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     state: 'approved',
     commit_id: 'sha1'
   }, context);
-  assert.strictEqual(manualDismissed, null);
+  assert.strictEqual(manualDismissed.state, 'DISMISSED');
+  assert.strictEqual(manualDismissed.isDismissed, true);
 
   // Stale dismissed with APPROVED previous state
   const staleApproved = parseTimelineReviewEvent({
@@ -125,6 +155,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     commit_id: 'sha1'
   }, context);
   assert.strictEqual(staleApproved.state, 'APPROVED');
+  assert.strictEqual(staleApproved.isDismissed, true);
 
   // Stale dismissed with CHANGES_REQUESTED previous state
   const staleChanges = parseTimelineReviewEvent({
@@ -135,6 +166,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     commit_id: 'sha1'
   }, context);
   assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
+  assert.strictEqual(staleChanges.isDismissed, true);
 
   // Ignored bot review and PR author self-review
   assert.strictEqual(parseTimelineReviewEvent({
@@ -224,7 +256,8 @@ test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () =
   assert.deepStrictEqual(result, {
     approver: 'alice',
     approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z'
+    submittedAt: '2026-08-25T10:00:00Z',
+    isDismissed: false
   });
 });
 
@@ -264,6 +297,7 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'APPROVED',
+      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
       review: {
         databaseId: 5032149088
       }
@@ -273,7 +307,8 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
   assert.deepStrictEqual(result, {
     approver: 'andrzejfudro',
     approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-    submittedAt: '2026-08-26T15:12:24Z'
+    submittedAt: '2026-08-26T15:12:24Z',
+    isDismissed: true
   });
 });
 
@@ -299,6 +334,7 @@ test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_
     {
       __typename: 'ReviewDismissedEvent',
       previousReviewState: 'CHANGES_REQUESTED',
+      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
       review: {
         databaseId: 5032149088
       }
@@ -308,7 +344,7 @@ test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_
   assert.strictEqual(result, null);
 });
 
-test('findLatestApproval ignores manually dismissed reviews in timeline', () => {
+test('findLatestApproval ignores manually dismissed reviews in timeline (REST)', () => {
   const reviews = [
     {
       id: 1,
@@ -335,6 +371,88 @@ test('findLatestApproval ignores manually dismissed reviews in timeline', () => 
   ];
   const result = findLatestApproval(reviews, 'charlie', timelineEvents);
   assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL)', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'Security concern raised by reviewer',
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ignores manual dismissals without dismissal message when trigger commit is absent', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: null,
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ensures later manual dismissal overrides earlier stale approval by same reviewer', () => {
+  const reviews = [
+    { id: 101, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha1', submitted_at: '2026-08-25T10:00:00Z' },
+    { id: 102, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha2', submitted_at: '2026-08-25T12:00:00Z' }
+  ];
+  const timelineEvents = [
+    { id: 101, __typename: 'PullRequestReview', databaseId: 101, author: { login: 'alice' }, state: 'DISMISSED', commit: { oid: 'sha1' }, submittedAt: '2026-08-25T10:00:00Z' },
+    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', pullRequestCommit: { commit: { oid: 'sha2' } }, review: { databaseId: 101 }, createdAt: '2026-08-25T11:00:00Z' },
+    { id: 102, __typename: 'PullRequestReview', databaseId: 102, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha2' }, submittedAt: '2026-08-25T12:00:00Z' },
+    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', dismissalMessage: 'Security revocation', pullRequestCommit: null, review: { databaseId: 102 }, createdAt: '2026-08-25T13:00:00Z' }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('GRAPHQL_TIMELINE_QUERY queries pullRequestCommit and dismissalMessage', () => {
+  assert.match(GRAPHQL_TIMELINE_QUERY, /pullRequestCommit/);
+  assert.match(GRAPHQL_TIMELINE_QUERY, /dismissalMessage/);
 });
 
 test('findLatestApproval ignores self-approval from PR author', () => {
@@ -613,17 +731,47 @@ test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
   assert.strictEqual(result.trigger, 'NO_PRIOR_APPROVAL');
 });
 
-test('evaluateIncrementalApproval skips if PR is already approved at current SHA', () => {
+test('evaluateIncrementalApproval skips if PR is already approved at current SHA and not dismissed', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-222',
     currentSha: 'sha-222',
     isAuthorOwner: true,
     deltaLines: 0,
-    isCleanRebase: true
+    isCleanRebase: true,
+    isDismissed: false
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'ALREADY_APPROVED');
+});
+
+test('evaluateIncrementalApproval reapproves if approval on current SHA was dismissed (stale approval)', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-222',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 0,
+    isCleanRebase: true,
+    isDismissed: true
+  });
+  assert.strictEqual(result.shouldReapprove, true);
+  assert.strictEqual(result.trigger, 'RESTORE_DISMISSED_APPROVAL');
+});
+
+test('evaluateIncrementalApproval rejects dismissed approval on same SHA if sensitive files modified', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-222',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 0,
+    isCleanRebase: true,
+    isDismissed: true,
+    hasProtectedFileChanges: true
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
 });
 
 test('evaluateIncrementalApproval rejects removed commits even if deltaLines is 0', () => {
