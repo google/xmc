@@ -43,8 +43,25 @@ export class HealthStatusGroupCardComponent {
     return this.components().some((c) => c.healthState === HealthState.UNHEALTHY);
   });
 
+  protected readonly isHealthy = computed(() => {
+    return (
+      this.components().length > 0 &&
+      this.components().every((c) => c.healthState === HealthState.HEALTHY)
+    );
+  });
+
+  protected readonly isUnknown = computed(() => {
+    return !this.isDegraded() && !this.isHealthy();
+  });
+
   protected readonly groupStatusText = computed(() => {
-    return this.isDegraded() ? 'DEGRADED' : 'HEALTHY';
+    if (this.isDegraded()) {
+      return 'DEGRADED';
+    }
+    if (this.isHealthy()) {
+      return 'HEALTHY';
+    }
+    return 'UNKNOWN';
   });
 
   protected readonly items = computed<ComponentHealthItem[]>(() => {
