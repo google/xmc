@@ -14,6 +14,7 @@
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import {
+  MatCellHarness,
   MatRowHarness,
   MatTableHarness,
   TableHarnessFilters,
@@ -71,6 +72,13 @@ export class WorkUnitsTableHarness extends ComponentHarness {
     return table.getRows(filter);
   }
 
+  /**
+   * Returns the non-detail data rows.
+   */
+  async getDataRows(): Promise<MatRowHarness[]> {
+    return this.getRows({ selector: ':not(.detail-row)' });
+  }
+
   async hasNoWorkUnitsMessage(): Promise<boolean> {
     return !!(await this._noWorkUnitsMessage());
   }
@@ -80,35 +88,34 @@ export class WorkUnitsTableHarness extends ComponentHarness {
   }
 
   /**
+   * Returns the URLs action cell for a given data row index, or null if absent.
+   */
+  async getUrlsCell(rowIndex: number): Promise<MatCellHarness | null> {
+    const rows = await this.getDataRows();
+    const row = rows[rowIndex];
+    if (!row) {
+      return null;
+    }
+    const cells = await row.getCells({ columnName: 'Urls' });
+    return cells[0] ?? null;
+  }
+
+  /**
    * Returns the Run Profile button harness for a given row index, or null if absent.
    */
   async getRunProfileButton(rowIndex: number): Promise<MatButtonHarness | null> {
-    const rows = await this.getRows({ selector: ':not(.detail-row)' });
-    if (!rows[rowIndex]) {
-      return null;
-    }
-    const cells = await rows[rowIndex].getCells({ columnName: 'Urls' });
-    if (!cells.length) {
-      return null;
-    }
-    return cells[0].getHarnessOrNull(MatButtonHarness.with({ text: 'troubleshoot' }));
+    const cell = await this.getUrlsCell(rowIndex);
+    return cell ? cell.getHarnessOrNull(MatButtonHarness.with({ text: 'troubleshoot' })) : null;
   }
 
   /**
    * Returns the Run Profile tooltip harness for a given row index, or null if absent.
    */
   async getRunProfileTooltip(rowIndex: number): Promise<MatTooltipHarness | null> {
-    const rows = await this.getRows({ selector: ':not(.detail-row)' });
-    if (!rows[rowIndex]) {
-      return null;
-    }
-    const cells = await rows[rowIndex].getCells({ columnName: 'Urls' });
-    if (!cells.length) {
-      return null;
-    }
-    return cells[0].getHarnessOrNull(
-      MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }),
-    );
+    const cell = await this.getUrlsCell(rowIndex);
+    return cell
+      ? cell.getHarnessOrNull(MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }))
+      : null;
   }
 
   /**
