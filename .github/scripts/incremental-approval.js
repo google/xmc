@@ -99,18 +99,20 @@ function extractDismissalContext(sortedEvents) {
     const reviewId =
       (event.review && (event.review.databaseId || event.review.id)) ||
       (event.dismissed_review && event.dismissed_review.review_id) ||
-      event.review_id ||
-      event.id;
+      event.review_id;
 
     if (!reviewId) {
       continue;
     }
 
+    const reviewIdStr = String(reviewId);
     const prevState =
       event.previousReviewState ||
       (event.dismissed_review && event.dismissed_review.state);
     if (prevState) {
-      dismissedReviewPreviousStates.set(reviewId, String(prevState).toUpperCase());
+      const upperState = String(prevState).toUpperCase();
+      dismissedReviewPreviousStates.set(reviewId, upperState);
+      dismissedReviewPreviousStates.set(reviewIdStr, upperState);
     }
 
     // Automatic stale push dismissals reference the new commit that triggered the dismissal
@@ -132,6 +134,7 @@ function extractDismissalContext(sortedEvents) {
     const isManual = !hasTriggerCommit || hasDismissalMessage;
     if (isManual) {
       manualDismissalIds.add(reviewId);
+      manualDismissalIds.add(reviewIdStr);
     }
   }
 
@@ -145,7 +148,7 @@ function extractDismissalContext(sortedEvents) {
  * @param {string} context.authorLower - Lowercased PR author username.
  * @param {Set<string|number>} context.manualDismissalIds - Manually dismissed review IDs.
  * @param {Map<string|number, string>} context.dismissedReviewPreviousStates - Pre-dismissal state map.
- * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string } | null}
+ * @returns {{ approver: string, state: string, approvedSha: string, submittedAt: string, isDismissed?: boolean } | null}
  */
 function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dismissedReviewPreviousStates }) {
   const isReview = event.event === 'reviewed' || event.__typename === 'PullRequestReview';
@@ -165,13 +168,26 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
   }
 
   const reviewId = event.databaseId || event.id || event.review_id;
-  if (reviewId && manualDismissalIds.has(reviewId)) {
-    return null;
+  const reviewIdStr = reviewId ? String(reviewId) : '';
+  const isManuallyDismissed = Boolean(
+    reviewId && (manualDismissalIds.has(reviewId) || manualDismissalIds.has(reviewIdStr))
+  );
+
+  if (isManuallyDismissed) {
+    return {
+      approver: reviewer,
+      state: 'DISMISSED',
+      isDismissed: true,
+      approvedSha: commitSha,
+      submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
+    };
   }
 
   let isDismissed = false;
   if (state === 'DISMISSED') {
-    const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
+    const prevState = reviewId
+      ? (dismissedReviewPreviousStates.get(reviewId) || dismissedReviewPreviousStates.get(reviewIdStr))
+      : null;
     if (prevState === 'APPROVED') {
       state = 'APPROVED';
       isDismissed = true;
@@ -684,6 +700,12 @@ const GRAPHQL_TIMELINE_QUERY = `query($owner: String!, $repo: String!, $prNumber
           }
           ... on ReviewDismissedEvent {
             previousReviewState
+            dismissalMessage
+            pullRequestCommit {
+              commit {
+                oid
+              }
+            }
             review {
               databaseId
             }
@@ -918,6 +940,7 @@ module.exports = {
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  GRAPHQL_TIMELINE_QUERY,
   fetchTimelineEvents,
   formatReapprovalReviewBody,
   run

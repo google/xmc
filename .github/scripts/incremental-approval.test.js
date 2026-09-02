@@ -35,6 +35,7 @@ const {
   evaluateIncrementalApproval,
   resolveCommitRanges,
   runGitRangeDiff,
+  GRAPHQL_TIMELINE_QUERY,
   formatReapprovalReviewBody
 } = require('./incremental-approval');
 
@@ -142,7 +143,8 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     state: 'approved',
     commit_id: 'sha1'
   }, context);
-  assert.strictEqual(manualDismissed, null);
+  assert.strictEqual(manualDismissed.state, 'DISMISSED');
+  assert.strictEqual(manualDismissed.isDismissed, true);
 
   // Stale dismissed with APPROVED previous state
   const staleApproved = parseTimelineReviewEvent({
@@ -400,6 +402,57 @@ test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL
   ];
   const result = findLatestApproval(reviews, 'charlie', timelineEvents);
   assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ignores manual dismissals without dismissal message when trigger commit is absent', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: null,
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('findLatestApproval ensures later manual dismissal overrides earlier stale approval by same reviewer', () => {
+  const reviews = [
+    { id: 101, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha1', submitted_at: '2026-08-25T10:00:00Z' },
+    { id: 102, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha2', submitted_at: '2026-08-25T12:00:00Z' }
+  ];
+  const timelineEvents = [
+    { id: 101, __typename: 'PullRequestReview', databaseId: 101, author: { login: 'alice' }, state: 'DISMISSED', commit: { oid: 'sha1' }, submittedAt: '2026-08-25T10:00:00Z' },
+    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', pullRequestCommit: { commit: { oid: 'sha2' } }, review: { databaseId: 101 }, createdAt: '2026-08-25T11:00:00Z' },
+    { id: 102, __typename: 'PullRequestReview', databaseId: 102, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha2' }, submittedAt: '2026-08-25T12:00:00Z' },
+    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', dismissalMessage: 'Security revocation', pullRequestCommit: null, review: { databaseId: 102 }, createdAt: '2026-08-25T13:00:00Z' }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
+test('GRAPHQL_TIMELINE_QUERY queries pullRequestCommit and dismissalMessage', () => {
+  assert.match(GRAPHQL_TIMELINE_QUERY, /pullRequestCommit/);
+  assert.match(GRAPHQL_TIMELINE_QUERY, /dismissalMessage/);
 });
 
 test('findLatestApproval ignores self-approval from PR author', () => {
