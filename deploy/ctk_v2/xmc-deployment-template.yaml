@@ -62,6 +62,12 @@ vars:
   # Target Kubernetes namespace for XMC services
   namespace: xmc
 
+  # Name of the GKE cluster the tooling talks to. Leave empty and it is derived as
+  # xmc-<deployment_name>-<environment>, which is what the blueprint names the cluster it
+  # creates. Set it when deploying onto a cluster that already exists and is named something
+  # else, or get-credentials and the Gateway API check look up a cluster that is not there.
+  gke_cluster_name: ""
+
   # Toggles public endpoints access on GKE Control Plane
   gcp_public_cidrs_access_enabled: false
 

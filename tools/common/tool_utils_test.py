@@ -381,6 +381,114 @@ class TestConfigLoader(unittest.TestCase):
         self.assertEqual(config, expected)
 
 
+class TestGkeClusterNameOverride(unittest.TestCase):
+    """Covers resolving the cluster name for clusters XMC did not create.
+
+    Every step that reaches the cluster by name -- get-credentials, the Gateway API check,
+    verification -- reads DeploymentConfig.gke_cluster. Deriving it from deployment_name and
+    environment only describes the cluster the blueprint creates, so installing onto an existing
+    cluster needs the derivation overridden rather than the name coincidentally matched.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.tmp_dir.name) / "test_config.yaml"
+        self.base_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="staging",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+        )
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def write_config(self, extra_vars: str = "") -> str:
+        """Writes a valid deployment config, optionally with extra lines under vars."""
+        self.config_path.write_text(
+            "vars:\n"
+            "  deployment_name: xmc-dev\n"
+            "  project_id: my-project\n"
+            "  environment: staging\n"
+            "  region: us-central1\n"
+            "  domain_name: example.com\n"
+            "  image_registry: us-central1-docker.pkg.dev/my-project/xmc\n"
+            "  image_tag: latest\n" + extra_vars,
+            encoding="utf-8",
+        )
+        return str(self.config_path)
+
+    def test_derives_the_blueprint_name_when_unset(self):
+        """The greenfield path must keep resolving the name the blueprint gives the cluster."""
+        self.assertEqual(self.base_config.gke_cluster, "xmc-xmc-dev-staging")
+
+    def test_override_replaces_the_derived_name(self):
+        overridden = replace(self.base_config, gke_cluster_name="platform-prod-usc1")
+
+        self.assertEqual(overridden.gke_cluster, "platform-prod-usc1")
+
+    def test_empty_override_falls_back_to_the_derived_name(self):
+        """An override left blank in the template means "unset", not "a cluster named ''"."""
+        overridden = replace(self.base_config, gke_cluster_name="")
+
+        self.assertEqual(overridden.gke_cluster, "xmc-xmc-dev-staging")
+
+    def test_override_loads_from_the_deployment_config(self):
+        config = load_and_validate_config(
+            self.write_config("  gke_cluster_name: platform-prod-usc1\n")
+        )
+
+        self.assertEqual(config.gke_cluster, "platform-prod-usc1")
+
+    def test_config_without_override_keeps_the_derived_name(self):
+        config = load_and_validate_config(self.write_config())
+
+        self.assertEqual(config.gke_cluster, "xmc-xmc-dev-staging")
+
+    @patch.dict(os.environ, {"XMC_GKE_CLUSTER_NAME": "from-environment"})
+    def test_environment_variable_overrides_the_config_file(self):
+        config = load_and_validate_config(self.write_config("  gke_cluster_name: from-yaml\n"))
+
+        self.assertEqual(config.gke_cluster, "from-environment")
+
+    def test_blank_override_in_the_config_is_ignored(self):
+        """The deployment template ships the key empty, which must not fail validation."""
+        config = load_and_validate_config(self.write_config('  gke_cluster_name: ""\n'))
+
+        self.assertEqual(config.gke_cluster, "xmc-xmc-dev-staging")
+
+    def test_malformed_override_is_rejected(self):
+        """Underscores are legal in deployment_name but not in a GKE cluster name."""
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(self.write_config("  gke_cluster_name: Bad_Cluster\n"))
+
+        self.assertIn("'gke_cluster_name' value 'Bad_Cluster' is invalid", str(cm.exception))
+
+    def test_override_at_the_length_limit_is_accepted(self):
+        name = "c" + "x" * 39
+
+        config = load_and_validate_config(self.write_config(f"  gke_cluster_name: {name}\n"))
+
+        self.assertEqual(config.gke_cluster, name)
+
+    def test_override_over_the_length_limit_is_rejected(self):
+        """GKE caps cluster names at 40 characters, so a longer one can name no cluster."""
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(self.write_config(f"  gke_cluster_name: {'c' * 41}\n"))
+
+        self.assertIn("'gke_cluster_name'", str(cm.exception))
+
+    def test_surrounding_whitespace_is_stripped_rather_than_rejected(self):
+        """The field is stored stripped, so validating it unstripped rejected what it accepts."""
+        config = load_and_validate_config(
+            self.write_config('  gke_cluster_name: "  platform-prod-usc1  "\n')
+        )
+
+        self.assertEqual(config.gke_cluster, "platform-prod-usc1")
+
+
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""
 

@@ -626,6 +626,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `image_registry` | **Yes** | - | Target Google Artifact Registry repository path for XMC images |
 | `image_tag` | No | `"latest"` | OCI container image tag to deploy (e.g. git commit hash or release version) |
 | `namespace` | No | `"xmc"` | Target Kubernetes namespace for services |
+| `gke_cluster_name` | No | `xmc-<deployment_name>-<environment>` | Name of the GKE cluster the tooling addresses. Set it when the cluster already exists under a different name. Overridable with `XMC_GKE_CLUSTER_NAME` |
 | `gcp_public_cidrs_access_enabled` | No | `false` | Toggles public endpoints on the GKE Control Plane |
 | `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases, Cloud Run) |
 | `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
