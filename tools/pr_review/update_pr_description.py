@@ -61,7 +61,13 @@ def _resolve_body_content(args) -> str | None:
                 f"Body file not found or is not a regular file: '{args.body_file}'",
                 "Ensure the specified body markdown file exists and is a regular file.",
             )
-        return body_path.read_text(encoding="utf-8")
+        try:
+            return body_path.read_text(encoding="utf-8")
+        except OSError as e:
+            raise HandledError(
+                f"Failed to read body file '{args.body_file}': {e}",
+                "Ensure you have read permissions for the specified file and it is valid UTF-8.",
+            ) from e
     if getattr(args, "body", None) is not None:
         return args.body
     return None
@@ -75,7 +81,7 @@ def update_pr_description(args):
     pull_number = parsed["pull_number"]
 
     payload: dict[str, str] = {}
-    if getattr(args, "title", None):
+    if getattr(args, "title", None) is not None:
         payload["title"] = args.title
 
     body_content = _resolve_body_content(args)

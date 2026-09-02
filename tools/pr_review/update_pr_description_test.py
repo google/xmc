@@ -124,6 +124,45 @@ class TestUpdatePRDescription(unittest.TestCase):
                 user_agent="XMC-PR-Updater-Agent",
             )
 
+    @patch("pathlib.Path.read_text")
+    @patch("pathlib.Path.is_file")
+    def test_update_pr_description_body_file_read_error(self, mock_is_file, mock_read_text):
+        """Test update_pr_description raises HandledError when reading body file fails."""
+        mock_is_file.return_value = True
+        mock_read_text.side_effect = OSError("Permission denied")
+
+        args = MagicMock()
+        args.pr = "148"
+        args.title = None
+        args.body = None
+        args.body_file = "/path/to/protected_file.md"
+
+        with self.assertRaises(HandledError) as ctx:
+            update_pr_description(args)
+        self.assertIn("Failed to read body file", ctx.exception.message)
+        self.assertIn("Permission denied", ctx.exception.message)
+
+    @patch("tools.pr_review.update_pr_description.call_github_api")
+    def test_update_pr_description_empty_title_success(self, mock_call):
+        """Test update_pr_description allows explicitly passing an empty title."""
+        mock_call.return_value = {"html_url": "https://github.com/google/xmc/pull/148"}
+
+        args = MagicMock()
+        args.pr = "148"
+        args.title = ""
+        args.body = None
+        args.body_file = None
+
+        res = update_pr_description(args)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["title"], "")
+        mock_call.assert_called_once_with(
+            "/repos/google/xmc/pulls/148",
+            method="PATCH",
+            payload={"title": ""},
+            user_agent="XMC-PR-Updater-Agent",
+        )
+
     @patch("tools.pr_review.update_pr_description.call_github_api")
     def test_update_pr_description_title_only_success(self, mock_call):
         """Test update_pr_description updates title only."""
