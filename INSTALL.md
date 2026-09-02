@@ -303,6 +303,32 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
 1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
 
+### Bringing your own Redis
+
+By default the blueprint provisions a Memorystore instance, attaches it to the VPC it created, and
+points the application at it. A Memorystore instance accepts traffic only from its single
+authorized network, and Private Service Access peering is not transitive, so that instance is
+unreachable from a cluster on any other network.
+
+To point the application at an instance you manage, set the host in your overrides file and turn
+off provisioning:
+
+```yaml
+vars:
+  deploy_redis: false
+  external_redis_host: "10.20.0.3"
+  external_redis_port: "6379"
+  external_redis_auth_string: "YOUR_REDIS_AUTH_STRING"
+```
+
+`external_redis_host` takes precedence whenever it is set, so an existing deployment can be moved
+onto a different instance without tearing the provisioned one down first. Setting
+`deploy_redis: false` without an `external_redis_host` now fails the plan with an explanatory
+error, rather than installing a release whose `redisAddr` is `:`.
+
+The instance must be reachable from the cluster's pod network: the actuator, the experiment state
+server and the health service all connect to it.
+
 ---
 
 ## Approach 3: Terraform and Helm Directly (Hands-on)
@@ -607,4 +633,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
+| `external_redis_host` | No | `""` | Host of a Redis instance you provide. Overrides the provisioned one when set |
+| `external_redis_port` | No | `"6379"` | Port of the Redis instance you provide. Read only when `external_redis_host` is set |
+| `external_redis_auth_string` | No | `""` | AUTH string of the Redis instance you provide. Leave empty when AUTH is disabled |
 | `verticalPodAutoscaler.enabled` (Helm) | No | `true` | Renders the actuator and reconciler `VerticalPodAutoscaler` objects. Set `false` on clusters without the `autoscaling.k8s.io` CRDs |

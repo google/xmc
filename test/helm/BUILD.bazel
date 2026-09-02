@@ -94,6 +94,28 @@ py_test(
     deps = [":chart_test_lib"],
 )
 
+# Reads only the blueprint and the module beside it, so unlike its neighbours it needs no helm
+# binary and no chart: chart_test_lib is imported for find_repo_file alone. It stays tagged the
+# same way to keep the CI job that runs this package uniform.
+py_test(
+    name = "redis_endpoint_wiring_test",
+    srcs = ["redis_endpoint_wiring_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/ctk_v2:redis_endpoint_module",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "redis_endpoint_wiring_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
 py_test(
     name = "vertical_pod_autoscaler_test",
     srcs = ["vertical_pod_autoscaler_test.py"],
