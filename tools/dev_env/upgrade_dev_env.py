@@ -44,6 +44,11 @@ from tools.common.tool_utils import (  # noqa: E402
     log_success,
     run_command,
 )
+from tools.dev_env.blueprint_selection import (  # noqa: E402
+    DEFAULT_BLUEPRINT_PATH,
+    record_blueprint,
+    resolve_blueprint,
+)
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
@@ -55,6 +60,7 @@ class UpgradeConfig(DeploymentConfig):
 
     config_path: str
     run_migrations: bool = False
+    blueprint_path: str = DEFAULT_BLUEPRINT_PATH
 
 
 def error_exit(msg: str, exit_code: int = 1) -> None:
@@ -100,6 +106,14 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
+    parser.add_argument(
+        "--blueprint",
+        help=(
+            "Path to the Cluster Toolkit blueprint to re-compile. Defaults to the blueprint this "
+            f"deployment was compiled from, or {DEFAULT_BLUEPRINT_PATH} when it predates that "
+            "being recorded."
+        ),
+    )
 
     parsed = parser.parse_args(args)
 
@@ -112,12 +126,15 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def load_config(config_file: str, run_migrations: bool = False) -> UpgradeConfig:
+def load_config(
+    config_file: str, run_migrations: bool = False, blueprint: str | None = None
+) -> UpgradeConfig:
     """Loads YAML config file and merges with environment variable overrides.
 
     Args:
       config_file: Target YAML configuration file path string.
       run_migrations: Boolean flag to enable running migrations.
+      blueprint: Blueprint to re-compile, overriding the one the deployment was compiled from.
 
     Returns:
       Populated UpgradeConfig instance.
@@ -132,6 +149,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> UpgradeConfig
     return UpgradeConfig(
         config_path=config_file,
         run_migrations=run_migrations,
+        blueprint_path=resolve_blueprint(xmc_config.deployment_name, blueprint),
         **asdict(xmc_config),
     )
 
@@ -327,12 +345,15 @@ def step_app(config: UpgradeConfig) -> None:
             " has been deployed first."
         )
 
-    log_info("Re-compiling XMC blueprint with latest variables and templates...")
+    log_info(
+        f"Re-compiling XMC blueprint '{config.blueprint_path}' with latest variables and"
+        " templates..."
+    )
     run_command(
         [
             "./cluster-toolkit/gcluster",
             "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
+            config.blueprint_path,
             "-d",
             config.config_path,
             "-o",
@@ -343,6 +364,7 @@ def step_app(config: UpgradeConfig) -> None:
             "--force",
         ]
     )
+    record_blueprint(config.deployment_name, config.blueprint_path)
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
@@ -496,7 +518,8 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
             print(f"\n{RED}Error executing step '{args.only}': {e}{NC}")
             print(
                 "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                f" --config {config.config_path} --start-from {args.only}"
+                f" --config {config.config_path} --blueprint {config.blueprint_path}"
+                f" --start-from {args.only}"
             )
             sys.exit(1)
         return
@@ -512,7 +535,8 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
                 print(f"\n{RED}Error executing step '{step}': {e}{NC}")
                 print(
                     "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                    f" --config {config.config_path} --start-from {step}"
+                    f" --config {config.config_path} --blueprint {config.blueprint_path}"
+                    f" --start-from {step}"
                 )
                 sys.exit(1)
 
@@ -525,7 +549,7 @@ def run_upgrade(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments.
     """
-    config = load_config(args.config, run_migrations=args.run_migrations)
+    config = load_config(args.config, run_migrations=args.run_migrations, blueprint=args.blueprint)
     run_pipeline(args, config, STEPS)
 
 

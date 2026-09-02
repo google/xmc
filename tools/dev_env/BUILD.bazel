@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__init__.py",
+    "blueprint_selection.py",
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
@@ -27,6 +28,21 @@ exports_files([
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "blueprint_selection_lib",
+    srcs = ["blueprint_selection.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "blueprint_selection_test",
+    srcs = ["blueprint_selection_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":blueprint_selection_lib",
+    ],
+)
 
 py_library(
     name = "kind_manager_lib",
@@ -131,6 +147,7 @@ py_library(
     srcs = ["deploy_dev_env.py"],
     imports = ["../.."],
     deps = [
+        ":blueprint_selection_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -160,6 +177,7 @@ py_library(
     srcs = ["upgrade_dev_env.py"],
     imports = ["../.."],
     deps = [
+        ":blueprint_selection_lib",
         "//tools/common:tool_utils",
     ],
 )

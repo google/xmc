@@ -44,6 +44,11 @@ from tools.common.tool_utils import (  # noqa: E402
     log_success,
     run_command,
 )
+from tools.dev_env.blueprint_selection import (  # noqa: E402
+    DEFAULT_BLUEPRINT_PATH,
+    record_blueprint,
+    resolve_blueprint,
+)
 
 # ANSI Color Codes
 BOLD = "\033[1m"
@@ -96,6 +101,13 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="GCP Project ID hosting the DNS zone (Required)",
     )
     parser.add_argument("--dns-zone", required=True, help="Cloud DNS Managed Zone name (Required)")
+    parser.add_argument(
+        "--blueprint",
+        help=(
+            "Path to the Cluster Toolkit blueprint to compile. Defaults to the blueprint this "
+            f"deployment was last compiled from, or {DEFAULT_BLUEPRINT_PATH} for a new one."
+        ),
+    )
     parser.add_argument(
         "--start-from",
         "-s",
@@ -451,21 +463,27 @@ def step_compile(
     dns_project: str,
     dns_zone: str,
     config_path: str,
+    blueprint: str | None = None,
 ) -> None:
     """Compiles the XMC blueprint using gcluster.
+
+    The blueprint is recorded alongside the compiled deployment so that a later upgrade, which
+    re-compiles before applying, does not silently fall back to the greenfield blueprint.
 
     Args:
         config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
         config_path: Path to the configuration file.
+        blueprint: Blueprint to compile, overriding the recorded and default choices.
     """
-    log_info("Compiling XMC blueprint using gcluster...")
+    blueprint_path = resolve_blueprint(config.deployment_name, blueprint)
+    log_info(f"Compiling XMC blueprint '{blueprint_path}' using gcluster...")
     run_command(
         [
             "./cluster-toolkit/gcluster",
             "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
+            blueprint_path,
             "-d",
             config_path,
             "-o",
@@ -476,6 +494,7 @@ def step_compile(
             "--force",
         ]
     )
+    record_blueprint(config.deployment_name, blueprint_path)
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
@@ -766,7 +785,9 @@ def run_deployment(args: argparse.Namespace) -> None:
     # Define step mapping
     step_map = {
         "check": lambda: step_check(config, args.dns_project, args.dns_zone),
-        "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
+        "compile": lambda: step_compile(
+            config, args.dns_project, args.dns_zone, args.config, args.blueprint
+        ),
         "images": lambda: step_images(config),
         "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
         "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
@@ -796,6 +817,8 @@ def run_deployment(args: argparse.Namespace) -> None:
         dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
         # Suggest resume command
         resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
+        if args.blueprint:
+            resume_cmd += f"--blueprint {args.blueprint} "
         if args.only:
             resume_cmd += f"--only {current_step}"
         else:

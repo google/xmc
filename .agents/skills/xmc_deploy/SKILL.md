@@ -129,6 +129,8 @@ Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v
 ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ```
 
+`deploy/ctk_v2/xmanager-cloud.yaml` is the default blueprint. If the user asks for a different one, substitute its path here, and pass the same path as `--blueprint` when driving the deployment through `tools/dev_env/dev_env.py gke-deploy` so the choice is recorded for later upgrades.
+
 Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` inside `ctk-out/` containing the Terraform workspaces.
 
 ### Step 2: Enable APIs (`apis` group)

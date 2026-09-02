@@ -110,7 +110,9 @@ If no migrations were pending, or if the user approved running migrations:
     ```
 
 > [!NOTE]
-> During the `app` step, `gke-upgrade` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
+> During the `app` step, `gke-upgrade` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create <blueprint> -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
+>
+> The blueprint re-compiled is the one recorded in `ctk-out/<deployment_name>/.xmc-blueprint` when the deployment was compiled, defaulting to `deploy/ctk_v2/xmanager-cloud.yaml` when there is no record. Do not pass `--blueprint` unless the user asks for a specific blueprint or the record is missing on a deployment that was not built from the default — re-compiling a deployment from the wrong blueprint plans the creation of infrastructure it is already using.
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:

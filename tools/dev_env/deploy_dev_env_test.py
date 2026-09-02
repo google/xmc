@@ -68,6 +68,22 @@ image_tag: latest
         self.assertEqual(parsed.dns_zone, "z")
         self.assertEqual(parsed.start_from, "compile")
         self.assertIsNone(parsed.only)
+        self.assertIsNone(parsed.blueprint)
+
+    def test_parse_args_accepts_blueprint(self):
+        parsed = deploy_dev_env.parse_args(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--blueprint",
+                "deploy/ctk_v2/other-blueprint.yaml",
+            ]
+        )
+        self.assertEqual(parsed.blueprint, "deploy/ctk_v2/other-blueprint.yaml")
 
     def test_parse_args_mutual_exclusion(self):
         args = [
@@ -675,8 +691,10 @@ image_tag: latest
 
     # --- Individual Step Tests ---
 
+    @patch("tools.dev_env.blueprint_selection.recorded_blueprint", return_value=None)
+    @patch("tools.dev_env.deploy_dev_env.record_blueprint")
     @patch("tools.dev_env.deploy_dev_env.run_command")
-    def test_step_compile(self, mock_run):
+    def test_step_compile(self, mock_run, _mock_record, _mock_recorded):
         deploy_dev_env.step_compile(
             self.valid_config,
             self.dns_project,
@@ -698,6 +716,37 @@ image_tag: latest
                 "--force",
             ]
         )
+
+    @patch("tools.dev_env.deploy_dev_env.record_blueprint")
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_compile_uses_requested_blueprint(self, mock_run, _mock_record):
+        deploy_dev_env.step_compile(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+            "my-config.yaml",
+            "deploy/ctk_v2/other-blueprint.yaml",
+        )
+        self.assertEqual(
+            mock_run.call_args[0][0][:3],
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/other-blueprint.yaml",
+            ],
+        )
+
+    @patch("tools.dev_env.deploy_dev_env.record_blueprint")
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_compile_records_compiled_blueprint(self, _mock_run, mock_record):
+        deploy_dev_env.step_compile(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+            "my-config.yaml",
+            "deploy/ctk_v2/other-blueprint.yaml",
+        )
+        mock_record.assert_called_once_with("xmc-dev", "deploy/ctk_v2/other-blueprint.yaml")
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")
