@@ -224,11 +224,12 @@ def main() -> int:
 
     files_to_check: list[Path] = []
     if args.files:
-        files_to_check.extend(
-            f
-            for f in args.files
-            if f.name.endswith("_test.go") and not is_excluded(f) and f.exists()
-        )
+        for f in args.files:
+            if f.exists() and not is_excluded(f):
+                if f.is_dir():
+                    files_to_check.extend(find_test_files(f))
+                elif f.name.endswith("_test.go"):
+                    files_to_check.append(f)
     else:
         files_to_check = find_test_files(Path.cwd())
 

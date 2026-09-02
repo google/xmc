@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.check_go_determinism import check_file, is_excluded
+from tools.check_go_determinism import check_file, find_test_files, is_excluded
 
 
 class CheckGoDeterminismTest(unittest.TestCase):
@@ -285,6 +285,14 @@ func TestStruct(t *testing.T) {
         )
         violations = check_file(file_path)
         self.assertEqual(violations, [])
+
+    def test_directory_argument_discovers_nested_tests(self) -> None:
+        sub_dir = self.test_dir / "nested"
+        sub_dir.mkdir()
+        test_file = sub_dir / "nested_test.go"
+        test_file.write_text('package main\n\nimport "testing"\n', encoding="utf-8")
+        found = find_test_files(self.test_dir)
+        self.assertIn(test_file, found)
 
     def test_excluded_directories(self) -> None:
         self.assertTrue(is_excluded(Path("vendor/pkg/foo_test.go")))

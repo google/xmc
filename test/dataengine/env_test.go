@@ -38,20 +38,15 @@ INVALID_LINE_WITHOUT_EQUALS
 	// Preset one env var to ensure existing vars are not overwritten
 	t.Setenv("TEST_CLICKHOUSE_HOST", "existing-host")
 
-	origPort, portExists := os.LookupEnv("TEST_CLICKHOUSE_PORT")
-	origUser, userExists := os.LookupEnv("TEST_CLICKHOUSE_USER")
-	t.Cleanup(func() {
-		if portExists {
-			_ = os.Setenv("TEST_CLICKHOUSE_PORT", origPort) // nolint:determinism // restoring original pre-existing env state
+	// Ensure port and user env vars are backed up and restored via t.Setenv lifecycle
+	for _, envVar := range []string{"TEST_CLICKHOUSE_PORT", "TEST_CLICKHOUSE_USER"} {
+		if val, ok := os.LookupEnv(envVar); ok {
+			t.Setenv(envVar, val)
 		} else {
-			_ = os.Unsetenv("TEST_CLICKHOUSE_PORT")
+			t.Setenv(envVar, "")
+			_ = os.Unsetenv(envVar)
 		}
-		if userExists {
-			_ = os.Setenv("TEST_CLICKHOUSE_USER", origUser) // nolint:determinism // restoring original pre-existing env state
-		} else {
-			_ = os.Unsetenv("TEST_CLICKHOUSE_USER")
-		}
-	})
+	}
 
 	if err := LoadEnvFile(envPath); err != nil {
 		t.Fatalf("LoadEnvFile failed: %v", err)
