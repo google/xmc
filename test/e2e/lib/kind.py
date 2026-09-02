@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
+import time
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
@@ -74,16 +76,41 @@ class KindClusterManager:
         """Provisions KinD cluster and configures kubectl context."""
         manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
         kind_config = os.path.join(manifests_dir, "kind_config.yaml")
-        run_cmd(
-            [
-                self.cfg.kind_bin,
-                "create",
-                "cluster",
-                "--name",
-                self.cfg.cluster_name,
-                f"--config={kind_config}",
-            ]
-        )
+        base_cmd = [
+            self.cfg.kind_bin,
+            "create",
+            "cluster",
+            "--name",
+            self.cfg.cluster_name,
+            f"--config={kind_config}",
+        ]
+        if self.cfg.kind_node_image:
+            logger.info(
+                "Attempting cluster creation with custom KinD node image: %s",
+                self.cfg.kind_node_image,
+            )
+            try:
+                run_cmd(base_cmd + [f"--image={self.cfg.kind_node_image}"])
+            except Exception as e:
+                logger.warning(
+                    "Custom KinD node image %s failed to load (%s). Cleaning up stale cluster state and falling back to upstream default...",
+                    self.cfg.kind_node_image,
+                    e,
+                )
+                run_cmd(
+                    [
+                        self.cfg.kind_bin,
+                        "delete",
+                        "cluster",
+                        "--name",
+                        self.cfg.cluster_name,
+                    ],
+                    check=False,
+                )
+                run_cmd(base_cmd)
+        else:
+            run_cmd(base_cmd)
+
         run_cmd(["kubectl", "config", "use-context", f"kind-{self.cfg.cluster_name}"])
         logger.info("Creating namespace 'xmc'...")
         run_cmd(["kubectl", "create", "namespace", "xmc"])
@@ -197,21 +224,67 @@ class KindClusterManager:
             cmd.extend(["-f", os.path.join(manifests_dir, manifest)])
         run_cmd(cmd)
 
+    def _load_single_image(self, img: str) -> None:
+        """Loads a single image into KinD with exponential backoff retry."""
+        logger.info("[KinD] Loading image %s...", img)
+        max_attempts = 3
+        backoff_seconds = 2.0
+        for attempt in range(1, max_attempts + 1):
+            try:
+                run_cmd(
+                    [
+                        self.cfg.kind_bin,
+                        "load",
+                        "docker-image",
+                        img,
+                        "--name",
+                        self.cfg.cluster_name,
+                    ],
+                    timeout=180.0,
+                )
+                logger.info("[KinD] Successfully loaded image %s", img)
+                return
+            except Exception as e:
+                if attempt == max_attempts:
+                    logger.error(
+                        "[KinD] Failed to load image %s after %d attempts: %s",
+                        img,
+                        max_attempts,
+                        e,
+                    )
+                    raise
+                logger.warning(
+                    "[KinD] Image %s load failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                    img,
+                    attempt,
+                    max_attempts,
+                    e,
+                    backoff_seconds,
+                )
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2.0
+
     def load_images(self, images: list[str]) -> None:
-        """Loads Docker images into KinD nodes."""
+        """Loads Docker images into KinD nodes concurrently with bounded worker pool."""
         if not images:
             return
-        logger.info("=== [KinD] Loading container images into cluster ===")
-        run_cmd(
-            [
-                self.cfg.kind_bin,
-                "load",
-                "docker-image",
-                *images,
-                "--name",
-                self.cfg.cluster_name,
-            ]
+        workers = max(1, min(self.cfg.image_load_workers, len(images)))
+        logger.info(
+            "=== [KinD] Loading %d container images into cluster (concurrency: %d workers) ===",
+            len(images),
+            workers,
         )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(self._load_single_image, img): img for img in images}
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+            except Exception:
+                logger.error(
+                    "[KinD] Image loading encountered an error. Cancelling pending loads..."
+                )
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""

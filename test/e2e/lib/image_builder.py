@@ -47,6 +47,11 @@ class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
     _SERVICES = _get_service_specs()
+    _EXTRA_BUILD_TARGETS = [
+        "//api/protos/experiment:experiment_messages_descriptor",
+        "//api/protos/xid:xid_messages_descriptor",
+        "//internal/storage/spanner/migrations:migrations",
+    ]
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
@@ -214,9 +219,11 @@ class ImageBuilder:
         # Step 1: Pre-compile Angular UI bundle on the host (if Node.js is present).
         self._maybe_precompile_ui()
 
-        # Step 2: Build all backend services and UI OCI image tarballs in parallel.
-        logger.info("=== [Bazel] Building OCI images in parallel ===")
-        bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES]
+        # Step 2: Build all backend services, prerequisites, and UI OCI image tarballs in parallel.
+        logger.info("=== [Bazel] Building OCI images and test prerequisites in parallel ===")
+        bazel_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES
+        ] + self._EXTRA_BUILD_TARGETS
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
         bazel_bin_res = run_cmd(

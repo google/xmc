@@ -34,7 +34,42 @@ class PlaywrightTestExecutor:
         self.venv_dir = os.path.join(self.cfg.workspace_root, ".venv_e2e")
 
     def setup_venv(self) -> str:
-        """Sets up Python virtual environment and installs dependencies."""
+        """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
+        if (
+            os.environ.get("GITHUB_ACTIONS") == "true"
+            or os.environ.get("XMC_USE_PREBAKED_ENV") == "true"
+            or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        ):
+            try:
+                import playwright  # noqa: F401
+                import requests  # noqa: F401
+
+                browser_paths = []
+                env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+                if env_path:
+                    browser_paths.append(env_path)
+                else:
+                    browser_paths.extend(
+                        [
+                            "/ms-playwright",
+                            os.path.expanduser("~/.cache/ms-playwright"),
+                            os.path.expanduser("~/Library/Caches/ms-playwright"),
+                            os.path.expanduser("~/AppData/Local/ms-playwright"),
+                        ]
+                    )
+
+                for path in browser_paths:
+                    if os.path.exists(path) and os.path.isdir(path) and os.listdir(path):
+                        logger.info(
+                            "Using pre-baked Playwright environment at %s (0s setup).",
+                            sys.executable,
+                        )
+                        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+                            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
+                        return sys.executable
+            except Exception:
+                pass
+
         python_bin = sys.executable
         if not os.path.exists(os.path.join(self.venv_dir, "bin", "python")):
             logger.info("Creating Python virtualenv at %s...", self.venv_dir)
@@ -71,7 +106,7 @@ class PlaywrightTestExecutor:
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (
-            f"{self.cfg.workspace_root}:{existing_pythonpath}"
+            f"{self.cfg.workspace_root}{os.pathsep}{existing_pythonpath}"
             if existing_pythonpath
             else self.cfg.workspace_root
         )

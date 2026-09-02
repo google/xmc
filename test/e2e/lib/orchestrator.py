@@ -56,15 +56,24 @@ class E2EOrchestrator:
             yield
         finally:
             logger.info("=== Executing Teardown ===")
-            self.kind.teardown()
-            if not self.cfg.keep_cluster:
-                self.spanner.teardown()
-            else:
-                logger.info(
-                    "[Spanner] Preserving ephemeral databases %s and %s for debugging.",
-                    self.cfg.ess_db,
-                    self.cfg.xid_db,
-                )
+            try:
+                if not self.cfg.keep_cluster:
+                    self.kind.teardown()
+                else:
+                    logger.info("Preserving KinD cluster %s for debugging.", self.cfg.cluster_name)
+            except Exception as e:
+                logger.warning("Kind teardown failed: %s", e)
+            try:
+                if not self.cfg.keep_cluster:
+                    self.spanner.teardown()
+                else:
+                    logger.info(
+                        "[Spanner] Preserving ephemeral databases %s and %s for debugging.",
+                        self.cfg.ess_db,
+                        self.cfg.xid_db,
+                    )
+            except Exception as e:
+                logger.warning("Spanner teardown failed: %s", e)
             if not self.cfg.keep_cluster and os.path.exists(self.cfg.temp_dir):
                 logger.info("Cleaning up temporary directory %s...", self.cfg.temp_dir)
                 shutil.rmtree(self.cfg.temp_dir, ignore_errors=True)
@@ -90,18 +99,24 @@ class E2EOrchestrator:
         signal.signal(signal.SIGTERM, _signal_handler)
 
         with self.managed_lifecycle():
-            logger.info("=== Provisioning Ephemeral Environment Concurrently ===")
+            logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                spanner_future = executor.submit(self.spanner.setup)
+                builder_future = executor.submit(self.builder.build_all)
                 kind_future = executor.submit(self.kind.setup)
 
-                spanner_future.result()
+                images = builder_future.result()
                 kind_future.result()
 
-            logger.info("=== Building OCI Container Images ===")
-            images = self.builder.build_all()
+            logger.info(
+                "=== Phase 2: Loading Container Images & Provisioning Spanner Databases ==="
+            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                load_future = executor.submit(self.kind.load_images, images)
+                spanner_future = executor.submit(self.spanner.setup)
 
-            self.kind.load_images(images)
+                load_future.result()
+                spanner_future.result()
+
             self.helm.deploy()
             self.tester.execute()
 
