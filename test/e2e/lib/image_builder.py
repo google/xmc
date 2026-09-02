@@ -75,7 +75,7 @@ class ImageBuilder:
 
     def _maybe_precompile_ui(self) -> None:
         """Pre-compiles Angular UI on host if Node.js and npm are available."""
-        if not (shutil.which("node") and shutil.which("npm")):
+        if not (shutil.which("node") and shutil.which("npm") and shutil.which("npx")):
             return
 
         ui_dir = os.path.join(self.cfg.workspace_root, "cmd", "ui")

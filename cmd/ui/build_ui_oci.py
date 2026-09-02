@@ -101,7 +101,7 @@ def main():
         os.path.join(dist_browser_src, "index.html")
     )
 
-    with tempfile.TemporaryDirectory() as temp_build_dir:
+    with tempfile.TemporaryDirectory(dir=ui_src_dir) as temp_build_dir:
         dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
 
         if has_prebuilt_dist:

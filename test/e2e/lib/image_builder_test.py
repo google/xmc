@@ -232,6 +232,23 @@ class TestImageBuilder(unittest.TestCase):
         builder._maybe_precompile_ui()
         mock_run.assert_not_called()
 
+    @patch("shutil.which")
+    @patch("test.e2e.lib.image_builder.run_cmd")
+    def test_maybe_precompile_ui_skips_when_npx_missing(self, mock_run, mock_which):
+        # node and npm exist, but npx is missing
+        mock_which.side_effect = lambda tool: "/usr/bin/" + tool if tool != "npx" else None
+        cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        builder = ImageBuilder(cfg)
+        builder._maybe_precompile_ui()
+        mock_run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
