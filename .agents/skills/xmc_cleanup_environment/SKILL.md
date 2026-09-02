@@ -28,9 +28,10 @@ Before starting the teardown, verify you are operating on the correct environmen
 2.  **Determine What the Deployment Owns** (before anything else destructive: it decides what the rest of the workflow may touch, including the wording of the confirmation below):
     *   Read the blueprint the deployment was compiled from:
         ```bash
-        cat ctk-out/<deployment_name>/.xmc-blueprint
+        cat ctk-out/<deployment_name>/.xmc-blueprint 2>/dev/null || echo "NO BLUEPRINT RECORD"
         ```
-    *   If that file is absent (deployments compiled before it existed), inspect the compiled deployment instead:
+        A deployment compiled before this record existed has no such file. That is an expected outcome of this step, not a failed command; fall through to the next bullet.
+    *   If that file is absent, inspect the compiled deployment instead:
         ```bash
         grep -rlq "pre-existing-gke-cluster" ctk-out/<deployment_name> && echo "EXISTING INFRASTRUCTURE"
         ```
@@ -140,7 +141,7 @@ If the destroy gets stuck on the `xmc_app` group (often due to Helm release dele
 > **This scenario applies only to a cluster the deployment created.** If *Determine What the Deployment Owns* in Section 1 identified the cluster as pre-existing, deleting it would destroy infrastructure this deployment does not own and may take unrelated workloads down with it. There is also nothing here to fix: the deployment created no node pool and no subnetwork, so neither can be blocking its teardown. Do not run the command below — report the failure and its cause to the user instead.
 
 If the destroy fails because GKE node pools are stuck deleting (which prevents subnetwork deletion):
-1.  **Confirm the cluster belongs to this deployment**. Re-check `ctk-out/<deployment_name>/.xmc-blueprint`; the command below is permitted only when the deployment was compiled from `xmanager-cloud.yaml`. If in any doubt, stop and ask the user.
+1.  **Confirm the cluster belongs to this deployment**. Re-check `ctk-out/<deployment_name>/.xmc-blueprint`, or, on a deployment that predates that record, the `grep` fallback in *Determine What the Deployment Owns* (Section 1). The command below is permitted only when the deployment was compiled from `xmanager-cloud.yaml`. If in any doubt, stop and ask the user.
 2.  **Force delete the GKE cluster** manually:
     ```bash
     gcloud container clusters delete xmc-<deployment_name>-<environment> --location=<location> --project=<project_id> --quiet
