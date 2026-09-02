@@ -9,7 +9,6 @@ compat_go_library(
     importpath = "xmanager_cloud/kubernetes/common/jobsetutil",
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/log",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
     ],
