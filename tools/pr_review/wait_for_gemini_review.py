@@ -46,9 +46,10 @@ def get_latest_review_trigger_time(owner: str, repo: str, pr_number: int) -> str
         [
             "gh",
             "api",
-            f"repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100&sort=created&direction=desc",
+            "--paginate",
+            f"repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100",
             "--jq",
-            '[.[] | select(.body | test("/gemini review"))] | .[0].created_at // empty',
+            '[.[] | select(.body | test("/gemini review"))] | .[-1].created_at // empty',
         ],
         timeout=30,
     )

@@ -203,35 +203,28 @@ class LocalRunner:
             while True:
                 time.sleep(interval)
                 current_sig = self._get_workspace_signature()
-                if current_sig and current_sig != last_sig:
+                if current_sig == last_sig:
+                    continue
+
+                if current_sig:
                     time.sleep(0.5)  # debounce rapid filesystem events
                     current_sig = self._get_workspace_signature()
-                    if not current_sig:
-                        if last_sig:
-                            delta_files = list(last_sig.keys())
-                            try:
-                                self._reload_once(services=services, changed_files=delta_files)
-                            except Exception as e:
-                                log_error(f"Reload failed: {e}. Watching for next save...")
-                        last_sig = {}
-                        continue
+
+                if not current_sig:
+                    changed_files = list(last_sig.keys())
+                else:
                     delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
                     deleted_files = [f for f in last_sig if f not in current_sig]
-                    changed_delta = sorted(set(delta_files + deleted_files))
-                    _LOGGER.debug("Watch detected file delta: %s", changed_delta)
-                    if changed_delta:
-                        try:
-                            self._reload_once(services=services, changed_files=changed_delta)
-                        except Exception as e:
-                            log_error(f"Reload failed: {e}. Watching for next save...")
-                    last_sig = current_sig
-                elif not current_sig and last_sig:
-                    delta_files = list(last_sig.keys())
+                    changed_files = sorted(set(delta_files + deleted_files))
+
+                _LOGGER.debug("Watch detected file delta: %s", changed_files)
+                if changed_files:
                     try:
-                        self._reload_once(services=services, changed_files=delta_files)
+                        self._reload_once(services=services, changed_files=changed_files)
                     except Exception as e:
                         log_error(f"Reload failed: {e}. Watching for next save...")
-                    last_sig = {}
+
+                last_sig = current_sig
         except KeyboardInterrupt:
             log_info("\n🛑 Stopped watching workspace.")
 
