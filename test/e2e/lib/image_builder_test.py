@@ -127,7 +127,7 @@ class TestImageBuilder(unittest.TestCase):
     ):
         builder = ImageBuilder(self.cfg)
         builder._maybe_precompile_ui()
-        mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist", ignore_errors=True)
+        mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist")
 
     @patch("os.path.getmtime")
     @patch("os.walk")
