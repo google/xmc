@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
@@ -386,5 +387,21 @@ py_test(
     deps = [
         ":analyze_diff_size_lib",
         ":tool_utils",
+    ],
+)
+
+py_binary(
+    name = "check_go_determinism",
+    srcs = ["check_go_determinism.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "check_go_determinism_test",
+    srcs = ["check_go_determinism_test.py"],
+    imports = ["."],
+    deps = [
+        ":check_go_determinism",
     ],
 )

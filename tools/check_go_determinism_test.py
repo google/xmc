@@ -191,6 +191,101 @@ func TestString(t *testing.T) {
         violations = check_file(file_path)
         self.assertEqual(violations, [])
 
+    def test_rune_literal_does_not_mask_subsequent_code(self) -> None:
+        file_path = self.test_dir / "rune_test.go"
+        file_path.write_text(
+            """package main
+
+import (
+	"os"
+	"testing"
+)
+
+func TestRune(t *testing.T) {
+	q := '"'
+	os.Setenv("FOO", "BAR")
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("os.Setenv used in test", violations[0])
+
+    def test_operand_ordering_sleep_flags_violation(self) -> None:
+        file_path = self.test_dir / "reverse_operand_test.go"
+        file_path.write_text(
+            """package main
+
+import (
+	"testing"
+	"time"
+)
+
+func TestReverse(t *testing.T) {
+	time.Sleep(time.Second * 5)
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("arbitrary second-level time.Sleep in test", violations[0])
+
+    def test_multiline_inline_nolint_bypasses(self) -> None:
+        file_path = self.test_dir / "multiline_inline_test.go"
+        file_path.write_text(
+            """package main
+
+import (
+	"testing"
+	"time"
+)
+
+func TestMultilineInline(t *testing.T) {
+	time.Sleep(
+		15 * time.Second, // nolint:sleep
+	)
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(violations, [])
+
+    def test_struct_member_setenv_not_flagged(self) -> None:
+        file_path = self.test_dir / "struct_member_test.go"
+        file_path.write_text(
+            """package main
+
+import "testing"
+
+type MockOS struct{}
+
+func (m *MockOS) Setenv(k, v string) {}
+
+func TestStruct(t *testing.T) {
+	mock := &MockOS{}
+	mock.Setenv("K", "V")
+}
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(violations, [])
+
+    def test_unclosed_block_comment_at_eof(self) -> None:
+        file_path = self.test_dir / "unclosed_test.go"
+        file_path.write_text(
+            """package main
+
+/* unclosed comment at EOF
+""",
+            encoding="utf-8",
+        )
+        violations = check_file(file_path)
+        self.assertEqual(violations, [])
+
     def test_excluded_directories(self) -> None:
         self.assertTrue(is_excluded(Path("vendor/pkg/foo_test.go")))
         self.assertTrue(is_excluded(Path("node_modules/foo/bar_test.go")))

@@ -446,7 +446,7 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 
 		// 2. Second call immediately - Cache Hit (X-Cache: HIT)
 		resp2 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "HIT")
-		if resp1.HealthCheckTime.AsTime() != resp2.HealthCheckTime.AsTime() {
+		if !resp1.HealthCheckTime.AsTime().Equal(resp2.HealthCheckTime.AsTime()) {
 			t.Error("expected cached response to have the same health check time")
 		}
 

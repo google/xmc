@@ -28,12 +28,12 @@ import re
 import sys
 from pathlib import Path
 
-# Match os.Setenv(...) calls
-SETENV_PATTERN = re.compile(r"\bos\.Setenv\s*\(")
+# Match os.Setenv(...) calls, preventing false matches on struct members (e.g. mock.os.Setenv)
+SETENV_PATTERN = re.compile(r"(?<![\w.])os\s*\.\s*Setenv\s*\(")
 
 # Match long time.Sleep calls (e.g. time.Sleep(16 * time.Second), time.Sleep(time.Second * 5))
 LONG_SLEEP_PATTERN = re.compile(
-    r"\btime\.Sleep\s*\(\s*(?:(?:\d+\s*\*\s*)?time\.(?:Second|Minute|Hour)|(?:\d+)\s*\*\s*time\.Second)"
+    r"(?<![\w.])time\s*\.\s*Sleep\s*\(\s*(?:(?:\d+\s*\*\s*)?time\.(?:Second|Minute|Hour)|time\.(?:Second|Minute|Hour)\s*\*\s*\d+)"
 )
 
 EXCLUDED_DIRS = {
@@ -54,7 +54,7 @@ def is_excluded(path: Path) -> bool:
 
 
 def mask_comments_and_strings(content: str) -> tuple[str, set[int], set[int]]:
-    """Masks comments and string literals by replacing their contents with spaces.
+    """Masks comments, string literals, and rune literals with spaces.
 
     Newlines are strictly preserved so that line numbers remain exact.
 
@@ -103,6 +103,8 @@ def mask_comments_and_strings(content: str) -> tuple[str, set[int], set[int]]:
                 i += 1
             if i + 1 < n:
                 i += 2
+            else:
+                i = n
             comment_text = content[start:i]
             if "nolint:determinism" in comment_text:
                 for l_idx in range(start_line, line_num + 1):
@@ -123,12 +125,37 @@ def mask_comments_and_strings(content: str) -> tuple[str, set[int], set[int]]:
                 if chars[i] == "\n":
                     line_num += 1
                 if quote == '"' and chars[i] == "\\" and i + 1 < n:
+                    chars[i] = " "
+                    if chars[i + 1] != "\n":
+                        chars[i + 1] = " "
                     i += 2
                     continue
                 if chars[i] == quote:
+                    chars[i] = " "
                     i += 1
                     break
                 chars[i] = " " if chars[i] != "\n" else "\n"
+                i += 1
+            continue
+
+        # Rune literal: '...'
+        if c == "'":
+            i += 1
+            while i < n:
+                if chars[i] == "\n":
+                    line_num += 1
+                    break
+                if chars[i] == "\\" and i + 1 < n:
+                    chars[i] = " "
+                    if chars[i + 1] != "\n":
+                        chars[i + 1] = " "
+                    i += 2
+                    continue
+                if chars[i] == "'":
+                    chars[i] = " "
+                    i += 1
+                    break
+                chars[i] = " "
                 i += 1
             continue
 
@@ -148,20 +175,22 @@ def check_file(file_path: Path) -> list[str]:
     violations: list[str] = []
 
     for match in SETENV_PATTERN.finditer(sanitized):
-        line_num = content[: match.start()].count("\n") + 1
-        if line_num in nolint_det or (line_num - 1) in nolint_det:
+        start_line = content[: match.start()].count("\n") + 1
+        end_line = content[: match.end()].count("\n") + 1
+        if any(line_idx in nolint_det for line_idx in range(start_line - 1, end_line + 1)):
             continue
         violations.append(
-            f"{file_path}:{line_num}: "
+            f"{file_path}:{start_line}: "
             f"os.Setenv used in test. Use t.Setenv(...) to guarantee cleanup and prevent environment pollution."
         )
 
     for match in LONG_SLEEP_PATTERN.finditer(sanitized):
-        line_num = content[: match.start()].count("\n") + 1
-        if line_num in nolint_sleep or (line_num - 1) in nolint_sleep:
+        start_line = content[: match.start()].count("\n") + 1
+        end_line = content[: match.end()].count("\n") + 1
+        if any(line_idx in nolint_sleep for line_idx in range(start_line - 1, end_line + 1)):
             continue
         violations.append(
-            f"{file_path}:{line_num}: "
+            f"{file_path}:{start_line}: "
             f"arbitrary second-level time.Sleep in test. Inject millisecond TTLs, use synctest, or use wait.Poll."
         )
 
