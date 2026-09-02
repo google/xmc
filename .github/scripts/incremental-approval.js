@@ -138,12 +138,15 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
     return null;
   }
 
+  let isDismissed = false;
   if (state === 'DISMISSED') {
     const prevState = reviewId ? dismissedReviewPreviousStates.get(reviewId) : null;
     if (prevState === 'APPROVED') {
       state = 'APPROVED';
+      isDismissed = true;
     } else if (prevState === 'CHANGES_REQUESTED') {
       state = 'CHANGES_REQUESTED';
+      isDismissed = true;
     } else {
       return null;
     }
@@ -152,6 +155,7 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
   return {
     approver: reviewer,
     state,
+    isDismissed,
     approvedSha: commitSha,
     submittedAt: event.submitted_at || event.submittedAt || event.created_at || event.createdAt
   };
@@ -161,7 +165,7 @@ function parseTimelineReviewEvent(event, { authorLower, manualDismissalIds, dism
  * Pure function: Selects the latest active approval from a map of normalized reviewer states.
  * Returns null if any reviewer has an active CHANGES_REQUESTED or no approvals exist.
  * @param {Map<string, Object>} latestByReviewer - Map of reviewer username to latest review state.
- * @returns {{ approver: string, approvedSha: string, submittedAt: string } | null}
+ * @returns {{ approver: string, approvedSha: string, submittedAt: string, isDismissed: boolean } | null}
  */
 function resolveActiveApproval(latestByReviewer) {
   const activeReviews = Array.from(latestByReviewer.values());
@@ -178,7 +182,8 @@ function resolveActiveApproval(latestByReviewer) {
   return {
     approver: approvals[0].approver,
     approvedSha: approvals[0].approvedSha,
-    submittedAt: approvals[0].submittedAt
+    submittedAt: approvals[0].submittedAt,
+    isDismissed: !!approvals[0].isDismissed
   };
 }
 
@@ -247,6 +252,7 @@ function findLatestApprovalFromReviews(reviews, prAuthor = '') {
     latestByReviewer.set(reviewer.toLowerCase(), {
       approver: reviewer,
       state,
+      isDismissed: false,
       approvedSha: review.commit_id,
       submittedAt: review.submitted_at || review.created_at
     });
@@ -386,6 +392,7 @@ function parseRangeDiff(output) {
  * @param {boolean} params.isCleanRebase
  * @param {boolean} [params.hasRemovedCommits=false]
  * @param {boolean} [params.hasProtectedFileChanges=false]
+ * @param {boolean} [params.isDismissed=false]
  * @param {number} [params.maxGraceLines=10]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
@@ -398,6 +405,7 @@ function evaluateIncrementalApproval({
   isCleanRebase,
   hasRemovedCommits = false,
   hasProtectedFileChanges = false,
+  isDismissed = false,
   maxGraceLines = MAX_OWNER_GRACE_LINES
 }) {
   if (!hasPriorApproval || !approvedSha) {
@@ -408,19 +416,26 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (approvedSha === currentSha) {
-    return {
-      shouldReapprove: false,
-      reason: 'PR HEAD is already approved at this commit.',
-      trigger: 'ALREADY_APPROVED'
-    };
-  }
-
   if (hasProtectedFileChanges) {
     return {
       shouldReapprove: false,
       reason: 'PR modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS, .githooks/). Manual human review is required.',
       trigger: 'PROTECTED_FILES_MODIFIED'
+    };
+  }
+
+  if (approvedSha === currentSha) {
+    if (!isDismissed) {
+      return {
+        shouldReapprove: false,
+        reason: 'PR HEAD is already approved at this commit.',
+        trigger: 'ALREADY_APPROVED'
+      };
+    }
+    return {
+      shouldReapprove: true,
+      reason: 'PR HEAD matches previously approved commit whose approval was dismissed.',
+      trigger: 'RESTORE_DISMISSED_APPROVAL'
     };
   }
 
@@ -825,7 +840,8 @@ async function run({ github, context, core }) {
     deltaLines: totalDelta,
     isCleanRebase,
     hasRemovedCommits,
-    hasProtectedFileChanges
+    hasProtectedFileChanges,
+    isDismissed: latestApproval.isDismissed
   });
 
   if (!decision.shouldReapprove) {

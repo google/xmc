@@ -102,6 +102,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
   assert.deepStrictEqual(valid, {
     approver: 'reviewer1',
     state: 'APPROVED',
+    isDismissed: false,
     approvedSha: 'sha1',
     submittedAt: undefined
   });
@@ -125,6 +126,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     commit_id: 'sha1'
   }, context);
   assert.strictEqual(staleApproved.state, 'APPROVED');
+  assert.strictEqual(staleApproved.isDismissed, true);
 
   // Stale dismissed with CHANGES_REQUESTED previous state
   const staleChanges = parseTimelineReviewEvent({
@@ -135,6 +137,7 @@ test('parseTimelineReviewEvent parses valid review and respects dismissal contex
     commit_id: 'sha1'
   }, context);
   assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
+  assert.strictEqual(staleChanges.isDismissed, true);
 
   // Ignored bot review and PR author self-review
   assert.strictEqual(parseTimelineReviewEvent({
@@ -224,7 +227,8 @@ test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () =
   assert.deepStrictEqual(result, {
     approver: 'alice',
     approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z'
+    submittedAt: '2026-08-25T10:00:00Z',
+    isDismissed: false
   });
 });
 
@@ -273,7 +277,8 @@ test('findLatestApproval finds prior approval from timeline when state is dismis
   assert.deepStrictEqual(result, {
     approver: 'andrzejfudro',
     approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-    submittedAt: '2026-08-26T15:12:24Z'
+    submittedAt: '2026-08-26T15:12:24Z',
+    isDismissed: true
   });
 });
 
@@ -613,17 +618,47 @@ test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
   assert.strictEqual(result.trigger, 'NO_PRIOR_APPROVAL');
 });
 
-test('evaluateIncrementalApproval skips if PR is already approved at current SHA', () => {
+test('evaluateIncrementalApproval skips if PR is already approved at current SHA and not dismissed', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-222',
     currentSha: 'sha-222',
     isAuthorOwner: true,
     deltaLines: 0,
-    isCleanRebase: true
+    isCleanRebase: true,
+    isDismissed: false
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'ALREADY_APPROVED');
+});
+
+test('evaluateIncrementalApproval reapproves if approval on current SHA was dismissed (stale approval)', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-222',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 0,
+    isCleanRebase: true,
+    isDismissed: true
+  });
+  assert.strictEqual(result.shouldReapprove, true);
+  assert.strictEqual(result.trigger, 'RESTORE_DISMISSED_APPROVAL');
+});
+
+test('evaluateIncrementalApproval rejects dismissed approval on same SHA if sensitive files modified', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-222',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 0,
+    isCleanRebase: true,
+    isDismissed: true,
+    hasProtectedFileChanges: true
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
 });
 
 test('evaluateIncrementalApproval rejects removed commits even if deltaLines is 0', () => {
