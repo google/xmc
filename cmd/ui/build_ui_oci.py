@@ -98,26 +98,7 @@ def main():
 
     dist_browser_src = os.path.join(ui_src_dir, "dist", "browser")
     index_html = os.path.join(dist_browser_src, "index.html")
-    has_prebuilt_dist = False
-    if os.path.isdir(dist_browser_src) and os.path.isfile(index_html):
-        try:
-            dist_mtime = os.path.getmtime(index_html)
-            stale = False
-            ignored_dirs = {"node_modules", ".angular", "dist", ".git", "build_tmp", "__pycache__"}
-            ignored_files = {"BUILD.bazel", "BUILD"}
-            for root, dirs, files in os.walk(ui_src_dir, followlinks=True):
-                dirs[:] = [d for d in dirs if d not in ignored_dirs]
-                for file in files:
-                    if file.endswith(".py") or file in ignored_files:
-                        continue
-                    if os.path.getmtime(os.path.join(root, file)) > dist_mtime:
-                        stale = True
-                        break
-                if stale:
-                    break
-            has_prebuilt_dist = not stale
-        except OSError:
-            has_prebuilt_dist = False
+    has_prebuilt_dist = os.path.isdir(dist_browser_src) and os.path.isfile(index_html)
 
     with tempfile.TemporaryDirectory() as temp_build_dir:
         dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
