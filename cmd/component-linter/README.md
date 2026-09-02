@@ -324,3 +324,9 @@ bazel run //tools/components:run_linter -- --scan-roots deploy/profiles --strict
 ```
 
 See [`tools/components/README.md`](../../tools/components/README.md) for flag documentation and JSON output formats.
+
+---
+
+## 12. CI/CD Pre-Merge Verification
+
+In pull request workflows, component manifest linting is enforced automatically via the composite GitHub Action [`.github/actions/run-xmc-linter`](../../.github/actions/run-xmc-linter/README.md) and workflow [`.github/workflows/xmc-lint.yml`](../../.github/workflows/xmc-lint.yml). It verifies all profiles across `deploy/profiles/`, `deploy/components/`, and reference profiles under [`examples/components/profiles/`](../../examples/components/profiles/README.md) before PR merge.
