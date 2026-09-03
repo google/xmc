@@ -52,7 +52,19 @@ class ImageBuilder:
         self.cfg = config
 
     def _is_ui_dist_stale(self, ui_dir: str, index_html: str) -> bool:
-        """Returns True if any UI source file is newer than the built index.html."""
+        """Determines whether the pre-compiled UI bundle is stale compared to source files.
+
+        Compares the modification time (`mtime`) of `dist/browser/index.html` against
+        all frontend source files (`.ts`, `.html`, `.scss`, etc.) in `ui_dir`.
+
+        Exclusions & Guards:
+          - Ignores Bazel metadata (`BUILD.bazel`), Python helper scripts, and artifact
+            directories (`node_modules`, `dist`, `.angular`, `.git`, `build_tmp`).
+          - Tracks visited directories via `os.path.realpath` to safely handle circular
+            symlinks without infinite recursion.
+          - Returns True (stale) if `index.html` is missing, unreadable, or if any source
+            file is newer than `index.html`.
+        """
         try:
             dist_mtime = os.path.getmtime(index_html)
         except OSError:
@@ -62,6 +74,7 @@ class ImageBuilder:
         ignored_files = {"BUILD.bazel", "BUILD"}
         visited = set()
         for root, dirs, files in os.walk(ui_dir, followlinks=True):
+            # Guard against circular symlink loops.
             real_root = os.path.realpath(root)
             if real_root in visited:
                 dirs[:] = []
@@ -80,7 +93,25 @@ class ImageBuilder:
         return False
 
     def _maybe_precompile_ui(self) -> None:
-        """Pre-compiles Angular UI on host if Node.js and npm are available."""
+        """Pre-compiles the Angular UI on the host machine to accelerate OCI packaging.
+
+        In the standard Docker multi-stage build, running `npm ci` and `ng build` inside
+        a container takes ~99 seconds per test run. By leveraging the host runner's
+        pre-installed Node.js environment:
+          1. Environment Check: Confirms `node`, `npm`, and `npx` exist on the host.
+             If absent, gracefully skips host build to let Bazel use the Docker fallback.
+          2. Freshness Check: If `dist/browser/index.html` already exists and no UI source
+             files have changed, skips compilation entirely (0 seconds).
+          3. Dependency Cache: Uses an `.install-success` sentinel file inside `node_modules`
+             to only run `npm ci` when `package.json` or `package-lock.json` are modified.
+          4. Native Host Build: Executes `npx ng build --configuration production` using
+             the host's native V8 engine, reducing build time to ~25 seconds.
+          5. Failure Recovery: On any compilation error, wipes `dist` so Bazel cleanly
+             falls back to the hermetic containerized build without leaving partial state.
+             Crucially preserves the npm install sentinel so developers fixing TypeScript
+             bugs don't suffer redundant `npm ci` reinstalls.
+        """
+        # 1. Skip host compilation if Node.js toolchain is not available on host.
         if not (shutil.which("node") and shutil.which("npm") and shutil.which("npx")):
             return
 
@@ -88,6 +119,7 @@ class ImageBuilder:
         dist_dir = os.path.join(ui_dir, "dist", "browser")
         index_html = os.path.join(dist_dir, "index.html")
 
+        # 2. Check if existing pre-compiled bundle is up-to-date.
         if os.path.isfile(index_html):
             if not self._is_ui_dist_stale(ui_dir, index_html):
                 logger.info(
@@ -101,6 +133,8 @@ class ImageBuilder:
         install_sentinel = os.path.join(node_modules_dir, ".install-success")
         package_json = os.path.join(ui_dir, "package.json")
         package_lock = os.path.join(ui_dir, "package-lock.json")
+
+        # 3. Determine if npm dependencies need installation/refresh.
         needs_install = not os.path.isfile(install_sentinel)
         if not needs_install:
             try:
@@ -123,9 +157,12 @@ class ImageBuilder:
                         f.write("ok")
                 except OSError:
                     pass
+
+            # 4. Compile Angular production bundle on host.
             run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
             logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
         except Exception as e:
+            # 5. Clean up failed dist directory to force clean containerized Docker fallback.
             logger.warning(
                 "[UI] Host compilation failed (%s). Falling back to containerized build...", e
             )
@@ -135,13 +172,25 @@ class ImageBuilder:
                 pass
 
     def build_all(self) -> list[str]:
-        """Builds all backend and frontend images and required test binaries."""
+        """Builds all backend and frontend images and loads them into Docker.
+
+        Execution flow:
+          1. Host Pre-compilation: Triggers `_maybe_precompile_ui()` to build the
+             Angular bundle on the host if Node.js is present.
+          2. Parallel Bazel Build: Invokes `bazel build` on all backend service
+             targets and `//cmd/ui:ui_image_tarball` concurrently. If the UI was
+             pre-compiled, `ui_image_tarball` builds as a fast 2-second Nginx image.
+          3. Docker Ingestion: Queries `bazel-bin` and loads all generated OCI tarballs
+             into the local Docker daemon via `docker load`.
+        """
         if self.cfg.skip_build:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
             return [tag for _, _, tag in self._SERVICES]
 
+        # Step 1: Pre-compile Angular UI bundle on the host (if Node.js is present).
         self._maybe_precompile_ui()
 
+        # Step 2: Build all backend services and UI OCI image tarballs in parallel.
         logger.info("=== [Bazel] Building OCI images in parallel ===")
         bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES]
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
@@ -151,6 +200,7 @@ class ImageBuilder:
         )
         bazel_bin = bazel_bin_res.stdout.strip()
 
+        # Step 3: Load all produced OCI tarballs into Docker daemon.
         images: list[str] = []
         for pkg, target, tag in self._SERVICES:
             tar_path = os.path.join(bazel_bin, pkg, f"{target}.tar")
