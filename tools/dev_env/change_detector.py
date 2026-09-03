@@ -118,16 +118,32 @@ class ChangeDetector:
             _LOGGER.warning("Failed to run git command %s: %s", cmd, e)
             return []
 
+    def _find_default_base_ref(self) -> str | None:
+        """Attempts to auto-detect a common upstream base ref with a valid merge-base.
+
+        Probes candidate upstream branches in order ('origin/main', 'main',
+        'origin/master', 'master'). Returns the first candidate that exists
+        and shares a common merge-base with HEAD.
+        """
+        candidates = ("origin/main", "main", "origin/master", "master")
+        for ref in candidates:
+            if self._run_git(["git", "rev-parse", "--verify", "--quiet", ref]):
+                if self._run_git(["git", "merge-base", "HEAD", ref]):
+                    return ref
+        return None
+
     def get_modified_files(self, base_ref: str | None = None) -> list[str]:
         """Inspects git status and diffs to discover modified and untracked files.
 
         Combines:
         1. Unstaged and staged working tree modifications (`git status --porcelain`).
         2. Renamed files (parsing `old -> new` porcelain notation).
-        3. Committed changes between base_ref and HEAD (if base_ref provided).
+        3. Committed changes between base_ref and HEAD (auto-detected from origin/main if not provided).
 
         Args:
             base_ref: Optional git commit/branch ref to compare HEAD against.
+                If None, auto-detects common base branch (origin/main, main, etc.).
+                Pass "HEAD" to compare only uncommitted changes.
 
         Returns:
             Sorted list of relative file paths modified in the repository.
@@ -139,20 +155,32 @@ class ChangeDetector:
                 path_str = path_str.split(" -> ", 1)[1].strip().strip('"')
             if path_str:
                 files.add(path_str)
-        diff_cmd = [
-            "git",
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--name-only",
-            f"{base_ref}...HEAD" if base_ref else "HEAD",
-        ]
+
+        resolved_base = base_ref if base_ref is not None else self._find_default_base_ref()
+        if resolved_base and resolved_base != "HEAD":
+            diff_cmd = [
+                "git",
+                "-c",
+                "core.quotepath=false",
+                "diff",
+                "--name-only",
+                f"{resolved_base}...HEAD",
+            ]
+        else:
+            diff_cmd = [
+                "git",
+                "-c",
+                "core.quotepath=false",
+                "diff",
+                "--name-only",
+                "HEAD",
+            ]
         for line in self._run_git(diff_cmd):
             path_str = line.strip().strip('"')
             if path_str:
                 files.add(path_str)
         res = sorted(files)
-        _LOGGER.debug("Discovered modified files from git: %s", res)
+        _LOGGER.debug("Discovered modified files from git (base=%s): %s", resolved_base, res)
         return res
 
     def _match_service_for_file(self, clean_f: str) -> str | None:

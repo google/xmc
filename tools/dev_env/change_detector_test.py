@@ -30,7 +30,6 @@ class ChangeDetectorTest(unittest.TestCase):
         super().setUp()
         self.test_enabled_services = [
             "actuator",
-            "components",
             "dashboard_service",
             "experiment_state_server",
             "health_service",
@@ -40,6 +39,7 @@ class ChangeDetectorTest(unittest.TestCase):
             "rod_data_provider",
             "ui",
             "xid_service",
+            "xmc_bridge",
         ]
         self.detector = ChangeDetector(
             repo_root=Path("/fake/repo"),
@@ -158,6 +158,86 @@ class ChangeDetectorTest(unittest.TestCase):
         lines = self.detector._run_git(["git", "status"])
         self.assertEqual(lines, [])
 
+    @mock.patch("subprocess.run")
+    def test_find_default_base_ref_found(self, mock_run: mock.MagicMock) -> None:
+        """Verifies auto-detection returns first matching candidate with valid merge-base."""
+
+        def side_effect(cmd, **kwargs):
+            del kwargs
+            if "rev-parse" in cmd and "origin/main" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="sha123\n", stderr=""
+                )
+            if "merge-base" in cmd and "origin/main" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="mb456\n", stderr=""
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        base = self.detector._find_default_base_ref()
+        self.assertEqual(base, "origin/main")
+
+    @mock.patch("subprocess.run")
+    def test_find_default_base_ref_none_available(self, mock_run: mock.MagicMock) -> None:
+        """Verifies None returned when no candidate branch or merge-base exists."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr=""
+        )
+        base = self.detector._find_default_base_ref()
+        self.assertIsNone(base)
+
+    @mock.patch("subprocess.run")
+    def test_get_modified_files_auto_detected_base(self, mock_run: mock.MagicMock) -> None:
+        """Verifies diff against auto-detected origin/main...HEAD captures committed changes."""
+
+        def side_effect(cmd, **kwargs):
+            del kwargs
+            if "status" in cmd:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            if "rev-parse" in cmd and "origin/main" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="sha123\n", stderr=""
+                )
+            if "merge-base" in cmd and "origin/main" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="mb456\n", stderr=""
+                )
+            if "diff" in cmd and "origin/main...HEAD" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="cmd/reconciler/main.go\ncmd/xmc_bridge/main.go\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        files = self.detector.get_modified_files()
+        self.assertEqual(files, ["cmd/reconciler/main.go", "cmd/xmc_bridge/main.go"])
+
+    @mock.patch("subprocess.run")
+    def test_get_modified_files_explicit_head_base(self, mock_run: mock.MagicMock) -> None:
+        """Verifies passing base_ref='HEAD' diffs only against HEAD."""
+        executed_cmds = []
+
+        def side_effect(cmd, **kwargs):
+            del kwargs
+            executed_cmds.append(cmd)
+            if "status" in cmd:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            if "diff" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="cmd/ui/src/new.ts\n", stderr=""
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+        files = self.detector.get_modified_files(base_ref="HEAD")
+        self.assertEqual(files, ["cmd/ui/src/new.ts"])
+        diff_calls = [c for c in executed_cmds if "diff" in c]
+        self.assertTrue(any("HEAD" in c and "origin/main...HEAD" not in c for c in diff_calls))
+
     def test_detect_changes_service_specific_files(self) -> None:
         """Verifies individual microservice file changes map to their respective service."""
         test_cases = [
@@ -171,7 +251,7 @@ class ChangeDetectorTest(unittest.TestCase):
             (["cmd/health_service/main.go"], ["health_service"]),
             (["cmd/rod_data_provider/jobs.go"], ["rod_data_provider"]),
             (["cmd/log_monitor/monitor.go"], ["log_monitor"]),
-            (["cmd/components/main.go"], ["components"]),
+            (["cmd/xmc_bridge/main.go"], ["xmc_bridge"]),
             (["cmd/actuator/BUILD.bazel"], ["actuator"]),
         ]
 
