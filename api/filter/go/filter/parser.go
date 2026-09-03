@@ -229,11 +229,10 @@ func (l *lexer) scanNumber(prefix string) string {
 	sb.WriteString(prefix)
 	for {
 		r := l.peek()
-		if unicode.IsDigit(r) || r == '.' || r == 'e' || r == 'E' || r == '+' || r == '-' {
-			sb.WriteRune(l.advance())
-		} else {
+		if !unicode.IsDigit(r) && r != '.' && r != 'e' && r != 'E' && r != '+' && r != '-' {
 			break
 		}
+		sb.WriteRune(l.advance())
 	}
 	return sb.String()
 }
@@ -249,11 +248,10 @@ func (l *lexer) scanIdentifier() string {
 	var sb strings.Builder
 	for {
 		r := l.peek()
-		if isAlphaNum(r) || r == '_' || r == '.' {
-			sb.WriteRune(l.advance())
-		} else {
+		if !isAlphaNum(r) && r != '_' && r != '.' {
 			break
 		}
+		sb.WriteRune(l.advance())
 	}
 	return sb.String()
 }

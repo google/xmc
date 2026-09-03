@@ -93,3 +93,15 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "reconciler_monitoring_config_test",
+    srcs = ["reconciler_monitoring_config_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = ["../.."],
+    main = "reconciler_monitoring_config_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+)

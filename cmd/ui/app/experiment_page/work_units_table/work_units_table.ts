@@ -68,6 +68,7 @@ interface WorkUnitView extends WorkUnit {
   processedUrls: ProcessedUrl[];
   statusMessages: StructuredMessage[];
   isStatusMessageVisible: boolean;
+  runProfileUrl?: string;
 }
 
 /**
@@ -138,6 +139,7 @@ export class WorkUnitsTable implements OnInit {
         processedUrls: processUrls(workUnit.urls ?? [], workUnit).slice(0, MAX_URLS_DISPLAYED),
         statusMessages: messages,
         isStatusMessageVisible,
+        runProfileUrl: workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined,
       };
     });
   });

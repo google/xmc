@@ -24,8 +24,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
-
-	baselogging "go/log"
 )
 
 const (
@@ -230,6 +228,5 @@ func Debug(ctx context.Context, msg string, args ...any) {
 // Fatal logs an error message with attributes and exits.
 func Fatal(ctx context.Context, msg string, args ...any) {
 	log(ctx, slog.LevelError, msg, args...)
-	// Let the base logging library handle the critical existence failure.
-	baselogging.FatalContextf(ctx, "Fatal: %s", msg)
+	os.Exit(1)
 }

@@ -25,7 +25,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         # keep
-        "//internal/compat/log",
         "//internal/kubernetes/common/constants",
         "//internal/compat/metadata",
         "//internal/compat/uuid",

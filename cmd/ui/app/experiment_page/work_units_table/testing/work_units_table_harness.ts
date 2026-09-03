@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { ComponentHarness } from '@angular/cdk/testing';
+import { MatButtonHarness } from '@angular/material/button/testing';
 import {
+  MatCellHarness,
   MatRowHarness,
   MatTableHarness,
   TableHarnessFilters,
 } from '@angular/material/table/testing';
+import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
 
@@ -69,11 +72,67 @@ export class WorkUnitsTableHarness extends ComponentHarness {
     return table.getRows(filter);
   }
 
+  /**
+   * Returns the non-detail data rows.
+   */
+  async getDataRows(): Promise<MatRowHarness[]> {
+    return this.getRows({ selector: ':not(.detail-row)' });
+  }
+
   async hasNoWorkUnitsMessage(): Promise<boolean> {
     return !!(await this._noWorkUnitsMessage());
   }
 
   async hasErrorMessage(): Promise<boolean> {
     return !!(await this._errorMessage());
+  }
+
+  /**
+   * Returns the URLs action cell for a given data row index, or null if absent.
+   */
+  async getUrlsCell(rowIndex: number): Promise<MatCellHarness | null> {
+    const rows = await this.getDataRows();
+    const row = rows[rowIndex];
+    if (!row) {
+      return null;
+    }
+    const cells = await row.getCells({ columnName: 'Urls' });
+    return cells[0] ?? null;
+  }
+
+  /**
+   * Returns the Run Profile button harness for a given row index, or null if absent.
+   */
+  async getRunProfileButton(rowIndex: number): Promise<MatButtonHarness | null> {
+    const cell = await this.getUrlsCell(rowIndex);
+    return cell ? cell.getHarnessOrNull(MatButtonHarness.with({ text: 'troubleshoot' })) : null;
+  }
+
+  /**
+   * Returns the Run Profile tooltip harness for a given row index, or null if absent.
+   */
+  async getRunProfileTooltip(rowIndex: number): Promise<MatTooltipHarness | null> {
+    const cell = await this.getUrlsCell(rowIndex);
+    return cell
+      ? cell.getHarnessOrNull(MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }))
+      : null;
+  }
+
+  /**
+   * Returns link attributes (href, target, rel) for the Run Profile button, or null if absent.
+   */
+  async getRunProfileLink(
+    rowIndex: number,
+  ): Promise<{ href: string | null; target: string | null; rel: string | null } | null> {
+    const button = await this.getRunProfileButton(rowIndex);
+    if (!button) {
+      return null;
+    }
+    const host = await button.host();
+    return {
+      href: await host.getAttribute('href'),
+      target: await host.getAttribute('target'),
+      rel: await host.getAttribute('rel'),
+    };
   }
 }

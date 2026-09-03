@@ -126,8 +126,13 @@ describe('HealthStatusSectionComponent', () => {
     expect(await harness.getRefreshButtonText()).toContain('Refreshing...');
   });
 
-  it('should keep group as HEALTHY and render Unknown when a component is unspecified/unconfigured', async () => {
+  it('should render group as UNKNOWN when at least one component is unspecified', async () => {
     const mockComponents: ComponentHealth[] = [
+      {
+        name: 'actuator',
+        type: ComponentType.CORE_SERVICE,
+        healthState: HealthState.HEALTHY,
+      },
       {
         name: 'log-monitor',
         type: ComponentType.CORE_SERVICE,
@@ -145,9 +150,11 @@ describe('HealthStatusSectionComponent', () => {
     const items = await cards[0].getItemTexts();
 
     expect(cards.length).toBe(1);
-    expect(await cards[0].getStatusText()).toBe('HEALTHY');
-    expect(items.length).toBe(1);
-    expect(items[0]).toContain('log-monitor');
-    expect(items[0]).toContain('Unknown');
+    expect(await cards[0].getStatusText()).toBe('UNKNOWN');
+    expect(items.length).toBe(2);
+    expect(items[0]).toContain('actuator');
+    expect(items[0]).toContain('Running');
+    expect(items[1]).toContain('log-monitor');
+    expect(items[1]).toContain('Unknown');
   });
 });
