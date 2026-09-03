@@ -53,7 +53,6 @@ Optional flags:
   own ManagedXprof artifact.
 - `--display_name`: Display name for the ManagedXprof artifact (XProf UI title).
 - `--run_group`: Run group (tag) for the profiling session.
-- `--sleep_seconds`: How long the workload runs so the JobSet stays alive.
 
 The script will:
 1. Create an experiment.
@@ -64,11 +63,11 @@ The script will:
 ## How the worker profiles (SDK-less)
 
 `worker.py`:
-1. Resolves the destination from `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` (falling
-   back to a local directory only when the variable is unset, e.g. for local
-   testing).
+1. Resolves the destination from `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`, raising
+   an error if it is unset (the workload must run in a managed-xprof-configured
+   cluster where the XMC Actuator injects it).
 2. Warms up a JAX matmul so the trace captures steady-state execution.
 3. Wraps the traced computation in `jax.profiler.start_trace(profile_dir)` /
    `jax.profiler.stop_trace()`, writing the profile directly to the GCS folder.
-4. Idles for the remainder of `SLEEP_SECONDS` so the reconciler can create the
-   MLRun before the container exits.
+4. Idles for a fixed 30 minutes so the reconciler can create the MLRun before
+   the container exits.

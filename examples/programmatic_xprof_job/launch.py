@@ -64,32 +64,20 @@ _NUM_WORK_UNITS = flags.DEFINE_integer(
     2,
     "Number of work units to launch, each with its own ManagedXprof artifact.",
 )
-_SLEEP_SECONDS = flags.DEFINE_integer(
-    "sleep_seconds",
-    300,
-    "Seconds for the container job to run so the JobSet stays alive.",
-)
-
 # Skip git push snapshot during local test launch.
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 
-def _build_work_unit(
-    image_path: str, queue_name: str, sleep_seconds: int
-) -> work_unit_pb2.WorkUnit:
+def _build_work_unit(image_path: str, queue_name: str) -> work_unit_pb2.WorkUnit:
     """Builds a single-job WorkUnit running the JAX profiler workload.
 
     Args:
       image_path: The container image to run.
       queue_name: The scheduling queue for the work unit.
-      sleep_seconds: How long the workload should run (passed via env var).
 
     Returns:
       A WorkUnit proto ready to be created via the ESS.
     """
-    env_vars = {}
-    if sleep_seconds > 0:
-        env_vars["SLEEP_SECONDS"] = str(sleep_seconds)
     return work_unit_pb2.WorkUnit(
         work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
         priority=priority_pb2.Priority.NORMAL,
@@ -106,7 +94,6 @@ def _build_work_unit(
                             name="programmatic-xprof-worker",
                             docker_image=image_path,
                             command=["python3", "/app/worker.py"],
-                            env_vars=env_vars,
                             resources=resources_pb2.ResourceSet(
                                 cpu_resources=resources_pb2.CpuResources(
                                     cpu_millicores=1000,
@@ -155,7 +142,7 @@ def main(argv: Sequence[str]) -> None:
         xid = int(experiment.resource_name.split("/")[-1])
 
         for _ in range(_NUM_WORK_UNITS.value):
-            work_unit = _build_work_unit(image_path, queue_name, _SLEEP_SECONDS.value)
+            work_unit = _build_work_unit(image_path, queue_name)
             created_wu = stub.create_work_unit(
                 ess_api_pb2.CreateWorkUnitRequest(
                     parent=experiment.resource_name,
