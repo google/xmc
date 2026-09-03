@@ -23,9 +23,9 @@ Diagon backend then discovers and loads the profile from that GCS folder using
 the customized ManagedXprof MLRun labels, without the workload depending on the
 Diagon SDK.
 
-After the trace is captured the workload idles for the remainder of
-``SLEEP_SECONDS`` so the enclosing JobSet stays alive long enough for the Diagon
-reconciler to create the MLRun from the attached ManagedXprof artifact.
+After the trace is captured the workload idles for a fixed 30 minutes so the
+enclosing JobSet stays alive long enough for the Diagon reconciler to create the
+MLRun from the attached ManagedXprof artifact.
 """
 
 import os
