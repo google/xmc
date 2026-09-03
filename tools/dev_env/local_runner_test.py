@@ -219,7 +219,37 @@ class TestLocalRunner(unittest.TestCase):
         ):
             self.runner.reload(services=None)
 
-            mock_detect.assert_called_once()
+            mock_detect.assert_called_once_with(base_ref=None)
+            mock_build.assert_called_once_with(services=["ui"])
+            mock_load.assert_called_once_with(["ui_image:latest"])
+            mock_helm_deploy.assert_not_called()
+            self.assertTrue(mock_run.called)
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_auto_detection_with_base_ref(self, mock_run: MagicMock) -> None:
+        """Verifies auto-detection passes base_ref to change detector."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["ui"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/ui/src/app.ts"],
+            reasons={"ui": ["cmd/ui/src/app.ts"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["ui_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
+        ):
+            self.runner.reload(services=None, base_ref="origin/main")
+
+            mock_detect.assert_called_once_with(base_ref="origin/main")
             mock_build.assert_called_once_with(services=["ui"])
             mock_load.assert_called_once_with(["ui_image:latest"])
             mock_helm_deploy.assert_not_called()
@@ -250,7 +280,7 @@ class TestLocalRunner(unittest.TestCase):
         ):
             self.runner.reload(services=["auto"])
 
-            mock_detect.assert_called_once()
+            mock_detect.assert_called_once_with(base_ref=None)
             mock_helm_deploy.assert_called_once()
             mock_apply_manifests.assert_called_once()
             mock_build.assert_called_once_with(services=["reconciler"])
@@ -449,6 +479,7 @@ class TestLocalRunner(unittest.TestCase):
                 services=["reconciler"],
                 interval=2.0,
                 helm=True,
+                base_ref=None,
             )
 
     def test_reload_helm_flag_triggers_helm_deploy(self) -> None:
@@ -571,7 +602,9 @@ class TestLocalRunner(unittest.TestCase):
             self.runner._watch_loop(services=["reconciler"], interval=1.0)
             self.assertEqual(mock_reload.call_count, 2)
             mock_reload.assert_called_with(
-                services=["reconciler"], changed_files=["cmd/reconciler/main.go"]
+                services=["reconciler"],
+                changed_files=["cmd/reconciler/main.go"],
+                base_ref=None,
             )
 
     @patch("tools.dev_env.local_runner.time.sleep")
@@ -616,7 +649,11 @@ class TestLocalRunner(unittest.TestCase):
         ):
             self.runner._watch_loop(services=["reconciler"], interval=1.0)
             self.assertEqual(mock_reload.call_count, 2)
-            mock_reload.assert_called_with(services=["reconciler"], changed_files=["f.go"])
+            mock_reload.assert_called_with(
+                services=["reconciler"],
+                changed_files=["f.go"],
+                base_ref=None,
+            )
 
 
 if __name__ == "__main__":

@@ -111,7 +111,8 @@ python3 tools/dev_env/dev_env.py reload ess --helm
 ##### Options
 - `[services...]`: Positional microservice names or aliases to rebuild and reload (or omit for auto-detection).
 - `--watch`, `-w`: Run in continuous filesystem watch mode, automatically detecting code edits and reloading affected services on save.
-- `--watch-interval`: Debounce polling interval in seconds for watch mode (default: `1.0`).
+- `--interval`: Polling interval in seconds for watch mode (default: `1.5`).
+- `--base-ref`: Optional git reference or commit to compare against for change detection (e.g. `origin/main`).
 - `--helm`: Force an incremental Helm chart upgrade.
 - `--cluster-name`: KinD cluster name (defaults to dynamic `xmc-<environment>`).
 - `--tag`: Docker image tag (default: `local-dev`).

@@ -170,16 +170,16 @@ def _resolve_enabled_services(
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
     ig_deployment_flag = yaml_vars.get("ingestion_gateway_deployment_enabled")
-    yaml_metrics_flag: Any
+    effective_yaml_metrics: Any
     if ig_deployment_flag is not None and not _parse_bool(ig_deployment_flag):
-        yaml_metrics_flag = False
+        effective_yaml_metrics = False
     else:
-        yaml_metrics_flag = yaml_vars.get("enable_metrics")
+        effective_yaml_metrics = yaml_vars.get("enable_metrics")
 
     enable_metrics = _resolve_bool_flag(
         getattr(args, "enable_metrics", None) if args else None,
         os.environ.get("ENABLE_METRICS"),
-        yaml_metrics_flag,
+        effective_yaml_metrics,
         default=False,
     )
     if enable_metrics and "ingestion_gateway" not in services:
