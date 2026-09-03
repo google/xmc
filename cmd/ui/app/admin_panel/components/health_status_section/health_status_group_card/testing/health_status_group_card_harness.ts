@@ -47,4 +47,19 @@ export class HealthStatusGroupCardHarness extends ComponentHarness {
     const el = await this._errorDetails();
     return el ? el.text() : null;
   }
+
+  async hasHealthyStatus(): Promise<boolean> {
+    const el = await this._statusBadge();
+    return el.hasClass('status-healthy');
+  }
+
+  async hasDegradedStatus(): Promise<boolean> {
+    const el = await this._statusBadge();
+    return el.hasClass('status-degraded');
+  }
+
+  async hasUnknownStatus(): Promise<boolean> {
+    const el = await this._statusBadge();
+    return el.hasClass('status-unknown');
+  }
 }

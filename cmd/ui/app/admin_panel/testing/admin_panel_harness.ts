@@ -27,6 +27,7 @@ export class AdminPanelHarness extends ComponentHarness {
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
   private readonly _pageErrorBanner = this.locatorForOptional(ErrorBannerHarness);
   private readonly _spinner = this.locatorForOptional('mat-spinner');
+  private readonly _footer = this.locatorForOptional('.admin-panel-footer');
 
   async getTimestampText(): Promise<string | null> {
     const el = await this._timestampBadge();
@@ -54,6 +55,11 @@ export class AdminPanelHarness extends ComponentHarness {
   async hasSpinner(): Promise<boolean> {
     const el = await this._spinner();
     return el !== null;
+  }
+
+  async getFooterText(): Promise<string | null> {
+    const el = await this._footer();
+    return el ? el.text() : null;
   }
 
   async getSystemInfoCard(): Promise<SystemInfoCardHarness | null> {

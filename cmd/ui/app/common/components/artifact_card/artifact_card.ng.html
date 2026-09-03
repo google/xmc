@@ -38,12 +38,13 @@ limitations under the License.
       <div class="artifact-title">
         @if (displayProperties().url) {
           <a
+            class="artifact-title-link"
             target="_blank"
             rel="noreferrer"
-            style="text-decoration: none; color: inherit"
             [href]="displayProperties().url | safeUrl"
           >
-            {{ displayProperties().displayName }}
+            <span>{{ displayProperties().displayName }}</span>
+            <mat-icon class="external-link-icon">open_in_new</mat-icon>
           </a>
         } @else {
           {{ displayProperties().displayName }}

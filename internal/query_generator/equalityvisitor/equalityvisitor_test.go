@@ -21,7 +21,6 @@ import (
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
-	"go/log"
 )
 
 type testCase struct {
@@ -182,7 +181,7 @@ func TestEquality(t *testing.T) {
 			continue
 		}
 		m := map[string]bool{}
-		log.Info("calling into EqualityVisitor")
+		t.Log("calling into EqualityVisitor")
 		ev := EqualityVisitor{
 			MemberFunc: memberMap(&m, tc.m),
 			FunctionFunc: func(functionName string, ev *EqualityVisitor, args []*fpb.Expression) (filtervisitor.PrimType, error) {

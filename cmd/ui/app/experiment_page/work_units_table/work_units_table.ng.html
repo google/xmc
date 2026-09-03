@@ -72,6 +72,17 @@ limitations under the License.
         <xmc-status-message-filter />
       </th>
       <td mat-cell *matCellDef="let workUnit">
+        @if (workUnit.runProfileUrl) {
+          <a
+            mat-icon-button
+            target="_blank"
+            rel="noreferrer"
+            matTooltip="Run Profile"
+            [href]="workUnit.runProfileUrl"
+          >
+            <mat-icon>troubleshoot</mat-icon>
+          </a>
+        }
         @for (url of workUnit.processedUrls; track $index) {
           @if (url.processedUrl) {
             @let disableReason = shouldDisableUrl(url, workUnit);

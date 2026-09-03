@@ -25,7 +25,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"go/google"
-	"go/log"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
@@ -75,10 +75,10 @@ func main() {
 	publisher := redisclient.NewPublisher(redisConfig, streamName)
 
 	if err := consumer.Client.Ping(ctx).Err(); err != nil {
-		log.ErrorContextf(ctx, "ERROR: Could not connect to Redis at %s: %v", redisAddr, err)
+		logging.Error(ctx, fmt.Sprintf("ERROR: Could not connect to Redis at %s: %v", redisAddr, err))
 		os.Exit(1)
 	}
-	log.InfoContextf(ctx, "Connected to Redis at %s", redisAddr)
+	logging.Info(ctx, fmt.Sprintf("Connected to Redis at %s", redisAddr))
 
 	tests := []testCase{
 		{"TestSuccess", testSuccess, 0, 1, 0},
@@ -92,54 +92,53 @@ func main() {
 
 	allPassed := true
 	for _, tc := range tests {
-		log.InfoContextf(ctx, "--- Running test: %s ---", tc.name)
+		logging.Info(ctx, fmt.Sprintf("--- Running test: %s ---", tc.name))
 		if err := setupRedis(ctx, consumer); err != nil {
-			log.ErrorContextf(ctx, "Failed to setup Redis: %v", err)
+			logging.Error(ctx, fmt.Sprintf("Failed to setup Redis: %v", err))
 			allPassed = false
 			continue
 		}
 
 		stats, err := tc.testFunc(ctx, consumer, publisher)
 		if err != nil {
-			log.ErrorContextf(ctx, "--- FAIL: %s returned error: %v ---", tc.name, err)
+			logging.Error(ctx, fmt.Sprintf("--- FAIL: %s returned error: %v ---", tc.name, err))
 			allPassed = false
 			continue
 		}
 
 		success := true
-		log.InfoContextf(ctx, "Validating tests results for %s", tc.name)
+		logging.Info(ctx, fmt.Sprintf("Validating tests results for %s", tc.name))
 		if stats.PendingCount != tc.expectedPending {
-			log.ErrorContextf(ctx, "Failure: expected %d pending messages, got %d", tc.expectedPending, stats.PendingCount)
+			logging.Error(ctx, fmt.Sprintf("Failure: expected %d pending messages, got %d", tc.expectedPending, stats.PendingCount))
 			success = false
 		}
 		if stats.StreamLength != tc.expectedStreamLen {
-			log.ErrorContextf(ctx, "Failure: expected %d stream len, got %d", tc.expectedStreamLen, stats.StreamLength)
+			logging.Error(ctx, fmt.Sprintf("Failure: expected %d stream len, got %d", tc.expectedStreamLen, stats.StreamLength))
 			success = false
 		}
 		if stats.DLQLength != tc.expectedDlqLen {
-			log.ErrorContextf(ctx, "Failure: expected %d DLQ stream len, got %d", tc.expectedDlqLen, stats.DLQLength)
+			logging.Error(ctx, fmt.Sprintf("Failure: expected %d DLQ stream len, got %d", tc.expectedDlqLen, stats.DLQLength))
 			success = false
 		}
 
 		if !success {
-			log.ErrorContextf(ctx, "--- FAIL: %s ---", tc.name)
+			logging.Error(ctx, fmt.Sprintf("--- FAIL: %s ---", tc.name))
 			allPassed = false
 		} else {
-			log.InfoContextf(ctx, "--- PASS: %s ---", tc.name)
+			logging.Info(ctx, fmt.Sprintf("--- PASS: %s ---", tc.name))
 		}
 	}
 
-	if allPassed {
-		log.InfoContextf(ctx, "All validation tests passed!")
-	} else {
-		log.ErrorContextf(ctx, "SOME VALIDATION TESTS FAILED.")
+	if !allPassed {
+		logging.Error(ctx, "SOME VALIDATION TESTS FAILED.")
 		os.Exit(1)
 	}
+	logging.Info(ctx, "All validation tests passed!")
 }
 
 // setupRedis resets Redis state for a test run.
 func setupRedis(ctx context.Context, consumer *redisclient.ConsumerClient) error {
-	log.InfoContextf(ctx, "Resetting Redis state (FLUSHALL, creating group)...")
+	logging.Info(ctx, "Resetting Redis state (FLUSHALL, creating group)...")
 
 	consumer.Reset(ctx)
 	consumer.InitializeClient(ctx)
@@ -169,7 +168,7 @@ func runWorkerInBackground(ctx context.Context, workerID string, workerFunc func
 }
 
 func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing successful message processing...")
+	logging.Info(ctx, "Testing successful message processing...")
 	// Setup: Mock function to succeed.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
 		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
@@ -182,11 +181,11 @@ func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	workerHandle := runWorkerInBackground(ctx, "worker-1", consumer.StartWorker)
 
 	// Publisher: Add a message to the stream.
-	log.InfoContextf(ctx, "Publishing message 'ok'...")
+	logging.Info(ctx, "Publishing message 'ok'...")
 	publisher.AddMessage(ctx, "ok", "0")
 
 	// Assertion: Wait for message to be ACKed.
-	log.InfoContextf(ctx, "Waiting for message to be ACKed...")
+	logging.Info(ctx, "Waiting for message to be ACKed...")
 	time.Sleep(5 * time.Second)
 
 	pending, _ := consumer.FetchPendingCount(ctx)
@@ -202,7 +201,7 @@ func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 }
 
 func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing pending message count during processing...")
+	logging.Info(ctx, "Testing pending message count during processing...")
 	consumer.ProcessTimeout = 10 * time.Second
 	consumer.AbandonedMessageTimeout = 10 * time.Second
 	defer func() { consumer.ProcessTimeout = processTimeout }()
@@ -234,7 +233,7 @@ func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 }
 
 func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing message retry on function error if retryable...")
+	logging.Info(ctx, "Testing message retry on function error if retryable...")
 	// Setup: Mock function to fail.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
 		if data == "bad-no-retry" {
@@ -250,13 +249,13 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 	workerHandle := runWorkerInBackground(ctx, "worker-1", consumer.StartWorker)
 
 	// Publisher: Add a message that will cause an error.
-	log.InfoContextf(ctx, "Publishing message 'bad-with-retry' that will be retried...")
+	logging.Info(ctx, "Publishing message 'bad-with-retry' that will be retried...")
 	publisher.AddMessage(ctx, "bad-with-retry", "0")
 	// Publisher: Add a message that will cause a non-retryable error.
-	log.InfoContextf(ctx, "Publishing message 'bad-no-retry' that will not be retried...")
+	logging.Info(ctx, "Publishing message 'bad-no-retry' that will not be retried...")
 	publisher.AddMessage(ctx, "bad-no-retry", "0")
 
-	log.InfoContextf(ctx, "Waiting for message to be re-queued for retry...")
+	logging.Info(ctx, "Waiting for message to be re-queued for retry...")
 	time.Sleep(5 * time.Second)
 
 	pending, _ := consumer.FetchPendingCount(ctx)
@@ -284,7 +283,7 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 			if failedAttempts != 1 {
 				validationErrors = append(validationErrors, fmt.Errorf("'bad-no-retry' message in DLQ has %d failed attempts, want 1", failedAttempts))
 			} else {
-				log.InfoContextf(ctx, "'bad-no-retry' message found in DLQ with 1 failed attempt, as expected.")
+				logging.Info(ctx, "'bad-no-retry' message found in DLQ with 1 failed attempt, as expected.")
 			}
 		}
 		if msg.Values["data"] == "bad-with-retry" {
@@ -292,7 +291,7 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 			if failedAttempts != maxFailedAttempts+1 {
 				validationErrors = append(validationErrors, fmt.Errorf("'bad-with-retry' message in DLQ has %d failed attempts, want %d", failedAttempts, maxFailedAttempts+1))
 			} else {
-				log.InfoContextf(ctx, "'bad-with-retry' message found in DLQ with %d failed attempts, as expected.", maxFailedAttempts+1)
+				logging.Info(ctx, fmt.Sprintf("'bad-with-retry' message found in DLQ with %d failed attempts, as expected.", maxFailedAttempts+1))
 			}
 		}
 	}
@@ -317,14 +316,14 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 }
 
 func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing cleanup of abandoned messages...")
+	logging.Info(ctx, "Testing cleanup of abandoned messages...")
 	// Setup: Mock function to fail, so we can see it gets re-processed and retried.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: true, Error: errors.New("error")}
 	})
 
 	// Publisher simulation: Add and consume a message by 'abandoner' to make it pending.
-	log.InfoContextf(ctx, "Publishing message 'abandon' and leaving it pending...")
+	logging.Info(ctx, "Publishing message 'abandon' and leaving it pending...")
 	publisher.AddMessage(ctx, "abandon", "0")
 	_, err := consumer.Client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    groupName,
@@ -333,11 +332,11 @@ func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 		Count:    1,
 	}).Result()
 	if err != nil {
-		log.ErrorContextf(ctx, "XReadGroup for abandoner failed: %v", err)
+		logging.Error(ctx, fmt.Sprintf("XReadGroup for abandoner failed: %v", err))
 		return StreamStats{PendingCount: -1}, fmt.Errorf("XReadGroup for abandoner failed: %v", err)
 	}
 
-	log.InfoContextf(ctx, "Message abandoned, starting worker and cleanup worker...")
+	logging.Info(ctx, "Message abandoned, starting worker and cleanup worker...")
 	// Publisher: Start the cleanup goroutine
 	cleanupHandle := runWorkerInBackground(ctx, "cleanup-1", consumer.RunCleanup)
 
@@ -348,7 +347,7 @@ func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	// process it via ProcessMessage, which will see an error, ACK the original,
 	// and add a new message to the stream with failedAttempts=1.
 	// We expect 1 new message for the group to process. Pending should be 0.
-	log.InfoContextf(ctx, "Waiting for cleanup worker to claim and re-queue message...")
+	logging.Info(ctx, "Waiting for cleanup worker to claim and re-queue message...")
 	time.Sleep(5 * time.Second)
 
 	pending, _ := consumer.FetchPendingCount(ctx)
@@ -365,7 +364,7 @@ func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 
 func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	messageCount := 15
-	log.InfoContextf(ctx, "Testing load balancing with 3 workers and %d messages...", messageCount)
+	logging.Info(ctx, fmt.Sprintf("Testing load balancing with 3 workers and %d messages...", messageCount))
 	var mu sync.Mutex
 	processedCount := make(map[string]int)
 
@@ -385,7 +384,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 	worker3 := runWorkerInBackground(ctx, "worker-lb-3", consumer.StartWorker)
 
 	// Publisher: Add messageCount messages to the stream.
-	log.InfoContextf(ctx, "Publishing %d messages...", messageCount)
+	logging.Info(ctx, fmt.Sprintf("Publishing %d messages...", messageCount))
 	for i := 0; i < messageCount; i++ {
 		publisher.AddMessage(ctx, strconv.Itoa(i), "0")
 	}
@@ -393,7 +392,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 	// Assertion: Wait for messages to be processed.
 	// 15 messages * 200ms / 3 workers = 1s.
 	// Let's wait 10 seconds to be sure all are processed and ACKed.
-	log.InfoContextf(ctx, "Waiting for messages to be processed...")
+	logging.Info(ctx, "Waiting for messages to be processed...")
 	time.Sleep(10 * time.Second)
 
 	pending, _ := consumer.FetchPendingCount(ctx)
@@ -433,7 +432,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 }
 
 func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing message timeout...")
+	logging.Info(ctx, "Testing message timeout...")
 	// Setup: Mock function to timeout.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
 		time.Sleep(processTimeout + 500*time.Millisecond)
@@ -447,12 +446,12 @@ func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	workerHandle := runWorkerInBackground(ctx, "worker-1", consumer.StartWorker)
 
 	// Publisher: Add a message that will cause a timeout.
-	log.InfoContextf(ctx, "Publishing message 'timeout'...")
+	logging.Info(ctx, "Publishing message 'timeout'...")
 	publisher.AddMessage(ctx, "timeout", "0")
 
 	// Assertion: Wait for worker to timeout, ACK original message, and add a new one for retry.
 	// This will repeat until maxFailedAttempts is reached, and message is moved to DLQ.
-	log.InfoContextf(ctx, "Waiting for message to be moved to DLQ after timeouts...")
+	logging.Info(ctx, "Waiting for message to be moved to DLQ after timeouts...")
 	time.Sleep(10 * time.Second) // need more time for 5 timeouts of 1s each + redis communication.
 
 	pending, _ := consumer.FetchPendingCount(ctx)
@@ -468,7 +467,7 @@ func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 }
 
 func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
-	log.InfoContextf(ctx, "Testing batching with batchSize=10...")
+	logging.Info(ctx, "Testing batching with batchSize=10...")
 	numberOfMessages := 5
 	consumer.ReadBatchSize = 10
 	consumer.AbandonedMessageTimeout = 10 * time.Second
@@ -487,7 +486,7 @@ func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, pu
 	})
 
 	// Publisher: Add 5 messages.
-	log.InfoContextf(ctx, "Publishing %d messages...", numberOfMessages)
+	logging.Info(ctx, fmt.Sprintf("Publishing %d messages...", numberOfMessages))
 	for i := 0; i < numberOfMessages; i++ {
 		publisher.AddMessage(ctx, strconv.Itoa(i), "0")
 	}
@@ -499,7 +498,7 @@ func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, pu
 	w2 := runWorkerInBackground(ctx, "worker-batch-2", consumer.StartWorker)
 	w3 := runWorkerInBackground(ctx, "worker-batch-3", consumer.StartWorker)
 
-	log.InfoContextf(ctx, "Waiting for messages to be processed...")
+	logging.Info(ctx, "Waiting for messages to be processed...")
 	time.Sleep(10 * time.Second)
 
 	// Cleanup: Stop workers.

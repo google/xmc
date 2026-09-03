@@ -46,7 +46,7 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags.
 - [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist.
-- [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR descriptions from text or Markdown files.
+- [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
 
 ### 4. `tools/benchmark/` (Skills & Rules Benchmark Suite)
 Harness for testing and evaluating skill/rule modifications:

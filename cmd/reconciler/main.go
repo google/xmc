@@ -30,6 +30,7 @@ func main() {
 
 	cfg := Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.RuntimeConfig.QuotaProjectID)
+	slog.SetDefault(logger)
 	ctx = logging.WithLogger(ctx, logger)
 
 	if err := run(ctx, cfg); err != nil {
@@ -52,6 +53,12 @@ func run(ctx context.Context, cfg Config) error {
 	if err := registerHealthChecks(mgr.CtrlManager(), k8s, spHealth); err != nil {
 		return fmt.Errorf("failed to register health checks: %w", err)
 	}
+
+	// Expose the reconciler's own metrics (registered to the global default
+	// registry via promauto) on a dedicated port for PodMonitoring to scrape;
+	// the manager's own metrics server serves only the controller-runtime
+	// registry.
+	go serveMetrics(ctx, fmt.Sprintf(":%d", cfg.MetricsPort))
 
 	return mgr.Start(ctx)
 }
