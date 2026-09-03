@@ -70,12 +70,16 @@ func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.Compone
 type mockHelm struct {
 	ensureErr, deleteErr error
 	active               bool
+	lastRef              ComponentRef
+	lastOpts             HelmComponentOptions
 }
 
 func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
 	}
+	m.lastRef = ref
+	m.lastOpts = opts
 	if m.ensureErr == nil {
 		m.active = true
 	}
@@ -611,5 +615,39 @@ func TestExtractHelpers(t *testing.T) {
 	}
 	if parseWrapperRef(m) != nil {
 		t.Errorf("parseWrapperRef not-a-map failed")
+	}
+}
+
+func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, nil, helm)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+
+	in := ReconcileComponentInput{
+		Namespace: "custom-ns",
+		Name:      "custom-comp",
+		Enabled:   true,
+		Spec: &componentspb.ComponentSpec{
+			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		},
+		HelmOpts: HelmComponentOptions{
+			// Ref intentionally empty
+		},
+	}
+
+	res := &ReconcileResult{}
+	if err := r.ensure1PComponent(ctx, in, res); err != nil {
+		t.Fatalf("ensure1PComponent failed: %v", err)
+	}
+
+	wantRef := ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
+	if helm.lastRef != wantRef {
+		t.Errorf("expected lastRef %v, got %v", wantRef, helm.lastRef)
+	}
+	if helm.lastOpts.Ref != wantRef {
+		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helm.lastOpts.Ref)
 	}
 }

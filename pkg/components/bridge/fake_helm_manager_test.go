@@ -148,3 +148,51 @@ func TestFakeHelmManager(t *testing.T) {
 		t.Error("expected nil for empty component name GetAppliedValues")
 	}
 }
+
+func TestFakeHelmManager_GetAppliedValues_CloneIsolation(t *testing.T) {
+	ctx := context.Background()
+	mgr := NewFakeHelmManager()
+	ref := ComponentRef{Namespace: "xmc", Name: "test-comp"}
+	opts := HelmComponentOptions{
+		Ref:     ref,
+		Enabled: true,
+		RawValues: map[string]any{
+			"config": map[string]any{
+				"timeout": 30,
+			},
+		},
+	}
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	values := mgr.GetAppliedValues(ref)
+	if values == nil {
+		t.Fatal("expected non-nil applied values")
+	}
+
+	depKey := ComponentNameToHelmKey(ref.Name)
+	depMap, ok := values[depKey].(map[string]any)
+	if !ok {
+		t.Fatalf("expected values[%q] to be a map[string]any", depKey)
+	}
+
+	// Mutate the returned copy
+	if configMap, ok := depMap["config"].(map[string]any); ok {
+		configMap["timeout"] = 999
+	}
+	values["newKey"] = "newValue"
+
+	// Verify internal state in FakeHelmManager was not mutated
+	freshValues := mgr.GetAppliedValues(ref)
+	if freshValues["newKey"] != nil {
+		t.Error("expected fresh values not to contain newKey added to external copy")
+	}
+	freshDepMap, ok := freshValues[depKey].(map[string]any)
+	if !ok {
+		t.Fatalf("expected fresh values[%q] to be map[string]any", depKey)
+	}
+	if freshConfig, ok := freshDepMap["config"].(map[string]any); !ok || freshConfig["timeout"] != 30 {
+		t.Errorf("expected internal timeout to remain 30, got %v", freshDepMap["config"])
+	}
+}

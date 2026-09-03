@@ -294,24 +294,25 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 
 // ensure1PComponent sets component enablement and parameter values in the Helm release.
 func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		if r.helmManager == nil {
-			logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
-			return nil
-		}
-		ref := in.HelmOpts.Ref
-		if ref.Name == "" {
-			ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
-		}
-		in.HelmOpts.Enabled = in.Enabled
-		if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
-			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmUpgradeFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())
-			return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
-		}
-		logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace)
+	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		return nil
 	}
+	if r.helmManager == nil {
+		logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
+		return nil
+	}
+	if in.HelmOpts.Ref.Name == "" {
+		in.HelmOpts.Ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
+	}
+	ref := in.HelmOpts.Ref
+	in.HelmOpts.Enabled = in.Enabled
+	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
+		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmUpgradeFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())
+		return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
+	}
+	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace)
 	return nil
 }
 

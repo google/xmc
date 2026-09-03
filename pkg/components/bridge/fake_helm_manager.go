@@ -151,12 +151,27 @@ func (f *FakeHelmManager) IsComponentActive(ref ComponentRef) bool {
 	return f.ActiveComponents[ref.String()]
 }
 
-// GetAppliedValues returns the applied Helm values for a component thread-safely.
+// GetAppliedValues returns a thread-safe deep copy of the applied Helm values for a component.
 func (f *FakeHelmManager) GetAppliedValues(ref ComponentRef) map[string]any {
 	if f == nil || ref.Name == "" {
 		return nil
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.AppliedValues[ref.String()]
+	return cloneValuesMap(f.AppliedValues[ref.String()])
+}
+
+func cloneValuesMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	res := make(map[string]any, len(m))
+	for k, v := range m {
+		if subMap, ok := v.(map[string]any); ok {
+			res[k] = cloneValuesMap(subMap)
+		} else {
+			res[k] = v
+		}
+	}
+	return res
 }
