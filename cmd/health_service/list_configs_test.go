@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/pkg/components/summary"
 )
 
 func TestListConfigs(t *testing.T) {
@@ -162,4 +163,35 @@ func (e errorFileFS) ReadFile(name string) ([]byte, error) {
 	}
 	defer f.Close()
 	return io.ReadAll(f)
+}
+
+func TestConvertComponentConfigs(t *testing.T) {
+	configs := []summary.ComponentConfig{
+		{
+			Name: "clickhouse",
+			ConfigParameters: []summary.ConfigParameter{
+				{Key: "type", Value: "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
+				{Key: "version", Value: "v1"},
+			},
+		},
+		{
+			Name:             "empty-comp",
+			ConfigParameters: nil,
+		},
+	}
+
+	got := convertComponentConfigs(configs)
+	want := []*spb.ConfigGroup{
+		{
+			DisplayName: "clickhouse (Custom Component)",
+			Configs: []*spb.ConfigInfo{
+				{Key: "type", Value: "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
+				{Key: "version", Value: "v1"},
+			},
+		},
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("convertComponentConfigs() mismatch (-want +got):\n%s", diff)
+	}
 }

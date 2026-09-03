@@ -24,6 +24,7 @@ import (
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/summary"
 )
 
 // readConfigDir reads all files in the given directory from fsys and returns ConfigInfo slice.
@@ -85,4 +86,26 @@ func listConfigs(ctx context.Context, fsys fs.FS) ([]*spb.ConfigGroup, error) {
 	}
 
 	return groups, nil
+}
+
+// convertComponentConfigs transforms custom component configurations into ConfigGroup objects.
+func convertComponentConfigs(configs []summary.ComponentConfig) []*spb.ConfigGroup {
+	groups := make([]*spb.ConfigGroup, 0, len(configs))
+	for _, comp := range configs {
+		if len(comp.ConfigParameters) == 0 {
+			continue
+		}
+		infoList := make([]*spb.ConfigInfo, 0, len(comp.ConfigParameters))
+		for _, param := range comp.ConfigParameters {
+			infoList = append(infoList, &spb.ConfigInfo{
+				Key:   param.Key,
+				Value: param.Value,
+			})
+		}
+		groups = append(groups, &spb.ConfigGroup{
+			DisplayName: fmt.Sprintf("%s (Custom Component)", comp.Name),
+			Configs:     infoList,
+		})
+	}
+	return groups
 }

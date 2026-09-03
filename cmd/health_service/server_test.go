@@ -26,6 +26,7 @@ import (
 	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/pkg/components/summary"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -93,7 +94,7 @@ func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, windo
 		},
 	}
 	checker := &mockHealthChecker{result: mockResult}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil)
 	return &testFixture{
 		checker: checker,
 		server:  s,
@@ -240,7 +241,7 @@ func TestGetHealthStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := &mockHealthChecker{result: tt.mockResult}
-			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true})
+			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil)
 			defer s.Close()
 
 			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -290,7 +291,7 @@ func TestGetHealthStatus_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard)
+	s := newServer(cfg, checker, guard, nil)
 	defer s.Close()
 
 	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -331,7 +332,7 @@ func TestListConfigEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil)
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -360,7 +361,7 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard)
+	s := newServer(cfg, checker, guard, nil)
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -372,6 +373,92 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestListConfigEntries_WithCustomComponents(t *testing.T) {
+	tempDir := t.TempDir()
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0755); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(essDir, "ess_key"), []byte("ess_val"), 0644); err != nil {
+		t.Fatalf("failed to write ess config: %v", err)
+	}
+
+	cfg := &Config{
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
+	}
+	checker := &mockHealthChecker{}
+	mockProvider := &mockComponentsInfoProvider{
+		configList: []summary.ComponentConfig{
+			{
+				Name: "clickhouse",
+				ConfigParameters: []summary.ConfigParameter{
+					{Key: "version", Value: "v1.0"},
+					{Key: "wrapper.crd_kind", Value: "ClickHouseInstallation"},
+				},
+			},
+		},
+	}
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider)
+	defer s.Close()
+
+	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err != nil {
+		t.Fatalf("ListConfigEntries failed: %v", err)
+	}
+
+	if len(resp.ConfigGroups) != 2 {
+		t.Fatalf("Expected 2 config groups, got %d", len(resp.ConfigGroups))
+	}
+
+	if resp.ConfigGroups[0].DisplayName != "Experiment State Server Config" {
+		t.Errorf("expected ESS config group, got %q", resp.ConfigGroups[0].DisplayName)
+	}
+	customGroup := resp.ConfigGroups[1]
+	if customGroup.DisplayName != "clickhouse (Custom Component)" {
+		t.Errorf("expected custom group display name, got %q", customGroup.DisplayName)
+	}
+	if len(customGroup.Configs) != 2 {
+		t.Fatalf("expected 2 configs in custom group, got %d", len(customGroup.Configs))
+	}
+}
+
+func TestListConfigEntries_CustomComponentsError(t *testing.T) {
+	tempDir := t.TempDir()
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0755); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(essDir, "key"), []byte("val"), 0644); err != nil {
+		t.Fatalf("failed to write ess config: %v", err)
+	}
+
+	cfg := &Config{
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
+	}
+	mockProvider := &mockComponentsInfoProvider{
+		configErr: errors.New("spanner failure"),
+	}
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider)
+	defer s.Close()
+
+	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err != nil {
+		t.Fatalf("ListConfigEntries failed: %v", err)
+	}
+
+	// Should still return core config group without failing the RPC
+	if len(resp.ConfigGroups) != 1 {
+		t.Fatalf("Expected 1 config group on custom components error, got %d", len(resp.ConfigGroups))
+	}
+}
 func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -439,7 +526,6 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{Port: "8080", GRPCPort: "50051"}
@@ -448,7 +534,7 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 					Components: tt.components,
 				},
 			}
-			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil)
 			defer s.Close()
 
 			resp := s.calculateHealthStatus(context.Background())
@@ -498,7 +584,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard)
+			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil)
 			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
 			if err != nil {
 				t.Fatalf("GetUserInfo failed: %v", err)

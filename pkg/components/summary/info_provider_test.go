@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -48,6 +49,14 @@ func TestStoreComponentsProvider_EmptyStore(t *testing.T) {
 	}
 	if len(healthList) != 0 {
 		t.Errorf("got %d health items, want 0", len(healthList))
+	}
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 0 {
+		t.Errorf("got %d config items, want 0", len(configList))
 	}
 }
 
@@ -202,6 +211,72 @@ func TestEnums_StringMethods(t *testing.T) {
 	}
 }
 
+func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
+	ctx := context.Background()
+	memStore := store.NewMemoryStore()
+	provider, err := NewStoreComponentsProvider(memStore)
+	if err != nil {
+		t.Fatalf("NewStoreComponentsProvider failed: %v", err)
+	}
+
+	_, _ = memStore.SetComponentIntent(ctx, "redpanda", &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.1.0",
+		Description: "Streaming engine",
+		WrapperRef: &componentspb.WrapperRef{
+			CrdKind:         "RedpandaCluster",
+			CrdGroup:        "redpanda.vectorized.io",
+			CrdVersion:      "v1alpha1",
+			TargetNamespace: "xmc-redpanda",
+			TargetName:      "rp-cluster",
+		},
+	}, map[string]string{
+		"tier": "storage",
+	}, 2)
+
+	_, _ = memStore.UpdateObservedGeneration(ctx, "redpanda", 2, &componentspb.ComponentAccessStatus{
+		Ready: true,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ServiceName: "redpanda-service",
+			Port:        9092,
+			Scheme:      "http",
+			Host:        "redpanda.xmc-redpanda.svc.cluster.local",
+		},
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready")
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configList))
+	}
+
+	cfg := configList[0]
+	if cfg.Name != "redpanda" || cfg.Type != ComponentTypeCustom1PComponent {
+		t.Errorf("unexpected name/type: name=%s type=%v", cfg.Name, cfg.Type)
+	}
+
+	expectedParams := []ConfigParameter{
+		{Key: "description", Value: "Streaming engine"},
+		{Key: "endpoint", Value: "http://redpanda.xmc-redpanda.svc.cluster.local:9092"},
+		{Key: "generation", Value: "2"},
+		{Key: "label.tier", Value: "storage"},
+		{Key: "state", Value: "COMPONENT_STATE_ENABLED"},
+		{Key: "type", Value: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"},
+		{Key: "version", Value: "v2.1.0"},
+		{Key: "wrapper.crd_group", Value: "redpanda.vectorized.io"},
+		{Key: "wrapper.crd_kind", Value: "RedpandaCluster"},
+		{Key: "wrapper.crd_version", Value: "v1alpha1"},
+		{Key: "wrapper.target_name", Value: "rp-cluster"},
+		{Key: "wrapper.target_namespace", Value: "xmc-redpanda"},
+	}
+
+	if diff := cmp.Diff(expectedParams, cfg.ConfigParameters); diff != "" {
+		t.Errorf("ConfigParameters mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 	ctx := context.Background()
 	memStore := store.NewMemoryStore()
@@ -231,5 +306,28 @@ func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 	}
 	if healthList[0].HealthState != HealthStateUnhealthy || healthList[0].StatusMessage != "Component draining" {
 		t.Errorf("unexpected draining health: %+v", healthList[0])
+	}
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configList))
+	}
+
+	cfgMap := make(map[string]string)
+	for _, p := range configList[0].ConfigParameters {
+		cfgMap[p.Key] = p.Value
+	}
+
+	if cfgMap["lifecycle.grace_period"] != "30s" {
+		t.Errorf("got grace_period %q, want %q", cfgMap["lifecycle.grace_period"], "30s")
+	}
+	if cfgMap["lifecycle.draining_timeout"] != "2m0s" {
+		t.Errorf("got draining_timeout %q, want %q", cfgMap["lifecycle.draining_timeout"], "2m0s")
+	}
+	if cfgMap["state"] != "COMPONENT_STATE_DISABLING" {
+		t.Errorf("got state %q, want COMPONENT_STATE_DISABLING", cfgMap["state"])
 	}
 }

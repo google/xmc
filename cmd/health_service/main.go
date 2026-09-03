@@ -237,7 +237,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
 	})
-	srv := newServer(cfg, checker, guard)
+	srv := newServer(cfg, checker, guard, customProvider)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 

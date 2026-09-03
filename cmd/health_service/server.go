@@ -22,6 +22,7 @@ import (
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/summary"
 
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
@@ -42,9 +43,10 @@ var _ spb.HealthServiceServer = (*server)(nil)
 
 type server struct {
 	spb.UnimplementedHealthServiceServer
-	cfg     *Config
-	checker healthChecker
-	guard   AdminRoleGuard
+	cfg                *Config
+	checker            healthChecker
+	guard              AdminRoleGuard
+	componentsProvider summary.CustomComponentsInfoProvider
 
 	// Caching
 	cacheMu      sync.RWMutex
@@ -56,7 +58,7 @@ type server struct {
 	sfGroup             singleflight.Group
 }
 
-func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard) *server {
+func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard, componentsProvider summary.CustomComponentsInfoProvider) *server {
 	var limiter *rate.Limiter
 	if cfg != nil && cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
 		limiter = rate.NewLimiter(rate.Limit(float64(cfg.ForceRefreshMaxRequests)/cfg.ForceRefreshWindow.Seconds()), cfg.ForceRefreshMaxRequests)
@@ -65,6 +67,7 @@ func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard) *server
 		cfg:                 cfg,
 		checker:             checker,
 		guard:               guard,
+		componentsProvider:  componentsProvider,
 		forceRefreshLimiter: limiter,
 	}
 }
@@ -202,6 +205,14 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
 	if err != nil {
 		return nil, err
+	}
+	if s.componentsProvider != nil {
+		customConfigs, err := s.componentsProvider.GetComponentsConfig(ctx)
+		if err != nil {
+			logging.Warn(ctx, "Failed to retrieve custom component configs", "error", err)
+		} else {
+			groups = append(groups, convertComponentConfigs(customConfigs)...)
+		}
 	}
 	return &spb.ListConfigEntriesResponse{
 		ConfigGroups: groups,

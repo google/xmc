@@ -670,11 +670,17 @@ func TestRunChecks(t *testing.T) {
 
 type mockComponentsInfoProvider struct {
 	healthList []summary.ComponentHealth
+	configList []summary.ComponentConfig
 	healthErr  error
+	configErr  error
 }
 
 func (m *mockComponentsInfoProvider) GetComponentsHealth(ctx context.Context) ([]summary.ComponentHealth, error) {
 	return m.healthList, m.healthErr
+}
+
+func (m *mockComponentsInfoProvider) GetComponentsConfig(ctx context.Context) ([]summary.ComponentConfig, error) {
+	return m.configList, m.configErr
 }
 
 func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
