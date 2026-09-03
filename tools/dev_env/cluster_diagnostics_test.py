@@ -51,7 +51,12 @@ class TestClusterDiagnostics(unittest.TestCase):
             if "get nodes" in cmd_str:
                 return subprocess.CompletedProcess(cmd, 0, stdout="node1 Ready", stderr="")
             if "get pods" in cmd_str and "jsonpath" in cmd_str:
-                return subprocess.CompletedProcess(cmd, 0, stdout="pod-1 pod-2", stderr="")
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    stdout="pod-1\tRunning\tTrue\t0\npod-2\tRunning\tTrue\t0",
+                    stderr="",
+                )
             if "logs" in cmd_str:
                 return subprocess.CompletedProcess(cmd, 0, stdout="Container log line", stderr="")
             if "get events" in cmd_str:
@@ -112,6 +117,24 @@ class TestClusterDiagnostics(unittest.TestCase):
         diag_path = self.diagnostics.capture_diagnostics(output_file=nested_file)
         self.assertEqual(diag_path, nested_file)
         self.assertTrue(nested_file.is_file())
+
+    @patch("tools.dev_env.cluster_diagnostics.getpass.getuser", return_value="testuser")
+    @patch("tools.dev_env.cluster_diagnostics.shutil.which", return_value="/usr/bin/kubectl")
+    @patch("tools.dev_env.cluster_diagnostics.run_command")
+    def test_capture_diagnostics_default_user_temp_file(
+        self, mock_run: MagicMock, mock_which: MagicMock, mock_getuser: MagicMock
+    ) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["kubectl", "get", "nodes"], 1, stdout="", stderr="connection refused"
+        )
+        diagnostics = ClusterDiagnostics(kube_context="kind-test-cluster", output_dir=None)
+        diag_path = diagnostics.capture_diagnostics()
+        try:
+            self.assertEqual(diag_path.name, "k8s_diagnostics_testuser.log")
+            self.assertTrue(diag_path.is_file())
+        finally:
+            if diag_path.exists():
+                diag_path.unlink()
 
     @patch("tools.dev_env.cluster_diagnostics.run_command")
     def test_capture_pod_logs_prioritizes_unhealthy_pods(self, mock_run: MagicMock) -> None:

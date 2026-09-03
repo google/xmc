@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import getpass
 import logging
 import shutil
+import tempfile
 from pathlib import Path
 
 from tools.common.tool_utils import log_error, log_info, run_command
@@ -127,10 +129,7 @@ class ClusterDiagnostics:
                 else:
                     other_pods.append(pod_name)
 
-            if not unhealthy_pods and not other_pods and pods_res.stdout:
-                target_pods = pods_res.stdout.split()[:15]
-            else:
-                target_pods = (unhealthy_pods + other_pods)[:10]
+            target_pods = (unhealthy_pods + other_pods)[:10]
 
             for pod in target_pods:
                 lines.append(f"--- Logs for pod: {pod} (ns: {ns}) ---")
@@ -177,7 +176,11 @@ class ClusterDiagnostics:
         elif self.output_dir:
             diag_file = self.output_dir / "k8s_diagnostics.log"
         else:
-            diag_file = Path("/tmp/k8s_diagnostics.log")
+            try:
+                username = getpass.getuser()
+            except Exception:
+                username = "unknown"
+            diag_file = Path(tempfile.gettempdir()) / f"k8s_diagnostics_{username}.log"
 
         diag_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -209,9 +212,13 @@ class ClusterDiagnostics:
 
         for ns in namespaces:
             lines.extend(self._capture_pods(ctx, ns))
+            lines.append("")
             lines.extend(self._capture_pod_descriptions(ctx, ns))
+            lines.append("")
             lines.extend(self._capture_events(ctx, ns))
+            lines.append("")
             lines.extend(self._capture_pod_logs(ctx, ns))
+            lines.append("")
 
         diag_file.write_text("\n".join(lines), encoding="utf-8")
         log_info(f"Diagnostic logs saved to: '{diag_file}'")
