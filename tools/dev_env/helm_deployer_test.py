@@ -68,15 +68,23 @@ class TestHelmDeployer(unittest.TestCase):
             xid_database="test_xid_db",
             cluster_name="test-kind-cluster",
         )
+        self.mock_sanitizer = MagicMock()
         self.deployer = HelmDeployer(
             config=self.config,
             repo_root=self.temp_path,
             temp_dir=self.temp_path,
+            sanitizer=self.mock_sanitizer,
         )
 
     def tearDown(self) -> None:
         self.tmp_dir.cleanup()
         super().tearDown()
+
+    def test_prepare_local_chart_delegates_to_sanitizer(self) -> None:
+        self.mock_sanitizer.prepare_sanitized_chart.return_value = self.temp_path / "sanitized"
+        res = self.deployer.prepare_local_chart()
+        self.assertEqual(res, self.temp_path / "sanitized")
+        self.mock_sanitizer.prepare_sanitized_chart.assert_called_once()
 
     def test_dump_yaml_json_fallback(self) -> None:
         data = {"key": "val", "number": 42, "items": ["a", "b"]}
@@ -266,6 +274,23 @@ class TestHelmDeployer(unittest.TestCase):
             ],
             check=False,
         )
+
+    @patch.object(HelmDeployer, "wait_for_rollouts")
+    @patch("tools.dev_env.helm_deployer.run_command")
+    def test_deploy_default_sanitizes_chart(
+        self, mock_run: MagicMock, mock_wait: MagicMock
+    ) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = b"gateway-proxy"
+        mock_run.return_value.stderr = b""
+        sanitized_dir = self.temp_path / "sanitized_chart"
+        sanitized_dir.mkdir(parents=True, exist_ok=True)
+        self.mock_sanitizer.prepare_sanitized_chart.return_value = sanitized_dir
+
+        self.deployer.deploy(timeout=60)
+
+        self.mock_sanitizer.prepare_sanitized_chart.assert_called_once()
+        mock_wait.assert_called_once_with(namespace="xmc", timeout_seconds=60)
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_deploy_with_values_local_yaml(self, mock_run: MagicMock) -> None:

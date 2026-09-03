@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helm chart values generation and deployment manager for local KinD dev."""
+"""Helm chart values generation, release orchestration, and deployment for local dev."""
+
+from __future__ import annotations
 
 import getpass
 import json
@@ -22,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import log_info, log_success, run_command
+from tools.dev_env.chart_sanitizer import ChartSanitizer
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.helm_deployer")
@@ -81,13 +84,14 @@ def service_to_image_key(service: str) -> str:
 
 
 class HelmDeployer:
-    """Manages Helm release values generation and deployment on KinD."""
+    """Manages Helm release values generation, deployment orchestration, and rollout verification."""
 
     def __init__(
         self,
         config: LocalDevConfig,
         repo_root: Path | None = None,
         temp_dir: Path | None = None,
+        sanitizer: ChartSanitizer | None = None,
     ) -> None:
         """Initializes HelmDeployer with development configuration."""
         self.config, self.repo_root = config, repo_root or _REPO_ROOT
@@ -103,12 +107,21 @@ class HelmDeployer:
         self.temp_dir = (
             temp_dir or self.repo_root / ".xmc_dev" / f"{username}_{config.cluster_name}"
         )
+        self.helm_dir = self.temp_dir / "helm"
         self.values_file = self.temp_dir / "values.yaml"
+        self.sanitizer = sanitizer or ChartSanitizer(
+            source_chart=self.repo_root / "deploy" / "helm",
+            target_dir=self.helm_dir,
+        )
 
     @property
     def kube_context(self) -> str:
         """Returns the kubectl context name for this KinD cluster."""
         return f"kind-{self.config.cluster_name}"
+
+    def prepare_local_chart(self) -> Path:
+        """Copies and sanitizes Helm chart templates for local development."""
+        return self.sanitizer.prepare_sanitized_chart()
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
@@ -275,11 +288,11 @@ class HelmDeployer:
     ) -> None:
         """Executes Helm release upgrade/install and waits for rollout confirmation.
 
-        Runs `helm upgrade --install xmc <chart_dir> -f <values_file>`, restarts
-        gateway-proxy to bind to new backends, and waits for deployment rollouts.
+        Sanitizes chart templates for local KinD execution, runs `helm upgrade --install`,
+        restarts gateway-proxy, and verifies deployment rollouts.
 
         Args:
-            chart_path: Optional Path to the Helm chart directory; defaults to deploy/helm.
+            chart_path: Optional Path to the Helm chart directory; sanitized if omitted.
             values_path: Optional Path to custom values YAML file; generated if omitted.
             namespace: Target Kubernetes namespace (default: 'xmc').
             timeout: Maximum rollout wait timeout in seconds (default: 180).
@@ -287,7 +300,7 @@ class HelmDeployer:
         Raises:
             FileNotFoundError: If the specified Helm chart directory does not exist.
         """
-        chart_dir = chart_path or (self.repo_root / "deploy" / "helm")
+        chart_dir = chart_path or self.prepare_local_chart()
         if not chart_dir.is_dir():
             raise FileNotFoundError(f"Helm chart directory not found at '{chart_dir}'")
         if values_path:
