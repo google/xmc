@@ -64,10 +64,15 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
 - **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
 - **Clean Lifecycle Operations**:
-  - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap and records component enablement.
-  - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, and clears active tracking state.
-  - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown.
-  - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership.
+  - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap, records component enablement, and triggers a release upgrade.
+  - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, clears active tracking state, and triggers a release upgrade.
+  - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and triggers a release upgrade.
+  - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
+- **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
+  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`RunUpgrade(ctx, releaseName, chartPath, values)`), allowing in-process Helm release upgrades without CLI child processes.
+  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the Helm release.
+- **Asynchronous Upgrade Worker Queue**:
+  - Serializes and debounces concurrent component updates through a buffered channel (`upgradeChan`) and worker goroutine (`syncUpgradeWorker`), preventing concurrent Helm release state conflicts and lock contention during multi-component updates.
 
 ---
 

@@ -55,12 +55,16 @@ type Config struct {
 	CMSAddress string
 	// Namespace is the target Kubernetes namespace to watch and reconcile Component resources.
 	Namespace string
+	// ReleaseName is the Helm release name for 1P component actuation.
+	ReleaseName string
 	// ProbeInterval is the duration interval between periodic reconciliation sweeps.
 	ProbeInterval time.Duration
 	// ProbeTimeout is the timeout duration for individual component probe and reconciliation passes.
 	ProbeTimeout time.Duration
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
+	// ChartPath is the optional filesystem path to the Helm chart to actuate.
+	ChartPath string
 }
 
 // ComponentStatus defines the structured representation of .status in the Component CRD.
@@ -99,6 +103,10 @@ func ParseConfig(args []string) (*Config, error) {
 	if defaultNS == "" {
 		defaultNS = "xmc"
 	}
+	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
+	if defaultReleaseName == "" {
+		defaultReleaseName = bridge.DefaultHelmReleaseName
+	}
 	defaultProbeInterval := 5 * time.Second
 	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
 		d, err := time.ParseDuration(val)
@@ -116,13 +124,16 @@ func ParseConfig(args []string) (*Config, error) {
 		defaultProbeTimeout = d
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
+	defaultChartPath := os.Getenv("HELM_CHART_PATH")
 
 	fs := flag.NewFlagSet("xmc_bridge", flag.ContinueOnError)
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
+	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
+	chartPath := fs.String("chart-path", defaultChartPath, "Path to the Helm chart directory or tarball")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
@@ -136,9 +147,11 @@ func ParseConfig(args []string) (*Config, error) {
 	return &Config{
 		CMSAddress:    *cmsAddress,
 		Namespace:     *namespace,
+		ReleaseName:   *releaseName,
 		ProbeInterval: *probeInterval,
 		ProbeTimeout:  *probeTimeout,
 		Kubeconfig:    *kubeconfig,
+		ChartPath:     *chartPath,
 	}, nil
 }
 
@@ -403,7 +416,14 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
-	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, bridge.DefaultHelmReleaseName)
+	helmOpts := []bridge.HelmManagerOption{
+		bridge.WithKubeconfig(cfg.Kubeconfig),
+	}
+	if cfg.ChartPath != "" {
+		helmOpts = append(helmOpts, bridge.WithChartPath(cfg.ChartPath))
+	}
+	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
+	defer helmMgr.Close()
 	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)

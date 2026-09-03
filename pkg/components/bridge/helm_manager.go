@@ -19,13 +19,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
 
 	"xmanager_cloud/logging/logging"
 )
@@ -53,30 +62,175 @@ type HelmManager interface {
 	IsComponentActive(ref ComponentRef) bool
 }
 
+// HelmActionRunner abstracts the execution of Helm release upgrades via the Helm Go SDK or test doubles.
+type HelmActionRunner interface {
+	Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error)
+}
+
+// SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
+type SDKHelmActionRunner struct {
+	restClientGetter genericclioptions.RESTClientGetter
+	helmDriver       string
+	chartPath        string
+	chartObj         *chart.Chart
+	mu               sync.RWMutex
+}
+
+// SDKRunnerOption configures an SDKHelmActionRunner.
+type SDKRunnerOption func(*SDKHelmActionRunner)
+
+// WithDriver sets the Helm storage driver (e.g. "secrets", "configmaps", "memory").
+func WithDriver(driver string) SDKRunnerOption {
+	return func(r *SDKHelmActionRunner) {
+		if driver != "" {
+			r.helmDriver = driver
+		}
+	}
+}
+
+// WithRunnerChartPath sets the filesystem path to the Helm chart to load.
+func WithRunnerChartPath(path string) SDKRunnerOption {
+	return func(r *SDKHelmActionRunner) { r.chartPath = path }
+}
+
+// WithRunnerChartObj provides a pre-loaded Chart object for upgrades.
+func WithRunnerChartObj(c *chart.Chart) SDKRunnerOption {
+	return func(r *SDKHelmActionRunner) { r.chartObj = c }
+}
+
+// NewSDKHelmActionRunner creates an initialized SDKHelmActionRunner.
+func NewSDKHelmActionRunner(getter genericclioptions.RESTClientGetter, opts ...SDKRunnerOption) *SDKHelmActionRunner {
+	runner := &SDKHelmActionRunner{
+		restClientGetter: getter,
+		helmDriver:       "secrets",
+	}
+	for _, opt := range opts {
+		opt(runner)
+	}
+	return runner
+}
+
+// Upgrade executes an upgrade action on the Helm release using the Helm Go SDK.
+func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
+	if r == nil || r.restClientGetter == nil {
+		return nil, errors.New("helm action runner or restClientGetter is uninitialized")
+	}
+	actionConfig := new(action.Configuration)
+	if err := actionConfig.Init(r.restClientGetter, namespace, r.helmDriver, func(format string, v ...interface{}) {
+		logging.Debug(ctx, fmt.Sprintf(format, v...))
+	}); err != nil {
+		return nil, fmt.Errorf("failed to initialize Helm action configuration: %w", err)
+	}
+
+	upgrade := action.NewUpgrade(actionConfig)
+	upgrade.Namespace = namespace
+	upgrade.Install = true
+	upgrade.ReuseValues = true
+
+	targetChart, err := r.resolveChart(releaseName, chartObj)
+	if err != nil {
+		return nil, err
+	}
+
+	rel, err := upgrade.RunWithContext(ctx, releaseName, targetChart, values)
+	if err != nil {
+		return nil, fmt.Errorf("helm upgrade failed for release %q in namespace %q: %w", releaseName, namespace, err)
+	}
+	return rel, nil
+}
+
+func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.Chart) (*chart.Chart, error) {
+	if chartObj != nil {
+		return chartObj, nil
+	}
+	r.mu.RLock()
+	cached := r.chartObj
+	r.mu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.chartObj == nil && r.chartPath != "" {
+		loaded, err := loader.Load(r.chartPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load Helm chart from %q: %w", r.chartPath, err)
+		}
+		r.chartObj = loaded
+	}
+	if r.chartObj != nil {
+		return r.chartObj, nil
+	}
+	return nil, fmt.Errorf("no chart object or valid chartPath specified for release %q", releaseName)
+}
+
 // K8sHelmManager implements HelmManager by synchronizing component values in Kubernetes ConfigMaps
-// and tracking active 1P component states for Helm release actuation.
+// and executing Helm release upgrades via the Helm Go SDK.
 type K8sHelmManager struct {
 	client      kubernetes.Interface
 	namespace   string
 	releaseName string
+	chartPath   string
+	runner      HelmActionRunner
+
 	mu          sync.RWMutex
 	activeState map[string]bool
+	upgradeErrs map[string]error
+	upgradeMu   sync.Mutex
+}
+
+// HelmManagerOption configures a K8sHelmManager.
+type HelmManagerOption func(*K8sHelmManager)
+
+// WithActionRunner sets the HelmActionRunner for release upgrades.
+func WithActionRunner(runner HelmActionRunner) HelmManagerOption {
+	return func(m *K8sHelmManager) { m.runner = runner }
+}
+
+// WithChartPath sets the filesystem chart path for release upgrades.
+func WithChartPath(chartPath string) HelmManagerOption {
+	return func(m *K8sHelmManager) { m.chartPath = chartPath }
+}
+
+// WithKubeconfig initializes an SDKHelmActionRunner using the specified kubeconfig path.
+func WithKubeconfig(kubeconfig string) HelmManagerOption {
+	return func(m *K8sHelmManager) {
+		settings := cli.New()
+		settings.SetNamespace(m.namespace)
+		if kubeconfig != "" {
+			settings.KubeConfig = kubeconfig
+		}
+		m.runner = NewSDKHelmActionRunner(settings.RESTClientGetter(), WithRunnerChartPath(m.chartPath))
+	}
+}
+
+// WithRESTClientGetter initializes an SDKHelmActionRunner with the provided RESTClientGetter.
+func WithRESTClientGetter(getter genericclioptions.RESTClientGetter) HelmManagerOption {
+	return func(m *K8sHelmManager) { m.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(m.chartPath)) }
 }
 
 // NewK8sHelmManager constructs an initialized K8sHelmManager.
-func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName string) *K8sHelmManager {
+func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName string, opts ...HelmManagerOption) *K8sHelmManager {
 	if releaseName == "" {
 		releaseName = DefaultHelmReleaseName
 	}
 	if namespace == "" {
 		namespace = DefaultNamespace
 	}
-	return &K8sHelmManager{
+	mgr := &K8sHelmManager{
 		client:      client,
 		namespace:   namespace,
 		releaseName: releaseName,
 		activeState: make(map[string]bool),
+		upgradeErrs: make(map[string]error),
 	}
+	for _, opt := range opts {
+		opt(mgr)
+	}
+	if sdkRunner, ok := mgr.runner.(*SDKHelmActionRunner); ok && sdkRunner != nil {
+		sdkRunner.chartPath = mgr.chartPath
+	}
+	return mgr
 }
 
 func componentKey(namespace, componentName string) string {
@@ -90,7 +244,106 @@ func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
 	return m.resolveNamespace(ref.Namespace), nil
 }
 
-// Ensure1PComponent sets the component values in the release ConfigMap and records component enablement.
+func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.upgradeErrs == nil {
+		m.upgradeErrs = make(map[string]error)
+	}
+	if err != nil {
+		m.upgradeErrs[ref.String()] = err
+		return
+	}
+	delete(m.upgradeErrs, ref.String())
+}
+
+// GetUpgradeError returns the last error encountered during an upgrade for the given component, if any.
+func (m *K8sHelmManager) GetUpgradeError(ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	targetNamespace, err := m.validateAndResolve(ref)
+	if err != nil {
+		return err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.upgradeErrs[ComponentRef{Namespace: targetNamespace, Name: ref.Name}.String()]
+}
+
+// Close releases any resources held by the HelmManager.
+func (m *K8sHelmManager) Close() error {
+	return nil
+}
+
+func (m *K8sHelmManager) loadAllComponentValues(ctx context.Context, namespace string) (map[string]any, error) {
+	if m == nil || m.client == nil {
+		return make(map[string]any), nil
+	}
+	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return make(map[string]any), nil
+		}
+		return nil, fmt.Errorf("failed to fetch component values ConfigMap: %w", err)
+	}
+
+	var keys []string
+	for k := range cm.Data {
+		if strings.HasSuffix(k, ".json") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	merged := make(map[string]any)
+	for _, k := range keys {
+		var compValues map[string]any
+		if err := json.Unmarshal([]byte(cm.Data[k]), &compValues); err != nil {
+			logging.Warn(ctx, "Failed to unmarshal component values from ConfigMap", "key", k, "error", err)
+			continue
+		}
+		for subK, subV := range compValues {
+			if existingMap, ok := merged[subK].(map[string]any); ok {
+				if newMap, ok := subV.(map[string]any); ok {
+					for innerK, innerV := range newMap {
+						existingMap[innerK] = innerV
+					}
+					continue
+				}
+			}
+			merged[subK] = subV
+		}
+	}
+	return merged, nil
+}
+
+func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, values map[string]any) error {
+	if m == nil || m.runner == nil {
+		return nil
+	}
+	targetNamespace := m.resolveNamespace(ref.Namespace)
+	m.setUpgradeErr(ref, nil)
+	mergedValues, err := m.loadAllComponentValues(ctx, targetNamespace)
+	if err != nil {
+		m.setUpgradeErr(ref, err)
+		return fmt.Errorf("failed to load component values from ConfigMap for sync upgrade: %w", err)
+	}
+	for k, v := range values {
+		mergedValues[k] = v
+	}
+	m.upgradeMu.Lock()
+	defer m.upgradeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		m.setUpgradeErr(ref, err)
+		return err
+	}
+	_, err = m.runner.Upgrade(ctx, m.releaseName, targetNamespace, nil, mergedValues)
+	m.setUpgradeErr(ref, err)
+	return err
+}
+
+// Ensure1PComponent sets component values in the release ConfigMap and executes a Helm upgrade.
 func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
@@ -99,10 +352,15 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	if err != nil {
 		return err
 	}
+	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
 	values := BuildHelmValues(opts)
 
 	if err := m.persistComponentValues(ctx, targetNamespace, ref.Name, values); err != nil {
 		return fmt.Errorf("failed to persist Helm values for %q: %w", ref.Name, err)
+	}
+
+	if err := m.triggerUpgrade(ctx, resolved, values); err != nil {
+		return err
 	}
 
 	key := componentKey(targetNamespace, ref.Name)
@@ -113,11 +371,11 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	m.activeState[key] = opts.Enabled
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Ensured 1P component Helm values", "name", ref.Name, "namespace", targetNamespace, "enabled", opts.Enabled)
+	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "enabled", opts.Enabled)
 	return nil
 }
 
-// Delete1PComponent disables the component values in the release ConfigMap (enabled: false) and marks it inactive.
+// Delete1PComponent disables the component values in the release ConfigMap (enabled: false) and triggers a Helm upgrade.
 func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
@@ -126,9 +384,19 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	if err != nil {
 		return err
 	}
+	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
 
 	if err := m.disableComponentValues(ctx, targetNamespace, ref.Name); err != nil {
 		return fmt.Errorf("failed to disable Helm values for %q: %w", ref.Name, err)
+	}
+
+	opts := HelmComponentOptions{
+		Ref:     resolved,
+		Enabled: false,
+	}
+	disabledValues := BuildHelmValues(opts)
+	if err := m.triggerUpgrade(ctx, resolved, disabledValues); err != nil {
+		return err
 	}
 
 	key := componentKey(targetNamespace, ref.Name)
@@ -138,11 +406,11 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	}
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Disabled 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
+	logging.Info(ctx, "Disabled 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace)
 	return nil
 }
 
-// Purge1PComponent permanently removes the component values from the release ConfigMap and removes it from active state.
+// Purge1PComponent permanently removes component values from the release ConfigMap and executes a Helm upgrade.
 func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
@@ -151,9 +419,19 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	if err != nil {
 		return err
 	}
+	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
 
 	if err := m.removeComponentValues(ctx, targetNamespace, ref.Name); err != nil {
 		return fmt.Errorf("failed to purge Helm values for %q: %w", ref.Name, err)
+	}
+
+	opts := HelmComponentOptions{
+		Ref:     resolved,
+		Enabled: false,
+	}
+	disabledValues := BuildHelmValues(opts)
+	if err := m.triggerUpgrade(ctx, resolved, disabledValues); err != nil {
+		return err
 	}
 
 	key := componentKey(targetNamespace, ref.Name)
@@ -163,11 +441,11 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	}
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Purged 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
+	logging.Info(ctx, "Purged 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace)
 	return nil
 }
 
-// Orphan1PComponent detaches component management without disabling values in Helm.
+// Orphan1PComponent detaches component management without modifying release values in Helm.
 func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil

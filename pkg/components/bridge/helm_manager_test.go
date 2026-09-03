@@ -17,14 +17,19 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/release"
 )
 
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
@@ -452,5 +457,296 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 	renderedDisabled := strings.TrimSpace(string(outDisabled))
 	if strings.Contains(renderedDisabled, "ClusterRole") || strings.Contains(renderedDisabled, "ClusterRoleBinding") {
 		t.Errorf("expected no RBAC resources rendered when disabled, got:\n%s", renderedDisabled)
+	}
+}
+
+type mockHelmActionRunner struct {
+	mu           sync.Mutex
+	lastRelease  string
+	lastNS       string
+	lastValues   map[string]any
+	upgradeErr   error
+	upgradeCalls int
+}
+
+func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.upgradeCalls++
+	m.lastRelease = releaseName
+	m.lastNS = namespace
+	m.lastValues = values
+	if m.upgradeErr != nil {
+		return nil, m.upgradeErr
+	}
+	return &release.Release{Name: releaseName, Namespace: namespace}, nil
+}
+
+func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithChartPath("deploy/helm"),
+	)
+
+	ref := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
+	opts := HelmComponentOptions{
+		Ref:      ref,
+		Enabled:  true,
+		ImageTag: "v1.2.3",
+	}
+
+	// 1. Ensure component triggers synchronous upgrade
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	runner.mu.Lock()
+	if runner.upgradeCalls != 1 {
+		t.Errorf("expected 1 upgrade call, got %d", runner.upgradeCalls)
+	}
+	if runner.lastRelease != "xmanager-cloud" {
+		t.Errorf("expected release xmanager-cloud, got %q", runner.lastRelease)
+	}
+	if runner.lastNS != "xmc" {
+		t.Errorf("expected namespace xmc, got %q", runner.lastNS)
+	}
+	compMap, ok := runner.lastValues["rodDeployment"].(map[string]any)
+	enabled, _ := compMap["enabled"].(bool)
+	if !ok || !enabled {
+		t.Errorf("expected rodDeployment.enabled=true in upgrade values, got %v", runner.lastValues)
+	}
+	runner.mu.Unlock()
+
+	// 2. Delete component triggers upgrade with enabled=false
+	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent failed: %v", err)
+	}
+
+	runner.mu.Lock()
+	if runner.upgradeCalls != 2 {
+		t.Errorf("expected 2 upgrade calls, got %d", runner.upgradeCalls)
+	}
+	compMapDel, ok := runner.lastValues["rodDeployment"].(map[string]any)
+	enabledDel, _ := compMapDel["enabled"].(bool)
+	if !ok || enabledDel {
+		t.Errorf("expected rodDeployment.enabled=false on delete, got %v", runner.lastValues)
+	}
+	runner.mu.Unlock()
+
+	// 3. Error propagation during upgrade
+	runner.mu.Lock()
+	runner.upgradeErr = errors.New("simulated helm failure")
+	runner.mu.Unlock()
+
+	err := mgr.Ensure1PComponent(ctx, ref, opts)
+	if err == nil || !errors.Is(err, runner.upgradeErr) {
+		t.Errorf("expected simulated helm failure error, got %v", err)
+	}
+	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
+		t.Error("expected GetUpgradeError to return non-nil error")
+	}
+}
+
+func TestSDKHelmActionRunner_Options(t *testing.T) {
+	var nilRunner *SDKHelmActionRunner
+	rel, err := nilRunner.Upgrade(context.Background(), "test", "xmc", nil, nil)
+	if err == nil || rel != nil {
+		t.Errorf("expected error on nil runner Upgrade, got rel=%v, err=%v", rel, err)
+	}
+
+	dummyChart := &chart.Chart{
+		Metadata: &chart.Metadata{Name: "custom-chart", Version: "1.0.0"},
+	}
+	runner := NewSDKHelmActionRunner(nil,
+		WithDriver("memory"),
+		WithRunnerChartPath("/tmp/charts"),
+		WithRunnerChartObj(dummyChart),
+	)
+	if runner.helmDriver != "memory" {
+		t.Errorf("expected driver memory, got %q", runner.helmDriver)
+	}
+	if runner.chartPath != "/tmp/charts" {
+		t.Errorf("expected chart path /tmp/charts, got %q", runner.chartPath)
+	}
+	if runner.chartObj != dummyChart {
+		t.Errorf("expected custom chart object, got %v", runner.chartObj)
+	}
+
+	// Calling Upgrade with nil restClientGetter should fail at actionConfig.Init
+	_, err = runner.Upgrade(context.Background(), "test", "xmc", nil, map[string]any{})
+	if err == nil {
+		t.Error("expected error from Upgrade when restClientGetter is nil")
+	}
+}
+
+func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
+	var nilMgr *K8sHelmManager
+	ref := ComponentRef{Namespace: "xmc", Name: "test"}
+	if err := nilMgr.GetUpgradeError(ref); err != nil {
+		t.Errorf("expected nil error on nil receiver GetUpgradeError, got %v", err)
+	}
+
+	mgr := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
+		WithKubeconfig("/tmp/nonexistent-kubeconfig"),
+		WithChartPath("deploy/helm"),
+	)
+	if mgr.chartPath != "deploy/helm" {
+		t.Errorf("expected chartPath deploy/helm, got %q", mgr.chartPath)
+	}
+	if mgr.runner == nil {
+		t.Error("expected runner to be initialized by WithKubeconfig")
+	}
+
+	mgrGetter := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
+		WithRESTClientGetter(nil),
+	)
+	if mgrGetter.runner == nil {
+		t.Error("expected runner to be initialized by WithRESTClientGetter")
+	}
+
+	if err := mgr.GetUpgradeError(ComponentRef{}); err == nil {
+		t.Error("expected error on empty componentName in GetUpgradeError")
+	}
+}
+
+func TestK8sHelmManager_RetryFailedUpgrade_Ensure(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{
+		upgradeErr: errors.New("transient Helm lock conflict"),
+	}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+	)
+
+	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	opts := HelmComponentOptions{
+		Ref:     ref,
+		Enabled: true,
+	}
+
+	// First attempt fails during Helm upgrade
+	err := mgr.Ensure1PComponent(ctx, ref, opts)
+	if err == nil || !strings.Contains(err.Error(), "transient Helm lock conflict") {
+		t.Fatalf("expected transient upgrade error, got %v", err)
+	}
+	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
+		t.Fatalf("expected recorded upgrade error, got nil")
+	}
+
+	// On second reconciliation, ConfigMap is not modified, but previous upgrade failed.
+	// Ensure1PComponent must retry rather than exiting early.
+	runner.upgradeErr = nil
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("expected retry Ensure1PComponent to succeed, got %v", err)
+	}
+	if gotErr := mgr.GetUpgradeError(ref); gotErr != nil {
+		t.Errorf("expected upgrade error cleared after successful retry, got %v", gotErr)
+	}
+	if runner.upgradeCalls != 2 {
+		t.Errorf("expected 2 runner calls after retry, got %d", runner.upgradeCalls)
+	}
+}
+
+func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+	)
+
+	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	opts := HelmComponentOptions{
+		Ref:     ref,
+		Enabled: true,
+	}
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("unexpected Ensure1PComponent error: %v", err)
+	}
+
+	// Inject error for delete upgrade
+	runner.upgradeErr = errors.New("deletion lock error")
+	err := mgr.Delete1PComponent(ctx, ref)
+	if err == nil || !strings.Contains(err.Error(), "deletion lock error") {
+		t.Fatalf("expected deletion upgrade error, got %v", err)
+	}
+	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
+		t.Fatalf("expected recorded upgrade error on delete, got nil")
+	}
+
+	// On second reconciliation, key is already deleted from ConfigMap, but previous upgrade failed.
+	// Delete1PComponent must retry.
+	runner.upgradeErr = nil
+	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("expected retry Delete1PComponent to succeed, got %v", err)
+	}
+	if gotErr := mgr.GetUpgradeError(ref); gotErr != nil {
+		t.Errorf("expected upgrade error cleared after successful delete retry, got %v", gotErr)
+	}
+}
+
+func TestSDKHelmActionRunner_ResolveChart_RWMutex(t *testing.T) {
+	runner := NewSDKHelmActionRunner(nil, WithRunnerChartPath("/invalid/path/to/chart"))
+
+	// First load fails
+	_, err := runner.resolveChart("test-release", nil)
+	if err == nil {
+		t.Fatal("expected error loading from invalid path, got nil")
+	}
+
+	// Dynamic override of chartObj should be thread-safe and succeed immediately
+	expectedChart := &chart.Chart{
+		Metadata: &chart.Metadata{Name: "test-chart"},
+	}
+	resolved, err := runner.resolveChart("test-release", expectedChart)
+	if err != nil {
+		t.Fatalf("unexpected error with explicit chart: %v", err)
+	}
+	if resolved.Name() != "test-chart" {
+		t.Errorf("expected resolved chart name %q, got %q", "test-chart", resolved.Name())
+	}
+}
+
+func TestK8sHelmManager_ConfigMapDeclarativeSourceOfTruth(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+	)
+
+	refA := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
+	optsA := HelmComponentOptions{Ref: refA, Enabled: true}
+	if err := mgr.Ensure1PComponent(ctx, refA, optsA); err != nil {
+		t.Fatalf("Ensure1PComponent A failed: %v", err)
+	}
+
+	refB := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	optsB := HelmComponentOptions{Ref: refB, Enabled: true}
+	if err := mgr.Ensure1PComponent(ctx, refB, optsB); err != nil {
+		t.Fatalf("Ensure1PComponent B failed: %v", err)
+	}
+
+	// Verify that the second upgrade call for component B included component A's values from ConfigMap
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.upgradeCalls != 2 {
+		t.Fatalf("expected 2 upgrade calls, got %d", runner.upgradeCalls)
+	}
+	_, hasRod := runner.lastValues["rodDeployment"]
+	_, hasIngestion := runner.lastValues["ingestionGatewayDeployment"]
+	if !hasRod || !hasIngestion {
+		t.Errorf("expected both rodDeployment and ingestionGatewayDeployment in merged upgrade values, got keys: %+v", runner.lastValues)
+	}
+}
+
+func TestK8sHelmManager_Close(t *testing.T) {
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud")
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("expected nil error on Close, got: %v", err)
 	}
 }

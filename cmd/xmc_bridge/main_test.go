@@ -286,6 +286,7 @@ func TestBuildStatusMap(t *testing.T) {
 func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("CMS_ADDRESS", "custom-cms:50051")
 	t.Setenv("NAMESPACE", "custom-ns")
+	t.Setenv("HELM_RELEASE_NAME", "custom-release")
 	t.Setenv("PROBE_INTERVAL", "15s")
 	t.Setenv("PROBE_TIMEOUT", "8s")
 	t.Setenv("KUBECONFIG", "/custom/kubeconfig")
@@ -299,6 +300,9 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.Namespace != "custom-ns" {
 		t.Errorf("cfg.Namespace = %q, want custom-ns", cfg.Namespace)
+	}
+	if cfg.ReleaseName != "custom-release" {
+		t.Errorf("cfg.ReleaseName = %q, want custom-release", cfg.ReleaseName)
 	}
 	if cfg.ProbeInterval != 15*time.Second {
 		t.Errorf("cfg.ProbeInterval = %v, want 15s", cfg.ProbeInterval)
