@@ -16,6 +16,7 @@
 
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -110,21 +111,44 @@ class RunLinterTest(unittest.TestCase):
         self.assertIsNone(targets[1].rules_config)
 
     def test_resolve_linter_binary(self) -> None:
-        """Tests resolving explicit binary or pre-built bazel-bin candidate."""
+        """Tests resolving explicit binary or pre-built executable candidates."""
         self.assertEqual(
             run_linter.resolve_linter_binary("/custom/bin"),
             "/custom/bin",
         )
         self.assertIsNone(run_linter.resolve_linter_binary(None, base_dir=self.temp_dir))
 
-        dummy_bin = self.create_file(
-            "bazel-bin/cmd/component-linter/component-linter_/component-linter", "#!/bin/sh\n"
-        )
-        dummy_bin.chmod(0o755)
+        dummy_bin_local = self.create_file("bin/component-linter", "#!/bin/sh\n")
+        dummy_bin_local.chmod(0o755)
         self.assertEqual(
             run_linter.resolve_linter_binary(None, base_dir=self.temp_dir),
-            str(dummy_bin),
+            str(dummy_bin_local),
         )
+
+        dummy_bin_bazel = self.create_file(
+            "bazel-bin/cmd/component-linter/component-linter_/component-linter", "#!/bin/sh\n"
+        )
+        dummy_bin_bazel.chmod(0o755)
+        dummy_bin_local.unlink()
+        self.assertEqual(
+            run_linter.resolve_linter_binary(None, base_dir=self.temp_dir),
+            str(dummy_bin_bazel),
+        )
+
+    def test_check_binary_freshness_warning(self) -> None:
+        """Tests that a warning is emitted when binary is older than Go source files."""
+        dummy_bin = self.create_file("bin/component-linter", "#!/bin/sh\n")
+        dummy_bin.chmod(0o755)
+        os.utime(dummy_bin, (1000, 1000))
+
+        go_src = self.create_file("cmd/component-linter/main.go", "package main\n")
+        os.utime(go_src, (2000, 2000))
+
+        stderr_buf = io.StringIO()
+        with patch("sys.stderr", stderr_buf):
+            run_linter.check_binary_freshness(dummy_bin, self.temp_dir)
+        self.assertIn("[WARNING] Linter binary", stderr_buf.getvalue())
+        self.assertIn("is older than source", stderr_buf.getvalue())
 
     def test_build_linter_command_with_binary(self) -> None:
         """Tests command assembly with pre-built binary."""

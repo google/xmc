@@ -6,14 +6,14 @@ A composite GitHub Action that executes offline static analysis and pre-flight v
 
 ## 1. Overview
 
-This action coordinates Bazel compilation of the [`component-linter`](../../../cmd/component-linter/README.md) CLI binary and executes the repository-wide discovery runner [`tools/components/run_linter.py`](../../../tools/components/run_linter.py) across all configured component profile directories (see [`tools/components/README.md`](../../../tools/components/README.md)).
+This action compiles the [`component-linter`](../../../cmd/component-linter/README.md) CLI binary using Go in milliseconds and executes the repository-wide discovery runner [`tools/components/run_linter.py`](../../../tools/components/run_linter.py) across all configured component profile directories (see [`tools/components/README.md`](../../../tools/components/README.md)).
 
 ```mermaid
 flowchart LR
     PR["Pull Request / Push"] --> Filter["Path Filter Check\n(dorny/paths-filter)"]
     Filter -->|"No changes"| Skip["Skip (Log Notice)"]
-    Filter -->|"Changes detected"| Bazel["Bazel Build\n(//cmd/component-linter)"]
-    Bazel --> Runner["run_linter.py\n(Discovers & validates profiles)"]
+    Filter -->|"Changes detected"| GoBuild["Go Build\n(cmd/component-linter)"]
+    GoBuild --> Runner["run_linter.py\n(Discovers & validates profiles)"]
     Runner --> Result{"Valid?"}
     Result -->|"Yes"| Pass["✅ CI Green"]
     Result -->|"No"| Fail["❌ CI Fail (Exit 1)"]
@@ -34,8 +34,8 @@ flowchart LR
 ## 3. Key Features
 
 - **Selective Execution (Path Filtering)**: Only triggers when relevant paths change (`deploy/profiles/**`, `deploy/components/**`, `examples/components/**`, `api/protos/components/**`, `pkg/components/**`, `cmd/component-linter/**`, `tools/components/**`, `.github/actions/run-component-linter/**`, `.github/workflows/lint.yml`).
-- **Bazel Repository Caching**: Caches external Go and Bazel dependencies under `~/.cache/bazel-repo` for fast turnaround times.
-- **Fail-Fast Binary Resolution**: Uses `bazel cquery --config=ci` to resolve the executable linter output file directly, avoiding `bazel run` overhead during multi-target scanning.
+- **Sub-Second Go Compilation**: Compiles the standalone linter CLI via `go build` directly in `~0.2s` without heavy Bazel or C++ toolchain overhead.
+- **Isolated Binary Execution**: Emits compiled binaries to an isolated `${RUNNER_TEMP}` location, avoiding Git workspace contamination and runner volume leakage.
 
 ---
 

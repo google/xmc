@@ -1,6 +1,7 @@
 # Bazel build products and symlinks
 /bazel-*
 .env
+/bin/
 
 # Environment-specific values overrides
 /deploy/helm/environments/values-*.yaml

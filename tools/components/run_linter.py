@@ -60,20 +60,51 @@ def get_base_directory() -> Path:
     return Path.cwd().resolve()
 
 
+def check_binary_freshness(binary_path: Path, base_dir: Path) -> None:
+    """Warns if the discovered pre-built binary is older than its Go source files."""
+    try:
+        bin_mtime = binary_path.stat().st_mtime
+        source_dirs = [
+            base_dir / "cmd" / "component-linter",
+            base_dir / "pkg" / "components" / "linter",
+            base_dir / "pkg" / "components" / "naming",
+            base_dir / "pkg" / "components" / "semver",
+        ]
+        for sdir in source_dirs:
+            if not sdir.is_dir():
+                continue
+            for root, _, files in os.walk(sdir):
+                for f in files:
+                    if f.endswith(".go"):
+                        fpath = Path(root) / f
+                        if fpath.stat().st_mtime > bin_mtime:
+                            print(
+                                f"[WARNING] Linter binary {binary_path.name} ({binary_path}) "
+                                f"is older than source {fpath.relative_to(base_dir)}. "
+                                "Consider rebuilding the binary to apply recent changes.",
+                                file=sys.stderr,
+                            )
+                            return
+    except OSError:
+        pass
+
+
 def resolve_linter_binary(
     linter_binary: str | None,
     base_dir: Path | None = None,
 ) -> str | None:
-    """Resolves the linter binary path or pre-built bazel-bin executable if available."""
+    """Resolves the linter binary path or pre-built executable if available."""
     if linter_binary:
         return linter_binary
     base = base_dir if base_dir is not None else get_base_directory()
     candidates = [
+        base / "bin" / "component-linter",
         base / "bazel-bin" / "cmd" / "component-linter" / "component-linter_" / "component-linter",
         base / "bazel-bin" / "cmd" / "component-linter" / "component-linter",
     ]
     for cand in candidates:
         if cand.is_file() and os.access(cand, os.X_OK):
+            check_binary_freshness(cand, base)
             return str(cand)
     return None
 

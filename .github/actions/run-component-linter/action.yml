@@ -48,51 +48,34 @@ runs:
             - '.github/actions/run-component-linter/**'
             - '.github/workflows/lint.yml'
 
-    - name: 'Set up Bazel'
+    - name: 'Set up Go'
       if: steps.changes.outputs.lint == 'true'
-      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
-
-    - name: 'Restore Bazel Repository Cache'
-      if: steps.changes.outputs.lint == 'true'
-      id: 'cache-bazel-repo-restore'
-      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      uses: 'actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34' # v5.3.0
       with:
-        path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
-        restore-keys: |
-          bazel-repo-${{ runner.os }}-
+        go-version: '1.26.0'
+        cache: false
 
     - name: 'Build component-linter Binary'
       if: steps.changes.outputs.lint == 'true'
+      id: 'build-linter'
       shell: bash
       run: |
-        echo "Building component-linter CLI binary..."
-        bazel build \
-          --config=ci \
-          --repository_cache=~/.cache/bazel-repo \
-          --experimental_repository_cache_hardlinks \
-          //cmd/component-linter:component-linter
-        LINTER_BIN=$(bazel cquery --config=ci --output=files //cmd/component-linter:component-linter 2>/dev/null | head -n1 || true)
-        if [ -z "${LINTER_BIN}" ] || [ ! -x "${LINTER_BIN}" ]; then
-          LINTER_BIN="bazel-bin/cmd/component-linter/component-linter_/component-linter"
-        fi
+        echo "Building component-linter CLI binary via Go..."
+        OUT_DIR="${RUNNER_TEMP:-/tmp}/xmc-bin"
+        mkdir -p "${OUT_DIR}"
+        LINTER_BIN="${OUT_DIR}/component-linter"
+        go build -o "${LINTER_BIN}" ./cmd/component-linter
         if [ ! -x "${LINTER_BIN}" ]; then
           echo "Error: Built linter binary not found or not executable!" >&2
           exit 1
         fi
-        echo "LINTER_BIN=${LINTER_BIN}" >> "${GITHUB_ENV}"
-
-    - name: 'Save Bazel Repository Cache'
-      uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-      if: github.ref == 'refs/heads/main' && steps.changes.outputs.lint == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
-      with:
-        path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        echo "binary_path=${LINTER_BIN}" >> "${GITHUB_OUTPUT}"
 
     - name: 'Run Component Manifest Linter'
       if: steps.changes.outputs.lint == 'true'
       shell: bash
       env:
+        LINTER_BIN: ${{ steps.build-linter.outputs.binary_path }}
         SCAN_ROOTS: ${{ inputs.scan-roots }}
         OUTPUT_FORMAT: ${{ inputs.output-format }}
         STRICT_FLAG: ${{ inputs.strict }}
