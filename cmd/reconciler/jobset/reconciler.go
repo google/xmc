@@ -670,7 +670,7 @@ const createdByXManagerLabelValue = "xmanager"
 // listExistingSessionsOnlyLabel tells the Diagon profiler-session backend to
 // discover profiles by recursively scanning the run's GCS folder (<gcs_path>/**)
 // rather than assuming its own <gcs_path>/<run_id>/plugins/profile/ layout. XMC
-// workloads (e.g. the SDK-less programmatic Xprof example) write the profile
+// workloads (e.g. the programmatic Xprof example) write the profile
 // themselves to <gcs_path>/plugins/profile/ and cannot know the
 // control-plane-minted run id, so without this label the backend never scans the
 // bucket and the profile is never surfaced.

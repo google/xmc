@@ -13,15 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A raw-JAX workload that captures a profile programmatically (SDK-less).
+"""A raw-JAX workload that captures a profile programmatically.
 
-Instead of instrumenting the workload with the Diagon SDK, this worker relies
-solely on the environment variables injected by the XMC Actuator. It reads the
-per-work-unit GCS destination from ``XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`` and
-uses native ``jax.profiler`` tracing to write the profile there directly. The
-Diagon backend then discovers and loads the profile from that GCS folder using
-the customized ManagedXprof MLRun labels, without the workload depending on the
-Diagon SDK.
+This worker relies solely on the environment variables injected by the XMC
+Actuator. It reads the per-work-unit GCS destination from
+``XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`` and uses native ``jax.profiler`` tracing
+to write the profile there directly. The Diagon backend then discovers and loads
+the profile from that GCS folder using the customized ManagedXprof MLRun labels.
 
 After the trace is captured the workload idles for a fixed 30 minutes so the
 enclosing JobSet stays alive long enough for the Diagon reconciler to create the

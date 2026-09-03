@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Launch script for SDK-less programmatic profiling with ManagedXprof.
+"""Launch script for programmatic profiling with ManagedXprof.
 
 This example demonstrates how to attach a `ManagedXprof` artifact to each
 `WorkUnit` using the `CreateArtifact` RPC. The Diagon reconciler reads this
@@ -28,8 +28,7 @@ makes the artifact link resolve to the run.
 Unlike the `managed_xprof_artifact_job` example (whose worker runs an on-demand
 `jax.profiler` server), the worker here captures the profile *programmatically*
 using raw JAX and writes it directly to the per-work-unit GCS folder injected by
-the XMC Actuator via `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` - without depending on
-the Diagon SDK.
+the XMC Actuator via `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`.
 """
 
 import logging
@@ -132,7 +131,7 @@ def main(argv: Sequence[str]) -> None:
     )
 
     with xm_cloud.create_experiment(
-        experiment_title="Programmatic Xprof (SDK-less) Example",
+        experiment_title="Programmatic Xprof Example",
         acls=xid_messages_pb2.XidAcls(
             owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
         ),

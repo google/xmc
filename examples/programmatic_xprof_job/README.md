@@ -1,11 +1,10 @@
-# Programmatic Xprof (SDK-less) Example
+# Programmatic Xprof Example
 
 This directory contains a complete XManager Cloud launch example demonstrating
-**SDK-less programmatic profiling**. The workload captures a JAX profile using
-native framework tooling only — it does **not** depend on the Diagon SDK.
+**programmatic profiling**. The workload captures a JAX profile using native
+framework tooling only.
 
-Instead of instrumenting the code with the Diagon SDK, the worker
-(`worker.py`) reads the per-work-unit GCS destination from the
+The worker (`worker.py`) reads the per-work-unit GCS destination from the
 `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` environment variable — which the XMC
 Actuator injects into every container — and calls `jax.profiler.start_trace()` /
 `jax.profiler.stop_trace()` to write the profile directly to that GCS folder.
@@ -15,8 +14,7 @@ As with the [`managed_xprof_artifact_job`](../managed_xprof_artifact_job) exampl
 lifecycle phase) to each work unit. The Diagon reconciler reads that artifact
 from storage, derives the GCS object folder, and creates the corresponding
 **MLRun** tracking record. Diagon then discovers and loads the programmatic
-profile from the GCS folder using the ManagedXprof labels — with no SDK
-dependency in the workload.
+profile from the GCS folder using the ManagedXprof labels.
 
 The difference from `managed_xprof_artifact_job` is the worker: that example
 runs a `jax.profiler.start_server` (on-demand) profiler; this example captures
@@ -60,7 +58,7 @@ The script will:
    `EXECUTION`-phase `ManagedXprof` artifact to it.
 3. Print the URL to your experiment dashboard.
 
-## How the worker profiles (SDK-less)
+## How the worker profiles
 
 `worker.py`:
 1. Resolves the destination from `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`, raising
