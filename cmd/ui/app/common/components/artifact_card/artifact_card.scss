@@ -61,6 +61,31 @@
     line-height: 1.2;
     margin-bottom: 2px;
     overflow-wrap: break-word;
+
+    .artifact-title-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #0b57d0;
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+
+      // Override the circular type-icon styling above for the small,
+      // inline external-link affordance.
+      .external-link-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+        line-height: 16px;
+        border-radius: 0;
+        background-color: transparent;
+        color: inherit;
+        flex-shrink: 0;
+      }
+    }
   }
 
   .artifact-subtitle {

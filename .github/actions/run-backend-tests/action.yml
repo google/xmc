@@ -49,14 +49,6 @@ runs:
           --ref "${GITHUB_REF}" \
           --github-output "${GITHUB_OUTPUT}"
 
-    - name: 'Start Async Disk Space Cleanup'
-      if: steps.scope.outputs.run_backend == 'true'
-      shell: bash
-      run: |
-        echo "=== Starting background cleanup of Android SDK & .NET ==="
-        sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
-        echo "CLEANUP_PID=$!" >> $GITHUB_ENV
-
     - name: 'Set up Bazel'
       if: steps.scope.outputs.run_backend == 'true'
       uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
@@ -95,17 +87,6 @@ runs:
         echo "CRITICAL: Spanner Emulator at ${SPANNER_HOST_INPUT} did not start within ${SPANNER_TIMEOUT_INPUT} seconds."
         exit 1
 
-    - name: 'Wait for Disk Space Cleanup'
-      if: steps.scope.outputs.run_backend == 'true'
-      shell: bash
-      run: |
-        if [ -n "${CLEANUP_PID:-}" ]; then
-          echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
-          wait "${CLEANUP_PID}" || true
-        fi
-        echo "=== Available Disk Space Before Bazel Build ==="
-        df -h /
-
     - name: 'Run Backend Unit Tests'
       if: steps.scope.outputs.run_backend == 'true'
       env:
@@ -120,7 +101,7 @@ runs:
         bazel test \
           --config=ci \
           --remote_upload_local_results="${REMOTE_UPLOAD}" \
-          --repository_cache=~/.cache/bazel-repo \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
           --experimental_repository_cache_hardlinks \
           --test_output=errors \
           --experimental_ui_max_stdouterr_bytes=2097152 \
