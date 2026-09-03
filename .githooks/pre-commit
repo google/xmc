@@ -358,7 +358,7 @@ check_helm() {
   if [ "$MODE" = "check" ]; then
     helm_files=$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)
   else
-    helm_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^deploy/helm/' || true)
+    helm_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/helm/' || true)
   fi
 
   if [ -z "$helm_files" ]; then

@@ -48,6 +48,13 @@ spec:
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-cache-nginx
+          mountPath: /var/cache/nginx
+        - name: var-run
+          mountPath: /var/run
         ports:
         - containerPort: 8080
           name: http
@@ -73,4 +80,11 @@ spec:
           limits:
             cpu: "200m"
             memory: "256Mi"
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: var-cache-nginx
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
 {{- end }}
