@@ -64,8 +64,18 @@ class CommitDict(TypedDict, total=False):
     gated_flag: str | None
 
 
+class CategorizedCommits(TypedDict):
+    """Audience-categorized commits dictionary."""
+
+    user_facing_features: list[CommitDict]
+    user_facing_fixes: list[CommitDict]
+    operational_and_infrastructure: list[CommitDict]
+    developer_velocity: list[CommitDict]
+
+
 class ReleaseMetadataResult(TypedDict):
     """Structured release metadata output."""
 
     metadata: ReleaseMetadataSummary
+    categorized_commits: CategorizedCommits
     raw_commits: list[CommitDict]

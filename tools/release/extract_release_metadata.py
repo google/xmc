@@ -32,7 +32,12 @@ try:
         parse_conventional_commit,
     )
     from tools.release.git_ops import get_git_commits, get_latest_tag_before
-    from tools.release.models import CommitDict, CommitInfo, ReleaseMetadataResult
+    from tools.release.models import (
+        CategorizedCommits,
+        CommitDict,
+        CommitInfo,
+        ReleaseMetadataResult,
+    )
 except ImportError:
     from commit_classifier import (  # type: ignore[no-redef]
         classify_commit,
@@ -44,12 +49,14 @@ except ImportError:
         get_latest_tag_before,
     )
     from models import (  # type: ignore[no-redef]
+        CategorizedCommits,
         CommitDict,
         CommitInfo,
         ReleaseMetadataResult,
     )
 
 __all__ = [
+    "CategorizedCommits",
     "CommitDict",
     "CommitInfo",
     "ReleaseMetadataResult",
@@ -62,21 +69,22 @@ __all__ = [
 
 def _group_commits_by_category(
     commits: list[CommitInfo],
-) -> dict[str, list[dict[str, Any]]]:
+) -> CategorizedCommits:
     """Groups categorized commits into release sections."""
-    categorized: dict[str, list[dict[str, Any]]] = {
+    categorized: CategorizedCommits = {
         "user_facing_features": [],
         "user_facing_fixes": [],
         "operational_and_infrastructure": [],
         "developer_velocity": [],
     }
+    bucket_map = cast(dict[str, list[CommitDict]], categorized)
     for c in commits:
-        cat_key = c.category if c.category in categorized else "developer_velocity"
-        categorized[cat_key].append(asdict(c))
+        cat_key = c.category if c.category in bucket_map else "developer_velocity"
+        bucket_map[cat_key].append(cast(CommitDict, asdict(c)))
     return categorized
 
 
-def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
+def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
     """Primary execution handler orchestrating release metadata extraction."""
     repo_dir = Path(args.repo_dir).resolve()
     target_ref = args.target_ref
@@ -98,7 +106,7 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
     # 2. Group commits by category
     categorized = _group_commits_by_category(commits)
 
-    result = {
+    result: ReleaseMetadataResult = {
         "metadata": {
             "base_ref": base_ref,
             "target_ref": target_ref,
@@ -106,7 +114,7 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
             "pr_count": len([c for c in commits if c.pr_number is not None]),
         },
         "categorized_commits": categorized,
-        "raw_commits": [asdict(c) for c in commits],
+        "raw_commits": [cast(CommitDict, asdict(c)) for c in commits],
     }
 
     if args.output:
