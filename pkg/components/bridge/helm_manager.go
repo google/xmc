@@ -258,7 +258,7 @@ func (m *K8sHelmManager) persistComponentValues(ctx context.Context, namespace, 
 			cm.Data = make(map[string]string)
 		}
 		key := componentName + ".json"
-		if existing, ok := cm.Data[key]; ok && existing == string(rawJSON) {
+		if cm.Data[key] == string(rawJSON) {
 			return nil
 		}
 		cm.Data[key] = string(rawJSON)
@@ -270,7 +270,9 @@ func (m *K8sHelmManager) persistComponentValues(ctx context.Context, namespace, 
 func setDisabledValues(existingJSON, deploymentKey string) (string, error) {
 	var values map[string]any
 	if existingJSON != "" {
-		_ = json.Unmarshal([]byte(existingJSON), &values)
+		if err := json.Unmarshal([]byte(existingJSON), &values); err != nil {
+			return "", fmt.Errorf("failed to unmarshal existing Helm values: %w", err)
+		}
 	}
 	if values == nil {
 		values = make(map[string]any)

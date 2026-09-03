@@ -390,19 +390,14 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 
 	contentStr := string(rawContent)
 
-	// Verify ClusterRole and ClusterRoleBinding are used instead of namespace-scoped Role/RoleBinding
+	// Verify ClusterRole and ClusterRoleBinding are structurally present as options
 	if !strings.Contains(contentStr, "kind: ClusterRole\n") {
-		t.Errorf("expected rbac.yaml to define kind: ClusterRole")
+		t.Errorf("expected rbac.yaml to define kind: ClusterRole as an option")
 	}
-	if !strings.Contains(contentStr, "kind: ClusterRoleBinding\n") {
-		t.Errorf("expected rbac.yaml to define kind: ClusterRoleBinding")
+	if !strings.Contains(contentStr, "kind: Role\n") {
+		t.Errorf("expected rbac.yaml to define kind: Role as an option")
 	}
-	if strings.Contains(contentStr, "kind: Role\n") {
-		t.Errorf("unexpected namespace-scoped kind: Role in rbac.yaml")
-	}
-	if strings.Contains(contentStr, "kind: RoleBinding\n") {
-		t.Errorf("unexpected namespace-scoped kind: RoleBinding in rbac.yaml")
-	}
+
 	if !strings.Contains(contentStr, "resources: [\"configmaps\"]") {
 		t.Errorf("expected rbac.yaml to grant configmaps permissions")
 	}
@@ -430,14 +425,14 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 	}
 
 	rendered := string(out)
-	if !strings.Contains(rendered, "kind: ClusterRole") {
-		t.Errorf("expected rendered output to contain 'kind: ClusterRole', got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: Role") || strings.Contains(rendered, "kind: ClusterRole") {
+		t.Errorf("expected rendered output to contain 'kind: Role' (default scope), got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "name: xmc-bridge-role") {
 		t.Errorf("expected rendered output to contain 'name: xmc-bridge-role', got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "kind: ClusterRoleBinding") {
-		t.Errorf("expected rendered output to contain 'kind: ClusterRoleBinding', got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: RoleBinding") || strings.Contains(rendered, "kind: ClusterRoleBinding") {
+		t.Errorf("expected rendered output to contain 'kind: RoleBinding', got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "name: xmc-bridge-rolebinding") {
 		t.Errorf("expected rendered output to contain 'name: xmc-bridge-rolebinding', got:\n%s", rendered)

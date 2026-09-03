@@ -40,6 +40,8 @@ componentsDeployment:
   cmsAddress: "grpc-service:50051"
   probeInterval: "5s"
   probeTimeout: "2s"
+  rbac:
+    clusterScope: false
 
 essDeployment:
   enabled: true
