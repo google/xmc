@@ -80,7 +80,15 @@ class ImageBuilder:
                 dirs[:] = []
                 continue
             visited.add(real_root)
-            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            filtered_dirs = []
+            for d in dirs:
+                if d in ignored_dirs:
+                    continue
+                real_dir_path = os.path.realpath(os.path.join(root, d))
+                if any(ignored in real_dir_path.split(os.sep) for ignored in ignored_dirs):
+                    continue
+                filtered_dirs.append(d)
+            dirs[:] = filtered_dirs
             for file in files:
                 if file.endswith(".py") or file in ignored_files:
                     continue
@@ -127,6 +135,8 @@ class ImageBuilder:
                 shutil.rmtree(os.path.join(ui_dir, "dist"))
             except FileNotFoundError:
                 pass
+            except OSError as e:
+                logger.warning("[UI] Failed to remove stale dist directory: %s", e)
 
         # 2. Skip host compilation if Node.js toolchain is not available on host.
         # If dist was stale above, it has now been wiped so Bazel cleanly falls back
@@ -182,6 +192,8 @@ class ImageBuilder:
                 shutil.rmtree(os.path.join(ui_dir, "dist"))
             except FileNotFoundError:
                 pass
+            except OSError as e:
+                logger.warning("[UI] Failed to clean up failed dist directory: %s", e)
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images and loads them into Docker.

@@ -99,7 +99,15 @@ def copy_flat(src_dir: str, dest_dir: str):
             dirs[:] = []
             continue
         visited.add(real_root)
-        dirs[:] = [d for d in dirs if d not in ignored_dirs]
+        filtered_dirs = []
+        for d in dirs:
+            if d in ignored_dirs:
+                continue
+            real_dir_path = os.path.realpath(os.path.join(root, d))
+            if any(ignored in real_dir_path.split(os.sep) for ignored in ignored_dirs):
+                continue
+            filtered_dirs.append(d)
+        dirs[:] = filtered_dirs
         for file in files:
             if file.endswith(".py") or file in ignored_files:
                 continue

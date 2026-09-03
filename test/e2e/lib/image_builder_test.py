@@ -178,6 +178,37 @@ class TestImageBuilder(unittest.TestCase):
         )
         self.assertFalse(is_stale)
 
+    @patch("os.path.realpath")
+    @patch("os.path.getmtime")
+    @patch("os.walk")
+    def test_is_ui_dist_stale_ignores_symlinks_pointing_to_ignored_dirs(
+        self, mock_walk, mock_mtime, mock_realpath
+    ):
+        mock_walk.return_value = [
+            ("/workspace/cmd/ui", ["custom_symlink"], ["app.component.ts"]),
+        ]
+        mock_realpath.side_effect = lambda p: (
+            "/workspace/cmd/ui/node_modules" if "custom_symlink" in p else p
+        )
+        mock_mtime.return_value = 50
+        builder = ImageBuilder(self.cfg)
+        is_stale = builder._is_ui_dist_stale(
+            "/workspace/cmd/ui", "/workspace/cmd/ui/dist/browser/index.html"
+        )
+        self.assertFalse(is_stale)
+
+    @patch("shutil.which", return_value=None)
+    @patch("shutil.rmtree", side_effect=OSError("locked file"))
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(ImageBuilder, "_is_ui_dist_stale", return_value=True)
+    @patch("test.e2e.lib.image_builder.run_cmd")
+    def test_maybe_precompile_ui_handles_rmtree_os_error_gracefully(
+        self, mock_run, mock_stale, mock_isfile, mock_rmtree, mock_which
+    ):
+        builder = ImageBuilder(self.cfg)
+        builder._maybe_precompile_ui()
+        mock_rmtree.assert_called_once_with("/workspace/cmd/ui/dist")
+
     @patch("shutil.which", return_value="/usr/bin/node")
     @patch("os.path.isfile")
     @patch("os.path.getmtime")
