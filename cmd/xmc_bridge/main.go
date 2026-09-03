@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -345,21 +347,43 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 }
 
 // syncStatus serializes the ReconcileResult into the .status map of item and persists it
-// via the Kubernetes dynamic client UpdateStatus API. It uses a deep copy to avoid local
-// object mutation if the API server update fails.
+// via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
 	ns := item.GetNamespace()
 	if ns == "" {
 		ns = c.namespace
 	}
-	itemCopy := item.DeepCopy()
-	itemCopy.Object["status"] = BuildStatusMap(res)
-	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
+	statusPatch := map[string]any{
+		"apiVersion": componentGVR.Group + "/" + componentGVR.Version,
+		"kind":       "Component",
+		"metadata": map[string]any{
+			"name":      item.GetName(),
+			"namespace": ns,
+		},
+		"status": BuildStatusMap(res),
+	}
+	patchBytes, err := json.Marshal(statusPatch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal status SSA patch: %w", err)
+	}
+
+	force := true
+	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).Patch(
+		ctx,
+		item.GetName(),
+		types.ApplyPatchType,
+		patchBytes,
+		metav1.PatchOptions{
+			FieldManager: "xmc-bridge",
+			Force:        &force,
+		},
+		"status",
+	)
 	if err != nil {
 		return err
 	}
 	item.Object = updated.Object
-	logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	logging.Debug(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 	return nil
 }
 
