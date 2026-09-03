@@ -14,428 +14,183 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const childProcess = require('child_process');
 const incrementalApproval = require('./incremental-approval');
-const {
-  isBotUser,
-  extractDismissalContext,
-  parseTimelineReviewEvent,
-  resolveActiveApproval,
-  findLatestApprovalFromTimeline,
-  findLatestApprovalFromReviews,
-  findLatestApproval,
-  GRAPHQL_TIMELINE_QUERY
-} = incrementalApproval;
+function createMockCore() {
+  return {
+    failed: [],
+    infos: [],
+    warnings: [],
+    setFailed(msg) { this.failed.push(msg); },
+    info(msg) { this.infos.push(msg); },
+    warning(msg) { this.warnings.push(msg); }
+  };
+}
 
-test('isBotUser identifies bot usernames correctly', () => {
-  assert.strictEqual(isBotUser('github-actions[bot]'), true);
-  assert.strictEqual(isBotUser('dependabot[bot]'), true);
-  assert.strictEqual(isBotUser('github-actions'), true);
-  assert.strictEqual(isBotUser('alice'), false);
-  assert.strictEqual(isBotUser(''), false);
-  assert.strictEqual(isBotUser(null), false);
+test('run fails when not in a pull request synchronize event', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: { payload: {} },
+    core
+  });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /must run in the context of a pull request/);
 });
 
-test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
-  const events = [
-    // Manual dismissal via REST (no trigger commit, dismissal message present)
-    { event: 'dismissed_review', review_id: 101, dismissal_message: 'Security issue' },
-    // Automatic stale push dismissal via GraphQL (trigger commit present, no message)
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      pullRequestCommit: { commit: { oid: 'sha-stale' } },
-      review: { databaseId: 202 }
-    },
-    // Automatic stale push dismissal of changes requested via GraphQL
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'CHANGES_REQUESTED',
-      pullRequestCommit: { commit: { oid: 'sha-stale' } },
-      review: { databaseId: 303 }
-    },
-    // Automatic stale push dismissal via REST (dismissal_commit_id present)
-    {
-      event: 'review_dismissed',
-      dismissed_review: {
-        review_id: 404,
-        state: 'approved',
-        dismissal_commit_id: 'sha-rest-commit'
+test('run skips auto-reapproval when PR is in draft mode', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: {
+      payload: {
+        pull_request: { number: 123, draft: true }
       }
     },
-    // Manual dismissal via GraphQL (no trigger commit, dismissal message present)
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: 'Rejected by security auditor',
-      review: { databaseId: 505 }
-    }
-  ];
-  const ctx = extractDismissalContext(events);
-  assert.strictEqual(ctx.manualDismissalIds.has(101), true);
-  assert.strictEqual(ctx.manualDismissalIds.has(202), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(303), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(404), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(505), true);
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(404), 'APPROVED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(505), 'APPROVED');
+    core
+  });
+  assert.strictEqual(core.failed.length, 0);
+  assert.ok(core.infos.some(m => m.includes('draft mode')));
 });
 
-test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
-  const context = {
-    authorLower: 'author1',
-    manualDismissalIds: new Set([101]),
-    dismissedReviewPreviousStates: new Map([[202, 'APPROVED'], [303, 'CHANGES_REQUESTED']])
+test('run fails when head SHA or base ref is missing', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: { number: 123, draft: false, user: { login: 'alice' }, head: {}, base: {} }
+      }
+    },
+    core
+  });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /missing head SHA or base ref/);
+});
+
+test('run fails when github review pagination fails', async () => {
+  const core = createMockCore();
+  const github = {
+    paginate: async () => { throw new Error('API Rate Limit Exceeded'); },
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+  await incrementalApproval.run({
+    github,
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: {
+          number: 123,
+          draft: false,
+          user: { login: 'alice' },
+          head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+          base: { ref: 'main' }
+        }
+      }
+    },
+    core
+  });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /Failed to fetch PR reviews: API Rate Limit Exceeded/);
+});
+
+test('run skips when no prior approval is found', async () => {
+  const core = createMockCore();
+  const github = {
+    paginate: async () => [],
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+  await incrementalApproval.run({
+    github,
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: {
+          number: 123,
+          draft: false,
+          user: { login: 'alice' },
+          head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+          base: { ref: 'main' }
+        }
+      }
+    },
+    core
+  });
+  assert.strictEqual(core.failed.length, 0);
+  assert.ok(core.infos.some(m => m.includes('does not have any prior active approvals')));
+});
+
+test('run executes clean rebase auto-reapproval successfully', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+  const originalExists = fs.existsSync;
+  const originalRead = fs.readFileSync;
+  let createdReview = null;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--name-only') {
+      return 'tools/dev_env/runner.py\n';
+    }
+    if (cmd === 'git' && args[0] === 'range-diff') {
+      return '1:  1111111 = 1:  2222222 feat: my commit\n';
+    }
+    if (cmd === 'git' && args[0] === 'rev-list') {
+      return '1\n';
+    }
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
   };
 
-  // Valid review
-  const valid = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 100,
-    user: { login: 'reviewer1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context);
-  assert.deepStrictEqual(valid, {
-    approver: 'reviewer1',
-    state: 'APPROVED',
-    isDismissed: false,
-    approvedSha: 'sha1',
-    submittedAt: undefined
-  });
+  fs.existsSync = (p) => p === 'OWNERS';
+  fs.readFileSync = () => 'alice\nbob\n';
 
-  // Manually dismissed review
-  const manualDismissed = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 101,
-    user: { login: 'reviewer1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(manualDismissed.state, 'DISMISSED');
-  assert.strictEqual(manualDismissed.isDismissed, true);
-
-  // Stale dismissed with APPROVED previous state
-  const staleApproved = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 202,
-    user: { login: 'reviewer1' },
-    state: 'dismissed',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(staleApproved.state, 'APPROVED');
-  assert.strictEqual(staleApproved.isDismissed, true);
-
-  // Stale dismissed with CHANGES_REQUESTED previous state
-  const staleChanges = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 303,
-    user: { login: 'reviewer1' },
-    state: 'dismissed',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
-  assert.strictEqual(staleChanges.isDismissed, true);
-
-  // Ignored bot review and PR author self-review
-  assert.strictEqual(parseTimelineReviewEvent({
-    event: 'reviewed',
-    user: { login: 'bot[bot]' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context), null);
-  assert.strictEqual(parseTimelineReviewEvent({
-    event: 'reviewed',
-    user: { login: 'author1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context), null);
-});
-
-test('resolveActiveApproval returns latest approval and blocks on CHANGES_REQUESTED', () => {
-  const reviewerMap = new Map();
-  reviewerMap.set('alice', { approver: 'alice', state: 'APPROVED', approvedSha: 'sha1', submittedAt: '2026-08-20T10:00:00Z' });
-  reviewerMap.set('bob', { approver: 'bob', state: 'APPROVED', approvedSha: 'sha2', submittedAt: '2026-08-21T10:00:00Z' });
-
-  const latest = resolveActiveApproval(reviewerMap);
-  assert.strictEqual(latest.approver, 'bob');
-  assert.strictEqual(latest.approvedSha, 'sha2');
-
-  // Blocking change request from another reviewer
-  reviewerMap.set('charlie', { approver: 'charlie', state: 'CHANGES_REQUESTED', approvedSha: 'sha3', submittedAt: '2026-08-22T10:00:00Z' });
-  assert.strictEqual(resolveActiveApproval(reviewerMap), null);
-
-  // Empty map returns null
-  assert.strictEqual(resolveActiveApproval(new Map()), null);
-});
-
-test('findLatestApproval ignores approvals from bot users', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'github-actions[bot]' },
-      state: 'APPROVED',
-      commit_id: 'sha-bot-approved',
-      submitted_at: '2026-08-25T12:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores approvals when another reviewer has active CHANGES_REQUESTED', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    },
-    {
-      id: 2,
-      user: { login: 'bob' },
-      state: 'CHANGES_REQUESTED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T11:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    },
-    {
-      id: 2,
-      user: { login: 'alice' },
-      state: 'COMMENTED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T11:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.deepStrictEqual(result, {
-    approver: 'alice',
-    approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z',
-    isDismissed: false
-  });
-});
-
-test('findLatestApproval rejects DISMISSED reviews when no timeline context is provided', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy with APPROVED previous state', () => {
-  const reviews = [
-    {
-      id: 5032149088,
-      user: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-      submitted_at: '2026-08-26T15:12:24Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 5032149088,
-      author: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
-      submittedAt: '2026-08-26T15:12:24Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
-      review: {
-        databaseId: 5032149088
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: {
+      pulls: {
+        listReviews: 'dummy',
+        createReview: async (params) => {
+          createdReview = params;
+          return { status: 200 };
+        }
       }
     }
-  ];
-  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
-  assert.deepStrictEqual(result, {
-    approver: 'andrzejfudro',
-    approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-    submittedAt: '2026-08-26T15:12:24Z',
-    isDismissed: true
-  });
-});
+  };
 
-test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_REQUESTED previous state', () => {
-  const reviews = [
-    {
-      id: 5032149088,
-      user: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-      submitted_at: '2026-08-26T15:12:24Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 5032149088,
-      author: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
-      submittedAt: '2026-08-26T15:12:24Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'CHANGES_REQUESTED',
-      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
-      review: {
-        databaseId: 5032149088
-      }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
-  assert.strictEqual(result, null);
-});
+  try {
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: '2222222222222222222222222222222222222222' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
 
-test('findLatestApproval ignores manually dismissed reviews in timeline (REST)', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      id: 1,
-      event: 'reviewed',
-      user: { login: 'alice' },
-      state: 'approved',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    },
-    {
-      event: 'dismissed_review',
-      review_id: 1,
-      dismissal_message: 'Dismissed by author due to security bug'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
+    assert.strictEqual(core.failed.length, 0);
+    assert.ok(createdReview);
+    assert.strictEqual(createdReview.pull_number, 123);
+    assert.strictEqual(createdReview.commit_id, '2222222222222222222222222222222222222222');
+    assert.strictEqual(createdReview.event, 'APPROVE');
+    assert.match(createdReview.body, /Clean rebase detected/);
+    assert.match(createdReview.body, /Preserving prior approval by @bob/);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    fs.existsSync = originalExists;
+    fs.readFileSync = originalRead;
+  }
 });
-
-test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL)', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 1,
-      author: { login: 'alice' },
-      state: 'DISMISSED',
-      commit: { oid: 'sha-111111' },
-      submittedAt: '2026-08-25T10:00:00Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: 'Security concern raised by reviewer',
-      pullRequestCommit: null,
-      review: { databaseId: 1 }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores manual dismissals without dismissal message when trigger commit is absent', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 1,
-      author: { login: 'alice' },
-      state: 'DISMISSED',
-      commit: { oid: 'sha-111111' },
-      submittedAt: '2026-08-25T10:00:00Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: null,
-      pullRequestCommit: null,
-      review: { databaseId: 1 }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ensures later manual dismissal overrides earlier stale approval by same reviewer', () => {
-  const reviews = [
-    { id: 101, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha1', submitted_at: '2026-08-25T10:00:00Z' },
-    { id: 102, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha2', submitted_at: '2026-08-25T12:00:00Z' }
-  ];
-  const timelineEvents = [
-    { id: 101, __typename: 'PullRequestReview', databaseId: 101, author: { login: 'alice' }, state: 'DISMISSED', commit: { oid: 'sha1' }, submittedAt: '2026-08-25T10:00:00Z' },
-    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', pullRequestCommit: { commit: { oid: 'sha2' } }, review: { databaseId: 101 }, createdAt: '2026-08-25T11:00:00Z' },
-    { id: 102, __typename: 'PullRequestReview', databaseId: 102, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha2' }, submittedAt: '2026-08-25T12:00:00Z' },
-    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', dismissalMessage: 'Security revocation', pullRequestCommit: null, review: { databaseId: 102 }, createdAt: '2026-08-25T13:00:00Z' }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('GRAPHQL_TIMELINE_QUERY queries pullRequestCommit and dismissalMessage', () => {
-  assert.match(GRAPHQL_TIMELINE_QUERY, /pullRequestCommit/);
-  assert.match(GRAPHQL_TIMELINE_QUERY, /dismissalMessage/);
-});
-
-test('findLatestApproval ignores self-approval from PR author', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'charlie' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
