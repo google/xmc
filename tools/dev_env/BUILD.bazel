@@ -21,6 +21,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "__init__.py",
     "chart_sanitizer.py",
+    "cluster_diagnostics.py",
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
@@ -52,11 +53,31 @@ py_test(
 )
 
 py_library(
+    name = "cluster_diagnostics_lib",
+    srcs = ["cluster_diagnostics.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "cluster_diagnostics_test",
+    srcs = ["cluster_diagnostics_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster_diagnostics_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "helm_deployer_lib",
     srcs = ["helm_deployer.py"],
     imports = ["../.."],
     deps = [
         ":chart_sanitizer_lib",
+        ":cluster_diagnostics_lib",
         ":config_lib",
         "//tools/common:tool_utils",
     ],
@@ -68,6 +89,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":chart_sanitizer_lib",
+        ":cluster_diagnostics_lib",
         ":config_lib",
         ":helm_deployer_lib",
         "//tools/common:tool_utils",

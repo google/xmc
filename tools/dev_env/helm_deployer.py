@@ -23,14 +23,14 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import log_info, log_success, run_command
+from tools.common.tool_utils import log_error, log_info, log_success, run_command
 from tools.dev_env.chart_sanitizer import ChartSanitizer
+from tools.dev_env.cluster_diagnostics import ClusterDiagnostics
 from tools.dev_env.config import LocalDevConfig
 
 _LOGGER = logging.getLogger("xmc.dev_env.helm_deployer")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 try:
     import yaml
@@ -92,6 +92,7 @@ class HelmDeployer:
         repo_root: Path | None = None,
         temp_dir: Path | None = None,
         sanitizer: ChartSanitizer | None = None,
+        diagnostics: ClusterDiagnostics | None = None,
     ) -> None:
         """Initializes HelmDeployer with development configuration."""
         self.config, self.repo_root = config, repo_root or _REPO_ROOT
@@ -113,6 +114,10 @@ class HelmDeployer:
             source_chart=self.repo_root / "deploy" / "helm",
             target_dir=self.helm_dir,
         )
+        self.diagnostics = diagnostics or ClusterDiagnostics(
+            kube_context=self.kube_context,
+            output_dir=self.temp_dir,
+        )
 
     @property
     def kube_context(self) -> str:
@@ -122,6 +127,10 @@ class HelmDeployer:
     def prepare_local_chart(self) -> Path:
         """Copies and sanitizes Helm chart templates for local development."""
         return self.sanitizer.prepare_sanitized_chart()
+
+    def capture_diagnostics(self, namespace: str = "xmc") -> Path:
+        """Captures diagnostic telemetry across namespaces on failure."""
+        return self.diagnostics.capture_diagnostics(namespace=namespace)
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
@@ -182,15 +191,7 @@ class HelmDeployer:
 
     def _check_dex_rollout(self, ctx: str, timeout_flag: str) -> None:
         """Checks rollout status for Dex in the 'dex' namespace if present."""
-        check_dex_cmd = [
-            "kubectl",
-            "--context",
-            ctx,
-            "get",
-            "deployment/dex",
-            "-n",
-            "dex",
-        ]
+        check_dex_cmd = ["kubectl", "--context", ctx, "get", "deployment/dex", "-n", "dex"]
         if (
             run_command(check_dex_cmd, check=False, capture_output=True, log_cmd=False).returncode
             == 0
@@ -251,33 +252,42 @@ class HelmDeployer:
         1. Dex deployment in the 'dex' namespace.
         2. Core XMC workloads in the target namespace.
 
+        If any deployment rollout fails or times out, automatically captures
+        cluster diagnostics before propagating the error.
+
         Args:
             namespace: Target Kubernetes namespace containing XMC deployments (default: 'xmc').
             timeout_seconds: Maximum seconds to wait for each individual deployment rollout.
         """
         log_info(f"Waiting for rollout in namespace '{namespace}' ({timeout_seconds}s)...")
         ctx, timeout_flag = self.kube_context, f"--timeout={timeout_seconds}s"
-        self._check_dex_rollout(ctx, timeout_flag)
-
-        deployments = self._discover_namespace_deployments(ctx, namespace)
-        for dep in deployments:
-            _LOGGER.debug(
-                "Checking rollout status for deployment/%s in namespace %s", dep, namespace
-            )
-            run_command(
-                [
-                    "kubectl",
-                    "--context",
-                    ctx,
-                    "rollout",
-                    "status",
-                    f"deployment/{dep}",
-                    "-n",
-                    namespace,
-                    timeout_flag,
-                ]
-            )
-        log_success("All core deployments rolled out successfully.")
+        try:
+            self._check_dex_rollout(ctx, timeout_flag)
+            deployments = self._discover_namespace_deployments(ctx, namespace)
+            for dep in deployments:
+                _LOGGER.debug(
+                    "Checking rollout status for deployment/%s in namespace %s", dep, namespace
+                )
+                run_command(
+                    [
+                        "kubectl",
+                        "--context",
+                        ctx,
+                        "rollout",
+                        "status",
+                        f"deployment/{dep}",
+                        "-n",
+                        namespace,
+                        timeout_flag,
+                    ]
+                )
+            log_success("All core deployments rolled out successfully.")
+        except Exception:
+            try:
+                self.capture_diagnostics(namespace=namespace)
+            except Exception as e:
+                log_error(f"Failed to capture diagnostics: {e}")
+            raise
 
     def deploy(
         self,
@@ -286,7 +296,7 @@ class HelmDeployer:
         namespace: str = "xmc",
         timeout: int = 180,
     ) -> None:
-        """Executes Helm release upgrade/install and waits for rollout confirmation.
+        """Executes sanitized Helm release upgrade/install and waits for rollout confirmation.
 
         Sanitizes chart templates for local KinD execution, runs `helm upgrade --install`,
         restarts gateway-proxy, and verifies deployment rollouts.
