@@ -71,8 +71,6 @@ def resolve_linter_binary(
     candidates = [
         base / "bazel-bin" / "cmd" / "component-linter" / "component-linter_" / "component-linter",
         base / "bazel-bin" / "cmd" / "component-linter" / "component-linter",
-        base / "bazel-bin" / "cmd" / "xmc-linter" / "xmc-linter_" / "xmc-linter",
-        base / "bazel-bin" / "cmd" / "xmc-linter" / "xmc-linter",
     ]
     for cand in candidates:
         if cand.is_file() and os.access(cand, os.X_OK):

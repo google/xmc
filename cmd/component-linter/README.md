@@ -1,6 +1,6 @@
 # Component Static Linter CLI (`cmd/component-linter`)
 
-`component-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters. (For backward compatibility, the `//cmd/xmc-linter:xmc-linter` Bazel target is maintained as an alias).
+`component-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters.
 
 ---
 

@@ -28,12 +28,6 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "xmc-linter",
-    actual = ":component-linter",
-    visibility = ["//visibility:public"],
-)
-
 go_test(
     name = "component-linter_test",
     srcs = ["main_test.go"],
