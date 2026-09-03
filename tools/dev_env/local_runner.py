@@ -211,12 +211,12 @@ class LocalRunner:
         """
         log_info("👀 [Watch Mode] Watching workspace for file changes (press Ctrl+C to stop)...")
         try:
-            self._reload_once(services=services, helm=helm, base_ref=base_ref)
-        except Exception as e:
-            log_error(f"Initial reload failed: {e}. Watching for next save...")
+            try:
+                self._reload_once(services=services, helm=helm, base_ref=base_ref)
+            except Exception as e:
+                log_error(f"Initial reload failed: {e}. Watching for next save...")
 
-        last_sig = self._get_workspace_signature(base_ref=base_ref)
-        try:
+            last_sig = self._get_workspace_signature(base_ref=base_ref)
             while True:
                 time.sleep(interval)
                 current_sig = self._get_workspace_signature(base_ref=base_ref)
@@ -237,6 +237,8 @@ class LocalRunner:
                                 st = file_path.stat()
                                 if (st.st_mtime_ns, st.st_size) == last_sig[f]:
                                     continue
+                            elif last_sig[f] == (0, 0):
+                                continue
                         except OSError:
                             pass
                         deleted_files.append(f)

@@ -490,6 +490,8 @@ def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--interval",
+        "--watch-interval",
+        dest="interval",
         type=float,
         default=1.5,
         help="Watch mode polling interval in seconds (default: 1.5).",

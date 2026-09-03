@@ -227,6 +227,17 @@ class ImageBuilderTest(unittest.TestCase):
         self.builder.load_images_into_kind([])
         mock_run.assert_not_called()
 
+    @mock.patch.object(ImageBuilder, "load_images_into_kind")
+    @mock.patch.object(ImageBuilder, "build_images", return_value=["reconciler_image:latest"])
+    def test_build_and_load_into_kind(
+        self, mock_build: mock.MagicMock, mock_load: mock.MagicMock
+    ) -> None:
+        """Verifies build_and_load_into_kind coordinates build and load stages."""
+        images = self.builder.build_and_load_into_kind(services=["reconciler"], skip_build=False)
+        self.assertEqual(images, ["reconciler_image:latest"])
+        mock_build.assert_called_once_with(services=["reconciler"], skip_build=False)
+        mock_load.assert_called_once_with(["reconciler_image:latest"])
+
 
 if __name__ == "__main__":
     unittest.main()

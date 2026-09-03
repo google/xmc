@@ -669,6 +669,35 @@ class TestLocalRunner(unittest.TestCase):
                 services=["reconciler"], changed_files=["f.go"], base_ref=None
             )
 
+    def test_watch_loop_initial_reload_keyboard_interrupt_handled_gracefully(self) -> None:
+        """Verifies KeyboardInterrupt during initial reload is handled gracefully."""
+        with (
+            patch.object(self.runner, "_reload_once", side_effect=KeyboardInterrupt) as mock_reload,
+            patch("tools.dev_env.local_runner.log_info") as mock_log,
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            mock_reload.assert_called_once_with(services=["reconciler"], helm=False, base_ref=None)
+            mock_log.assert_any_call("\n🛑 Stopped watching workspace.")
+
+    @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_committed_deletion_no_spurious_reload(self, mock_sleep: MagicMock) -> None:
+        """Verifies committed deletions with signature (0, 0) do not trigger spurious reloads."""
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"deleted.go": (0, 0)},  # file was deleted on disk
+                    {},  # committed deletion: disappears from git status
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            # Only initial reload should have fired, no reload for the committed deletion
+            self.assertEqual(mock_reload.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
