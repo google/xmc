@@ -111,15 +111,11 @@ class ImageBuilder:
              Crucially preserves the npm install sentinel so developers fixing TypeScript
              bugs don't suffer redundant `npm ci` reinstalls.
         """
-        # 1. Skip host compilation if Node.js toolchain is not available on host.
-        if not (shutil.which("node") and shutil.which("npm") and shutil.which("npx")):
-            return
-
         ui_dir = os.path.join(self.cfg.workspace_root, "cmd", "ui")
         dist_dir = os.path.join(ui_dir, "dist", "browser")
         index_html = os.path.join(dist_dir, "index.html")
 
-        # 2. Check if existing pre-compiled bundle is up-to-date.
+        # 1. Check if existing pre-compiled bundle exists and verify freshness.
         if os.path.isfile(index_html):
             if not self._is_ui_dist_stale(ui_dir, index_html):
                 logger.info(
@@ -127,6 +123,20 @@ class ImageBuilder:
                 )
                 return
             logger.info("=== [UI] UI source files modified since last build. Recompiling... ===")
+            try:
+                shutil.rmtree(os.path.join(ui_dir, "dist"))
+            except FileNotFoundError:
+                pass
+
+        # 2. Skip host compilation if Node.js toolchain is not available on host.
+        # If dist was stale above, it has now been wiped so Bazel cleanly falls back
+        # to the containerized Docker build instead of packaging stale assets.
+        if not (shutil.which("node") and shutil.which("npm") and shutil.which("npx")):
+            logger.info(
+                "=== [UI] Node.js toolchain not found on host. Falling back to containerized"
+                " build ==="
+            )
+            return
 
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         node_modules_dir = os.path.join(ui_dir, "node_modules")
@@ -155,8 +165,10 @@ class ImageBuilder:
                     os.makedirs(node_modules_dir, exist_ok=True)
                     with open(install_sentinel, "w", encoding="utf-8") as f:
                         f.write("ok")
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.warning(
+                        "[UI] Failed to write npm install sentinel %s: %s", install_sentinel, e
+                    )
 
             # 4. Compile Angular production bundle on host.
             run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
