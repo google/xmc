@@ -320,10 +320,10 @@ const MAX_TIMELINE_PAGES = 10;
  * @param {string} repo - Repository name.
  * @param {number} prNumber - Pull request number.
  * @param {Object} core - GitHub Actions core toolkit.
- * @param {number} maxPages - Maximum GraphQL pages to fetch.
+ * @param {number} [maxPages=MAX_TIMELINE_PAGES] - Maximum GraphQL pages to fetch.
  * @returns {Promise<Array<Object>>}
  */
-async function fetchGraphQLTimeline(github, owner, repo, prNumber, core, maxPages) {
+async function fetchGraphQLTimeline(github, owner, repo, prNumber, core, maxPages = MAX_TIMELINE_PAGES) {
   let hasNextPage = true;
   let cursor = null;
   let pageCount = 0;

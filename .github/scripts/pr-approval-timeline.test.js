@@ -589,6 +589,32 @@ test('fetchGraphQLTimeline iterates pages and respects maxPages limit', async ()
   assert.ok(logs.some(l => l.includes('Reached maximum timeline pages limit (2)')));
 });
 
+test('fetchGraphQLTimeline defaults maxPages to MAX_TIMELINE_PAGES when omitted', async () => {
+  let callCount = 0;
+  const mockGithub = {
+    graphql: async () => {
+      callCount++;
+      return {
+        repository: {
+          pullRequest: {
+            timelineItems: {
+              nodes: [{ id: callCount }],
+              pageInfo: {
+                hasNextPage: callCount < 5,
+                endCursor: `cursor-${callCount}`
+              }
+            }
+          }
+        }
+      };
+    }
+  };
+
+  const nodes = await fetchGraphQLTimeline(mockGithub, 'google', 'xmc', 123, {});
+  assert.strictEqual(callCount, 5);
+  assert.strictEqual(nodes.length, 5);
+});
+
 test('fetchRestTimeline paginates events via REST and catches errors', async () => {
   const mockGithub = {
     rest: {
