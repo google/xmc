@@ -49,6 +49,35 @@ func NewK8sStatusDetector(dynClient dynamic.Interface, restMapper meta.RESTMappe
 	}
 }
 
+var (
+	defaultEndpointCandidates = []string{
+		"{.status.endpoint}",
+		"{.status.endpoints[0]}",
+		"{.status.url}",
+		"{.status.host}",
+		"{.status.address.url}",
+		"{.status.head.serviceName}",
+	}
+
+	defaultSecretCandidates = []string{
+		"{.status.connectionSecret}",
+		"{.status.secretName}",
+		"{.status.auth.secretName}",
+		"{.status.secret.name}",
+		"{.status.connectionSecretRef.name}",
+	}
+)
+
+func handleK8sError(err error, ref WrapperRef) (*ResourceStatus, error) {
+	if meta.IsNoMatchError(err) {
+		return &ResourceStatus{Found: false, Ready: false, Message: fmt.Sprintf("CRD not installed: %v", err)}, nil
+	}
+	if apierrors.IsNotFound(err) {
+		return &ResourceStatus{Found: false, Ready: false, Message: fmt.Sprintf("resource %s/%s not found", ref.Namespace, ref.Name)}, nil
+	}
+	return nil, err
+}
+
 // DetectStatus queries the target 3P resource via the dynamic client and evaluates its status.
 // It gracefully handles uninstalled CRDs (meta.IsNoMatchError) and missing resources (apierrors.IsNotFound).
 func (d *K8sStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
@@ -60,8 +89,8 @@ func (d *K8sStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*
 	}
 	gvr, isNamespaced, err := ResolveGVR(ref, d.restMapper)
 	if err != nil {
-		if meta.IsNoMatchError(err) {
-			return &ResourceStatus{Found: false, Ready: false, Message: fmt.Sprintf("CRD not installed: %v", err)}, nil
+		if status, handleErr := handleK8sError(err, ref); handleErr == nil {
+			return status, nil
 		}
 		return nil, fmt.Errorf("failed to resolve GVR: %w", err)
 	}
@@ -72,11 +101,8 @@ func (d *K8sStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*
 	}
 	obj, err := ri.Get(ctx, ref.Name, metav1.GetOptions{})
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return &ResourceStatus{Found: false, Ready: false, Message: fmt.Sprintf("resource %s/%s not found", ref.Namespace, ref.Name)}, nil
-		}
-		if meta.IsNoMatchError(err) {
-			return &ResourceStatus{Found: false, Ready: false, Message: fmt.Sprintf("CRD not installed: %v", err)}, nil
+		if status, handleErr := handleK8sError(err, ref); handleErr == nil {
+			return status, nil
 		}
 		return nil, fmt.Errorf("failed to fetch dynamic resource: %w", err)
 	}
@@ -158,32 +184,43 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate readiness: %w", err)
 	}
-	endpoint, err := extractFirstMatch(obj, ref.EndpointJSONPath,
-		"{.status.endpoint}", "{.status.endpoints[0]}", "{.status.url}", "{.status.host}",
-		"{.status.address.url}", "{.status.head.serviceName}",
-	)
+	endpoint, err := extractFirstMatch(obj, ref.EndpointJSONPath, defaultEndpointCandidates...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract endpoint: %w", err)
 	}
-	secret, err := extractFirstMatch(obj, ref.ConnectionSecretJSONPath,
-		"{.status.connectionSecret}", "{.status.secretName}", "{.status.auth.secretName}",
-		"{.status.secret.name}", "{.status.connectionSecretRef.name}",
-	)
+	secret, err := extractFirstMatch(obj, ref.ConnectionSecretJSONPath, defaultSecretCandidates...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract connection secret: %w", err)
 	}
-	msg := readyMsg
-	if msg == "" {
-		if ready {
-			msg = "Resource is ready"
-		} else {
-			msg = "Resource is not ready"
-		}
-	}
 	return &ResourceStatus{
-		Found: true, Ready: ready, ObservedGeneration: obsGen,
-		Endpoint: endpoint, ConnectionSecret: secret, Message: msg, RawStatus: rawStatus,
+		Found:              true,
+		Ready:              ready,
+		ObservedGeneration: obsGen,
+		Endpoint:           endpoint,
+		ConnectionSecret:   secret,
+		Message:            readyMsg,
+		RawStatus:          rawStatus,
 	}, nil
+}
+
+// toStringValue converts any unstructured scalar value to its canonical string representation.
+func toStringValue(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		if val {
+			return "True"
+		}
+		return "False"
+	case fmt.Stringer:
+		return val.String()
+	default:
+		if val != nil {
+			return fmt.Sprintf("%v", val)
+		}
+		return ""
+	}
 }
 
 // parseGenerationValue converts a string representation of generation into an int64.
@@ -221,10 +258,8 @@ func extractObservedGeneration(obj *unstructured.Unstructured, path string) (int
 			return int64(v), nil
 		case float64:
 			return int64(v), nil
-		case string:
-			return parseGenerationValue(v)
-		case interface{ String() string }:
-			return parseGenerationValue(v.String())
+		default:
+			return parseGenerationValue(toStringValue(v))
 		}
 	}
 	return obj.GetGeneration(), nil
@@ -246,23 +281,7 @@ func getConditionStatusAndMessage(obj *unstructured.Unstructured, condType strin
 		}
 		t, _ := condMap["type"].(string)
 		if strings.EqualFold(t, condType) {
-			var statusStr string
-			switch s := condMap["status"].(type) {
-			case string:
-				statusStr = s
-			case bool:
-				if s {
-					statusStr = "True"
-				} else {
-					statusStr = "False"
-				}
-			case fmt.Stringer:
-				statusStr = s.String()
-			default:
-				if s != nil {
-					statusStr = fmt.Sprintf("%v", s)
-				}
-			}
+			statusStr := toStringValue(condMap["status"])
 			message, _ := condMap["message"].(string)
 			return statusStr, message, true
 		}

@@ -57,6 +57,20 @@ func makeObj(group, version, kind, ns, name string, gen int64, status map[string
 	return u
 }
 
+func newTestWrapperRef(name string, opts ...func(*WrapperRef)) WrapperRef {
+	ref := WrapperRef{
+		Group:     "custom.io",
+		Version:   "v1",
+		Kind:      "CustomCluster",
+		Namespace: "xmc",
+		Name:      name,
+	}
+	for _, opt := range opts {
+		opt(&ref)
+	}
+	return ref
+}
+
 func TestNormalizeJSONPath(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"", ""}, {"   ", ""}, {"status.phase", "{.status.phase}"},
@@ -262,70 +276,83 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("phase fallback active", func(t *testing.T) {
-		status, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c2", Namespace: "xmc"})
+		status, err := detector.DetectStatus(ctx, newTestWrapperRef("c2"))
 		if err != nil || !status.Ready || status.Message != "Phase is Ready" {
 			t.Errorf("expected phase fallback Ready: status=%+v, err=%v", status, err)
 		}
 	})
 
 	t.Run("sibling message extraction on custom condition path", func(t *testing.T) {
-		status, err := detector.DetectStatus(ctx, WrapperRef{
-			Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc",
-			ReadyConditionPath: "{.status.conditions[1].status}", ExpectedReadyValue: "Synced",
-		})
+		status, err := detector.DetectStatus(ctx, newTestWrapperRef("c1", func(r *WrapperRef) {
+			r.ReadyConditionPath = "{.status.conditions[1].status}"
+			r.ExpectedReadyValue = "Synced"
+		}))
 		if err != nil || status.Ready || status.Message != "Still syncing" {
 			t.Errorf("expected sibling message 'Still syncing', got %+v", status)
 		}
 	})
 
 	t.Run("candidate url, host, and auth secret extraction", func(t *testing.T) {
-		status3, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c3", Namespace: "xmc"})
+		status3, err := detector.DetectStatus(ctx, newTestWrapperRef("c3"))
 		if err != nil || status3.Endpoint != "http://c3-url.xmc:9000" || status3.ConnectionSecret != "c3-auth-sec" {
 			t.Errorf("unexpected url/auth extraction: status=%+v, err=%v", status3, err)
 		}
-		status4, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c4", Namespace: "xmc"})
+		status4, err := detector.DetectStatus(ctx, newTestWrapperRef("c4"))
 		if err != nil || status4.Endpoint != "c4-host.xmc" {
 			t.Errorf("unexpected host extraction: status=%+v, err=%v", status4, err)
 		}
 	})
 
 	t.Run("generation parsing variations and errors", func(t *testing.T) {
-		statusFloat, _ := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc", ObservedGenerationPath: "status.genFloat"})
+		statusFloat, _ := detector.DetectStatus(ctx, newTestWrapperRef("c1", func(r *WrapperRef) {
+			r.ObservedGenerationPath = "status.genFloat"
+		}))
 		if statusFloat.ObservedGeneration != 12 {
 			t.Errorf("expected observedGen 12: got %d", statusFloat.ObservedGeneration)
 		}
-		statusStr, _ := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc", ObservedGenerationPath: "status.genStr"})
+		statusStr, _ := detector.DetectStatus(ctx, newTestWrapperRef("c1", func(r *WrapperRef) {
+			r.ObservedGenerationPath = "status.genStr"
+		}))
 		if statusStr.ObservedGeneration != 15 {
 			t.Errorf("expected observedGen 15: got %d", statusStr.ObservedGeneration)
 		}
-		if _, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c7", Namespace: "xmc", ObservedGenerationPath: "status.genBool"}); err == nil {
+		if _, err := detector.DetectStatus(ctx, newTestWrapperRef("c7", func(r *WrapperRef) {
+			r.ObservedGenerationPath = "status.genBool"
+		})); err == nil {
 			t.Error("expected error for bool generation")
 		}
-		if _, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c7", Namespace: "xmc", ObservedGenerationPath: "status.genStrBad"}); err == nil {
+		if _, err := detector.DetectStatus(ctx, newTestWrapperRef("c7", func(r *WrapperRef) {
+			r.ObservedGenerationPath = "status.genStrBad"
+		})); err == nil {
 			t.Error("expected error for invalid string generation")
 		}
-		if _, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c7", Namespace: "xmc", ObservedGenerationPath: "status.gen["}); err == nil {
+		if _, err := detector.DetectStatus(ctx, newTestWrapperRef("c7", func(r *WrapperRef) {
+			r.ObservedGenerationPath = "status.gen["
+		})); err == nil {
 			t.Error("expected error for invalid generation JSONPath")
 		}
 	})
 
 	t.Run("custom paths and non-map status", func(t *testing.T) {
-		status7, err := detector.DetectStatus(ctx, WrapperRef{
-			Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c7", Namespace: "xmc",
-			EndpointJSONPath: "status.head.serviceName", ConnectionSecretJSONPath: "status.secret.name",
-		})
+		status7, err := detector.DetectStatus(ctx, newTestWrapperRef("c7", func(r *WrapperRef) {
+			r.EndpointJSONPath = "status.head.serviceName"
+			r.ConnectionSecretJSONPath = "status.secret.name"
+		}))
 		if err != nil || status7.Endpoint != "c7-head-svc" || status7.ConnectionSecret != "c7-sec-name" {
 			t.Errorf("unexpected head/secret extraction: status=%+v, err=%v", status7, err)
 		}
-		status8, err := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c8", Namespace: "xmc"})
+		status8, err := detector.DetectStatus(ctx, newTestWrapperRef("c8"))
 		if err != nil || status8.Ready {
 			t.Errorf("unexpected status for non-map status: status=%+v, err=%v", status8, err)
 		}
-		status5, _ := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c5", Namespace: "xmc", ReadyConditionPath: "status.state", ExpectedReadyValue: "Healthy"})
+		status5, _ := detector.DetectStatus(ctx, newTestWrapperRef("c5", func(r *WrapperRef) {
+			r.ReadyConditionPath = "status.state"
+			r.ExpectedReadyValue = "Healthy"
+		}))
 		if status5.Ready || status5.Message != `Expected ready value "Healthy", got "Degraded"` {
 			t.Errorf("unexpected mismatch status: status=%+v", status5)
 		}
-		status6, _ := detector.DetectStatus(ctx, WrapperRef{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c6", Namespace: "xmc"})
+		status6, _ := detector.DetectStatus(ctx, newTestWrapperRef("c6"))
 		if status6.Ready || status6.Message != "Readiness status not reported" {
 			t.Errorf("unexpected empty status: status=%+v", status6)
 		}
@@ -333,9 +360,9 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 
 	t.Run("invalid jsonpath query errors", func(t *testing.T) {
 		for _, wRef := range []WrapperRef{
-			{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc", ReadyConditionPath: "{.status["},
-			{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc", EndpointJSONPath: "{.status["},
-			{Group: "custom.io", Version: "v1", Kind: "CustomCluster", Name: "c1", Namespace: "xmc", ConnectionSecretJSONPath: "{.status["},
+			newTestWrapperRef("c1", func(r *WrapperRef) { r.ReadyConditionPath = "{.status[" }),
+			newTestWrapperRef("c1", func(r *WrapperRef) { r.EndpointJSONPath = "{.status[" }),
+			newTestWrapperRef("c1", func(r *WrapperRef) { r.ConnectionSecretJSONPath = "{.status[" }),
 		} {
 			if _, err := detector.DetectStatus(ctx, wRef); err == nil {
 				t.Errorf("expected error for invalid query path in %+v", wRef)
