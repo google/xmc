@@ -72,7 +72,7 @@ type mockHelm struct {
 	active               bool
 }
 
-func (m *mockHelm) Ensure1PComponent(ctx context.Context, ns, name string, opts HelmComponentOptions) error {
+func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
 	}
@@ -82,7 +82,7 @@ func (m *mockHelm) Ensure1PComponent(ctx context.Context, ns, name string, opts 
 	return m.ensureErr
 }
 
-func (m *mockHelm) Delete1PComponent(ctx context.Context, ns, name string) error {
+func (m *mockHelm) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
 	}
@@ -92,7 +92,27 @@ func (m *mockHelm) Delete1PComponent(ctx context.Context, ns, name string) error
 	return m.deleteErr
 }
 
-func (m *mockHelm) IsComponentActive(name string) bool {
+func (m *mockHelm) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	if m.deleteErr == nil {
+		m.active = false
+	}
+	return m.deleteErr
+}
+
+func (m *mockHelm) Orphan1PComponent(ctx context.Context, ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	if m.deleteErr == nil {
+		m.active = false
+	}
+	return m.deleteErr
+}
+
+func (m *mockHelm) IsComponentActive(ref ComponentRef) bool {
 	if m == nil {
 		return false
 	}
@@ -181,6 +201,21 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
+			name: "deletion successful 1P orphan policy",
+			cms:  &mockCMS{},
+			helm: &mockHelm{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2,
+				Spec: &componentspb.ComponentSpec{
+					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+				},
 				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,

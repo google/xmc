@@ -15,22 +15,39 @@
 package bridge
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
+const (
+	// terminationGracePeriodBufferSeconds provides a 5s buffer beyond drain timeout before force killing.
+	terminationGracePeriodBufferSeconds = 5
+)
+
+// ComponentRef uniquely identifies a component within a Kubernetes cluster by its namespace and name.
+type ComponentRef struct {
+	// Namespace is the Kubernetes namespace containing the component.
+	Namespace string `json:"namespace,omitempty"`
+	// Name is the unique name of the component within its namespace.
+	Name string `json:"name"`
+}
+
+// String returns the canonical "namespace/name" (or "name" if namespace is omitted) string representation.
+func (c ComponentRef) String() string {
+	if c.Namespace == "" {
+		return c.Name
+	}
+	return c.Namespace + "/" + c.Name
+}
+
 // HelmComponentOptions defines the configuration values for managing a 1P component via Helm releases.
 type HelmComponentOptions struct {
-	// ComponentName is the name of the component (e.g., "ingestion-gateway").
-	ComponentName string
-	// Namespace is the target release namespace.
-	Namespace string
+	// Ref uniquely identifies the component (namespace and name).
+	Ref ComponentRef
 	// ReleaseName is the Helm release name (defaults to "xmanager-cloud").
 	ReleaseName string
 	// Enabled indicates whether the component should be enabled in the Helm release.
@@ -45,20 +62,10 @@ type HelmComponentOptions struct {
 	RawValues map[string]any
 }
 
-// HelmManager defines the contract for provisioning and managing 1P component workloads via Helm releases.
-type HelmManager interface {
-	// Ensure1PComponent sets the component's enablement flag and values in the Helm release and triggers an upgrade.
-	Ensure1PComponent(ctx context.Context, namespace string, componentName string, opts HelmComponentOptions) error
-	// Delete1PComponent sets the component's enablement flag to false in the Helm release and triggers an upgrade.
-	Delete1PComponent(ctx context.Context, namespace string, componentName string) error
-	// IsComponentActive checks if the component is currently marked enabled in the Helm release.
-	IsComponentActive(componentName string) bool
-}
-
 // BuildHelmValues converts HelmComponentOptions into a structured values map suitable for Helm upgrade.
 func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	values := make(map[string]any)
-	deploymentKey := ComponentNameToHelmKey(opts.ComponentName)
+	deploymentKey := ComponentNameToHelmKey(opts.Ref.Name)
 
 	compValues := make(map[string]any)
 	compValues["enabled"] = opts.Enabled
@@ -73,6 +80,13 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 		}
 	}
 
+	if opts.ImageTag != "" || opts.Parameters["image"] != "" || opts.Parameters["imageRepository"] != "" {
+		compValues["image"] = ResolveImage(opts.Ref.Name, opts.ImageTag, opts.Parameters)
+	}
+	if opts.DrainTimeoutSeconds > 0 {
+		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + terminationGracePeriodBufferSeconds
+	}
+
 	for k, v := range opts.Parameters {
 		compValues[k] = parseParamValue(v)
 	}
@@ -85,18 +99,45 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	return values
 }
 
+// DefaultComponentRepository returns the standard default Google Artifact Registry repository
+// for first-party (1P) components in production XMC deployments (e.g. us-docker.pkg.dev/xmc-prod/xmc/<componentName>).
+// When deploying to non-prod environments or custom registries, callers supply explicit repository overrides
+// via parameters["imageRepository"] or parameters["image"].
+func DefaultComponentRepository(componentName string) string {
+	return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", componentName)
+}
+
+// ResolveImage resolves the container image following 4-tier precedence:
+// 1. Full image override (parameters["image"])
+// 2. Custom repository (parameters["imageRepository"]) + tag
+// 3. Default repository (DefaultComponentRepository) + tag override (imageTag)
+// 4. Default repository + ":latest"
+func ResolveImage(componentName string, imageTag string, parameters map[string]string) string {
+	if img, ok := parameters["image"]; ok && img != "" {
+		return img
+	}
+	repo := parameters["imageRepository"]
+	if repo == "" {
+		repo = DefaultComponentRepository(componentName)
+	}
+	tag := imageTag
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s:%s", repo, tag)
+}
+
 // ComponentNameToHelmKey maps a component name to its standard Helm values deployment section key.
 func ComponentNameToHelmKey(name string) string {
+	// Standard 1P components like "ingestion-gateway" and "health-service" are intentionally
+	// omitted from the known map because toCamelCase(name) + "Deployment" computes
+	// "ingestionGatewayDeployment" and "healthServiceDeployment" identically.
+	// Only components requiring non-standard key transformations (e.g. "rod-data-provider" -> "rodDeployment",
+	// "xmc-bridge" -> "componentsDeployment") need explicit entries in this lookup table.
 	known := map[string]string{
-		"ingestion-gateway": "ingestionGatewayDeployment",
-		"ingestion_gateway": "ingestionGatewayDeployment",
-		"rod":               "rodDeployment",
 		"rod-data-provider": "rodDeployment",
-		"health-service":    "healthServiceDeployment",
-		"health_service":    "healthServiceDeployment",
 		"metrics":           "metrics",
 		"xmc-bridge":        "componentsDeployment",
-		"xmc_bridge":        "componentsDeployment",
 	}
 	if k, ok := known[name]; ok {
 		return k
@@ -137,11 +178,14 @@ func toCamelCase(s string) string {
 // ParseHelmComponentOptions extracts HelmComponentOptions from an unstructured spec map and ComponentSpec.
 func ParseHelmComponentOptions(name, namespace string, specObj any, spec *componentspb.ComponentSpec) HelmComponentOptions {
 	opts := HelmComponentOptions{
-		ComponentName: name,
-		Namespace:     namespace,
-		Enabled:       true,
-		Parameters:    make(map[string]string),
-		RawValues:     make(map[string]any),
+		Ref: ComponentRef{
+			Namespace: namespace,
+			Name:      name,
+		},
+		ReleaseName: DefaultHelmReleaseName,
+		Enabled:     true,
+		Parameters:  make(map[string]string),
+		RawValues:   make(map[string]any),
 	}
 	applyProtoSpec(&opts, spec)
 	if specMap, ok := specObj.(map[string]any); ok && specMap != nil {
@@ -161,6 +205,9 @@ func applyProtoSpec(opts *HelmComponentOptions, spec *componentspb.ComponentSpec
 }
 
 func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
+	if en, ok := specMap["enabled"].(bool); ok {
+		opts.Enabled = en
+	}
 	if dt := parseDrainingTimeout(specMap["lifecycleControl"]); dt > 0 {
 		opts.DrainTimeoutSeconds = dt
 	}
@@ -216,71 +263,4 @@ func parseDrainingTimeout(lcObj any) int32 {
 		return int32(v)
 	}
 	return 0
-}
-
-// FakeHelmManager provides an in-memory double of HelmManager for unit tests.
-type FakeHelmManager struct {
-	mu               sync.Mutex
-	ActiveComponents map[string]bool
-	AppliedValues    map[string]map[string]any
-	EnsureErr        error
-	DeleteErr        error
-}
-
-// NewFakeHelmManager creates an initialized FakeHelmManager.
-func NewFakeHelmManager() *FakeHelmManager {
-	return &FakeHelmManager{
-		ActiveComponents: make(map[string]bool),
-		AppliedValues:    make(map[string]map[string]any),
-	}
-}
-
-// Ensure1PComponent records component enablement and synthesized Helm values.
-func (f *FakeHelmManager) Ensure1PComponent(ctx context.Context, namespace string, componentName string, opts HelmComponentOptions) error {
-	if f == nil {
-		return nil
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.EnsureErr != nil {
-		return f.EnsureErr
-	}
-	if f.ActiveComponents == nil {
-		f.ActiveComponents = make(map[string]bool)
-	}
-	if f.AppliedValues == nil {
-		f.AppliedValues = make(map[string]map[string]any)
-	}
-	f.ActiveComponents[componentName] = opts.Enabled
-	f.AppliedValues[componentName] = BuildHelmValues(opts)
-	return nil
-}
-
-// Delete1PComponent records component disabling in memory.
-func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, namespace string, componentName string) error {
-	if f == nil {
-		return nil
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.DeleteErr != nil {
-		return f.DeleteErr
-	}
-	if f.ActiveComponents != nil {
-		delete(f.ActiveComponents, componentName)
-	}
-	if f.AppliedValues != nil {
-		delete(f.AppliedValues, componentName)
-	}
-	return nil
-}
-
-// IsComponentActive checks whether the component is recorded as active.
-func (f *FakeHelmManager) IsComponentActive(componentName string) bool {
-	if f == nil {
-		return false
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.ActiveComponents[componentName]
 }

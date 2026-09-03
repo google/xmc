@@ -203,12 +203,8 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager != nil {
-		if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to delete 1P Helm component: %w", err)
-		}
+	if err := r.teardown1PComponent(ctx, in, res); err != nil {
+		return res, err
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
@@ -219,6 +215,30 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT || r.helmManager == nil {
+		return nil
+	}
+	ref := in.HelmOpts.Ref
+	if ref.Name == "" {
+		ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
+	}
+	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
+		if err := r.helmManager.Orphan1PComponent(ctx, ref); err != nil {
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmOrphanFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmOrphanFailed", err.Error())
+			return fmt.Errorf("failed to orphan 1P Helm component: %w", err)
+		}
+		return nil
+	}
+	if err := r.helmManager.Purge1PComponent(ctx, ref); err != nil {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
+	}
+	return nil
 }
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
@@ -259,7 +279,11 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 		logging.Warn(ctx, "HelmManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
 		return nil
 	}
-	if err := r.helmManager.Delete1PComponent(ctx, in.Namespace, in.Name); err != nil {
+	ref := in.HelmOpts.Ref
+	if ref.Name == "" {
+		ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
+	}
+	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
@@ -275,7 +299,12 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 			logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
 			return nil
 		}
-		if err := r.helmManager.Ensure1PComponent(ctx, in.Namespace, in.Name, in.HelmOpts); err != nil {
+		ref := in.HelmOpts.Ref
+		if ref.Name == "" {
+			ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
+		}
+		in.HelmOpts.Enabled = in.Enabled
+		if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 			res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmUpgradeFailed", err.Error())
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())

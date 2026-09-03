@@ -19,7 +19,9 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "bridge",
     srcs = [
+        "fake_helm_manager.go",
         "helm_builder.go",
+        "helm_manager.go",
         "reconciler.go",
     ],
     importpath = "xmanager_cloud/pkg/components/bridge",
@@ -36,14 +38,17 @@ go_library(
 go_test(
     name = "bridge_test",
     srcs = [
+        "fake_helm_manager_test.go",
         "helm_builder_test.go",
         "reconciler_test.go",
     ],
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//pkg/components/store",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
-        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
