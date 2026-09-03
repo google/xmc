@@ -6,7 +6,7 @@ A composite GitHub Action that executes offline static analysis and pre-flight v
 
 ## 1. Overview
 
-This action coordinates Bazel compilation of the [`component-linter`](../../../cmd/component-linter/README.md) CLI binary and executes the repository-wide discovery runner [`tools/components/run_linter.py`](../../../tools/components/README.md) across all configured component profile directories.
+This action coordinates Bazel compilation of the [`component-linter`](../../../cmd/component-linter/README.md) CLI binary and executes the repository-wide discovery runner [`tools/components/run_linter.py`](../../../tools/components/run_linter.py) across all configured component profile directories (see [`tools/components/README.md`](../../../tools/components/README.md)).
 
 ```mermaid
 flowchart LR
@@ -44,19 +44,9 @@ flowchart LR
 Integrated into [`.github/workflows/lint.yml`](../../workflows/lint.yml) (`Code Quality & Linting`):
 
 ```yaml
-      - name: 'Check Changed Paths'
-        uses: 'dorny/paths-filter@v3'
-        id: 'changes'
-        with:
-          filters: |
-            components:
-              - 'deploy/profiles/**'
-              - 'deploy/components/**'
-              - 'examples/components/**'
-              - 'cmd/component-linter/**'
-              - 'tools/components/**'
-
+      # 5. Component Manifests & Profiles Linting
       - name: 'Run Component Manifest Linter'
-        if: steps.changes.outputs.components == 'true'
         uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
 ```

@@ -25,7 +25,7 @@ spec:
   deletionProtection: false
   dependencies:
     - name: storage
-      version: ">=1.0.0 <2.0.0"
+      version: "^1.0.0"
   lifecycleControl:
     drainTimeoutSeconds: 30
     gracePeriodSeconds: 15
