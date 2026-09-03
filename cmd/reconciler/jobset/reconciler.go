@@ -667,6 +667,19 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 // our own (idempotent success); a run without it is adopted (updated) with our fields.
 const createdByXManagerLabelValue = "xmanager"
 
+// listExistingSessionsOnlyLabel tells the Diagon profiler-session backend to
+// discover profiles by recursively scanning the run's GCS folder (<gcs_path>/**)
+// rather than assuming its own <gcs_path>/<run_id>/plugins/profile/ layout. XMC
+// workloads (e.g. the SDK-less programmatic Xprof example) write the profile
+// themselves to <gcs_path>/plugins/profile/ and cannot know the
+// control-plane-minted run id, so without this label the backend never scans the
+// bucket and the profile is never surfaced.
+//
+// Setting it unconditionally is safe: XMC assigns a unique per-work-unit gcs_path
+// (so distinct runs never see each other's profiles even with a recursive scan),
+// and on-demand capture still works with the label set.
+const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
+
 // mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
 // resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
@@ -676,9 +689,10 @@ var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]
 // created-by marker that lets us detect ownership on a create conflict).
 func buildMLRunLabels(xid, wid int64) map[string]string {
 	return map[string]string{
-		"experiment-id": fmt.Sprintf("%d", xid),
-		"workunit-id":   fmt.Sprintf("%d", wid),
-		"created-by":    createdByXManagerLabelValue,
+		"experiment-id":               fmt.Sprintf("%d", xid),
+		"workunit-id":                 fmt.Sprintf("%d", wid),
+		"created-by":                  createdByXManagerLabelValue,
+		listExistingSessionsOnlyLabel: "true",
 	}
 }
 

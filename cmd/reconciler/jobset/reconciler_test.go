@@ -2131,3 +2131,20 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildMLRunLabels verifies the reconciler stamps the ownership labels and,
+// critically, list_existing_sessions_only=true so the Diagon profiler-session
+// backend recursively scans the run's GCS folder and surfaces
+// programmatically-written (SDK-less) profiles.
+func TestBuildMLRunLabels(t *testing.T) {
+	got := buildMLRunLabels(12, 3)
+	want := map[string]string{
+		"experiment-id":               "12",
+		"workunit-id":                 "3",
+		"created-by":                  createdByXManagerLabelValue,
+		listExistingSessionsOnlyLabel: "true",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	}
+}
