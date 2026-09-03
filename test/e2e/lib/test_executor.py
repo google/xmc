@@ -35,6 +35,26 @@ class PlaywrightTestExecutor:
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
+        # 1. Proactively discover and export pre-baked browser binaries so either execution
+        # path (pre-baked system Python or fallback .venv_e2e) avoids downloading Chromium.
+        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+            browser_candidates = [
+                "/ms-playwright",
+                os.path.expanduser("~/.cache/ms-playwright"),
+                os.path.expanduser("~/Library/Caches/ms-playwright"),
+                os.path.expanduser("~/AppData/Local/ms-playwright"),
+            ]
+            for path in browser_candidates:
+                try:
+                    if os.path.isdir(path) and os.listdir(path):
+                        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
+                        logger.info("Discovered pre-baked Playwright browsers at %s.", path)
+                        break
+                except OSError:
+                    continue
+
+        # 2. Fast Path: Use system Python directly if playwright and requests are already installed
+        # and pre-baked browser binaries are present (0s setup).
         if (
             os.environ.get("GITHUB_ACTIONS") == "true"
             or os.environ.get("XMC_USE_PREBAKED_ENV") == "true"
@@ -44,32 +64,12 @@ class PlaywrightTestExecutor:
                 import playwright  # noqa: F401
                 import requests  # noqa: F401
 
-                browser_paths = []
-                env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-                if env_path:
-                    browser_paths.append(env_path)
-                else:
-                    browser_paths.extend(
-                        [
-                            "/ms-playwright",
-                            os.path.expanduser("~/.cache/ms-playwright"),
-                            os.path.expanduser("~/Library/Caches/ms-playwright"),
-                            os.path.expanduser("~/AppData/Local/ms-playwright"),
-                        ]
+                if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+                    logger.info(
+                        "Using pre-baked Playwright environment at %s (0s setup).",
+                        sys.executable,
                     )
-
-                for path in browser_paths:
-                    try:
-                        if os.path.isdir(path) and os.listdir(path):
-                            logger.info(
-                                "Using pre-baked Playwright environment at %s (0s setup).",
-                                sys.executable,
-                            )
-                            if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
-                                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
-                            return sys.executable
-                    except OSError:
-                        continue
+                    return sys.executable
             except Exception:
                 pass
 

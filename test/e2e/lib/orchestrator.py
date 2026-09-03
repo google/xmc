@@ -105,8 +105,9 @@ class E2EOrchestrator:
                 kind_future = executor1.submit(self.kind.setup)
                 futures = [builder_future, kind_future]
                 try:
+                    for future in concurrent.futures.as_completed(futures):
+                        future.result()
                     images = builder_future.result()
-                    kind_future.result()
                 except BaseException:
                     for future in futures:
                         future.cancel()
@@ -120,8 +121,8 @@ class E2EOrchestrator:
                 spanner_future = executor2.submit(self.spanner.setup)
                 futures = [load_future, spanner_future]
                 try:
-                    load_future.result()
-                    spanner_future.result()
+                    for future in concurrent.futures.as_completed(futures):
+                        future.result()
                 except BaseException:
                     for future in futures:
                         future.cancel()

@@ -28,6 +28,7 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
 
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
+        self.orig_environ = os.environ.copy()
         self.cfg = E2EConfig(
             project_id="test-proj",
             spanner_instance="test-inst",
@@ -40,6 +41,8 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         self.executor = PlaywrightTestExecutor(self.cfg)
 
     def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.orig_environ)
         self.tmp_dir.cleanup()
 
     @patch("os.path.exists")
@@ -63,6 +66,22 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
                 "requests",
             ]
         )
+
+    @patch("os.path.isdir")
+    @patch("os.listdir")
+    @patch("os.path.exists")
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_setup_venv_discovers_browser_path_during_fallback(
+        self, mock_run, mock_exists, mock_listdir, mock_isdir
+    ):
+        mock_exists.return_value = False
+        mock_isdir.return_value = True
+        mock_listdir.return_value = ["chromium-1234"]
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+            self.executor.setup_venv()
+            self.assertIn("PLAYWRIGHT_BROWSERS_PATH", os.environ)
 
     @patch("os.path.isdir")
     @patch("os.listdir")

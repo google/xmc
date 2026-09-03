@@ -84,6 +84,31 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.kind.teardown.assert_not_called()
         self.orch.spanner.teardown.assert_not_called()
 
+    def test_run_fails_fast_when_phase1_task_fails(self):
+        self.orch.spanner = MagicMock()
+        self.orch.kind = MagicMock()
+        self.orch.builder = MagicMock()
+        self.orch.kind.setup.side_effect = RuntimeError("KinD setup failed")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.orch.run()
+        self.assertIn("KinD setup failed", str(ctx.exception))
+        self.orch.kind.teardown.assert_called_once()
+        self.orch.spanner.teardown.assert_called_once()
+
+    def test_run_fails_fast_when_phase2_task_fails(self):
+        self.orch.spanner = MagicMock()
+        self.orch.kind = MagicMock()
+        self.orch.builder = MagicMock()
+        self.orch.builder.build_all.return_value = ["img:latest"]
+        self.orch.spanner.setup.side_effect = RuntimeError("Spanner setup failed")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.orch.run()
+        self.assertIn("Spanner setup failed", str(ctx.exception))
+        self.orch.kind.teardown.assert_called_once()
+        self.orch.spanner.teardown.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
