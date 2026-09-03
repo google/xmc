@@ -14,1373 +14,317 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const {
-  DEFAULT_MAX_OWNER_GRACE_LINES,
-  MAX_OWNER_GRACE_LINES,
-  getMaxOwnerGraceLines,
-  validateGitRefs,
-  isBotUser,
-  extractDismissalContext,
-  parseTimelineReviewEvent,
-  resolveActiveApproval,
-  findLatestApprovalFromTimeline,
-  findLatestApprovalFromReviews,
-  findLatestApproval,
-  isIgnoredRangeDiffHeader,
-  parseRangeDiff,
-  getCommitLineDelta,
-  computeAddedCommitsDelta,
-  isProtectedFile,
-  checkProtectedFileChanges,
-  evaluateIncrementalApproval,
-  isFastForwardApproval,
-  getCommitCountInRange,
-  getCommitPatchId,
-  indexApprovedCandidateCommits,
-  correlateStackedParentBase,
-  resolveStackedApprovedRange,
-  resolveCommitRanges,
-  runGitRangeDiff,
-  execGit,
-  ensureGitRefs,
-  GRAPHQL_TIMELINE_QUERY,
-  formatReapprovalReviewBody
-} = require('./incremental-approval');
+const fs = require('fs');
+const childProcess = require('child_process');
 
-test('validateGitRefs accepts valid git refs and commit SHAs', () => {
-  assert.doesNotThrow(() => {
-    validateGitRefs('main', 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e', 'fa0f5830b0e8a78119efefeba44bd75939f20eee');
+const incrementalApproval = require('./incremental-approval');
+const rangeDiffParser = require('./range-diff-parser');
+const prApprovalTimeline = require('./pr-approval-timeline');
+const gitRangeDiff = require('./git-range-diff');
+const approvalPolicy = require('./approval-policy');
+
+test('incremental-approval re-exports all domain sub-module functions and constants', () => {
+  // Check range-diff-parser exports
+  assert.strictEqual(incrementalApproval.parseRangeDiff, rangeDiffParser.parseRangeDiff);
+  assert.strictEqual(incrementalApproval.isIgnoredRangeDiffHeader, rangeDiffParser.isIgnoredRangeDiffHeader);
+
+  // Check pr-approval-timeline exports
+  assert.strictEqual(incrementalApproval.isBotUser, prApprovalTimeline.isBotUser);
+  assert.strictEqual(incrementalApproval.extractDismissalContext, prApprovalTimeline.extractDismissalContext);
+  assert.strictEqual(incrementalApproval.parseTimelineReviewEvent, prApprovalTimeline.parseTimelineReviewEvent);
+  assert.strictEqual(incrementalApproval.resolveActiveApproval, prApprovalTimeline.resolveActiveApproval);
+  assert.strictEqual(incrementalApproval.findLatestApproval, prApprovalTimeline.findLatestApproval);
+  assert.strictEqual(incrementalApproval.fetchTimelineEvents, prApprovalTimeline.fetchTimelineEvents);
+  assert.strictEqual(incrementalApproval.GRAPHQL_TIMELINE_QUERY, prApprovalTimeline.GRAPHQL_TIMELINE_QUERY);
+
+  // Check git-range-diff exports
+  assert.strictEqual(incrementalApproval.validateGitRefs, gitRangeDiff.validateGitRefs);
+  assert.strictEqual(incrementalApproval.execGit, gitRangeDiff.execGit);
+  assert.strictEqual(incrementalApproval.ensureGitRefs, gitRangeDiff.ensureGitRefs);
+  assert.strictEqual(incrementalApproval.isFastForwardApproval, gitRangeDiff.isFastForwardApproval);
+  assert.strictEqual(incrementalApproval.getCommitCountInRange, gitRangeDiff.getCommitCountInRange);
+  assert.strictEqual(incrementalApproval.getCommitPatchId, gitRangeDiff.getCommitPatchId);
+  assert.strictEqual(incrementalApproval.indexApprovedCandidateCommits, gitRangeDiff.indexApprovedCandidateCommits);
+  assert.strictEqual(incrementalApproval.correlateStackedParentBase, gitRangeDiff.correlateStackedParentBase);
+  assert.strictEqual(incrementalApproval.resolveStackedApprovedRange, gitRangeDiff.resolveStackedApprovedRange);
+  assert.strictEqual(incrementalApproval.resolveCommitRanges, gitRangeDiff.resolveCommitRanges);
+  assert.strictEqual(incrementalApproval.runGitRangeDiff, gitRangeDiff.runGitRangeDiff);
+  assert.strictEqual(incrementalApproval.getCommitLineDelta, gitRangeDiff.getCommitLineDelta);
+  assert.strictEqual(incrementalApproval.computeAddedCommitsDelta, gitRangeDiff.computeAddedCommitsDelta);
+
+  // Check approval-policy exports
+  assert.strictEqual(incrementalApproval.DEFAULT_MAX_OWNER_GRACE_LINES, approvalPolicy.DEFAULT_MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(incrementalApproval.MAX_OWNER_GRACE_LINES, approvalPolicy.MAX_OWNER_GRACE_LINES);
+  assert.strictEqual(incrementalApproval.getMaxOwnerGraceLines, approvalPolicy.getMaxOwnerGraceLines);
+  assert.strictEqual(incrementalApproval.isProtectedFile, approvalPolicy.isProtectedFile);
+  assert.strictEqual(incrementalApproval.checkProtectedFileChanges, approvalPolicy.checkProtectedFileChanges);
+  assert.strictEqual(incrementalApproval.checkAddedCommitsForProtectedFiles, approvalPolicy.checkAddedCommitsForProtectedFiles);
+  assert.strictEqual(incrementalApproval.evaluateIncrementalApproval, approvalPolicy.evaluateIncrementalApproval);
+  assert.strictEqual(incrementalApproval.formatReapprovalReviewBody, approvalPolicy.formatReapprovalReviewBody);
+
+  // Check orchestrator functions
+  assert.strictEqual(typeof incrementalApproval.verifyCodeOwnership, 'function');
+  assert.strictEqual(typeof incrementalApproval.run, 'function');
+});
+
+test('verifyCodeOwnership checks author against OWNERS file', () => {
+  const originalExists = fs.existsSync;
+  const originalRead = fs.readFileSync;
+
+  try {
+    fs.existsSync = (p) => p === 'OWNERS';
+    fs.readFileSync = (p) => p === 'OWNERS' ? 'alice\nbob\n' : '';
+
+    const failedMessages = [];
+    const infoMessages = [];
+    const mockCore = {
+      setFailed: (msg) => failedMessages.push(msg),
+      info: (msg) => infoMessages.push(msg)
+    };
+
+    assert.strictEqual(incrementalApproval.verifyCodeOwnership('alice', mockCore), true);
+    assert.strictEqual(incrementalApproval.verifyCodeOwnership('charlie', mockCore), false);
+
+    fs.existsSync = () => false;
+    assert.strictEqual(incrementalApproval.verifyCodeOwnership('alice', mockCore), false);
+    assert.strictEqual(failedMessages.length, 1);
+  } finally {
+    fs.existsSync = originalExists;
+    fs.readFileSync = originalRead;
+  }
+});
+
+function createMockCore() {
+  return {
+    failed: [],
+    infos: [],
+    warnings: [],
+    setFailed(msg) { this.failed.push(msg); },
+    info(msg) { this.infos.push(msg); },
+    warning(msg) { this.warnings.push(msg); }
+  };
+}
+
+test('run fails when not in a pull request synchronize event', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: { payload: {} },
+    core
   });
-  assert.doesNotThrow(() => {
-    validateGitRefs('feat/new-feature', 'cfe1eb7', 'fa0f583');
-  });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /must run in the context of a pull request/);
 });
 
-test('validateGitRefs rejects invalid base refs and malicious option injection', () => {
-  assert.throws(() => validateGitRefs('--upload-pack=evil', 'cfe1eb7', 'fa0f583'), /Invalid base reference/);
-  assert.throws(() => validateGitRefs('main..evil', 'cfe1eb7', 'fa0f583'), /Invalid base reference/);
-  assert.throws(() => validateGitRefs('', 'cfe1eb7', 'fa0f583'), /Invalid base reference/);
-  assert.throws(() => validateGitRefs('main', 'not-a-sha', 'fa0f583'), /Invalid approved commit SHA/);
-  assert.throws(() => validateGitRefs('main', 'cfe1eb7', '--exec=evil'), /Invalid current commit SHA/);
-});
-
-test('isBotUser identifies bot usernames correctly', () => {
-  assert.strictEqual(isBotUser('github-actions[bot]'), true);
-  assert.strictEqual(isBotUser('dependabot[bot]'), true);
-  assert.strictEqual(isBotUser('github-actions'), true);
-  assert.strictEqual(isBotUser('alice'), false);
-  assert.strictEqual(isBotUser(''), false);
-  assert.strictEqual(isBotUser(null), false);
-});
-
-test('extractDismissalContext extracts manual dismissals and GraphQL previousReviewState', () => {
-  const events = [
-    // Manual dismissal via REST (no trigger commit, dismissal message present)
-    { event: 'dismissed_review', review_id: 101, dismissal_message: 'Security issue' },
-    // Automatic stale push dismissal via GraphQL (trigger commit present, no message)
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      pullRequestCommit: { commit: { oid: 'sha-stale' } },
-      review: { databaseId: 202 }
-    },
-    // Automatic stale push dismissal of changes requested via GraphQL
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'CHANGES_REQUESTED',
-      pullRequestCommit: { commit: { oid: 'sha-stale' } },
-      review: { databaseId: 303 }
-    },
-    // Automatic stale push dismissal via REST (dismissal_commit_id present)
-    {
-      event: 'review_dismissed',
-      dismissed_review: {
-        review_id: 404,
-        state: 'approved',
-        dismissal_commit_id: 'sha-rest-commit'
+test('run skips auto-reapproval when PR is in draft mode', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: {
+      payload: {
+        pull_request: { number: 123, draft: true }
       }
     },
-    // Manual dismissal via GraphQL (no trigger commit, dismissal message present)
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: 'Rejected by security auditor',
-      review: { databaseId: 505 }
-    }
-  ];
-  const ctx = extractDismissalContext(events);
-  assert.strictEqual(ctx.manualDismissalIds.has(101), true);
-  assert.strictEqual(ctx.manualDismissalIds.has(202), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(303), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(404), false);
-  assert.strictEqual(ctx.manualDismissalIds.has(505), true);
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(202), 'APPROVED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(303), 'CHANGES_REQUESTED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(404), 'APPROVED');
-  assert.strictEqual(ctx.dismissedReviewPreviousStates.get(505), 'APPROVED');
-});
-
-test('parseTimelineReviewEvent parses valid review and respects dismissal context', () => {
-  const context = {
-    authorLower: 'author1',
-    manualDismissalIds: new Set([101]),
-    dismissedReviewPreviousStates: new Map([[202, 'APPROVED'], [303, 'CHANGES_REQUESTED']])
-  };
-
-  // Valid review
-  const valid = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 100,
-    user: { login: 'reviewer1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context);
-  assert.deepStrictEqual(valid, {
-    approver: 'reviewer1',
-    state: 'APPROVED',
-    isDismissed: false,
-    approvedSha: 'sha1',
-    submittedAt: undefined
+    core
   });
-
-  // Manually dismissed review
-  const manualDismissed = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 101,
-    user: { login: 'reviewer1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(manualDismissed.state, 'DISMISSED');
-  assert.strictEqual(manualDismissed.isDismissed, true);
-
-  // Stale dismissed with APPROVED previous state
-  const staleApproved = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 202,
-    user: { login: 'reviewer1' },
-    state: 'dismissed',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(staleApproved.state, 'APPROVED');
-  assert.strictEqual(staleApproved.isDismissed, true);
-
-  // Stale dismissed with CHANGES_REQUESTED previous state
-  const staleChanges = parseTimelineReviewEvent({
-    event: 'reviewed',
-    id: 303,
-    user: { login: 'reviewer1' },
-    state: 'dismissed',
-    commit_id: 'sha1'
-  }, context);
-  assert.strictEqual(staleChanges.state, 'CHANGES_REQUESTED');
-  assert.strictEqual(staleChanges.isDismissed, true);
-
-  // Ignored bot review and PR author self-review
-  assert.strictEqual(parseTimelineReviewEvent({
-    event: 'reviewed',
-    user: { login: 'bot[bot]' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context), null);
-  assert.strictEqual(parseTimelineReviewEvent({
-    event: 'reviewed',
-    user: { login: 'author1' },
-    state: 'approved',
-    commit_id: 'sha1'
-  }, context), null);
+  assert.strictEqual(core.failed.length, 0);
+  assert.ok(core.infos.some(m => m.includes('draft mode')));
 });
 
-test('resolveActiveApproval returns latest approval and blocks on CHANGES_REQUESTED', () => {
-  const reviewerMap = new Map();
-  reviewerMap.set('alice', { approver: 'alice', state: 'APPROVED', approvedSha: 'sha1', submittedAt: '2026-08-20T10:00:00Z' });
-  reviewerMap.set('bob', { approver: 'bob', state: 'APPROVED', approvedSha: 'sha2', submittedAt: '2026-08-21T10:00:00Z' });
-
-  const latest = resolveActiveApproval(reviewerMap);
-  assert.strictEqual(latest.approver, 'bob');
-  assert.strictEqual(latest.approvedSha, 'sha2');
-
-  // Blocking change request from another reviewer
-  reviewerMap.set('charlie', { approver: 'charlie', state: 'CHANGES_REQUESTED', approvedSha: 'sha3', submittedAt: '2026-08-22T10:00:00Z' });
-  assert.strictEqual(resolveActiveApproval(reviewerMap), null);
-
-  // Empty map returns null
-  assert.strictEqual(resolveActiveApproval(new Map()), null);
-});
-
-test('findLatestApproval ignores approvals from bot users', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'github-actions[bot]' },
-      state: 'APPROVED',
-      commit_id: 'sha-bot-approved',
-      submitted_at: '2026-08-25T12:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores approvals when another reviewer has active CHANGES_REQUESTED', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
+test('run fails when head SHA or base ref is missing', async () => {
+  const core = createMockCore();
+  await incrementalApproval.run({
+    github: {},
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: { number: 123, draft: false, user: { login: 'alice' }, head: {}, base: {} }
+      }
     },
-    {
-      id: 2,
-      user: { login: 'bob' },
-      state: 'CHANGES_REQUESTED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T11:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
+    core
+  });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /missing head SHA or base ref/);
 });
 
-test('findLatestApproval ignores COMMENTED reviews from the same reviewer', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
+test('run fails when github review pagination fails', async () => {
+  const core = createMockCore();
+  const github = {
+    paginate: async () => { throw new Error('API Rate Limit Exceeded'); },
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+  await incrementalApproval.run({
+    github,
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: {
+          number: 123,
+          draft: false,
+          user: { login: 'alice' },
+          head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+          base: { ref: 'main' }
+        }
+      }
     },
-    {
-      id: 2,
-      user: { login: 'alice' },
-      state: 'COMMENTED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T11:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.deepStrictEqual(result, {
-    approver: 'alice',
-    approvedSha: 'sha-111111',
-    submittedAt: '2026-08-25T10:00:00Z',
-    isDismissed: false
+    core
   });
+  assert.strictEqual(core.failed.length, 1);
+  assert.match(core.failed[0], /Failed to fetch PR reviews: API Rate Limit Exceeded/);
 });
 
-test('findLatestApproval rejects DISMISSED reviews when no timeline context is provided', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval finds prior approval from timeline when state is dismissed by stale push policy with APPROVED previous state', () => {
-  const reviews = [
-    {
-      id: 5032149088,
-      user: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-      submitted_at: '2026-08-26T15:12:24Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 5032149088,
-      author: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
-      submittedAt: '2026-08-26T15:12:24Z'
+test('run skips when no prior approval is found', async () => {
+  const core = createMockCore();
+  const github = {
+    paginate: async () => [],
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+  await incrementalApproval.run({
+    github,
+    context: {
+      repo: { owner: 'google', repo: 'xmc' },
+      payload: {
+        pull_request: {
+          number: 123,
+          draft: false,
+          user: { login: 'alice' },
+          head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+          base: { ref: 'main' }
+        }
+      }
     },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
-      review: {
-        databaseId: 5032149088
-      }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
-  assert.deepStrictEqual(result, {
-    approver: 'andrzejfudro',
-    approvedSha: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-    submittedAt: '2026-08-26T15:12:24Z',
-    isDismissed: true
+    core
   });
+  assert.strictEqual(core.failed.length, 0);
+  assert.ok(core.infos.some(m => m.includes('does not have any prior active approvals')));
 });
 
-test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_REQUESTED previous state', () => {
-  const reviews = [
-    {
-      id: 5032149088,
-      user: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit_id: '2a56f774b68ac7347a854ba276c7c6898f47282a',
-      submitted_at: '2026-08-26T15:12:24Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 5032149088,
-      author: { login: 'andrzejfudro' },
-      state: 'DISMISSED',
-      commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' },
-      submittedAt: '2026-08-26T15:12:24Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'CHANGES_REQUESTED',
-      pullRequestCommit: { commit: { oid: '2a56f774b68ac7347a854ba276c7c6898f47282a' } },
-      review: {
-        databaseId: 5032149088
-      }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'VLukiantsev', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores manually dismissed reviews in timeline (REST)', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      id: 1,
-      event: 'reviewed',
-      user: { login: 'alice' },
-      state: 'approved',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    },
-    {
-      event: 'dismissed_review',
-      review_id: 1,
-      dismissal_message: 'Dismissed by author due to security bug'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL)', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 1,
-      author: { login: 'alice' },
-      state: 'DISMISSED',
-      commit: { oid: 'sha-111111' },
-      submittedAt: '2026-08-25T10:00:00Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: 'Security concern raised by reviewer',
-      pullRequestCommit: null,
-      review: { databaseId: 1 }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ignores manual dismissals without dismissal message when trigger commit is absent', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'alice' },
-      state: 'DISMISSED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const timelineEvents = [
-    {
-      __typename: 'PullRequestReview',
-      databaseId: 1,
-      author: { login: 'alice' },
-      state: 'DISMISSED',
-      commit: { oid: 'sha-111111' },
-      submittedAt: '2026-08-25T10:00:00Z'
-    },
-    {
-      __typename: 'ReviewDismissedEvent',
-      previousReviewState: 'APPROVED',
-      dismissalMessage: null,
-      pullRequestCommit: null,
-      review: { databaseId: 1 }
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('findLatestApproval ensures later manual dismissal overrides earlier stale approval by same reviewer', () => {
-  const reviews = [
-    { id: 101, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha1', submitted_at: '2026-08-25T10:00:00Z' },
-    { id: 102, user: { login: 'alice' }, state: 'DISMISSED', commit_id: 'sha2', submitted_at: '2026-08-25T12:00:00Z' }
-  ];
-  const timelineEvents = [
-    { id: 101, __typename: 'PullRequestReview', databaseId: 101, author: { login: 'alice' }, state: 'DISMISSED', commit: { oid: 'sha1' }, submittedAt: '2026-08-25T10:00:00Z' },
-    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', pullRequestCommit: { commit: { oid: 'sha2' } }, review: { databaseId: 101 }, createdAt: '2026-08-25T11:00:00Z' },
-    { id: 102, __typename: 'PullRequestReview', databaseId: 102, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha2' }, submittedAt: '2026-08-25T12:00:00Z' },
-    { __typename: 'ReviewDismissedEvent', previousReviewState: 'APPROVED', dismissalMessage: 'Security revocation', pullRequestCommit: null, review: { databaseId: 102 }, createdAt: '2026-08-25T13:00:00Z' }
-  ];
-  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
-  assert.strictEqual(result, null);
-});
-
-test('GRAPHQL_TIMELINE_QUERY queries pullRequestCommit and dismissalMessage', () => {
-  assert.match(GRAPHQL_TIMELINE_QUERY, /pullRequestCommit/);
-  assert.match(GRAPHQL_TIMELINE_QUERY, /dismissalMessage/);
-});
-
-test('findLatestApproval ignores self-approval from PR author', () => {
-  const reviews = [
-    {
-      id: 1,
-      user: { login: 'charlie' },
-      state: 'APPROVED',
-      commit_id: 'sha-111111',
-      submitted_at: '2026-08-25T10:00:00Z'
-    }
-  ];
-  const result = findLatestApproval(reviews, 'charlie');
-  assert.strictEqual(result, null);
-});
-
-test('parseRangeDiff identifies pure rebase with zero delta', () => {
-  const sampleOutput = [
-    '1:  a1b2c3d = 1:  e5f6g7h First commit',
-    '2:  1234567 = 2:  89abcdef Second commit'
-  ].join('\n');
-
-  const result = parseRangeDiff(sampleOutput);
-  assert.strictEqual(result.isCleanRebase, true);
-  assert.strictEqual(result.hasRemovedCommits, false);
-  assert.strictEqual(result.totalDelta, 0);
-  assert.strictEqual(result.additions, 0);
-  assert.strictEqual(result.deletions, 0);
-});
-
-test('parseRangeDiff ignores unchanged commit additions and deletions in Column 2', () => {
-  // Column 1 is ' ', Column 2 is '+' or '-' -> Unchanged in this revision
-  const sampleOutput = [
-    '1:  a1b2c3d ! 1:  e5f6g7h Commit title',
-    '    @@ src/main.go:10,5 @@',
-    '      context line',
-    '     +existing addition from v1',
-    '     -existing deletion from v1',
-    '    ++new addition in v2',
-    '    -+removed addition in v2'
-  ].join('\n');
-
-  const result = parseRangeDiff(sampleOutput);
-  assert.strictEqual(result.isCleanRebase, false);
-  assert.strictEqual(result.additions, 1); // Only ++ is added in v2
-  assert.strictEqual(result.deletions, 1); // Only -+ is removed in v2
-  assert.strictEqual(result.totalDelta, 2);
-});
-
-test('parseRangeDiff ignores Author/Commit keywords in code comments', () => {
-  const sampleOutput = [
-    '1:  a1b2c3d ! 1:  e5f6g7h Commit title',
-    '    @@ src/main.go:10,5 @@',
-    '      // Author: Alice',
-    '      // Commit: Initial implementation',
-    '    ++actualNewCodeLine()'
-  ].join('\n');
-
-  const result = parseRangeDiff(sampleOutput);
-  assert.strictEqual(result.additions, 1);
-  assert.strictEqual(result.totalDelta, 1);
-});
-
-test('parseRangeDiff ignores Commit message hunks', () => {
-  const sampleOutput = [
-    '1:  a1b2c3d ! 1:  e5f6g7h Commit title',
-    '    ## Commit message ##',
-    '    @@ -1,3 +1,4 @@',
-    '     -Old commit message line',
-    '     +New commit message line',
-    '    ## src/main.go ##',
-    '    @@ src/main.go:1,3 @@',
-    '    ++newActualCodeLine()'
-  ].join('\n');
-
-  const result = parseRangeDiff(sampleOutput);
-  assert.strictEqual(result.additions, 1);
-  assert.strictEqual(result.deletions, 0);
-  assert.strictEqual(result.totalDelta, 1);
-});
-
-test('parseRangeDiff identifies added commits and captures addedCommitShas', () => {
-  const sampleAdded = [
-    '1:  a1b2c3d = 1:  e5f6g7h First commit',
-    '-:  ------- > 2:  89abcdef Added new commit'
-  ].join('\n');
-
-  const resultAdded = parseRangeDiff(sampleAdded);
-  assert.strictEqual(resultAdded.isCleanRebase, false);
-  assert.strictEqual(resultAdded.hasRemovedCommits, false);
-  assert.deepStrictEqual(resultAdded.addedCommitShas, ['89abcdef']);
-  assert.strictEqual(resultAdded.totalDelta, 0);
-
-  const sampleRemoved = [
-    '1:  a1b2c3d < -:  ------- Removed commit'
-  ].join('\n');
-
-  const resultRemoved = parseRangeDiff(sampleRemoved);
-  assert.strictEqual(resultRemoved.isCleanRebase, false);
-  assert.strictEqual(resultRemoved.hasRemovedCommits, true);
-  assert.deepStrictEqual(resultRemoved.addedCommitShas, []);
-});
-
-test('isProtectedFile accurately identifies sensitive repository files', () => {
-  assert.strictEqual(isProtectedFile('.github/workflows/unit-tests.yml'), true);
-  assert.strictEqual(isProtectedFile('.github/scripts/incremental-approval.js'), true);
-  assert.strictEqual(isProtectedFile('OWNERS'), true);
-  assert.strictEqual(isProtectedFile('.githooks/pre-commit'), true);
-  assert.strictEqual(isProtectedFile('pkg/service/data_engine.go'), false);
-  assert.strictEqual(isProtectedFile('README.md'), false);
-  assert.strictEqual(isProtectedFile(''), false);
-  assert.strictEqual(isProtectedFile(null), false);
-});
-
-test('checkProtectedFileChanges detects sensitive modifications and handles git failure', () => {
-  const childProcess = require('child_process');
+test('run warns and aborts when approved commit is unreachable on remote', async () => {
+  const core = createMockCore();
   const originalExec = childProcess.execFileSync;
-
-  // Sensitive file modified
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff') {
-      return 'pkg/main.go\n.github/workflows/ci.yml\n';
-    }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: mockedCheckProtectedFileChanges } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedCheckProtectedFileChanges('sha1', 'sha2'), true);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-
-  // Safe files modified
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff') {
-      return 'pkg/main.go\nREADME.md\n';
-    }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: safeCheck } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(safeCheck('sha1', 'sha2'), false);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-
-  // Subprocess error fail-safe returns true
-  childProcess.execFileSync = () => {
-    throw new Error('Fatal git error');
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: errorCheck } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(errorCheck('sha1', 'sha2'), true);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('getCommitLineDelta parses numstat additions and deletions correctly', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff-tree') {
-      return '94d6450805df211f728adf73e0c98b8419e22005\n3\t1\t.github/workflows/unit-tests.yml\n1\t0\tREADME.md\n';
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
-
-  try {
-    const delta = mockedGetCommitLineDelta('94d64508');
-    assert.strictEqual(delta.additions, 4);
-    assert.strictEqual(delta.deletions, 1);
-    assert.strictEqual(delta.totalDelta, 5);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('getCommitLineDelta handles subprocess failure gracefully', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = () => {
-    throw new Error('Fatal git error');
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitLineDelta: mockedGetCommitLineDelta } = require('./incremental-approval');
-
-  try {
-    const delta = mockedGetCommitLineDelta('invalid-sha');
-    assert.strictEqual(delta.additions, 0);
-    assert.strictEqual(delta.deletions, 0);
-    assert.strictEqual(delta.totalDelta, 0);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('isIgnoredRangeDiffHeader detects metadata and header lines', () => {
-  assert.strictEqual(isIgnoredRangeDiffHeader('@@ Metadata'), true);
-  assert.strictEqual(isIgnoredRangeDiffHeader('Author: Alice <alice@google.com>'), true);
-  assert.strictEqual(isIgnoredRangeDiffHeader('Commit: Bob <bob@google.com>'), true);
-  assert.strictEqual(isIgnoredRangeDiffHeader('## Commit message ##'), true);
-  assert.strictEqual(isIgnoredRangeDiffHeader('## Notes (main) ##'), true);
-  assert.strictEqual(isIgnoredRangeDiffHeader('func main() {'), false);
-  assert.strictEqual(isIgnoredRangeDiffHeader('## pkg/foo/bar.go ##'), false);
-});
-
-test('computeAddedCommitsDelta sums additions and deletions across multiple commits', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff-tree') {
-      const sha = args[args.length - 1];
-      if (sha === 'sha-1') {
-        return 'sha-1\n2\t1\tfile1.go\n';
-      }
-      if (sha === 'sha-2') {
-        return 'sha-2\n3\t0\tfile2.go\n';
-      }
-    }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { computeAddedCommitsDelta: mockedComputeAddedCommitsDelta } = require('./incremental-approval');
-
-  try {
-    const delta = mockedComputeAddedCommitsDelta(['sha-1', 'sha-2']);
-    assert.strictEqual(delta.additions, 5);
-    assert.strictEqual(delta.deletions, 1);
-    assert.strictEqual(delta.totalDelta, 6);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('formatReapprovalReviewBody formats markdown body accurately', () => {
-  const body = formatReapprovalReviewBody('Clean rebase detected.', 'alice', 'abcdef1234567890');
-  assert.match(body, /🤖 \*\*Incremental PR Approval\*\*/);
-  assert.match(body, /Clean rebase detected\./);
-  assert.match(body, /\*Preserving prior approval by @alice on commit `abcdef1`\.\*/);
-});
-
-test('evaluateIncrementalApproval rejects if no prior approval exists', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: false,
-    approvedSha: null,
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 0,
-    isCleanRebase: true
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'NO_PRIOR_APPROVAL');
-});
-
-test('evaluateIncrementalApproval skips if PR is already approved at current SHA and not dismissed', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-222',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 0,
-    isCleanRebase: true,
-    isDismissed: false
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'ALREADY_APPROVED');
-});
-
-test('evaluateIncrementalApproval reapproves if approval on current SHA was dismissed (stale approval)', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-222',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 0,
-    isCleanRebase: true,
-    isDismissed: true
-  });
-  assert.strictEqual(result.shouldReapprove, true);
-  assert.strictEqual(result.trigger, 'RESTORE_DISMISSED_APPROVAL');
-});
-
-test('evaluateIncrementalApproval rejects dismissed approval on same SHA if sensitive files modified', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-222',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 0,
-    isCleanRebase: true,
-    isDismissed: true,
-    hasProtectedFileChanges: true
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
-});
-
-test('evaluateIncrementalApproval rejects removed commits even if deltaLines is 0', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: false,
-    deltaLines: 0,
-    isCleanRebase: false,
-    hasRemovedCommits: true
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'REMOVED_COMMITS');
-});
-
-test('evaluateIncrementalApproval rejects when sensitive CI/ownership files are modified', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 1,
-    isCleanRebase: false,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: true
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
-});
-
-test('evaluateIncrementalApproval auto-reapproves pure clean rebase with 0 delta', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: false,
-    deltaLines: 0,
-    isCleanRebase: true,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: false
-  });
-  assert.strictEqual(result.shouldReapprove, true);
-  assert.strictEqual(result.trigger, 'CLEAN_REBASE');
-});
-
-test('evaluateIncrementalApproval auto-reapproves code owner within 10-line grace delta', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 8,
-    isCleanRebase: false,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: false
-  });
-  assert.strictEqual(result.shouldReapprove, true);
-  assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
-});
-
-test('evaluateIncrementalApproval auto-reapproves code owner with exactly 10 lines delta', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: DEFAULT_MAX_OWNER_GRACE_LINES,
-    isCleanRebase: false,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: false
-  });
-  assert.strictEqual(result.shouldReapprove, true);
-  assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
-});
-
-test('evaluateIncrementalApproval rejects code owner when delta exceeds 10 lines', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: 11,
-    isCleanRebase: false,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: false
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
-});
-
-test('evaluateIncrementalApproval rejects non-owner when delta > 0', () => {
-  const result = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: false,
-    deltaLines: 1,
-    isCleanRebase: false,
-    hasRemovedCommits: false,
-    hasProtectedFileChanges: false
-  });
-  assert.strictEqual(result.shouldReapprove, false);
-  assert.strictEqual(result.trigger, 'NON_OWNER_MODIFICATION');
-});
-
-test('evaluateIncrementalApproval rejects invalid delta inputs (negative, null, NaN)', () => {
-  const resultNegative = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: -1,
-    isCleanRebase: false
-  });
-  assert.strictEqual(resultNegative.shouldReapprove, false);
-  assert.strictEqual(resultNegative.trigger, 'INVALID_DELTA');
-
-  const resultNull = evaluateIncrementalApproval({
-    hasPriorApproval: true,
-    approvedSha: 'sha-111',
-    currentSha: 'sha-222',
-    isAuthorOwner: true,
-    deltaLines: null,
-    isCleanRebase: false
-  });
-  assert.strictEqual(resultNull.shouldReapprove, false);
-  assert.strictEqual(resultNull.trigger, 'INVALID_DELTA');
-});
-
-test('resolveCommitRanges uses standard ranges when commit count matches', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
-      return '3\n';
-    }
-    if (args[0] === 'rev-parse') {
-      return 'head1~3\n';
-    }
-    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
-      return '3\n';
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
-
-  try {
-    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
-    assert.strictEqual(res.currentRange, 'origin/main..head2');
-    assert.strictEqual(res.approvedRange, 'origin/main..head1');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('resolveCommitRanges scopes approved range when parent branch was rebased in stacked PRs', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head2') {
-      return '6\n';
-    }
-    if (args[0] === 'rev-parse' && args[2] === 'head1~6') {
-      return 'ok\n';
-    }
-    if (args[0] === 'rev-list' && args[2] === 'origin/feat/base..head1') {
-      return '17\n'; // 11 rebased base commits + 6 PR commits
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
-
-  try {
-    const res = mockedResolveCommitRanges('feat/base', 'head1', 'head2', {});
-    assert.strictEqual(res.currentRange, 'origin/feat/base..head2');
-    assert.strictEqual(res.approvedRange, 'head1~6..head1');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('resolveCommitRanges preserves standard range when developer adds new commits to regular PR', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (args[0] === 'rev-list' && args[2] === 'origin/main..head2') {
-      return '4\n'; // PR now has 4 commits
-    }
-    if (args[0] === 'rev-parse' && args[2] === 'head1~4') {
-      return 'ok\n';
-    }
-    if (args[0] === 'rev-list' && args[2] === 'origin/main..head1') {
-      return '3\n'; // PR previously had 3 commits (approvedBaseCount < prCommitCount)
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { resolveCommitRanges: mockedResolveCommitRanges } = require('./incremental-approval');
-
-  try {
-    const res = mockedResolveCommitRanges('main', 'head1', 'head2', {});
-    assert.strictEqual(res.currentRange, 'origin/main..head2');
-    assert.strictEqual(res.approvedRange, 'origin/main..head1');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('runGitRangeDiff executes range-diff without usage errors', () => {
-  const headSha = require('child_process').execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-  const output = runGitRangeDiff('main', headSha, headSha);
-  assert.strictEqual(typeof output, 'string');
-});
-
-test('getMaxOwnerGraceLines resolves custom env or fallback default', () => {
-  assert.strictEqual(getMaxOwnerGraceLines('25'), 25);
-  assert.strictEqual(getMaxOwnerGraceLines(15), 15);
-  assert.strictEqual(getMaxOwnerGraceLines('0'), 0);
-  assert.strictEqual(getMaxOwnerGraceLines(''), DEFAULT_MAX_OWNER_GRACE_LINES);
-  assert.strictEqual(getMaxOwnerGraceLines(undefined), DEFAULT_MAX_OWNER_GRACE_LINES);
-  assert.strictEqual(getMaxOwnerGraceLines(null), DEFAULT_MAX_OWNER_GRACE_LINES);
-  assert.strictEqual(getMaxOwnerGraceLines('invalid'), DEFAULT_MAX_OWNER_GRACE_LINES);
-  assert.strictEqual(getMaxOwnerGraceLines('-5'), DEFAULT_MAX_OWNER_GRACE_LINES);
-});
-
-test('checkProtectedFileChanges uses 3-dot diff against baseRef and avoids false positives from base branch (PR #559 incident fix)', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  // Simulate PR #559 incident:
-  // Base branch has .github/scripts/incremental-approval.js modified in interim (PR #673)
-  // But PR #559 only touches tools/dev_env/deployer.py
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff') {
-      const target = args[2];
-      if (target === 'origin/feat/tools-dev-env-helm-deployer...c40cf0f') {
-        // 3-dot diff only shows the PR branch files
-        return 'tools/dev_env/deployer.py\ntools/dev_env/config.yaml\n';
-      }
-      if (target === '8fa2009' && args[3] === 'c40cf0f') {
-        // 2-dot diff would have contained the base branch change!
-        return '.github/scripts/incremental-approval.js\ntools/dev_env/deployer.py\n';
-      }
-    }
-    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
-      // Rebase occurred, so 8fa2009 is NOT ancestor of c40cf0f
-      const err = new Error('not ancestor');
-      err.status = 1;
-      throw err;
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
-
-  try {
-    const hasProtected = mockedCheck('feat/tools-dev-env-helm-deployer', '8fa2009', 'c40cf0f');
-    assert.strictEqual(hasProtected, false, 'Should NOT flag protected file change when only base branch modified it');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('checkProtectedFileChanges flags sensitive files when PR modifies protected files against baseRef', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff') {
-      if (args[2] === 'origin/main...head-sha') {
-        return 'src/main.go\n.github/workflows/deploy.yml\n';
-      }
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
-
-  try {
-    const hasProtected = mockedCheck('main', 'approved-sha', 'head-sha');
-    assert.strictEqual(hasProtected, true);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('checkProtectedFileChanges detects protected file modification in fast-forward follow-up commit', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff') {
-      if (args[2] === 'origin/main...head-sha') {
-        return 'src/main.go\n';
-      }
-      if (args[2] === 'approved-sha' && args[3] === 'head-sha') {
-        return 'OWNERS\n';
-      }
-    }
-    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
-      return ''; // Fast-forward, approved-sha IS ancestor of head-sha
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { checkProtectedFileChanges: mockedCheck } = require('./incremental-approval');
-
-  try {
-    const hasProtected = mockedCheck('main', 'approved-sha', 'head-sha');
-    assert.strictEqual(hasProtected, true);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('ensureGitRefs returns success when all refs exist locally', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--verify') {
-      return 'ok\n';
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
-
-  try {
-    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
-    assert.strictEqual(res.success, true);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('ensureGitRefs fetches missing base and approved commits', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-  const fetched = [];
 
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'rev-parse') {
-      if (args[3] === 'c40cf0f') return 'ok\n';
-      const err = new Error('missing ref');
+      if (args[3] === 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e') return 'ok\n';
+      const err = new Error('not found');
       err.status = 1;
       throw err;
     }
     if (cmd === 'git' && args[0] === 'fetch') {
-      fetched.push(args.slice(1));
-      return '';
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
-
-  try {
-    const res = mockedEnsure('feat/layer', '8fa2009', 'c40cf0f');
-    assert.strictEqual(res.success, true);
-    assert.strictEqual(fetched.length, 2);
-    assert.deepStrictEqual(fetched[0], ['origin', '+refs/heads/feat/layer:refs/remotes/origin/feat/layer']);
-    assert.deepStrictEqual(fetched[1], ['origin', '8fa2009']);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('ensureGitRefs gracefully returns failure when approved commit is GCed on remote', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'rev-parse') {
-      if (args[3] === 'refs/remotes/origin/main' || args[3] === 'c40cf0f') return 'ok\n';
-      const err = new Error('missing ref');
-      err.status = 1;
-      throw err;
-    }
-    if (cmd === 'git' && args[0] === 'fetch' && args[2] === '8fa2009') {
-      const err = new Error("fatal: couldn't find remote ref 8fa2009");
+      const err = new Error('fetch failed');
       err.status = 128;
-      err.stderr = Buffer.from("fatal: couldn't find remote ref 8fa2009");
       throw err;
-    }
-    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { ensureGitRefs: mockedEnsure } = require('./incremental-approval');
-
-  try {
-    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
-    assert.strictEqual(res.success, false);
-    assert.strictEqual(res.reason, 'APPROVED_SHA_UNREACHABLE');
-    assert.strictEqual(res.unreachableSha, '8fa2009');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('execGit passes GITHUB_TOKEN auth header and terminal security defaults', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-  let capturedOptions = null;
-
-  childProcess.execFileSync = (cmd, args, opts) => {
-    capturedOptions = opts;
-    return 'ok\n';
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  process.env.GITHUB_TOKEN = 'secret-test-token';
-  const { execGit: mockedExecGit } = require('./incremental-approval');
-
-  try {
-    mockedExecGit(['status']);
-    assert.ok(capturedOptions);
-    assert.strictEqual(capturedOptions.env.GIT_TERMINAL_PROMPT, '0');
-    assert.strictEqual(capturedOptions.env.GIT_OPTIONAL_LOCKS, '0');
-    assert.strictEqual(capturedOptions.env.GIT_CONFIG_COUNT, '1');
-    assert.strictEqual(capturedOptions.env.GIT_CONFIG_KEY_0, 'http.extraheader');
-    assert.ok(capturedOptions.env.GIT_CONFIG_VALUE_0.startsWith('Authorization: Basic '));
-  } finally {
-    delete process.env.GITHUB_TOKEN;
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('isFastForwardApproval detects ancestry correctly', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  // Fast-forward case
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
-      return '';
     }
     throw new Error(`Unexpected command: ${cmd}`);
   };
 
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { isFastForwardApproval: mockedFF } = require('./incremental-approval');
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
 
   try {
-    assert.strictEqual(mockedFF('sha1', 'sha2', {}), true);
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.warnings.length, 1);
+    assert.match(core.warnings[0], /is no longer reachable on remote/);
   } finally {
     childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
   }
+});
 
-  // Non-fast-forward case
+test('run executes clean rebase auto-reapproval successfully', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+  const originalExists = fs.existsSync;
+  const originalRead = fs.readFileSync;
+  let createdReview = null;
+
   childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
+    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--name-only') {
+      return 'tools/dev_env/runner.py\n';
+    }
+    if (cmd === 'git' && args[0] === 'merge-base') {
       const err = new Error('not ancestor');
       err.status = 1;
       throw err;
     }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { isFastForwardApproval: mockedFF2 } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedFF2('sha1', 'sha2', {}), false);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('getCommitCountInRange parses count and handles errors', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'rev-list' && args[1] === '--count') {
-      return ' 5 \n';
+    if (cmd === 'git' && args[0] === 'range-diff') {
+      // Clean rebase range-diff: identical commits
+      return '1:  1111111 = 1:  2222222 feat: my commit\n';
     }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitCountInRange: mockedCount } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedCount('origin/main..HEAD', {}), 5);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-
-  childProcess.execFileSync = () => {
-    throw new Error('git rev-list failure');
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitCountInRange: mockedCount2 } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedCount2('origin/main..HEAD', {}), 0);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('getCommitPatchId parses patch-id and handles errors', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
-    if (cmd === 'git' && args[0] === 'diff-tree') {
-      return 'patch content';
-    }
-    if (cmd === 'git' && args[0] === 'patch-id') {
-      return '1122334455aabbcc commit-sha\n';
-    }
-    throw new Error(`Unexpected command: ${cmd}`);
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitPatchId: mockedPatchId } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedPatchId('sha123', {}), '1122334455aabbcc');
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-
-  childProcess.execFileSync = () => {
-    throw new Error('git failure');
-  };
-
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { getCommitPatchId: mockedPatchId2 } = require('./incremental-approval');
-
-  try {
-    assert.strictEqual(mockedPatchId2('sha123', {}), null);
-  } finally {
-    childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
-  }
-});
-
-test('indexApprovedCandidateCommits indexes patch-id and subject maps', () => {
-  const childProcess = require('child_process');
-  const originalExec = childProcess.execFileSync;
-
-  childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'rev-list') {
-      return 'sha1\nsha2\n';
+      return '1\n';
     }
-    if (cmd === 'git' && args[0] === 'diff-tree') {
-      return 'diff';
-    }
-    if (cmd === 'git' && args[0] === 'patch-id') {
-      return 'pid123 sha\n';
-    }
-    if (cmd === 'git' && args[0] === 'log') {
-      return 'feat: commit title\n';
-    }
-    throw new Error(`Unexpected command: ${cmd}`);
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
   };
 
-  delete require.cache[require.resolve('./incremental-approval')];
-  const { indexApprovedCandidateCommits: mockedIndex } = require('./incremental-approval');
+  fs.existsSync = (p) => p === 'OWNERS';
+  fs.readFileSync = () => 'approvers:\n  - alice\n  - bob\n';
+
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: {
+      pulls: {
+        listReviews: 'dummy',
+        createReview: async (params) => {
+          createdReview = params;
+          return { status: 200 };
+        }
+      }
+    }
+  };
 
   try {
-    const maps = mockedIndex('origin/main..approvedSha', {});
-    assert.strictEqual(maps.byPatchId.get('pid123'), 'sha2');
-    assert.strictEqual(maps.bySubject.get('feat: commit title'), 'sha2');
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: '2222222222222222222222222222222222222222' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.failed.length, 0);
+    assert.ok(createdReview);
+    assert.strictEqual(createdReview.pull_number, 123);
+    assert.strictEqual(createdReview.commit_id, '2222222222222222222222222222222222222222');
+    assert.strictEqual(createdReview.event, 'APPROVE');
+    assert.match(createdReview.body, /Clean rebase detected/);
+    assert.match(createdReview.body, /Preserving prior approval by @bob/);
   } finally {
     childProcess.execFileSync = originalExec;
-    delete require.cache[require.resolve('./incremental-approval')];
+    fs.existsSync = originalExists;
+    fs.readFileSync = originalRead;
   }
 });
-
