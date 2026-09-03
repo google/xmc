@@ -19,6 +19,19 @@ const {
   parseRangeDiff
 } = require('./range-diff-parser');
 
+test('parseRangeDiff handles empty or invalid output safely', () => {
+  for (const emptyInput of ['', '   ', null, undefined]) {
+    const result = parseRangeDiff(emptyInput);
+    assert.strictEqual(result.isCleanRebase, true);
+    assert.strictEqual(result.hasRemovedCommits, false);
+    assert.strictEqual(result.totalDelta, 0);
+    assert.strictEqual(result.additions, 0);
+    assert.strictEqual(result.deletions, 0);
+    assert.deepStrictEqual(result.addedCommitShas, []);
+    assert.strictEqual('hasUnmatchedCommits' in result, false);
+  }
+});
+
 test('parseRangeDiff identifies pure rebase with zero delta', () => {
   const sampleOutput = [
     '1:  a1b2c3d = 1:  e5f6g7h First commit',

@@ -18,14 +18,13 @@
  * @returns {boolean} True if line is a metadata header.
  */
 function isIgnoredRangeDiffHeader(trimmedLine) {
-  if (trimmedLine.startsWith('@@ Metadata') ||
-      trimmedLine.startsWith('Author:') ||
-      trimmedLine.startsWith('Commit:') ||
-      trimmedLine.startsWith('## Commit message ##') ||
-      trimmedLine.startsWith('## Notes')) {
-    return true;
-  }
-  return false;
+  return (
+    trimmedLine.startsWith('@@ Metadata') ||
+    trimmedLine.startsWith('Author:') ||
+    trimmedLine.startsWith('Commit:') ||
+    trimmedLine.startsWith('## Commit message ##') ||
+    trimmedLine.startsWith('## Notes')
+  );
 }
 
 /**
@@ -40,7 +39,6 @@ function parseRangeDiff(output) {
       deletions: 0,
       totalDelta: 0,
       isCleanRebase: true,
-      hasUnmatchedCommits: false,
       hasRemovedCommits: false,
       addedCommitShas: []
     };
