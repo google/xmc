@@ -43,3 +43,29 @@ This document defines core architectural contracts and invariants across the XMC
    - All lifecycle state operations (`PrepareDeactivation`, `CompleteDeactivation`, `ExecuteDeletion`) **MUST** evaluate safety across the entire transitive reverse-dependency DAG rather than single-hop indexed joins.
    - Inactive or disabled intermediate nodes (e.g. `A (active) -> B (disabled) -> C (disabling)`) must **never** mask upstream active dependents from blocking downstream deactivations. Deactivation completion requires all transitive upstream dependents to reach terminal disabled/deleted states.
 
+---
+
+## 4. Declarative Lifecycle Contract
+
+1. **Disablement vs. Deletion Boundary**:
+   - Managed workload disablement (`enabled: false`) **MUST** retain declarative configuration records.
+   - Disabling a component, workload, or feature flag only suspends its operational reconciliation or execution state; it must not destroy, prune, or reset associated configuration, parameter mappings, or stored specifications.
+   - Only explicit deletion or purge operations (`Delete`, `Purge`, hard removal) are permitted to remove configuration records from storage.
+
+---
+
+## 5. Level-Triggered Reconciler Idempotency Guard
+
+1. **Semantic Equivalence Check Before Mutation**:
+   - All Kubernetes resource mutations (`Create`, `Update`, `Patch`) in reconcilers **MUST** check for semantic equivalence (`if existing == desired { return nil }` or equivalent deep comparison) before mutating Kubernetes API state.
+   - Mutating resources when the desired state matches the existing state triggers redundant watch events, saturates API server queues, and induces infinite reconciliation loops.
+
+---
+
+## 6. Cross-Layer Scope Alignment
+
+1. **Atomic Multi-Namespace Deployment & RBAC Synchronization**:
+   - When data structures, models, or controllers expand in operational scope from single-namespace to multi-namespace (e.g., cluster-scoped watches or multi-tenant namespace dispatching), deployment manifests (`rbac.yaml`, Helm templates, ClusterRole/ClusterRoleBinding definitions) **MUST** be updated in the exact same pull request.
+   - Shipping code changes that require broader RBAC permissions without corresponding manifest updates introduces runtime permission-denied errors or reconciliation stalls upon deployment.
+
+

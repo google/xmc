@@ -20,6 +20,7 @@ This document defines coding standards and conventions for Go development across
 ## 4. Concurrency Safety
 - **Goroutine Lifecycle Management**: Always govern goroutine lifecycles using `context.Context` cancellation, `sync.WaitGroup`, or worker channels to prevent goroutine leaks.
 - **Data Race Prevention**: Protect shared mutable state with `sync.Mutex` or `sync.RWMutex`. Verify concurrent routines with the `-race` detector enabled.
+- **Lazy Resource Initialization (`sync.Once` / `sync.OnceValues`)**: Prefer `sync.Once` or `sync.OnceValues` for thread-safe lazy resource initialization over double-checked locking patterns with `sync.RWMutex`.
 
 ## 5. Table-Driven Testing
 - **Table-Driven Tests**: Standardize unit test suites using Go table-driven patterns (`tests := []struct{ name string; ... }{...}`).
@@ -125,5 +126,8 @@ graph TD
 - **Multi-Table Read Transaction Snapshot Isolation**: Operations that query both live entity rows and associated historical snapshot tables (e.g. `ResolveComponentSnapshot`) **MUST** execute within a single `ReadOnlyTransaction` snapshot to guarantee atomic point-in-time isolation across all participating tables.
 - **Defensive Snapshot State Isolation**: When cloning live records to construct historical snapshots, mutable status fields (e.g. `rec.Status`) **MUST** be explicitly reset to `nil` before unmarshaling snapshot byte payloads. In Go Protobuf, `proto.Unmarshal` merges fields into existing non-nil messages rather than overwriting them entirely; resetting ensures that missing or empty optional payloads in historical snapshots never retain or leak merged fields from the current generation clone.
 - **Fallback Logging Convention**: In server initialization entrypoints (`main.go` / `run()`), fallback instantiations to in-memory test doubles (e.g. `MemoryStore` when a primary `spanner.Client` is nil) **MUST** log at warning level (`logging.Warn(ctx, ...)`), rather than `logging.Info`, to maintain operational visibility in production runtime environments.
+
+## 13. Domain SDK Utility Reuse
+- **Canonical Domain SDK Inspection Before Ad-Hoc Utilities**: Mandate inspecting imported domain SDKs (e.g. `chartutil.CoalesceTables` in `helm.sh/helm/v3`, `k8s.io/apimachinery`) for canonical implementations before writing ad-hoc data manipulators (such as deep map mergers or path parsers). Reusing established domain SDK utilities prevents subtle edge-case bugs, reduces maintenance overhead, and ensures semantic consistency with upstream tooling.
 
 

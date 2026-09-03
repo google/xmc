@@ -48,8 +48,8 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 ## Modular Rules Index
 
 ### Core Engineering & Operational Workflows
-- 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, high-fidelity test doubles, strict coverage, PR sizing thresholds, and post-implementation reflection rules.
-- 📐 [Architectural Contracts & Invariants](rules/architectural_contracts.md): Core platform invariants including the Non-Restarting JobSets Contract (`MaxRestarts: 0`, `PodSpec.RestartPolicy: Never` for primary containers), agent halt triggers, and WorkUnit execution lifecycle boundaries.
+- 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, negative boundary & zero-default testing, high-fidelity test doubles, strict coverage, PR sizing thresholds, and post-implementation reflection rules.
+- 📐 [Architectural Contracts & Invariants](rules/architectural_contracts.md): Core platform invariants including the Non-Restarting JobSets Contract (`MaxRestarts: 0`, `PodSpec.RestartPolicy: Never` for primary containers), zero-bypass authentication, declarative lifecycle contracts, reconciler idempotency guards, cross-layer scope alignment, agent halt triggers, and WorkUnit execution lifecycle boundaries.
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
 
 ### GitHub & PR Workflows
@@ -60,7 +60,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 📋 [Code Review & Comment Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), assumptions disclosure audits, review feedback standards, and mandatory PR comment resolution rules.
 
 ### Language-Specific Rules
-- 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), table-driven testing with baseline fixtures (`proto.Modify`), and centralized test utilities.
+- 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`sync.Once`, `context.Context`, mutexes), domain SDK utility reuse, table-driven testing with baseline fixtures (`proto.Modify`), and centralized test utilities.
 - 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): Prefer TypeScript over JavaScript, TypeScript strictness, modern Angular signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
 - 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, Python 3.14+ version enforcement, standard library preference, explicit public API type hints, docstrings, `unittest` framework, Python tooling over shell scripts, and local virtual environment requirements.
 - 🐚 [Shell Scripting](rules/languages/shell.md): Minimal shell script scope (`set -euo pipefail`), double-quoting variables with braces (`"${VAR}"`), restricting Shell to thin entrypoints while deferring logic to Python.
