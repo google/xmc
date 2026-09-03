@@ -42,6 +42,117 @@ function validateGitRefs(baseRef, approvedSha, currentSha) {
 }
 
 /**
+ * Pure function: Builds execution environment for git subprocesses.
+ * Enforces non-interactive terminal flags and injects GITHUB_TOKEN basic auth header if available.
+ * @param {Object} [customEnv={}] - Optional caller-specified environment overrides.
+ * @returns {Object} Configured process environment dictionary.
+ */
+function buildGitEnv(customEnv = {}) {
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_OPTIONAL_LOCKS: '0',
+    ...customEnv
+  };
+
+  const token = process.env.GITHUB_TOKEN;
+  if (token && !env.GIT_CONFIG_KEY_0) {
+    const authHeader = `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+    env.GIT_CONFIG_COUNT = '1';
+    env.GIT_CONFIG_KEY_0 = 'http.extraheader';
+    env.GIT_CONFIG_VALUE_0 = authHeader;
+  }
+  return env;
+}
+
+/**
+ * Executes a git command synchronously with standardized security, timeout, buffer, and authentication options.
+ * @param {Array<string>} args - Command line arguments for git.
+ * @param {Object} [options={}] - Execution options.
+ * @returns {string|{ status: number, stdout: string, stderr: string }}
+ */
+function execGit(args, options = {}) {
+  const safeOptions = options || {};
+  const { input, ignoreExitCode = false, env: customEnv, ...restOptions } = safeOptions;
+
+  const defaultOptions = {
+    encoding: 'utf8',
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+    timeout: GIT_EXEC_TIMEOUT_MS,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: buildGitEnv(customEnv),
+    ...restOptions
+  };
+  if (input !== undefined) {
+    defaultOptions.input = input;
+  }
+
+  try {
+    const stdout = childProcess.execFileSync('git', args, defaultOptions);
+    return ignoreExitCode ? { status: 0, stdout: typeof stdout === 'string' ? stdout : '', stderr: '' } : stdout;
+  } catch (error) {
+    const stderr = error.stderr ? error.stderr.toString().trim() : '';
+    const stdout = error.stdout ? error.stdout.toString().trim() : '';
+    const exitCode = typeof error.status === 'number' ? error.status : 1;
+    if (ignoreExitCode) {
+      return { status: exitCode, stdout, stderr };
+    }
+    const failure = new Error(`git ${args.join(' ')} failed (exit ${exitCode}): ${stderr || stdout || error.message}`);
+    failure.status = exitCode;
+    failure.stderr = stderr;
+    failure.stdout = stdout;
+    throw failure;
+  }
+}
+
+/**
+ * Shell Helper: Ensures origin/${baseRef}, currentSha, and approvedSha are available locally.
+ * Proactively fetches missing objects from origin with authentication.
+ * @param {string} baseRef - Target base branch name.
+ * @param {string} approvedSha - Previously approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {{ success: boolean, unreachableSha?: string, reason?: string, details?: string }}
+ */
+function ensureGitRefs(baseRef, approvedSha, currentSha, execOptions = {}) {
+  validateGitRefs(baseRef, approvedSha, currentSha);
+
+  const isRefPresent = (ref) => {
+    try {
+      execGit(['rev-parse', '--verify', '--quiet', ref], execOptions);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const hasBase = isRefPresent(`refs/remotes/origin/${baseRef}`);
+  const hasCurrent = isRefPresent(currentSha);
+  const hasApproved = isRefPresent(approvedSha);
+  if (hasBase && hasCurrent && hasApproved) {
+    return { success: true };
+  }
+
+  try {
+    const fetchArgs = ['fetch', 'origin'];
+    if (!hasBase) fetchArgs.push(`+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`);
+    if (!hasCurrent) fetchArgs.push(currentSha);
+    if (fetchArgs.length > 2) execGit(fetchArgs, execOptions);
+  } catch (error) {
+    return { success: false, reason: 'FETCH_BASE_OR_HEAD_FAILED', details: error.message };
+  }
+
+  if (!hasApproved && !isRefPresent(approvedSha)) {
+    try {
+      execGit(['fetch', 'origin', approvedSha], execOptions);
+    } catch (error) {
+      return { success: false, reason: 'APPROVED_SHA_UNREACHABLE', unreachableSha: approvedSha, details: error.message };
+    }
+  }
+  return { success: true };
+}
+
+/**
  * Shell Helper: Resolves commit ranges for git range-diff.
  * Handles stacked PRs (/gh-stack) where the base branch itself was rebased.
  * @param {string} baseRef - Target base branch name.
@@ -52,24 +163,20 @@ function validateGitRefs(baseRef, approvedSha, currentSha) {
  */
 function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions = {}) {
   const currentRange = `origin/${baseRef}..${currentSha}`;
+  if (approvedSha === currentSha) {
+    return { approvedRange: currentRange, currentRange };
+  }
+
   let approvedRange = `origin/${baseRef}..${approvedSha}`;
   const opts = { ...execOptions, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] };
 
   try {
-    const prCommitCountStr = childProcess.execFileSync(
-      'git',
-      ['rev-list', '--count', currentRange],
-      opts
-    ).trim();
+    const prCommitCountStr = execGit(['rev-list', '--count', currentRange], opts).trim();
     const prCommitCount = parseInt(prCommitCountStr, 10) || 0;
 
     if (prCommitCount > 0) {
-      childProcess.execFileSync('git', ['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], opts);
-      const approvedBaseCountStr = childProcess.execFileSync(
-        'git',
-        ['rev-list', '--count', approvedRange],
-        opts
-      ).trim();
+      execGit(['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], opts);
+      const approvedBaseCountStr = execGit(['rev-list', '--count', approvedRange], opts).trim();
       const approvedBaseCount = parseInt(approvedBaseCountStr, 10) || 0;
 
       // If approved range contains extra commits from a rebased parent branch in /gh-stack,
@@ -100,43 +207,15 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
     return '';
   }
 
-  const execOptions = {
-    encoding: 'utf8',
-    maxBuffer: GIT_MAX_BUFFER_BYTES,
-    timeout: GIT_EXEC_TIMEOUT_MS
-  };
-
-  const execute = () => {
-    const { approvedRange, currentRange } = resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions);
-    if (approvedRange === currentRange) {
-      return '';
-    }
-    return childProcess.execFileSync('git', ['range-diff', '--no-color', approvedRange, currentRange], execOptions);
-  };
+  const { approvedRange, currentRange } = resolveCommitRanges(baseRef, approvedSha, currentSha);
+  if (approvedRange === currentRange) {
+    return '';
+  }
 
   try {
-    return execute();
-  } catch (initialError) {
-    try {
-      const fetchArgs = ['fetch', 'origin', `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`, approvedSha, currentSha];
-      const fetchEnv = { ...process.env };
-      const token = process.env.GITHUB_TOKEN;
-      if (token) {
-        const authHeader = `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
-        fetchEnv.GIT_CONFIG_COUNT = '1';
-        fetchEnv.GIT_CONFIG_KEY_0 = 'http.extraheader';
-        fetchEnv.GIT_CONFIG_VALUE_0 = authHeader;
-      }
-      childProcess.execFileSync(
-        'git',
-        fetchArgs,
-        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: GIT_EXEC_TIMEOUT_MS, env: fetchEnv }
-      );
-      return execute();
-    } catch (fallbackError) {
-      const stderr = fallbackError.stderr ? fallbackError.stderr.toString().trim() : fallbackError.message;
-      throw new Error(`Failed to execute git range-diff: ${stderr || fallbackError.message}`);
-    }
+    return execGit(['range-diff', '--no-color', approvedRange, currentRange]);
+  } catch (error) {
+    throw new Error(`Failed to execute git range-diff between ${approvedRange} and ${currentRange}: ${error.message}`);
   }
 }
 
@@ -161,7 +240,7 @@ function getCommitLineDelta(commitSha, execOptions = {}) {
   };
 
   try {
-    const numstat = childProcess.execFileSync('git', ['diff-tree', '--numstat', '-r', '--no-renames', commitSha], opts);
+    const numstat = execGit(['diff-tree', '--no-commit-id', '--numstat', '-r', '--no-renames', commitSha], opts);
     let additions = 0;
     let deletions = 0;
     for (const line of numstat.split(/\r?\n/)) {
@@ -175,8 +254,7 @@ function getCommitLineDelta(commitSha, execOptions = {}) {
     }
     return { additions, deletions, totalDelta: additions + deletions };
   } catch (error) {
-    console.log(`[incremental-approval] Failed to get line delta for commit ${commitSha}: ${error.message}`);
-    return { additions: 0, deletions: 0, totalDelta: 0 };
+    throw new Error(`Failed to get line delta for commit ${commitSha}: ${error.message}`);
   }
 }
 
@@ -200,12 +278,72 @@ function computeAddedCommitsDelta(addedCommitShas, execOptions = {}) {
   return { additions, deletions, totalDelta: additions + deletions };
 }
 
+/**
+ * Shell Helper: Retrieves modified file paths between two refs or across PR merge base.
+ * When baseRef is provided, uses 3-dot diff (origin/${baseRef}...${headSha}) to verify files changed
+ * by the PR against the base branch, avoiding false positives from commits merged into base.
+ * @param {string} baseRefOrApprovedSha - Target base branch name or approved SHA.
+ * @param {string} approvedShaOrCurrentSha - Approved SHA or current SHA.
+ * @param {string} [currentSha] - Current HEAD commit SHA.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {Array<string>} List of unique modified file paths.
+ */
+function getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions = {}) {
+  let baseRef, approvedSha, headSha, opts = execOptions;
+  if (typeof currentSha === 'string') {
+    baseRef = baseRefOrApprovedSha;
+    approvedSha = approvedShaOrCurrentSha;
+    headSha = currentSha;
+  } else {
+    approvedSha = baseRefOrApprovedSha;
+    headSha = approvedShaOrCurrentSha;
+    if (typeof currentSha === 'object') opts = currentSha;
+  }
+
+  if (baseRef) {
+    const prDiffOutput = execGit(['diff', '--name-only', `origin/${baseRef}...${headSha}`], opts);
+    const files = new Set(prDiffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean));
+
+    if (approvedSha && approvedSha !== headSha) {
+      try {
+        const isAncestor = execGit(['merge-base', '--is-ancestor', approvedSha, headSha], { ...opts, ignoreExitCode: true });
+        if (isAncestor.status === 0) {
+          const followUpDiff = execGit(['diff', '--name-only', approvedSha, headSha], opts);
+          for (const file of followUpDiff.split(/\r?\n/).map(f => f.trim()).filter(Boolean)) {
+            files.add(file);
+          }
+        }
+      } catch (_) {}
+    }
+    return Array.from(files);
+  }
+
+  const diffOutput = execGit(['diff', '--name-only', approvedSha, headSha], opts);
+  return diffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean);
+}
+
+/**
+ * Shell Helper: Retrieves list of modified files for a specific commit.
+ * @param {string} commitSha - Commit SHA to inspect.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {Array<string>} List of modified file paths in the commit.
+ */
+function getCommitModifiedFiles(commitSha, execOptions = {}) {
+  const output = execGit(['diff-tree', '--no-commit-id', '--name-only', '-r', '--no-renames', commitSha], execOptions);
+  return output.split(/\r?\n/).map(f => f.trim()).filter(Boolean);
+}
+
 module.exports = {
   GIT_EXEC_TIMEOUT_MS,
   GIT_MAX_BUFFER_BYTES,
   validateGitRefs,
+  buildGitEnv,
+  execGit,
+  ensureGitRefs,
   resolveCommitRanges,
   runGitRangeDiff,
   getCommitLineDelta,
-  computeAddedCommitsDelta
+  computeAddedCommitsDelta,
+  getPrChangedFiles,
+  getCommitModifiedFiles
 };

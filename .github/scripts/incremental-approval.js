@@ -17,11 +17,13 @@ const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
 const { parseRangeDiff } = require('./range-diff-parser');
 const {
+  ensureGitRefs,
   runGitRangeDiff,
   computeAddedCommitsDelta
 } = require('./git-range-diff');
 const {
   checkProtectedFileChanges,
+  checkAddedCommitsForProtectedFiles,
   evaluateIncrementalApproval,
   formatReapprovalReviewBody
 } = require('./approval-policy');
@@ -82,6 +84,18 @@ async function run({ github, context, core }) {
 
   core.info(`Found previous approval by @${latestApproval.approver} on commit ${latestApproval.approvedSha.slice(0, 7)}`);
 
+  let refStatus;
+  try {
+    refStatus = ensureGitRefs(baseRef, latestApproval.approvedSha, currentSha);
+  } catch (error) {
+    core.warning(`Failed to verify git references (${error.message}). Requiring manual review.`);
+    return;
+  }
+  if (!refStatus.success) {
+    core.warning(`Previously approved commit ${latestApproval.approvedSha.slice(0, 7)} is no longer reachable on remote (likely pruned by Git GC after force-push). Requiring manual review.`);
+    return;
+  }
+
   if (!fs.existsSync('OWNERS')) {
     core.setFailed('OWNERS file not found in repository root.');
     return;
@@ -91,7 +105,7 @@ async function run({ github, context, core }) {
   const isAuthorOwner = isAuthorCodeOwner(prAuthor, ownersList);
   core.info(`PR Author @${prAuthor} is code owner: ${isAuthorOwner}`);
 
-  const hasProtectedFileChanges = checkProtectedFileChanges(latestApproval.approvedSha, currentSha);
+  let hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
   if (hasProtectedFileChanges) {
     core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS). Skipping auto-reapproval.`);
   }
@@ -111,7 +125,18 @@ async function run({ github, context, core }) {
     addedCommitShas
   } = parseRangeDiff(rangeDiffOutput);
 
-  const addedDelta = computeAddedCommitsDelta(addedCommitShas);
+  if (!hasProtectedFileChanges && checkAddedCommitsForProtectedFiles(addedCommitShas)) {
+    hasProtectedFileChanges = true;
+    core.info(`Newly added commit modifies sensitive files. Manual review required.`);
+  }
+
+  let addedDelta;
+  try {
+    addedDelta = computeAddedCommitsDelta(addedCommitShas);
+  } catch (error) {
+    core.warning(`Unable to compute line delta for added commits (${error.message}). Requiring manual review.`);
+    return;
+  }
   const totalDelta = hunkDelta + addedDelta.totalDelta;
   core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedDelta.totalDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines, hasRemovedCommits=${hasRemovedCommits}, hasProtectedFileChanges=${hasProtectedFileChanges}`);
 
