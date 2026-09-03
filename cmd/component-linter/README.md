@@ -1,18 +1,18 @@
-# Components Static Linter CLI (`cmd/xmc-linter`)
+# Component Static Linter CLI (`cmd/component-linter`)
 
-`xmc-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters.
+`component-linter` is a standalone Go command-line tool and validation engine for XMC Components. It performs offline static analysis and pre-flight verification on Kubernetes Component CRD manifests before deployment into GKE clusters.
 
 ---
 
 ## 1. Overview & Architecture
 
-`xmc-linter` acts as an offline verification gate in local development and CI/CD pull request pipelines to prevent invalid, malformed, or unsafe Component declarations from reaching cluster environments.
+`component-linter` acts as an offline verification gate in local development and CI/CD pull request pipelines to prevent invalid, malformed, or unsafe Component declarations from reaching cluster environments.
 
 ```mermaid
 flowchart LR
     Manifests["Component YAML Manifests\n(deploy/profiles/.../*.yaml)"] --> Scanner["Directory Scanner\n(pkg/components/linter)"]
     Rules["Rules Config\n(rules.yaml)"] --> Scanner
-    Scanner --> CLI["xmc-linter CLI\n(cmd/xmc-linter)"]
+    Scanner --> CLI["component-linter CLI\n(cmd/component-linter)"]
     CLI --> Format{"Output Format"}
     Format -->|"text"| TextReport["Console Text Report\n[ERROR] / [WARN]"]
     Format -->|"json"| JSONReport["Structured JSON Report\n(CI Annotations & Diagnostics)"]
@@ -27,7 +27,7 @@ flowchart LR
 Run the CLI directly using Bazel:
 
 ```bash
-bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/stable-2026a/ [flags]
+bazel run //cmd/component-linter:component-linter -- --manifests-dir=deploy/profiles/stable-2026a/ [flags]
 ```
 
 ### Command-Line Flags
@@ -309,6 +309,18 @@ bazel coverage //cmd/xmc-linter/... //pkg/components/linter/... --combined_repor
 genhtml bazel-out/_coverage/_coverage_report.dat -o coverage_html/
 ```
 
+---
 
+## 11. Multi-Profile Discovery Runner
 
+For multi-directory scanning and repository-wide profile linting, use the Python discovery runner [`tools/components/run_linter.py`](../../tools/components/README.md):
 
+```bash
+# Scan across standard repository profile directories
+bazel run //tools/components:run_linter
+
+# Scan specific directories in strict mode
+bazel run //tools/components:run_linter -- --scan-roots deploy/profiles --strict
+```
+
+See [`tools/components/README.md`](../../tools/components/README.md) for flag documentation and JSON output formats.
