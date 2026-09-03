@@ -40,6 +40,8 @@ compat_go_library(
         "//internal/storage/spanner/migrations/version",
         "//internal/task_queue_redis/redisclient",
         "//pkg/auth/oauth2",
+        "//pkg/components/store",
+        "//pkg/components/summary",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//cloudidentity/v1beta1:go_default_library",

@@ -372,6 +372,52 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestNewServer_NilValidation(t *testing.T) {
+	cfg := &Config{}
+	checker := &mockHealthChecker{}
+	guard := &mockAdminRoleGuard{hasRole: true}
+
+	assertPanics := func(name string, f func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("%s: expected panic, got nil", name)
+			}
+		}()
+		f()
+	}
+
+	assertPanics("nil cfg", func() { newServer(nil, checker, guard) })
+	assertPanics("nil checker", func() { newServer(cfg, nil, guard) })
+	assertPanics("nil guard", func() { newServer(cfg, checker, nil) })
+}
+
+func TestCalculateHealthStatus_DisabledCustomComponent(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	checker := &mockHealthChecker{
+		result: RunChecksResult{
+			Components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "redis-disabled",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+					HealthState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+				},
+			},
+		},
+	}
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+	defer s.Close()
+
+	resp := s.calculateHealthStatus(context.Background())
+	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
+		t.Errorf("expected HEALTHY overall state when custom component is disabled (UNSPECIFIED), got %v", resp.HealthState)
+	}
+}
+
 func TestGetUserInfo(t *testing.T) {
 	tests := []struct {
 		name           string
