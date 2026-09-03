@@ -26,6 +26,7 @@ exports_files([
     "helm_deployer.py",
     "image_builder.py",
     "kind_manager.py",
+    "local_runner.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
@@ -47,6 +48,35 @@ py_test(
     deps = [
         ":config_lib",
         ":helm_deployer_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "local_runner_lib",
+    srcs = ["local_runner.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":helm_deployer_lib",
+        ":image_builder_lib",
+        ":kind_manager_lib",
+        ":spanner_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "local_runner_test",
+    srcs = ["local_runner_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":helm_deployer_lib",
+        ":image_builder_lib",
+        ":kind_manager_lib",
+        ":local_runner_lib",
+        ":spanner_manager_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -142,8 +172,10 @@ py_library(
     deps = [
         ":config_lib",
         ":deploy_dev_env_lib",
+        ":helm_deployer_lib",
         ":image_builder_lib",
         ":kind_manager_lib",
+        ":local_runner_lib",
         ":spanner_manager_lib",
         ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",

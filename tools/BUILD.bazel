@@ -73,16 +73,6 @@ alias(
 
 # Dev Env
 alias(
-    name = "helm_deployer_lib",
-    actual = "//tools/dev_env:helm_deployer_lib",
-)
-
-alias(
-    name = "helm_deployer_test",
-    actual = "//tools/dev_env:helm_deployer_test",
-)
-
-alias(
     name = "config_lib",
     actual = "//tools/dev_env:config_lib",
 )
@@ -155,6 +145,26 @@ alias(
 alias(
     name = "kind_manager_test",
     actual = "//tools/dev_env:kind_manager_test",
+)
+
+alias(
+    name = "helm_deployer_lib",
+    actual = "//tools/dev_env:helm_deployer_lib",
+)
+
+alias(
+    name = "helm_deployer_test",
+    actual = "//tools/dev_env:helm_deployer_test",
+)
+
+alias(
+    name = "local_runner_lib",
+    actual = "//tools/dev_env:local_runner_lib",
+)
+
+alias(
+    name = "local_runner_test",
+    actual = "//tools/dev_env:local_runner_test",
 )
 
 alias(
