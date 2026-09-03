@@ -16,10 +16,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
-const {
-  isIgnoredRangeDiffHeader,
-  parseRangeDiff
-} = require('./range-diff-parser');
+const { parseRangeDiff } = require('./range-diff-parser');
 
 // Default maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
 const DEFAULT_MAX_OWNER_GRACE_LINES = 10;
@@ -831,8 +828,6 @@ module.exports = {
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
-  isIgnoredRangeDiffHeader,
-  parseRangeDiff,
   getCommitLineDelta,
   computeAddedCommitsDelta,
   isProtectedFile,

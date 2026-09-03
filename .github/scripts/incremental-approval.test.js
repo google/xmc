@@ -15,7 +15,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const incrementalApproval = require('./incremental-approval');
-const rangeDiffParser = require('./range-diff-parser');
 
 const {
   DEFAULT_MAX_OWNER_GRACE_LINES,
@@ -29,8 +28,6 @@ const {
   findLatestApprovalFromTimeline,
   findLatestApprovalFromReviews,
   findLatestApproval,
-  isIgnoredRangeDiffHeader,
-  parseRangeDiff,
   getCommitLineDelta,
   computeAddedCommitsDelta,
   isProtectedFile,
@@ -41,11 +38,6 @@ const {
   GRAPHQL_TIMELINE_QUERY,
   formatReapprovalReviewBody
 } = incrementalApproval;
-
-test('incremental-approval re-exports range-diff-parser functions', () => {
-  assert.strictEqual(incrementalApproval.parseRangeDiff, rangeDiffParser.parseRangeDiff);
-  assert.strictEqual(incrementalApproval.isIgnoredRangeDiffHeader, rangeDiffParser.isIgnoredRangeDiffHeader);
-});
 
 test('validateGitRefs accepts valid git refs and commit SHAs', () => {
   assert.doesNotThrow(() => {
