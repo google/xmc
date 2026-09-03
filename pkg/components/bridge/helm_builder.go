@@ -88,6 +88,9 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	}
 
 	for k, v := range opts.Parameters {
+		if k == "image" || k == "imageRepository" {
+			continue
+		}
 		compValues[k] = parseParamValue(v)
 	}
 

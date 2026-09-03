@@ -167,11 +167,22 @@ func cloneValuesMap(m map[string]any) map[string]any {
 	}
 	res := make(map[string]any, len(m))
 	for k, v := range m {
-		if subMap, ok := v.(map[string]any); ok {
-			res[k] = cloneValuesMap(subMap)
-		} else {
-			res[k] = v
-		}
+		res[k] = cloneValue(v)
 	}
 	return res
+}
+
+func cloneValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return cloneValuesMap(val)
+	case []any:
+		res := make([]any, len(val))
+		for i, item := range val {
+			res[i] = cloneValue(item)
+		}
+		return res
+	default:
+		return v
+	}
 }
