@@ -58,6 +58,7 @@ vars:
   # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
   # Empty (default) leaves managed-xprof GCS wiring disabled on the actuator.
   managed_xprof_gcs_bucket: ""
+  enable_managed_mldiagnostics: false
   enable_metrics: false
   # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
   # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
@@ -81,15 +82,16 @@ deployment_groups:
   - id: cloud_api
     source: community/modules/project/service-enablement
     settings:
-      gcp_service_list:
-      - compute.googleapis.com
-      - container.googleapis.com
-      - spanner.googleapis.com
-      - redis.googleapis.com
-      - iam.googleapis.com
-      - cloudresourcemanager.googleapis.com
-      - servicenetworking.googleapis.com
-      - certificatemanager.googleapis.com
+      gcp_service_list: '$(concat([
+        "compute.googleapis.com",
+        "container.googleapis.com",
+        "spanner.googleapis.com",
+        "redis.googleapis.com",
+        "iam.googleapis.com",
+        "cloudresourcemanager.googleapis.com",
+        "servicenetworking.googleapis.com",
+        "certificatemanager.googleapis.com"
+      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
 
 - group: primary
   modules:
@@ -119,14 +121,6 @@ deployment_groups:
     source: modules/project/service-account
     settings:
       name: xmc-wl-sa
-      project_roles:
-      - logging.logWriter
-      - monitoring.metricWriter
-      - monitoring.viewer
-      - stackdriver.resourceMetadata.writer
-      - storage.objectAdmin
-      - artifactregistry.reader
-      - serviceusage.serviceUsageConsumer
       # Stage 3 of the authorization pipeline falls back to the project IAM policy when a caller
       # matches neither the email nor the domain allowlist, so every service that serves
       # authenticated traffic on this account -- the experiment state server, ROD and the
@@ -134,7 +128,16 @@ deployment_groups:
       # predefined role that carries it. iam.securityReviewer, which xmc-hs-sa uses for the same
       # need, would additionally hand the actuator and the reconciler read access to the IAM
       # policies on Spanner, GCS and everything else in the project, which none of them require.
-      - browser
+      project_roles: '$(concat([
+        "logging.logWriter",
+        "monitoring.metricWriter",
+        "monitoring.viewer",
+        "stackdriver.resourceMetadata.writer",
+        "storage.objectAdmin",
+        "artifactregistry.reader",
+        "serviceusage.serviceUsageConsumer",
+        "browser"
+      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.editor"] : []))'
 
   - id: workload_sa_token_creator
     source: ./deploy/ctk_v2/modules/self-token-creator
@@ -246,6 +249,7 @@ deployment_groups:
       - monitoring.viewer
       - stackdriver.resourceMetadata.writer
       - storage.objectViewer
+      - storage.objectCreator
       - artifactregistry.reader
 
   - id: xmc_wi_binding_ess
@@ -304,6 +308,7 @@ deployment_groups:
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
       configure_workload_identity_sa: true
       enable_vertical_pod_autoscaling: true
+      enable_ml_diagnostics: $(vars.enable_managed_mldiagnostics)
       master_authorized_networks:
       - cidr_block: $(vars.authorized_cidr)
         display_name: Authorized
@@ -472,6 +477,9 @@ deployment_groups:
       - name: managedXprofGcsBucket
         value: $(vars.managed_xprof_gcs_bucket)
         type: string
+      - name: mldiagnostics.enabled
+        value: $(vars.enable_managed_mldiagnostics)
+        type: auto
       - name: healthServiceDeployment.enabled
         value: $(vars.health_service_deployment_enabled)
         type: auto

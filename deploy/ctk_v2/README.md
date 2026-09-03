@@ -41,25 +41,29 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
+*   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
 
 ### Managed ML Diagnostics (Managed XProf)
-Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**. On a supported cluster, enable it with `--enable-managed-mldiagnostics` at creation or update time; this lets the reconciler create Hypercompute Cluster ML Runs.
+Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
 
+Enable it in your deployment blueprint by setting:
+```yaml
+vars:
+  enable_managed_mldiagnostics: true
+  managed_xprof_gcs_bucket: "gs://<project>-mlruns"
+```
+Or via the dev_env CLI:
 ```bash
-# On an existing cluster (must already be on 1.35.0-gke.3065000+):
+python3 tools/dev_env/dev_env.py gke-deploy --enable-managed-mldiagnostics --managed-xprof-gcs-bucket gs://<project>-mlruns ...
+```
+
+For existing clusters not provisioned with `enable_managed_mldiagnostics: true`, enable the feature flag on the GKE cluster via:
+```bash
 gcloud container clusters update <CLUSTER_NAME> \
   --project <PROJECT_ID> --location <REGION> \
   --enable-managed-mldiagnostics
-
-# Or at creation time:
-gcloud container clusters create <CLUSTER_NAME> \
-  --project <PROJECT_ID> --location <REGION> \
-  --cluster-version 1.35.0-gke.3065000 \
-  --enable-managed-mldiagnostics
 ```
-
-Then set `managed_xprof_gcs_bucket` (see Feature Switches) so profiling captures are written to GCS.
 
 > **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
 

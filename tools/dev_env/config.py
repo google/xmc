@@ -53,6 +53,8 @@ class LocalDevConfig:
     xid_database: str = ""
     cluster_name: str = ""
     auto_migrate: bool = True
+    enable_managed_mldiagnostics: bool = False
+    managed_xprof_gcs_bucket: str = ""
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
 
@@ -63,6 +65,11 @@ class LocalDevConfig:
                 "Missing required configuration field: 'project_id'. "
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
+            )
+        if self.managed_xprof_gcs_bucket and not self.managed_xprof_gcs_bucket.startswith("gs://"):
+            raise ValueError(
+                f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
+                "The bucket URI must start with 'gs://'."
             )
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
@@ -300,6 +307,25 @@ def load_config(
         default=True,
     )
 
+    enable_managed_mldiagnostics = _resolve_bool_flag(
+        getattr(args, "enable_managed_mldiagnostics", None) if args else None,
+        os.environ.get("ENABLE_MANAGED_MLDIAGNOSTICS"),
+        yaml_vars.get("enable_managed_mldiagnostics"),
+        default=False,
+    )
+
+    managed_xprof_gcs_bucket = _resolve_str_flag(
+        getattr(args, "managed_xprof_gcs_bucket", None) if args else None,
+        os.environ.get("MANAGED_XPROF_GCS_BUCKET"),
+        yaml_vars.get("managed_xprof_gcs_bucket"),
+        default="",
+    )
+    if managed_xprof_gcs_bucket and not managed_xprof_gcs_bucket.startswith("gs://"):
+        raise ValueError(
+            f"Invalid GCS bucket URI: '{managed_xprof_gcs_bucket}'. "
+            "The bucket URI must start with 'gs://'."
+        )
+
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 
     cfg = LocalDevConfig(
@@ -310,6 +336,8 @@ def load_config(
         xid_database=xid_database,
         cluster_name=cluster_name,
         auto_migrate=auto_migrate,
+        enable_managed_mldiagnostics=enable_managed_mldiagnostics,
+        managed_xprof_gcs_bucket=managed_xprof_gcs_bucket,
         enabled_services=enabled_services,
         config_path=resolved_path,
     )

@@ -71,6 +71,10 @@ vars:
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
   enable_metrics: false
 
+  # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
+  # Requires GKE cluster version 1.35.0-gke.3065000 or later.
+  enable_managed_mldiagnostics: false
+
   # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
   # When set, the actuator injects the GCS destination into workload JobSets so
   # Managed ML Diagnostics (xprof) traces are written to GCS. Requires a GKE

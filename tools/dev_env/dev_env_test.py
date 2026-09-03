@@ -90,6 +90,9 @@ class DevEnvCliTest(unittest.TestCase):
             "test-cluster",
             "--auto-migrate",
             "--enable-metrics",
+            "--enable-managed-mldiagnostics",
+            "--managed-xprof-gcs-bucket",
+            "gs://test-bucket",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -110,6 +113,8 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.cluster_name, "test-cluster")
         self.assertTrue(called_args.auto_migrate)
         self.assertTrue(called_args.enable_metrics)
+        self.assertTrue(called_args.enable_managed_mldiagnostics)
+        self.assertEqual(called_args.managed_xprof_gcs_bucket, "gs://test-bucket")
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")

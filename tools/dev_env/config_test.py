@@ -220,6 +220,26 @@ class ConfigResolutionTest(unittest.TestCase):
             self.assertNotIn("rod_data_provider", cfg.enabled_services)
             self.assertNotIn("dashboard_service", cfg.enabled_services)
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_mldiagnostics_and_xprof_bucket_flags(self) -> None:
+        """Verifies managed mldiagnostics and xprof bucket are resolved."""
+        args = argparse.Namespace(
+            project_id="my-proj",
+            enable_managed_mldiagnostics=True,
+            managed_xprof_gcs_bucket="gs://my-bucket",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertTrue(cfg.enable_managed_mldiagnostics)
+        self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+        # Verify invalid bucket URI raises ValueError
+        invalid_args = argparse.Namespace(
+            project_id="my-proj",
+            managed_xprof_gcs_bucket="invalid-bucket",
+        )
+        with self.assertRaises(ValueError):
+            config.load_config(invalid_args, repo_root=self.root)
+
 
 class LocalDevConfigDataClassTest(unittest.TestCase):
     """Test cases for LocalDevConfig dataclass validation and dynamic naming."""
@@ -241,8 +261,16 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
     def test_enabled_services_default_factory(self) -> None:
         """Verifies default enabled_services returns a fresh copy of BASE_SERVICES."""
         cfg = config.LocalDevConfig(project_id="test-proj")
-        self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
+        self.assertEqual(cfg.enabled_services, list(config.BASE_SERVICES))
         self.assertIsNot(cfg.enabled_services, config.BASE_SERVICES)
+
+    def test_invalid_managed_xprof_gcs_bucket_raises(self) -> None:
+        """Verifies invalid managed_xprof_gcs_bucket raises ValueError."""
+        with self.assertRaises(ValueError):
+            config.LocalDevConfig(
+                project_id="test-proj",
+                managed_xprof_gcs_bucket="invalid-bucket",
+            )
 
     def test_empty_project_id_raises_value_error(self) -> None:
         """Verifies whitespace or empty project_id raises ValueError."""
