@@ -59,6 +59,8 @@ jobs:
             security:
               - 'deploy/**/*.tf'
               - 'deploy/**/*.tfvars'
+              - 'deploy/**/*.yaml'
+              - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
 
@@ -228,5 +230,3 @@ jobs:
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
           scan-ref: 'deploy/'
-          skip-dirs: 'deploy/ci'
-
