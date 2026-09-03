@@ -15,50 +15,20 @@
 package store
 
 import (
-	"strings"
+	"xmanager_cloud/pkg/components/naming"
 )
 
-const (
-	componentPrefix = "components/"
-	maxNameLength   = 63
-)
-
-// CanonicalComponentName strips whitespace, leading/trailing slashes, and the AIP-122
-// "components/" resource prefix to return the canonical resource ID.
+// CanonicalComponentName delegates to naming.CanonicalComponentName.
 func CanonicalComponentName(name string) string {
-	name = strings.Trim(strings.TrimSpace(name), "/")
-	canonical := strings.TrimPrefix(name, componentPrefix)
-	return strings.Trim(canonical, "/")
+	return naming.CanonicalComponentName(name)
 }
 
-// FullComponentName formats a canonical or relative name into AIP-122
-// resource name format "components/{name}". Returns "" if the input name is empty.
+// FullComponentName delegates to naming.FullComponentName.
 func FullComponentName(name string) string {
-	canonical := CanonicalComponentName(name)
-	if canonical == "" {
-		return ""
-	}
-	return componentPrefix + canonical
+	return naming.FullComponentName(name)
 }
 
-// IsValidComponentName validates that a component name conforms to DNS-1123 / AIP-122
-// identifier format (lowercase alphanumeric and hyphens, 1-63 chars, start/end with alphanumeric).
+// IsValidComponentName delegates to naming.IsValidComponentName.
 func IsValidComponentName(name string) bool {
-	if len(name) < 1 || len(name) > maxNameLength {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
-			continue
-		}
-		if c == '-' {
-			if i == 0 || i == len(name)-1 {
-				return false
-			}
-			continue
-		}
-		return false
-	}
-	return true
+	return naming.IsValidComponentName(name)
 }
