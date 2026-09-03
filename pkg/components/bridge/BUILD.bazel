@@ -62,9 +62,9 @@ go_test(
         "fake_status_detector_test.go",
         "helm_builder_test.go",
         "helm_manager_test.go",
+        "k8s_status_detector_test.go",
         "reconciler_test.go",
         "sdk_helm_action_runner_test.go",
-        "status_detector_test.go",
     ],
     data = [
         "//deploy/helm:chart",
@@ -73,6 +73,7 @@ go_test(
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",

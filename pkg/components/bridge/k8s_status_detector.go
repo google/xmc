@@ -184,6 +184,10 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate readiness: %w", err)
 	}
+	if obsGen > 0 && obsGen < obj.GetGeneration() {
+		ready = false
+		readyMsg = fmt.Sprintf("Observed generation %d is stale compared to metadata generation %d", obsGen, obj.GetGeneration())
+	}
 	endpoint, err := extractFirstMatch(obj, ref.EndpointJSONPath, defaultEndpointCandidates...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract endpoint: %w", err)

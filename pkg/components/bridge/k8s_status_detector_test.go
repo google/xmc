@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -221,10 +222,13 @@ func TestStatusDetector_DetectStatus(t *testing.T) {
 			wantFound: false, wantReady: false,
 		},
 		{
-			name:      "fallback GVR resolution without RESTMapper",
-			detector:  NewK8sStatusDetector(dynClient, nil),
-			ref:       WrapperRef{Group: "ray.io", Version: "v1", Kind: "RayCluster", Namespace: "xmc", Name: "my-ray"},
-			wantFound: true, wantReady: true, wantGen: 2,
+			name:         "fallback GVR resolution without RESTMapper",
+			detector:     NewK8sStatusDetector(dynClient, nil),
+			ref:          WrapperRef{Group: "ray.io", Version: "v1", Kind: "RayCluster", Namespace: "xmc", Name: "my-ray"},
+			wantFound:    true,
+			wantReady:    true,
+			wantGen:      2,
+			wantEndpoint: "http://my-ray-head.xmc:8265",
 		},
 		{
 			name: "uninitialized client error", detector: &K8sStatusDetector{}, ref: WrapperRef{Kind: "K", Name: "N"}, wantErr: true,
@@ -241,10 +245,34 @@ func TestStatusDetector_DetectStatus(t *testing.T) {
 				t.Fatalf("DetectStatus() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if err == nil {
-				if res.Found != tt.wantFound || res.Ready != tt.wantReady || (tt.wantGen != 0 && res.ObservedGeneration != tt.wantGen) ||
-					(tt.wantEndpoint != "" && res.Endpoint != tt.wantEndpoint) || (tt.wantSecret != "" && res.ConnectionSecret != tt.wantSecret) {
-					t.Errorf("DetectStatus() = %+v, want Found=%v Ready=%v Gen=%d Ep=%s Sec=%s",
-						res, tt.wantFound, tt.wantReady, tt.wantGen, tt.wantEndpoint, tt.wantSecret)
+				got := struct {
+					Found              bool
+					Ready              bool
+					ObservedGeneration int64
+					Endpoint           string
+					ConnectionSecret   string
+				}{
+					Found:              res.Found,
+					Ready:              res.Ready,
+					ObservedGeneration: res.ObservedGeneration,
+					Endpoint:           res.Endpoint,
+					ConnectionSecret:   res.ConnectionSecret,
+				}
+				want := struct {
+					Found              bool
+					Ready              bool
+					ObservedGeneration int64
+					Endpoint           string
+					ConnectionSecret   string
+				}{
+					Found:              tt.wantFound,
+					Ready:              tt.wantReady,
+					ObservedGeneration: tt.wantGen,
+					Endpoint:           tt.wantEndpoint,
+					ConnectionSecret:   tt.wantSecret,
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("DetectStatus() mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})
@@ -489,8 +517,15 @@ func TestToBridgeWrapperRef(t *testing.T) {
 		TargetNamespace: "",
 	}
 	ref := ToBridgeWrapperRef(pbRef, "fallback-ns")
-	if ref.Group != "clickhouse.altinity.com" || ref.Name != "my-ch" || ref.Namespace != "fallback-ns" {
-		t.Errorf("unexpected bridge wrapper ref: %+v", ref)
+	wantRef := WrapperRef{
+		Group:     "clickhouse.altinity.com",
+		Version:   "v1",
+		Kind:      "ClickHouseInstallation",
+		Name:      "my-ch",
+		Namespace: "fallback-ns",
+	}
+	if diff := cmp.Diff(wantRef, ref); diff != "" {
+		t.Errorf("ToBridgeWrapperRef() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -507,17 +542,113 @@ func TestResolveGVR(t *testing.T) {
 	})
 
 	gvr, isNamespaced, err := ResolveGVR(WrapperRef{Group: "apps", Version: "v1", Kind: "Deployment"}, rm)
-	if err != nil || !isNamespaced || gvr.Resource != "deployments" {
-		t.Errorf("expected namespaced deployment GVR, got gvr=%+v, isNamespaced=%v, err=%v", gvr, isNamespaced, err)
+	if err != nil || !isNamespaced {
+		t.Fatalf("ResolveGVR(Deployment) failed: isNamespaced=%v, err=%v", isNamespaced, err)
+	}
+	wantGVR := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+	if diff := cmp.Diff(wantGVR, gvr); diff != "" {
+		t.Errorf("ResolveGVR(Deployment) mismatch (-want +got):\n%s", diff)
 	}
 
 	gvr, isNamespaced, err = ResolveGVR(WrapperRef{Group: "infra.io", Version: "v1", Kind: "ClusterPool"}, rm)
-	if err != nil || isNamespaced || gvr.Resource != "clusterpools" {
-		t.Errorf("expected cluster-scoped clusterpools GVR, got gvr=%+v, isNamespaced=%v, err=%v", gvr, isNamespaced, err)
+	if err != nil || isNamespaced {
+		t.Fatalf("ResolveGVR(ClusterPool) failed: isNamespaced=%v, err=%v", isNamespaced, err)
+	}
+	wantPoolGVR := schema.GroupVersionResource{Group: "infra.io", Version: "v1", Resource: "clusterpools"}
+	if diff := cmp.Diff(wantPoolGVR, gvr); diff != "" {
+		t.Errorf("ResolveGVR(ClusterPool) mismatch (-want +got):\n%s", diff)
 	}
 
 	gvr, isNamespaced, err = ResolveGVR(WrapperRef{Group: "apps", Version: "v1", Kind: "Deployment"}, nil)
-	if err != nil || !isNamespaced || gvr.Resource != "deployments" {
-		t.Errorf("expected fallback guess GVR, got gvr=%+v, isNamespaced=%v, err=%v", gvr, isNamespaced, err)
+	if err != nil || !isNamespaced {
+		t.Fatalf("ResolveGVR(fallback) failed: isNamespaced=%v, err=%v", isNamespaced, err)
 	}
+	if diff := cmp.Diff(wantGVR, gvr); diff != "" {
+		t.Errorf("ResolveGVR(fallback) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestStatusDetector_TolerantStalenessGuard(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("stale observed generation marks status unready", func(t *testing.T) {
+		// Target object has generation 3, but status reports observedGeneration 2 with Ready=True.
+		staleObj := makeObj("clickhouse.altinity.com", "v1", "ClickHouseInstallation", "xmc", "stale-ch", 3, map[string]any{
+			"status": "Completed", "observedGeneration": int64(2),
+			"conditions": []any{
+				map[string]any{"type": "Ready", "status": "True", "message": "Cluster ready (stale)"},
+			},
+		})
+		dynClient := dynamicfake.NewSimpleDynamicClient(newTestScheme(), staleObj)
+		detector := NewK8sStatusDetector(dynClient, nil)
+
+		status, err := detector.DetectStatus(ctx, WrapperRef{
+			Group:     "clickhouse.altinity.com",
+			Version:   "v1",
+			Kind:      "ClickHouseInstallation",
+			Namespace: "xmc",
+			Name:      "stale-ch",
+		})
+		if err != nil {
+			t.Fatalf("DetectStatus() error = %v", err)
+		}
+
+		if status.Ready {
+			t.Errorf("expected Ready=false due to stale observedGeneration, got Ready=true")
+		}
+		if !strings.Contains(status.Message, "stale compared to metadata generation") {
+			t.Errorf("expected staleness message, got %q", status.Message)
+		}
+	})
+
+	t.Run("up to date observed generation allows readiness", func(t *testing.T) {
+		upToDateObj := makeObj("clickhouse.altinity.com", "v1", "ClickHouseInstallation", "xmc", "fresh-ch", 3, map[string]any{
+			"status": "Completed", "observedGeneration": int64(3),
+			"conditions": []any{
+				map[string]any{"type": "Ready", "status": "True", "message": "Cluster ready"},
+			},
+		})
+		dynClient := dynamicfake.NewSimpleDynamicClient(newTestScheme(), upToDateObj)
+		detector := NewK8sStatusDetector(dynClient, nil)
+
+		status, err := detector.DetectStatus(ctx, WrapperRef{
+			Group:     "clickhouse.altinity.com",
+			Version:   "v1",
+			Kind:      "ClickHouseInstallation",
+			Namespace: "xmc",
+			Name:      "fresh-ch",
+		})
+		if err != nil {
+			t.Fatalf("DetectStatus() error = %v", err)
+		}
+
+		if !status.Ready {
+			t.Errorf("expected Ready=true for fresh observedGeneration, got Ready=false (%s)", status.Message)
+		}
+	})
+
+	t.Run("missing observed generation falls back without false staleness", func(t *testing.T) {
+		noObsGenObj := makeObj("clickhouse.altinity.com", "v1", "ClickHouseInstallation", "xmc", "no-gen-ch", 5, map[string]any{
+			"conditions": []any{
+				map[string]any{"type": "Ready", "status": "True", "message": "Cluster ready without observedGeneration"},
+			},
+		})
+		dynClient := dynamicfake.NewSimpleDynamicClient(newTestScheme(), noObsGenObj)
+		detector := NewK8sStatusDetector(dynClient, nil)
+
+		status, err := detector.DetectStatus(ctx, WrapperRef{
+			Group:     "clickhouse.altinity.com",
+			Version:   "v1",
+			Kind:      "ClickHouseInstallation",
+			Namespace: "xmc",
+			Name:      "no-gen-ch",
+		})
+		if err != nil {
+			t.Fatalf("DetectStatus() error = %v", err)
+		}
+
+		if !status.Ready {
+			t.Errorf("expected Ready=true when observedGeneration is omitted by operator, got Ready=false (%s)", status.Message)
+		}
+	})
 }
