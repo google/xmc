@@ -15,6 +15,7 @@
 """Data models for git commits and release metadata extraction."""
 
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 
 @dataclass
@@ -34,3 +35,37 @@ class CommitInfo:
     category: str = "developer_velocity"
     is_promotion: bool = False
     gated_flag: str | None = None
+
+
+class ReleaseMetadataSummary(TypedDict):
+    """Summary of release extraction metadata."""
+
+    base_ref: str
+    target_ref: str
+    commit_count: int
+    pr_count: int
+
+
+class CommitDict(TypedDict, total=False):
+    """Serialized git commit dictionary."""
+
+    commit_hash: str
+    short_hash: str
+    subject: str
+    author: str
+    date: str
+    commit_type: str
+    scope: str
+    description: str
+    pr_number: int | None
+    files_changed: list[str]
+    category: str
+    is_promotion: bool
+    gated_flag: str | None
+
+
+class ReleaseMetadataResult(TypedDict):
+    """Structured release metadata output."""
+
+    metadata: ReleaseMetadataSummary
+    raw_commits: list[CommitDict]

@@ -19,7 +19,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -28,24 +28,30 @@ if str(_REPO_ROOT) not in sys.path:
 try:
     from tools.common.tool_utils import HandledError, run_tool
     from tools.release.git_ops import get_git_commits, get_latest_tag_before
-    from tools.release.models import CommitInfo
+    from tools.release.models import CommitDict, CommitInfo, ReleaseMetadataResult
 except ImportError:
     from common.tool_utils import HandledError, run_tool  # type: ignore[no-redef]
     from git_ops import (  # type: ignore[no-redef]
         get_git_commits,
         get_latest_tag_before,
     )
-    from models import CommitInfo  # type: ignore[no-redef]
+    from models import (  # type: ignore[no-redef]
+        CommitDict,
+        CommitInfo,
+        ReleaseMetadataResult,
+    )
 
 __all__ = [
+    "CommitDict",
     "CommitInfo",
+    "ReleaseMetadataResult",
     "extract_release_metadata",
     "get_git_commits",
     "get_latest_tag_before",
 ]
 
 
-def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
+def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
     """Primary execution handler orchestrating release metadata extraction."""
     repo_dir = Path(args.repo_dir).resolve()
     target_ref = args.target_ref
@@ -61,15 +67,16 @@ def extract_release_metadata(args: argparse.Namespace) -> dict[str, Any]:
 
     # Extract git commits
     commits = get_git_commits(base_ref, target_ref, repo_dir)
+    raw_commits: list[CommitDict] = [cast(CommitDict, asdict(c)) for c in commits]
 
-    result = {
+    result: ReleaseMetadataResult = {
         "metadata": {
             "base_ref": base_ref,
             "target_ref": target_ref,
             "commit_count": len(commits),
             "pr_count": len([c for c in commits if c.pr_number is not None]),
         },
-        "raw_commits": [asdict(c) for c in commits],
+        "raw_commits": raw_commits,
     }
 
     if args.output:
