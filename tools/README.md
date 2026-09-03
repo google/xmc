@@ -33,8 +33,12 @@ Centralized utilities and build helpers used across tools:
 - [`requirements.txt`](common/requirements.txt): Pinned third-party Python dependencies for developer tools.
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)
-Playbooks and unified CLI for deploying, upgrading, and managing development environments:
-- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for environment lifecycle operations (`gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`).
+Playbooks and unified CLI for deploying, upgrading, and managing local/remote development clusters:
+- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for all environment lifecycle operations (`gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`, `cluster`, `status`, `logs`, `spanner`, `build-images`).
+- [`config.py`](dev_env/config.py): Configurable local development environment settings (`LocalDevConfig`), multi-source resolution precedence (CLI > Env > YAML > Defaults), and dynamic Spanner / database naming.
+- [`kind_manager.py`](dev_env/kind_manager.py): Pre-flight CLI tool verification, KinD cluster creation/deletion, credentials/secret provisioning (`gcp-sa-key`, `backend-oauth-secrets`, self-signed TLS certs), and local manifest application (`dummy_crds.yaml`, `redis.yaml`, `dex.yaml`, `gateway_proxy.yaml`).
+- [`spanner_manager.py`](dev_env/spanner_manager.py): Cloud Spanner database existence verification, parallel creation with single-batch DDL & proto descriptors, schema migrations, and database dropping (`dev_env.py spanner`).
+- [`image_builder.py`](dev_env/image_builder.py): Parallel Bazel OCI container image compilation, Docker archive loading, and loading images directly into KinD nodes (`dev_env.py build-images`).
 - [`deploy_dev_env.py`](dev_env/deploy_dev_env.py): Orchestrates Cluster Toolkit (`gcluster`) compilation and step-by-step remote infrastructure rollout (invoked via `python3 tools/dev_env/dev_env.py gke-deploy`).
 - [`upgrade_dev_env.py`](dev_env/upgrade_dev_env.py): Rebuilds changed services, pushes OCI images, and rolls out Helm charts or deployments without recreating infrastructure (invoked via `python3 tools/dev_env/dev_env.py gke-upgrade`).
 

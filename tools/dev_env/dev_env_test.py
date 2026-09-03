@@ -46,6 +46,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertIn("cluster", output)
         self.assertIn("status", output)
         self.assertIn("logs", output)
+        self.assertIn("build-images", output)
         self.assertIn("--verbose", output)
         self.assertIn("--quiet", output)
         self.assertIn("--version", output)
@@ -502,6 +503,37 @@ class DevEnvCliTest(unittest.TestCase):
             lines=50,
             namespace="custom-ns",
         )
+
+    @patch("tools.dev_env.image_builder.ImageBuilder.build_images")
+    @patch("tools.dev_env.config.load_config")
+    def test_build_images_action_default(
+        self,
+        mock_load_config: MagicMock,
+        mock_build: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env build-images' dispatches to ImageBuilder.build_images."""
+        mock_build.return_value = ["img1:latest"]
+        args = self.parser.parse_args(["build-images", "reconciler", "ui", "--skip-build"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_build.assert_called_once_with(services=["reconciler", "ui"], skip_build=True)
+
+    @patch("tools.dev_env.image_builder.ImageBuilder.load_images_into_kind")
+    @patch("tools.dev_env.image_builder.ImageBuilder.build_images")
+    @patch("tools.dev_env.config.load_config")
+    def test_build_images_action_with_kind(
+        self,
+        mock_load_config: MagicMock,
+        mock_build: MagicMock,
+        mock_load_kind: MagicMock,
+    ) -> None:
+        """Verifies 'dev_env build-images --load-kind' builds and side-loads into KinD."""
+        mock_build.return_value = ["reconciler_image:latest"]
+        args = self.parser.parse_args(["build-images", "reconciler", "--load-kind"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_build.assert_called_once_with(services=["reconciler"], skip_build=False)
+        mock_load_kind.assert_called_once_with(["reconciler_image:latest"])
 
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")

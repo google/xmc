@@ -83,6 +83,16 @@ alias(
 )
 
 alias(
+    name = "image_builder_lib",
+    actual = "//tools/dev_env:image_builder_lib",
+)
+
+alias(
+    name = "image_builder_test",
+    actual = "//tools/dev_env:image_builder_test",
+)
+
+alias(
     name = "dev_env_lib",
     actual = "//tools/dev_env:dev_env_lib",
 )
