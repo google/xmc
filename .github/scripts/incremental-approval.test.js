@@ -33,6 +33,12 @@ const {
   isProtectedFile,
   checkProtectedFileChanges,
   evaluateIncrementalApproval,
+  isFastForwardApproval,
+  getCommitCountInRange,
+  getCommitPatchId,
+  indexApprovedCandidateCommits,
+  correlateStackedParentBase,
+  resolveStackedApprovedRange,
   resolveCommitRanges,
   runGitRangeDiff,
   execGit,
@@ -1222,6 +1228,157 @@ test('execGit passes GITHUB_TOKEN auth header and terminal security defaults', (
     assert.ok(capturedOptions.env.GIT_CONFIG_VALUE_0.startsWith('Authorization: Basic '));
   } finally {
     delete process.env.GITHUB_TOKEN;
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('isFastForwardApproval detects ancestry correctly', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  // Fast-forward case
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { isFastForwardApproval: mockedFF } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedFF('sha1', 'sha2', {}), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+
+  // Non-fast-forward case
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      const err = new Error('not ancestor');
+      err.status = 1;
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { isFastForwardApproval: mockedFF2 } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedFF2('sha1', 'sha2', {}), false);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('getCommitCountInRange parses count and handles errors', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-list' && args[1] === '--count') {
+      return ' 5 \n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitCountInRange: mockedCount } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedCount('origin/main..HEAD', {}), 5);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+
+  childProcess.execFileSync = () => {
+    throw new Error('git rev-list failure');
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitCountInRange: mockedCount2 } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedCount2('origin/main..HEAD', {}), 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('getCommitPatchId parses patch-id and handles errors', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      return 'patch content';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return '1122334455aabbcc commit-sha\n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitPatchId: mockedPatchId } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedPatchId('sha123', {}), '1122334455aabbcc');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+
+  childProcess.execFileSync = () => {
+    throw new Error('git failure');
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { getCommitPatchId: mockedPatchId2 } = require('./incremental-approval');
+
+  try {
+    assert.strictEqual(mockedPatchId2('sha123', {}), null);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./incremental-approval')];
+  }
+});
+
+test('indexApprovedCandidateCommits indexes patch-id and subject maps', () => {
+  const childProcess = require('child_process');
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-list') {
+      return 'sha1\nsha2\n';
+    }
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      return 'diff';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return 'pid123 sha\n';
+    }
+    if (cmd === 'git' && args[0] === 'log') {
+      return 'feat: commit title\n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./incremental-approval')];
+  const { indexApprovedCandidateCommits: mockedIndex } = require('./incremental-approval');
+
+  try {
+    const maps = mockedIndex('origin/main..approvedSha', {});
+    assert.strictEqual(maps.byPatchId.get('pid123'), 'sha2');
+    assert.strictEqual(maps.bySubject.get('feat: commit title'), 'sha2');
+  } finally {
     childProcess.execFileSync = originalExec;
     delete require.cache[require.resolve('./incremental-approval')];
   }
