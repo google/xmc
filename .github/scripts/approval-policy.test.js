@@ -17,7 +17,6 @@ const assert = require('node:assert');
 const childProcess = require('child_process');
 const {
   DEFAULT_MAX_OWNER_GRACE_LINES,
-  MAX_OWNER_GRACE_LINES,
   getMaxOwnerGraceLines,
   isProtectedFile,
   checkProtectedFileChanges,
@@ -69,9 +68,11 @@ test('checkProtectedFileChanges detects sensitive modifications and handles git 
     childProcess.execFileSync = originalExec;
   }
 
-  // Git failure fail-safe
+  // Git failure fail-safe (with stderr)
   childProcess.execFileSync = () => {
-    throw new Error('Fatal git error');
+    const err = new Error('Fatal git error');
+    err.stderr = 'fatal: bad object sha1\n';
+    throw err;
   };
 
   try {
@@ -80,6 +81,12 @@ test('checkProtectedFileChanges detects sensitive modifications and handles git 
   } finally {
     childProcess.execFileSync = originalExec;
   }
+});
+
+test('evaluateIncrementalApproval handles undefined arguments safely without throwing', () => {
+  const result = evaluateIncrementalApproval();
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'NO_PRIOR_APPROVAL');
 });
 
 test('formatReapprovalReviewBody formats markdown body accurately', () => {

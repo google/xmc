@@ -77,20 +77,21 @@ function checkProtectedFileChanges(approvedSha, currentSha, execOptions = {}) {
     const files = diffOutput.split(/\r?\n/).filter(f => f.trim().length > 0);
     return files.some(isProtectedFile);
   } catch (error) {
-    console.log(`[incremental-approval] Failed to check modified files between ${approvedSha}..${currentSha}: ${error.message}`);
+    const stderrInfo = error.stderr ? ' | Stderr: ' + error.stderr.trim() : '';
+    console.log('[incremental-approval] Failed to check modified files between ' + approvedSha + '..' + currentSha + ': ' + error.message + stderrInfo);
     return true;
   }
 }
 
 /**
  * Pure function: Evaluates whether a synchronized PR should be auto-reapproved.
- * @param {Object} params
- * @param {boolean} params.hasPriorApproval
- * @param {string} params.approvedSha
- * @param {string} params.currentSha
- * @param {boolean} params.isAuthorOwner
- * @param {number} params.deltaLines
- * @param {boolean} params.isCleanRebase
+ * @param {Object} [params={}]
+ * @param {boolean} [params.hasPriorApproval]
+ * @param {string} [params.approvedSha]
+ * @param {string} [params.currentSha]
+ * @param {boolean} [params.isAuthorOwner]
+ * @param {number} [params.deltaLines]
+ * @param {boolean} [params.isCleanRebase]
  * @param {boolean} [params.hasRemovedCommits=false]
  * @param {boolean} [params.hasProtectedFileChanges=false]
  * @param {boolean} [params.isDismissed=false]
@@ -108,7 +109,7 @@ function evaluateIncrementalApproval({
   hasProtectedFileChanges = false,
   isDismissed = false,
   maxGraceLines = MAX_OWNER_GRACE_LINES
-}) {
+} = {}) {
   if (!hasPriorApproval || !approvedSha) {
     return {
       shouldReapprove: false,
