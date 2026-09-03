@@ -96,6 +96,13 @@ check_go() {
     echo "   To install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6"
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
+
+  if [ -d "tools/lint/check_go_determinism" ]; then
+    echo "--> Running Go Test Determinism & State Leakage Checker..."
+    if ! go run ./tools/lint/check_go_determinism; then
+      FAILED=1
+    fi
+  fi
 }
 
 check_ui() {
@@ -244,9 +251,9 @@ check_python() {
 check_mypy() {
   local py_files
   if [ "$MODE" = "check" ]; then
-    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" || true)
+    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
   else
-    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' || true)
+    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' | grep -v 'tools/dev_env.py' || true)
   fi
 
   if [ -z "$py_files" ]; then

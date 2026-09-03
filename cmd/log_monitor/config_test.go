@@ -15,7 +15,6 @@ package main
 
 import (
 	"flag"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -33,14 +32,6 @@ func TestDefaultPort(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	// Save original env vars and restore them after test
-	origProjectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-	origSubscriptionID := os.Getenv("PUBSUB_SUBSCRIPTION_ID")
-	defer func() {
-		os.Setenv("GOOGLE_CLOUD_PROJECT", origProjectID)
-		os.Setenv("PUBSUB_SUBSCRIPTION_ID", origSubscriptionID)
-	}()
-
 	tests := []struct {
 		name        string
 		inputConfig Config

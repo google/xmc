@@ -94,6 +94,10 @@ jobs:
           fi
           golangci-lint run --timeout=5m
 
+      - name: 'Check Go Test Determinism'
+        run: |
+          go run ./tools/lint/check_go_determinism
+
       - name: 'Install & Run Buildifier'
         run: |
           if ! command -v buildifier &>/dev/null; then

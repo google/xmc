@@ -80,6 +80,9 @@ linters-settings:
       - name: bool-literal-in-expr
       - name: constant-logical-expr
       - name: bare-return
+      - name: time-equal
+      - name: waitgroup-by-value
+      - name: atomic
 
 issues:
   exclude-dirs:

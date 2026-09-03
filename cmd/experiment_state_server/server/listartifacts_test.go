@@ -93,6 +93,7 @@ func TestSearchArtifacts_HappyPath(t *testing.T) {
 	server, _ := createExperimentStateServer(ctx, t)
 	exp := mustCreateExperiment(ctx, t, server, nil)
 
+	// nolint:sleep // Requires Spanner read staleness duration
 	time.Sleep(15*time.Second + 10*time.Millisecond)
 
 	var artifacts []*msgpb.Artifact
@@ -100,6 +101,7 @@ func TestSearchArtifacts_HappyPath(t *testing.T) {
 		artifacts = append(artifacts, mustCreateArtifact(ctx, t, server, exp.GetName(), nil))
 	}
 
+	// nolint:sleep // Requires Spanner read staleness duration
 	time.Sleep(15*time.Second + 10*time.Millisecond)
 
 	sort.Slice(artifacts, func(i, j int) bool {

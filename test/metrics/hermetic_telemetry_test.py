@@ -122,11 +122,11 @@ def poll_clickhouse_counts(
     )
     raw_query = f"SELECT count() FROM xmc_metrics WHERE xid = {xid}"
 
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     dedup_count = 0
     raw_count = 0
 
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         try:
             dedup_res = query_clickhouse(ch_base_url, dedup_query)
             raw_res = query_clickhouse(ch_base_url, raw_query)
@@ -375,7 +375,7 @@ class TestHermeticTelemetryFlow(unittest.TestCase):
                         "metric_name": "ttl_metric",
                         "metric_value": float(i),
                         "step": i,
-                        "timestamp": int(time.time() * 1e6),
+                        "timestamp": time.time_ns() // 1_000,
                     }
                 ]
             )

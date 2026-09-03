@@ -21,3 +21,8 @@ build:ci --experimental_remote_cache_compression=true
 # headroom (1-2 cores) for the Spanner emulator service container and system daemons.
 build:ci --jobs=14
 
+# Deterministic test execution environment
+test --test_env=PYTHONHASHSEED=0
+test --test_env=TZ=UTC
+
+

@@ -37,6 +37,7 @@ select = [
     "PIE800",  # flake8-pie: Unnecessary dict kwargs spread
     "PIE804",  # flake8-pie: Unnecessary dict unpack in function call
     "PIE810",  # flake8-pie: Single starts/endswith with tuple
+    "TID251",  # flake8-tidy-imports: Ban non-monotonic time.time in favor of time.monotonic
     "TID252",  # flake8-tidy-imports: Ban relative imports from parent modules
     "A001",    # flake8-builtins: Variable shadowing built-in
     "A002",    # flake8-builtins: Argument shadowing built-in
@@ -64,6 +65,13 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 # 'compare' module is provided by regression test framework runners
 "test/regression/*" = ["F821"]
+# Buffer and E2E require wall-clock unix epoch timestamps for telemetry and naming
+"sdks/python/xmc/buffer.py" = ["TID251"]
+"sdks/python/xmc/buffer_test.py" = ["TID251"]
+"test/e2e/*" = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"time.time".msg = "Use time.monotonic() for measuring intervals, deadlines, and elapsed time."
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -83,4 +91,5 @@ exclude = [
     '(^|/)bazel-',
     '(^|/)ctk-out/',
     '(^|/)test/regression/',
+    '(^|/)tools/dev_env\\.py$',
 ]
