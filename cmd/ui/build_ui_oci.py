@@ -30,7 +30,6 @@ This script implements a two-tier container build strategy for the Angular UI:
      Docker layer caching across source-only edits.
 """
 
-import contextlib
 import hashlib
 import os
 import platform
@@ -41,14 +40,7 @@ import tempfile
 
 
 def get_sha256(filepath: str) -> str:
-    """Computes SHA256 hex digest for a file.
-
-    Args:
-        filepath: Path to the file to hash.
-
-    Returns:
-        Hexadecimal SHA-256 string.
-    """
+    """Computes SHA256 hex digest for a file."""
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         while True:
@@ -60,14 +52,7 @@ def get_sha256(filepath: str) -> str:
 
 
 def translate_imports(content: str) -> str:
-    """Translates legacy Angular import strings to npm package names.
-
-    Args:
-        content: Source code string from an Angular template, style, or TypeScript file.
-
-    Returns:
-        Translated source string compatible with standard npm dependencies.
-    """
+    """Translates legacy Angular import strings to npm package name."""
     content = content.replace(
         "'third_party/javascript/angular_components/material'",
         "'@angular/material'",
@@ -84,7 +69,7 @@ def translate_imports(content: str) -> str:
     return content.replace('.css"', '.scss"')
 
 
-def copy_flat(src_dir: str, dest_dir: str) -> None:
+def copy_flat(src_dir: str, dest_dir: str):
     """Copies UI source files resolving symlinks and translating legacy imports.
 
     Bazel sandboxes and monorepos often rely heavily on symlinks. When building
@@ -149,7 +134,7 @@ def copy_flat(src_dir: str, dest_dir: str) -> None:
                 raise
 
 
-def main() -> None:
+def main():
     """Main entrypoint for building UI container image.
 
     Strategy:
@@ -214,16 +199,13 @@ CMD ["nginx", "-g", "daemon off;"]
             # Copy package.json first so Docker can cache npm dependencies across source code edits.
             print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
             copy_flat(ui_src_dir, temp_build_dir)
-            ui_build_config = os.environ.get("XMC_UI_BUILD_CONFIG", "development")
-            if not ui_build_config or not all(c.isalnum() or c in "-_" for c in ui_build_config):
-                raise ValueError(f"Invalid XMC_UI_BUILD_CONFIG: {ui_build_config}")
             with open(dockerfile_path, "w") as f:
-                f.write(f"""FROM node:22-alpine AS builder
+                f.write("""FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
-RUN npx ng build --configuration {ui_build_config}
+RUN npx ng build --configuration production
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
@@ -256,8 +238,7 @@ CMD ["nginx", "-g", "daemon off;"]
         if target_platform:
             build_cmd.extend(["--platform", target_platform])
 
-        alt_tag = "ui_image:latest"
-        build_cmd.extend(["-t", tag, "-t", alt_tag, temp_build_dir])
+        build_cmd.extend(["-t", tag, temp_build_dir])
 
         try:
             subprocess.run(build_cmd, check=True)
@@ -266,7 +247,7 @@ CMD ["nginx", "-g", "daemon off;"]
             sys.exit(1)
 
         print(f"Saving Docker image to {output_tar}...")
-        save_cmd = ["docker", "save", "-o", output_tar, tag, alt_tag]
+        save_cmd = ["docker", "save", "-o", output_tar, tag]
         try:
             subprocess.run(save_cmd, check=True)
         except subprocess.CalledProcessError as e:
