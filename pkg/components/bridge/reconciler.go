@@ -617,6 +617,9 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	if ref.Name == "" {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "InvalidWrapperRef", "3P wrapper target name is empty")
 	}
+	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace))
+	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
 	if err != nil {

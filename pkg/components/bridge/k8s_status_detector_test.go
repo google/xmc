@@ -652,3 +652,20 @@ func TestStatusDetector_TolerantStalenessGuard(t *testing.T) {
 		}
 	})
 }
+
+func TestStatusDetector_DetectStatus_SecretProhibited(t *testing.T) {
+	ctx := context.Background()
+	dynClient := dynamicfake.NewSimpleDynamicClient(newTestScheme())
+	detector := NewK8sStatusDetector(dynClient, nil)
+
+	_, err := detector.DetectStatus(ctx, WrapperRef{
+		Group:     "",
+		Version:   "v1",
+		Kind:      "Secret",
+		Namespace: "kube-system",
+		Name:      "admin-token",
+	})
+	if err == nil || !strings.Contains(err.Error(), "access to Secret resources via status detector is forbidden") {
+		t.Fatalf("expected forbidden error for Secret kind, got: %v", err)
+	}
+}

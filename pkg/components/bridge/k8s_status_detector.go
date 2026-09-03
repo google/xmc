@@ -87,6 +87,9 @@ func (d *K8sStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*
 	if ref.Name == "" || ref.Kind == "" {
 		return nil, errors.New("wrapperRef name and kind are required")
 	}
+	if strings.EqualFold(ref.Kind, "Secret") {
+		return nil, errors.New("access to Secret resources via status detector is forbidden")
+	}
 	gvr, isNamespaced, err := ResolveGVR(ref, d.restMapper)
 	if err != nil {
 		if status, handleErr := handleK8sError(err, ref); handleErr == nil {
