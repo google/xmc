@@ -124,7 +124,6 @@ class LocalRunner:
         watch: bool = False,
         helm: bool = False,
         interval: float = 1.5,
-        base_ref: str | None = None,
     ) -> bool | None:
         """Recompiles and hot-reloads selected or modified microservices into the running cluster.
 
@@ -137,8 +136,6 @@ class LocalRunner:
             watch: If True, continuously watches the repository workspace for file changes.
             helm: If True, explicitly triggers a Helm chart upgrade and manifest sync.
             interval: Polling interval in seconds when operating in continuous watch mode.
-            base_ref: Git reference or commit to compare against for change detection.
-                Defaults to auto-detecting merge-base with upstream main.
 
         Returns:
             True if any service or Helm upgrade was performed; False if clean; None in watch mode.
@@ -156,30 +153,18 @@ class LocalRunner:
         if watch:
             if interval <= 0:
                 raise ValueError("Watch interval must be greater than 0 seconds.")
-            self._watch_loop(
-                services=services,
-                interval=interval,
-                helm=helm,
-                base_ref=base_ref,
-            )
+            self._watch_loop(services=services, interval=interval, helm=helm)
             return None
 
-        return self._reload_once(
-            services=services,
-            helm=helm,
-            base_ref=base_ref,
-        )
+        return self._reload_once(services=services, helm=helm)
 
-    def _get_workspace_signature(self, base_ref: str | None = None) -> dict[str, tuple[int, int]]:
+    def _get_workspace_signature(self) -> dict[str, tuple[int, int]]:
         """Computes a lightweight signature (mtime + file size) of modified git files.
-
-        Args:
-            base_ref: Git reference to compare against for change detection.
 
         Returns:
             Dictionary mapping relative file paths to (modification_time_ns, size_bytes).
         """
-        files = self.change_detector.get_modified_files(base_ref=base_ref)
+        files = self.change_detector.get_modified_files()
         sig: dict[str, tuple[int, int]] = {}
         for f in files:
             try:
@@ -195,7 +180,6 @@ class LocalRunner:
         services: list[str] | None = None,
         interval: float = 1.5,
         helm: bool = False,
-        base_ref: str | None = None,
     ) -> None:
         """Continuously polls workspace for file modifications and triggers hot-reloads.
 
@@ -207,25 +191,24 @@ class LocalRunner:
             services: Optional list of service names or aliases to scope reloads to.
             interval: Polling interval in seconds between workspace signature checks.
             helm: If True, triggers Helm upgrade on initial reload.
-            base_ref: Git reference to compare against for change detection.
         """
         log_info("👀 [Watch Mode] Watching workspace for file changes (press Ctrl+C to stop)...")
         try:
-            try:
-                self._reload_once(services=services, helm=helm, base_ref=base_ref)
-            except Exception as e:
-                log_error(f"Initial reload failed: {e}. Watching for next save...")
+            self._reload_once(services=services, helm=helm)
+        except Exception as e:
+            log_error(f"Initial reload failed: {e}. Watching for next save...")
 
-            last_sig = self._get_workspace_signature(base_ref=base_ref)
+        last_sig = self._get_workspace_signature()
+        try:
             while True:
                 time.sleep(interval)
-                current_sig = self._get_workspace_signature(base_ref=base_ref)
+                current_sig = self._get_workspace_signature()
                 if current_sig == last_sig:
                     continue
 
                 if current_sig:
                     time.sleep(0.5)  # debounce rapid filesystem events
-                    current_sig = self._get_workspace_signature(base_ref=base_ref)
+                    current_sig = self._get_workspace_signature()
 
                 delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
                 deleted_files: list[str] = []
@@ -237,8 +220,6 @@ class LocalRunner:
                                 st = file_path.stat()
                                 if (st.st_mtime_ns, st.st_size) == last_sig[f]:
                                     continue
-                            elif last_sig[f] == (0, 0):
-                                continue
                         except OSError:
                             pass
                         deleted_files.append(f)
@@ -248,11 +229,7 @@ class LocalRunner:
                 _LOGGER.debug("Watch detected file delta: %s", changed_files)
                 if changed_files:
                     try:
-                        self._reload_once(
-                            services=services,
-                            changed_files=changed_files,
-                            base_ref=base_ref,
-                        )
+                        self._reload_once(services=services, changed_files=changed_files)
                     except Exception as e:
                         log_error(f"Reload failed: {e}. Watching for next save...")
 
@@ -265,7 +242,6 @@ class LocalRunner:
         services: list[str] | None = None,
         changed_files: list[str] | None = None,
         helm: bool = False,
-        base_ref: str | None = None,
     ) -> tuple[set[str], bool]:
         """Resolves target services and Helm requirement from args and git status."""
         target_services: set[str] = set()
@@ -275,11 +251,7 @@ class LocalRunner:
 
         if ("auto" in lowercase_services) or (not raw_services and not helm):
             log_info("=== [ChangeDetector] Auto-detecting modified services from git ===")
-            det = (
-                self.change_detector.detect_changes(base_ref=base_ref)
-                if changed_files is None
-                else self.change_detector.detect_changes(files=changed_files)
-            )
+            det = self.change_detector.detect_changes(files=changed_files)
             target_services.update(det.services)
             if det.helm_upgrade_needed:
                 helm_needed = True
@@ -380,7 +352,6 @@ class LocalRunner:
         services: list[str] | None = None,
         changed_files: list[str] | None = None,
         helm: bool = False,
-        base_ref: str | None = None,
     ) -> bool:
         """Executes a single hot-reload iteration.
 
@@ -392,7 +363,6 @@ class LocalRunner:
             services: Optional explicit list of services to reload.
             changed_files: Optional list of specific modified files triggering this reload.
             helm: If True, forces a Helm chart upgrade.
-            base_ref: Git reference to compare against for change detection.
 
         Returns:
             True if any service or Helm upgrade was performed; False if workspace was clean.
@@ -402,17 +372,13 @@ class LocalRunner:
             ValueError: If any explicitly requested service is unrecognized or disabled.
         """
         _LOGGER.debug(
-            "Single reload iteration (services=%s, changed_files=%s, helm=%s, base_ref=%s)",
+            "Single reload iteration (services=%s, changed_files=%s, helm=%s)",
             services,
             changed_files,
             helm,
-            base_ref,
         )
         target_services, helm_needed = self._resolve_target_services(
-            services=services,
-            changed_files=changed_files,
-            helm=helm,
-            base_ref=base_ref,
+            services=services, changed_files=changed_files, helm=helm
         )
         if not target_services and not helm_needed:
             log_info("No modified microservices or Helm manifests detected. Working tree clean.")

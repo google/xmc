@@ -59,13 +59,23 @@ class ConfigResolutionTest(unittest.TestCase):
             config.resolve_config_path("non-existent.yaml", repo_root=self.root)
 
     def test_resolve_config_path_defaults(self) -> None:
-        """Verifies default configuration locations are checked in order."""
+        """Verifies default configuration locations prioritize deploy/local over deploy/ctk_v2."""
+        local_cfg = self.root / "deploy" / "local" / "xmanager-cloud-local.yaml"
+        local_cfg.parent.mkdir(parents=True, exist_ok=True)
+        local_cfg.write_text("vars:\n  project_id: local-p\n", encoding="utf-8")
+
         ctk_cfg = self.root / "deploy" / "ctk_v2" / "xmanager-cloud-deployment.yaml"
         ctk_cfg.parent.mkdir(parents=True, exist_ok=True)
         ctk_cfg.write_text("vars:\n  project_id: ctk-p\n", encoding="utf-8")
 
+        # When both exist, deploy/local is chosen
         resolved = config.resolve_config_path(repo_root=self.root)
-        self.assertEqual(resolved, ctk_cfg.resolve())
+        self.assertEqual(resolved, local_cfg.resolve())
+
+        # When local is removed, fallback to ctk_v2
+        local_cfg.unlink()
+        resolved_fallback = config.resolve_config_path(repo_root=self.root)
+        self.assertEqual(resolved_fallback, ctk_cfg.resolve())
 
     def test_resolve_config_path_none_when_empty(self) -> None:
         """Verifies None is returned when no default configuration files exist."""
@@ -219,6 +229,19 @@ class ConfigResolutionTest(unittest.TestCase):
             self.assertIn("health_service", cfg.enabled_services)
             self.assertNotIn("rod_data_provider", cfg.enabled_services)
             self.assertNotIn("dashboard_service", cfg.enabled_services)
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_load_config_ingestion_gateway_disabled_overrides_enable_metrics(self) -> None:
+        """Verifies ingestion_gateway_deployment_enabled: false suppresses ingestion_gateway even if enable_metrics is true."""
+        cfg_file = self.root / "config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  ingestion_gateway_deployment_enabled: false\n",
+            encoding="utf-8",
+        )
+
+        args = argparse.Namespace(config=str(cfg_file))
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertNotIn("ingestion_gateway", cfg.enabled_services)
 
 
 class LocalDevConfigDataClassTest(unittest.TestCase):

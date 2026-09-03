@@ -111,9 +111,10 @@ python3 tools/dev_env/dev_env.py reload ess --helm
 ##### Options
 - `[services...]`: Positional microservice names or aliases to rebuild and reload (or omit for auto-detection).
 - `--watch`, `-w`: Run in continuous filesystem watch mode, automatically detecting code edits and reloading affected services on save.
-- `--interval`, `--watch-interval`: Polling interval in seconds for watch mode (default: `1.5`).
-- `--base-ref`: Git base reference to compare against (e.g. `origin/main`, `HEAD`). Defaults to auto-detecting merge-base with `origin/main`.
+- `--watch-interval`: Debounce polling interval in seconds for watch mode (default: `1.0`).
 - `--helm`: Force an incremental Helm chart upgrade.
+- `--cluster-name`: KinD cluster name (defaults to dynamic `xmc-<environment>`).
+- `--tag`: Docker image tag (default: `local-dev`).
 
 ##### Supported Service Aliases & Canonical Names
 Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice target (`snake_case` or `kebab-case`) can always be specified directly even if it does not have a dedicated alias in `SERVICE_ALIASES`:
@@ -123,7 +124,7 @@ Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice
 | `ess` | `experiment_state_server` |
 | `xid` | `xid_service` |
 | `ui`, `frontend`, `web` | `ui` |
-| `gw`, `gateway` | `ingestion_gateway` (`ingestion-gateway-deployment`) |
+| `gw`, `gateway` | `ingestion_gateway` (`gateway-proxy`) |
 | `actuator` | `actuator` |
 | `reconciler` | `reconciler` |
 | `dash`, `dashboard` | `dashboard_service` |

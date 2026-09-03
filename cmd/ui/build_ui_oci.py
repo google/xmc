@@ -30,6 +30,7 @@ This script implements a two-tier container build strategy for the Angular UI:
      Docker layer caching across source-only edits.
 """
 
+import contextlib
 import hashlib
 import os
 import platform
@@ -255,7 +256,8 @@ CMD ["nginx", "-g", "daemon off;"]
         if target_platform:
             build_cmd.extend(["--platform", target_platform])
 
-        build_cmd.extend(["-t", tag, temp_build_dir])
+        alt_tag = "ui_image:latest"
+        build_cmd.extend(["-t", tag, "-t", alt_tag, temp_build_dir])
 
         try:
             subprocess.run(build_cmd, check=True)
@@ -264,7 +266,7 @@ CMD ["nginx", "-g", "daemon off;"]
             sys.exit(1)
 
         print(f"Saving Docker image to {output_tar}...")
-        save_cmd = ["docker", "save", "-o", output_tar, tag]
+        save_cmd = ["docker", "save", "-o", output_tar, tag, alt_tag]
         try:
             subprocess.run(save_cmd, check=True)
         except subprocess.CalledProcessError as e:

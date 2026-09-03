@@ -194,7 +194,6 @@ def handle_reload(args: argparse.Namespace) -> None:
         watch=getattr(args, "watch", False),
         helm=getattr(args, "helm", False),
         interval=getattr(args, "interval", 1.5),
-        base_ref=getattr(args, "base_ref", None) or None,
     )
 
 
@@ -490,16 +489,9 @@ def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--interval",
-        "--watch-interval",
-        dest="interval",
         type=float,
         default=1.5,
         help="Watch mode polling interval in seconds (default: 1.5).",
-    )
-    p.add_argument(
-        "--base-ref",
-        default=None,
-        help="Git base reference to compare against (e.g. origin/main, HEAD). Defaults to auto-detecting merge-base with origin/main.",
     )
     _add_common_config_flags(p)
     p.add_argument("-c", "--config", help="Path to deployment YAML config.")

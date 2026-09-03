@@ -241,6 +241,6 @@ When implementing Level 2 in-pod syncing, be aware of the following architectura
 #### Recommended Hybrid Implementation Strategy
 
 To safely leverage Level 2 velocity without risking production drift:
-1. Provide Level 2 as an opt-in fast flag (e.g. `dev_env reload -w --fast` or `python3 tools/dev_env/dev_env.py reload -w --fast`).
+1. Provide Level 2 as an opt-in fast flag (e.g. `dev_env local reload -w --fast`).
 2. Automatically fall back to a full Level 1 container rebuild whenever `package.json`, `go.mod`, `Dockerfile`, or `deploy/` templates are modified.
 3. Run a full hermetic verification (`dev_env build-images` or Bazel test suite) prior to opening Pull Requests.

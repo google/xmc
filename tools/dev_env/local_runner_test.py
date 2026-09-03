@@ -226,32 +226,6 @@ class TestLocalRunner(unittest.TestCase):
             self.assertTrue(mock_run.called)
 
     @patch("tools.dev_env.local_runner.run_command")
-    def test_reload_auto_detection_with_explicit_base_ref(self, mock_run: MagicMock) -> None:
-        """Verifies reload forwards explicit base_ref to change detector."""
-        from tools.dev_env.change_detector import ChangeDetectionResult
-
-        mock_result = ChangeDetectionResult(
-            services=["ui"],
-            helm_upgrade_needed=False,
-            modified_files=["cmd/ui/src/app.ts"],
-            reasons={"ui": ["cmd/ui/src/app.ts"]},
-        )
-        with (
-            patch.object(self.runner.kind_mgr, "exists", return_value=True),
-            patch.object(
-                self.runner.change_detector, "detect_changes", return_value=mock_result
-            ) as mock_detect,
-            patch.object(
-                self.runner.image_builder, "build_images", return_value=["ui_image:latest"]
-            ),
-            patch.object(self.runner.image_builder, "load_images_into_kind"),
-            patch.object(self.runner.helm_deployer, "deploy"),
-        ):
-            self.runner.reload(services=None, base_ref="origin/main")
-
-            mock_detect.assert_called_once_with(base_ref="origin/main")
-
-    @patch("tools.dev_env.local_runner.run_command")
     def test_reload_auto_detection_with_helm_changes(self, mock_run: MagicMock) -> None:
         """Verifies auto-detection executes helm upgrade when manifests are modified."""
         from tools.dev_env.change_detector import ChangeDetectionResult
@@ -475,27 +449,6 @@ class TestLocalRunner(unittest.TestCase):
                 services=["reconciler"],
                 interval=2.0,
                 helm=True,
-                base_ref=None,
-            )
-
-    def test_reload_watch_mode_with_base_ref(self) -> None:
-        """Verifies reload(watch=True, base_ref=...) passes base_ref to _watch_loop."""
-        with (
-            patch.object(self.runner.kind_mgr, "exists", return_value=True),
-            patch.object(self.runner, "_watch_loop") as mock_watch,
-        ):
-            self.runner.reload(
-                services=["reconciler"],
-                watch=True,
-                helm=False,
-                interval=2.0,
-                base_ref="origin/main",
-            )
-            mock_watch.assert_called_once_with(
-                services=["reconciler"],
-                interval=2.0,
-                helm=False,
-                base_ref="origin/main",
             )
 
     def test_reload_helm_flag_triggers_helm_deploy(self) -> None:
@@ -618,9 +571,7 @@ class TestLocalRunner(unittest.TestCase):
             self.runner._watch_loop(services=["reconciler"], interval=1.0)
             self.assertEqual(mock_reload.call_count, 2)
             mock_reload.assert_called_with(
-                services=["reconciler"],
-                changed_files=["cmd/reconciler/main.go"],
-                base_ref=None,
+                services=["reconciler"], changed_files=["cmd/reconciler/main.go"]
             )
 
     @patch("tools.dev_env.local_runner.time.sleep")
@@ -665,38 +616,7 @@ class TestLocalRunner(unittest.TestCase):
         ):
             self.runner._watch_loop(services=["reconciler"], interval=1.0)
             self.assertEqual(mock_reload.call_count, 2)
-            mock_reload.assert_called_with(
-                services=["reconciler"], changed_files=["f.go"], base_ref=None
-            )
-
-    def test_watch_loop_initial_reload_keyboard_interrupt_handled_gracefully(self) -> None:
-        """Verifies KeyboardInterrupt during initial reload is handled gracefully."""
-        with (
-            patch.object(self.runner, "_reload_once", side_effect=KeyboardInterrupt) as mock_reload,
-            patch("tools.dev_env.local_runner.log_info") as mock_log,
-        ):
-            self.runner._watch_loop(services=["reconciler"], interval=1.0)
-            mock_reload.assert_called_once_with(services=["reconciler"], helm=False, base_ref=None)
-            mock_log.assert_any_call("\n🛑 Stopped watching workspace.")
-
-    @patch("tools.dev_env.local_runner.time.sleep")
-    def test_watch_loop_committed_deletion_no_spurious_reload(self, mock_sleep: MagicMock) -> None:
-        """Verifies committed deletions with signature (0, 0) do not trigger spurious reloads."""
-        with (
-            patch.object(self.runner, "_reload_once") as mock_reload,
-            patch.object(
-                self.runner,
-                "_get_workspace_signature",
-                side_effect=[
-                    {"deleted.go": (0, 0)},  # file was deleted on disk
-                    {},  # committed deletion: disappears from git status
-                    KeyboardInterrupt,
-                ],
-            ),
-        ):
-            self.runner._watch_loop(services=["reconciler"], interval=1.0)
-            # Only initial reload should have fired, no reload for the committed deletion
-            self.assertEqual(mock_reload.call_count, 1)
+            mock_reload.assert_called_with(services=["reconciler"], changed_files=["f.go"])
 
 
 if __name__ == "__main__":

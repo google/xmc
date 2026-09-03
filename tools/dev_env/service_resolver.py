@@ -27,7 +27,6 @@ SERVICE_ALIASES: dict[str, str] = {
     "dashboard": "dashboard_service",
     "health": "health_service",
     "comp": "components",
-    "bridge": "xmc_bridge",
     "monitor": "log_monitor",
 }
 
@@ -77,7 +76,7 @@ def service_to_k8s_deployment_name(service: str) -> str:
     Examples:
         'dashboard_service' -> 'dashboard-service-deployment'
         'experiment_state_server' -> 'experiment-state-server-deployment'
-        'ingestion_gateway' -> 'ingestion-gateway-deployment'
+        'ingestion_gateway' -> 'gateway-proxy'
         'ui' -> 'ui-deployment'
 
     Args:
@@ -88,10 +87,8 @@ def service_to_k8s_deployment_name(service: str) -> str:
     """
     canonical = resolve_service_name(service)
     svc_lower = canonical.lower().replace("_", "-")
-    if svc_lower in ("gateway-proxy",):
+    if svc_lower in ("ingestion-gateway", "gateway-proxy"):
         return "gateway-proxy"
-    if svc_lower in ("ingestion-gateway", "ingestion-gateway-deployment"):
-        return "ingestion-gateway-deployment"
     if svc_lower.endswith("-deployment"):
         return svc_lower
     return f"{svc_lower}-deployment"
