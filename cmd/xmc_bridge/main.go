@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -398,7 +399,12 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes dynamic client: %w", err)
 	}
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, nil)
+	k8sClient, err := kubernetes.NewForConfig(k8sCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, bridge.DefaultHelmReleaseName)
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
