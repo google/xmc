@@ -23,11 +23,33 @@ exports_files([
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
+    "helm_deployer.py",
     "image_builder.py",
     "kind_manager.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "helm_deployer_lib",
+    srcs = ["helm_deployer.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "helm_deployer_test",
+    srcs = ["helm_deployer_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":helm_deployer_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "image_builder_lib",

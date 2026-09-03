@@ -73,6 +73,16 @@ alias(
 
 # Dev Env
 alias(
+    name = "helm_deployer_lib",
+    actual = "//tools/dev_env:helm_deployer_lib",
+)
+
+alias(
+    name = "helm_deployer_test",
+    actual = "//tools/dev_env:helm_deployer_test",
+)
+
+alias(
     name = "config_lib",
     actual = "//tools/dev_env:config_lib",
 )
