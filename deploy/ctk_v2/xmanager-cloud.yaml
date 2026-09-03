@@ -243,14 +243,14 @@ deployment_groups:
     source: modules/project/service-account
     settings:
       name: xmc-np-sa
-      project_roles:
-      - logging.logWriter
-      - monitoring.metricWriter
-      - monitoring.viewer
-      - stackdriver.resourceMetadata.writer
-      - storage.objectViewer
-      - storage.objectCreator
-      - artifactregistry.reader
+      project_roles: '$(concat([
+        "logging.logWriter",
+        "monitoring.metricWriter",
+        "monitoring.viewer",
+        "stackdriver.resourceMetadata.writer",
+        "storage.objectViewer",
+        "artifactregistry.reader"
+      ], vars.enable_managed_mldiagnostics ? ["storage.objectCreator"] : []))'
 
   - id: xmc_wi_binding_ess
     source: modules/project/workload_identity_binding
