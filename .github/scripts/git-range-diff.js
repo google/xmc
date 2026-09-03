@@ -53,7 +53,7 @@ function validateGitRefs(baseRef, approvedSha, currentSha) {
 function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions = {}) {
   const currentRange = `origin/${baseRef}..${currentSha}`;
   let approvedRange = `origin/${baseRef}..${approvedSha}`;
-  const opts = { encoding: 'utf8', ...execOptions, stdio: ['pipe', 'pipe', 'ignore'] };
+  const opts = { ...execOptions, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] };
 
   try {
     const prCommitCountStr = childProcess.execFileSync(
@@ -147,12 +147,17 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
  * @returns {{ additions: number, deletions: number, totalDelta: number }}
  */
 function getCommitLineDelta(commitSha, execOptions = {}) {
+  if (!commitSha || !SHA_REGEX.test(commitSha)) {
+    console.log('[incremental-approval] Invalid commit SHA: "' + commitSha + '"');
+    return { additions: 0, deletions: 0, totalDelta: 0 };
+  }
+
   const opts = {
-    encoding: 'utf8',
     maxBuffer: GIT_MAX_BUFFER_BYTES,
     timeout: GIT_EXEC_TIMEOUT_MS,
-    stdio: ['pipe', 'pipe', 'ignore'],
-    ...execOptions
+    ...execOptions,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'ignore']
   };
 
   try {
@@ -184,6 +189,9 @@ function getCommitLineDelta(commitSha, execOptions = {}) {
 function computeAddedCommitsDelta(addedCommitShas, execOptions = {}) {
   let additions = 0;
   let deletions = 0;
+  if (!Array.isArray(addedCommitShas)) {
+    return { additions, deletions, totalDelta: 0 };
+  }
   for (const sha of addedCommitShas) {
     const delta = getCommitLineDelta(sha, execOptions);
     additions += delta.additions;

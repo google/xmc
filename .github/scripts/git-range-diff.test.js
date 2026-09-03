@@ -68,10 +68,35 @@ test('getCommitLineDelta handles subprocess failure gracefully', () => {
   };
 
   try {
-    const delta = getCommitLineDelta('invalid-sha');
+    const delta = getCommitLineDelta('94d64508');
     assert.strictEqual(delta.additions, 0);
     assert.strictEqual(delta.deletions, 0);
     assert.strictEqual(delta.totalDelta, 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('getCommitLineDelta validates commit SHA before spawning subprocess', () => {
+  let execCalled = false;
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = () => {
+    execCalled = true;
+    return '';
+  };
+
+  try {
+    const invalidShaDelta = getCommitLineDelta('invalid-sha');
+    assert.strictEqual(execCalled, false);
+    assert.deepStrictEqual(invalidShaDelta, { additions: 0, deletions: 0, totalDelta: 0 });
+
+    const nullDelta = getCommitLineDelta(null);
+    assert.strictEqual(execCalled, false);
+    assert.deepStrictEqual(nullDelta, { additions: 0, deletions: 0, totalDelta: 0 });
+
+    const emptyDelta = getCommitLineDelta('');
+    assert.strictEqual(execCalled, false);
+    assert.deepStrictEqual(emptyDelta, { additions: 0, deletions: 0, totalDelta: 0 });
   } finally {
     childProcess.execFileSync = originalExec;
   }
@@ -83,24 +108,31 @@ test('computeAddedCommitsDelta sums additions and deletions across multiple comm
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'diff-tree') {
       const sha = args[args.length - 1];
-      if (sha === 'sha-1') {
-        return 'sha-1\n2\t1\tfile1.go\n';
+      if (sha === '1111111') {
+        return '1111111\n2\t1\tfile1.go\n';
       }
-      if (sha === 'sha-2') {
-        return 'sha-2\n3\t0\tfile2.go\n';
+      if (sha === '2222222') {
+        return '2222222\n3\t0\tfile2.go\n';
       }
     }
     throw new Error(`Unexpected command: ${cmd}`);
   };
 
   try {
-    const delta = computeAddedCommitsDelta(['sha-1', 'sha-2']);
+    const delta = computeAddedCommitsDelta(['1111111', '2222222']);
     assert.strictEqual(delta.additions, 5);
     assert.strictEqual(delta.deletions, 1);
     assert.strictEqual(delta.totalDelta, 6);
   } finally {
     childProcess.execFileSync = originalExec;
   }
+});
+
+test('computeAddedCommitsDelta handles non-array input defensively', () => {
+  assert.deepStrictEqual(computeAddedCommitsDelta(null), { additions: 0, deletions: 0, totalDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta(undefined), { additions: 0, deletions: 0, totalDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta('not-an-array'), { additions: 0, deletions: 0, totalDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta({}), { additions: 0, deletions: 0, totalDelta: 0 });
 });
 
 test('resolveCommitRanges uses standard ranges when commit count matches', () => {
@@ -183,4 +215,42 @@ test('runGitRangeDiff executes range-diff without usage errors', () => {
   const output = runGitRangeDiff('main', headSha, headSha);
   assert.strictEqual(typeof output, 'string');
   assert.strictEqual(output, '');
+});
+
+test('resolveCommitRanges enforces encoding and stdio precedence over execOptions', () => {
+  const originalExec = childProcess.execFileSync;
+  let capturedOpts = null;
+
+  childProcess.execFileSync = (cmd, args, opts) => {
+    capturedOpts = opts;
+    return '0\n';
+  };
+
+  try {
+    resolveCommitRanges('main', '1111111', '2222222', { encoding: 'buffer', stdio: 'inherit', extra: true });
+    assert.strictEqual(capturedOpts.encoding, 'utf8');
+    assert.deepStrictEqual(capturedOpts.stdio, ['pipe', 'pipe', 'ignore']);
+    assert.strictEqual(capturedOpts.extra, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('getCommitLineDelta enforces encoding and stdio precedence over execOptions', () => {
+  const originalExec = childProcess.execFileSync;
+  let capturedOpts = null;
+
+  childProcess.execFileSync = (cmd, args, opts) => {
+    capturedOpts = opts;
+    return '1111111\n1\t0\tfile.go\n';
+  };
+
+  try {
+    getCommitLineDelta('1111111', { encoding: 'buffer', stdio: 'inherit', extra: true });
+    assert.strictEqual(capturedOpts.encoding, 'utf8');
+    assert.deepStrictEqual(capturedOpts.stdio, ['pipe', 'pipe', 'ignore']);
+    assert.strictEqual(capturedOpts.extra, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
 });
