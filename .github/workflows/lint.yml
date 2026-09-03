@@ -56,6 +56,11 @@ jobs:
             helm:
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            security:
+              - 'deploy/**/*.tf'
+              - 'deploy/**/*.tfvars'
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff)
       - name: 'Install Ruff'
@@ -189,25 +194,13 @@ jobs:
         if: steps.changes.outputs.terraform == 'true'
         run: 'tflint --recursive'
 
-      # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
-        if: steps.changes.outputs.terraform == 'true'
-        uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
-        with:
-          scan-type: 'config'
-          hide-progress: true
-          format: 'table'
-          exit-code: '1'
-          severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/ctk_v2/modules'
-
       # 5. Component Manifests & Profiles Linting
       - name: 'Run Component Manifest Linter'
         uses: './.github/actions/run-component-linter'
         with:
           strict: 'true'
 
-      # 6. Helm Chart & Kubernetes Security Linting
+      # 6. Helm Chart Linting
       - name: 'Install Helm'
         if: steps.changes.outputs.helm == 'true'
         run: |
@@ -223,9 +216,10 @@ jobs:
         if: steps.changes.outputs.helm == 'true'
         run: helm lint deploy/helm
 
+      # 7. Infrastructure & Workload Security Scanning (Trivy)
       # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy Helm Scanner (deploy/helm)'
-        if: steps.changes.outputs.helm == 'true'
+      - name: 'Run Trivy Security Scanner (deploy/)'
+        if: steps.changes.outputs.security == 'true'
         uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
         with:
           scan-type: 'config'
@@ -233,5 +227,6 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/helm'
+          scan-ref: 'deploy/'
+          skip-dirs: 'deploy/ci'
 

@@ -335,22 +335,6 @@ check_terraform() {
     echo "--> WARNING: tflint or docker not found. TFLint check skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
-
-  echo "--> Running Terraform Security Scanner (Trivy)..."
-  if command -v trivy >/dev/null 2>&1; then
-    if ! trivy config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL deploy/; then
-      echo "❌ Trivy security check failed."
-      FAILED=1
-    fi
-  elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL /src/deploy; then
-      echo "❌ Trivy security check failed."
-      FAILED=1
-    fi
-  else
-    echo "--> WARNING: trivy or docker not found. Terraform security check skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
 }
 
 check_helm() {
@@ -375,20 +359,33 @@ check_helm() {
     echo "--> WARNING: helm not found. Helm chart linting skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
+}
 
-  echo "--> Running Helm & Kubernetes Security Scanner (Trivy)..."
+check_security() {
+  local sec_files
+  if [ "$MODE" = "check" ]; then
+    sec_files=$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) -not -path "deploy/ci/*" || true)
+  else
+    sec_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/' | grep -v '^deploy/ci/' || true)
+  fi
+
+  if [ -z "$sec_files" ]; then
+    return
+  fi
+
+  echo "--> Running Infrastructure & Workload Security Scanner (Trivy)..."
   if command -v trivy >/dev/null 2>&1; then
-    if ! trivy config --skip-check-update --misconfig-scanners helm,kubernetes --severity HIGH,CRITICAL deploy/helm; then
-      echo "❌ Trivy Helm/Kubernetes security check failed."
+    if ! trivy config --skip-check-update --severity HIGH,CRITICAL --skip-dirs deploy/ci deploy/; then
+      echo "❌ Trivy security check failed."
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --misconfig-scanners helm,kubernetes --severity HIGH,CRITICAL /src/deploy/helm; then
-      echo "❌ Trivy Helm/Kubernetes security check failed."
+    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL --skip-dirs /src/deploy/ci /src/deploy; then
+      echo "❌ Trivy security check failed."
       FAILED=1
     fi
   else
-    echo "--> WARNING: trivy or docker not found. Helm security check skipped."
+    echo "--> WARNING: trivy or docker not found. Security check skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
@@ -402,6 +399,7 @@ main() {
   check_mypy
   check_terraform
   check_helm
+  check_security
 
   if [ "$MODE" = "fix" ]; then
     if ! git diff --quiet; then
