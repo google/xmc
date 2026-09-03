@@ -197,3 +197,10 @@ jobs:
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
           scan-ref: 'deploy/ctk_v2/modules'
+
+      # 5. Component Manifests & Profiles Linting
+      - name: 'Run Component Manifest Linter'
+        uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
+
