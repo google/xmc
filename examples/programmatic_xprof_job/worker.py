@@ -52,31 +52,26 @@ _MATRIX_SIZE = flags.DEFINE_integer(
 # gs://<bucket>/xmc-<xid>-<wid>-<timestamp>.
 _XPROF_GCS_FOLDER_ENV = "XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER"
 
-# Fallback used only when the managed-xprof env var is absent (e.g. local runs),
-# so the example remains runnable outside a managed-xprof-configured cluster.
-_LOCAL_FALLBACK_ENV = "XPROF_LOCAL_DIR"
-_LOCAL_FALLBACK_DEFAULT = "/tmp/xmc-programmatic-xprof"
-
 
 def _resolve_profile_dir() -> str:
     """Resolves the profile destination from the Actuator-injected env var.
 
     Returns:
-      The GCS folder (``gs://...``) injected by the XMC Actuator when managed
-      xprof is configured, or a local fallback directory otherwise.
+      The GCS folder (``gs://...``) that the XMC Actuator injects via
+      ``XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`` for this work unit.
+
+    Raises:
+      RuntimeError: if ``XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`` is not set, i.e.
+        the workload is not running in a managed-xprof-configured XMC cluster.
     """
     profile_dir = os.environ.get(_XPROF_GCS_FOLDER_ENV)
-    if profile_dir:
-        return profile_dir
-
-    fallback = os.environ.get(_LOCAL_FALLBACK_ENV, _LOCAL_FALLBACK_DEFAULT)
-    print(
-        f"{_XPROF_GCS_FOLDER_ENV} is not set; writing the profile to local path"
-        f" {fallback!r}. In a managed-xprof cluster the XMC Actuator injects this"
-        " variable with the per-work-unit GCS folder.",
-        flush=True,
-    )
-    return fallback
+    if not profile_dir:
+        raise RuntimeError(
+            f"{_XPROF_GCS_FOLDER_ENV} is not set. This workload must run in a"
+            " managed-xprof-configured XMC cluster, where the Actuator injects"
+            " the per-work-unit GCS destination folder."
+        )
+    return profile_dir
 
 
 def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: int) -> None:
