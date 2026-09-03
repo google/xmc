@@ -93,7 +93,6 @@ nogo(
 # Internal package package target mappings
 # gazelle:resolve go xmanager_cloud/auth/auth //internal/auth:auth
 # gazelle:resolve go xmanager_cloud/task_queue/client //internal/task_queue:client
-# gazelle:resolve go xmanager_cloud/task_queue_redis/redisclient //internal/task_queue_redis/redisclient
 # gazelle:resolve go xmanager_cloud/logging/logging //internal/logging:logging
 # gazelle:resolve go xmanager_cloud/validator/validator //internal/validator:validator
 # gazelle:resolve go xmanager_cloud/common/interfaces //internal/common/interfaces
@@ -141,8 +140,6 @@ filegroup(
         "//internal/security/keyreloader",
         "//internal/security/securitytest",
         "//internal/task_queue:client",
-        "//internal/task_queue_redis/redisclient",
-        "//internal/task_queue_redis/validator",
         "//internal/validator",
     ],
     visibility = ["//visibility:public"],

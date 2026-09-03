@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
@@ -37,7 +38,6 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
 	run "google.golang.org/api/run/v2"
 
@@ -45,13 +45,25 @@ import (
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
+type redisHealthAdapter struct {
+	rdb *redis.Client
+}
+
+func (a *redisHealthAdapter) Ping(ctx context.Context) error {
+	return a.rdb.Ping(ctx).Err()
+}
+
+func (a *redisHealthAdapter) Close() error {
+	return a.rdb.Close()
+}
+
 type grpcServerDeps struct {
 	grpcServer       *grpc.Server
 	listener         net.Listener
 	srv              *server
 	essSpannerClient health.SpannerHealthClient
 	xidSpannerClient health.SpannerHealthClient
-	redisClient      *redisclient.PublisherClient
+	redisClient      io.Closer
 }
 
 func (d *grpcServerDeps) Close(ctx context.Context) {
@@ -62,9 +74,7 @@ func (d *grpcServerDeps) Close(ctx context.Context) {
 		_ = closer.Close()
 	}
 	if d.redisClient != nil {
-		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := d.redisClient.Close(cleanupCtx); err != nil {
+		if err := d.redisClient.Close(); err != nil {
 			logging.Error(ctx, "Failed to close redis client", "error", err)
 		}
 	}
@@ -163,11 +173,12 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	xidSpannerClient := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
 	var redisPingClient RedisPingClient
-	var publisher *redisclient.PublisherClient
+	var redisCloser io.Closer
 	if cfg.RedisAddr != "" {
-		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
-		publisher = redisclient.NewPublisher(redisCfg, "")
-		redisPingClient = publisher
+		rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+		adapter := &redisHealthAdapter{rdb: rdb}
+		redisPingClient = adapter
+		redisCloser = adapter
 	}
 
 	cloudRunService, err := run.NewService(ctx)
@@ -201,7 +212,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		srv:              srv,
 		essSpannerClient: essSpannerClient,
 		xidSpannerClient: xidSpannerClient,
-		redisClient:      publisher,
+		redisClient:      redisCloser,
 	}
 }
 

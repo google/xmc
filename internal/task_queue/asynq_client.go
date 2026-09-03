@@ -195,3 +195,44 @@ func determineActionType(action *actuatortaskpb.Action) string {
 		return "UNKNOWN"
 	}
 }
+
+// DefaultSignatureTTLSeconds is preserved for configuration compatibility.
+const DefaultSignatureTTLSeconds = 3600
+
+// New creates a new AsynqClient instance connecting to the specified Redis address.
+func New(redisAddr string, password string) (*AsynqClient, error) {
+	return NewAsynqClient(redisAddr, password)
+}
+
+// CreateAction creates an action for the Actuator to create a WorkUnit.
+func CreateAction(experimentPriority essmsgpb.Priority, author string) *actuatortaskpb.Action {
+	return &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Create{
+			Create: &actuatortaskpb.CreateAction{
+				ExperimentPriority: experimentPriority.Enum(),
+				Author:             proto.String(author),
+			},
+		},
+	}
+}
+
+// DeleteAction creates an action for the Actuator to delete a WorkUnit.
+func DeleteAction() *actuatortaskpb.Action {
+	return &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Delete{
+			Delete: &actuatortaskpb.DeleteAction{},
+		},
+	}
+}
+
+// RestartAction creates an action for the Actuator to restart a WorkUnit.
+func RestartAction(experimentPriority essmsgpb.Priority, author string) *actuatortaskpb.Action {
+	return &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Restart{
+			Restart: &actuatortaskpb.RestartAction{
+				ExperimentPriority: experimentPriority.Enum(),
+				Author:             proto.String(author),
+			},
+		},
+	}
+}

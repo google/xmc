@@ -15,14 +15,12 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"golang/cmp/cmp"
-	"golang/protobuf/v2/encoding/protojson/protojson"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -34,7 +32,6 @@ import (
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
-	tpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -44,11 +41,8 @@ import (
 
 func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
-	cleanup := tq.MockGenerateOIDCTokenForTest()
-	defer cleanup()
-	realTaskQueueClient := tq.CreateTaskQueueClient(ctx, t)
-	server, _ := createExperimentStateServer(ctx, t, withWorkUnitActuator(realTaskQueueClient))
-	redisFake := tq.GetFakeRedisClient(realTaskQueueClient)
+	taskQueueClient := &tq.FakeClient{}
+	server, _ := createExperimentStateServer(ctx, t, withWorkUnitActuator(taskQueueClient))
 
 	exp := &msgpb.Experiment{
 		Title: "test experiment for createworkunit",
@@ -73,29 +67,11 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 		t.Errorf("CreateWorkUnit() op.GetError() = %v, want nil", op.GetError())
 	}
 
-	if len(redisFake.Messages) != 1 {
-		t.Fatalf("CreateWorkUnit() enqueued %d tasks, want 1", len(redisFake.Messages))
+	if len(taskQueueClient.EnqueuedTasks) != 1 {
+		t.Fatalf("CreateWorkUnit() enqueued %d tasks, want 1", len(taskQueueClient.EnqueuedTasks))
 	}
 
-	var redisTask struct {
-		Payload   []byte `json:"payload"`
-		Signature string `json:"signature"`
-		OidcToken string `json:"oidcToken"`
-	}
-	if err := json.Unmarshal([]byte(redisFake.Messages[0]), &redisTask); err != nil {
-		t.Fatalf("Failed to unmarshal redis message: %v", err)
-	}
-
-	if redisTask.OidcToken == "" {
-		t.Errorf("CreateWorkUnit() enqueued task with empty OidcToken")
-	}
-
-	var payload tpb.ActuatorPayload
-	if err := protojson.Unmarshal(redisTask.Payload, &payload); err != nil {
-		t.Fatalf("Failed to unmarshal task body: %v", err)
-	}
-
-	action := payload.GetAction()
+	action := taskQueueClient.LastEnqueuedAction
 	if action == nil {
 		t.Fatalf("CreateWorkUnit() payload action = nil, want non-nil")
 	}
@@ -126,16 +102,16 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	}
 
 	wantWorkUnitName := validator.ConstructWorkUnitName(xid, 1)
-	if payload.GetWorkUnit().GetName() != wantWorkUnitName {
-		t.Errorf("CreateWorkUnit() enqueued work unit name = %q, want %q", payload.GetWorkUnit().GetName(), wantWorkUnitName)
+	if taskQueueClient.LastEnqueuedWorkUnit.GetName() != wantWorkUnitName {
+		t.Errorf("CreateWorkUnit() enqueued work unit name = %q, want %q", taskQueueClient.LastEnqueuedWorkUnit.GetName(), wantWorkUnitName)
 	}
-	if payload.GetWorkUnit().GetWorkUnitType() != workUnit.GetWorkUnitType() {
-		t.Errorf("CreateWorkUnit() enqueued work unit type = %v, want %v", payload.GetWorkUnit().GetWorkUnitType(), workUnit.GetWorkUnitType())
+	if taskQueueClient.LastEnqueuedWorkUnit.GetWorkUnitType() != workUnit.GetWorkUnitType() {
+		t.Errorf("CreateWorkUnit() enqueued work unit type = %v, want %v", taskQueueClient.LastEnqueuedWorkUnit.GetWorkUnitType(), workUnit.GetWorkUnitType())
 	}
-	if diff := cmp.Diff(workUnit.GetExecutable(), payload.GetWorkUnit().GetExecutable(), protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(workUnit.GetExecutable(), taskQueueClient.LastEnqueuedWorkUnit.GetExecutable(), protocmp.Transform()); diff != "" {
 		t.Errorf("CreateWorkUnit() enqueued work unit executable mismatch (-want +got):\n%s", diff)
 	}
-	if payload.GetWorkUnit().GetCurrentWorkUnitExecution() == nil {
+	if taskQueueClient.LastEnqueuedWorkUnit.GetCurrentWorkUnitExecution() == nil {
 		t.Errorf("CreateWorkUnit() enqueued work unit CurrentWorkUnitExecution = nil, want non-nil")
 	}
 }

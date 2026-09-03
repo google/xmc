@@ -25,7 +25,6 @@ import (
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 type mockK8sHealthClient struct {
@@ -50,7 +49,6 @@ func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 }
 
 type mockRedisConsumer struct {
-	redisclient.Consumer
 	pingErr error
 }
 
@@ -79,7 +77,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		name       string
 		k8s        k8sHealthClient
 		spClient   health.SpannerHealthClient
-		redis      redisclient.Consumer
+		redis      redisHealthClient
 		wantStatus int
 	}{
 		{

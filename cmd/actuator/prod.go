@@ -18,34 +18,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
-	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
-
-var osHostname = os.Hostname
 
 // ProdServer encapsulates the production actuator dependencies and lifecycle.
 type ProdServer struct {
-	Handler       *workunittaskhandler.Handler
+	Handler       *workunittaskhandler.AsynqHandler
 	K8sClient     *k8sclient.Client
 	SpannerClient *spanner.Client
-	RedisClient   redisclient.Consumer
+	RedisClient   redisHealthClient
 	cleanup       func() error
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.SpannerHealthClient, redisclient.Consumer) {
+func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.SpannerHealthClient, redisHealthClient) {
 	if p == nil {
 		return nil, nil, nil
 	}
@@ -121,48 +115,29 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
-	keyReloader, err := keyreloader.NewVerifierReloader(cfg.VerifyingKeyFile, cfg.MaxRecentKeys)
+	asynqHandler, err := workunittaskhandler.NewAsynqHandler(workunittaskhandler.AsynqHandlerParams{
+		K8sClient: k8sClient,
+		ProjectID: projectID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load verifying key: %w", err)
+		return nil, fmt.Errorf("failed to create asynq handler: %w", err)
 	}
 
-	redisConfig := redisclient.Config{
-		Addr: cfg.RedisConfig.RedisAddr,
+	asynqServer, err := NewAsynqWorkerServer(AsynqServerConfig{
+		RedisAddr: cfg.RedisConfig.RedisAddr,
+	}, asynqHandler)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create asynq worker server: %w", err)
 	}
-	redisConsumer := redisclient.NewConsumer(
-		redisConfig,
-		constants.RedisStream,
-		constants.RedisGroup,
-		constants.RedisDLQ,
-		cfg.RedisConfig.RedisMaxRetries,
-		cfg.RedisConfig.RedisProcessTimeout,
-		cfg.RedisConfig.RedisAbandonedMessageTimeout,
-		cfg.RedisConfig.RedisReadBatchSize,
-	)
-	redisConsumer.InitializeClient(ctx)
 	cleanups = append(cleanups, func() error {
-		return redisConsumer.Close(context.Background())
+		asynqServer.Shutdown()
+		return nil
 	})
 
-	cleanupWorkerID := actuatorCleanupWorkerID(ctx)
-	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
-	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
-
-	handler, err := workunittaskhandler.New(workunittaskhandler.Params{
-		K8sClient:              k8sClient,
-		ProjectID:              projectID,
-		Audience:               cfg.Audience,
-		XManagerServiceAccount: cfg.XManagerServiceAccount,
-		JWTVerifier:            keyReloader.Verifier,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
+	if err := asynqServer.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start asynq worker server: %w", err)
 	}
-
-	redisConsumer.SetTaskHandler(handler.HandleWorkUnitRedisTask)
-	workerID := actuatorWorkerID(ctx)
-	go redisConsumer.StartWorker(ctx, workerID)
-	logging.Info(ctx, "Started Redis task queue worker", "worker_id", workerID)
+	logging.Info(ctx, "Started Asynq task queue worker server", "addr", cfg.RedisConfig.RedisAddr)
 
 	cleanup := func() error {
 		var errs []error
@@ -175,28 +150,10 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	}
 
 	return &ProdServer{
-		Handler:       handler,
+		Handler:       asynqHandler,
 		K8sClient:     k8sClient,
 		SpannerClient: spannerClient,
-		RedisClient:   redisConsumer,
+		RedisClient:   asynqServer,
 		cleanup:       cleanup,
 	}, nil
-}
-
-func actuatorWorkerID(ctx context.Context) string {
-	hostname, err := osHostname()
-	if err != nil {
-		logging.Warn(ctx, "Failed to get hostname for worker ID, using 'unknown'", "error", err)
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("%s-%s", constants.ActuatorWorkerID, hostname)
-}
-
-func actuatorCleanupWorkerID(ctx context.Context) string {
-	hostname, err := osHostname()
-	if err != nil {
-		logging.Warn(ctx, "Failed to get hostname for cleanup worker ID, using 'unknown'", "error", err)
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("%s-%s", constants.ActuatorCleanupWorkerID, hostname)
 }

@@ -23,6 +23,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,6 +36,33 @@ const (
 	// AsynqTaskTypeWorkUnitActuation is the task type for WorkUnit actuation tasks.
 	AsynqTaskTypeWorkUnitActuation = "task:actuate_workunit"
 )
+
+var (
+	ctMessagesProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xm_cloud_actuator_ct_messages_processed_total",
+		Help: "Total number of CT messages correctly processed by the actuator",
+	}, []string{})
+	ctMessagesFailed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xm_cloud_actuator_ct_messages_failed_total",
+		Help: "Total number of CT messages that failed processing",
+	}, []string{})
+	workUnitsCreated = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xm_cloud_actuator_workunits_created_total",
+		Help: "Total number of WorkUnits successfully created",
+	}, []string{})
+)
+
+// K8sClient defines the Kubernetes operations required by the work unit task handler.
+type K8sClient interface {
+	CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
+	DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
+	RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
+	UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
+}
+
+func isRetryableError(err error) bool {
+	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) || apierrors.IsInternalError(err) || apierrors.IsConflict(err)
+}
 
 // AsynqHandlerParams holds the dependencies required to instantiate an AsynqHandler.
 type AsynqHandlerParams struct {

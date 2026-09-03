@@ -175,39 +175,3 @@ func TestNewProd_Validation(t *testing.T) {
 		}
 	})
 }
-
-func TestWorkerIDHelpers(t *testing.T) {
-	ctx := context.Background()
-	origHostname := osHostname
-	t.Cleanup(func() {
-		osHostname = origHostname
-	})
-
-	t.Run("hostname_success", func(t *testing.T) {
-		osHostname = func() (string, error) {
-			return "actuator-pod-123", nil
-		}
-		workerID := actuatorWorkerID(ctx)
-		if !strings.HasSuffix(workerID, "actuator-pod-123") {
-			t.Errorf("actuatorWorkerID() = %q, want suffix 'actuator-pod-123'", workerID)
-		}
-		cleanupID := actuatorCleanupWorkerID(ctx)
-		if !strings.HasSuffix(cleanupID, "actuator-pod-123") {
-			t.Errorf("actuatorCleanupWorkerID() = %q, want suffix 'actuator-pod-123'", cleanupID)
-		}
-	})
-
-	t.Run("hostname_error_fallback", func(t *testing.T) {
-		osHostname = func() (string, error) {
-			return "", errors.New("hostname failed")
-		}
-		workerID := actuatorWorkerID(ctx)
-		if !strings.HasSuffix(workerID, "unknown") {
-			t.Errorf("actuatorWorkerID() = %q, want suffix 'unknown'", workerID)
-		}
-		cleanupID := actuatorCleanupWorkerID(ctx)
-		if !strings.HasSuffix(cleanupID, "unknown") {
-			t.Errorf("actuatorCleanupWorkerID() = %q, want suffix 'unknown'", cleanupID)
-		}
-	})
-}

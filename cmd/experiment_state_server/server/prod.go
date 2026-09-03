@@ -34,7 +34,6 @@ import (
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
@@ -48,13 +47,13 @@ type ProdServer struct {
 	*Server
 	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
-	taskQueueClient *tq.Client
+	taskQueueClient *tq.AsynqClient
 	bgTaskWG        *sync.WaitGroup
 	cleanup         func() error
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpcpb.XidServiceClient, *tq.Client) {
+func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpcpb.XidServiceClient, *tq.AsynqClient) {
 	if p == nil {
 		return nil, nil, nil
 	}
@@ -99,12 +98,8 @@ func initXidClient(ctx context.Context, cfg *config.Config) (xidgrpcpb.XidServic
 	return xidgrpcpb.NewXidServiceClient(conn), conn, nil
 }
 
-func initTaskQueueClient(ctx context.Context, cfg *config.Config) (*tq.Client, error) {
-	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load signing key: %w", err)
-	}
-	return tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
+func initTaskQueueClient(ctx context.Context, cfg *config.Config) (*tq.AsynqClient, error) {
+	return tq.NewAsynqClient(cfg.RedisAddr, "")
 }
 
 func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.DashboardToolClient, *grpc.ClientConn, error) {

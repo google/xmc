@@ -24,7 +24,6 @@ import (
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 // k8sHealthClient defines the Kubernetes client interface required for health checking.
@@ -32,8 +31,13 @@ type k8sHealthClient interface {
 	Clientset() kubernetes.Interface
 }
 
+// redisHealthClient defines the Redis client interface required for health checking.
+type redisHealthClient interface {
+	Ping(ctx context.Context) error
+}
+
 // activeHealthCheck performs active checks against Kubernetes, Spanner, and Redis.
-func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient, redis redisclient.Consumer) http.HandlerFunc {
+func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient, redis redisHealthClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		eg, ctx := errgroup.WithContext(ctx)

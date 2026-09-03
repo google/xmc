@@ -37,7 +37,6 @@ compat_go_library(
         "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/logging",
-        "//internal/security/keyreloader",
         "//internal/security/tlsutil",
         "//internal/storage/spanner",
         "//internal/task_queue:client",
