@@ -20,6 +20,12 @@ const {
   buildGitEnv,
   execGit,
   ensureGitRefs,
+  isFastForwardApproval,
+  getCommitCountInRange,
+  getCommitPatchId,
+  indexApprovedCandidateCommits,
+  correlateStackedParentBase,
+  resolveStackedApprovedRange,
   resolveCommitRanges,
   runGitRangeDiff,
   getCommitLineDelta,
@@ -492,5 +498,337 @@ test('getCommitModifiedFiles returns file list for commit from diff-tree', () =>
     childProcess.execFileSync = originalExec;
   }
 });
+test('isFastForwardApproval detects ancestry correctly', () => {
+  const originalExec = childProcess.execFileSync;
 
+  // Fast-forward case
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
 
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { isFastForwardApproval: mockedFF } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedFF('sha1', 'sha2', {}), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+
+  // Non-fast-forward case
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      const err = new Error('not ancestor');
+      err.status = 1;
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { isFastForwardApproval: mockedFF2 } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedFF2('sha1', 'sha2', {}), false);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('getCommitCountInRange parses count and handles errors', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-list' && args[1] === '--count') {
+      return ' 5 \n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { getCommitCountInRange: mockedCount } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedCount('origin/main..HEAD', {}), 5);
+    // Verify ignoreExitCode: true does not cause TypeError on .trim()
+    assert.strictEqual(mockedCount('origin/main..HEAD', { ignoreExitCode: true }), 5);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+
+  childProcess.execFileSync = () => {
+    throw new Error('git rev-list failure');
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { getCommitCountInRange: mockedCount2 } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedCount2('origin/main..HEAD', {}), 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('getCommitPatchId parses patch-id and handles errors', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      assert.ok(args.includes('--root'), 'should pass --root to diff-tree for root commit support');
+      return 'patch content';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return '1122334455aabbcc commit-sha\n';
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { getCommitPatchId: mockedPatchId } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedPatchId('sha123', {}), '1122334455aabbcc');
+    // Verify ignoreExitCode: true in opts does not cause TypeError
+    assert.strictEqual(mockedPatchId('sha123', { ignoreExitCode: true }), '1122334455aabbcc');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+
+  childProcess.execFileSync = () => {
+    throw new Error('git failure');
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { getCommitPatchId: mockedPatchId2 } = require('./git-range-diff');
+
+  try {
+    assert.strictEqual(mockedPatchId2('sha123', {}), null);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('indexApprovedCandidateCommits indexes patch-id and subject maps and limits to 30 commits', () => {
+  const originalExec = childProcess.execFileSync;
+  let logPatchCalls = 0;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('--format=%H %s')) {
+      // Return 50 candidate commits
+      const lines = [];
+      for (let i = 1; i <= 50; i++) {
+        lines.push(`sha${i} feat: commit ${i}`);
+      }
+      return lines.join('\n') + '\n';
+    }
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p') && args.includes('--no-walk')) {
+      logPatchCalls++;
+      assert.strictEqual(args.length - 3, 30, 'should pass exactly 30 SHAs to git log -p --no-walk');
+      return 'diff';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return 'pid123 sha50\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { indexApprovedCandidateCommits: mockedIndex } = require('./git-range-diff');
+
+  try {
+    const maps = mockedIndex('origin/main..approvedSha', {});
+    assert.strictEqual(logPatchCalls, 1, 'should spawn git log -p once for bulk patch-id computation');
+    assert.strictEqual(maps.bySubject.has('feat: commit 1'), false, 'older commits beyond 30 should not be indexed');
+    assert.strictEqual(maps.bySubject.has('feat: commit 50'), true, 'newest commits should be indexed');
+    assert.deepStrictEqual(maps.bySubject.get('feat: commit 50'), ['sha50']);
+    assert.strictEqual(maps.byPatchId.get('pid123'), 'sha50');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('correlateStackedParentBase matches commits using object and string formats without redundant git log', () => {
+  const originalExec = childProcess.execFileSync;
+  let logCalls = 0;
+  let bulkLogCalls = 0;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p') && args.includes('--no-walk')) {
+      bulkLogCalls++;
+      return 'diff';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return 'pid-nomatch sha\n';
+    }
+    if (cmd === 'git' && args[0] === 'log') {
+      logCalls++;
+      return 'feat: fallback subject\n';
+    }
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'matched-base-sha\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { correlateStackedParentBase: mockedCorrelate } = require('./git-range-diff');
+
+  try {
+    const approvedMaps = {
+      byPatchId: new Map(),
+      bySubject: new Map([['feat: my stacked commit', 'approved-sha-1']])
+    };
+
+    // When objects with { sha, subj } are provided, git log should NOT be invoked
+    const objectResult = mockedCorrelate(
+      [{ sha: 'curr-sha-1', subj: 'feat: my stacked commit' }],
+      approvedMaps,
+      {}
+    );
+    assert.strictEqual(objectResult, 'matched-base-sha');
+    assert.strictEqual(logCalls, 0, 'git log should not be called when subj is provided in commit object');
+    assert.strictEqual(bulkLogCalls, 1, 'should call bulk git log -p once');
+
+    // Reset calls
+    bulkLogCalls = 0;
+    logCalls = 0;
+
+    // When strings are provided, git log should be invoked as fallback
+    const stringApprovedMaps = {
+      byPatchId: new Map(),
+      bySubject: new Map([['feat: fallback subject', 'approved-sha-2']])
+    };
+    const stringResult = mockedCorrelate(['curr-sha-2'], stringApprovedMaps, {});
+    assert.strictEqual(stringResult, 'matched-base-sha');
+    assert.strictEqual(logCalls, 1, 'git log should be called when commit is a string');
+    assert.strictEqual(bulkLogCalls, 1, 'should call bulk git log -p once');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('correlateStackedParentBase resolves base commit via patch-id match', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p')) {
+      return 'commit curr-sha-1\n diff content\n';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return 'pid-match-123 curr-sha-1\n';
+    }
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'resolved-base-sha\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { correlateStackedParentBase: mockedCorrelate } = require('./git-range-diff');
+
+  try {
+    const approvedMaps = {
+      byPatchId: new Map([['pid-match-123', 'approved-parent-sha']]),
+      bySubject: new Map()
+    };
+    const result = mockedCorrelate(['curr-sha-1'], approvedMaps, {});
+    assert.strictEqual(result, 'resolved-base-sha');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('correlateStackedParentBase handles null or invalid arguments defensively', () => {
+  const { correlateStackedParentBase: mockedCorrelate } = require('./git-range-diff');
+  assert.strictEqual(mockedCorrelate(null, { byPatchId: new Map(), bySubject: new Map() }), null);
+  assert.strictEqual(mockedCorrelate([], null), null);
+  assert.strictEqual(mockedCorrelate([null], { byPatchId: new Map(), bySubject: new Map() }), null);
+});
+
+test('indexApprovedCandidateCommits handles duplicate commit subjects by preserving chronological order', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('--format=%H %s')) {
+      return 'sha1 fix: typo\nsha2 fix: typo\nsha3 feat: feature\n';
+    }
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p')) {
+      return '';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { indexApprovedCandidateCommits: mockedIndex } = require('./git-range-diff');
+
+  try {
+    const maps = mockedIndex('origin/main..HEAD', {});
+    assert.deepStrictEqual(maps.bySubject.get('fix: typo'), ['sha1', 'sha2']);
+    assert.deepStrictEqual(maps.bySubject.get('feat: feature'), ['sha3']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('correlateStackedParentBase matches duplicate subjects in chronological order to compute correct baseOffset', () => {
+  const originalExec = childProcess.execFileSync;
+  const revParseTargets = [];
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p') && args.includes('--no-walk')) {
+      return 'diff';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return ''; // No patch-id match, forcing subject correlation
+    }
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      revParseTargets.push(args[2]);
+      return 'resolved-base-sha\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { correlateStackedParentBase: mockedCorrelate } = require('./git-range-diff');
+
+  try {
+    const approvedMaps = {
+      byPatchId: new Map(),
+      bySubject: new Map([
+        ['fix: duplicate', ['approved-sha-1', 'approved-sha-2']]
+      ])
+    };
+
+    // First commit with duplicate subject should match the first candidate (approved-sha-1)
+    const result = mockedCorrelate(
+      [
+        { sha: 'curr-1', subj: 'fix: duplicate' },
+        { sha: 'curr-2', subj: 'fix: duplicate' }
+      ],
+      approvedMaps,
+      {}
+    );
+
+    assert.strictEqual(result, 'resolved-base-sha');
+    // For i = 0 (first commit), baseOffset = 1, so target should be approved-sha-1~1 (NOT approved-sha-2~1)
+    assert.strictEqual(revParseTargets[0], 'approved-sha-1~1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
