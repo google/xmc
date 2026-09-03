@@ -23,6 +23,9 @@ const {
   findLatestApprovalFromReviews,
   findLatestApproval,
   GRAPHQL_TIMELINE_QUERY,
+  MAX_TIMELINE_PAGES,
+  fetchGraphQLTimeline,
+  fetchRestTimeline,
   fetchTimelineEvents
 } = require('./pr-approval-timeline');
 
@@ -438,3 +441,176 @@ test('findLatestApproval ignores self-approval from PR author', () => {
   const result = findLatestApproval(reviews, 'charlie');
   assert.strictEqual(result, null);
 });
+
+test('MAX_TIMELINE_PAGES defaults to 10', () => {
+  assert.strictEqual(MAX_TIMELINE_PAGES, 10);
+});
+
+test('fetchTimelineEvents caps GraphQL pagination to maxPages', async () => {
+  let callCount = 0;
+  const mockGithub = {
+    graphql: async () => {
+      callCount++;
+      return {
+        repository: {
+          pullRequest: {
+            timelineItems: {
+              nodes: [{ id: callCount, __typename: 'PullRequestReview' }],
+              pageInfo: {
+                hasNextPage: true,
+                endCursor: `cursor-${callCount}`
+              }
+            }
+          }
+        }
+      };
+    }
+  };
+
+  const infoMessages = [];
+  const mockCore = {
+    info: (msg) => infoMessages.push(msg)
+  };
+
+  const nodes = await fetchTimelineEvents(mockGithub, 'google', 'xmc', 123, mockCore, 3);
+  assert.strictEqual(callCount, 3);
+  assert.strictEqual(nodes.length, 3);
+  assert.ok(infoMessages.some(m => m.includes('Reached maximum timeline pages limit (3)')));
+});
+
+test('fetchTimelineEvents falls back to REST when GraphQL throws', async () => {
+  const mockGithub = {
+    graphql: async () => {
+      throw new Error('GraphQL 500 error');
+    },
+    paginate: async (endpoint, params) => {
+      assert.strictEqual(params.issue_number, 123);
+      return [{ id: 999, event: 'reviewed' }];
+    },
+    rest: {
+      issues: {
+        listEventsForTimeline: 'dummy-fn'
+      }
+    }
+  };
+
+  const infoMessages = [];
+  const mockCore = {
+    info: (msg) => infoMessages.push(msg)
+  };
+
+  const nodes = await fetchTimelineEvents(mockGithub, 'google', 'xmc', 123, mockCore);
+  assert.strictEqual(nodes.length, 1);
+  assert.strictEqual(nodes[0].id, 999);
+  assert.ok(infoMessages.some(m => m.includes('GraphQL timeline query failed')));
+});
+
+test('fetchTimelineEvents returns empty array when REST fallback also throws', async () => {
+  const mockGithub = {
+    graphql: async () => {
+      throw new Error('GraphQL 500 error');
+    },
+    paginate: async () => {
+      throw new Error('REST 404 error');
+    },
+    rest: {
+      issues: {
+        listEventsForTimeline: 'dummy-fn'
+      }
+    }
+  };
+
+  const infoMessages = [];
+  const mockCore = {
+    info: (msg) => infoMessages.push(msg)
+  };
+
+  const nodes = await fetchTimelineEvents(mockGithub, 'google', 'xmc', 123, mockCore);
+  assert.deepStrictEqual(nodes, []);
+  assert.ok(infoMessages.some(m => m.includes('REST timeline fetch failed')));
+});
+
+test('fetchTimelineEvents returns empty array when GraphQL succeeds with no events without falling back to REST', async () => {
+  let restCalled = false;
+  const mockGithub = {
+    graphql: async () => {
+      return {
+        repository: {
+          pullRequest: {
+            timelineItems: {
+              nodes: [],
+              pageInfo: {
+                hasNextPage: false,
+                endCursor: null
+              }
+            }
+          }
+        }
+      };
+    },
+    paginate: async () => {
+      restCalled = true;
+      return [{ id: 999 }];
+    }
+  };
+
+  const mockCore = { info: () => {} };
+  const nodes = await fetchTimelineEvents(mockGithub, 'google', 'xmc', 123, mockCore);
+  assert.deepStrictEqual(nodes, []);
+  assert.strictEqual(restCalled, false);
+});
+
+test('fetchGraphQLTimeline iterates pages and respects maxPages limit', async () => {
+  let callCount = 0;
+  const mockGithub = {
+    graphql: async () => {
+      callCount++;
+      return {
+        repository: {
+          pullRequest: {
+            timelineItems: {
+              nodes: [{ id: callCount }],
+              pageInfo: {
+                hasNextPage: true,
+                endCursor: `cursor-${callCount}`
+              }
+            }
+          }
+        }
+      };
+    }
+  };
+
+  const logs = [];
+  const mockCore = { info: (msg) => logs.push(msg) };
+  const nodes = await fetchGraphQLTimeline(mockGithub, 'google', 'xmc', 123, mockCore, 2);
+  assert.strictEqual(callCount, 2);
+  assert.strictEqual(nodes.length, 2);
+  assert.ok(logs.some(l => l.includes('Reached maximum timeline pages limit (2)')));
+});
+
+test('fetchRestTimeline paginates events via REST and catches errors', async () => {
+  const mockGithub = {
+    rest: {
+      issues: {
+        listEventsForTimeline: () => {}
+      }
+    },
+    paginate: async () => [{ id: 101 }, { id: 102 }]
+  };
+  const nodes = await fetchRestTimeline(mockGithub, 'google', 'xmc', 123, {});
+  assert.strictEqual(nodes.length, 2);
+
+  const failingGithub = {
+    rest: {
+      issues: {
+        listEventsForTimeline: () => {}
+      }
+    },
+    paginate: async () => { throw new Error('API Rate Limit'); }
+  };
+  const emptyNodes = await fetchRestTimeline(failingGithub, 'google', 'xmc', 123, {});
+  assert.deepStrictEqual(emptyNodes, []);
+});
+
+

@@ -311,8 +311,55 @@ const GRAPHQL_TIMELINE_QUERY = `
   }
 `;
 
+const MAX_TIMELINE_PAGES = 10;
+
 /**
- * Fetches timeline items via GraphQL API with fallback to REST issues.listEventsForTimeline.
+ * Fetches timeline items via GraphQL API with cursor pagination.
+ * @param {Object} github - Octokit instance.
+ * @param {string} owner - Repository owner.
+ * @param {string} repo - Repository name.
+ * @param {number} prNumber - Pull request number.
+ * @param {Object} core - GitHub Actions core toolkit.
+ * @param {number} maxPages - Maximum GraphQL pages to fetch.
+ * @returns {Promise<Array<Object>>}
+ */
+async function fetchGraphQLTimeline(github, owner, repo, prNumber, core, maxPages) {
+  let hasNextPage = true;
+  let cursor = null;
+  let pageCount = 0;
+  const allNodes = [];
+
+  while (hasNextPage && pageCount < maxPages) {
+    pageCount++;
+    const response = await github.graphql(GRAPHQL_TIMELINE_QUERY, {
+      owner,
+      repo,
+      prNumber,
+      cursor
+    });
+
+    const timelineItems = response?.repository?.pullRequest?.timelineItems;
+    if (!timelineItems) {
+      break;
+    }
+
+    if (Array.isArray(timelineItems.nodes)) {
+      allNodes.push(...timelineItems.nodes);
+    }
+
+    hasNextPage = Boolean(timelineItems.pageInfo?.hasNextPage);
+    cursor = timelineItems.pageInfo?.endCursor;
+  }
+
+  if (pageCount >= maxPages && hasNextPage) {
+    core?.info?.(`[incremental-approval] Reached maximum timeline pages limit (${maxPages}). Halting pagination.`);
+  }
+
+  return allNodes;
+}
+
+/**
+ * Fetches timeline items via REST fallback API.
  * @param {Object} github - Octokit instance.
  * @param {string} owner - Repository owner.
  * @param {string} repo - Repository name.
@@ -320,41 +367,7 @@ const GRAPHQL_TIMELINE_QUERY = `
  * @param {Object} core - GitHub Actions core toolkit.
  * @returns {Promise<Array<Object>>}
  */
-async function fetchTimelineEvents(github, owner, repo, prNumber, core) {
-  try {
-    let hasNextPage = true;
-    let cursor = null;
-    const allNodes = [];
-
-    // TODO: Cap pagination loop to MAX_PAGES to prevent unbounded API consumption in CI workflows (addressed in stacked PR #754).
-    while (hasNextPage) {
-      const response = await github.graphql(GRAPHQL_TIMELINE_QUERY, {
-        owner,
-        repo,
-        prNumber,
-        cursor
-      });
-
-      const timelineItems = response?.repository?.pullRequest?.timelineItems;
-      if (!timelineItems) {
-        break;
-      }
-
-      if (Array.isArray(timelineItems.nodes)) {
-        allNodes.push(...timelineItems.nodes);
-      }
-
-      hasNextPage = timelineItems.pageInfo?.hasNextPage;
-      cursor = timelineItems.pageInfo?.endCursor;
-    }
-
-    if (allNodes.length > 0) {
-      return allNodes;
-    }
-  } catch (error) {
-    core.info(`[incremental-approval] GraphQL timeline query failed (${error.message}). Falling back to REST timeline.`);
-  }
-
+async function fetchRestTimeline(github, owner, repo, prNumber, core) {
   try {
     return await github.paginate(github.rest.issues.listEventsForTimeline, {
       owner,
@@ -363,9 +376,29 @@ async function fetchTimelineEvents(github, owner, repo, prNumber, core) {
       per_page: 100
     });
   } catch (restError) {
-    core.info(`[incremental-approval] REST timeline fetch failed: ${restError.message}`);
+    core?.info?.(`[incremental-approval] REST timeline fetch failed: ${restError.message}`);
     return [];
   }
+}
+
+/**
+ * Fetches timeline items via GraphQL API with fallback to REST issues.listEventsForTimeline.
+ * Capped to MAX_TIMELINE_PAGES (default: 10) to prevent unbounded API consumption in CI workflows.
+ * @param {Object} github - Octokit instance.
+ * @param {string} owner - Repository owner.
+ * @param {string} repo - Repository name.
+ * @param {number} prNumber - Pull request number.
+ * @param {Object} core - GitHub Actions core toolkit.
+ * @param {number} [maxPages=MAX_TIMELINE_PAGES] - Maximum GraphQL pages to fetch.
+ * @returns {Promise<Array<Object>>}
+ */
+async function fetchTimelineEvents(github, owner, repo, prNumber, core, maxPages = MAX_TIMELINE_PAGES) {
+  try {
+    return await fetchGraphQLTimeline(github, owner, repo, prNumber, core, maxPages);
+  } catch (error) {
+    core?.info?.(`[incremental-approval] GraphQL timeline query failed (${error.message}). Falling back to REST timeline.`);
+  }
+  return fetchRestTimeline(github, owner, repo, prNumber, core);
 }
 
 module.exports = {
@@ -377,5 +410,9 @@ module.exports = {
   findLatestApprovalFromReviews,
   findLatestApproval,
   GRAPHQL_TIMELINE_QUERY,
+  MAX_TIMELINE_PAGES,
+  fetchGraphQLTimeline,
+  fetchRestTimeline,
   fetchTimelineEvents
 };
+
