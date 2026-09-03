@@ -16,6 +16,10 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
 const { isAuthorCodeOwner } = require('./auto-approve-absence');
+const {
+  isIgnoredRangeDiffHeader,
+  parseRangeDiff
+} = require('./range-diff-parser');
 
 // Default maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
 const DEFAULT_MAX_OWNER_GRACE_LINES = 10;
@@ -322,111 +326,7 @@ function findLatestApproval(reviews, prAuthor = '', timelineEvents = []) {
   return findLatestApprovalFromReviews(reviews, prAuthor);
 }
 
-/**
- * Pure function: Checks if a trimmed line is a metadata or commit header line in git range-diff.
- * @param {string} trimmedLine - Cleaned, trimmed line.
- * @returns {boolean}
- */
-function isIgnoredRangeDiffHeader(trimmedLine) {
-  return (
-    trimmedLine.startsWith('@@ Metadata') ||
-    trimmedLine.startsWith('Author:') ||
-    trimmedLine.startsWith('Commit:') ||
-    trimmedLine === '## Commit message ##' ||
-    trimmedLine.startsWith('## Notes')
-  );
-}
 
-/**
- * Pure function: Parses git range-diff output using Column 1 (outer diff) to detect line changes.
- * @param {string} output - Raw output of `git range-diff`.
- * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasUnmatchedCommits: boolean, hasRemovedCommits: boolean, addedCommitShas: Array<string> }}
- */
-function parseRangeDiff(output) {
-  if (!output || typeof output !== 'string' || output.trim() === '') {
-    return {
-      additions: 0,
-      deletions: 0,
-      totalDelta: 0,
-      isCleanRebase: true,
-      hasUnmatchedCommits: false,
-      hasRemovedCommits: false,
-      addedCommitShas: []
-    };
-  }
-
-  const lines = output.split(/\r?\n/);
-  let additions = 0;
-  let deletions = 0;
-  let inCodeDiffHunk = false;
-  let hasModifiedCommits = false;
-  let hasRemovedCommits = false;
-  const addedCommitShas = [];
-
-  for (const line of lines) {
-    const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
-    const commitMatch = cleanLine.match(/^\s*(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
-    if (commitMatch) {
-      const status = commitMatch[2];
-      if (status !== '=') {
-        hasModifiedCommits = true;
-      }
-      if (status === '<') {
-        hasRemovedCommits = true;
-      } else if (status === '>') {
-        const addedSha = commitMatch[3];
-        if (addedSha && addedSha !== '--------') {
-          addedCommitShas.push(addedSha);
-        }
-      }
-      inCodeDiffHunk = false;
-      continue;
-    }
-
-    const trimmed = cleanLine.trim();
-    if (isIgnoredRangeDiffHeader(trimmed)) {
-      inCodeDiffHunk = false;
-      continue;
-    }
-
-    if ((trimmed.startsWith('## ') && trimmed.endsWith(' ##')) || trimmed.startsWith('@@')) {
-      inCodeDiffHunk = true;
-      continue;
-    }
-
-    if (inCodeDiffHunk) {
-      const hunkMatch = cleanLine.match(/^ {4}([-+ ])([-+ ])?(.*)$/);
-      if (!hunkMatch) {
-        continue;
-      }
-
-      const outerCol = hunkMatch[1];
-      const content = (hunkMatch[3] || '').trim();
-
-      if (content.startsWith('## ') || content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
-        continue;
-      }
-
-      if (outerCol === '+') {
-        additions++;
-      } else if (outerCol === '-') {
-        deletions++;
-      }
-    }
-  }
-
-  const totalDelta = additions + deletions;
-  const isCleanRebase = !hasModifiedCommits && !hasRemovedCommits && addedCommitShas.length === 0 && totalDelta === 0;
-
-  return {
-    additions,
-    deletions,
-    totalDelta,
-    isCleanRebase,
-    hasRemovedCommits,
-    addedCommitShas
-  };
-}
 
 /**
  * Pure function: Evaluates whether a synchronized PR should be auto-reapproved.
