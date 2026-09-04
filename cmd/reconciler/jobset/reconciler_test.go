@@ -1713,13 +1713,14 @@ func TestEnsureMLRunCreated(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		client     MLRunCreator
-		jobSet     *v1alpha2.JobSet
-		wantCalls  int
-		wantID     string
-		wantGroup  string
-		wantBucket string
+		name            string
+		client          MLRunCreator
+		jobSet          *v1alpha2.JobSet
+		wantCalls       int
+		wantID          string
+		wantGroup       string
+		wantBucket      string
+		wantUpdateCalls int
 	}{
 		{
 			name:      "nil client",
@@ -1734,22 +1735,24 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantCalls: 0,
 		},
 		{
-			name:       "successful creation with correct options",
-			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
-			jobSet:     jobSet,
-			wantCalls:  1,
-			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
-			wantGroup:  "group-abc",
-			wantBucket: "gs://bucket/folder",
+			name:            "successful creation with correct options",
+			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:          jobSet,
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 1,
 		},
 		{
-			name:       "creation error handled without panic",
-			client:     &mockMLRunCreator{retErr: errors.New("api error")},
-			jobSet:     jobSet,
-			wantCalls:  1,
-			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
-			wantGroup:  "group-abc",
-			wantBucket: "gs://bucket/folder",
+			name:            "creation error handled without panic",
+			client:          &mockMLRunCreator{retErr: errors.New("api error")},
+			jobSet:          jobSet,
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 0,
 		},
 	}
 
@@ -1794,6 +1797,22 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			}
 			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
+			}
+			// Create-then-update: the list_existing_sessions_only marker is applied via
+			// a follow-up UpdateMLRun, not on the create request above.
+			if mock.updateCalls != tc.wantUpdateCalls {
+				t.Errorf("updateCalls = %d, want %d", mock.updateCalls, tc.wantUpdateCalls)
+			}
+			if tc.wantUpdateCalls > 0 {
+				if mock.lastUpdateID != tc.wantID {
+					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
+				}
+				if diff := cmp.Diff(buildMLRunSessionScanLabels(10, 20), mock.lastUpdateOpts.Labels); diff != "" {
+					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
+				}
+				if !mock.lastUpdateOpts.Force {
+					t.Errorf("update Force = false, want true")
+				}
 			}
 		})
 	}
@@ -2135,12 +2154,29 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 	}
 }
 
-// TestBuildMLRunLabels verifies the reconciler stamps the ownership labels and,
-// critically, list_existing_sessions_only=true so the Diagon profiler-session
-// backend recursively scans the run's GCS folder and surfaces
-// programmatically-written profiles.
+// TestBuildMLRunLabels verifies the reconciler stamps the ownership labels on
+// every MLRun it owns. The list_existing_sessions_only marker is intentionally
+// NOT among them: it is applied via a follow-up UpdateMLRun (create-then-update),
+// so it is asserted separately in TestBuildMLRunSessionScanLabels.
 func TestBuildMLRunLabels(t *testing.T) {
 	got := buildMLRunLabels(12, 3)
+	want := map[string]string{
+		"experiment-id": "12",
+		"workunit-id":   "3",
+		"created-by":    createdByXManagerLabelValue,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBuildMLRunSessionScanLabels verifies the session-scan label set adds
+// list_existing_sessions_only=true on top of the ownership labels. This marker is
+// applied to the run via UpdateMLRun so the Diagon profiler-session backend
+// recursively scans the run's GCS folder and surfaces programmatically-written
+// profiles.
+func TestBuildMLRunSessionScanLabels(t *testing.T) {
+	got := buildMLRunSessionScanLabels(12, 3)
 	want := map[string]string{
 		"experiment-id":               "12",
 		"workunit-id":                 "3",
@@ -2148,6 +2184,6 @@ func TestBuildMLRunLabels(t *testing.T) {
 		listExistingSessionsOnlyLabel: "true",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+		t.Errorf("buildMLRunSessionScanLabels(12, 3) mismatch (-want +got):\n%s", diff)
 	}
 }

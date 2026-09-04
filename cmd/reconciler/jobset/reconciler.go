@@ -675,9 +675,12 @@ const createdByXManagerLabelValue = "xmanager"
 // control-plane-minted run id, so without this label the backend never scans the
 // bucket and the profile is never surfaced.
 //
-// Setting it unconditionally is safe: XMC assigns a unique per-work-unit gcs_path
-// (so distinct runs never see each other's profiles even with a recursive scan),
-// and on-demand capture still works with the label set.
+// It is applied to the run via a follow-up UpdateMLRun (create-then-update), not
+// on the create request: the backend performs the folder scan when the marker is
+// set via an update, so setting it at creation (before the workload has written
+// its profile) leaves the run empty. Applying it is safe: XMC assigns a unique
+// per-work-unit gcs_path (so distinct runs never see each other's profiles even
+// with a recursive scan), and on-demand capture still works with the marker set.
 const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 
 // mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
@@ -689,11 +692,21 @@ var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]
 // created-by marker that lets us detect ownership on a create conflict).
 func buildMLRunLabels(xid, wid int64) map[string]string {
 	return map[string]string{
-		"experiment-id":               fmt.Sprintf("%d", xid),
-		"workunit-id":                 fmt.Sprintf("%d", wid),
-		"created-by":                  createdByXManagerLabelValue,
-		listExistingSessionsOnlyLabel: "true",
+		"experiment-id": fmt.Sprintf("%d", xid),
+		"workunit-id":   fmt.Sprintf("%d", wid),
+		"created-by":    createdByXManagerLabelValue,
 	}
+}
+
+// buildMLRunSessionScanLabels returns the ownership labels plus the
+// list_existing_sessions_only marker. The marker is applied to the MLRun via a
+// follow-up UpdateMLRun (see applySessionScanLabel), never on the create request:
+// the Diagon profiler-session backend only (re)scans the run's GCS folder for
+// programmatically-written profiles when the marker is set via an update.
+func buildMLRunSessionScanLabels(xid, wid int64) map[string]string {
+	labels := buildMLRunLabels(xid, wid)
+	labels[listExistingSessionsOnlyLabel] = "true"
+	return labels
 }
 
 // ConstructMLRunID deterministically constructs and sanitizes a unique MLRun identifier for an execution.
@@ -724,6 +737,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
 	labels := buildMLRunLabels(xid, wid)
+	scanLabels := buildMLRunSessionScanLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,
@@ -746,10 +760,31 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		// exists (possibly created by another producer); adopt or refresh it instead
 		// of returning empty and looping forever on the 409.
 		if isMLRunAlreadyExistsError(err) {
-			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
+			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, scanLabels, artifacts)
 		}
 		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
 		return ""
+	}
+	// Create-then-update: apply the list_existing_sessions_only marker via a
+	// follow-up UpdateMLRun rather than on the create request above, so the Diagon
+	// profiler-session backend scans the run's GCS folder for the
+	// programmatically-written profile.
+	return r.applySessionScanLabel(ctx, mlRunID, scanLabels, r.mlRunURL(res, mlRunID))
+}
+
+// applySessionScanLabel applies the list_existing_sessions_only marker to a
+// freshly created MLRun via UpdateMLRun. This is the "update" half of the
+// create-then-update flow. On failure it logs and falls back to the create-time
+// URL so a transient update error does not drop the run URL.
+func (r *Reconciler) applySessionScanLabel(ctx context.Context, mlRunID string, scanLabels map[string]string, createURL string) string {
+	logging.Info(ctx, "Updating MLRun with list_existing_sessions_only marker", "mlRunID", mlRunID)
+	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
+		Labels: scanLabels,
+		Force:  true,
+	})
+	if err != nil {
+		logging.Error(ctx, "Failed to apply list_existing_sessions_only marker to MLRun", "mlRunID", mlRunID, "error", err)
+		return createURL
 	}
 	return r.mlRunURL(res, mlRunID)
 }
