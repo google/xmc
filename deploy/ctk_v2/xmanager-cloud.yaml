@@ -252,7 +252,7 @@ deployment_groups:
         "stackdriver.resourceMetadata.writer",
         "storage.objectViewer",
         "artifactregistry.reader"
-      ], vars.enable_managed_mldiagnostics ? ["storage.objectCreator"] : []))'
+      ], vars.enable_managed_mldiagnostics ? ["storage.objectAdmin"] : []))'
 
   - id: xmc_wi_binding_ess
     source: modules/project/workload_identity_binding
