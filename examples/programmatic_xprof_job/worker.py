@@ -119,7 +119,9 @@ def main(argv):
 
     # Keep the JobSet alive long enough for the Diagon reconciler to create the
     # MLRun from the attached ManagedXprof artifact before the container exits.
-    idle_seconds = 30 * 60
+    # Configurable via IDLE_SECONDS (default 30 minutes); lower it in CI/smoke
+    # runs so the pod does not hold cluster resources longer than necessary.
+    idle_seconds = int(os.environ.get("IDLE_SECONDS", str(30 * 60)))
     print(f"Idling for {idle_seconds}s so the JobSet stays alive.", flush=True)
     time.sleep(idle_seconds)
 
