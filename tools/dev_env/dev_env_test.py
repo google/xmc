@@ -748,9 +748,7 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertTrue(parsed.enable_managed_mldiagnostics)
         self.assertEqual(parsed.managed_xprof_gcs_bucket, "gs://my-bucket")
 
-        parsed_neg = self.parser.parse_args(
-            ["gke-upgrade", "--no-enable-managed-mldiagnostics"]
-        )
+        parsed_neg = self.parser.parse_args(["gke-upgrade", "--no-enable-managed-mldiagnostics"])
         self.assertFalse(parsed_neg.enable_managed_mldiagnostics)
 
 
