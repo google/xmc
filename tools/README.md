@@ -14,6 +14,7 @@ tools/
 ├── components/         # XMC component profiles discovery runner and linting harness
 ├── dev_env/            # Developer environment deployment and live upgrade tools
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
+├── stacks/             # GitHub CLI gh-stack automation and recovery utilities
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
 ├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
 ├── xmc-diag/           # Cluster diagnostics and health inspection utilities
@@ -65,7 +66,12 @@ Harness for automated validation and discovery of XMC component profiles:
 - [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `component-linter` with consolidated text/JSON reporting.
 - [`run_linter_test.py`](components/run_linter_test.py): Hermetic unit test suite for directory discovery, rules matching, exit codes, and JSON serialization.
 
-### 5. `tools/lint/` (Static Analyzers & Linters)
+### 6. `tools/stacks/` (Stacked PRs & `gh-stack` Automation)
+Playbooks and automation tooling for managing and recovering stacked PR chains:
+- [`recover_closed_stacked_pr.py`](stacks/recover_closed_stacked_pr.py): Automatically recovers a stacked PR closed by GitHub when an intermediate base branch is squash-merged and deleted, clears outdated stack tracking, temporarily recreates the deleted remote branch to reopen the PR, retargets it to trunk (`main`), deletes the temporary branch, recursively discovers upstream stacked PRs, and re-initializes/syncs the remaining stack via `gh stack`.
+- [`recover_closed_stacked_pr_test.py`](stacks/recover_closed_stacked_pr_test.py): Hermetic unit test suite covering PR parsing, recursive stack discovery, branch recreation, fallback handling, and dry-run verification.
+
+### 7. `tools/lint/` (Static Analyzers & Linters)
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 

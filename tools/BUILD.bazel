@@ -21,6 +21,7 @@ exports_files([
     "BUILD.bazel",
     "README.md",
     "dev_env.py",
+    "recover_closed_stacked_pr.py",
 ])
 
 # Aliases to subpackages for backwards compatibility
@@ -433,4 +434,10 @@ py_test(
         ":analyze_diff_size_lib",
         ":tool_utils",
     ],
+)
+
+# Stacks
+alias(
+    name = "recover_closed_stacked_pr",
+    actual = "//tools/stacks:recover_closed_stacked_pr",
 )
