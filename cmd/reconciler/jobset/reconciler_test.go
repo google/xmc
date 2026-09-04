@@ -1792,6 +1792,9 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
+			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
+				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -2135,7 +2138,7 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 // TestBuildMLRunLabels verifies the reconciler stamps the ownership labels and,
 // critically, list_existing_sessions_only=true so the Diagon profiler-session
 // backend recursively scans the run's GCS folder and surfaces
-// programmatically-written (SDK-less) profiles.
+// programmatically-written profiles.
 func TestBuildMLRunLabels(t *testing.T) {
 	got := buildMLRunLabels(12, 3)
 	want := map[string]string{

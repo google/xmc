@@ -92,7 +92,7 @@ def _build_work_unit(image_path: str, queue_name: str) -> work_unit_pb2.WorkUnit
                         spec=work_unit_pb2.ExecutableSpec(
                             name="programmatic-xprof-worker",
                             docker_image=image_path,
-                            command=["python3", "/app/worker.py"],
+                            command=["python3", "-u", "/app/worker.py"],
                             resources=resources_pb2.ResourceSet(
                                 cpu_resources=resources_pb2.CpuResources(
                                     cpu_millicores=1000,
@@ -116,12 +116,10 @@ def main(argv: Sequence[str]) -> None:
         raise app.UsageError("Too many command-line arguments.")
 
     project_id = os.environ.get("PROJECT_ID")
+    if not project_id:
+        raise app.UsageError("PROJECT_ID environment variable must be set.")
     image_path = os.environ.get("IMAGE_PATH")
     if not image_path:
-        if not project_id:
-            raise app.UsageError(
-                "PROJECT_ID environment variable must be set when IMAGE_PATH is not specified."
-            )
         image_path = f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest"
     queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
 
