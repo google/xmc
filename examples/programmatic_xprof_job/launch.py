@@ -120,8 +120,10 @@ def main(argv: Sequence[str]) -> None:
         raise app.UsageError("PROJECT_ID environment variable must be set.")
     image_path = os.environ.get("IMAGE_PATH")
     if not image_path:
-        image_path = f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest"
-    queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
+        raise app.UsageError("IMAGE_PATH environment variable must be set.")
+    queue_name = os.environ.get("QUEUE_NAME")
+    if not queue_name:
+        raise app.UsageError("QUEUE_NAME environment variable must be set.")
 
     print(
         "Creating experiment attaching a work-unit-level ManagedXprof artifact"
