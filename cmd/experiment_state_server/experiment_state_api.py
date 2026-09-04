@@ -22,8 +22,8 @@ from typing import Any
 import google.auth
 import grpc
 from google.auth.transport import requests
+from google.longrunning import operations_pb2
 from google.oauth2 import id_token
-from longrunning import operations_pb2
 from xmanager_cloud.experiment_state_server.proto import (
     api_pb2 as experiment_state_service_pb2,
     api_pb2_grpc as experiment_state_service_pb2_grpc,
@@ -125,43 +125,46 @@ def _create_experiment_state_server_stub(
     grpc.Channel,
 ]:
     """Create a gRPC stub and channel for the Experiment State Server."""
-    iap_client_id = os.environ.get("IAP_CLIENT_ID")
-    if not iap_client_id:
-        print(
-            "IAP_CLIENT_ID not set. It should be the OAuth client ID used by IAP for your backend."
-        )
-        iap_client_id = input("Enter IAP_CLIENT_ID: ")
-    client_sa = os.environ.get("XMC_CLIENT_SA")
-    if not client_sa:
-        print(
-            "XMC_CLIENT_SA not set. It should be the email of the service account "
-            "to impersonate (e.g., "
-            "xmc-client-username@my-project-id.iam.gserviceaccount.com)."
-        )
-        client_sa = input("Enter XMC_CLIENT_SA: ")
+    user_email = get_current_user_email()
+    audit_interceptor = AuditMetadataInterceptor(user_email)
 
-    try:
-        credentials, _ = google.auth.default()
-        authed_session = google.auth.transport.requests.AuthorizedSession(credentials)
-        url = (
-            "https://iamcredentials.googleapis.com/v1/projects/-/"
-            f"serviceAccounts/{client_sa}:generateIdToken"
-        )
-        body = {"audience": iap_client_id, "includeEmail": True}
-        response = authed_session.post(url, json=body)
-        response.raise_for_status()
-        open_id_connect_token = response.json()["token"]
-    except Exception as e:
-        raise RuntimeError("Failed to get identity token via google-auth") from e
+    if endpoint.startswith("http://"):
+        channel = grpc.insecure_channel(endpoint[len("http://") :])
+        intercepted_channel = grpc.intercept_channel(channel, audit_interceptor)
     else:
-        user_email = get_current_user_email()
+        iap_client_id = os.environ.get("IAP_CLIENT_ID")
+        if not iap_client_id:
+            print(
+                "IAP_CLIENT_ID not set. It should be the OAuth client ID used by IAP for your backend."
+            )
+            iap_client_id = input("Enter IAP_CLIENT_ID: ")
+        client_sa = os.environ.get("XMC_CLIENT_SA")
+        if not client_sa:
+            print(
+                "XMC_CLIENT_SA not set. It should be the email of the service account "
+                "to impersonate (e.g., "
+                "xmc-client-username@my-project-id.iam.gserviceaccount.com)."
+            )
+            client_sa = input("Enter XMC_CLIENT_SA: ")
+
+        try:
+            credentials, _ = google.auth.default()
+            authed_session = google.auth.transport.requests.AuthorizedSession(credentials)
+            url = (
+                "https://iamcredentials.googleapis.com/v1/projects/-/"
+                f"serviceAccounts/{client_sa}:generateIdToken"
+            )
+            body = {"audience": iap_client_id, "includeEmail": True}
+            response = authed_session.post(url, json=body)
+            response.raise_for_status()
+            open_id_connect_token = response.json()["token"]
+        except Exception as e:
+            raise RuntimeError("Failed to get identity token via google-auth") from e
 
         channel_creds = grpc.ssl_channel_credentials()
         call_creds = grpc.access_token_call_credentials(open_id_connect_token)
         composite_creds = grpc.composite_channel_credentials(channel_creds, call_creds)
         channel = grpc.secure_channel(endpoint, composite_creds)
-
-        audit_interceptor = AuditMetadataInterceptor(user_email)
         intercepted_channel = grpc.intercept_channel(channel, audit_interceptor)
 
     grpc.channel_ready_future(intercepted_channel).result(_CHANNEL_READY_TIMEOUT_SEC)

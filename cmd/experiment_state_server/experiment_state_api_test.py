@@ -18,8 +18,8 @@ import unittest
 from unittest import mock
 
 import google.auth
+from google.longrunning import operations_pb2
 from google.oauth2 import id_token
-from longrunning import operations_pb2
 from xmanager_cloud.experiment_state_server import experiment_state_api
 from xmanager_cloud.experiment_state_server.proto import (
     api_pb2 as experiment_state_service_pb2,
@@ -32,9 +32,7 @@ from xmanager_cloud.experiment_state_server.proto import (
 class ExperimentStateApiTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
-        self._mock_stub = mock.create_autospec(
-            experiment_state_service_pb2.ExperimentStateServiceStub,
-        )
+        self._mock_stub = mock.MagicMock()
         self._mock_stub.CreateExperiment.return_value = experiment_pb2.Experiment()
         self._mock_stub.CreateWorkUnit.return_value = operations_pb2.Operation()
         self._mock_stub.GetExperiment.return_value = experiment_pb2.Experiment()
@@ -243,6 +241,25 @@ class GetCurrentUserEmailTest(unittest.TestCase):
         self.mock_default.side_effect = Exception("Auth failed")
         with self.assertRaisesRegex(RuntimeError, "Failed to get current user email"):
             experiment_state_api.get_current_user_email()
+
+
+class CreateStubTransportTest(unittest.TestCase):
+    def test_http_endpoint_uses_insecure_channel(self):
+        with (
+            mock.patch.object(
+                experiment_state_api,
+                "get_current_user_email",
+                return_value="user@example.com",
+            ),
+            mock.patch.object(experiment_state_api.grpc, "insecure_channel") as mock_insecure,
+            mock.patch.object(experiment_state_api.grpc, "secure_channel") as mock_secure,
+            mock.patch.object(experiment_state_api.grpc, "intercept_channel"),
+            mock.patch.object(experiment_state_api.grpc, "channel_ready_future"),
+        ):
+            experiment_state_api._create_experiment_state_server_stub("http://10.180.0.2:50051")
+
+        mock_insecure.assert_called_once_with("10.180.0.2:50051")
+        mock_secure.assert_not_called()
 
 
 if __name__ == "__main__":
