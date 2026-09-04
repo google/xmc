@@ -49,8 +49,49 @@ var (
 		Name: "xm_cloud_actuator_workunits_created_total",
 		Help: "Total number of WorkUnits successfully created",
 	}, []string{})
-	idtokenValidate = idtoken.Validate
 )
+
+// TokenValidator defines the interface for validating authentication tokens.
+type TokenValidator interface {
+	Validate(ctx context.Context, token string, audience string) error
+}
+
+// GoogleIDTokenValidator validates Google ID tokens against an expected audience and service account email.
+type GoogleIDTokenValidator struct {
+	ExpectedServiceAccount string
+	ValidateFunc           func(ctx context.Context, token, audience string) (*idtoken.Payload, error)
+}
+
+// Validate validates the Google ID token.
+func (v *GoogleIDTokenValidator) Validate(ctx context.Context, token string, audience string) error {
+	if token == "" {
+		return fmt.Errorf("auth token is empty")
+	}
+	if v.ExpectedServiceAccount == "" {
+		return fmt.Errorf("expected service account is not configured")
+	}
+
+	validateFn := v.ValidateFunc
+	if validateFn == nil {
+		validateFn = idtoken.Validate
+	}
+
+	idPayload, err := validateFn(ctx, token, audience)
+	if err != nil {
+		return fmt.Errorf("failed to validate ID token: %w", err)
+	}
+
+	email, ok := idPayload.Claims["email"].(string)
+	if !ok {
+		return fmt.Errorf("email claim not found in ID token")
+	}
+
+	if email != v.ExpectedServiceAccount {
+		return fmt.Errorf("service account mismatch")
+	}
+
+	return nil
+}
 
 // K8sClient defines the Kubernetes operations required by the work unit task handler.
 type K8sClient interface {
@@ -67,6 +108,7 @@ type Params struct {
 	Audience               string
 	XManagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
+	TokenValidator         TokenValidator
 }
 
 // Handler processes incoming actuation requests.
@@ -76,6 +118,7 @@ type Handler struct {
 	audience               string
 	xmanagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
+	tokenValidator         TokenValidator
 }
 
 // New creates a new Handler.
@@ -95,13 +138,27 @@ func New(p Params) (*Handler, error) {
 	if p.JWTVerifier == nil {
 		return nil, fmt.Errorf("jwt verifier is required")
 	}
+
+	validator := p.TokenValidator
+	if validator == nil {
+		validator = &GoogleIDTokenValidator{
+			ExpectedServiceAccount: p.XManagerServiceAccount,
+		}
+	}
+
 	return &Handler{
 		k8sClient:              p.K8sClient,
 		projectID:              p.ProjectID,
 		audience:               p.Audience,
 		xmanagerServiceAccount: p.XManagerServiceAccount,
 		JWTVerifier:            p.JWTVerifier,
+		tokenValidator:         validator,
 	}, nil
+}
+
+// TokenValidator returns the configured token validator.
+func (h *Handler) TokenValidator() TokenValidator {
+	return h.tokenValidator
 }
 
 func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
@@ -145,6 +202,18 @@ func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatorta
 	}
 }
 
+func failTask(ctx context.Context, msg string, err error, retryable bool) redisclient.TaskResult {
+	if err != nil {
+		logging.Warn(ctx, msg, "error", err)
+		err = fmt.Errorf("%s: %w", msg, err)
+	} else {
+		logging.Warn(ctx, msg)
+		err = fmt.Errorf("%s", msg)
+	}
+	ctMessagesFailed.WithLabelValues().Inc()
+	return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: retryable, Error: err}
+}
+
 // HandleWorkUnitRedisTask processes a task received from Redis.
 func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data string) redisclient.TaskResult {
 	logger := logging.NewGCPLogger(slog.LevelInfo, h.projectID)
@@ -154,35 +223,24 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 
 	var msg interfaces.RedisTask
 	if err := json.Unmarshal([]byte(data), &msg); err != nil {
-		logging.Warn(ctx, "Failed to unmarshal Redis message", "error", err)
-		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to unmarshal redis message: %w", err)}
+		return failTask(ctx, "failed to unmarshal redis message", err, false)
 	}
 
-	if !h.validateSignature(ctx, msg.Signature, msg.Payload) {
-		logging.Warn(ctx, "Failed to validate signature")
-		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to validate signature")}
+	if err := h.validateSignature(msg.Signature, msg.Payload); err != nil {
+		return failTask(ctx, "failed to validate signature", err, false)
 	}
 
 	if err := h.validateAuthTokenString(ctx, msg.OidcToken); err != nil {
-		logging.Warn(ctx, "Failed to validate OIDC token", "error", err)
-		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to validate OIDC token: %w", err)}
+		return failTask(ctx, "failed to validate OIDC token", err, false)
 	}
 
 	var payload actuatortaskpb.ActuatorPayload
 	if err := protojson.Unmarshal(msg.Payload, &payload); err != nil {
-		logging.Warn(ctx, "Failed to unmarshal ActuatorPayload", "error", err)
-		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to unmarshal actuator payload: %w", err)}
+		return failTask(ctx, "failed to unmarshal actuator payload", err, false)
 	}
 
-	err := h.handleActuatorPayload(ctx, &payload)
-	if err != nil {
-		logging.Warn(ctx, "Failed to process Redis task", "error", err)
-		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: isRetryableError(err), Error: err}
+	if err := h.handleActuatorPayload(ctx, &payload); err != nil {
+		return failTask(ctx, "failed to process Redis task", err, isRetryableError(err))
 	}
 
 	return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
@@ -215,27 +273,12 @@ func isRetryableError(err error) bool {
 		apierrors.IsInternalError(err) || apierrors.IsConflict(err)
 }
 
-// validateAuthTokenString validates the auth token string, including the service account email.
+// validateAuthTokenString validates the auth token string using the configured TokenValidator.
 func (h *Handler) validateAuthTokenString(ctx context.Context, authToken string) error {
-	if authToken == "" {
-		return fmt.Errorf("auth token is empty")
+	if h.tokenValidator == nil {
+		return fmt.Errorf("token validator is not configured")
 	}
-
-	idPayload, err := idtokenValidate(ctx, authToken, h.audience)
-	if err != nil {
-		return fmt.Errorf("failed to validate ID token: %w", err)
-	}
-
-	email, ok := idPayload.Claims["email"].(string)
-	if !ok {
-		return fmt.Errorf("email claim not found in ID token")
-	}
-
-	if email != h.xmanagerServiceAccount {
-		return fmt.Errorf("service account mismatch")
-	}
-
-	return nil
+	return h.tokenValidator.Validate(ctx, authToken, h.audience)
 }
 
 func calculateSHA256(payload []byte) string {
@@ -244,71 +287,58 @@ func calculateSHA256(payload []byte) string {
 }
 
 // validateSignature validates the signature of the request using the verifying key.
-func (h *Handler) validateSignature(ctx context.Context, tokenString string, body []byte) bool {
+func (h *Handler) validateSignature(tokenString string, body []byte) error {
 	if tokenString == "" {
-		logging.Warn(ctx, "Signature not found")
-		return false
+		return fmt.Errorf("signature not found")
 	}
 
 	verifier, err := h.JWTVerifier()
 	if err != nil {
-		logging.Warn(ctx, "Failed to get JWT verifier", "error", err)
-		return false
+		return fmt.Errorf("failed to get JWT verifier: %w", err)
 	}
 
 	validator, err := jwt.NewValidator(&jwt.ValidatorOpts{ExpectedAudience: &h.audience, ExpectedIssuer: &h.xmanagerServiceAccount})
 	if err != nil {
-		logging.Warn(ctx, "Failed to create JWT validator", "error", err)
-		return false
+		return fmt.Errorf("failed to create JWT validator: %w", err)
 	}
 
 	verifiedJWT, err := verifier.VerifyAndDecode(tokenString, validator)
 	if err != nil {
-		logging.Warn(ctx, "Failed to verify JWT", "error", err)
-		return false
+		return fmt.Errorf("failed to verify JWT: %w", err)
 	}
 
 	extractedSubject, err := verifiedJWT.Subject()
 	if err != nil {
-		logging.Warn(ctx, "Failed to get JWT subject", "error", err)
-		return false
+		return fmt.Errorf("failed to get JWT subject: %w", err)
 	}
 	if extractedSubject != h.xmanagerServiceAccount {
-		logging.Warn(ctx, "Invalid JWT subject claim")
-		return false
+		return fmt.Errorf("invalid JWT subject claim: expected %s, got %s", h.xmanagerServiceAccount, extractedSubject)
 	}
 
 	issuedAt, err := verifiedJWT.IssuedAt()
 	if err != nil {
-		logging.Warn(ctx, "Failed to get JWT issued-at", "error", err)
-		return false
+		return fmt.Errorf("failed to get JWT issued-at: %w", err)
 	}
 
 	expiresAt, err := verifiedJWT.ExpiresAt()
 	if err != nil {
-		logging.Warn(ctx, "Failed to get JWT expiration", "error", err)
-		return false
+		return fmt.Errorf("failed to get JWT expiration: %w", err)
 	}
 	if expiresAt.Before(time.Now()) {
-		logging.Warn(ctx, "JWT expired")
-		return false
+		return fmt.Errorf("JWT expired")
 	}
 	if issuedAt.After(expiresAt) {
-		logging.Warn(ctx, "JWT issued-at is after expiration")
-		return false
+		return fmt.Errorf("JWT issued-at is after expiration")
 	}
 
 	bodyHash := calculateSHA256(body)
-
 	messageDigest, err := verifiedJWT.StringClaim("message_digest")
 	if err != nil {
-		logging.Warn(ctx, "Failed to get JWT message_digest", "error", err)
-		return false
+		return fmt.Errorf("failed to get JWT message_digest: %w", err)
 	}
 	if messageDigest != bodyHash {
-		logging.Warn(ctx, "Invalid JWT message_digest claim")
-		return false
+		return fmt.Errorf("invalid JWT message_digest claim")
 	}
 
-	return true
+	return nil
 }

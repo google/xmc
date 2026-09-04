@@ -20,6 +20,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,6 +51,176 @@ const (
 	DefaultSignatureTTLSeconds = 3600
 )
 
+// TokenProvider defines the interface for generating authentication tokens (e.g. OIDC tokens).
+type TokenProvider interface {
+	GenerateToken(ctx context.Context, invokerSA, audience string) (string, error)
+}
+
+// TokenProviderFunc allows plain functions or closures to satisfy TokenProvider.
+type TokenProviderFunc func(ctx context.Context, invokerSA, audience string) (string, error)
+
+// GenerateToken calls the underlying function.
+func (f TokenProviderFunc) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	return f(ctx, invokerSA, audience)
+}
+
+// GcpIAMTokenProvider generates OIDC ID tokens using Google Cloud IAM Credentials API.
+type GcpIAMTokenProvider struct{}
+
+// GenerateToken generates an OIDC ID token for the specified service account and audience.
+func (p *GcpIAMTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	creds, err := google.FindDefaultCredentials(ctx, iamcredentials.CloudPlatformScope)
+	if err != nil {
+		return "", fmt.Errorf("failed to find default credentials: %w", err)
+	}
+
+	iamService, err := iamcredentials.NewService(ctx, option.WithCredentials(creds))
+	if err != nil {
+		return "", fmt.Errorf("failed to create iamcredentials service: %w", err)
+	}
+
+	resourceName := "projects/-/serviceAccounts/" + invokerSA
+	req := &iamcredentials.GenerateIdTokenRequest{
+		Audience:     audience,
+		IncludeEmail: true,
+	}
+
+	resp, err := iamService.Projects.ServiceAccounts.GenerateIdToken(resourceName, req).Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate ID token for service account: %w", err)
+	}
+	return resp.Token, nil
+}
+
+// OidcTokenProviderConfig holds parameters for fetching real signed OIDC tokens from an IdP.
+type OidcTokenProviderConfig struct {
+	TokenURL     string
+	ClientID     string
+	ClientSecret string
+	Username     string
+	Password     string
+	Scope        string
+	HTTPClient   *http.Client
+}
+
+// OidcTokenProvider fetches signed OIDC ID tokens from an OpenID Connect provider.
+type OidcTokenProvider struct {
+	cfg        OidcTokenProviderConfig
+	httpClient *http.Client
+	mu         sync.Mutex
+	token      string
+	expiry     time.Time
+}
+
+// NewOidcTokenProvider creates a new OidcTokenProvider.
+func NewOidcTokenProvider(cfg OidcTokenProviderConfig) *OidcTokenProvider {
+	client := cfg.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	if cfg.Scope == "" {
+		cfg.Scope = "openid email profile"
+	}
+	return &OidcTokenProvider{
+		cfg:        cfg,
+		httpClient: client,
+	}
+}
+
+// GenerateToken fetches or returns a cached signed OIDC token.
+func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	p.mu.Lock()
+	if p.token != "" && time.Now().Add(1*time.Minute).Before(p.expiry) {
+		token := p.token
+		p.mu.Unlock()
+		return token, nil
+	}
+	p.mu.Unlock()
+
+	data := url.Values{
+		"client_id":     {p.cfg.ClientID},
+		"client_secret": {p.cfg.ClientSecret},
+		"scope":         {p.cfg.Scope},
+	}
+	if p.cfg.Password != "" && p.cfg.Username != "" {
+		data.Set("grant_type", "password")
+		data.Set("username", p.cfg.Username)
+		data.Set("password", p.cfg.Password)
+	} else {
+		data.Set("grant_type", "client_credentials")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if p.cfg.ClientID != "" && p.cfg.ClientSecret != "" {
+		req.SetBasicAuth(p.cfg.ClientID, p.cfg.ClientSecret)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute token request to %s: %w", p.cfg.TokenURL, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var tokenResp struct {
+		IDToken     string `json:"id_token"`
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(bodyBytes, &tokenResp); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	token := tokenResp.IDToken
+	if token == "" {
+		token = tokenResp.AccessToken
+	}
+	if token == "" {
+		return "", fmt.Errorf("token response did not contain id_token or access_token")
+	}
+
+	ttl := time.Duration(tokenResp.ExpiresIn) * time.Second
+	if ttl <= 0 {
+		ttl = 1 * time.Hour
+	}
+
+	p.mu.Lock()
+	p.token = token
+	p.expiry = time.Now().Add(ttl)
+	p.mu.Unlock()
+
+	return token, nil
+}
+
+// Option configures a Client instance.
+type Option func(*Client)
+
+// WithTokenProvider configures a custom TokenProvider on the Client.
+func WithTokenProvider(tp TokenProvider) Option {
+	return func(c *Client) {
+		c.tokenProvider = tp
+	}
+}
+
+// WithRedisPublisher configures a custom Redis publisher on the Client.
+func WithRedisPublisher(publisher redisclient.Publisher) Option {
+	return func(c *Client) {
+		c.redisClient = publisher
+	}
+}
+
 type Client struct {
 	invokerSA        string
 	gcpProjectID     string
@@ -54,10 +229,11 @@ type Client struct {
 	signer           func() (jwt.Signer, error)
 	signatureTTL     time.Duration
 	redisClient      redisclient.Publisher
+	tokenProvider    TokenProvider
 }
 
 // New creates a new Client instance.
-func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudience string, signer func() (jwt.Signer, error), signatureTTL int, redisAddr string) (*Client, error) {
+func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudience string, signer func() (jwt.Signer, error), signatureTTL int, redisAddr string, opts ...Option) (*Client, error) {
 	aud := actuatorAudience
 	if aud == "" {
 		aud = actuatorURL
@@ -74,7 +250,7 @@ func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudienc
 	redisClient := redisclient.NewPublisher(redisConfig, constants.RedisStream)
 	logging.Info(ctx, "Initialized Redis task queue publisher")
 
-	return &Client{
+	c := &Client{
 		invokerSA:        invokerSA,
 		gcpProjectID:     projectID,
 		actuatorURL:      actuatorURL,
@@ -82,7 +258,17 @@ func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudienc
 		signer:           signer,
 		signatureTTL:     time.Duration(ttl) * time.Second,
 		redisClient:      redisClient,
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	if c.tokenProvider == nil {
+		c.tokenProvider = &GcpIAMTokenProvider{}
+	}
+
+	return c, nil
 }
 
 // EnqueueWorkUnitTask creates and enqueues a Cloud Task to actuate a WorkUnit.
@@ -122,7 +308,7 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 		return fmt.Errorf("failed to create message signature: %w", err)
 	}
 
-	oidcTokenString, err := generateOIDCToken(ctx, c.invokerSA, c.actuatorAudience)
+	oidcTokenString, err := c.tokenProvider.GenerateToken(ctx, c.invokerSA, c.actuatorAudience)
 	if err != nil {
 		logging.Warn(ctx, "Failed to generate OIDC token for redis task", "error", err)
 		return fmt.Errorf("failed to generate OIDC token for redis task: %w", err)
@@ -209,32 +395,6 @@ func (c *Client) createJwtToken(bodyHash string) (string, error) {
 		return "", fmt.Errorf("failed to sign and encode JWT: %w", err)
 	}
 	return token, nil
-}
-
-var generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-	creds, err := google.FindDefaultCredentials(ctx, iamcredentials.CloudPlatformScope)
-	if err != nil {
-		return "", fmt.Errorf("failed to find default credentials: %w", err)
-	}
-
-	iamService, err := iamcredentials.NewService(ctx, option.WithCredentials(creds))
-	if err != nil {
-		return "", fmt.Errorf("failed to create iamcredentials service: %w", err)
-	}
-
-	resourceName := "projects/-/serviceAccounts/" + serviceAccountEmail
-	req := &iamcredentials.GenerateIdTokenRequest{
-		Audience:     audience,
-		IncludeEmail: true,
-	}
-
-	logging.Info(ctx, "Generate ID token for service account", "resource_name", resourceName)
-	resp, err := iamService.Projects.ServiceAccounts.GenerateIdToken(resourceName, req).Context(ctx).Do()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate ID token: %w", err)
-	}
-	logging.Info(ctx, "Generated ID token for service account", "resource_name", resourceName)
-	return resp.Token, nil
 }
 
 // CreateAction creates an action for the Actuator to create a WorkUnit.

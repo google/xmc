@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/jwks"
 )
 
 // RedisConfig holds the configuration for the Redis queue.
@@ -41,6 +43,8 @@ type Config struct {
 	RuntimeConfig          k8sclient.ActuatorRuntimeConfig
 	Audience               string
 	XManagerServiceAccount string
+	JWKSURL                string
+	OIDCIssuerURL          string
 	VerifyingKeyFile       string
 	MaxRecentKeys          int
 	RedisConfig            RedisConfig
@@ -53,6 +57,8 @@ var (
 	quotaProjectID              string
 	xmanagerServiceAccount      string
 	audience                    string
+	jwksURL                     string
+	oidcIssuerURL               string
 	defaultExecutionEnvironment string
 	verifyingKeyFile            string
 	maxRecentKeys               int
@@ -81,6 +87,8 @@ func init() {
 	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
 	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
 	flag.BoolVar(&enableComponents, "enable_components", false, "Whether the components feature is enabled.")
+	flag.StringVar(&jwksURL, "jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
+	flag.StringVar(&oidcIssuerURL, "oidc_issuer_url", "", "The OIDC issuer URL.")
 	registerConfigs()
 }
 
@@ -91,6 +99,8 @@ func registerConfigs() {
 	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
 	configutil.StringEnv(&audience, "audience", "")
+	configutil.StringEnv(&jwksURL, "jwks_url", "")
+	configutil.StringEnv(&oidcIssuerURL, "oidc_issuer_url", "")
 	configutil.StringEnv(&redisAddr, "redis_addr", "")
 	configutil.IntEnv(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
 	configutil.DurationEnv(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
@@ -125,6 +135,19 @@ func Load() Config {
 		aud = fmt.Sprintf("https://actuator.xmanager.svc.cluster.local:%s", port)
 	}
 
+	resolvedJWKSURL := jwksURL
+	if resolvedJWKSURL == "" {
+		resolvedJWKSURL = jwks.GoogleOAuth2CertsURL
+	}
+
+	resolvedIssuer := oidcIssuerURL
+	if resolvedIssuer == "" {
+		resolvedIssuer = os.Getenv("IAP_EXPECTED_ISSUER")
+	}
+	if resolvedIssuer == "" {
+		resolvedIssuer = os.Getenv("OIDC_ISSUER_URL")
+	}
+
 	return Config{
 		Port: port,
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
@@ -139,6 +162,8 @@ func Load() Config {
 		},
 		Audience:               aud,
 		XManagerServiceAccount: xmanagerServiceAccount,
+		JWKSURL:                resolvedJWKSURL,
+		OIDCIssuerURL:          resolvedIssuer,
 		VerifyingKeyFile:       verifyingKeyFile,
 		MaxRecentKeys:          maxRecentKeys,
 		RedisConfig: RedisConfig{

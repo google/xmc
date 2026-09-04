@@ -112,30 +112,6 @@ func (m *mockK8sClient) UpdateWorkUnit(ctx context.Context, payload *actuatortas
 	return m.err
 }
 
-func mockidTokenValidator(t *testing.T, wantErr bool) {
-	t.Helper()
-	orig := idtokenValidate
-	if wantErr {
-		idtokenValidate = func(_ context.Context, _, _ string) (*idtoken.Payload, error) {
-			return nil, errors.New("token validation failed")
-		}
-	} else {
-		idtokenValidate = func(_ context.Context, _, aud string) (*idtoken.Payload, error) {
-			if aud != testAudience {
-				return nil, fmt.Errorf("unexpected audience: got %q, want %q", aud, testAudience)
-			}
-			return &idtoken.Payload{
-				Claims: map[string]any{
-					"email": testServiceAccount,
-				},
-			}, nil
-		}
-	}
-	t.Cleanup(func() {
-		idtokenValidate = orig
-	})
-}
-
 type testHandlerOption func(*Params)
 
 func withK8sClient(client K8sClient) testHandlerOption {
@@ -156,6 +132,12 @@ func withJWTVerifier(v func() (jwt.Verifier, error)) testHandlerOption {
 	}
 }
 
+func withTokenValidator(v TokenValidator) testHandlerOption {
+	return func(p *Params) {
+		p.TokenValidator = v
+	}
+}
+
 func newTestTaskHandler(t *testing.T, opts ...testHandlerOption) *Handler {
 	t.Helper()
 	params := Params{
@@ -164,6 +146,19 @@ func newTestTaskHandler(t *testing.T, opts ...testHandlerOption) *Handler {
 		Audience:               testAudience,
 		XManagerServiceAccount: testServiceAccount,
 		JWTVerifier:            securitytest.MustCreateTestVerifier(t),
+		TokenValidator: &GoogleIDTokenValidator{
+			ExpectedServiceAccount: testServiceAccount,
+			ValidateFunc: func(_ context.Context, _, aud string) (*idtoken.Payload, error) {
+				if aud != testAudience {
+					return nil, fmt.Errorf("unexpected audience: got %q, want %q", aud, testAudience)
+				}
+				return &idtoken.Payload{
+					Claims: map[string]any{
+						"email": testServiceAccount,
+					},
+				}, nil
+			},
+		},
 	}
 	for _, opt := range opts {
 		opt(&params)
@@ -246,7 +241,6 @@ func TestHandleWorkUnitRedisTask_K8sClientError(t *testing.T) {
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
 	handler := newTestTaskHandler(t, withK8sClient(&mockK8sClient{err: apierrors.NewInternalError(errors.New("internal error"))}))
-	mockidTokenValidator(t, false)
 
 	payload := []byte(`{
     "kind": "WORK_UNIT_ACTUATION_REQUEST",
@@ -319,7 +313,6 @@ func TestHandleWorkUnitRedisTask_MalformedJSON(t *testing.T) {
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
 	handler := newTestTaskHandler(t)
-	mockidTokenValidator(t, false)
 
 	payload := []byte(`this is not json`)
 	signature := issueTestJWT(t, validJWTOptions(payload, testAudience, testServiceAccount))
@@ -336,7 +329,7 @@ func TestHandleWorkUnitRedisTask_MalformedJSON(t *testing.T) {
 	}
 	initialProcessedMetricCount := testutil.ToFloat64(ctMessagesProcessed.WithLabelValues())
 	if initialProcessedMetricCount != 0 {
-		t.Errorf("ctMessagesProcessed counter should be 0 before test, got %v", initialProcessedMetricCount)
+		t.Errorf("ctMessagesProcessed counter mismatch: got %v, want 0", initialProcessedMetricCount)
 	}
 
 	result := handler.HandleWorkUnitRedisTask(context.Background(), "test-worker", redisMsg)
@@ -359,37 +352,53 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		oidcToken              string
-		validationErr          bool
+		tokenValidator         TokenValidator
 		xmanagerServiceAccount string
 		wantErrMsg             string
 	}{
 		{
 			name:                   "no_oidc_token",
 			oidcToken:              "",
-			validationErr:          false,
+			tokenValidator:         nil,
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "auth token is empty",
 		},
 		{
-			name:                   "token_validation_error",
-			oidcToken:              "fake-token",
-			validationErr:          true,
+			name:      "token_validation_error",
+			oidcToken: "fake-token",
+			tokenValidator: &GoogleIDTokenValidator{
+				ExpectedServiceAccount: testServiceAccount,
+				ValidateFunc: func(_ context.Context, _, _ string) (*idtoken.Payload, error) {
+					return nil, errors.New("failed to validate ID token")
+				},
+			},
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "failed to validate ID token",
 		},
 		{
-			name:                   "service_account_mismatch",
-			oidcToken:              "fake-token",
-			validationErr:          false,
-			xmanagerServiceAccount: "wrong@serviceaccount.com",
+			name:      "service_account_mismatch",
+			oidcToken: "fake-token",
+			tokenValidator: &GoogleIDTokenValidator{
+				ExpectedServiceAccount: testServiceAccount,
+				ValidateFunc: func(_ context.Context, _, _ string) (*idtoken.Payload, error) {
+					return &idtoken.Payload{
+						Claims: map[string]any{"email": "different@serviceaccount.com"},
+					}, nil
+				},
+			},
+			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "service account mismatch",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestTaskHandler(t, withServiceAccount(tc.xmanagerServiceAccount))
-			mockidTokenValidator(t, tc.validationErr)
+			var opts []testHandlerOption
+			opts = append(opts, withServiceAccount(tc.xmanagerServiceAccount))
+			if tc.tokenValidator != nil {
+				opts = append(opts, withTokenValidator(tc.tokenValidator))
+			}
+			handler := newTestTaskHandler(t, opts...)
 
 			payload := []byte(`{
 				"kind": "WORK_UNIT_ACTUATION_REQUEST",
@@ -423,6 +432,160 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockTokenValidator struct {
+	err error
+}
+
+func (m *mockTokenValidator) Validate(ctx context.Context, token string, audience string) error {
+	return m.err
+}
+
+func TestGoogleIDTokenValidator(t *testing.T) {
+	t.Run("empty token returns error", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{ExpectedServiceAccount: testServiceAccount}
+		err := v.Validate(context.Background(), "", testAudience)
+		if err == nil || !strings.Contains(err.Error(), "auth token is empty") {
+			t.Errorf("Validate(\"\") error = %v, want substring 'auth token is empty'", err)
+		}
+	})
+
+	t.Run("empty expected service account returns error", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{ExpectedServiceAccount: ""}
+		err := v.Validate(context.Background(), "some-token", testAudience)
+		if err == nil || !strings.Contains(err.Error(), "expected service account is not configured") {
+			t.Errorf("Validate() error = %v, want substring 'expected service account is not configured'", err)
+		}
+	})
+
+	t.Run("validate error returned", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{
+			ExpectedServiceAccount: testServiceAccount,
+			ValidateFunc: func(context.Context, string, string) (*idtoken.Payload, error) {
+				return nil, errors.New("underlying validation error")
+			},
+		}
+		err := v.Validate(context.Background(), "tok", testAudience)
+		if err == nil || !strings.Contains(err.Error(), "failed to validate ID token") {
+			t.Errorf("Validate() error = %v, want substring 'failed to validate ID token'", err)
+		}
+	})
+
+	t.Run("missing email claim", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{
+			ExpectedServiceAccount: testServiceAccount,
+			ValidateFunc: func(context.Context, string, string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{Claims: map[string]any{}}, nil
+			},
+		}
+		err := v.Validate(context.Background(), "tok", testAudience)
+		if err == nil || !strings.Contains(err.Error(), "email claim not found") {
+			t.Errorf("Validate() error = %v, want substring 'email claim not found'", err)
+		}
+	})
+
+	t.Run("service account mismatch", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{
+			ExpectedServiceAccount: testServiceAccount,
+			ValidateFunc: func(context.Context, string, string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{Claims: map[string]any{"email": "other@sa.com"}}, nil
+			},
+		}
+		err := v.Validate(context.Background(), "tok", testAudience)
+		if err == nil || !strings.Contains(err.Error(), "service account mismatch") {
+			t.Errorf("Validate() error = %v, want substring 'service account mismatch'", err)
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		v := &GoogleIDTokenValidator{
+			ExpectedServiceAccount: testServiceAccount,
+			ValidateFunc: func(context.Context, string, string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{Claims: map[string]any{"email": testServiceAccount}}, nil
+			},
+		}
+		if err := v.Validate(context.Background(), "tok", testAudience); err != nil {
+			t.Errorf("Validate() error = %v, want nil", err)
+		}
+	})
+}
+
+func TestHandleWorkUnitRedisTask_CustomTokenValidatorSuccess(t *testing.T) {
+	workUnitsCreated.Reset()
+	ctMessagesProcessed.Reset()
+	ctMessagesFailed.Reset()
+	handler := newTestTaskHandler(t, withTokenValidator(&mockTokenValidator{}))
+
+	payload := []byte(`{
+    "kind": "WORK_UNIT_ACTUATION_REQUEST",
+    "target": "experiments/12345/workUnits/678/executions/1",
+    "action": {
+      "create": {}
+    },
+    "workUnit": {
+      "name": "work-unit-1",
+      "executable": {
+        "schedulingConstraints": {
+          "queueName": "test-queue"
+        }
+      }
+    },
+    "metadata": {},
+    "createTime": "2025-10-29T10:00:00Z"
+  }`)
+
+	signature := issueTestJWT(t, validJWTOptions(payload, testAudience, testServiceAccount))
+	b64Payload := base64.StdEncoding.EncodeToString(payload)
+	redisMsg := fmt.Sprintf(`{
+		"payload": %q,
+		"signature": %q,
+		"oidcToken": "valid-mock-token"
+	}`, b64Payload, signature)
+
+	result := handler.HandleWorkUnitRedisTask(context.Background(), "test-worker", redisMsg)
+	if result.Error != nil {
+		t.Fatalf("HandleWorkUnitRedisTask returned error with mockTokenValidator: %v", result.Error)
+	}
+	if !result.WasRunSuccessful {
+		t.Errorf("HandleWorkUnitRedisTask returned success=false, want true")
+	}
+}
+
+func TestNew_DefaultTokenValidator(t *testing.T) {
+	t.Run("defaults to GoogleIDTokenValidator", func(t *testing.T) {
+		h, err := New(Params{
+			K8sClient:              &mockK8sClient{},
+			ProjectID:              "test-project",
+			Audience:               testAudience,
+			XManagerServiceAccount: testServiceAccount,
+			JWTVerifier:            securitytest.MustCreateTestVerifier(t),
+		})
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		if _, ok := h.TokenValidator().(*GoogleIDTokenValidator); !ok {
+			t.Errorf("tokenValidator is %T, want *GoogleIDTokenValidator", h.TokenValidator())
+		}
+	})
+
+	t.Run("explicit token validator", func(t *testing.T) {
+		customVal := &mockTokenValidator{}
+		h, err := New(Params{
+			K8sClient:              &mockK8sClient{},
+			ProjectID:              "test-project",
+			Audience:               testAudience,
+			XManagerServiceAccount: testServiceAccount,
+			JWTVerifier:            securitytest.MustCreateTestVerifier(t),
+			TokenValidator:         customVal,
+		})
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		if h.TokenValidator() != customVal {
+			t.Errorf("tokenValidator got %v, want %v", h.TokenValidator(), customVal)
+		}
+	})
 }
 
 type actuatorPayloadTestCase struct {
@@ -593,7 +756,6 @@ func TestHandleWorkUnitRedisTask_Success(t *testing.T) {
 	ctMessagesProcessed.Reset()
 	ctMessagesFailed.Reset()
 	handler := newTestTaskHandler(t)
-	mockidTokenValidator(t, false)
 
 	payload := []byte(`{
     "kind": "WORK_UNIT_ACTUATION_REQUEST",
@@ -661,7 +823,6 @@ func TestHandleWorkUnitRedisTask_Success(t *testing.T) {
 func TestHandleWorkUnitRedisTask_Failures(t *testing.T) {
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
-	handler := newTestTaskHandler(t)
 
 	validPayload := []byte(`{
     "kind": "WORK_UNIT_ACTUATION_REQUEST",
@@ -678,10 +839,10 @@ func TestHandleWorkUnitRedisTask_Failures(t *testing.T) {
 	b64MalformedActuatorPayload := base64.StdEncoding.EncodeToString(malformedActuatorPayload)
 
 	testCases := []struct {
-		name          string
-		redisMsg      string
-		wantErrMsg    string
-		validationErr bool
+		name           string
+		redisMsg       string
+		wantErrMsg     string
+		tokenValidator TokenValidator
 	}{
 		{
 			name:       "unmarshal_error",
@@ -707,18 +868,30 @@ func TestHandleWorkUnitRedisTask_Failures(t *testing.T) {
 			name:       "missing_oidc_token",
 			redisMsg:   fmt.Sprintf(`{"payload": %q, "signature": %q}`, b64ValidPayload, signatureForValidPayload),
 			wantErrMsg: "failed to validate OIDC token: auth token is empty",
+			tokenValidator: &GoogleIDTokenValidator{
+				ExpectedServiceAccount: testServiceAccount,
+			},
 		},
 		{
-			name:          "oidc_token_invalid",
-			redisMsg:      fmt.Sprintf(`{"payload": %q, "signature": %q, "oidcToken": "invalid-token"}`, b64ValidPayload, signatureForValidPayload),
-			wantErrMsg:    "failed to validate OIDC token",
-			validationErr: true,
+			name:       "oidc_token_invalid",
+			redisMsg:   fmt.Sprintf(`{"payload": %q, "signature": %q, "oidcToken": "invalid-token"}`, b64ValidPayload, signatureForValidPayload),
+			wantErrMsg: "failed to validate OIDC token",
+			tokenValidator: &GoogleIDTokenValidator{
+				ExpectedServiceAccount: testServiceAccount,
+				ValidateFunc: func(context.Context, string, string) (*idtoken.Payload, error) {
+					return nil, errors.New("failed to validate ID token")
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockidTokenValidator(t, tc.validationErr)
+			var opts []testHandlerOption
+			if tc.tokenValidator != nil {
+				opts = append(opts, withTokenValidator(tc.tokenValidator))
+			}
+			handler := newTestTaskHandler(t, opts...)
 			result := handler.HandleWorkUnitRedisTask(context.Background(), "test-worker", tc.redisMsg)
 			if result.WasRunSuccessful {
 				t.Errorf("HandleWorkUnitRedisTask returned success=true, want false")
@@ -824,7 +997,6 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 				jwtVerifier = securitytest.MustCreateTestVerifier(t)
 			}
 			handler := newTestTaskHandler(t, withJWTVerifier(jwtVerifier))
-			mockidTokenValidator(t, false)
 
 			b64Payload := base64.StdEncoding.EncodeToString(payload)
 			redisMsg := fmt.Sprintf(`{

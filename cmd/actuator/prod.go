@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
@@ -148,12 +149,19 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
+	tokenValidator := jwks.NewValidator(jwks.ValidatorConfig{
+		JWKSURL:                cfg.JWKSURL,
+		ExpectedIssuer:         cfg.OIDCIssuerURL,
+		ExpectedServiceAccount: cfg.XManagerServiceAccount,
+	})
+
 	handler, err := workunittaskhandler.New(workunittaskhandler.Params{
 		K8sClient:              k8sClient,
 		ProjectID:              projectID,
 		Audience:               cfg.Audience,
 		XManagerServiceAccount: cfg.XManagerServiceAccount,
 		JWTVerifier:            keyReloader.Verifier,
+		TokenValidator:         tokenValidator,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)

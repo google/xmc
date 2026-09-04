@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +32,32 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
+	"xmanager_cloud/task_queue_redis/redisclient"
 )
+
+type mockTokenProvider struct {
+	Token string
+	Err   error
+}
+
+func (m *mockTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	return m.Token, m.Err
+}
+
+func createTaskQueueClient(ctx context.Context, t *testing.T, opts ...Option) (*Client, *redisclient.FakeClient) {
+	t.Helper()
+	fakeRedis := redisclient.NewFakeClient()
+	keyFunc := securitytest.MustCreateTestSigner(t)
+	allOpts := append([]Option{
+		WithTokenProvider(&mockTokenProvider{Token: "mock-oidc-token"}),
+		WithRedisPublisher(fakeRedis),
+	}, opts...)
+	taskQueueClient, err := New(ctx, "test-project", "test-sa", "http://actuator.example.com", "test-audience", keyFunc, DefaultSignatureTTLSeconds, "", allOpts...)
+	if err != nil {
+		t.Fatalf("Failed to create task queue client: %v", err)
+	}
+	return taskQueueClient, fakeRedis
+}
 
 func TestNewClient(t *testing.T) {
 	projectID := "test-project"
@@ -42,7 +69,6 @@ func TestNewClient(t *testing.T) {
 	keyFunc := securitytest.MustCreateTestSigner(t)
 
 	c, err := New(ctx, projectID, invokerSA, actuatorURL, audience, keyFunc, DefaultSignatureTTLSeconds, "")
-
 	if err != nil {
 		t.Fatalf("New() failed with error: %v", err)
 	}
@@ -125,16 +151,7 @@ func TestEnqueueWorkUnitTask(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 
-			oldGenerateOIDCToken := generateOIDCToken
-			generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-				return "mock-oidc-token", nil
-			}
-			defer func() {
-				generateOIDCToken = oldGenerateOIDCToken
-			}()
-
-			c := CreateTaskQueueClient(ctx, t)
-			redisClient := mockAndConfigureRedisClient(t, c)
+			c, redisClient := createTaskQueueClient(ctx, t, WithTokenProvider(&mockTokenProvider{Token: "mock-oidc-token"}))
 
 			if err := c.EnqueueWorkUnitTask(ctx, tc.target, workUnit, tc.action, operationName); err != nil {
 				t.Fatalf("EnqueueWorkUnitTask() failed with error: %v", err)
@@ -223,16 +240,7 @@ func TestEnqueueWorkUnitTask(t *testing.T) {
 func TestEnqueueWorkUnitTask_IdempotencyKeyIsUnique(t *testing.T) {
 	ctx := t.Context()
 
-	oldGenerateOIDCToken := generateOIDCToken
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "mock-oidc-token", nil
-	}
-	defer func() {
-		generateOIDCToken = oldGenerateOIDCToken
-	}()
-
-	c := CreateTaskQueueClient(ctx, t)
-	redisClient := mockAndConfigureRedisClient(t, c)
+	c, redisClient := createTaskQueueClient(ctx, t, WithTokenProvider(&mockTokenProvider{Token: "mock-oidc-token"}))
 
 	action := &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Create{
@@ -270,26 +278,10 @@ func TestEnqueueWorkUnitTask_IdempotencyKeyIsUnique(t *testing.T) {
 	}
 }
 
-func TestEnqueueWorkUnitTask_RedisFailure(t *testing.T) {
+func TestEnqueueWorkUnitTask_TokenProviderFailure(t *testing.T) {
 	ctx := t.Context()
 
-	oldGenerateOIDCToken := generateOIDCToken
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "mock-oidc-token", nil
-	}
-	defer func() {
-		generateOIDCToken = oldGenerateOIDCToken
-	}()
-
-	// Note: currently redisclient.Publisher.AddMessage doesn't return an error, but it might in the future.
-	// For now, we can only test failures in token generation or other parts.
-	// Let's test OIDC token generation failure.
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "", fmt.Errorf("oidc error")
-	}
-
-	c := CreateTaskQueueClient(ctx, t)
-	mockAndConfigureRedisClient(t, c)
+	c, _ := createTaskQueueClient(ctx, t, WithTokenProvider(&mockTokenProvider{Err: fmt.Errorf("token provider error")}))
 
 	action := &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Create{
@@ -300,8 +292,8 @@ func TestEnqueueWorkUnitTask_RedisFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("EnqueueWorkUnitTask() succeeded, want error")
 	}
-	if !strings.Contains(err.Error(), "oidc error") {
-		t.Errorf("Error message %q does not contain 'oidc error'", err.Error())
+	if !strings.Contains(err.Error(), "token provider error") {
+		t.Errorf("Error message %q does not contain 'token provider error'", err.Error())
 	}
 }
 
@@ -310,4 +302,102 @@ func TestGenerateIdempotencyKeyUnknown(t *testing.T) {
 	if !strings.HasPrefix(key, "target_UNKNOWN_") {
 		t.Errorf("generateIdempotencyKey with unknown action got %q, want prefix %q", key, "target_UNKNOWN_")
 	}
+}
+
+func TestOidcTokenProvider(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		if r.Form.Get("grant_type") != "password" || r.Form.Get("client_id") != "test-client" {
+			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id_token":   "mock-oidc-id-token",
+			"expires_in": 3600,
+		})
+	}))
+	defer server.Close()
+
+	p := NewOidcTokenProvider(OidcTokenProviderConfig{
+		TokenURL:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		Username:     "admin@xmc.local",
+		Password:     "password",
+		HTTPClient:   server.Client(),
+	})
+
+	token, err := p.GenerateToken(ctx, "admin@xmc.local", "aud")
+	if err != nil {
+		t.Fatalf("OidcTokenProvider.GenerateToken() returned unexpected error: %v", err)
+	}
+	if token != "mock-oidc-id-token" {
+		t.Errorf("OidcTokenProvider.GenerateToken() returned %q, want 'mock-oidc-id-token'", token)
+	}
+
+	// Verify token caching (second call returns cached token without hitting server)
+	server.Close()
+	cachedToken, err := p.GenerateToken(ctx, "admin@xmc.local", "aud")
+	if err != nil {
+		t.Fatalf("OidcTokenProvider.GenerateToken() cached call failed: %v", err)
+	}
+	if cachedToken != "mock-oidc-id-token" {
+		t.Errorf("OidcTokenProvider.GenerateToken() cached token = %q, want 'mock-oidc-id-token'", cachedToken)
+	}
+}
+
+func TestGcpIAMTokenProvider_MissingCredentials(t *testing.T) {
+	ctx := t.Context()
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/credentials.json")
+	p := &GcpIAMTokenProvider{}
+	token, err := p.GenerateToken(ctx, "sa@test.com", "aud")
+	if err == nil {
+		t.Fatalf("GcpIAMTokenProvider.GenerateToken() succeeded unexpectedly with token %q, want error", token)
+	}
+	if !strings.Contains(err.Error(), "failed to find default credentials") {
+		t.Errorf("GenerateToken() error %q want substring 'failed to find default credentials'", err.Error())
+	}
+}
+
+type staticTestTokenProvider struct {
+	token string
+}
+
+func (s *staticTestTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	return s.token, nil
+}
+
+func TestNew_DefaultTokenProvider(t *testing.T) {
+	ctx := t.Context()
+	keyFunc := securitytest.MustCreateTestSigner(t)
+
+	t.Run("defaults to GcpIAMTokenProvider", func(t *testing.T) {
+		c, err := New(ctx, "project", "sa", "http://actuator", "", keyFunc, 3600, "")
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		if _, ok := c.tokenProvider.(*GcpIAMTokenProvider); !ok {
+			t.Errorf("tokenProvider is %T, want *GcpIAMTokenProvider", c.tokenProvider)
+		}
+	})
+
+	t.Run("explicit custom token provider", func(t *testing.T) {
+		customProvider := &staticTestTokenProvider{token: "test-token"}
+		c, err := New(ctx, "project", "sa", "http://actuator", "", keyFunc, 3600, "", WithTokenProvider(customProvider))
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		if c.tokenProvider != customProvider {
+			t.Errorf("tokenProvider got %v, want %v", c.tokenProvider, customProvider)
+		}
+	})
 }
