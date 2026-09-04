@@ -147,13 +147,15 @@ jobs:
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'
         if: steps.changes.outputs.ui == 'true'
-        uses: 'actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af' # v4.1.0
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
 
       - name: 'Install UI Dependencies'
         if: steps.changes.outputs.ui == 'true'
-        run: npm ci --legacy-peer-deps
+        run: npm ci --legacy-peer-deps --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
       - name: 'Run Prettier Check'
