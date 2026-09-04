@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, log_success, run_command
+from tools.dev_env.change_detector import ChangeDetector
 from tools.dev_env.config import LocalDevConfig
 from tools.dev_env.helm_deployer import HelmDeployer
 from tools.dev_env.image_builder import ImageBuilder
@@ -45,6 +46,10 @@ class LocalRunner:
         self.kind_mgr = KindManager(config, repo_root=self.repo_root)
         self.image_builder = ImageBuilder(config, repo_root=self.repo_root)
         self.helm_deployer = HelmDeployer(config, repo_root=self.repo_root)
+        self.change_detector = ChangeDetector(
+            repo_root=self.repo_root,
+            enabled_services=self.config.enabled_services,
+        )
 
     def up(
         self,
@@ -112,6 +117,41 @@ class LocalRunner:
                 f"'{self.config.xid_database}'). Use --drop-db to delete them."
             )
         log_success("Local KinD development environment teardown complete.")
+
+    def _resolve_target_services(
+        self,
+        services: list[str] | None = None,
+        helm: bool = False,
+    ) -> tuple[set[str], bool]:
+        """Resolves target services and Helm requirement from args and git status."""
+        target_services: set[str] = set()
+        helm_needed = helm
+        raw_services = services or []
+        lowercase_services = {s.strip().lower() for s in raw_services if s and s.strip()}
+
+        if ("auto" in lowercase_services) or (not raw_services and not helm):
+            log_info("=== [ChangeDetector] Auto-detecting modified services from git ===")
+            det = self.change_detector.detect_changes()
+            target_services.update(det.services)
+            if det.helm_upgrade_needed:
+                helm_needed = True
+            for svc, r in det.reasons.items():
+                files_str = ", ".join(r[:2]) + ("..." if len(r) > 2 else "")
+                log_info(f"  • {svc}: triggered by {len(r)} file(s) ({files_str})")
+
+        non_auto_services = [
+            s for s in raw_services if s and s.strip() and s.strip().lower() != "auto"
+        ]
+        if non_auto_services:
+            explicit_targets, explicit_helm = resolve_target_services(
+                services=non_auto_services,
+                enabled_services=self.change_detector.enabled_services,
+                helm=helm_needed,
+            )
+            target_services.update(explicit_targets)
+            helm_needed = explicit_helm
+
+        return target_services, helm_needed
 
     def _rebuild_and_load_services(self, sorted_targets: list[str]) -> None:
         """Compiles image tarballs and imports them into the KinD cluster."""
@@ -182,28 +222,30 @@ class LocalRunner:
             return [r for r in results if r is not None]
 
     def reload(self, services: list[str] | None = None, helm: bool = False) -> bool:
-        """Recompiles and hot-reloads selected microservices into the running cluster.
+        """Recompiles and hot-reloads selected or modified microservices into the running cluster.
 
         Fast inner-loop reload pipeline:
         1. Checks that the KinD development cluster is active.
-        2. Validates and merges explicitly specified services or 'all' keyword.
-        3. Recompiles OCI container images in parallel with Bazel.
-        4. Imports new image layers into KinD cluster nodes via `kind load docker-image`.
-        5. Upgrades Helm release if `--helm` was requested.
-        6. Triggers non-blocking `kubectl rollout restart` across affected deployments.
-        7. Concurrently monitors rollout completion across worker threads with timeout bounds.
-        8. Reports sub-second execution elapsed time and success status.
+        2. Detects modified microservices and Helm manifests via git status/diffs.
+        3. Validates and merges explicitly specified services or 'all' keyword.
+        4. Recompiles OCI container images in parallel with Bazel.
+        5. Imports new image layers into KinD cluster nodes via `kind load docker-image`.
+        6. Upgrades Helm release if chart or supporting manifests were modified or requested.
+        7. Triggers non-blocking `kubectl rollout restart` across affected deployments.
+        8. Concurrently monitors rollout completion across worker threads with timeout bounds.
+        9. Reports sub-second execution elapsed time and success status.
 
         Args:
-            services: List of microservice names or aliases to reload (e.g. 'ess', 'ui', 'all').
+            services: Optional list of microservice names or aliases to reload.
+                Supports special keywords 'auto' (detect from git) and 'all' (all services).
             helm: If True, forces a Helm chart upgrade.
 
         Returns:
-            True if any service or Helm upgrade was performed.
+            True if any service or Helm upgrade was performed; False if clean.
 
         Raises:
             RuntimeError: If the KinD cluster is not currently running or any rollouts fail.
-            ValueError: If services list is empty or any requested service is invalid.
+            ValueError: If any explicitly requested service is unrecognized or disabled.
         """
         if not self.kind_mgr.exists():
             raise RuntimeError(
@@ -211,9 +253,10 @@ class LocalRunner:
                 "Run 'python3 tools/dev_env/dev_env.py up' first."
             )
 
-        target_services, helm_needed = resolve_target_services(
-            services, self.config.enabled_services, helm=helm
-        )
+        target_services, helm_needed = self._resolve_target_services(services, helm=helm)
+        if not target_services and not helm_needed:
+            log_info("No modified microservices or Helm manifests detected. Working tree clean.")
+            return False
         start_time = time.perf_counter()
         sorted_targets = sorted(target_services)
 
@@ -221,7 +264,7 @@ class LocalRunner:
             self._rebuild_and_load_services(sorted_targets)
 
         if helm_needed:
-            log_info("=== [Helm] Updating Helm release on KinD cluster ===")
+            log_info("=== [Helm] Manifest or chart changes detected, updating Helm release ===")
             self.helm_deployer.deploy()
             self.kind_mgr.apply_manifests()
 
@@ -241,7 +284,6 @@ class LocalRunner:
                 f"Services{msg_suffix} reloaded in {elapsed:.2f}s: {', '.join(sorted_targets)}"
             )
             return True
-
         if helm_needed:
             elapsed = time.perf_counter() - start_time
             log_success(f"Helm release reloaded in {elapsed:.2f}s")

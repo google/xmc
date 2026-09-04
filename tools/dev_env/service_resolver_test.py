@@ -40,6 +40,8 @@ class ServiceResolverTest(unittest.TestCase):
         self.assertEqual(resolve_service_name("dashboard"), "dashboard_service")
         self.assertEqual(resolve_service_name("health"), "health_service")
         self.assertEqual(resolve_service_name("comp"), "components")
+        self.assertEqual(resolve_service_name("monitor"), "log_monitor")
+        self.assertEqual(resolve_service_name("ingestion"), "ingestion_gateway")
 
     def test_resolve_service_name_canonical_and_kebab(self) -> None:
         """Verifies canonical names and kebab-case strings are preserved or normalized."""
@@ -49,8 +51,8 @@ class ServiceResolverTest(unittest.TestCase):
         self.assertEqual(resolve_service_name("custom-worker"), "custom_worker")
 
     def test_resolve_service_names_deduplication(self) -> None:
-        """Verifies resolving a list of names deduplicates while preserving order."""
-        names = ["ess", "ui", "web", "experiment-state-server", "xid", ""]
+        """Verifies resolving a list of names deduplicates and filters reserved keywords."""
+        names = ["ess", "ui", "web", "auto", "ALL", "experiment-state-server", "xid", ""]
         resolved = resolve_service_names(names)
         self.assertEqual(resolved, ["experiment_state_server", "ui", "xid_service"])
 

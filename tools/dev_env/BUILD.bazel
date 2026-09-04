@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__init__.py",
+    "change_detector.py",
     "chart_sanitizer.py",
     "cluster_diagnostics.py",
     "config.py",
@@ -33,6 +34,26 @@ exports_files([
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "change_detector_lib",
+    srcs = ["change_detector.py"],
+    imports = ["../.."],
+    deps = [
+        ":image_builder_lib",
+        ":service_resolver_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "change_detector_test",
+    srcs = ["change_detector_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":change_detector_lib",
+    ],
+)
 
 py_library(
     name = "chart_sanitizer_lib",
@@ -117,6 +138,7 @@ py_library(
     srcs = ["local_runner.py"],
     imports = ["../.."],
     deps = [
+        ":change_detector_lib",
         ":config_lib",
         ":helm_deployer_lib",
         ":image_builder_lib",
@@ -132,6 +154,7 @@ py_test(
     srcs = ["local_runner_test.py"],
     imports = ["../.."],
     deps = [
+        ":change_detector_lib",
         ":config_lib",
         ":helm_deployer_lib",
         ":image_builder_lib",
@@ -232,6 +255,7 @@ py_library(
     ],
     imports = ["../.."],
     deps = [
+        ":change_detector_lib",
         ":config_lib",
         ":deploy_dev_env_lib",
         ":helm_deployer_lib",
