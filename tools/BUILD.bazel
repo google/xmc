@@ -21,7 +21,6 @@ exports_files([
     "BUILD.bazel",
     "README.md",
     "dev_env.py",
-    "recover_closed_stacked_pr.py",
 ])
 
 # Aliases to subpackages for backwards compatibility
