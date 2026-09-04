@@ -17,10 +17,15 @@ const assert = require('node:assert');
 const childProcess = require('child_process');
 const {
   validateGitRefs,
+  buildGitEnv,
+  execGit,
+  ensureGitRefs,
   resolveCommitRanges,
   runGitRangeDiff,
   getCommitLineDelta,
-  computeAddedCommitsDelta
+  computeAddedCommitsDelta,
+  getPrChangedFiles,
+  getCommitModifiedFiles
 } = require('./git-range-diff');
 
 test('validateGitRefs accepts valid git refs and commit SHAs', () => {
@@ -45,7 +50,8 @@ test('getCommitLineDelta parses numstat additions and deletions correctly', () =
 
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'diff-tree') {
-      return '94d6450805df211f728adf73e0c98b8419e22005\n3\t1\t.github/workflows/unit-tests.yml\n1\t0\tREADME.md\n';
+      assert.ok(args.includes('--no-commit-id'), 'should pass --no-commit-id to diff-tree');
+      return '3\t1\t.github/workflows/unit-tests.yml\n1\t0\tREADME.md\n';
     }
     throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
   };
@@ -60,7 +66,7 @@ test('getCommitLineDelta parses numstat additions and deletions correctly', () =
   }
 });
 
-test('getCommitLineDelta handles subprocess failure gracefully', () => {
+test('getCommitLineDelta throws on subprocess failure to fail-safe', () => {
   const originalExec = childProcess.execFileSync;
 
   childProcess.execFileSync = () => {
@@ -68,10 +74,10 @@ test('getCommitLineDelta handles subprocess failure gracefully', () => {
   };
 
   try {
-    const delta = getCommitLineDelta('94d64508');
-    assert.strictEqual(delta.additions, 0);
-    assert.strictEqual(delta.deletions, 0);
-    assert.strictEqual(delta.totalDelta, 0);
+    assert.throws(
+      () => getCommitLineDelta('94d64508'),
+      /Failed to get line delta for commit 94d64508:.*Fatal git error/
+    );
   } finally {
     childProcess.execFileSync = originalExec;
   }
@@ -254,3 +260,237 @@ test('getCommitLineDelta enforces encoding and stdio precedence over execOptions
     childProcess.execFileSync = originalExec;
   }
 });
+
+test('runGitRangeDiff returns empty string when approvedSha equals currentSha', () => {
+  const result = runGitRangeDiff('main', 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e', 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e');
+  assert.strictEqual(result, '');
+});
+
+test('ensureGitRefs returns success when all refs exist locally', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--verify') {
+      return 'ok\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { ensureGitRefs: mockedEnsure } = require('./git-range-diff');
+
+  try {
+    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('ensureGitRefs fetches missing base and approved commits', () => {
+  const originalExec = childProcess.execFileSync;
+  const fetched = [];
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'c40cf0f') return 'ok\n';
+      const err = new Error('missing ref');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch') {
+      fetched.push(args.slice(1));
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { ensureGitRefs: mockedEnsure } = require('./git-range-diff');
+
+  try {
+    const res = mockedEnsure('feat/layer', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(fetched.length, 2);
+    assert.deepStrictEqual(fetched[0], ['origin', '+refs/heads/feat/layer:refs/remotes/origin/feat/layer']);
+    assert.deepStrictEqual(fetched[1], ['origin', '8fa2009']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('ensureGitRefs skips fetching approved commit if it became present after base fetch', () => {
+  const originalExec = childProcess.execFileSync;
+  const fetched = [];
+  let baseFetched = false;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'c40cf0f') return 'ok\n';
+      if (args[3] === '8fa2009' && baseFetched) return 'ok\n';
+      const err = new Error('missing ref');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch') {
+      fetched.push(args.slice(1));
+      baseFetched = true;
+      return '';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { ensureGitRefs: mockedEnsure } = require('./git-range-diff');
+
+  try {
+    const res = mockedEnsure('feat/layer', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(fetched.length, 1);
+    assert.deepStrictEqual(fetched[0], ['origin', '+refs/heads/feat/layer:refs/remotes/origin/feat/layer']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('ensureGitRefs gracefully returns failure when approved commit is GCed on remote', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'refs/remotes/origin/main' || args[3] === 'c40cf0f') return 'ok\n';
+      const err = new Error('missing ref');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch' && args[2] === '8fa2009') {
+      const err = new Error("fatal: couldn't find remote ref 8fa2009");
+      err.status = 128;
+      err.stderr = Buffer.from("fatal: couldn't find remote ref 8fa2009");
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { ensureGitRefs: mockedEnsure } = require('./git-range-diff');
+
+  try {
+    const res = mockedEnsure('main', '8fa2009', 'c40cf0f');
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.reason, 'APPROVED_SHA_UNREACHABLE');
+    assert.strictEqual(res.unreachableSha, '8fa2009');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('execGit passes GITHUB_TOKEN auth header and terminal security defaults', () => {
+  const originalExec = childProcess.execFileSync;
+  let capturedOptions = null;
+
+  childProcess.execFileSync = (cmd, args, opts) => {
+    capturedOptions = opts;
+    return 'ok\n';
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  process.env.GITHUB_TOKEN = 'secret-test-token';
+  const { execGit: mockedExecGit } = require('./git-range-diff');
+
+  try {
+    mockedExecGit(['status']);
+    assert.ok(capturedOptions);
+    assert.strictEqual(capturedOptions.env.GIT_TERMINAL_PROMPT, '0');
+    assert.strictEqual(capturedOptions.env.GIT_OPTIONAL_LOCKS, '0');
+    assert.strictEqual(capturedOptions.env.GIT_CONFIG_COUNT, '1');
+    assert.strictEqual(capturedOptions.env.GIT_CONFIG_KEY_0, 'http.extraheader');
+    assert.ok(capturedOptions.env.GIT_CONFIG_VALUE_0.startsWith('Authorization: Basic '));
+  } finally {
+    delete process.env.GITHUB_TOKEN;
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('execGit handles explicitly passed null options without throwing TypeError', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = () => 'ok\n';
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { execGit: mockedExecGit } = require('./git-range-diff');
+
+  try {
+    const result = mockedExecGit(['status'], null);
+    assert.strictEqual(result, 'ok\n');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
+test('buildGitEnv constructs non-interactive environment and basic auth header', () => {
+  const originalToken = process.env.GITHUB_TOKEN;
+  try {
+    process.env.GITHUB_TOKEN = 'secret-token';
+    const env = buildGitEnv({ CUSTOM_VAR: '1' });
+    assert.strictEqual(env.GIT_TERMINAL_PROMPT, '0');
+    assert.strictEqual(env.GIT_OPTIONAL_LOCKS, '0');
+    assert.strictEqual(env.CUSTOM_VAR, '1');
+    assert.strictEqual(env.GIT_CONFIG_COUNT, '1');
+    assert.strictEqual(env.GIT_CONFIG_KEY_0, 'http.extraheader');
+    assert.ok(env.GIT_CONFIG_VALUE_0.includes('Authorization: Basic '));
+  } finally {
+    if (originalToken !== undefined) {
+      process.env.GITHUB_TOKEN = originalToken;
+    } else {
+      delete process.env.GITHUB_TOKEN;
+    }
+  }
+});
+
+test('getPrChangedFiles returns files from 3-dot diff and includes follow-up commits if ancestor', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff' && args[2] === 'origin/main...headSha') {
+      return 'file1.go\nfile2.go\n';
+    }
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      return '';
+    }
+    if (cmd === 'git' && args[0] === 'diff' && args[2] === 'approvedSha' && args[3] === 'headSha') {
+      return 'file2.go\nfile3.go\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const files = getPrChangedFiles('main', 'approvedSha', 'headSha');
+    assert.deepStrictEqual(files.sort(), ['file1.go', 'file2.go', 'file3.go']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('getCommitModifiedFiles returns file list for commit from diff-tree', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree' && args.includes('sha123')) {
+      return 'pkg/auth.go\ncmd/main.go\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const files = getCommitModifiedFiles('sha123');
+    assert.deepStrictEqual(files, ['pkg/auth.go', 'cmd/main.go']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+

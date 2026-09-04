@@ -43,6 +43,7 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
+          git fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" --depth=1 || true
           git checkout "origin/${BASE_REF}" -- .github/scripts/ .github/workflows/ OWNERS
 
       - name: 'Evaluate Incremental Approval'

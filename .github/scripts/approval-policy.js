@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const childProcess = require('child_process');
-const { GIT_EXEC_TIMEOUT_MS, GIT_MAX_BUFFER_BYTES } = require('./git-range-diff');
+const { getPrChangedFiles, getCommitModifiedFiles } = require('./git-range-diff');
 
 // Default maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
 const DEFAULT_MAX_OWNER_GRACE_LINES = 10;
@@ -57,30 +56,55 @@ function isProtectedFile(filePath) {
 }
 
 /**
- * Shell Helper: Checks if any sensitive CI or repo configuration files were modified between commits.
- * @param {string} approvedSha - Previous approved commit SHA.
- * @param {string} currentSha - Current HEAD commit SHA.
+ * Pure function: Checks if any file in the provided list is a protected CI/security configuration file.
+ * @param {Array<string>} filePaths - List of file paths to inspect.
+ * @returns {boolean} True if any file matches protected patterns.
+ */
+function hasProtectedFile(filePaths) {
+  if (!Array.isArray(filePaths)) {
+    return false;
+  }
+  return filePaths.some(isProtectedFile);
+}
+
+/**
+ * Shell Helper: Checks if any protected files were modified.
+ * Delegates git file retrieval to git-range-diff.getPrChangedFiles and evaluates against hasProtectedFile.
+ * @param {string} baseRefOrApprovedSha - Target base branch name or approved SHA.
+ * @param {string} approvedShaOrCurrentSha - Approved SHA or current SHA.
+ * @param {string} [currentSha] - Current HEAD commit SHA.
  * @param {Object} [execOptions={}] - Subprocess options.
  * @returns {boolean} True if any sensitive file was modified.
  */
-function checkProtectedFileChanges(approvedSha, currentSha, execOptions = {}) {
-  const opts = {
-    encoding: 'utf8',
-    maxBuffer: GIT_MAX_BUFFER_BYTES,
-    timeout: GIT_EXEC_TIMEOUT_MS,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    ...execOptions
-  };
-
+function checkProtectedFileChanges(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions = {}) {
   try {
-    const diffOutput = childProcess.execFileSync('git', ['diff', '--name-only', approvedSha, currentSha], opts);
-    const files = diffOutput.split(/\r?\n/).filter(f => f.trim().length > 0);
-    return files.some(isProtectedFile);
+    const files = getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions);
+    return hasProtectedFile(files);
   } catch (error) {
     const stderrInfo = error.stderr ? ' | Stderr: ' + error.stderr.trim() : '';
-    console.log('[incremental-approval] Failed to check modified files between ' + approvedSha + '..' + currentSha + ': ' + error.message + stderrInfo);
+    console.log('[incremental-approval] Failed to check modified files: ' + error.message + stderrInfo);
     return true;
   }
+}
+
+/**
+ * Shell Helper: Checks if any newly added commits modify protected files.
+ * @param {Array<string>} addedCommitShas - List of commit SHAs to check.
+ * @param {Object} [execOptions={}] - Subprocess options.
+ * @returns {boolean} True if any commit modifies protected files.
+ */
+function checkAddedCommitsForProtectedFiles(addedCommitShas, execOptions = {}) {
+  if (!Array.isArray(addedCommitShas) || addedCommitShas.length === 0) return false;
+  for (const sha of addedCommitShas) {
+    try {
+      const files = getCommitModifiedFiles(sha, execOptions);
+      if (hasProtectedFile(files)) return true;
+    } catch (err) {
+      console.log(`[incremental-approval] Failed to verify files for commit ${sha}: ${err.message}`);
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -206,7 +230,9 @@ module.exports = {
   PROTECTED_FILE_PATTERNS,
   getMaxOwnerGraceLines,
   isProtectedFile,
+  hasProtectedFile,
   checkProtectedFileChanges,
+  checkAddedCommitsForProtectedFiles,
   evaluateIncrementalApproval,
   formatReapprovalReviewBody
 };

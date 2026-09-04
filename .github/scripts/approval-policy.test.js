@@ -19,7 +19,9 @@ const {
   DEFAULT_MAX_OWNER_GRACE_LINES,
   getMaxOwnerGraceLines,
   isProtectedFile,
+  hasProtectedFile,
   checkProtectedFileChanges,
+  checkAddedCommitsForProtectedFiles,
   evaluateIncrementalApproval,
   formatReapprovalReviewBody
 } = require('./approval-policy');
@@ -33,6 +35,14 @@ test('isProtectedFile accurately identifies sensitive repository files', () => {
   assert.strictEqual(isProtectedFile('README.md'), false);
   assert.strictEqual(isProtectedFile(''), false);
   assert.strictEqual(isProtectedFile(null), false);
+});
+
+test('hasProtectedFile checks arrays of paths and handles null/undefined inputs safely', () => {
+  assert.strictEqual(hasProtectedFile(['pkg/main.go', '.github/workflows/test.yml']), true);
+  assert.strictEqual(hasProtectedFile(['pkg/main.go', 'README.md']), false);
+  assert.strictEqual(hasProtectedFile([]), false);
+  assert.strictEqual(hasProtectedFile(null), false);
+  assert.strictEqual(hasProtectedFile(undefined), false);
 });
 
 test('checkProtectedFileChanges detects sensitive modifications and handles git failure', () => {
@@ -87,6 +97,70 @@ test('evaluateIncrementalApproval handles undefined arguments safely without thr
   const result = evaluateIncrementalApproval();
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'NO_PRIOR_APPROVAL');
+});
+
+test('checkProtectedFileChanges uses 3-dot diff against baseRef and avoids false positives from base branch (PR #559 incident fix)', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff') {
+      if (args[2] === 'origin/feat/tools-dev-env-helm-deployer...c40cf0f') {
+        return 'tools/dev_env/local_runner.py\ntools/dev_env/local_runner_test.py\n';
+      }
+      if (args[2] === '8fa2009' && args[3] === 'c40cf0f') {
+        return '.github/scripts/incremental-approval.js\ntools/dev_env/local_runner.py\n';
+      }
+    }
+    if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+      const err = new Error('not ancestor after rebase');
+      err.status = 1;
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const hasProtected = checkProtectedFileChanges('feat/tools-dev-env-helm-deployer', '8fa2009', 'c40cf0f');
+    assert.strictEqual(hasProtected, false);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('checkProtectedFileChanges detects sensitive files in 3-dot diff', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff' && args[2] === 'origin/main...c40cf0f') {
+      return '.github/workflows/incremental-pr-approval.yml\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const hasProtected = checkProtectedFileChanges('main', '8fa2009', 'c40cf0f');
+    assert.strictEqual(hasProtected, true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('checkProtectedFileChanges respects 3-argument signature even when execOptions includes encoding property', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff' && args[2] === 'origin/main...c40cf0f') {
+      return 'pkg/foo.go\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const hasProtected = checkProtectedFileChanges('main', '8fa2009', 'c40cf0f', { encoding: 'utf8' });
+    assert.strictEqual(hasProtected, false);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
 });
 
 test('formatReapprovalReviewBody formats markdown body accurately', () => {
@@ -300,4 +374,45 @@ test('getMaxOwnerGraceLines resolves custom env or fallback default', () => {
   assert.strictEqual(getMaxOwnerGraceLines(null), DEFAULT_MAX_OWNER_GRACE_LINES);
   assert.strictEqual(getMaxOwnerGraceLines('invalid'), DEFAULT_MAX_OWNER_GRACE_LINES);
   assert.strictEqual(getMaxOwnerGraceLines('-5'), DEFAULT_MAX_OWNER_GRACE_LINES);
+});
+
+test('checkAddedCommitsForProtectedFiles detects protected file in added commits', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      assert.ok(args.includes('--no-commit-id'), 'should pass --no-commit-id to diff-tree');
+      const sha = args[args.length - 1];
+      if (sha === 'sha-normal') {
+        return 'pkg/foo.go\n';
+      }
+      if (sha === 'sha-sensitive') {
+        return '.github/workflows/ci.yml\n';
+      }
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  try {
+    assert.strictEqual(checkAddedCommitsForProtectedFiles([]), false);
+    assert.strictEqual(checkAddedCommitsForProtectedFiles(null), false);
+    assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-normal']), false);
+    assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-normal', 'sha-sensitive']), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('checkAddedCommitsForProtectedFiles returns true on git error to fail-safe', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = () => {
+    throw new Error('git diff-tree failed: corrupt commit');
+  };
+
+  try {
+    assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-corrupt']), true);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
 });

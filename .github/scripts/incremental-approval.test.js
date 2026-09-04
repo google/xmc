@@ -122,6 +122,100 @@ test('run skips when no prior approval is found', async () => {
   assert.ok(core.infos.some(m => m.includes('does not have any prior active approvals')));
 });
 
+test('run warns and aborts when approved commit is unreachable on remote', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      if (args[3] === 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e') return 'ok\n';
+      const err = new Error('not found');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'fetch') {
+      const err = new Error('fetch failed');
+      err.status = 128;
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+
+  try {
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.warnings.length, 1);
+    assert.match(core.warnings[0], /is no longer reachable on remote/);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('run warns and aborts gracefully when ensureGitRefs throws an unexpected error', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd) => {
+    if (cmd === 'git') {
+      throw new Error('git rev-parse unexpected failure');
+    }
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: { pulls: { listReviews: 'dummy' } }
+  };
+
+  try {
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: 'cfe1eb7d59fe72ac5e7c61b237a6c82bc791895e' },
+            base: { ref: 'main..invalid' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.warnings.length, 1);
+    assert.match(core.warnings[0], /Failed to verify git references.*Requiring manual review\./);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
 test('run executes clean rebase auto-reapproval successfully', async () => {
   const core = createMockCore();
   const originalExec = childProcess.execFileSync;
@@ -130,17 +224,22 @@ test('run executes clean rebase auto-reapproval successfully', async () => {
   let createdReview = null;
 
   childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
     if (cmd === 'git' && args[0] === 'diff' && args[1] === '--name-only') {
       return 'tools/dev_env/runner.py\n';
+    }
+    if (cmd === 'git' && args[0] === 'merge-base') {
+      const err = new Error('not ancestor');
+      err.status = 1;
+      throw err;
     }
     if (cmd === 'git' && args[0] === 'range-diff') {
       return '1:  1111111 = 1:  2222222 feat: my commit\n';
     }
     if (cmd === 'git' && args[0] === 'rev-list') {
       return '1\n';
-    }
-    if (cmd === 'git' && args[0] === 'rev-parse') {
-      return 'ok\n';
     }
     throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
   };
@@ -194,3 +293,83 @@ test('run executes clean rebase auto-reapproval successfully', async () => {
     fs.readFileSync = originalRead;
   }
 });
+
+test('run warns and aborts when computing delta for added commits fails', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+  const originalExists = fs.existsSync;
+  const originalRead = fs.readFileSync;
+  let createdReview = null;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
+    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--name-only') {
+      return 'tools/dev_env/runner.py\n';
+    }
+    if (cmd === 'git' && args[0] === 'merge-base') {
+      const err = new Error('not ancestor');
+      err.status = 1;
+      throw err;
+    }
+    if (cmd === 'git' && args[0] === 'range-diff') {
+      return '1:  1111111 < -:  ------- commit 1\n-:  ------- > 1:  3333333 commit 2\n';
+    }
+    if (cmd === 'git' && args[0] === 'rev-list') {
+      return '1\n';
+    }
+    if (cmd === 'git' && args[0] === 'diff-tree') {
+      throw new Error('corrupt commit object 3333333');
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  fs.existsSync = (p) => p === 'OWNERS';
+  fs.readFileSync = () => 'alice\nbob\n';
+
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: {
+      pulls: {
+        listReviews: 'dummy',
+        createReview: async (params) => {
+          createdReview = params;
+          return { status: 200 };
+        }
+      }
+    }
+  };
+
+  try {
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 123,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: '3333333333333333333333333333333333333333' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.failed.length, 0);
+    assert.strictEqual(createdReview, null);
+    assert.strictEqual(core.warnings.length, 1);
+    assert.match(core.warnings[0], /Unable to compute line delta for added commits/);
+    assert.match(core.warnings[0], /corrupt commit object 3333333/);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    fs.existsSync = originalExists;
+    fs.readFileSync = originalRead;
+  }
+});
+
