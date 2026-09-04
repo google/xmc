@@ -120,6 +120,27 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.start_from, "compile")
         self.assertIsNone(called_args.only)
 
+    @patch("tools.dev_env.deploy_dev_env.run_deployment")
+    def test_gke_deploy_negative_managed_mldiagnostics(self, mock_run: MagicMock) -> None:
+        """Verifies --no-enable-managed-mldiagnostics sets enable_managed_mldiagnostics to False."""
+        args = [
+            "gke-deploy",
+            "--config",
+            "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--dns-project",
+            "test-dns-proj",
+            "--dns-zone",
+            "test-dns-zone",
+            "--no-enable-managed-mldiagnostics",
+        ]
+        parsed = self.parser.parse_args(args)
+        parsed.func(parsed)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertFalse(called_args.enable_managed_mldiagnostics)
+
     def test_gke_deploy_missing_required_args(self) -> None:
         """Verifies gke-deploy fails when required flags are omitted."""
         with patch("sys.stderr", new_callable=io.StringIO):
@@ -181,6 +202,23 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertTrue(called_args.run_migrations)
         self.assertEqual(called_args.only, "images")
         self.assertIsNone(called_args.start_from)
+
+    @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
+    def test_gke_upgrade_negative_managed_mldiagnostics(self, mock_run: MagicMock) -> None:
+        """Verifies --no-enable-managed-mldiagnostics sets enable_managed_mldiagnostics to False in gke-upgrade."""
+        args = [
+            "gke-upgrade",
+            "--config",
+            "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--no-enable-managed-mldiagnostics",
+        ]
+        parsed = self.parser.parse_args(args)
+        parsed.func(parsed)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertFalse(called_args.enable_managed_mldiagnostics)
 
     def test_gke_upgrade_mutually_exclusive_flags(self) -> None:
         """Verifies gke-upgrade exits if --start-from and --only are both set."""

@@ -240,6 +240,24 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg_neg = config.load_config(args_neg, repo_root=self.root)
         self.assertFalse(cfg_neg.enable_managed_mldiagnostics)
 
+        # Negative flag overrides both env var and YAML
+        with patch.dict(
+            "os.environ",
+            {config.ENABLE_MANAGED_MLDIAGNOSTICS_ENV: "true"},
+            clear=True,
+        ):
+            override_file = self.root / "mldiag_override.yaml"
+            override_file.write_text(
+                "vars:\n  project_id: my-proj\n  enable_managed_mldiagnostics: true\n",
+                encoding="utf-8",
+            )
+            args_neg_override = argparse.Namespace(
+                config=str(override_file),
+                enable_managed_mldiagnostics=False,
+            )
+            cfg_neg_override = config.load_config(args_neg_override, repo_root=self.root)
+            self.assertFalse(cfg_neg_override.enable_managed_mldiagnostics)
+
         # Environment variable fallback resolution
         with patch.dict(
             "os.environ",
