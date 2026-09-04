@@ -27,6 +27,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/semver"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -50,11 +52,11 @@ func (s *Server) Store() store.Store {
 
 // validateComponentName validates and returns the canonical component name.
 func validateComponentName(name string) (string, error) {
-	canonical := store.CanonicalComponentName(name)
+	canonical := naming.CanonicalComponentName(name)
 	if canonical == "" {
 		return "", status.Error(codes.InvalidArgument, "component name is required")
 	}
-	if !store.IsValidComponentName(canonical) {
+	if !naming.IsValidComponentName(canonical) {
 		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
 	}
 	return canonical, nil
@@ -107,13 +109,13 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}
 
 	if version := specToSet.GetVersion(); version != "" {
-		if _, err := store.Parse(version); err != nil {
+		if _, err := semver.Parse(version); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
 	if req.GetValidateOnly() {
 		protoComp := &componentspb.Component{
-			Name: store.FullComponentName(canonicalName),
+			Name: naming.FullComponentName(canonicalName),
 			Spec: proto.Clone(specToSet).(*componentspb.ComponentSpec),
 			Status: &componentspb.ComponentAccessStatus{
 				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -282,7 +284,7 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 		return nil, err
 	}
 	if minVersion := req.GetMinimumVersion(); minVersion != "" {
-		if _, err := store.Parse(minVersion); err != nil {
+		if _, err := semver.Parse(minVersion); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}

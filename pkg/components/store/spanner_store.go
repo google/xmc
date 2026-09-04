@@ -30,6 +30,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/semver"
 )
 
 // Ensure SpannerStore implements Store interface at compile time.
@@ -210,7 +212,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 	specClone.Generation = newGen
 
 	compProto := &componentspb.Component{
-		Name:   FullComponentName(canonicalName),
+		Name:   naming.FullComponentName(canonicalName),
 		Spec:   specClone,
 		Labels: copyMap(labels),
 	}
@@ -300,7 +302,7 @@ func (s *SpannerStore) createNewIntentTx(
 	specClone.Generation = gen
 
 	compProto := &componentspb.Component{
-		Name:   FullComponentName(canonicalName),
+		Name:   naming.FullComponentName(canonicalName),
 		Spec:   specClone,
 		Labels: copyMap(labels),
 	}
@@ -714,7 +716,7 @@ func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.Del
 		}
 
 		compProto := &componentspb.Component{
-			Name:   FullComponentName(target.Name),
+			Name:   naming.FullComponentName(target.Name),
 			Spec:   target.Spec,
 			Labels: copyMap(target.Labels),
 		}
@@ -840,7 +842,7 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 		return nil, err
 	}
 	if minVersion != "" {
-		if _, err := Parse(minVersion); err != nil {
+		if _, err := semver.Parse(minVersion); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}

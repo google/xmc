@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 // validateSchema validates YAML structural correctness and schema conformance.
@@ -56,7 +56,7 @@ func (l *Linter) validateComponentManifest(c *ComponentManifest, rules *RulesCon
 	if line <= 0 {
 		line = 1
 	}
-	if c.Metadata.Name != "" && !store.IsValidComponentName(c.Metadata.Name) {
+	if c.Metadata.Name != "" && !naming.IsValidComponentName(c.Metadata.Name) {
 		res.AddError(c.FilePath, line, "INVALID_COMPONENT_NAME", fmt.Sprintf("invalid component name %q: must conform to DNS-1123", c.Metadata.Name))
 	}
 	if c.Spec.ComponentType != "" && !isValidComponentType(c.Spec.ComponentType) {

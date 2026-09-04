@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -169,11 +170,11 @@ func NormalizeDependencies(rawDeps []string) []string {
 	for _, raw := range rawDeps {
 		cleaned := cleanRawDependencyString(raw)
 		for _, token := range strings.Fields(cleaned) {
-			canonical := CanonicalComponentName(token)
+			canonical := naming.CanonicalComponentName(token)
 			if canonical == "" {
 				continue
 			}
-			if !IsValidComponentName(canonical) {
+			if !naming.IsValidComponentName(canonical) {
 				continue
 			}
 			if !seen[canonical] {

@@ -26,7 +26,7 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
-        "//pkg/components/store",
+        "//pkg/components/naming",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/types",
         "@org_golang_google_grpc//:go_default_library",
@@ -42,7 +42,6 @@ go_test(
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
-        "//pkg/components/store",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/types",
         "@org_golang_google_grpc//codes",

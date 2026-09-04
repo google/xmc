@@ -20,7 +20,8 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/naming"
+	componentsemver "xmanager_cloud/pkg/components/semver"
 )
 
 // validateMatrix validates SemVer compatibility matrix constraints and requirements.
@@ -33,14 +34,14 @@ func (l *Linter) validateMatrix(compManifests []*ComponentManifest, compMap map[
 }
 
 // validateComponentVersions parses and validates all declared Component.spec.version strings
-// across manifests using store.Parse, recording INVALID_VERSION diagnostics for malformed strings.
+// across manifests using componentsemver.Parse, recording INVALID_VERSION diagnostics for malformed strings.
 func validateComponentVersions(compManifests []*ComponentManifest, res *ValidationResult) {
 	for _, c := range compManifests {
 		if c == nil || c.Spec.Version == "" {
 			continue
 		}
 		line := max(c.Line, 1)
-		if _, err := store.Parse(c.Spec.Version); err != nil {
+		if _, err := componentsemver.Parse(c.Spec.Version); err != nil {
 			res.AddError(c.FilePath, line, "INVALID_VERSION", fmt.Sprintf("invalid semver version %q for component %q: %v", c.Spec.Version, c.Metadata.Name, err))
 		}
 	}
@@ -54,7 +55,7 @@ func validateManifestDependencies(compManifests []*ComponentManifest, compMap ma
 			continue
 		}
 		line := max(c.Line, 1)
-		cName := store.CanonicalComponentName(c.Metadata.Name)
+		cName := naming.CanonicalComponentName(c.Metadata.Name)
 		for _, dep := range c.Spec.Dependencies {
 			validateSingleDependency(c, line, cName, dep, compMap, res)
 		}
@@ -68,12 +69,12 @@ func validateSingleDependency(c *ComponentManifest, line int, cName string, dep 
 	if dep.Version == "" {
 		return
 	}
-	depName := store.CanonicalComponentName(dep.Name)
+	depName := naming.CanonicalComponentName(dep.Name)
 	depComp, exists := compMap[depName]
 	if !exists || depComp == nil || !depComp.IsEnabled() || depComp.Spec.Version == "" {
 		return
 	}
-	if _, err := store.Parse(depComp.Spec.Version); err != nil {
+	if _, err := componentsemver.Parse(depComp.Spec.Version); err != nil {
 		return
 	}
 	satisfied, err := MatchConstraint(depComp.Spec.Version, dep.Version)
@@ -96,7 +97,7 @@ func (l *Linter) evaluateMatrixRules(compMap map[string]*ComponentManifest, res 
 // applying each rule to enabled target components that match the rule's version filter.
 func (l *Linter) evaluateComponentDependencies(compMap map[string]*ComponentManifest, res *ValidationResult) {
 	for _, rule := range l.rules.CompatibilityMatrix.ComponentDependencies {
-		ruleCompName := store.CanonicalComponentName(rule.Component)
+		ruleCompName := naming.CanonicalComponentName(rule.Component)
 		comp, exists := compMap[ruleCompName]
 		if !exists || comp == nil || !comp.IsEnabled() {
 			continue
@@ -123,7 +124,7 @@ func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDepende
 	if comp.Spec.Version == "" {
 		return false
 	}
-	if _, err := store.Parse(comp.Spec.Version); err != nil {
+	if _, err := componentsemver.Parse(comp.Spec.Version); err != nil {
 		return false
 	}
 	match, err := MatchConstraint(comp.Spec.Version, rule.ComponentVersion)
@@ -137,7 +138,7 @@ func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDepende
 // evaluateDependencyRequirement validates a single dependency requirement against the component map,
 // asserting presence (unless optional: true), enabled status, and SemVer compatibility.
 func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompName string, req DependencyRequirement, compMap map[string]*ComponentManifest, res *ValidationResult) {
-	reqCompName := store.CanonicalComponentName(req.Component)
+	reqCompName := naming.CanonicalComponentName(req.Component)
 	reqComp, reqExists := compMap[reqCompName]
 	if !reqExists || reqComp == nil || !reqComp.IsEnabled() {
 		if !req.Optional {
@@ -148,7 +149,7 @@ func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompNa
 	if req.Version == "" || reqComp.Spec.Version == "" {
 		return
 	}
-	if _, err := store.Parse(reqComp.Spec.Version); err != nil {
+	if _, err := componentsemver.Parse(reqComp.Spec.Version); err != nil {
 		return
 	}
 	satisfied, err := MatchConstraint(reqComp.Spec.Version, req.Version)
@@ -184,7 +185,7 @@ func reportVersionIncompatibility(filePath string, line int, ruleCompName, reqCo
 // validating Kubernetes version bounds and required CRD specifications for all enabled components.
 func (l *Linter) evaluatePlatformRequirements(compMap map[string]*ComponentManifest, res *ValidationResult) {
 	for _, rule := range l.rules.CompatibilityMatrix.PlatformRequirements {
-		ruleCompName := store.CanonicalComponentName(rule.Component)
+		ruleCompName := naming.CanonicalComponentName(rule.Component)
 		comp, exists := compMap[ruleCompName]
 		if !exists || !comp.IsEnabled() {
 			continue
