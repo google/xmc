@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-@use 'third_party/javascript/angular_components/material' as mat;
-@import 'third_party/xmanager_cloud/ui/consts';
+@use '@angular/material' as mat;
+@import 'consts';
 
 :host {
   display: block;

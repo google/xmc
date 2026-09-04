@@ -28,7 +28,7 @@ export enum ResourceType {
   selector: 'xmc-resource-chip',
   standalone: true,
   templateUrl: './resource_chip.ng.html',
-  styleUrl: './resource_chip.css',
+  styleUrl: './resource_chip.scss',
   imports: [MatChipsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

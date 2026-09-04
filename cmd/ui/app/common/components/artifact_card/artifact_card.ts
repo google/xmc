@@ -40,7 +40,7 @@ export const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
   selector: 'xmc-artifact-card',
   standalone: true,
   templateUrl: './artifact_card.ng.html',
-  styleUrl: './artifact_card.css',
+  styleUrl: './artifact_card.scss',
   imports: [
     JsonPipe,
     MatButtonModule,

@@ -78,7 +78,7 @@ interface WorkUnitView extends WorkUnit {
   selector: 'xmc-work-units-table',
   standalone: true,
   templateUrl: './work_units_table.ng.html',
-  styleUrl: './work_units_table.css',
+  styleUrl: './work_units_table.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
