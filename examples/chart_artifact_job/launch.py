@@ -176,10 +176,19 @@ def _get_auth_headers() -> dict[str, str]:
 
 
 def _resolve_ui_base_url() -> str:
-    """Resolves the XMC UI origin, used to build the deep links printed at the end."""
+    """Resolves the XMC UI origin, used to build the deep links printed at the end.
+
+    XMC_DOMAIN is documented as a bare host, but the same value is often pasted in
+    with the scheme it was copied from a browser with. Prefixing that blindly yields
+    https://https://example.com, so an existing scheme is kept and only a missing one
+    is added.
+    """
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
         return ui_url.rstrip("/")
-    return f"https://{_require_env('XMC_DOMAIN')}"
+    domain = _require_env("XMC_DOMAIN").strip().rstrip("/")
+    if domain.startswith(("http://", "https://")):
+        return domain
+    return f"https://{domain}"
 
 
 def _resolve_image_path() -> str:
