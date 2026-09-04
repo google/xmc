@@ -222,6 +222,70 @@ test('resolveCommitRanges preserves standard range when developer adds new commi
   }
 });
 
+test('resolveCommitRanges attempts stacked correlation when approvedRange revision walk fails', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/layer..head2') {
+      return '2\n';
+    }
+    if (args[0] === 'rev-list' && args[2] === 'origin/feat/layer..head1') {
+      const err = new Error('fatal: Invalid revision range origin/feat/layer..head1');
+      err.status = 128;
+      throw err;
+    }
+    if (args[0] === 'log' && args[3] === 'origin/feat/layer..head2') {
+      return 'head2_c1 feat: one\nhead2 fix: two\n';
+    }
+    if (args[0] === 'log' && args[3] === 'origin/feat/layer..head1') {
+      const err = new Error('fatal: Invalid revision range origin/feat/layer..head1');
+      err.status = 128;
+      throw err;
+    }
+    if (args[0] === 'rev-parse' && args[2] === 'head1~2') {
+      return 'ok\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  try {
+    const res = resolveCommitRanges('feat/layer', 'head1', 'head2', {});
+    assert.strictEqual(res.currentRange, 'origin/feat/layer..head2');
+    assert.strictEqual(res.approvedRange, 'head1~2..head1');
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('ensureGitRefs verifies commit objects with ^{commit} suffix', () => {
+  const originalExec = childProcess.execFileSync;
+  const queriedRefs = [];
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--verify') {
+      queriedRefs.push(args[3]);
+      return 'ok\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  delete require.cache[require.resolve('./git-range-diff')];
+  const { ensureGitRefs: mockedEnsure } = require('./git-range-diff');
+
+  try {
+    const res = mockedEnsure('main', 'b7fe6d0a3dce5a6a11178b08f182123ad9a9a03e', '08c0cfe01d10e02a5ad99899f86c6dc90d527287');
+    assert.strictEqual(res.success, true);
+    assert.deepStrictEqual(queriedRefs, [
+      'refs/remotes/origin/main^{commit}',
+      '08c0cfe01d10e02a5ad99899f86c6dc90d527287^{commit}',
+      'b7fe6d0a3dce5a6a11178b08f182123ad9a9a03e^{commit}'
+    ]);
+  } finally {
+    childProcess.execFileSync = originalExec;
+    delete require.cache[require.resolve('./git-range-diff')];
+  }
+});
+
 test('runGitRangeDiff executes range-diff without usage errors', () => {
   const headSha = childProcess.execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
   const output = runGitRangeDiff('main', headSha, headSha);
@@ -300,7 +364,7 @@ test('ensureGitRefs fetches missing base and approved commits', () => {
 
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'rev-parse') {
-      if (args[3] === 'c40cf0f') return 'ok\n';
+      if (args[3]?.startsWith('c40cf0f')) return 'ok\n';
       const err = new Error('missing ref');
       err.status = 1;
       throw err;
@@ -334,8 +398,8 @@ test('ensureGitRefs skips fetching approved commit if it became present after ba
 
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'rev-parse') {
-      if (args[3] === 'c40cf0f') return 'ok\n';
-      if (args[3] === '8fa2009' && baseFetched) return 'ok\n';
+      if (args[3]?.startsWith('c40cf0f')) return 'ok\n';
+      if (args[3]?.startsWith('8fa2009') && baseFetched) return 'ok\n';
       const err = new Error('missing ref');
       err.status = 1;
       throw err;
@@ -367,7 +431,7 @@ test('ensureGitRefs gracefully returns failure when approved commit is GCed on r
 
   childProcess.execFileSync = (cmd, args) => {
     if (cmd === 'git' && args[0] === 'rev-parse') {
-      if (args[3] === 'refs/remotes/origin/main' || args[3] === 'c40cf0f') return 'ok\n';
+      if (args[3]?.startsWith('refs/remotes/origin/main') || args[3]?.startsWith('c40cf0f')) return 'ok\n';
       const err = new Error('missing ref');
       err.status = 1;
       throw err;
@@ -570,7 +634,7 @@ test('getCommitCountInRange parses count and handles errors', () => {
   const { getCommitCountInRange: mockedCount2 } = require('./git-range-diff');
 
   try {
-    assert.strictEqual(mockedCount2('origin/main..HEAD', {}), 0);
+    assert.strictEqual(mockedCount2('origin/main..HEAD', {}), null);
   } finally {
     childProcess.execFileSync = originalExec;
     delete require.cache[require.resolve('./git-range-diff')];
