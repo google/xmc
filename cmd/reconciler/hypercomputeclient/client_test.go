@@ -441,16 +441,58 @@ func TestUpdateMLRun(t *testing.T) {
 				t.Errorf("patch body still contains output-only field %q", f)
 			}
 		}
-		// orchestrator/workloadDetails are mutable but must not be echoed back when the
-		// caller is not explicitly updating the orchestrator: the PATCH stays scoped to
-		// the fields being changed and leaves the existing values untouched.
-		for _, f := range []string{"orchestrator", "workloadDetails"} {
-			if _, ok := patchBody[f]; ok {
-				t.Errorf("patch body still contains immutable field %q", f)
-			}
+		// The API only accepts update_mask=*, which clears any field absent from the
+		// body. orchestrator/workloadDetails are immutable after creation, so they must
+		// be re-sent unchanged from the GET rather than dropped.
+		if patchBody["orchestrator"] != "GKE" {
+			t.Errorf("orchestrator = %v, want %q (must be preserved from GET)", patchBody["orchestrator"], "GKE")
+		}
+		if _, ok := patchBody["workloadDetails"]; !ok {
+			t.Errorf("workloadDetails missing, want preserved from GET")
 		}
 		if got["displayName"] != "new" {
 			t.Errorf("response displayName = %v, want %q", got["displayName"], "new")
+		}
+	})
+
+	t.Run("labels-only update preserves orchestrator and uses mask=*", func(t *testing.T) {
+		var patchMask string
+		var patchBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]any{
+					"orchestrator":    "GKE",
+					"workloadDetails": map[string]any{"gke": map[string]any{"id": "js-1"}},
+					"labels":          map[string]any{"experiment-id": "6170"},
+				})
+			case http.MethodPatch:
+				patchMask = r.URL.Query().Get("update_mask")
+				json.NewDecoder(r.Body).Decode(&patchBody)
+				json.NewEncoder(w).Encode(map[string]any{"done": true, "response": map[string]any{}})
+			default:
+				http.Error(w, "unexpected method", http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		_, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			Labels: map[string]string{"experiment-id": "6170", "list_existing_sessions_only": "true"},
+			Force:  true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchMask != "*" {
+			t.Errorf("update_mask = %q, want %q", patchMask, "*")
+		}
+		if patchBody["orchestrator"] != "GKE" {
+			t.Errorf("orchestrator = %v, want %q (labels-only update must not clear it)", patchBody["orchestrator"], "GKE")
+		}
+		labels, ok := patchBody["labels"].(map[string]any)
+		if !ok || labels["list_existing_sessions_only"] != "true" {
+			t.Errorf("labels = %v, want list_existing_sessions_only=true", patchBody["labels"])
 		}
 	})
 
