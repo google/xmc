@@ -495,6 +495,13 @@ def main(raw_args: list[str] | None = None) -> None:
         rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "experiment_state_server" / "proto")
         rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "dashboard_service" / "proto")
 
+        sys.stdout.write("Overlaying client source...\n")
+        shutil.copy2(
+            Path(__file__).resolve().parents[2]
+            / "cmd/experiment_state_server/experiment_state_api.py",
+            xmanager_dir / "xmanager_cloud/experiment_state_server/experiment_state_api.py",
+        )
+
         compile_protos(venv_python, xmanager_dir, googleapis_dir)
         install_xmanager_package(venv_python, xmanager_dir)
         verify_imports(venv_python)
