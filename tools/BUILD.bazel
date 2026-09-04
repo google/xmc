@@ -158,6 +158,16 @@ alias(
 )
 
 alias(
+    name = "cluster_diagnostics_lib",
+    actual = "//tools/dev_env:cluster_diagnostics_lib",
+)
+
+alias(
+    name = "cluster_diagnostics_test",
+    actual = "//tools/dev_env:cluster_diagnostics_test",
+)
+
+alias(
     name = "helm_deployer_lib",
     actual = "//tools/dev_env:helm_deployer_lib",
 )
