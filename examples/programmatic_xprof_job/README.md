@@ -65,9 +65,10 @@ The script will:
    an error if it is unset (the workload must run in a managed-xprof-configured
    cluster where the XMC Actuator injects it).
 2. Warms up a JAX matmul so the trace captures steady-state execution.
-3. Wraps the traced computation in `jax.profiler.start_trace(profile_dir)` /
-   `jax.profiler.stop_trace()`, writing the profile directly to the GCS folder.
-4. Starts a JAX profiler server (port `9999`) and keeps running matmuls for
-   `IDLE_SECONDS` (default 30 minutes), so the workload is also available for
+3. Captures the first `--programmatic_steps` steps (default 50) inside
+   `jax.profiler.start_trace(profile_dir)` / `jax.profiler.stop_trace()`,
+   writing the profile directly to the GCS folder.
+4. Then starts a JAX profiler server (port `9999`) and keeps running matmuls for
+   `IDLE_SECONDS` (default 30 minutes), so the following steps are available for
    on-demand profile captures and the JobSet stays alive long enough for the
    reconciler to create the MLRun before the container exits.

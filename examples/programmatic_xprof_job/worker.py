@@ -21,10 +21,11 @@ Actuator. It reads the per-work-unit GCS destination from
 to write the profile there directly. The Diagon backend then discovers and loads
 the profile from that GCS folder using the customized ManagedXprof MLRun labels.
 
-After the trace is captured the workload starts a JAX profiler server and keeps
-running matrix multiplications for ``IDLE_SECONDS`` (default 30 minutes), so it
-is also available for on-demand profile captures and the enclosing JobSet stays
-alive long enough for the Diagon reconciler to create the MLRun from the attached
+The worker captures the first ``--programmatic_steps`` steps (default 50) this
+way. It then starts a JAX profiler server and keeps running matrix
+multiplications for ``IDLE_SECONDS`` (default 30 minutes), so the following steps
+are available for on-demand profile captures and the enclosing JobSet stays alive
+long enough for the Diagon reconciler to create the MLRun from the attached
 ManagedXprof artifact.
 """
 
@@ -36,10 +37,11 @@ import jax.numpy as jnp
 import jax.profiler
 from absl import app, flags
 
-_PROFILE_DURATION_SECONDS = flags.DEFINE_integer(
-    "profile_duration_seconds",
-    15,
-    "How long to run the traced JAX computation while the profile is captured.",
+_PROGRAMMATIC_STEPS = flags.DEFINE_integer(
+    "programmatic_steps",
+    50,
+    "Number of steps captured programmatically via start_trace/stop_trace before "
+    "the worker switches to serving the on-demand profiler port.",
 )
 _MATRIX_SIZE = flags.DEFINE_integer(
     "matrix_size",
@@ -79,14 +81,15 @@ def _resolve_profile_dir() -> str:
     return profile_dir
 
 
-def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: int) -> None:
-    """Runs matrix multiplications while a JAX profile trace is active.
+def _run_traced_workload(profile_dir: str, num_steps: int, matrix_size: int) -> None:
+    """Captures the first ``num_steps`` steps via programmatic JAX tracing.
 
     Args:
       profile_dir: Destination directory (local path or ``gs://`` URL) that the
         JAX profiler writes the captured trace to.
-      duration_seconds: Minimum wall-clock time to keep the traced computation
-        running so the profile captures representative steady-state work.
+      num_steps: Number of matmul steps to run while the trace is active. Only
+        these initial steps are captured programmatically; the caller keeps the
+        workload running afterwards to serve on-demand captures.
       matrix_size: Side length of the square matrices multiplied each step.
     """
     key = jax.random.PRNGKey(0)
@@ -99,18 +102,21 @@ def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: i
     )
     warmup.block_until_ready()
 
-    print(f"Starting programmatic JAX profile trace to: {profile_dir}", flush=True)
+    print(
+        f"Capturing the first {num_steps} steps via programmatic JAX profile"
+        f" trace to: {profile_dir}",
+        flush=True,
+    )
     jax.profiler.start_trace(profile_dir)
     try:
-        deadline = time.monotonic() + duration_seconds
-        while time.monotonic() < deadline:
+        for _ in range(num_steps):
             key, subkey = jax.random.split(key)
             x = jax.random.normal(key, (matrix_size, matrix_size))
             y = jax.random.normal(subkey, (matrix_size, matrix_size))
             jnp.dot(x, y).block_until_ready()
     finally:
         jax.profiler.stop_trace()
-    print(f"Profile trace written to: {profile_dir}", flush=True)
+    print(f"Profile trace written to: {profile_dir} ({num_steps} steps)", flush=True)
 
 
 def _serve_for_on_demand_profiling(
@@ -156,7 +162,7 @@ def main(argv):
     profile_dir = _resolve_profile_dir()
     _run_traced_workload(
         profile_dir,
-        _PROFILE_DURATION_SECONDS.value,
+        _PROGRAMMATIC_STEPS.value,
         _MATRIX_SIZE.value,
     )
 
