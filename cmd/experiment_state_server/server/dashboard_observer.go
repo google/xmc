@@ -87,17 +87,24 @@ type dashboardObserver struct {
 }
 
 // uniquePlotID slugifies a metric name into a plot ID, disambiguating names that slugify to
-// the same string ("train/loss" and "train_loss") with a counter suffix. seen is mutated.
-func uniquePlotID(metric string, seen map[string]int) string {
+// the same string ("train/loss" and "train_loss") with a counter suffix. used records every ID
+// handed out so far and is mutated.
+//
+// The counter has to skip IDs already taken rather than simply count occurrences of a slug: a
+// metric whose own name ends in a number can otherwise collide with a generated suffix, so
+// ["foo", "foo_2", "foo"] would hand out foo_2 twice. Duplicate plot IDs are not cosmetic --
+// the UI keys plot data by ID, so both plots would draw the same series.
+func uniquePlotID(metric string, used map[string]bool) string {
 	slug := strings.Trim(nonPlotIDChars.ReplaceAllString(strings.ToLower(metric), "_"), "_")
 	if slug == "" {
 		slug = "metric"
 	}
-	seen[slug]++
-	if n := seen[slug]; n > 1 {
-		return fmt.Sprintf("%s_%d", slug, n)
+	id := slug
+	for n := 2; used[id]; n++ {
+		id = fmt.Sprintf("%s_%d", slug, n)
 	}
-	return slug
+	used[id] = true
+	return id
 }
 
 // plotSpecsForMetrics derives a plot specification from a ChartArtifact's metric names: a
@@ -106,7 +113,7 @@ func uniquePlotID(metric string, seen map[string]int) string {
 // so it renders blank however much data the work unit logged.
 func plotSpecsForMetrics(metricNames []string) []*dashboard_apipb.PlotSpec {
 	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*len(metricNames))
-	seen := make(map[string]int, len(metricNames))
+	used := make(map[string]bool, len(metricNames))
 	for _, metric := range metricNames {
 		metric = strings.TrimSpace(metric)
 		if metric == "" {
@@ -115,7 +122,7 @@ func plotSpecsForMetrics(metricNames []string) []*dashboard_apipb.PlotSpec {
 		if len(plots) >= 2*maxProvisionedMetrics {
 			break
 		}
-		id := uniquePlotID(metric, seen)
+		id := uniquePlotID(metric, used)
 		plots = append(plots,
 			&dashboard_apipb.PlotSpec{
 				PlotId: id + "_latest",
@@ -210,7 +217,15 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
 
-		if _, err := o.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
+		// Recording the outcome has to outlive the deadline that governed CreateChart. If
+		// CreateChart is what burned those two minutes, writing under the same context fails
+		// before it reaches Spanner, so the FAILED status is never persisted and the artifact
+		// sits in PROVISIONING for good -- the UI then reports a chart that is "still being
+		// provisioned" by a goroutine that exited long ago.
+		storeCtx, storeCancel := context.WithTimeout(context.WithoutCancel(ctxBg), 15*time.Second)
+		defer storeCancel()
+
+		if _, err := o.storage.UpdateArtifact(storeCtx, &storage.ArtifactUpdate{
 			AID:        aid,
 			Artifact:   artifactToProvision,
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"payload"}},

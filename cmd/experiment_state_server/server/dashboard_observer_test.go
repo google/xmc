@@ -46,11 +46,15 @@ type recordingStorage struct {
 	*storage.MockStorage
 	mu            sync.Mutex
 	updateUpdates []*storage.ArtifactUpdate
+	// updateCtxErrs records ctx.Err() as each write was attempted, so tests can tell a write
+	// that reached storage from one that was refused by an already-finished context.
+	updateCtxErrs []error
 }
 
 func (s *recordingStorage) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
 	s.mu.Lock()
 	s.updateUpdates = append(s.updateUpdates, update)
+	s.updateCtxErrs = append(s.updateCtxErrs, ctx.Err())
 	s.mu.Unlock()
 	return s.MockStorage.UpdateArtifact(ctx, update)
 }
@@ -287,6 +291,33 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 		}
 	})
 
+	t.Run("does not reuse an ID a metric name already claimed", func(t *testing.T) {
+		t.Parallel()
+		// "foo_2" is both a metric in its own right and the suffix the third metric would be
+		// given by a naive occurrence counter, which would hand out foo_2 twice. The UI keys
+		// plot data by ID, so the duplicate would draw one metric's series under both plots.
+		plots := plotSpecsForMetrics([]string{"foo", "foo_2", "foo"})
+		want := []string{
+			"foo_latest", "foo_curve",
+			"foo_2_latest", "foo_2_curve",
+			"foo_3_latest", "foo_3_curve",
+		}
+		if len(plots) != len(want) {
+			t.Fatalf("len(plots) = %d, want %d", len(plots), len(want))
+		}
+		seen := make(map[string]bool, len(plots))
+		for i, w := range want {
+			got := plots[i].GetPlotId()
+			if got != w {
+				t.Errorf("plots[%d].PlotId = %q, want %q", i, got, w)
+			}
+			if seen[got] {
+				t.Errorf("plots[%d].PlotId = %q is a duplicate", i, got)
+			}
+			seen[got] = true
+		}
+	})
+
 	t.Run("falls back to a placeholder slug when a name has no usable characters", func(t *testing.T) {
 		t.Parallel()
 		plots := plotSpecsForMetrics([]string{"///"})
@@ -508,6 +539,35 @@ func TestDashboardObserver_OnArtifactCreated_UncredentialedCallerStillCalls(t *t
 
 	if len(mockDash.reqs) != 1 {
 		t.Fatalf("len(mockDash.reqs) = %d, want 1", len(mockDash.reqs))
+	}
+}
+
+func TestDashboardObserver_OnArtifactCreated_PersistsOutcomeAfterDeadline(t *testing.T) {
+	t.Parallel()
+	mockDash := &mockDashboardClient{createChartErr: errors.New("deadline exceeded")}
+	toolClient := toollibs.NewDashboardToolClient(mockDash)
+	var wg sync.WaitGroup
+	recStorage := &recordingStorage{MockStorage: &storage.MockStorage{}}
+	obs := NewDashboardObserver(toolClient, recStorage, &wg)
+
+	// A context that is already finished stands in for the real case: CreateChart spending the
+	// whole two-minute budget. The status write has to survive it, or the FAILED status never
+	// lands and the artifact stays PROVISIONING with no goroutine left to move it.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	artifact := chartArtifactFixture()
+	obs.OnArtifactCreated(ctx, artifact)
+	wg.Wait()
+
+	if len(recStorage.updateCtxErrs) != 1 {
+		t.Fatalf("len(recStorage.updateCtxErrs) = %d, want 1", len(recStorage.updateCtxErrs))
+	}
+	if err := recStorage.updateCtxErrs[0]; err != nil {
+		t.Errorf("UpdateArtifact context was already done (%v); the FAILED status would not persist", err)
+	}
+	if got := artifact.GetPayload().GetChart().GetStatus(); got != essmsgpb.ChartArtifact_FAILED {
+		t.Errorf("status = %v, want FAILED", got)
 	}
 }
 

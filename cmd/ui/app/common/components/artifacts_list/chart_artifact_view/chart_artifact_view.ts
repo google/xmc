@@ -19,7 +19,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
-import { ChartTypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import {
+  ChartArtifactPayload,
+  ChartTypedArtifact,
+} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { PlotDataPipe } from 'xmanager_cloud/ui/app/common/components/dashboard/chart_card/chart_card';
 import { PlotCardComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card';
 import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
@@ -34,6 +37,32 @@ import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_servic
  */
 export function isSummaryBoxPlot(plot: PlotSpec): boolean {
   return plot.type === PlotType.SUMMARY_BOX || (plot.type as unknown) === 1;
+}
+
+/** A ChartArtifact provisioning status, as its proto JSON name. */
+type ChartStatus = NonNullable<ChartArtifactPayload['status']>;
+
+/** ChartArtifact.Status JSON names, indexed by the enum tag they are declared with. */
+const CHART_STATUS_BY_TAG: readonly ChartStatus[] = [
+  'STATUS_UNSPECIFIED',
+  'PROVISIONING',
+  'SUCCESS',
+  'FAILED',
+];
+
+/**
+ * Normalises a ChartArtifact status to its proto JSON name.
+ *
+ * Like `PlotSpec.type` above, the status arrives either as the JSON name or as the enum's
+ * integer tag depending on the serializer. Comparing only against the names would let a
+ * numerically encoded FAILED fall through as though the chart were fine, hiding the very
+ * error message that status carries.
+ */
+export function chartStatusName(status: unknown): ChartStatus | undefined {
+  if (typeof status === 'number') {
+    return CHART_STATUS_BY_TAG[status];
+  }
+  return typeof status === 'string' ? (status as ChartStatus) : undefined;
 }
 
 /**
@@ -90,11 +119,12 @@ export class ChartArtifactView {
    */
   protected readonly notice = computed<string | null>(() => {
     const payload = this.payload();
-    if (payload.status === 'FAILED') {
+    const status = chartStatusName(payload.status);
+    if (status === 'FAILED') {
       return payload.errorMessage || 'The server could not provision a chart for this artifact.';
     }
     if (!this.chartName()) {
-      return payload.status === 'SUCCESS'
+      return status === 'SUCCESS'
         ? 'This artifact has no provisioned chart to draw.'
         : 'The chart for this artifact is still being provisioned. Reload in a moment.';
     }
@@ -104,8 +134,17 @@ export class ChartArtifactView {
     return null;
   });
 
+  /**
+   * The chart to fetch series for, or '' when there is nothing worth asking about.
+   *
+   * A chart declaring no plots has nowhere to put a response, so fetching one spends a
+   * GetChartData round trip -- and a data engine query per plot on the other end -- to
+   * populate a map the template never reads.
+   */
+  private readonly fetchTarget = computed(() => (this.plots().length ? this.chartName() : ''));
+
   protected readonly chartData = toSignal(
-    combineLatest([toObservable(this.chartName), this.refreshTrigger$]).pipe(
+    combineLatest([toObservable(this.fetchTarget), this.refreshTrigger$]).pipe(
       tap(() => {
         this.isLoading.set(true);
         this.error.set(null);
