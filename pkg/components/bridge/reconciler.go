@@ -676,21 +676,30 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 	*conditions = append(*conditions, newCond)
 }
 
+// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
+func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
+	ref := in.WrapperOpts
+	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
+		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
+	}
+	if ref.Name == "" {
+		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
+	}
+	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
+		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
+	}
+	return ref, "", ""
+}
+
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
 // querying the dynamic StatusDetector to evaluate CR readiness and reporting state to CMS.
 func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if r.prober == nil {
 		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
 	}
-	ref := in.WrapperOpts
-	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
-		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
-	}
-	if ref.Name == "" {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "InvalidWrapperRef", "3P wrapper target name is empty")
-	}
-	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace))
+	ref, unreadyReason, unreadyMsg := resolveAndValidateWrapperRef(in)
+	if unreadyReason != "" {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)

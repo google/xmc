@@ -319,7 +319,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{nilStatus: true},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				DeletionProtection: true, Enabled: true,
 			},
 			wantErr:    true,
@@ -331,7 +331,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{obsErr: errors.New("spanner write failed")},
 			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				DeletionProtection: true, Enabled: true,
 			},
 			wantErr:    true,
