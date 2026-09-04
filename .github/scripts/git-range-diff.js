@@ -232,19 +232,83 @@ function indexApprovedCandidateCommits(approvedRange, opts) {
     shas.push(c);
   }
 
-  if (shas.length > 0) {
-    try {
-      const diffs = execGit(['log', '-p', '--no-walk', ...shas], { ...opts, ignoreExitCode: false });
-      const patchIdOutput = execGit(['patch-id'], { ...opts, ignoreExitCode: false, input: diffs });
-      for (const line of patchIdOutput.split(/\r?\n/).filter(Boolean)) {
-        const [patchId, sha] = line.split(/\s+/);
-        if (patchId && sha) {
-          byPatchId.set(patchId, sha);
-        }
-      }
-    } catch (_) {}
+  const commitPatchIds = computeBulkCommitPatchIds(shas, opts);
+  for (const [sha, patchId] of commitPatchIds.entries()) {
+    byPatchId.set(patchId, sha);
   }
   return { byPatchId, bySubject };
+}
+
+/**
+ * Shell Helper: Computes git patch-ids for a list of commit SHAs in bulk.
+ * @param {Array<string>} shas - Commit SHAs.
+ * @param {Object} opts - Subprocess options.
+ * @returns {Map<string, string>} Map of commitSha -> patchId.
+ */
+function computeBulkCommitPatchIds(shas, opts) {
+  const patchIdMap = new Map();
+  if (!Array.isArray(shas) || shas.length === 0) {
+    return patchIdMap;
+  }
+  try {
+    const diffs = execGit(['log', '-p', '--no-walk', ...shas], { ...opts, ignoreExitCode: false });
+    const patchIdOutput = execGit(['patch-id'], { ...opts, ignoreExitCode: false, input: diffs });
+    for (const line of patchIdOutput.split(/\r?\n/).filter(Boolean)) {
+      const [patchId, sha] = line.split(/\s+/);
+      if (patchId && sha) {
+        patchIdMap.set(sha, patchId);
+      }
+    }
+  } catch (_) {}
+  return patchIdMap;
+}
+
+/**
+ * Shell Helper: Matches a single current commit against approved candidates via patch-id or subject.
+ * @param {string} cSha - Commit SHA.
+ * @param {string|null} subj - Commit subject line (or null to fetch via git log).
+ * @param {string|null} patchId - Pre-computed patch-id for cSha.
+ * @param {{ byPatchId: Map<string, string>, bySubject: Map<string, string|string[]> }} approvedMaps - Indexed candidates.
+ * @param {Map<string, number>} subjectSeenCount - Tracks occurrence count for duplicate subjects.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null} Matched approved commit SHA, or null.
+ */
+function matchCommitToApproved(cSha, subj, patchId, approvedMaps, subjectSeenCount, opts) {
+  if (patchId && approvedMaps.byPatchId.has(patchId)) {
+    return approvedMaps.byPatchId.get(patchId);
+  }
+  try {
+    const resolvedSubj = (subj !== null && subj !== undefined)
+      ? subj
+      : execGit(['log', '-1', '--format=%s', cSha], { ...opts, ignoreExitCode: false }).trim();
+    if (!resolvedSubj || !approvedMaps.bySubject.has(resolvedSubj)) {
+      return null;
+    }
+    const rawCandidates = approvedMaps.bySubject.get(resolvedSubj);
+    const candidates = Array.isArray(rawCandidates) ? rawCandidates : [rawCandidates];
+    const seen = subjectSeenCount.get(resolvedSubj) || 0;
+    subjectSeenCount.set(resolvedSubj, seen + 1);
+    return seen < candidates.length ? candidates[seen] : candidates[candidates.length - 1];
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Shell Helper: Resolves candidate base commit SHA from a matched approved commit and commit offset.
+ * @param {string} matchedSha - Matched approved commit SHA.
+ * @param {number} commitIndex - 0-based index of commit in current PR branch.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null} Verified base commit SHA, or null.
+ */
+function resolveParentBaseFromMatch(matchedSha, commitIndex, opts) {
+  const baseOffset = commitIndex + 1;
+  for (const target of [`${matchedSha}~${baseOffset}`, `${matchedSha}~1`]) {
+    try {
+      return execGit(['rev-parse', '--verify', target], { ...opts, ignoreExitCode: false }).trim();
+    } catch (_) {}
+  }
+  return null;
 }
 
 /**
@@ -259,54 +323,22 @@ function correlateStackedParentBase(currCommits, approvedMaps, opts) {
     return null;
   }
 
-  const currPatchIds = new Map();
   const shas = currCommits.map(item => typeof item === 'string' ? item : item?.sha).filter(Boolean);
-  if (shas.length > 0) {
-    try {
-      const diffs = execGit(['log', '-p', '--no-walk', ...shas], { ...opts, ignoreExitCode: false });
-      const patchIdOutput = execGit(['patch-id'], { ...opts, ignoreExitCode: false, input: diffs });
-      for (const line of patchIdOutput.split(/\r?\n/).filter(Boolean)) {
-        const [patchId, sha] = line.split(/\s+/);
-        if (patchId && sha) {
-          currPatchIds.set(sha, patchId);
-        }
-      }
-    } catch (_) {}
-  }
-
+  const currPatchIds = computeBulkCommitPatchIds(shas, opts);
   const subjectSeenCount = new Map();
 
   for (let i = 0; i < currCommits.length; i++) {
     const item = currCommits[i];
     const cSha = typeof item === 'string' ? item : item?.sha;
     if (!cSha) continue;
-    let subj = typeof item === 'string' ? null : item?.subj;
-
+    const subj = typeof item === 'string' ? null : item?.subj;
     const patchId = currPatchIds.get(cSha) || null;
-    let matched = patchId ? approvedMaps.byPatchId.get(patchId) : null;
-    if (!matched) {
-      try {
-        if (subj === null || subj === undefined) {
-          subj = execGit(['log', '-1', '--format=%s', cSha], { ...opts, ignoreExitCode: false }).trim();
-        }
-        if (subj && approvedMaps.bySubject.has(subj)) {
-          const rawCandidates = approvedMaps.bySubject.get(subj);
-          const candidates = Array.isArray(rawCandidates) ? rawCandidates : [rawCandidates];
-          const seen = subjectSeenCount.get(subj) || 0;
-          subjectSeenCount.set(subj, seen + 1);
-          matched = seen < candidates.length ? candidates[seen] : candidates[candidates.length - 1];
-        }
-      } catch (_) {}
-    }
 
-    if (matched) {
-      const baseOffset = i + 1;
-      for (const target of [`${matched}~${baseOffset}`, `${matched}~1`]) {
-        try {
-          return execGit(['rev-parse', '--verify', target], { ...opts, ignoreExitCode: false }).trim();
-        } catch (_) {}
-      }
-    }
+    const matched = matchCommitToApproved(cSha, subj, patchId, approvedMaps, subjectSeenCount, opts);
+    if (!matched) continue;
+
+    const parentBase = resolveParentBaseFromMatch(matched, i, opts);
+    if (parentBase) return parentBase;
   }
   return null;
 }
@@ -528,6 +560,9 @@ module.exports = {
   isFastForwardApproval,
   getCommitCountInRange,
   getCommitPatchId,
+  computeBulkCommitPatchIds,
+  matchCommitToApproved,
+  resolveParentBaseFromMatch,
   indexApprovedCandidateCommits,
   correlateStackedParentBase,
   resolveStackedApprovedRange,

@@ -832,3 +832,103 @@ test('correlateStackedParentBase matches duplicate subjects in chronological ord
     delete require.cache[require.resolve('./git-range-diff')];
   }
 });
+
+test('computeBulkCommitPatchIds handles empty inputs and subprocess failures defensively', () => {
+  const { computeBulkCommitPatchIds } = require('./git-range-diff');
+  assert.strictEqual(computeBulkCommitPatchIds(null).size, 0);
+  assert.strictEqual(computeBulkCommitPatchIds([]).size, 0);
+
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = () => {
+    throw new Error('git failure');
+  };
+  try {
+    const res = computeBulkCommitPatchIds(['sha1'], {});
+    assert.strictEqual(res.size, 0);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('computeBulkCommitPatchIds parses multiple patch-id lines correctly', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'log' && args.includes('-p')) {
+      return 'diff content';
+    }
+    if (cmd === 'git' && args[0] === 'patch-id') {
+      return 'pid1 sha1\npid2 sha2\n';
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+  try {
+    const { computeBulkCommitPatchIds } = require('./git-range-diff');
+    const res = computeBulkCommitPatchIds(['sha1', 'sha2'], {});
+    assert.strictEqual(res.size, 2);
+    assert.strictEqual(res.get('sha1'), 'pid1');
+    assert.strictEqual(res.get('sha2'), 'pid2');
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('matchCommitToApproved resolves matches via patch-id and subject fallback', () => {
+  const { matchCommitToApproved } = require('./git-range-diff');
+  const approvedMaps = {
+    byPatchId: new Map([['pid-a', 'approved-a']]),
+    bySubject: new Map([['feat: test', ['approved-b']]])
+  };
+  const seenCount = new Map();
+
+  // Primary patch-id match
+  const match1 = matchCommitToApproved('sha-1', 'irrelevant', 'pid-a', approvedMaps, seenCount, {});
+  assert.strictEqual(match1, 'approved-a');
+
+  // Fallback subject match
+  const match2 = matchCommitToApproved('sha-2', 'feat: test', null, approvedMaps, seenCount, {});
+  assert.strictEqual(match2, 'approved-b');
+  assert.strictEqual(seenCount.get('feat: test'), 1);
+
+  // Unmatched subject
+  const match3 = matchCommitToApproved('sha-3', 'unknown', null, approvedMaps, seenCount, {});
+  assert.strictEqual(match3, null);
+});
+
+test('resolveParentBaseFromMatch tests offset target and falls back to ~1', () => {
+  const originalExec = childProcess.execFileSync;
+  const calls = [];
+
+  // Success on first offset
+  childProcess.execFileSync = (cmd, args) => {
+    calls.push(args[2]);
+    return 'resolved-sha\n';
+  };
+  try {
+    const { resolveParentBaseFromMatch } = require('./git-range-diff');
+    const res = resolveParentBaseFromMatch('matched-sha', 2, {});
+    assert.strictEqual(res, 'resolved-sha');
+    assert.strictEqual(calls[0], 'matched-sha~3');
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+
+  // Fallback to ~1 when offset fails
+  calls.length = 0;
+  childProcess.execFileSync = (cmd, args) => {
+    calls.push(args[2]);
+    if (args[2] === 'matched-sha~3') {
+      const err = new Error('not found');
+      err.status = 1;
+      throw err;
+    }
+    return 'fallback-sha\n';
+  };
+  try {
+    const { resolveParentBaseFromMatch } = require('./git-range-diff');
+    const res = resolveParentBaseFromMatch('matched-sha', 2, {});
+    assert.strictEqual(res, 'fallback-sha');
+    assert.deepStrictEqual(calls, ['matched-sha~3', 'matched-sha~1']);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
