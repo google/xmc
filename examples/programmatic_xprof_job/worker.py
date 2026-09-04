@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A raw-JAX workload that captures a profile programmatically.
+"""A raw-JAX workload that profiles programmatically, then serves on-demand.
 
 This worker relies solely on the environment variables injected by the XMC
 Actuator. It reads the per-work-unit GCS destination from
@@ -21,12 +21,13 @@ Actuator. It reads the per-work-unit GCS destination from
 to write the profile there directly. The Diagon backend then discovers and loads
 the profile from that GCS folder using the customized ManagedXprof MLRun labels.
 
-The worker captures the first ``--programmatic_steps`` steps (default 50) this
-way. It then starts a JAX profiler server and keeps running matrix
-multiplications for ``IDLE_SECONDS`` (default 30 minutes), so the following steps
-are available for on-demand profile captures and the enclosing JobSet stays alive
-long enough for the Diagon reconciler to create the MLRun from the attached
-ManagedXprof artifact.
+The workload runs a single stepping loop. The first ``--programmatic_steps``
+steps (default 50) are captured programmatically via ``start_trace`` /
+``stop_trace``. The remaining steps, up to ``--total_steps`` (default 10000), run
+against a live JAX profiler server so an operator can trigger on-demand profile
+captures (e.g. from the XProf/Diagon UI). The tail also keeps the enclosing
+JobSet alive long enough for the Diagon reconciler to create the MLRun from the
+attached ManagedXprof artifact.
 """
 
 import os
@@ -40,13 +41,18 @@ from absl import app, flags
 _PROGRAMMATIC_STEPS = flags.DEFINE_integer(
     "programmatic_steps",
     50,
-    "Number of steps captured programmatically via start_trace/stop_trace before "
-    "the worker switches to serving the on-demand profiler port.",
+    "Number of initial steps captured programmatically via start_trace/stop_trace.",
+)
+_TOTAL_STEPS = flags.DEFINE_integer(
+    "total_steps",
+    10000,
+    "Total number of steps to run. Steps after --programmatic_steps run against "
+    "the live JAX profiler server so they can be captured on demand.",
 )
 _MATRIX_SIZE = flags.DEFINE_integer(
     "matrix_size",
     5000,
-    "Side length of the square matrices multiplied during profiling.",
+    "Side length of the square matrices multiplied each step.",
 )
 _PROFILER_PORT = flags.DEFINE_integer(
     "profiler_port",
@@ -81,16 +87,31 @@ def _resolve_profile_dir() -> str:
     return profile_dir
 
 
-def _run_traced_workload(profile_dir: str, num_steps: int, matrix_size: int) -> None:
-    """Captures the first ``num_steps`` steps via programmatic JAX tracing.
+def _run_traced_workload(
+    profile_dir: str,
+    programmatic_steps: int,
+    total_steps: int,
+    matrix_size: int,
+    profiler_port: int,
+) -> None:
+    """Runs a stepping workload: programmatic capture first, then on-demand.
+
+    The first ``programmatic_steps`` steps are wrapped in
+    ``jax.profiler.start_trace`` / ``jax.profiler.stop_trace`` so their profile is
+    written to ``profile_dir`` automatically. A JAX profiler server is started up
+    front so that, once the programmatic phase ends, the remaining steps (up to
+    ``total_steps``) can be captured on demand -- e.g. from the XProf/Diagon UI --
+    against the live workload.
 
     Args:
       profile_dir: Destination directory (local path or ``gs://`` URL) that the
-        JAX profiler writes the captured trace to.
-      num_steps: Number of matmul steps to run while the trace is active. Only
-        these initial steps are captured programmatically; the caller keeps the
-        workload running afterwards to serve on-demand captures.
+        programmatic JAX profiler writes the captured trace to.
+      programmatic_steps: Number of initial steps captured programmatically.
+      total_steps: Total number of steps to run; steps beyond
+        ``programmatic_steps`` are available for on-demand capture.
       matrix_size: Side length of the square matrices multiplied each step.
+      profiler_port: Port the JAX profiler server listens on for on-demand
+        capture requests.
     """
     key = jax.random.PRNGKey(0)
 
@@ -102,52 +123,38 @@ def _run_traced_workload(profile_dir: str, num_steps: int, matrix_size: int) -> 
     )
     warmup.block_until_ready()
 
+    # Start the profiler server up front so the on-demand phase below can be
+    # captured against the live workload.
+    jax.profiler.start_server(profiler_port)
+    print(f"JAX profiler server started on port {profiler_port}.", flush=True)
+
+    # Phase 1: programmatically profile the first `programmatic_steps` steps.
     print(
-        f"Capturing the first {num_steps} steps via programmatic JAX profile"
-        f" trace to: {profile_dir}",
+        f"Capturing the first {programmatic_steps} steps via programmatic JAX"
+        f" profile trace to: {profile_dir}",
         flush=True,
     )
     jax.profiler.start_trace(profile_dir)
     try:
-        for _ in range(num_steps):
+        for _ in range(programmatic_steps):
             key, subkey = jax.random.split(key)
             x = jax.random.normal(key, (matrix_size, matrix_size))
             y = jax.random.normal(subkey, (matrix_size, matrix_size))
             jnp.dot(x, y).block_until_ready()
     finally:
         jax.profiler.stop_trace()
-    print(f"Profile trace written to: {profile_dir} ({num_steps} steps)", flush=True)
+    print(f"Programmatic profile written to: {profile_dir}", flush=True)
 
-
-def _serve_for_on_demand_profiling(
-    matrix_size: int, duration_seconds: int, profiler_port: int
-) -> None:
-    """Keeps the workload alive and profileable for on-demand capture.
-
-    Starts a JAX profiler server and runs continuous matrix multiplications for
-    ``duration_seconds`` so that, in addition to the profile captured
-    programmatically above, an operator can trigger an on-demand profile capture
-    (e.g. from the XProf/Diagon UI) against the live workload during this window.
-    Running real computation -- rather than sleeping -- ensures those on-demand
-    captures record representative work. The window also keeps the enclosing
-    JobSet alive long enough for the Diagon reconciler to create the MLRun from
-    the attached ManagedXprof artifact.
-
-    Args:
-      matrix_size: Side length of the square matrices multiplied each cycle.
-      duration_seconds: Wall-clock time to keep serving before exiting.
-      profiler_port: Port the JAX profiler server listens on for on-demand
-        capture requests.
-    """
-    jax.profiler.start_server(profiler_port)
+    # Phase 2: keep running steps `programmatic_steps + 1` .. `total_steps` so an
+    # operator can trigger on-demand profile captures against the live profiler
+    # server. This also keeps the JobSet alive long enough for the Diagon
+    # reconciler to create the MLRun from the attached ManagedXprof artifact.
     print(
-        f"JAX profiler server started on port {profiler_port}; workload is"
-        f" available for on-demand profiling for {duration_seconds}s.",
+        f"Serving on-demand profiling for steps {programmatic_steps + 1} to"
+        f" {total_steps} on port {profiler_port}.",
         flush=True,
     )
-    key = jax.random.PRNGKey(0)
-    deadline = time.monotonic() + duration_seconds
-    while time.monotonic() < deadline:
+    for _ in range(programmatic_steps, total_steps):
         key, subkey = jax.random.split(key)
         x = jax.random.normal(key, (matrix_size, matrix_size))
         y = jax.random.normal(subkey, (matrix_size, matrix_size))
@@ -163,18 +170,9 @@ def main(argv):
     _run_traced_workload(
         profile_dir,
         _PROGRAMMATIC_STEPS.value,
+        _TOTAL_STEPS.value,
         _MATRIX_SIZE.value,
-    )
-
-    # After the programmatic trace, keep the workload alive AND profileable so an
-    # operator can also trigger on-demand profile captures against the live JAX
-    # profiler server. This also keeps the JobSet alive long enough for the Diagon
-    # reconciler to create the MLRun from the attached ManagedXprof artifact.
-    # Configurable via IDLE_SECONDS (default 30 minutes); lower it in CI/smoke
-    # runs so the pod does not hold cluster resources longer than necessary.
-    idle_seconds = int(os.environ.get("IDLE_SECONDS", str(30 * 60)))
-    _serve_for_on_demand_profiling(
-        _MATRIX_SIZE.value, idle_seconds, _PROFILER_PORT.value
+        _PROFILER_PORT.value,
     )
 
     print("Workload finished successfully.", flush=True)
