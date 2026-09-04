@@ -20,6 +20,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -42,7 +44,7 @@ func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
 		}
-		canonical := CanonicalComponentName(rec.Name)
+		canonical := naming.CanonicalComponentName(rec.Name)
 		if canonical == "" {
 			continue
 		}
@@ -61,7 +63,7 @@ func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) Dependency
 		if rec == nil || isDeletedRecord(rec) {
 			continue
 		}
-		canonical := CanonicalComponentName(rec.Name)
+		canonical := naming.CanonicalComponentName(rec.Name)
 		if canonical == "" {
 			continue
 		}
@@ -80,7 +82,7 @@ func BuildDependentsGraph(records []*ComponentRecord) DependencyGraph {
 		if rec == nil || isDeletedRecord(rec) {
 			continue
 		}
-		canonical := CanonicalComponentName(rec.Name)
+		canonical := naming.CanonicalComponentName(rec.Name)
 		if canonical == "" {
 			continue
 		}
@@ -88,7 +90,7 @@ func BuildDependentsGraph(records []*ComponentRecord) DependencyGraph {
 			dependents[canonical] = nil
 		}
 		for _, dep := range rec.Dependencies {
-			depCanonical := CanonicalComponentName(dep)
+			depCanonical := naming.CanonicalComponentName(dep)
 			if depCanonical != "" {
 				dependents[depCanonical] = append(dependents[depCanonical], canonical)
 			}
@@ -190,7 +192,7 @@ func formatCycle(cycle []string) string {
 // ValidateProspectiveDependencies validates that adding or updating dependencies on targetName
 // will not introduce self-cycles or transitive cycles into the component dependency graph.
 func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName string, newDeps []string) error {
-	canonicalTarget := CanonicalComponentName(targetName)
+	canonicalTarget := naming.CanonicalComponentName(targetName)
 	if canonicalTarget == "" {
 		return status.Error(codes.InvalidArgument, "target component name is required")
 	}
@@ -203,7 +205,7 @@ func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName str
 // ValidateProspectiveDependenciesFromMap validates prospective dependencies directly from a component record map
 // avoiding intermediate slice allocations.
 func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord, targetName string, newDeps []string) error {
-	canonicalTarget := CanonicalComponentName(targetName)
+	canonicalTarget := naming.CanonicalComponentName(targetName)
 	if canonicalTarget == "" {
 		return status.Error(codes.InvalidArgument, "target component name is required")
 	}
@@ -231,7 +233,7 @@ func validateProspectiveGraph(graph DependencyGraph, canonicalTarget string, nor
 // FindTransitiveDependents returns all components that transitively depend on root.
 // The result is deduplicated, sorted, and excludes the root itself.
 func FindTransitiveDependents(dependentsGraph DependencyGraph, root string) []string {
-	canonicalRoot := CanonicalComponentName(root)
+	canonicalRoot := naming.CanonicalComponentName(root)
 	if canonicalRoot == "" {
 		return nil
 	}

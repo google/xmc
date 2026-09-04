@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/semver"
 )
 
 // ResolveComponentSnapshotFromMap resolves or caches an immutable snapshot of a component at the requested generation.
@@ -106,7 +107,7 @@ func ValidateComponentRequirementFromMap(components map[string]*ComponentRecord,
 		return nil, err
 	}
 	if minVersion != "" {
-		if _, err := Parse(minVersion); err != nil {
+		if _, err := semver.Parse(minVersion); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}
@@ -170,7 +171,7 @@ func checkVersionRequirement(rec *ComponentRecord, canonicalName, minVersion str
 		}, nil
 	}
 
-	satisfies, err := SatisfiesMinVersion(rec.Spec.GetVersion(), minVersion)
+	satisfies, err := semver.SatisfiesMinVersion(rec.Spec.GetVersion(), minVersion)
 	if err != nil {
 		return &RequirementValidationResult{
 			IsSatisfied:             false,

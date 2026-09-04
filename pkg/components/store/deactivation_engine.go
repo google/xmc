@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -78,7 +79,7 @@ func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 // lifecycle transition (PrepareDeactivation -> CompleteDeactivation); deletion protection is strictly enforced
 // during permanent resource destruction in ValidateDeletionSafety / ExecuteDeletion.
 func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, minDrainFloor time.Duration) (*PrepareDeactivationResult, error) {
-	canonicalName := CanonicalComponentName(targetName)
+	canonicalName := naming.CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
 	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
 		return nil, ErrComponentNotFound
@@ -157,7 +158,7 @@ func findAllDependents(components map[string]*ComponentRecord, rootCanonical str
 
 // ValidateDeletionSafety checks if a component can be deleted without violating protection or dependency constraints.
 func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, policy componentspb.DeletionPolicy, force bool) error {
-	canonicalName := CanonicalComponentName(targetName)
+	canonicalName := naming.CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
 	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
 		return ErrComponentNotFound

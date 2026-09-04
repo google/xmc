@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store_test
+package naming_test
 
 import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 func TestCanonicalComponentName(t *testing.T) {
@@ -76,7 +76,7 @@ func TestCanonicalComponentName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.CanonicalComponentName(tt.input)
+			got := naming.CanonicalComponentName(tt.input)
 			if got != tt.want {
 				t.Errorf("CanonicalComponentName(%q) = %q, want %q", tt.input, got, tt.want)
 			}
@@ -119,7 +119,7 @@ func TestFullComponentName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.FullComponentName(tt.input)
+			got := naming.FullComponentName(tt.input)
 			if got != tt.want {
 				t.Errorf("FullComponentName(%q) = %q, want %q", tt.input, got, tt.want)
 			}
@@ -151,7 +151,7 @@ func TestIsValidComponentName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.IsValidComponentName(tt.input)
+			got := naming.IsValidComponentName(tt.input)
 			if got != tt.want {
 				t.Errorf("IsValidComponentName(%q) = %v, want %v", tt.input, got, tt.want)
 			}
