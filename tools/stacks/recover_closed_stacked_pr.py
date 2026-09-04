@@ -13,7 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Recovers a stacked PR closed by GitHub when an intermediate base branch was deleted."""
+"""Recovers a stacked PR closed by GitHub when an intermediate base branch was deleted.
+
+Tested with GitHub CLI (`gh`) v2.46.0+ and `gh-stack` extension v0.1.0+.
+
+Example:
+    $ ./tools/stacks/recover_closed_stacked_pr.py 753 --dry-run
+    $ ./tools/stacks/recover_closed_stacked_pr.py 753 --target-base main
+"""
 
 import argparse
 import re

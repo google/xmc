@@ -71,6 +71,22 @@ Playbooks and automation tooling for managing and recovering stacked PR chains:
 - [`recover_closed_stacked_pr.py`](stacks/recover_closed_stacked_pr.py): Automatically recovers a stacked PR closed by GitHub when an intermediate base branch is squash-merged and deleted, clears outdated stack tracking, temporarily recreates the deleted remote branch to reopen the PR, retargets it to trunk (`main`), deletes the temporary branch, recursively discovers upstream stacked PRs, and re-initializes/syncs the remaining stack via `gh stack`.
 - [`recover_closed_stacked_pr_test.py`](stacks/recover_closed_stacked_pr_test.py): Hermetic unit test suite covering PR parsing, recursive stack discovery, branch recreation, fallback handling, and dry-run verification.
 
+#### Usage Example
+
+```bash
+# Preview recovery plan and stack chain without mutations (dry-run)
+./tools/stacks/recover_closed_stacked_pr.py 753 --dry-run
+
+# Recover a closed stacked PR and restack remaining PRs onto main
+./tools/stacks/recover_closed_stacked_pr.py 753
+
+# Specify a custom target base branch or PR URL
+./tools/stacks/recover_closed_stacked_pr.py https://github.com/google/xmc/pull/753 --target-base main
+```
+
+> [!NOTE]
+> Tested and verified with GitHub CLI `gh` version `2.46.0` (requires `gh` >= `2.40.0`) and extension [`gh-stack`](https://github.com/github/gh-stack) version `v0.1.0`.
+
 ### 7. `tools/lint/` (Static Analyzers & Linters)
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
