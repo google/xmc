@@ -43,3 +43,14 @@ This document defines core architectural contracts and invariants across the XMC
    - All lifecycle state operations (`PrepareDeactivation`, `CompleteDeactivation`, `ExecuteDeletion`) **MUST** evaluate safety across the entire transitive reverse-dependency DAG rather than single-hop indexed joins.
    - Inactive or disabled intermediate nodes (e.g. `A (active) -> B (disabled) -> C (disabling)`) must **never** mask upstream active dependents from blocking downstream deactivations. Deactivation completion requires all transitive upstream dependents to reach terminal disabled/deleted states.
 
+---
+
+## 4. Kubernetes Workload Security Baseline Invariant
+
+1. **Least-Privilege Security Contexts**:
+   - All production and service deployments defined in Helm templates (`deploy/helm/templates/`) **MUST** enforce explicit, non-root security contexts at both Pod and Container spec levels:
+     - **Pod Spec**: `runAsNonRoot: true`, `runAsUser: 1000` (or dedicated non-root service UID), `runAsGroup: 1000`, and `seccompProfile: { type: RuntimeDefault }`.
+     - **Container Spec**: `allowPrivilegeEscalation: false`, `privileged: false`, `readOnlyRootFilesystem: true`, and `capabilities: { drop: ["ALL"] }`.
+   - Workloads requiring temporary runtime disk writes (e.g. dynamic configuration generation or caches) must mount explicit `emptyDir` volumes rather than running with mutable root filesystems.
+   - Default, unconstrained, or root security contexts are strictly prohibited across all XMC service workloads and will fail pre-commit and CI Trivy static scans.
+

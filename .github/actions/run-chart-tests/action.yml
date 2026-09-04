@@ -58,6 +58,12 @@ runs:
           echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
         fi
 
+    - name: 'Run Helm Lint'
+      if: steps.changes.outputs.chart == 'true'
+      shell: bash
+      run: |
+        helm lint deploy/helm
+
     - name: 'Run Helm Chart Configuration Tests'
       if: steps.changes.outputs.chart == 'true'
       shell: bash

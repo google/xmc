@@ -53,6 +53,16 @@ jobs:
             ui:
               - 'cmd/ui/**'
               - '.github/workflows/lint.yml'
+            helm:
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
+            security:
+              - 'deploy/**/*.tf'
+              - 'deploy/**/*.tfvars'
+              - 'deploy/**/*.yaml'
+              - 'deploy/**/*.yml'
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff)
       - name: 'Install Ruff'
@@ -186,9 +196,32 @@ jobs:
         if: steps.changes.outputs.terraform == 'true'
         run: 'tflint --recursive'
 
+      # 5. Component Manifests & Profiles Linting
+      - name: 'Run Component Manifest Linter'
+        uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
+
+      # 6. Helm Chart Linting
+      - name: 'Install Helm'
+        if: steps.changes.outputs.helm == 'true'
+        run: |
+          if ! command -v helm &>/dev/null; then
+            mkdir -p "${RUNNER_TEMP}/helm"
+            curl -sSfL "https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz" \
+              | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
+            chmod +x "${RUNNER_TEMP}/helm/helm"
+            echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
+          fi
+
+      - name: 'Run Helm Lint'
+        if: steps.changes.outputs.helm == 'true'
+        run: helm lint deploy/helm
+
+      # 7. Infrastructure & Workload Security Scanning (Trivy)
       # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
-        if: steps.changes.outputs.terraform == 'true'
+      - name: 'Run Trivy Security Scanner (deploy/)'
+        if: steps.changes.outputs.security == 'true'
         uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
         with:
           scan-type: 'config'
@@ -196,11 +229,4 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/ctk_v2/modules'
-
-      # 5. Component Manifests & Profiles Linting
-      - name: 'Run Component Manifest Linter'
-        uses: './.github/actions/run-component-linter'
-        with:
-          strict: 'true'
-
+          scan-ref: 'deploy/'
