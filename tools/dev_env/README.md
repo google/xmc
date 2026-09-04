@@ -359,7 +359,6 @@ The sanitizer dynamically removes Google Cloud-specific resources that require G
 
 ### 2. Local Pod Optimizations
 - **Image Pull Policy**: Automatically patched from `Always` to `IfNotPresent` across all deployment templates, ensuring locally built images loaded via `kind load docker-image` are reused instantly without registry pull failures.
-- **Probe Delays & Timeouts**: Adjusted for developer machine CPU concurrency.
 
 ---
 
