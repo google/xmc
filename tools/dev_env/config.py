@@ -66,11 +66,14 @@ class LocalDevConfig:
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
             )
-        if self.managed_xprof_gcs_bucket and not self.managed_xprof_gcs_bucket.startswith("gs://"):
-            raise ValueError(
-                f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
-                "The bucket URI must start with 'gs://'."
-            )
+        if self.managed_xprof_gcs_bucket:
+            cleaned = self.managed_xprof_gcs_bucket.strip().rstrip("/")
+            if not cleaned.startswith("gs://") or cleaned == "gs:":
+                raise ValueError(
+                    f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
+                    "The bucket URI must start with 'gs://' and specify a bucket name."
+                )
+            self.managed_xprof_gcs_bucket = cleaned
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
@@ -309,22 +312,17 @@ def load_config(
 
     enable_managed_mldiagnostics = _resolve_bool_flag(
         getattr(args, "enable_managed_mldiagnostics", None) if args else None,
-        os.environ.get("ENABLE_MANAGED_MLDIAGNOSTICS"),
+        None,
         yaml_vars.get("enable_managed_mldiagnostics"),
         default=False,
     )
 
     managed_xprof_gcs_bucket = _resolve_str_flag(
         getattr(args, "managed_xprof_gcs_bucket", None) if args else None,
-        os.environ.get("MANAGED_XPROF_GCS_BUCKET"),
+        None,
         yaml_vars.get("managed_xprof_gcs_bucket"),
         default="",
     )
-    if managed_xprof_gcs_bucket and not managed_xprof_gcs_bucket.startswith("gs://"):
-        raise ValueError(
-            f"Invalid GCS bucket URI: '{managed_xprof_gcs_bucket}'. "
-            "The bucket URI must start with 'gs://'."
-        )
 
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 

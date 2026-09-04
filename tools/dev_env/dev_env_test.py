@@ -537,6 +537,24 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertFalse(parsed_neg.enable_health_service)
         self.assertFalse(parsed_neg.enable_dashboard_service)
 
+    def test_parser_mldiagnostics_feature_flags(self) -> None:
+        """Verifies mldiagnostics flags and negative flags parse into namespace."""
+        parsed = self.parser.parse_args(
+            [
+                "gke-upgrade",
+                "--enable-managed-mldiagnostics",
+                "--managed-xprof-gcs-bucket",
+                "gs://my-bucket",
+            ]
+        )
+        self.assertTrue(parsed.enable_managed_mldiagnostics)
+        self.assertEqual(parsed.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+        parsed_neg = self.parser.parse_args(
+            ["gke-upgrade", "--no-enable-managed-mldiagnostics"]
+        )
+        self.assertFalse(parsed_neg.enable_managed_mldiagnostics)
+
 
 if __name__ == "__main__":
     unittest.main()

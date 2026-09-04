@@ -47,15 +47,15 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 ### Managed ML Diagnostics (Managed XProf)
 Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
 
-Enable it in your deployment blueprint by setting:
+Enable it in your deployment blueprint by setting the variables in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`:
 ```yaml
 vars:
   enable_managed_mldiagnostics: true
   managed_xprof_gcs_bucket: "gs://<project>-mlruns"
 ```
-Or via the dev_env CLI:
+Then run deployment normally:
 ```bash
-python3 tools/dev_env/dev_env.py gke-deploy --enable-managed-mldiagnostics --managed-xprof-gcs-bucket gs://<project>-mlruns ...
+python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml ...
 ```
 
 For existing clusters not provisioned with `enable_managed_mldiagnostics: true`, enable the feature flag on the GKE cluster via:

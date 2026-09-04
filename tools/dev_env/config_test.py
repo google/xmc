@@ -220,17 +220,39 @@ class ConfigResolutionTest(unittest.TestCase):
             self.assertNotIn("rod_data_provider", cfg.enabled_services)
             self.assertNotIn("dashboard_service", cfg.enabled_services)
 
-    @patch.dict("os.environ", {}, clear=True)
     def test_mldiagnostics_and_xprof_bucket_flags(self) -> None:
-        """Verifies managed mldiagnostics and xprof bucket are resolved."""
+        """Verifies managed mldiagnostics and xprof bucket are resolved from CLI and YAML."""
+        # CLI flags override
         args = argparse.Namespace(
             project_id="my-proj",
             enable_managed_mldiagnostics=True,
-            managed_xprof_gcs_bucket="gs://my-bucket",
+            managed_xprof_gcs_bucket="gs://my-bucket/",
         )
         cfg = config.load_config(args, repo_root=self.root)
         self.assertTrue(cfg.enable_managed_mldiagnostics)
         self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+        # Negative flag
+        args_neg = argparse.Namespace(
+            project_id="my-proj",
+            enable_managed_mldiagnostics=False,
+        )
+        cfg_neg = config.load_config(args_neg, repo_root=self.root)
+        self.assertFalse(cfg_neg.enable_managed_mldiagnostics)
+
+        # YAML fallback resolution
+        cfg_file = self.root / "mldiag_config.yaml"
+        cfg_file.write_text(
+            "vars:\n"
+            "  project_id: my-proj\n"
+            "  enable_managed_mldiagnostics: true\n"
+            "  managed_xprof_gcs_bucket: gs://yaml-bucket\n",
+            encoding="utf-8",
+        )
+        args_yaml = argparse.Namespace(config=str(cfg_file))
+        cfg_yaml = config.load_config(args_yaml, repo_root=self.root)
+        self.assertTrue(cfg_yaml.enable_managed_mldiagnostics)
+        self.assertEqual(cfg_yaml.managed_xprof_gcs_bucket, "gs://yaml-bucket")
 
         # Verify invalid bucket URI raises ValueError
         invalid_args = argparse.Namespace(
@@ -264,13 +286,24 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
         self.assertEqual(cfg.enabled_services, list(config.BASE_SERVICES))
         self.assertIsNot(cfg.enabled_services, config.BASE_SERVICES)
 
-    def test_invalid_managed_xprof_gcs_bucket_raises(self) -> None:
+    def test_managed_xprof_gcs_bucket_normalization(self) -> None:
+        """Verifies GCS bucket trailing slashes and whitespace are normalized."""
+        cfg = config.LocalDevConfig(
+            project_id="test-proj",
+            managed_xprof_gcs_bucket="  gs://my-bucket/  ",
+        )
+        self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+    def test_invalid_managed_xprof_gcs_bucket_raises_value_error(self) -> None:
         """Verifies invalid managed_xprof_gcs_bucket raises ValueError."""
-        with self.assertRaises(ValueError):
-            config.LocalDevConfig(
-                project_id="test-proj",
-                managed_xprof_gcs_bucket="invalid-bucket",
-            )
+        invalid_buckets = ["invalid-bucket", "s3://my-bucket", "gs://", "gs:///", "gs:"]
+        for bucket in invalid_buckets:
+            with self.subTest(bucket=bucket):
+                with self.assertRaises(ValueError):
+                    config.LocalDevConfig(
+                        project_id="test-proj",
+                        managed_xprof_gcs_bucket=bucket,
+                    )
 
     def test_empty_project_id_raises_value_error(self) -> None:
         """Verifies whitespace or empty project_id raises ValueError."""
