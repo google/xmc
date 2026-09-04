@@ -27,19 +27,51 @@ import time
 import xmc
 from training_metrics import METRIC_NAMES, sample_step_metrics
 
-_DEFAULT_TOTAL_STEPS = 60
+_DEFAULT_TOTAL_STEPS = "60"
 _DEFAULT_STEP_DELAY_SECONDS = 1.0
 
 
-def _read_positive_int(name: str, default: int) -> int:
-    """Reads a positive integer environment variable, falling back to a default."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    value = int(raw)
-    if value < 1:
-        raise ValueError(f"{name} must be positive, got {value}")
+def env_value(name: str, default: str) -> str:
+    """Reads an environment variable, treating an empty value the same as an unset one.
+
+    A declared-but-blank variable -- CHART_DEMO_TOTAL_STEPS="" in a manifest or an .env file --
+    reaches the process as '', which int() rejects. Blank plainly means "no value given", so it
+    takes the default rather than crashing the worker before it logs a single metric.
+    """
+    return os.environ.get(name, default) or default
+
+
+def positive_int_env(name: str, default: str) -> int:
+    """Reads a positive integer setting, refusing a malformed or out-of-range value.
+
+    Falling back to the default on a bad value is the worse failure: a worker that quietly runs
+    60 steps when the manifest asked for 5000 is indistinguishable from a healthy run. Naming
+    the variable and the value it was given saves the operator from reading a traceback.
+    """
+    raw = env_value(name, default)
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r} is not an integer") from None
+    if value <= 0:
+        raise ValueError(f"{name}={raw!r} must be greater than zero")
     return value
+
+
+def seed_env(name: str, default: str) -> int:
+    """Reads the RNG seed, warning and falling back when it is not an integer.
+
+    Unlike the setting above, a wrong seed costs nothing -- it only picks which synthetic noise
+    the run replays -- and zero and negatives are perfectly good seeds, so nothing is range
+    checked here. Refusing to start over a value the sampler itself tolerates would trade a
+    working run for a cosmetic one.
+    """
+    raw = env_value(name, default)
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"!!! {name}={raw!r} is not an integer: seeding from {default} instead.")
+        return int(default)
 
 
 def run_training_loop(total_steps: int, seed: int, step_delay_seconds: float) -> None:
@@ -73,8 +105,8 @@ def main() -> None:
 
     # launch.py always forwards CHART_DEMO_SEED, drawing one if it was not configured, so
     # that the seed is printed by the launcher. The fallback only covers a manual run.
-    total_steps = _read_positive_int("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
-    seed = _read_positive_int("CHART_DEMO_SEED", random.randrange(1, 1_000_000))
+    total_steps = positive_int_env("CHART_DEMO_TOTAL_STEPS", _DEFAULT_TOTAL_STEPS)
+    seed = seed_env("CHART_DEMO_SEED", str(random.randrange(1, 1_000_000)))
 
     try:
         run_training_loop(total_steps, seed, _DEFAULT_STEP_DELAY_SECONDS)

@@ -81,7 +81,7 @@ flowchart TD
    `dashboardServiceDeployment.enabled=true` both serves the endpoints this example calls
    and gates the UI's `/dashboards` route, which is where the plots are drawn.
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see
-   `deploy/addons/metrics/clickhouse/README.md`).
+   [ClickHouse Addon README](../../deploy/addons/metrics/clickhouse/README.md)).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to
    your project's Artifact Registry.
 4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
