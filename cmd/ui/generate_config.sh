@@ -15,7 +15,7 @@
 
 # Dynamically generate config.js from environment variables at startup
 
-CONFIG_FILE="/usr/share/nginx/html/config.js"
+CONFIG_FILE="${CONFIG_FILE:-/tmp/config.js}"
 
 echo "Generating runtime config.js at ${CONFIG_FILE}..."
 
@@ -50,6 +50,11 @@ window.XMC_FEATURE_FLAGS = {
   "isNonProdAuth": ${NON_PROD_AUTH}
 };
 EOF
+
+# For backward compatibility, also mirror config.js to web root if writable
+if [ -w "/usr/share/nginx/html" ] && [ "${CONFIG_FILE}" != "/usr/share/nginx/html/config.js" ]; then
+  cp "${CONFIG_FILE}" /usr/share/nginx/html/config.js 2>/dev/null || true
+fi
 
 echo "Config.js generated successfully:"
 cat "${CONFIG_FILE}"
