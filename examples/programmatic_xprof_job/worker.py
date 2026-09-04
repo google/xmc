@@ -21,9 +21,11 @@ Actuator. It reads the per-work-unit GCS destination from
 to write the profile there directly. The Diagon backend then discovers and loads
 the profile from that GCS folder using the customized ManagedXprof MLRun labels.
 
-After the trace is captured the workload idles for a fixed 30 minutes so the
-enclosing JobSet stays alive long enough for the Diagon reconciler to create the
-MLRun from the attached ManagedXprof artifact.
+After the trace is captured the workload starts a JAX profiler server and keeps
+running matrix multiplications for ``IDLE_SECONDS`` (default 30 minutes), so it
+is also available for on-demand profile captures and the enclosing JobSet stays
+alive long enough for the Diagon reconciler to create the MLRun from the attached
+ManagedXprof artifact.
 """
 
 import os
@@ -43,6 +45,11 @@ _MATRIX_SIZE = flags.DEFINE_integer(
     "matrix_size",
     5000,
     "Side length of the square matrices multiplied during profiling.",
+)
+_PROFILER_PORT = flags.DEFINE_integer(
+    "profiler_port",
+    9999,
+    "Port the JAX profiler server listens on for on-demand profile captures.",
 )
 
 # Environment variable injected by the XMC Actuator into every container. It
@@ -106,6 +113,42 @@ def _run_traced_workload(profile_dir: str, duration_seconds: int, matrix_size: i
     print(f"Profile trace written to: {profile_dir}", flush=True)
 
 
+def _serve_for_on_demand_profiling(
+    matrix_size: int, duration_seconds: int, profiler_port: int
+) -> None:
+    """Keeps the workload alive and profileable for on-demand capture.
+
+    Starts a JAX profiler server and runs continuous matrix multiplications for
+    ``duration_seconds`` so that, in addition to the profile captured
+    programmatically above, an operator can trigger an on-demand profile capture
+    (e.g. from the XProf/Diagon UI) against the live workload during this window.
+    Running real computation -- rather than sleeping -- ensures those on-demand
+    captures record representative work. The window also keeps the enclosing
+    JobSet alive long enough for the Diagon reconciler to create the MLRun from
+    the attached ManagedXprof artifact.
+
+    Args:
+      matrix_size: Side length of the square matrices multiplied each cycle.
+      duration_seconds: Wall-clock time to keep serving before exiting.
+      profiler_port: Port the JAX profiler server listens on for on-demand
+        capture requests.
+    """
+    jax.profiler.start_server(profiler_port)
+    print(
+        f"JAX profiler server started on port {profiler_port}; workload is"
+        f" available for on-demand profiling for {duration_seconds}s.",
+        flush=True,
+    )
+    key = jax.random.PRNGKey(0)
+    deadline = time.monotonic() + duration_seconds
+    while time.monotonic() < deadline:
+        key, subkey = jax.random.split(key)
+        x = jax.random.normal(key, (matrix_size, matrix_size))
+        y = jax.random.normal(subkey, (matrix_size, matrix_size))
+        jnp.dot(x, y).block_until_ready()
+        time.sleep(1)
+
+
 def main(argv):
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
@@ -117,13 +160,16 @@ def main(argv):
         _MATRIX_SIZE.value,
     )
 
-    # Keep the JobSet alive long enough for the Diagon reconciler to create the
-    # MLRun from the attached ManagedXprof artifact before the container exits.
+    # After the programmatic trace, keep the workload alive AND profileable so an
+    # operator can also trigger on-demand profile captures against the live JAX
+    # profiler server. This also keeps the JobSet alive long enough for the Diagon
+    # reconciler to create the MLRun from the attached ManagedXprof artifact.
     # Configurable via IDLE_SECONDS (default 30 minutes); lower it in CI/smoke
     # runs so the pod does not hold cluster resources longer than necessary.
     idle_seconds = int(os.environ.get("IDLE_SECONDS", str(30 * 60)))
-    print(f"Idling for {idle_seconds}s so the JobSet stays alive.", flush=True)
-    time.sleep(idle_seconds)
+    _serve_for_on_demand_profiling(
+        _MATRIX_SIZE.value, idle_seconds, _PROFILER_PORT.value
+    )
 
     print("Workload finished successfully.", flush=True)
 

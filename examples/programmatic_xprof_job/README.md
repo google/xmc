@@ -67,5 +67,7 @@ The script will:
 2. Warms up a JAX matmul so the trace captures steady-state execution.
 3. Wraps the traced computation in `jax.profiler.start_trace(profile_dir)` /
    `jax.profiler.stop_trace()`, writing the profile directly to the GCS folder.
-4. Idles for 30 minutes (configurable via the `IDLE_SECONDS` env var) so the
-   reconciler can create the MLRun before the container exits.
+4. Starts a JAX profiler server (port `9999`) and keeps running matmuls for
+   `IDLE_SECONDS` (default 30 minutes), so the workload is also available for
+   on-demand profile captures and the JobSet stays alive long enough for the
+   reconciler to create the MLRun before the container exits.
