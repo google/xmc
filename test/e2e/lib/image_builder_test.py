@@ -66,13 +66,13 @@ class TestImageBuilder(unittest.TestCase):
         images = builder.build_all()
 
         mock_precompile.assert_called_once()
-        expected_targets = [f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._SERVICES]
+        expected_targets = [
+            f"//{pkg}:{target}" for pkg, target, _ in ImageBuilder._SERVICES
+        ] + ImageBuilder._EXTRA_BUILD_TARGETS
         mock_run.assert_any_call(
             ["bazel", "build", *expected_targets],
             cwd="/workspace",
         )
-
-        # Check docker load calls
         self.assertEqual(len(images), 5)
         self.assertEqual(mock_run.call_count, 7)  # 1 bazel build + 1 bazel info + 5 docker load
 

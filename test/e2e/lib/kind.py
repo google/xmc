@@ -74,16 +74,41 @@ class KindClusterManager:
         """Provisions KinD cluster and configures kubectl context."""
         manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
         kind_config = os.path.join(manifests_dir, "kind_config.yaml")
-        run_cmd(
-            [
-                self.cfg.kind_bin,
-                "create",
-                "cluster",
-                "--name",
-                self.cfg.cluster_name,
-                f"--config={kind_config}",
-            ]
-        )
+        base_cmd = [
+            self.cfg.kind_bin,
+            "create",
+            "cluster",
+            "--name",
+            self.cfg.cluster_name,
+            f"--config={kind_config}",
+        ]
+        if self.cfg.kind_node_image:
+            logger.info(
+                "Attempting cluster creation with custom KinD node image: %s",
+                self.cfg.kind_node_image,
+            )
+            try:
+                run_cmd(base_cmd + [f"--image={self.cfg.kind_node_image}"])
+            except Exception as e:
+                logger.warning(
+                    "Custom KinD node image %s failed to load (%s). Cleaning up stale cluster state and falling back to upstream default...",
+                    self.cfg.kind_node_image,
+                    e,
+                )
+                run_cmd(
+                    [
+                        self.cfg.kind_bin,
+                        "delete",
+                        "cluster",
+                        "--name",
+                        self.cfg.cluster_name,
+                    ],
+                    check=False,
+                )
+                run_cmd(base_cmd)
+        else:
+            run_cmd(base_cmd)
+
         run_cmd(["kubectl", "config", "use-context", f"kind-{self.cfg.cluster_name}"])
         logger.info("Creating namespace 'xmc'...")
         run_cmd(["kubectl", "create", "namespace", "xmc"])
@@ -198,10 +223,13 @@ class KindClusterManager:
         run_cmd(cmd)
 
     def load_images(self, images: list[str]) -> None:
-        """Loads Docker images into KinD nodes."""
+        """Loads Docker images into KinD nodes in a single batch."""
         if not images:
             return
-        logger.info("=== [KinD] Loading container images into cluster ===")
+        logger.info(
+            "=== [KinD] Loading %d container images into cluster in a single batch ===",
+            len(images),
+        )
         run_cmd(
             [
                 self.cfg.kind_bin,
@@ -210,7 +238,8 @@ class KindClusterManager:
                 *images,
                 "--name",
                 self.cfg.cluster_name,
-            ]
+            ],
+            timeout=300.0,
         )
 
     def teardown(self) -> None:
