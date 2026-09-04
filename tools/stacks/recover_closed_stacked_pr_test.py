@@ -26,6 +26,7 @@ from tools.stacks.recover_closed_stacked_pr import (
     _is_valid_git_commit,
     _resolve_merge_base,
     _resolve_target_base_sha,
+    _run_subprocess_command,
     delete_remote_branch,
     discover_upstream_prs,
     fetch_pr_details,
@@ -46,23 +47,19 @@ class TestParsePrIdentifier(unittest.TestCase):
 
     def test_parse_numeric_id(self):
         result = parse_pr_identifier("753")
-        self.assertEqual(result.owner, "google")
-        self.assertEqual(result.repo, "xmc")
-        self.assertEqual(result.pull_number, 753)
+        self.assertEqual((result.owner, result.repo, result.pull_number), ("google", "xmc", 753))
         self.assertEqual(result["owner"], "google")
         self.assertEqual(result["pull_number"], 753)
 
     def test_parse_full_url(self):
         result = parse_pr_identifier("https://github.com/google/xmc/pull/753")
-        self.assertEqual(result.owner, "google")
-        self.assertEqual(result.repo, "xmc")
-        self.assertEqual(result.pull_number, 753)
+        self.assertEqual((result.owner, result.repo, result.pull_number), ("google", "xmc", 753))
 
     def test_parse_custom_org_and_repo_url(self):
         result = parse_pr_identifier("https://github.com/my-org/custom-repo/pull/999")
-        self.assertEqual(result.owner, "my-org")
-        self.assertEqual(result.repo, "custom-repo")
-        self.assertEqual(result.pull_number, 999)
+        self.assertEqual(
+            (result.owner, result.repo, result.pull_number), ("my-org", "custom-repo", 999)
+        )
 
     def test_parse_url_with_fragment_and_trailing_slash(self):
         result = parse_pr_identifier("https://github.com/google/xmc/pull/753/#discussion_r12345")
@@ -95,40 +92,25 @@ class TestDiscoverUpstreamPrs(unittest.TestCase):
 
     @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
     def test_discover_upstream_single_child(self, mock_api):
-        child_pr = {
-            "number": 754,
-            "head": {"ref": "feat/child-branch"},
-            "base": {"ref": "feat/parent-branch"},
-        }
+        child_pr = {"number": 754, "head": {"ref": "c"}, "base": {"ref": "p"}}
         mock_api.side_effect = [[child_pr], []]
-        result = discover_upstream_prs("google", "xmc", "feat/parent-branch")
-        self.assertEqual(result, [child_pr])
+        self.assertEqual(discover_upstream_prs("google", "xmc", "p"), [child_pr])
         self.assertEqual(mock_api.call_count, 2)
 
     @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
     def test_discover_upstream_multi_level(self, mock_api):
-        child1 = {
-            "number": 754,
-            "head": {"ref": "feat/layer-1"},
-            "base": {"ref": "feat/base-layer"},
-        }
-        child2 = {"number": 755, "head": {"ref": "feat/layer-2"}, "base": {"ref": "feat/layer-1"}}
-        child3 = {"number": 756, "head": {"ref": "feat/layer-3"}, "base": {"ref": "feat/layer-2"}}
-        mock_api.side_effect = [[child1], [child2], [child3], []]
-        result = discover_upstream_prs("google", "xmc", "feat/base-layer")
-        self.assertEqual(result, [child1, child2, child3])
+        c1 = {"number": 754, "head": {"ref": "l1"}, "base": {"ref": "b0"}}
+        c2 = {"number": 755, "head": {"ref": "l2"}, "base": {"ref": "l1"}}
+        c3 = {"number": 756, "head": {"ref": "l3"}, "base": {"ref": "l2"}}
+        mock_api.side_effect = [[c1], [c2], [c3], []]
+        self.assertEqual(discover_upstream_prs("google", "xmc", "b0"), [c1, c2, c3])
         self.assertEqual(mock_api.call_count, 4)
 
     @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
     def test_discover_upstream_cycle_protection(self, mock_api):
-        cycle_pr = {
-            "number": 754,
-            "head": {"ref": "feat/base-layer"},
-            "base": {"ref": "feat/base-layer"},
-        }
+        cycle_pr = {"number": 754, "head": {"ref": "b"}, "base": {"ref": "b"}}
         mock_api.return_value = [cycle_pr]
-        result = discover_upstream_prs("google", "xmc", "feat/base-layer")
-        self.assertEqual(result, [cycle_pr])
+        self.assertEqual(discover_upstream_prs("google", "xmc", "b"), [cycle_pr])
 
     @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
     def test_discover_upstream_api_error_raises_handled_error(self, mock_api):
@@ -137,6 +119,12 @@ class TestDiscoverUpstreamPrs(unittest.TestCase):
             discover_upstream_prs("google", "xmc", "feat/branch")
         self.assertIn("Failed to query upstream PRs", ctx.exception.message)
 
+    @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
+    def test_discover_upstream_non_dict_element(self, mock_api):
+        mock_api.return_value = ["not-a-dict"]
+        result = discover_upstream_prs("google", "xmc", "feat/base-branch")
+        self.assertEqual(result, [])
+
 
 class TestResolveBaseCommitSha(unittest.TestCase):
     """Test cases for commit SHA resolution for deleted base branch."""
@@ -144,13 +132,10 @@ class TestResolveBaseCommitSha(unittest.TestCase):
     @patch("tools.stacks.recover_closed_stacked_pr._is_valid_git_commit")
     def test_resolve_from_base_sha(self, mock_valid):
         mock_valid.return_value = True
-        pr_data = {
-            "base": {"ref": "deleted-branch", "sha": "1111222233334444555566667777888899990000"},
-            "head": {"ref": "head-branch", "sha": "aaaa"},
-        }
+        pr_data = {"base": {"ref": "b", "sha": "11112222"}, "head": {"ref": "h"}}
         sha = resolve_base_commit_sha(pr_data, target_base="main", remote="origin")
-        self.assertEqual(sha, "1111222233334444555566667777888899990000")
-        mock_valid.assert_called_once_with("1111222233334444555566667777888899990000")
+        self.assertEqual(sha, "11112222")
+        mock_valid.assert_called_once_with("11112222")
 
     @patch("tools.stacks.recover_closed_stacked_pr._resolve_merge_base")
     @patch("tools.stacks.recover_closed_stacked_pr._is_valid_git_commit")
@@ -158,14 +143,11 @@ class TestResolveBaseCommitSha(unittest.TestCase):
         self, mock_valid, mock_merge_base
     ):
         mock_valid.return_value = False
-        mock_merge_base.return_value = "mergebase1234567890abcdef"
-        pr_data = {
-            "base": {"ref": "deleted-branch", "sha": "invalidsha"},
-            "head": {"ref": "head-branch", "sha": "aaaa"},
-        }
+        mock_merge_base.return_value = "mergebase1234"
+        pr_data = {"base": {"ref": "b", "sha": "invalid"}, "head": {"ref": "h"}}
         sha = resolve_base_commit_sha(pr_data, target_base="main", remote="origin")
-        self.assertEqual(sha, "mergebase1234567890abcdef")
-        mock_merge_base.assert_called_once_with("origin", "main", "head-branch")
+        self.assertEqual(sha, "mergebase1234")
+        mock_merge_base.assert_called_once_with("origin", "main", "h")
 
     @patch("tools.stacks.recover_closed_stacked_pr._resolve_target_base_sha")
     @patch("tools.stacks.recover_closed_stacked_pr._resolve_merge_base")
@@ -173,15 +155,11 @@ class TestResolveBaseCommitSha(unittest.TestCase):
     def test_resolve_from_target_base_when_merge_base_fails(
         self, mock_valid, mock_merge_base, mock_target_sha
     ):
-        mock_valid.return_value = False
-        mock_merge_base.return_value = None
-        mock_target_sha.return_value = "targetbasecommitsha1234"
-        pr_data = {
-            "base": {"ref": "deleted-branch", "sha": ""},
-            "head": {"ref": "head-branch", "sha": "aaaa"},
-        }
+        mock_valid.return_value, mock_merge_base.return_value = False, None
+        mock_target_sha.return_value = "targetbase1234"
+        pr_data = {"base": {"ref": "b", "sha": ""}, "head": {"ref": "h"}}
         sha = resolve_base_commit_sha(pr_data, target_base="main", remote="origin")
-        self.assertEqual(sha, "targetbasecommitsha1234")
+        self.assertEqual(sha, "targetbase1234")
         mock_target_sha.assert_called_once_with("origin", "main")
 
     @patch("tools.stacks.recover_closed_stacked_pr._resolve_target_base_sha")
@@ -193,10 +171,7 @@ class TestResolveBaseCommitSha(unittest.TestCase):
         mock_valid.return_value = False
         mock_merge_base.return_value = None
         mock_target_sha.return_value = None
-        pr_data = {
-            "base": {"ref": "deleted-branch", "sha": ""},
-            "head": {"ref": "head-branch", "sha": "aaaa"},
-        }
+        pr_data = {"base": {"ref": "b", "sha": ""}, "head": {"ref": "h"}}
         with self.assertRaises(HandledError) as ctx:
             resolve_base_commit_sha(pr_data, target_base="main", remote="origin")
         self.assertIn("Failed to resolve commit SHA", ctx.exception.message)
@@ -216,6 +191,13 @@ class TestGitSubprocessHelpers(unittest.TestCase):
     def test_is_valid_git_commit_invalid_format(self):
         self.assertFalse(_is_valid_git_commit("xyz"))
         self.assertFalse(_is_valid_git_commit(""))
+
+    @patch("subprocess.run")
+    def test_run_subprocess_command_file_not_found(self, mock_sub_run):
+        mock_sub_run.side_effect = FileNotFoundError("No such file or directory")
+        with self.assertRaises(HandledError) as ctx:
+            _run_subprocess_command(["fake-cmd", "arg"])
+        self.assertIn("Command 'fake-cmd' not found.", ctx.exception.message)
 
     @patch("tools.stacks.recover_closed_stacked_pr._run_subprocess_command")
     def test_resolve_merge_base_remote_candidate_success(self, mock_run):
@@ -412,7 +394,9 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
         }
         return argparse.Namespace(**(defaults | kwargs))
 
-    def _run_workflow_mocks(self, fetch_val, branch_exists=False, discover_val=None, args=None):
+    def _run_workflow_mocks(
+        self, fetch_val, branch_exists=False, discover_val=None, reopen_err=None, args=None
+    ):
         with (
             patch(
                 "tools.stacks.recover_closed_stacked_pr.fetch_pr_details", return_value=fetch_val
@@ -427,7 +411,9 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
                 return_value=branch_exists,
             ) as mock_exists,
             patch("tools.stacks.recover_closed_stacked_pr.recreate_remote_branch") as mock_recreate,
-            patch("tools.stacks.recover_closed_stacked_pr.reopen_pr") as mock_reopen,
+            patch(
+                "tools.stacks.recover_closed_stacked_pr.reopen_pr", side_effect=reopen_err
+            ) as mock_reopen,
             patch("tools.stacks.recover_closed_stacked_pr.retarget_pr_base") as mock_retarget,
             patch("tools.stacks.recover_closed_stacked_pr.delete_remote_branch") as mock_delete,
             patch(
@@ -436,7 +422,12 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
             ) as mock_discover,
             patch("tools.stacks.recover_closed_stacked_pr.rebuild_and_sync_stack") as mock_rebuild,
         ):
-            res = recover_stacked_pr(args or self._create_args())
+            if reopen_err:
+                with self.assertRaises(HandledError):
+                    recover_stacked_pr(args or self._create_args())
+                res = None
+            else:
+                res = recover_stacked_pr(args or self._create_args())
             return res, {
                 "fetch": mock_fetch,
                 "sha": mock_sha,
@@ -456,21 +447,20 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
             "base": {"ref": "del-branch", "sha": "1234sha"},
             "head": {"ref": "feat/h", "sha": "5678sha"},
         }
-        children = [
-            {"number": 754, "head": {"ref": "feat/c1"}},
-            {"number": 755, "head": {"ref": "feat/c2"}},
-        ]
+        children = [{"number": 754, "head": {"ref": "c1"}}, {"number": 755, "head": {"ref": "c2"}}]
         res, m = self._run_workflow_mocks(pr, branch_exists=False, discover_val=children)
 
-        self.assertEqual(res["status"], "success")
-        self.assertFalse(res["dry_run"])
-        self.assertEqual(res["pull_number"], 753)
-        self.assertEqual(res["target_base"], "main")
-        self.assertEqual(res["deleted_base_branch"], "del-branch")
-        self.assertEqual(res["recreated_commit_sha"], "1234sha")
-        self.assertEqual(res["recovered_head_branch"], "feat/h")
-        self.assertEqual(res["upstream_pr_numbers"], [754, 755])
-        self.assertEqual(res["stack_branches"], ["feat/h", "feat/c1", "feat/c2"])
+        self.assertEqual(
+            (res["status"], res["dry_run"], res["pull_number"], res["target_base"]),
+            ("success", False, 753, "main"),
+        )
+        self.assertEqual(
+            (res["deleted_base_branch"], res["recreated_commit_sha"]), ("del-branch", "1234sha")
+        )
+        self.assertEqual(
+            (res["recovered_head_branch"], res["upstream_pr_numbers"]), ("feat/h", [754, 755])
+        )
+        self.assertEqual(res["stack_branches"], ["feat/h", "c1", "c2"])
 
         m["unstack"].assert_called_once_with(unstack_local_only=False, dry_run=False)
         m["recreate"].assert_called_once_with("origin", "1234sha", "del-branch", dry_run=False)
@@ -478,19 +468,13 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
         m["retarget"].assert_called_once_with("google", "xmc", 753, "main", dry_run=False)
         m["delete"].assert_called_once_with("origin", "del-branch", dry_run=False)
         m["discover"].assert_called_once_with("google", "xmc", "feat/h")
-        m["rebuild"].assert_called_once_with(
-            "main", ["feat/h", "feat/c1", "feat/c2"], dry_run=False
-        )
+        m["rebuild"].assert_called_once_with("main", ["feat/h", "c1", "c2"], dry_run=False)
 
     @patch("tools.stacks.recover_closed_stacked_pr.call_github_api")
     @patch("tools.stacks.recover_closed_stacked_pr._run_subprocess_command")
     def test_dry_run_mode_ensures_no_mutating_calls(self, mock_subprocess, mock_api):
         mock_api.side_effect = [
-            {
-                "state": "closed",
-                "base": {"ref": "del", "sha": "c1"},
-                "head": {"ref": "h", "sha": "h1"},
-            },
+            {"state": "closed", "base": {"ref": "del", "sha": "c1"}, "head": {"ref": "h"}},
             [],
         ]
         mock_subprocess.return_value = MagicMock(returncode=0)
@@ -512,11 +496,7 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
             self.assertNotIn("unstack", cmd)
 
     def test_full_recovery_when_remote_branch_exists_skips_recreation_and_deletion(self):
-        pr = {
-            "state": "closed",
-            "base": {"ref": "exist-branch", "sha": "1234sha"},
-            "head": {"ref": "feat/h", "sha": "5678sha"},
-        }
+        pr = {"state": "closed", "base": {"ref": "exist-b", "sha": "123"}, "head": {"ref": "h"}}
         res, m = self._run_workflow_mocks(pr, branch_exists=True, discover_val=[])
 
         self.assertEqual(res["status"], "success")
@@ -526,13 +506,16 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
         m["reopen"].assert_called_once()
         m["retarget"].assert_called_once()
 
+    def test_full_recovery_cleans_up_branch_on_reopen_failure(self):
+        pr = {"state": "closed", "base": {"ref": "del", "sha": "123"}, "head": {"ref": "h"}}
+        err = HandledError("Reopen failed", "Check permissions")
+        _, m = self._run_workflow_mocks(pr, branch_exists=False, reopen_err=err)
+        m["recreate"].assert_called_once_with("origin", "123", "del", dry_run=False)
+        m["delete"].assert_called_once_with("origin", "del", dry_run=False)
+
     @patch("tools.stacks.recover_closed_stacked_pr.fetch_pr_details")
     def test_pr_already_open_raises_handled_error(self, mock_fetch):
-        mock_fetch.return_value = {
-            "state": "open",
-            "base": {"ref": "main"},
-            "head": {"ref": "feat/my-branch"},
-        }
+        mock_fetch.return_value = {"state": "open"}
         args = self._create_args()
         with self.assertRaises(HandledError) as ctx:
             recover_stacked_pr(args)
@@ -540,13 +523,7 @@ class TestFullRecoveryWorkflow(unittest.TestCase):
 
     @patch("tools.stacks.recover_closed_stacked_pr.fetch_pr_details")
     def test_pr_already_merged_raises_handled_error(self, mock_fetch):
-        mock_fetch.return_value = {
-            "state": "closed",
-            "merged": True,
-            "merged_at": "2026-09-04T08:00:00Z",
-            "base": {"ref": "main"},
-            "head": {"ref": "feat/my-branch"},
-        }
+        mock_fetch.return_value = {"state": "closed", "merged": True, "merged_at": "now"}
         args = self._create_args()
         with self.assertRaises(HandledError) as ctx:
             recover_stacked_pr(args)

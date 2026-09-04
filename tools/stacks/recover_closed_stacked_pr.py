@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
@@ -51,9 +51,8 @@ def parse_pr_identifier(pr_arg: str) -> PullRequestIdentifier:
     """Parses a PR number or GitHub PR URL into owner, repo, and PR number."""
     if pr_arg.isdigit():
         return PullRequestIdentifier(owner="google", repo="xmc", pull_number=int(pr_arg))
-    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_arg)
-    if m:
-        return PullRequestIdentifier(owner=m.group(1), repo=m.group(2), pull_number=int(m.group(3)))
+    if m := re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_arg):
+        return PullRequestIdentifier(m.group(1), m.group(2), int(m.group(3)))
     msg = "Provide a numeric PR ID (e.g. '753') or full URL (e.g. 'https://github.com/.../753')."
     raise HandledError(f"Invalid PR identifier: '{pr_arg}'", msg)
 
@@ -62,7 +61,11 @@ def _run_subprocess_command(
     cmd: list[str], check: bool = True, capture_output: bool = True
 ) -> subprocess.CompletedProcess[str]:
     """Runs a subprocess command with string output decoding."""
-    return subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
+    try:
+        return subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
+    except FileNotFoundError as e:
+        msg = f"Please ensure '{cmd[0]}' is installed and available in your PATH."
+        raise HandledError(f"Command '{cmd[0]}' not found.", msg) from e
 
 
 def _is_valid_git_commit(commit_sha: str) -> bool:
@@ -84,27 +87,24 @@ def _resolve_merge_base(remote: str, target_base: str, head_ref: str) -> str | N
 
 def _resolve_target_base_sha(remote: str, target_base: str) -> str | None:
     """Resolves commit SHA of the target base branch."""
-    for target in [f"{remote}/{target_base}^{{commit}}", f"{target_base}^{{commit}}"]:
-        cmd = ["git", "rev-parse", "--verify", "--quiet", target]
-        proc = _run_subprocess_command(cmd, check=False)
-        if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout.strip()
+    for ref in [f"{remote}/{target_base}^{{commit}}", f"{target_base}^{{commit}}"]:
+        p = _run_subprocess_command(["git", "rev-parse", "--verify", "--quiet", ref], check=False)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
     return None
 
 
 def resolve_base_commit_sha(pr_data: dict[str, Any], target_base: str, remote: str) -> str:
     """Resolves a commit SHA to recreate the deleted base branch."""
-    base_ref = pr_data.get("base", {}).get("ref", "")
-    head_ref = pr_data.get("head", {}).get("ref", "")
-    base_sha = pr_data.get("base", {}).get("sha", "")
-    if base_sha and _is_valid_git_commit(base_sha):
+    base = pr_data.get("base", {})
+    if (base_sha := base.get("sha", "")) and _is_valid_git_commit(base_sha):
         return base_sha
-    merge_base = _resolve_merge_base(remote, target_base, head_ref)
-    if merge_base:
-        return merge_base
-    target_sha = _resolve_target_base_sha(remote, target_base)
-    if target_sha:
-        return target_sha
+    head_ref = pr_data.get("head", {}).get("ref", "")
+    if sha := _resolve_merge_base(remote, target_base, head_ref) or _resolve_target_base_sha(
+        remote, target_base
+    ):
+        return sha
+    base_ref = base.get("ref", "")
     raise HandledError(
         f"Failed to resolve commit SHA for deleted base branch '{base_ref}'.",
         f"Run 'git fetch {remote}' to make base commits available locally.",
@@ -123,10 +123,8 @@ def fetch_pr_details(pr_id: PullRequestIdentifier) -> dict[str, Any]:
         msg = "Ensure the pull request exists and your credentials have read access."
         raise HandledError(str(e), msg) from e
     if not isinstance(resp, dict):
-        raise HandledError(
-            f"Unexpected GitHub API response format for PR #{pr_id.pull_number}.",
-            "Ensure GitHub API returns a valid JSON object.",
-        )
+        msg = "Ensure GitHub API returns a valid JSON object."
+        raise HandledError(f"Unexpected GitHub API response for PR #{pr_id.pull_number}.", msg)
     return resp
 
 
@@ -146,13 +144,14 @@ def discover_upstream_prs(
             ) from e
         if not isinstance(results, list) or not results:
             break
-        child_pr, child_num = results[0], results[0].get("number")
-        if not child_num or child_num in visited_prs:
+        child_pr = results[0]
+        if not isinstance(child_pr, dict):
+            break
+        if not (child_num := child_pr.get("number")) or child_num in visited_prs:
             break
         visited_prs.add(child_num)
         chain.append(child_pr)
-        current_base = child_pr.get("head", {}).get("ref", "")
-        if not current_base:
+        if not (current_base := child_pr.get("head", {}).get("ref", "")):
             break
     return chain
 
@@ -255,10 +254,12 @@ def recover_stacked_pr(args: argparse.Namespace) -> dict[str, Any]:
     unstack_stack(unstack_local_only=args.unstack_local_only, dry_run=dry_run)
     if deleted:
         recreate_remote_branch(remote, sha, del_base, dry_run=dry_run)
-    reopen_pr(owner, repo, pr_num, dry_run=dry_run)
-    retarget_pr_base(owner, repo, pr_num, target_base, dry_run=dry_run)
-    if deleted:
-        delete_remote_branch(remote, del_base, dry_run=dry_run)
+    try:
+        reopen_pr(owner, repo, pr_num, dry_run=dry_run)
+        retarget_pr_base(owner, repo, pr_num, target_base, dry_run=dry_run)
+    finally:
+        if deleted:
+            delete_remote_branch(remote, del_base, dry_run=dry_run)
 
     upstream = discover_upstream_prs(owner, repo, rec_head)
     stack = [rec_head] + [
@@ -287,9 +288,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-base", default="main", help="Target base branch.")
     parser.add_argument("--remote", default="origin", help="Git remote name.")
     parser.add_argument("--dry-run", action="store_true", help="Dry run mode.")
-    parser.add_argument(
-        "--unstack-local-only", action="store_true", help="Pass --local to unstack."
-    )
+    parser.add_argument("--unstack-local-only", action="store_true", help="Unstack locally only.")
     return parser
 
 
