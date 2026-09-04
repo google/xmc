@@ -20,13 +20,172 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__init__.py",
+    "change_detector.py",
+    "chart_sanitizer.py",
+    "cluster_diagnostics.py",
     "config.py",
     "deploy_dev_env.py",
     "dev_env.py",
+    "helm_deployer.py",
+    "image_builder.py",
     "kind_manager.py",
+    "local_runner.py",
+    "service_resolver.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "change_detector_lib",
+    srcs = ["change_detector.py"],
+    imports = ["../.."],
+    deps = [
+        ":image_builder_lib",
+        ":service_resolver_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "change_detector_test",
+    srcs = ["change_detector_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":change_detector_lib",
+    ],
+)
+
+py_library(
+    name = "chart_sanitizer_lib",
+    srcs = ["chart_sanitizer.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "chart_sanitizer_test",
+    srcs = ["chart_sanitizer_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_sanitizer_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "cluster_diagnostics_lib",
+    srcs = ["cluster_diagnostics.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "cluster_diagnostics_test",
+    srcs = ["cluster_diagnostics_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster_diagnostics_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "helm_deployer_lib",
+    srcs = ["helm_deployer.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_sanitizer_lib",
+        ":cluster_diagnostics_lib",
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "helm_deployer_test",
+    srcs = ["helm_deployer_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_sanitizer_lib",
+        ":cluster_diagnostics_lib",
+        ":config_lib",
+        ":helm_deployer_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "service_resolver_lib",
+    srcs = ["service_resolver.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "service_resolver_test",
+    srcs = ["service_resolver_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":service_resolver_lib",
+    ],
+)
+
+py_library(
+    name = "local_runner_lib",
+    srcs = ["local_runner.py"],
+    imports = ["../.."],
+    deps = [
+        ":change_detector_lib",
+        ":config_lib",
+        ":helm_deployer_lib",
+        ":image_builder_lib",
+        ":kind_manager_lib",
+        ":service_resolver_lib",
+        ":spanner_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "local_runner_test",
+    srcs = ["local_runner_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":change_detector_lib",
+        ":config_lib",
+        ":helm_deployer_lib",
+        ":image_builder_lib",
+        ":kind_manager_lib",
+        ":local_runner_lib",
+        ":service_resolver_lib",
+        ":spanner_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "image_builder_lib",
+    srcs = ["image_builder.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "image_builder_test",
+    srcs = ["image_builder_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":config_lib",
+        ":image_builder_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "kind_manager_lib",
@@ -96,9 +255,13 @@ py_library(
     ],
     imports = ["../.."],
     deps = [
+        ":change_detector_lib",
         ":config_lib",
         ":deploy_dev_env_lib",
+        ":helm_deployer_lib",
+        ":image_builder_lib",
         ":kind_manager_lib",
+        ":local_runner_lib",
         ":spanner_manager_lib",
         ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",

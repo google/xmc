@@ -39,6 +39,7 @@ class TestSpannerManager(unittest.TestCase):
             temp_dir="/tmp/e2e_test",
         )
         self.mgr = SpannerManager(self.cfg)
+        self.mgr._cached_bazel_bin = "/workspace/bazel-bin"
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_cleanup_stale_databases_deletes_expired_databases(self, mock_run):
@@ -90,20 +91,24 @@ class TestSpannerManager(unittest.TestCase):
             check=False,
         )
 
+    @patch("os.path.isfile", return_value=False)
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(self, mock_run, mock_cleanup):
+    def test_setup_creates_dbs_with_ddl_and_proto_descriptors(
+        self, mock_run, mock_cleanup, mock_isfile
+    ):
         self.mgr.setup()
 
         mock_cleanup.assert_called_once()
 
-        # Check proto descriptors build call
+        # Check prerequisites build call
         mock_run.assert_any_call(
             [
                 "bazel",
                 "build",
                 "//api/protos/experiment:experiment_messages_descriptor",
                 "//api/protos/xid:xid_messages_descriptor",
+                "//internal/storage/spanner/migrations:migrations",
             ],
             cwd="/workspace",
         )
@@ -152,6 +157,7 @@ class TestSpannerManager(unittest.TestCase):
                 "-command=init",
             ],
             cwd="/workspace",
+            capture_output=True,
         )
         mock_run.assert_any_call(
             [
@@ -166,6 +172,7 @@ class TestSpannerManager(unittest.TestCase):
                 "-command=init",
             ],
             cwd="/workspace",
+            capture_output=True,
         )
 
     @patch("time.sleep")
@@ -184,6 +191,64 @@ class TestSpannerManager(unittest.TestCase):
 
         self.assertEqual(mock_run.call_count, 2)
         mock_sleep.assert_called_once_with(15)
+
+    @patch("os.access", return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
+        binary = self.mgr._resolve_migration_binary()
+        self.assertIsNotNone(binary)
+        self.assertTrue(binary.endswith(("migrations", "migrations.exe")))
+
+    @patch("os.path.isdir", return_value=False)
+    @patch("os.path.isfile", return_value=False)
+    def test_resolve_migration_binary_returns_none_when_missing(self, mock_isfile, mock_isdir):
+        binary = self.mgr._resolve_migration_binary()
+        self.assertIsNone(binary)
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_retries_on_grpc_resource_exhausted(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["migrations"],
+                stderr=b"rpc error: code = ResourceExhausted desc = Quota exceeded for quota metric ...",
+            ),
+            subprocess.CompletedProcess(args=[], returncode=0),
+        ]
+
+        with patch.object(
+            self.mgr, "_resolve_migration_binary", return_value="/workspace/bazel-bin/migrations"
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once_with(5)
+
+    @patch("os.path.getsize", return_value=1024)
+    @patch("os.path.isfile", return_value=True)
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_build_prerequisites_skips_when_all_targets_present(
+        self, mock_run, mock_isfile, mock_getsize
+    ):
+        with patch.object(
+            self.mgr, "_resolve_migration_binary", return_value="/workspace/bazel-bin/migrations"
+        ):
+            self.mgr._build_prerequisites()
+            mock_run.assert_not_called()
+
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_get_bazel_bin_queries_bazel_info(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="/custom/bazel-bin\n"
+        )
+        mgr = SpannerManager(self.cfg)
+        self.assertEqual(mgr._get_bazel_bin(), "/custom/bazel-bin")
+
+    @patch("test.e2e.lib.spanner.run_cmd", side_effect=RuntimeError("bazel not found"))
+    def test_get_bazel_bin_falls_back_on_error(self, mock_run):
+        mgr = SpannerManager(self.cfg)
+        self.assertEqual(mgr._get_bazel_bin(), "/workspace/bazel-bin")
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_teardown_drops_databases(self, mock_run):

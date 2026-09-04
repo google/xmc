@@ -56,9 +56,9 @@ class ExperimentRegressionTest(googletest.TestCase):
 
         # Wait for experiment to be available in ESS with a timeout.
         timeout = 10
-        start_time = time.time()
+        start_time = time.monotonic()
         experiment = None
-        while time.time() - start_time < timeout and experiment is None:
+        while time.monotonic() - start_time < timeout and experiment is None:
             try:
                 time.sleep(1)
                 experiment = self.examples.get_experiment(experiment_name)

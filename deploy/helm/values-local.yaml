@@ -1,0 +1,72 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Static local development Helm values overlay for KinD / local dev environments.
+# Merged automatically with dynamically generated project/database values.
+
+domainSuffix: "local.xmc.dev"
+isDevEnvironment: true
+imageTag: latest
+taskSignatureTtlSeconds: 300
+statusMessageHistoryEnabled: false
+redisAddr: "redis-service.xmc.svc.cluster.local:6379"
+
+# Local container image tags loaded directly into KinD nodes via ImageBuilder.
+# In local KinD deployments, ChartSanitizer patches imagePullPolicy from Always to IfNotPresent.
+# If an image is not built/loaded into KinD, containerd will attempt to pull the unqualified
+# name from Docker Hub, failing with ImagePullBackOff and triggering automated diagnostics.
+xid_custom_image: "xid_service_image:latest"
+actuator_custom_image: "actuator_image:latest"
+reconciler_custom_image: "reconciler_image:latest"
+ess_custom_image: "experiment_state_server_image:latest"
+
+xidService:
+  hpa:
+    minReplicas: 1
+    maxReplicas: 1
+
+essDeployment:
+  enabled: true
+  hpa:
+    minReplicas: 1
+    maxReplicas: 1
+
+auth:
+  disableAuthentication: false
+  isNonProdAuth: true
+  allowedEmails: "admin@xmc.local,viewer@xmc.local"
+  clientId: "xmc-client"
+  iap:
+    clientId: "xmc-client"
+    iapIssuer: "http://dex.dex.svc.cluster.local:5556/dex"
+  googleApplicationCredentials: "/etc/gcp-secrets/key.json"
+  redirectUrl: "http://localhost:8080/api/callback"
+  frontendUrl: "http://localhost:8080"
+  authUrl: "http://localhost:5556/dex/auth"
+  tokenUrl: "http://dex.dex.svc.cluster.local:5556/dex/token"
+  apiUrl: "http://dex.dex.svc.cluster.local:5556/dex/userinfo"
+  secureCookie: false
+  issuerUrl: "http://dex.dex.svc.cluster.local:5556/dex"
+
+secrets:
+  csi:
+    enabled: false
+  development:
+    jwtSecret: "e2e-development-secret-must-be-at-least-32-chars-long"
+    clientSecret: "xmc-client-secret"
+
+ui:
+  enabled: true
+  image: "ui-image:latest"
+  apiUrl: "http://localhost:8080/v1"

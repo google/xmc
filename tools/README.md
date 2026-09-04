@@ -11,9 +11,11 @@ The tools suite is organized into domain-focused subpackages:
 ```
 tools/
 ├── common/             # Shared utilities, virtualenv management, and container builders
+├── components/         # XMC component profiles discovery runner and linting harness
 ├── dev_env/            # Developer environment deployment and live upgrade tools
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
+├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
 ├── xmc-diag/           # Cluster diagnostics and health inspection utilities
 └── *.py                # Backward-compatible forwarding wrappers
 ```
@@ -31,8 +33,14 @@ Centralized utilities and build helpers used across tools:
 - [`requirements.txt`](common/requirements.txt): Pinned third-party Python dependencies for developer tools.
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)
-Playbooks and unified CLI for deploying, upgrading, and managing development environments:
-- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for environment lifecycle operations (`gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`).
+Playbooks and unified CLI for deploying, upgrading, and managing local/remote development clusters:
+- [`dev_env.py`](dev_env/dev_env.py): Unified CLI entrypoint for all environment lifecycle operations (`up`, `down`, `reload`, `gke-deploy`, `gke-upgrade`, `deploy`, `upgrade`, `cluster`, `status`, `logs`, `spanner`, `build-images`).
+- [`config.py`](dev_env/config.py): Configurable local development environment settings (`LocalDevConfig`), multi-source resolution precedence (CLI > Env > YAML > Defaults), and dynamic Spanner / database naming.
+- [`change_detector.py`](dev_env/change_detector.py): Git diff inspection and smart mapping of file modifications to affected microservices and Helm charts.
+- [`local_runner.py`](dev_env/local_runner.py): Local KinD orchestrator with single-shot and continuous watch mode (`-w`) fast reload, debouncing, and live Helm deployments.
+- [`kind_manager.py`](dev_env/kind_manager.py): Pre-flight CLI tool verification, KinD cluster creation/deletion, credentials/secret provisioning (`gcp-sa-key`, `backend-oauth-secrets`, self-signed TLS certs), and local manifest application (`dummy_crds.yaml`, `redis.yaml`, `dex.yaml`, `gateway_proxy.yaml`).
+- [`spanner_manager.py`](dev_env/spanner_manager.py): Cloud Spanner database existence verification, parallel creation with single-batch DDL & proto descriptors, schema migrations, and database dropping (`dev_env.py spanner`).
+- [`image_builder.py`](dev_env/image_builder.py): Parallel Bazel OCI container image compilation, Docker archive loading, and loading images directly into KinD nodes (`dev_env.py build-images`).
 - [`deploy_dev_env.py`](dev_env/deploy_dev_env.py): Orchestrates Cluster Toolkit (`gcluster`) compilation and step-by-step remote infrastructure rollout (invoked via `python3 tools/dev_env/dev_env.py gke-deploy`).
 - [`upgrade_dev_env.py`](dev_env/upgrade_dev_env.py): Rebuilds changed services, pushes OCI images, and rolls out Helm charts or deployments without recreating infrastructure (invoked via `python3 tools/dev_env/dev_env.py gke-upgrade`).
 
@@ -54,7 +62,14 @@ Harness for testing and evaluating skill/rule modifications:
 - [`analyze_diff_and_synthesize.py`](benchmark/analyze_diff_and_synthesize.py): Extracts structured git diffs and categorized changes across `.agents/`.
 - [`extract_telemetry.py`](benchmark/extract_telemetry.py): Extracts usage telemetry embedded in GitHub PR comments.
 - [`resolve_test_scope.py`](benchmark/resolve_test_scope.py): Resolves affected Bazel test scopes from git diffs for CI optimization.
-- [`teardown_benchmark.py`](benchmark/teardown_benchmark.py): Cleans up test PRs, branches, and scratch artifacts generated during benchmark runs.
+### 5. `tools/components/` (Component Manifest Linting & Profile Discovery)
+Harness for automated validation and discovery of XMC component profiles:
+- [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `component-linter` with consolidated text/JSON reporting.
+- [`run_linter_test.py`](components/run_linter_test.py): Hermetic unit test suite for directory discovery, rules matching, exit codes, and JSON serialization.
+
+### 5. `tools/lint/` (Static Analyzers & Linters)
+Offline syntax walkers and static validation tooling:
+- [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 
 ---
 

@@ -17,6 +17,7 @@ filegroup(
     srcs = glob([
         "Chart.yaml",
         "values.yaml",
+        "values-local.yaml",
         "templates/**",
     ]),
     visibility = ["//visibility:public"],

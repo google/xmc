@@ -77,6 +77,7 @@ class TestParseArgs(unittest.TestCase):
             "--kind-bin=/bin/kind",
             "--workspace-root=/my/workspace",
             "--screenshots-dir=/my/screenshots",
+            "--kind-node-image=us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1",
             "--keep-cluster",
             "--skip-build",
         ]
@@ -87,6 +88,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(cfg.kind_bin, "/bin/kind")
         self.assertEqual(cfg.workspace_root, "/my/workspace")
         self.assertEqual(cfg.screenshots_dir, "/my/screenshots")
+        self.assertEqual(cfg.kind_node_image, "us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1")
         self.assertTrue(cfg.keep_cluster)
         self.assertTrue(cfg.skip_build)
 
@@ -99,6 +101,7 @@ class TestParseArgs(unittest.TestCase):
             "KIND_BIN": "/env/kind",
             "WORKSPACE_ROOT": "/env/root",
             "XMC_SCREENSHOTS_DIR": "/env/screenshots",
+            "XMC_KIND_NODE_IMAGE": "us-docker.pkg.dev/env/xmc/node:v1.33.1",
         },
         clear=True,
     )
@@ -110,6 +113,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(cfg.kind_bin, "/env/kind")
         self.assertEqual(cfg.workspace_root, "/env/root")
         self.assertEqual(cfg.screenshots_dir, "/env/screenshots")
+        self.assertEqual(cfg.kind_node_image, "us-docker.pkg.dev/env/xmc/node:v1.33.1")
         self.assertFalse(cfg.keep_cluster)
         self.assertFalse(cfg.skip_build)
 

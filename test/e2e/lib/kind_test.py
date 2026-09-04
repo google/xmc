@@ -139,6 +139,55 @@ class TestKindClusterManager(unittest.TestCase):
                 "img2:latest",
                 "--name",
                 "test-cluster",
+            ],
+            timeout=300.0,
+        )
+
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/valid/key.json"})
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(KindClusterManager, "exists", return_value=False)
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_setup_provisions_cluster_with_custom_node_image(
+        self, mock_run, mock_exists, mock_isfile
+    ):
+        self.cfg.kind_node_image = "us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1"
+        self.mgr.setup()
+        mock_run.assert_any_call(
+            [
+                "kind",
+                "create",
+                "cluster",
+                "--name",
+                "test-cluster",
+                f"--config={os.path.join('/workspace', 'test', 'e2e', 'manifests', 'kind_config.yaml')}",
+                "--image=us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1",
+            ]
+        )
+
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/valid/key.json"})
+    @patch("os.path.isfile", return_value=True)
+    @patch.object(KindClusterManager, "exists", return_value=False)
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_setup_falls_back_to_default_image_when_custom_node_image_fails(
+        self, mock_run, mock_exists, mock_isfile
+    ):
+        self.cfg.kind_node_image = "us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1"
+
+        def side_effect(cmd, *args, **kwargs):
+            if any(arg.startswith("--image=") for arg in cmd):
+                raise subprocess.CalledProcessError(1, cmd)
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        mock_run.side_effect = side_effect
+        self.mgr.setup()
+        mock_run.assert_any_call(
+            [
+                "kind",
+                "create",
+                "cluster",
+                "--name",
+                "test-cluster",
+                f"--config={os.path.join('/workspace', 'test', 'e2e', 'manifests', 'kind_config.yaml')}",
             ]
         )
 
@@ -146,6 +195,12 @@ class TestKindClusterManager(unittest.TestCase):
     def test_load_images_skips_when_empty(self, mock_run):
         self.mgr.load_images([])
         mock_run.assert_not_called()
+
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_load_images_raises_on_fatal_error(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["kind", "load"])
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.mgr.load_images(["img1:latest"])
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_apply_manifests_batches_arguments(self, mock_run):

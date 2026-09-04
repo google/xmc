@@ -27,7 +27,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -169,7 +169,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	}
 	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
 	in.Spec.Generation = in.Generation
-	canonicalName := store.CanonicalComponentName(in.Name)
+	canonicalName := naming.CanonicalComponentName(in.Name)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
 	if in.IsDeleting {

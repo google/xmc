@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -213,8 +214,8 @@ func matchesReadyPredicate(rec *ComponentRecord, expected string) bool {
 }
 
 func matchesNamePredicate(actualName, expected string) bool {
-	canonicalExpected := CanonicalComponentName(expected)
-	return CanonicalComponentName(actualName) == canonicalExpected
+	canonicalExpected := naming.CanonicalComponentName(expected)
+	return naming.CanonicalComponentName(actualName) == canonicalExpected
 }
 
 func parsePlatformHealthFilter(filter string) ([]filterPredicate, error) {

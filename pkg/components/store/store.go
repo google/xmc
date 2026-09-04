@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 // Sentinel errors for component store operations.
@@ -126,7 +127,7 @@ func ToProtoComponent(r *ComponentRecord) *componentspb.Component {
 		return nil
 	}
 	comp := &componentspb.Component{
-		Name: FullComponentName(r.Name),
+		Name: naming.FullComponentName(r.Name),
 		Etag: r.Etag,
 	}
 	if r.Spec != nil {

@@ -83,6 +83,16 @@ alias(
 )
 
 alias(
+    name = "image_builder_lib",
+    actual = "//tools/dev_env:image_builder_lib",
+)
+
+alias(
+    name = "image_builder_test",
+    actual = "//tools/dev_env:image_builder_test",
+)
+
+alias(
     name = "dev_env_lib",
     actual = "//tools/dev_env:dev_env_lib",
 )
@@ -135,6 +145,66 @@ alias(
 alias(
     name = "kind_manager_test",
     actual = "//tools/dev_env:kind_manager_test",
+)
+
+alias(
+    name = "chart_sanitizer_lib",
+    actual = "//tools/dev_env:chart_sanitizer_lib",
+)
+
+alias(
+    name = "chart_sanitizer_test",
+    actual = "//tools/dev_env:chart_sanitizer_test",
+)
+
+alias(
+    name = "cluster_diagnostics_lib",
+    actual = "//tools/dev_env:cluster_diagnostics_lib",
+)
+
+alias(
+    name = "cluster_diagnostics_test",
+    actual = "//tools/dev_env:cluster_diagnostics_test",
+)
+
+alias(
+    name = "helm_deployer_lib",
+    actual = "//tools/dev_env:helm_deployer_lib",
+)
+
+alias(
+    name = "helm_deployer_test",
+    actual = "//tools/dev_env:helm_deployer_test",
+)
+
+alias(
+    name = "service_resolver_lib",
+    actual = "//tools/dev_env:service_resolver_lib",
+)
+
+alias(
+    name = "service_resolver_test",
+    actual = "//tools/dev_env:service_resolver_test",
+)
+
+alias(
+    name = "local_runner_lib",
+    actual = "//tools/dev_env:local_runner_lib",
+)
+
+alias(
+    name = "local_runner_test",
+    actual = "//tools/dev_env:local_runner_test",
+)
+
+alias(
+    name = "change_detector_lib",
+    actual = "//tools/dev_env:change_detector_lib",
+)
+
+alias(
+    name = "change_detector_test",
+    actual = "//tools/dev_env:change_detector_test",
 )
 
 alias(
@@ -367,6 +437,22 @@ alias(
 alias(
     name = "analyze_ci_performance_test",
     actual = "//tools/benchmark:analyze_ci_performance_test",
+)
+
+# Components
+alias(
+    name = "run_linter_lib",
+    actual = "//tools/components:run_linter_lib",
+)
+
+alias(
+    name = "run_linter",
+    actual = "//tools/components:run_linter",
+)
+
+alias(
+    name = "run_linter_test",
+    actual = "//tools/components:run_linter_test",
 )
 
 py_library(

@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+// Package naming provides resource name parsing, formatting, and validation
+// for XMC Component resources conforming to AIP-122 and DNS-1123 identifiers.
+package naming
 
 import (
 	"strings"

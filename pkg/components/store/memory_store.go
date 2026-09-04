@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 // Ensure MemoryStore implements Store interface at compile time.
@@ -87,11 +88,11 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 }
 
 func validateResourceName(name string) (string, error) {
-	canonicalName := CanonicalComponentName(name)
+	canonicalName := naming.CanonicalComponentName(name)
 	if canonicalName == "" {
 		return "", status.Error(codes.InvalidArgument, "component name is required")
 	}
-	if !IsValidComponentName(canonicalName) {
+	if !naming.IsValidComponentName(canonicalName) {
 		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
 	}
 	return canonicalName, nil

@@ -377,6 +377,39 @@ class KindManager:
                 create_cmd.extend(f"--from-literal={lit}" for lit in literals)
             try:
                 run_command(create_cmd, check=True, log_cmd=False, log_on_error=False)
+                run_command(
+                    [
+                        "kubectl",
+                        "--context",
+                        target_ctx,
+                        "annotate",
+                        "secret",
+                        name,
+                        "-n",
+                        ns,
+                        "meta.helm.sh/release-name=xmc",
+                        f"meta.helm.sh/release-namespace={ns}",
+                        "--overwrite",
+                    ],
+                    check=False,
+                    log_cmd=False,
+                )
+                run_command(
+                    [
+                        "kubectl",
+                        "--context",
+                        target_ctx,
+                        "label",
+                        "secret",
+                        name,
+                        "-n",
+                        ns,
+                        "app.kubernetes.io/managed-by=Helm",
+                        "--overwrite",
+                    ],
+                    check=False,
+                    log_cmd=False,
+                )
             except subprocess.CalledProcessError:
                 raise RuntimeError(
                     f"Failed to create secret '{name}' in namespace '{ns}'"

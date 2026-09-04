@@ -147,6 +147,57 @@ def handle_logs(args: argparse.Namespace) -> None:
     )
 
 
+def handle_build_images(args: argparse.Namespace) -> None:
+    """Handler for compiling and loading local OCI images.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from tools.dev_env.image_builder import ImageBuilder
+
+    cfg = config.load_config(args)
+    builder = ImageBuilder(cfg)
+    services = getattr(args, "services", None)
+    skip_build = getattr(args, "skip_build", False)
+    image_tags = builder.build_images(services=services, skip_build=skip_build)
+    if getattr(args, "load_kind", False):
+        builder.load_images_into_kind(image_tags)
+
+
+def handle_up(args: argparse.Namespace) -> None:
+    """Handler for local KinD development environment bootstrap."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).up(
+        recreate=getattr(args, "recreate", False),
+        skip_build=getattr(args, "skip_build", False),
+        skip_helm=getattr(args, "skip_helm", False),
+    )
+
+
+def handle_down(args: argparse.Namespace) -> None:
+    """Handler for local KinD development environment teardown."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).down(drop_db=getattr(args, "drop_db", False))
+
+
+def handle_reload(args: argparse.Namespace) -> None:
+    """Handler for local KinD fast service reload."""
+    from tools.dev_env.local_runner import LocalRunner
+
+    cfg = config.load_config(args)
+    LocalRunner(cfg).reload(
+        services=getattr(args, "services", None) or None,
+        watch=getattr(args, "watch", False),
+        helm=getattr(args, "helm", False),
+        interval=getattr(args, "interval", 1.5),
+        base_ref=getattr(args, "base_ref", None),
+    )
+
+
 def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     """Adds common configuration override flags."""
     p.add_argument("-p", "--project-id", help="Google Cloud project ID override.")
@@ -367,6 +418,112 @@ def _add_logs_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=handle_logs)
 
 
+def _add_build_images_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'build-images' subcommand parser for local image compilation."""
+    p = subparsers.add_parser(
+        "build-images",
+        help="Build Bazel OCI container images and load into Docker / KinD.",
+        description="Compiles OCI container images in parallel for enabled microservices.",
+    )
+    p.add_argument(
+        "services",
+        nargs="*",
+        default=None,
+        help="Specific microservices to compile (e.g. reconciler ui). Default is all enabled.",
+    )
+    p.add_argument(
+        "--load-kind",
+        action="store_true",
+        help="Also load compiled container images into the local KinD cluster.",
+    )
+    p.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Skip compilation step and only load existing local Docker images.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_build_images)
+
+
+def _add_up_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'up' subcommand parser for full local environment provisioning."""
+    p = subparsers.add_parser("up", help="Bootstrap local KinD environment.")
+    p.add_argument(
+        "--recreate-cluster",
+        "--recreate",
+        dest="recreate",
+        action="store_true",
+        help="Recreate cluster if present.",
+    )
+    p.add_argument(
+        "--no-build-images",
+        "--skip-build",
+        dest="skip_build",
+        action="store_true",
+        help="Skip Bazel image compilation.",
+    )
+    p.add_argument(
+        "--no-deploy-helm",
+        "--skip-helm",
+        dest="skip_helm",
+        action="store_true",
+        help="Skip Helm chart deployment.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_up)
+
+
+def _add_down_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'down' subcommand parser for local environment teardown."""
+    p = subparsers.add_parser("down", help="Tear down local KinD environment.")
+    p.add_argument("--drop-db", action="store_true", help="Drop Spanner dev databases.")
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_down)
+
+
+def _add_reload_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'reload' subcommand parser for fast microservice reload."""
+    p = subparsers.add_parser(
+        "reload",
+        help="Recompile and hot-reload modified services into KinD cluster.",
+        description="Fast incremental reload of modified microservices into local KinD.",
+    )
+    p.add_argument(
+        "services",
+        nargs="*",
+        default=None,
+        help="Services to reload (e.g. reconciler, ui). Defaults to auto-detecting changes from git.",
+    )
+    p.add_argument(
+        "-w",
+        "--watch",
+        action="store_true",
+        help="Continuously watch filesystem and reload on changes.",
+    )
+    p.add_argument(
+        "--helm",
+        action="store_true",
+        help="Upgrade Helm release on cluster.",
+    )
+    p.add_argument(
+        "--interval",
+        type=float,
+        default=1.5,
+        help="Watch mode polling interval in seconds (default: 1.5).",
+    )
+    p.add_argument(
+        "--base-ref",
+        default=None,
+        help="Git reference or commit to compare against for change detection.",
+    )
+    _add_common_config_flags(p)
+    p.add_argument("-c", "--config", help="Path to deployment YAML config.")
+    p.set_defaults(func=handle_reload)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures top-level argument parser for dev_env CLI."""
     parser = argparse.ArgumentParser(
@@ -374,6 +531,12 @@ def create_parser() -> argparse.ArgumentParser:
         description="XMC Development Environment Management CLI Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
+  python3 tools/dev_env/dev_env.py up --recreate
+  python3 tools/dev_env/dev_env.py down --drop-db
+  python3 tools/dev_env/dev_env.py reload
+  python3 tools/dev_env/dev_env.py reload reconciler ui
+  python3 tools/dev_env/dev_env.py reload -w
+  python3 tools/dev_env/dev_env.py reload --helm
   python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \\
       --dns-project my-dns-proj --dns-zone my-zone
   python3 tools/dev_env/dev_env.py gke-upgrade --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
@@ -381,6 +544,7 @@ def create_parser() -> argparse.ArgumentParser:
   python3 tools/dev_env/dev_env.py cluster delete --cluster-name my-kind
   python3 tools/dev_env/dev_env.py status --cluster-name my-kind
   python3 tools/dev_env/dev_env.py logs reconciler --follow
+  python3 tools/dev_env/dev_env.py build-images reconciler ui --load-kind
   python3 tools/dev_env/dev_env.py spanner create --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner migrate --project-id my-proj
   python3 tools/dev_env/dev_env.py spanner drop --project-id my-proj
@@ -406,6 +570,10 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="<command>",
         required=True,
     )
+
+    _add_up_parser(subparsers)
+    _add_down_parser(subparsers)
+    _add_reload_parser(subparsers)
 
     gke_deploy_p = subparsers.add_parser(
         "gke-deploy",
@@ -438,6 +606,7 @@ def create_parser() -> argparse.ArgumentParser:
     _add_cluster_parser(subparsers)
     _add_status_parser(subparsers)
     _add_logs_parser(subparsers)
+    _add_build_images_parser(subparsers)
     _add_spanner_parser(subparsers)
 
     return parser
@@ -476,7 +645,7 @@ def main(argv: list[str] | None = None) -> None:
             args.func(args)
         else:
             parser.print_help()
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
         log_error(str(e))
         sys.exit(1)
 

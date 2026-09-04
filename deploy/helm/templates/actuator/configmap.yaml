@@ -26,6 +26,11 @@ data:
   redis_addr: {{ .Values.redisAddr | quote }}
   xmanager_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   audience: {{ printf "https://actuator.api.%s.%s/actuate" .Values.environment .Values.domainSuffix | quote }}
+  {{- if .Values.isDevEnvironment }}
+  XMC_PROJECT_ID: {{ .Values.projectId | quote }}
+  XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}
+  XMC_CLUSTER_LOCATION: {{ .Values.clusterLocation | default "local" | quote }}
+  {{- end }}
   {{- if .Values.redisMaxRetries }}
   redis_max_retries: {{ .Values.redisMaxRetries | quote }}
   {{- end }}

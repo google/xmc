@@ -35,6 +35,7 @@ class E2EConfig:
     kind_bin: str
     workspace_root: str
     screenshots_dir: str
+    kind_node_image: str = ""
     keep_cluster: bool = False
     skip_build: bool = False
     ess_db: str = ""
@@ -100,6 +101,11 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         help="Directory to save Playwright test screenshot artifacts",
     )
     parser.add_argument(
+        "--kind-node-image",
+        default=os.environ.get("XMC_KIND_NODE_IMAGE", ""),
+        help="Custom KinD node container image (default: $XMC_KIND_NODE_IMAGE or upstream default)",
+    )
+    parser.add_argument(
         "--keep-cluster",
         action="store_true",
         help="Keep KinD cluster and Spanner DB intact on exit for debugging",
@@ -118,6 +124,7 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         kind_bin=parsed.kind_bin,
         workspace_root=parsed.workspace_root,
         screenshots_dir=parsed.screenshots_dir,
+        kind_node_image=parsed.kind_node_image,
         keep_cluster=parsed.keep_cluster,
         skip_build=parsed.skip_build,
     )
