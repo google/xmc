@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -194,7 +196,9 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 
 // reconcileDeletion handles component teardown when a deletionTimestamp is present.
 // If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
-// and finalizers remain intact. Otherwise, 1P components are disabled in Helm and CMS ExecuteDeletion is called.
+// and finalizers remain intact. Otherwise, CMS ExecuteDeletion is called first to validate
+// deletion safety before mutating Kubernetes resources. If CMS reports NotFound, deletion
+// is treated as idempotently completed in CMS and proceeds to 1P workload teardown.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.DeletionProtection {
 		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
@@ -203,28 +207,41 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
+	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
+		if status.Code(err) != codes.NotFound {
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
+			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "CMSDeletionFailed", err.Error())
+			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
+		}
+		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
+	} else {
+		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+	}
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
-	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "CMSDeletionFailed", err.Error())
-		return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
-	}
-	logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+// resolveComponentRef returns the ComponentRef from HelmOpts with fallback to input Name and Namespace.
+func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
+	ref := in.HelmOpts.Ref
+	if ref.Name == "" {
+		ref.Name = in.Name
+	}
+	if ref.Namespace == "" {
+		ref.Namespace = in.Namespace
+	}
+	return ref
 }
 
 func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
 	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT || r.helmManager == nil {
 		return nil
 	}
-	ref := in.HelmOpts.Ref
-	if ref.Name == "" {
-		ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
-	}
+	ref := resolveComponentRef(in)
 	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
 		if err := r.helmManager.Orphan1PComponent(ctx, ref); err != nil {
 			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmOrphanFailed", err.Error())
@@ -279,10 +296,7 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 		logging.Warn(ctx, "HelmManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
 		return nil
 	}
-	ref := in.HelmOpts.Ref
-	if ref.Name == "" {
-		ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
-	}
+	ref := resolveComponentRef(in)
 	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
@@ -301,10 +315,8 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 		logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
 		return nil
 	}
-	if in.HelmOpts.Ref.Name == "" {
-		in.HelmOpts.Ref = ComponentRef{Namespace: in.Namespace, Name: in.Name}
-	}
-	ref := in.HelmOpts.Ref
+	ref := resolveComponentRef(in)
+	in.HelmOpts.Ref = ref
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
