@@ -80,7 +80,44 @@ python3 tools/dev_env/dev_env.py down --drop-db
 
 ---
 
-#### 3. `status` (Cluster Status & Health Inspection)
+#### 3. `reload` (Microservice Fast Reload & Rollout Restart)
+Recompiles specified microservices with Bazel in parallel, side-loads updated image layers into the running KinD cluster, and triggers non-blocking rolling restarts in ~5–10s without restarting or recreating the KinD cluster:
+
+```bash
+# Reload specific microservices by name or alias
+python3 tools/dev_env/dev_env.py reload ess ui
+
+# Reload using full canonical snake_case or kebab-case service names
+python3 tools/dev_env/dev_env.py reload experiment_state_server actuator reconciler
+python3 tools/dev_env/dev_env.py reload experiment-state-server xid-service
+
+# Reload all enabled microservices
+python3 tools/dev_env/dev_env.py reload all
+
+# Synchronize Helm chart manifests alongside reload
+python3 tools/dev_env/dev_env.py reload ess --helm
+```
+
+##### Supported Service Aliases & Canonical Names
+Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice target (`snake_case` or `kebab-case`) can always be specified directly even if it does not have a dedicated alias in `SERVICE_ALIASES`:
+
+- `ess` → `experiment_state_server` (or pass `experiment_state_server` / `experiment-state-server`)
+- `xid` → `xid_service` (or pass `xid_service` / `xid-service`)
+- `actuator` → `actuator`
+- `reconciler` → `reconciler`
+- `rod` → `rod_data_provider` (or pass `rod_data_provider` / `rod-data-provider`)
+- `gw` / `gateway` → `ingestion_gateway` (`gateway-proxy`)
+- `ui` / `frontend` / `web` → `ui`
+- `dash` / `dashboard` → `dashboard_service` (or pass `dashboard_service` / `dashboard-service`)
+- `health` → `health_service` (or pass `health_service` / `health-service`)
+- `comp` → `components`
+
+> [!TIP]
+> When adding a new microservice under `cmd/<new_service>`, it works immediately with `dev_env.py reload <new_service>` or `dev_env.py reload <new-service>` without needing to define an alias in `tools/dev_env/service_resolver.py`.
+
+---
+
+#### 4. `status` (Cluster Status & Health Inspection)
 Displays the operational status of the local KinD cluster, pod readiness across `xmc` and `dex` namespaces, and endpoint health.
 
 ```bash

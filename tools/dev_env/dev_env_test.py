@@ -566,6 +566,15 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config.assert_called_once_with(args)
         mock_down.assert_called_once_with(drop_db=True)
 
+    @patch("tools.dev_env.local_runner.LocalRunner.reload")
+    @patch("tools.dev_env.config.load_config")
+    def test_reload_action(self, mock_load_config: MagicMock, mock_reload: MagicMock) -> None:
+        """Verifies 'dev_env reload' dispatches to LocalRunner.reload."""
+        args = self.parser.parse_args(["reload", "ess", "ui", "--helm"])
+        args.func(args)
+        mock_load_config.assert_called_once_with(args)
+        mock_reload.assert_called_once_with(services=["ess", "ui"], helm=True)
+
     @patch("tools.dev_env.dev_env.ensure_venv")
     @patch("tools.dev_env.dev_env.log_error")
     @patch(
