@@ -150,6 +150,26 @@ class RunLinterTest(unittest.TestCase):
         self.assertIn("[WARNING] Linter binary", stderr_buf.getvalue())
         self.assertIn("is older than source", stderr_buf.getvalue())
 
+    def test_check_binary_freshness_oserror_skipped(self) -> None:
+        """Tests that an OSError on a single source file does not abort the freshness check."""
+        dummy_bin = self.create_file("bin/component-linter", "#!/bin/sh\n")
+        dummy_bin.chmod(0o755)
+        os.utime(dummy_bin, (1000, 1000))
+
+        # Broken symlink causes fpath.stat() to raise FileNotFoundError (OSError)
+        broken_go = self.temp_dir / "cmd" / "component-linter" / "broken.go"
+        broken_go.parent.mkdir(parents=True, exist_ok=True)
+        broken_go.symlink_to(self.temp_dir / "nonexistent.go")
+
+        go_src_newer = self.create_file("cmd/component-linter/main.go", "package main\n")
+        os.utime(go_src_newer, (2000, 2000))
+
+        stderr_buf = io.StringIO()
+        with patch("sys.stderr", stderr_buf):
+            run_linter.check_binary_freshness(dummy_bin, self.temp_dir)
+        self.assertIn("[WARNING] Linter binary", stderr_buf.getvalue())
+        self.assertIn("is older than source", stderr_buf.getvalue())
+
     def test_build_linter_command_with_binary(self) -> None:
         """Tests command assembly with pre-built binary."""
         target = run_linter.LintTarget(

@@ -77,14 +77,17 @@ def check_binary_freshness(binary_path: Path, base_dir: Path) -> None:
                 for f in files:
                     if f.endswith(".go"):
                         fpath = Path(root) / f
-                        if fpath.stat().st_mtime > bin_mtime:
-                            print(
-                                f"[WARNING] Linter binary {binary_path.name} ({binary_path}) "
-                                f"is older than source {fpath.relative_to(base_dir)}. "
-                                "Consider rebuilding the binary to apply recent changes.",
-                                file=sys.stderr,
-                            )
-                            return
+                        try:
+                            if fpath.stat().st_mtime > bin_mtime:
+                                print(
+                                    f"[WARNING] Linter binary {binary_path.name} ({binary_path}) "
+                                    f"is older than source {fpath.relative_to(base_dir)}. "
+                                    "Consider rebuilding the binary to apply recent changes.",
+                                    file=sys.stderr,
+                                )
+                                return
+                        except OSError:
+                            continue
     except OSError:
         pass
 
