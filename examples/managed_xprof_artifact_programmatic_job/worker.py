@@ -40,23 +40,23 @@ from absl import app, flags
 
 _PROGRAMMATIC_STEPS = flags.DEFINE_integer(
     "programmatic_steps",
-    50,
+    int(os.environ.get("PROGRAMMATIC_STEPS", "50")),
     "Number of initial steps captured programmatically via start_trace/stop_trace.",
 )
 _TOTAL_STEPS = flags.DEFINE_integer(
     "total_steps",
-    10000,
+    int(os.environ.get("TOTAL_STEPS", "10000")),
     "Total number of steps to run. Steps after --programmatic_steps run against "
     "the live JAX profiler server so they can be captured on demand.",
 )
 _MATRIX_SIZE = flags.DEFINE_integer(
     "matrix_size",
-    5000,
+    int(os.environ.get("MATRIX_SIZE", "5000")),
     "Side length of the square matrices multiplied each step.",
 )
 _PROFILER_PORT = flags.DEFINE_integer(
     "profiler_port",
-    9999,
+    int(os.environ.get("PROFILER_PORT", "9999")),
     "Port the JAX profiler server listens on for on-demand profile captures.",
 )
 

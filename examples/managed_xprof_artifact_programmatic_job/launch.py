@@ -67,6 +67,56 @@ _NUM_WORK_UNITS = flags.DEFINE_integer(
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 
+def _configure_dev_endpoint_if_needed() -> None:
+    endpoint = os.environ.get("XMANAGER_ENDPOINT", "")
+    if "127.0.0.1" in endpoint or "localhost" in endpoint or os.environ.get("XMC_DEV_AUTH"):
+        user_email = os.environ.get("USER_EMAIL", "").strip()
+        if not user_email:
+            raise ValueError(
+                "USER_EMAIL environment variable must be set for dev endpoint authentication."
+            )
+
+        from datetime import datetime, timezone
+
+        import grpc
+        import jwt
+        from xmanager_cloud.experiment_state_server import experiment_state_api
+        from xmanager_cloud.experiment_state_server.proto import api_pb2_grpc
+
+        target = endpoint.replace("dns:///", "") if endpoint else "127.0.0.1:50055"
+        secret = os.environ.get(
+            "JWT_SECRET", "dev-local-jwt-secret-for-south1-testing-32bytes"
+        ).encode()
+
+        def dev_create_stub(_: str):
+            now = int(datetime.now(timezone.utc).timestamp())
+            token = jwt.encode(
+                {
+                    "email": user_email,
+                    "iss": "xmanager-cloud-backend",
+                    "aud": "xmanager-cloud-frontend",
+                    "iat": now,
+                    "exp": now + 86400,
+                },
+                secret,
+                algorithm="HS256",
+            )
+            channel = grpc.insecure_channel(target)
+
+            class DevAuthInterceptor(grpc.UnaryUnaryClientInterceptor):
+                def intercept_unary_unary(self, continuation, client_call_details, request):
+                    metadata = list(client_call_details.metadata or [])
+                    metadata.append(("authorization", f"Bearer {token}"))
+                    metadata.append(("x-goog-user-email", user_email))
+                    return continuation(client_call_details._replace(metadata=metadata), request)
+
+            intercepted_channel = grpc.intercept_channel(channel, DevAuthInterceptor())
+            grpc.channel_ready_future(intercepted_channel).result(10)
+            return api_pb2_grpc.ExperimentStateServiceStub(intercepted_channel), intercepted_channel
+
+        experiment_state_api._create_experiment_state_server_stub = dev_create_stub
+
+
 def _build_work_unit(image_path: str, queue_name: str) -> work_unit_pb2.WorkUnit:
     """Builds a single-job WorkUnit running the JAX profiler workload.
 
@@ -92,7 +142,13 @@ def _build_work_unit(image_path: str, queue_name: str) -> work_unit_pb2.WorkUnit
                         spec=work_unit_pb2.ExecutableSpec(
                             name="programmatic-xprof-worker",
                             docker_image=image_path,
-                            command=["python3", "-u", "/app/worker.py"],
+                            command=[
+                                "python3",
+                                "-u",
+                                "/app/worker.py",
+                                "--programmatic_steps=10",
+                                "--matrix_size=2000",
+                            ],
                             resources=resources_pb2.ResourceSet(
                                 cpu_resources=resources_pb2.CpuResources(
                                     cpu_millicores=1000,
@@ -111,6 +167,7 @@ def main(argv: Sequence[str]) -> None:
     """Launches an experiment and attaches a ManagedXprof artifact per work unit."""
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
     dotenv.load_dotenv()
+    _configure_dev_endpoint_if_needed()
 
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
