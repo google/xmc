@@ -17,6 +17,7 @@ package bridge
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 type mockCMS struct {
 	setErr, delErr, obsErr error
 	state                  componentspb.ComponentState
+	lastObsReq             *componentspb.UpdateObservedGenerationRequest
 }
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
@@ -48,6 +50,7 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 }
 
 func (m *mockCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
+	m.lastObsReq = in
 	return &componentspb.UpdateObservedGenerationResponse{}, m.obsErr
 }
 
@@ -60,6 +63,7 @@ type mockProber struct {
 	msg       string
 	resStatus *ResourceStatus
 	detectErr error
+	nilStatus bool
 }
 
 func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
@@ -68,6 +72,9 @@ func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*Resourc
 	}
 	if m.detectErr != nil {
 		return nil, m.detectErr
+	}
+	if m.nilStatus {
+		return nil, nil
 	}
 	if m.resStatus != nil {
 		return m.resStatus, nil
@@ -248,6 +255,30 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with status detector error",
 			cms:    &mockCMS{},
+			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantErr:    true,
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantAddFin: true,
+		},
+		{
+			name:   "active 3P with status detector nil status",
+			cms:    &mockCMS{},
+			prober: &mockProber{nilStatus: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantErr:    true,
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantAddFin: true,
+		},
+		{
+			name:   "active 3P with status detector error and CMS failure",
+			cms:    &mockCMS{obsErr: errors.New("spanner write failed")},
 			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
@@ -502,6 +533,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusFalse)
 				assertConditionStatus(t, res.Conditions, ConditionTypeDeletionBlocked, ConditionStatusTrue)
 			}
+			verify3PStatusDetectorAssertions(t, tt.name, tt.cms, tt.in.Generation, res, err)
 		})
 	}
 }
@@ -517,6 +549,43 @@ func assertConditionStatus(t *testing.T, conds []Condition, cType string, wantSt
 		}
 	}
 	t.Errorf("condition %v not found", cType)
+}
+
+func verify3PStatusDetectorAssertions(t *testing.T, testName string, cms *mockCMS, gen int64, res *ReconcileResult, err error) {
+	t.Helper()
+	if !strings.HasPrefix(testName, "active 3P with status detector") {
+		return
+	}
+	if testName == "active 3P with status detector ready" {
+		assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusTrue)
+		assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusFalse)
+		return
+	}
+
+	assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusFalse)
+	assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusTrue)
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("%s: expected state %v, got %v", testName, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, res.State)
+	}
+	if testName == "active 3P with status detector error and CMS failure" {
+		if err == nil || !strings.Contains(err.Error(), "CMS update failed") {
+			t.Errorf("expected error to mention CMS update failure, got: %v", err)
+		}
+		return
+	}
+	if cms == nil || cms.obsErr != nil {
+		return
+	}
+	if cms.lastObsReq == nil {
+		t.Errorf("%s: expected UpdateObservedGeneration to be called on CMS", testName)
+		return
+	}
+	if cms.lastObsReq.ObservedGeneration != gen {
+		t.Errorf("%s: expected CMS observed generation %d, got %d", testName, gen, cms.lastObsReq.ObservedGeneration)
+	}
+	if cms.lastObsReq.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("%s: expected CMS state %v, got %v", testName, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, cms.lastObsReq.State)
+	}
 }
 
 func TestReconcile_Unstructured(t *testing.T) {

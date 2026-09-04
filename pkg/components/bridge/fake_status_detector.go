@@ -20,7 +20,9 @@ import (
 	"sync"
 )
 
-// FakeStatusDetector is an in-memory test double for StatusDetector.
+// FakeStatusDetector is an in-memory test double for StatusDetector intended exclusively
+// for unit and integration testing. Production binaries wire UnimplementedStatusDetector
+// or K8sStatusDetector.
 type FakeStatusDetector struct {
 	mu        sync.Mutex
 	Statuses  map[string]*ResourceStatus

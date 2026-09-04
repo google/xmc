@@ -620,16 +620,16 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
 	if err != nil {
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", err.Error())
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", err.Error()); cmsErr != nil {
+			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
+		}
 		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
 	}
 	if resStatus == nil {
 		errmsg := "status detector returned nil status"
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "StatusDetectionFailed", errmsg)
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "StatusDetectionFailed", errmsg)
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", errmsg); cmsErr != nil {
+			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
+		}
 		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
 	}
 	if !resStatus.Found {
