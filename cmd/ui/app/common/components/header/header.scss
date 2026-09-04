@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 @use '@angular/material' as mat;
-@import 'consts';
+@use 'consts' as *;
 
 $small-margin: 15px;
 $max-searchbar-width: 1200px;
