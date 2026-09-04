@@ -90,7 +90,7 @@ func Compare(v1, v2 string) (int, error) {
 // Compare compares the version to another Version struct according to SemVer 2.0.0 §11.
 // Build metadata is ignored when determining precedence.
 func (v *Version) Compare(other *Version) int {
-	if v == nil && other == nil {
+	if v == other {
 		return 0
 	}
 	if v == nil {
@@ -98,6 +98,27 @@ func (v *Version) Compare(other *Version) int {
 	}
 	if other == nil {
 		return 1
+	}
+	if v.Major != other.Major {
+		if v.Major < other.Major {
+			return -1
+		}
+		return 1
+	}
+	if v.Minor != other.Minor {
+		if v.Minor < other.Minor {
+			return -1
+		}
+		return 1
+	}
+	if v.Patch != other.Patch {
+		if v.Patch < other.Patch {
+			return -1
+		}
+		return 1
+	}
+	if len(v.PreRelease) == 0 && len(other.PreRelease) == 0 {
+		return 0
 	}
 	return semver.Compare(versionPrefix+v.String(), versionPrefix+other.String())
 }
@@ -123,7 +144,11 @@ func (v *Version) String() string {
 		return ""
 	}
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "%d.%d.%d", v.Major, v.Minor, v.Patch)
+	sb.WriteString(strconv.FormatUint(v.Major, 10))
+	sb.WriteByte('.')
+	sb.WriteString(strconv.FormatUint(v.Minor, 10))
+	sb.WriteByte('.')
+	sb.WriteString(strconv.FormatUint(v.Patch, 10))
 	if len(v.PreRelease) > 0 {
 		sb.WriteString(prereleaseDelimiter)
 		sb.WriteString(strings.Join(v.PreRelease, segmentDelimiter))
@@ -137,34 +162,34 @@ func (v *Version) String() string {
 
 // IsPatchUpdate checks if target is a strictly higher patch version of current with identical Major and Minor.
 func IsPatchUpdate(current, target string) (bool, error) {
-	nCur, err := normalize(current)
+	curVer, err := Parse(current)
 	if err != nil {
 		return false, fmt.Errorf("invalid current version %q: %w", current, err)
 	}
-	nTarget, err := normalize(target)
+	targetVer, err := Parse(target)
 	if err != nil {
 		return false, fmt.Errorf("invalid target version %q: %w", target, err)
 	}
-	if semver.MajorMinor(nCur) != semver.MajorMinor(nTarget) {
+	if curVer.Major != targetVer.Major || curVer.Minor != targetVer.Minor {
 		return false, nil
 	}
-	if isStableToPrerelease(nCur, nTarget) {
+	if len(curVer.PreRelease) == 0 && len(targetVer.PreRelease) > 0 {
 		return false, nil
 	}
-	return semver.Compare(nTarget, nCur) > 0, nil
+	return targetVer.Compare(curVer) > 0, nil
 }
 
 // SatisfiesMinVersion checks if version is greater than or equal to minVersion.
 func SatisfiesMinVersion(version, minVersion string) (bool, error) {
-	nVer, err := normalize(version)
+	ver, err := Parse(version)
 	if err != nil {
 		return false, fmt.Errorf("invalid version %q: %w", version, err)
 	}
-	nMin, err := normalize(minVersion)
+	minVer, err := Parse(minVersion)
 	if err != nil {
 		return false, fmt.Errorf("invalid minVersion %q: %w", minVersion, err)
 	}
-	return semver.Compare(nVer, nMin) >= 0, nil
+	return ver.Compare(minVer) >= 0, nil
 }
 
 // --- Helper Functions ---
@@ -206,7 +231,7 @@ func validateCoreSegmentCount(normalized, raw string) error {
 	if idx := strings.IndexAny(core, metadataDelimiters); idx != -1 {
 		core = core[:idx]
 	}
-	if len(strings.Split(core, segmentDelimiter)) != requiredCoreSegments {
+	if strings.Count(core, segmentDelimiter) != requiredCoreSegments-1 {
 		return fmt.Errorf("invalid semver 2.0.0 string %q: expected major.minor.patch", raw)
 	}
 	return nil
@@ -254,9 +279,4 @@ func extractPreRelease(prerelease string) []string {
 	}
 	clean := strings.TrimPrefix(prerelease, prereleaseDelimiter)
 	return strings.Split(clean, segmentDelimiter)
-}
-
-// isStableToPrerelease checks if current is a stable version while target is a pre-release.
-func isStableToPrerelease(currentNorm, targetNorm string) bool {
-	return semver.Prerelease(currentNorm) == "" && semver.Prerelease(targetNorm) != ""
 }
