@@ -89,7 +89,7 @@ interface TableRow {
   selector: 'xmc-experiments-table',
   standalone: true,
   templateUrl: './experiments_table.ng.html',
-  styleUrl: './experiments_table.css',
+  styleUrl: './experiments_table.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,

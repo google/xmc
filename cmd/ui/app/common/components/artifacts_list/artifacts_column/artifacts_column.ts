@@ -26,7 +26,7 @@ import { ArtifactCard } from 'xmanager_cloud/ui/app/common/components/artifact_c
   selector: 'xmc-artifacts-column',
   standalone: true,
   templateUrl: './artifacts_column.ng.html',
-  styleUrl: './artifacts_column.css',
+  styleUrl: './artifacts_column.scss',
   imports: [MatIconModule, ArtifactCard, MatExpansionModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

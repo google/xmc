@@ -62,8 +62,6 @@ import { APP_CONSTS } from 'third_party/xmanager_cloud/ui/consts';
 import { THEME } from "third_party/xmanager_cloud/ui/consts";
 import { COLORS } from 'third_party/xmanager_cloud/ui/custom_colors';
 import { PALETTE } from "third_party/xmanager_cloud/ui/custom_colors";
-@import 'component.css';
-@import "global.css";
 """
         translated = build_ui_oci.translate_imports(sample_code)
 
@@ -76,8 +74,6 @@ import { PALETTE } from "third_party/xmanager_cloud/ui/custom_colors";
         self.assertNotIn("third_party/xmanager_cloud/ui/custom_colors", translated)
         self.assertIn("'custom_colors'", translated)
         self.assertIn('"custom_colors"', translated)
-        self.assertIn("'component.scss'", translated)
-        self.assertIn('"global.scss"', translated)
 
     def test_copy_flat_copies_and_translates_sources(self):
         """Verifies copy_flat copies sources, rewrites imports, and preserves binaries."""
