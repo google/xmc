@@ -108,25 +108,14 @@ func TestGetEnvOrFile(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	os.Setenv("PORT", "9090")
-	os.Setenv("MOCK_AUTH", "true")
-	os.Setenv("DISABLE_AUTHENTICATION", "true")
-	os.Setenv("ALLOWED_DOMAINS", "company.com, google.com")
-	os.Setenv("ALLOWED_EMAILS", "a@b.com b@c.com")
-	os.Setenv("ALLOWED_ORIGINS", "http://org1.com,http://org2.com")
-	os.Setenv("CLIENT_ID", "my-client")
-	os.Setenv("CLIENT_SECRET", "my-secret")
-
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("MOCK_AUTH")
-		os.Unsetenv("DISABLE_AUTHENTICATION")
-		os.Unsetenv("ALLOWED_DOMAINS")
-		os.Unsetenv("ALLOWED_EMAILS")
-		os.Unsetenv("ALLOWED_ORIGINS")
-		os.Unsetenv("CLIENT_ID")
-		os.Unsetenv("CLIENT_SECRET")
-	}()
+	t.Setenv("PORT", "9090")
+	t.Setenv("MOCK_AUTH", "true")
+	t.Setenv("DISABLE_AUTHENTICATION", "true")
+	t.Setenv("ALLOWED_DOMAINS", "company.com, google.com")
+	t.Setenv("ALLOWED_EMAILS", "a@b.com b@c.com")
+	t.Setenv("ALLOWED_ORIGINS", "http://org1.com,http://org2.com")
+	t.Setenv("CLIENT_ID", "my-client")
+	t.Setenv("CLIENT_SECRET", "my-secret")
 
 	cfg, err := LoadConfig()
 	if err != nil {

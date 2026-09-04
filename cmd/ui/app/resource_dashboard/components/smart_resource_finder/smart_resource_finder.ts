@@ -15,7 +15,12 @@
 import { ChangeDetectionStrategy, Component, input, OnInit, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatOptionModule } from '@angular/material/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 
 export interface ResourceRequirementRow {
   id: string;
@@ -37,12 +42,20 @@ function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
   templateUrl: './smart_resource_finder.ng.html',
   styleUrl: './smart_resource_finder.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MatIconModule, MatButtonModule],
+  imports: [
+    FormsModule,
+    MatIconModule,
+    MatButtonModule,
+    MatSelectModule,
+    MatOptionModule,
+    MatTooltipModule,
+  ],
 })
 export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
 
+  protected readonly dominantTooltip = ROD_TERM_TOOLTIPS.dominantResource;
   protected readonly rows = signal<ResourceRequirementRow[]>([createRow(1, '')]);
 
   ngOnInit() {
@@ -60,13 +73,17 @@ export class SmartResourceFinderComponent implements OnInit {
     this.emitQuery();
   }
 
-  protected updateRowAmount(index: number, val: number | null | undefined) {
+  protected updateRowAmount(index: number, val: number | string | null | undefined) {
     const amountNum = typeof val === 'number' ? val : Number(val);
+    const current = this.rows()[index];
+    if (current && current.amount === amountNum) return;
     this.rows.update((r) => r.with(index, { ...r[index], amount: amountNum }));
     this.emitQuery();
   }
 
-  protected updateRowResourceType(index: number, val: string) {
+  protected onResourceTypeChange(index: number, val: string) {
+    const current = this.rows()[index];
+    if (current && current.resourceType === val) return;
     this.rows.update((r) => r.with(index, { ...r[index], resourceType: val }));
     this.emitQuery();
   }

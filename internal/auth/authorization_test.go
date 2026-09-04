@@ -151,7 +151,7 @@ func TestIsAuthorized_PrincipalTypes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
-		if got != false {
+		if got {
 			t.Errorf("IsUserAuthorized(%s, xidAclsNoAllUsers, %v) = %v; want %v", user, Reader, got, false)
 		}
 	})

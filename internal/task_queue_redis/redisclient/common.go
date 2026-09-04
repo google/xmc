@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go/log"
+	"xmanager_cloud/logging/logging"
 )
 
 // TaskResult is the return type of TaskHandler.
@@ -92,7 +92,7 @@ func getRedisOptions(redisConfig Config) *redis.Options {
 	if redisPassword != "" {
 		options.Password = redisPassword
 	} else {
-		log.Warningf("Redis password environment variable is empty")
+		logging.Warn(context.Background(), "Redis password environment variable is empty")
 	}
 	return options
 }

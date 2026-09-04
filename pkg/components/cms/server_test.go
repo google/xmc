@@ -16,13 +16,16 @@ package cms
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -52,7 +55,7 @@ func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, reques
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) CompleteDeactivation(ctx context.Context, name string) error {
+func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -500,11 +503,6 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
 	}
 
-	// Ensure validate_only did not persist to the store
-	if _, err := ms.GetComponent(ctx, "test-validate-only"); status.Code(err) != codes.NotFound {
-		t.Errorf("GetComponent(test-validate-only) got code %v, want NotFound after validate_only", status.Code(err))
-	}
-
 	// 2. Normal creation test
 	resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 		Name: "components/test-comp",
@@ -695,5 +693,550 @@ func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("SetComponentIntent(update_mask non-existent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create root component
+	specRoot := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Root",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-root",
+		Spec: specRoot,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(cms-root) failed: %v", err)
+	}
+
+	// Create dependent component
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-dep",
+		Spec: specDep,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(cms-dep) failed: %v", err)
+	}
+
+	// 1. Prepare deactivation without cascade -> fails with FailedPrecondition
+	_, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("PrepareDeactivation(no force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare deactivation with force (cascade) -> succeeds
+	resp, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: true,
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation(force) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+		t.Errorf("GetState() = %v, want DISABLING", resp.GetState())
+	}
+	if resp.GetDeactivationStartTime() == nil {
+		t.Error("GetDeactivationStartTime() is nil, want timestamp")
+	}
+	if resp.GetMessage() == "" {
+		t.Error("GetMessage() is empty, want informative message")
+	}
+
+	// 3. Prepare with custom draining timeout
+	respTimeout, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		Force:           true,
+		DrainingTimeout: durationpb.New(120 * time.Second),
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with timeout failed: %v", err)
+	}
+	if respTimeout.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 120s)" {
+		t.Errorf("GetMessage() = %q, want drain: 120s", respTimeout.GetMessage())
+	}
+
+	// 4. Prepare with sub-second draining timeout (rounds up to 1s)
+	respSubSec, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		Force:           true,
+		DrainingTimeout: durationpb.New(500 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with subsecond timeout failed: %v", err)
+	}
+	if respSubSec.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 1s)" {
+		t.Errorf("GetMessage() = %q, want drain: 1s", respSubSec.GetMessage())
+	}
+
+	// 5. Prepare with negative draining timeout -> InvalidArgument
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:            "components/cms-root",
+		DrainingTimeout: durationpb.New(-10 * time.Second),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("PrepareDeactivation(negative timeout) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 6. Prepare with malformed draining timeout (invalid nanos) -> InvalidArgument
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/cms-root",
+		DrainingTimeout: &durationpb.Duration{
+			Seconds: 10,
+			Nanos:   -1,
+		},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("PrepareDeactivation(malformed timeout) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 7. Prepare with huge draining timeout -> capped at MaxInt32 (2147483647s)
+	respHuge, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-root",
+		Force: true,
+		DrainingTimeout: &durationpb.Duration{
+			Seconds: 5000000000,
+			Nanos:   500000000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PrepareDeactivation with huge timeout failed: %v", err)
+	}
+	if respHuge.GetMessage() != "Component cms-root and 1 dependent(s) deactivation prepared successfully (drain: 2147483647s)" {
+		t.Errorf("GetMessage() = %q, want drain: 2147483647s", respHuge.GetMessage())
+	}
+
+	// 8. Nonexistent component -> NotFound
+	_, err = server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("PrepareDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Deact test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-deact",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Complete without prepare -> FailedPrecondition
+	_, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/cms-deact",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(unprepared) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Prepare first
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name: "components/cms-deact",
+	}); err != nil {
+		t.Fatalf("PrepareDeactivation failed: %v", err)
+	}
+
+	// 3. Complete deactivation -> succeeds
+	resp, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/cms-deact",
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeactivation unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("GetState() = %v, want DISABLED", resp.GetState())
+	}
+	if resp.GetCompletionTime() == nil {
+		t.Error("GetCompletionTime() is nil, want timestamp")
+	}
+
+	// 4. Test CompleteDeactivation with active dependent and force flag
+	specParent := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Parent",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-force-parent",
+		Spec: specParent,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(parent) failed: %v", err)
+	}
+	specChild := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-force-parent",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-force-child",
+		Spec: specChild,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(child) failed: %v", err)
+	}
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: true,
+	}); err != nil {
+		t.Fatalf("PrepareDeactivation(parent) failed: %v", err)
+	}
+	// Complete without force while child is active -> FailedPrecondition
+	_, err = server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("CompleteDeactivation(parent without force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+	// Complete with force=true -> succeeds
+	respForce, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name:  "components/cms-force-parent",
+		Force: true,
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeactivation(parent with force) unexpected error: %v", err)
+	}
+	if respForce.GetState() != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("GetState() = %v, want DISABLED", respForce.GetState())
+	}
+
+	// 5. Nonexistent component -> NotFound
+	_, err = server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("CompleteDeactivation(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	// Create protected component
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Protected",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-prot", spec, map[string]string{"xmc.dev/deletion-protection": "true"}, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Delete protected without force -> FailedPrecondition
+	_, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-prot",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(protected, no force) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 2. Delete protected with force -> succeeds
+	resp, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-prot",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(protected, force) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
+	}
+
+	// 3. Dependent component deletion tests
+	specRoot := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Root for deletion",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-root", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	specDep := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-dep", specDep, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 3a. Delete root with non-cascading policy without force -> FailedPrecondition
+	_, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+		Force:          false,
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("ExecuteDeletion(with dep, orphan policy) got code %v, want FailedPrecondition", status.Code(err))
+	}
+
+	// 3b. Delete root with cascading policy -> succeeds
+	resp, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		Force:          false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(cascading) unexpected error: %v", err)
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", resp.GetState())
+	}
+
+	// 3c. Delete with DELETION_POLICY_UNSPECIFIED -> defaults to cascading delete
+	if _, err := ms.SetComponentIntent(ctx, "cms-root-unspec", specRoot, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	specDepUnspec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "@depends-on: cms-root-unspec",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "cms-dep-unspec", specDepUnspec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	respUnspec, err := server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name:           "components/cms-root-unspec",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED,
+		Force:          false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteDeletion(unspecified policy) unexpected error: %v", err)
+	}
+	if respUnspec.GetState() != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+		t.Errorf("GetState() = %v, want DELETED", respUnspec.GetState())
+	}
+	if _, err := ms.GetComponent(ctx, "cms-dep-unspec"); status.Code(err) != codes.NotFound {
+		t.Errorf("GetComponent(cms-dep-unspec) got code %v, want NotFound", status.Code(err))
+	}
+
+	// 4. Nonexistent component -> NotFound
+	_, err = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Snap CMS test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-snap",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	coords := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-cluster",
+		Namespace:   "default",
+		ServiceName: "cms-snap-svc",
+		Port:        8080,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Success path
+	resp, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name:       "components/cms-snap",
+		Generation: proto.Int64(1),
+	})
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot unexpected error: %v", err)
+	}
+	if resp.GetComponent().GetName() != "components/cms-snap" {
+		t.Errorf("GetName() = %q, want 'components/cms-snap'", resp.GetComponent().GetName())
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("GetState() = %v, want ENABLED", resp.GetState())
+	}
+	if resp.GetCoordinates().GetServiceName() != "cms-snap-svc" {
+		t.Errorf("Coordinates.ServiceName = %q, want 'cms-snap-svc'", resp.GetCoordinates().GetServiceName())
+	}
+
+	// 2. Negative generation -> InvalidArgument
+	_, err = server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name:       "components/cms-snap",
+		Generation: proto.Int64(-1),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ResolveComponentSnapshot(negative gen) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 3. Nonexistent component -> NotFound
+	_, err = server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ResolveComponentSnapshot(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.1.0",
+		Description: "Req CMS test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-req",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Satisfied
+	resp, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		RequiredType:   componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		MinimumVersion: "v2.0.0",
+	})
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if !resp.GetSatisfied() {
+		t.Errorf("GetSatisfied() = false, want true (reason: %q)", resp.GetReason())
+	}
+	if resp.GetComponent() == nil || resp.GetComponent().GetName() != "components/cms-req" {
+		t.Errorf("GetComponent() = %v, want 'components/cms-req'", resp.GetComponent())
+	}
+
+	// 2. Unsatisfied (higher version)
+	respUnsat, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		RequiredType:   componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		MinimumVersion: "v3.0.0",
+	})
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unsatisfied check failed: %v", err)
+	}
+	if respUnsat.GetSatisfied() {
+		t.Error("GetSatisfied() = true for v3.0.0 min version, want false")
+	}
+
+	// 3. Invalid minimum version -> InvalidArgument
+	_, err = server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		MinimumVersion: "invalid.semver.string",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ValidateComponentRequirement(invalid semver) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 4. Invalid required type enum -> InvalidArgument
+	_, err = server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:         "components/cms-req",
+		RequiredType: componentspb.ComponentType(99),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ValidateComponentRequirement(invalid type) got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("cms-health-%d", i)
+		spec := &componentspb.ComponentSpec{
+			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version: "v1.0.0",
+		}
+		if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+			Name: name,
+			Spec: spec,
+		}); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
+		}
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
+		}
+	}
+
+	// 1. Success path
+	resp, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: 2,
+	})
+	if err != nil {
+		t.Fatalf("GetPlatformHealth failed: %v", err)
+	}
+	if len(resp.GetComponents()) != 2 {
+		t.Errorf("len(Components) = %d, want 2", len(resp.GetComponents()))
+	}
+	if resp.GetTotalHealthy() != 3 {
+		t.Errorf("TotalHealthy = %d, want 3", resp.GetTotalHealthy())
+	}
+	if resp.GetTotalUnhealthy() != 0 {
+		t.Errorf("TotalUnhealthy = %d, want 0", resp.GetTotalUnhealthy())
+	}
+	if resp.GetNextPageToken() == "" {
+		t.Error("NextPageToken is empty, want token")
+	}
+
+	// 2. Negative page size -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: -1,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(negative page size) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 3. Nil request -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(nil request) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 4. Invalid filter -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		Filter: "invalid_key=value",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(invalid filter) got code %v, want InvalidArgument", status.Code(err))
 	}
 }

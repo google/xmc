@@ -57,7 +57,6 @@ nogo(
 # gazelle:resolve go golang/cloud_google_com/go/spanner/v/v1/spanner //internal/compat/spanner:spanner
 
 # Compatibility wrapper package target mappings
-# gazelle:resolve go go/log //internal/compat/log:log
 # gazelle:resolve go task/go/status //internal/compat/status:status
 # gazelle:resolve go googlesql/safesql/go/safesql //internal/compat/safesql:safesql
 # gazelle:resolve go protobuf/field_mask_go_proto //internal/compat/field_mask:field_mask

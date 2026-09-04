@@ -499,7 +499,8 @@ declare module 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls' {
     title?: string;
     description?: string;
     owner?: string;
-    charts?: Chart[];
+    chartIds?: string[];
+    chart_ids?: string[];
     chartLayout?: LayoutSpec;
     chart_layout?: LayoutSpec;
     createTime?: string;
@@ -604,6 +605,7 @@ declare module 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_
     dashboard?: any;
     dashboardId?: string;
     dashboard_id?: string;
+    charts?: any[];
     [key: string]: any;
   }
 

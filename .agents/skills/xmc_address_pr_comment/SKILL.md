@@ -35,9 +35,9 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-When invoking helper tools under `tools/` (e.g. `generate_review_checklist.py`, `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
+When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
-2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/fetch_pr_comment.py --help`).
+2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
    - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
@@ -56,7 +56,7 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
 
 ### Execution Command
 ```bash
-./tools/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
+./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
 ```
 
 ### Result Output Schema
@@ -78,11 +78,11 @@ This generates `pr_review_checklist.md` in the workspace populated with interact
 
 ## 2. Input & Comment Details Fetching
 
-The agent accepts a comment link or PR number. The helper script `tools/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
+The agent accepts a comment link or PR number. The helper script `tools/pr_review/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
 
 ### Execution Command
 ```bash
-./tools/fetch_pr_comment.py "<github_comment_url>"
+./tools/pr_review/fetch_pr_comment.py "<github_comment_url>"
 ```
 
 ### Result Schema
@@ -178,19 +178,25 @@ bazel build //cmd/xid_service:xid_service
 ```
 
 ### Git Commit to Current Branch
-The agent stages all changes and commits them with a message that includes a description of the changes and the URL of the original comment:
+The agent stages all changes and commits them as a new, distinct follow-up commit with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
 git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
+git push origin HEAD
 ```
 
+> [!CAUTION]
+> **Strict Prohibition of Force-Pushing on Active PRs**:
+> NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
+> Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
+
 ### Post GitHub Comment Notification
-The agent runs the helper script `tools/reply_pr_comment.py` to notify the reviewer that the changes have been made:
+The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made:
 ```bash
 export GITHUB_TOKEN="your_github_token"
-./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
 
 Or pass a file containing the message via `--message-file` (or `-f`):
@@ -198,21 +204,21 @@ Or pass a file containing the message via `--message-file` (or `-f`):
 cat << 'EOF' > reply_message.txt
 Addressed review comment for `handlers.go`.
 EOF
-./tools/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
 ```
 
 > [!WARNING]
-> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
+> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/pr_review/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
 
 ### Usage Telemetry Tracking
-When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
+When `tools/pr_review/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
 ```html
 <!-- xmc-telemetry: {"git_username": "Chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->
 ```
 
 To extract this telemetry and output it as a raw JSON dataset, run:
 ```bash
-./tools/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
+./tools/benchmark/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
 ```
 
 ---
@@ -260,7 +266,7 @@ kubectl rollout status deployment/xid-service-deployment -n xmc
 ## 8. 1-to-1 Thread Resolution Verification
 
 Before marking the PR review task as complete:
-1. Run `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
+1. Run `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
 2. Confirm that every single comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
 3. Update the checklist artifact status for each item to `[x] Resolved`.
 

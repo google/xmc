@@ -91,11 +91,13 @@ compat_go_test(
         "updateworkunit_test.go",
         "updateworkunitexecutions_test.go",
     ],
+    # Shard across 4 parallel executors to divide heavy Spanner emulator database
+    # setup, DDL schema creation, and live CRUD queries from ~36s down to ~10s.
+    shard_count = 4,
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/cmp",
         "//internal/compat/field_mask",
-        "//internal/compat/log",
         "//internal/compat/proto",
         "//internal/compat/protocmp",
         "//internal/compat/status",

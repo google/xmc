@@ -16,7 +16,7 @@ import 'jasmine';
 
 import { provideRouter } from '@angular/router';
 
-import { EXPERIMENT_1, WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
+import { WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
 import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitDetails } from './work_unit_details';
@@ -32,10 +32,8 @@ describe('WorkUnitDetails Component', () => {
   it('should be created', () => {
     const comp = bootstrap(WorkUnitDetails, {
       workUnit: WORK_UNIT_1,
-      experiment: EXPERIMENT_1,
     }) as WorkUnitDetails;
     expect(comp).toBeTruthy();
-    expect(comp.experimentId()).toBe('1');
-    expect(comp.workUnitId()).toBe('1');
+    expect(comp.workUnit()).toEqual(WORK_UNIT_1);
   });
 });

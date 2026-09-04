@@ -29,10 +29,13 @@ import "third_party/xmanager_cloud/dashboard_service/proto/messages.proto";
 service DashboardService {
   option (google.api.default_host) = "cloud.xmanager.googleapis.com";
 
+  // The whole request is the body rather than just `dashboard`, because `charts` has to travel with
+  // it: a repeated message cannot be expressed as a query parameter, and the point of the field is
+  // that the charts are created in the same transaction as the dashboard.
   rpc CreateDashboard(CreateDashboardRequest) returns (Dashboard) {
     option (google.api.http) = {
       post: "/v1/dashboards"
-      body: "dashboard"
+      body: "*"
     };
     option (google.api.method_signature) = "dashboard,dashboard_id";
   }
@@ -96,6 +99,9 @@ service DashboardService {
   rpc ListCharts(ListChartsRequest) returns (ListChartsResponse) {
     option (google.api.http) = {
       get: "/v1/{parent=dashboards/*}/charts"
+      additional_bindings {
+        get: "/v1/{parent=experiments/*/workUnits/*}/charts"
+      }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -133,6 +139,16 @@ service DashboardService {
 message CreateDashboardRequest {
   Dashboard dashboard = 1 [(google.api.field_behavior) = REQUIRED];
   string dashboard_id = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Charts to create together with the dashboard.
+  //
+  // Each chart must carry the xid and wid of the work unit that owns it; the server assigns the
+  // resource name, generates the chart ID and appends it to dashboard.chart_ids. The charts and the
+  // dashboard are committed atomically, so a dashboard is never persisted referencing charts that
+  // failed to be written, and a failed creation leaves no orphaned charts behind.
+  //
+  // Charts that already exist are referenced through dashboard.chart_ids instead.
+  repeated Chart charts = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message GetDashboardRequest {
@@ -202,10 +218,11 @@ message GetChartDataRequest {
 }
 
 message ListChartsRequest {
+  // Either "dashboards/{dashboard_id}" or "experiments/{xid}/workUnits/{wid}".
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloud.xmanager.googleapis.com/Dashboard"
+      child_type: "cloud.xmanager.googleapis.com/Chart"
     }
   ];
   int32 page_size = 2;

@@ -1,0 +1,302 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "fetch_pr_comment.py",
+    "generate_review_checklist.py",
+    "github_utils.py",
+    "reply_pr_comment.py",
+    "review_pr_generate_audit.py",
+    "review_pr_post_inline_comment.py",
+    "review_pr_verify_posted.py",
+    "update_pr_description.py",
+    "verify_pr_comment_resolution.py",
+])
+
+py_library(
+    name = "github_utils",
+    srcs = ["github_utils.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "github_utils_test",
+    srcs = ["github_utils_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+    ],
+)
+
+py_library(
+    name = "fetch_pr_comment_lib",
+    srcs = ["fetch_pr_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "fetch_pr_comment",
+    srcs = ["fetch_pr_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":fetch_pr_comment_lib",
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "fetch_pr_comment_test",
+    srcs = ["fetch_pr_comment_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":fetch_pr_comment_lib",
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "reply_pr_comment_lib",
+    srcs = ["reply_pr_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "reply_pr_comment",
+    srcs = ["reply_pr_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":reply_pr_comment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "reply_pr_comment_test",
+    srcs = ["reply_pr_comment_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":reply_pr_comment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "generate_review_checklist_lib",
+    srcs = ["generate_review_checklist.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "generate_review_checklist",
+    srcs = ["generate_review_checklist.py"],
+    imports = ["../.."],
+    deps = [
+        ":generate_review_checklist_lib",
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "generate_review_checklist_test",
+    srcs = ["generate_review_checklist_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":generate_review_checklist_lib",
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_generate_audit_lib",
+    srcs = ["review_pr_generate_audit.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "review_pr_generate_audit",
+    srcs = ["review_pr_generate_audit.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_generate_audit_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_generate_audit_test",
+    srcs = ["review_pr_generate_audit_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_generate_audit_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_post_inline_comment_lib",
+    srcs = ["review_pr_post_inline_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "review_pr_post_inline_comment",
+    srcs = ["review_pr_post_inline_comment.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_post_inline_comment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_post_inline_comment_test",
+    srcs = ["review_pr_post_inline_comment_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_post_inline_comment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_verify_posted_lib",
+    srcs = ["review_pr_verify_posted.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "review_pr_verify_posted",
+    srcs = ["review_pr_verify_posted.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_verify_posted_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_verify_posted_test",
+    srcs = ["review_pr_verify_posted_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_verify_posted_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "verify_pr_comment_resolution_lib",
+    srcs = ["verify_pr_comment_resolution.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "verify_pr_comment_resolution",
+    srcs = ["verify_pr_comment_resolution.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":verify_pr_comment_resolution_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "verify_pr_comment_resolution_test",
+    srcs = ["verify_pr_comment_resolution_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":verify_pr_comment_resolution_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "update_pr_description_lib",
+    srcs = ["update_pr_description.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "update_pr_description",
+    srcs = ["update_pr_description.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":update_pr_description_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "update_pr_description_test",
+    srcs = ["update_pr_description_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":update_pr_description_lib",
+        "//tools/common:tool_utils",
+    ],
+)

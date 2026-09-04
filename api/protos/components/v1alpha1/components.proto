@@ -621,6 +621,7 @@ message GetPlatformHealthRequest {
   ];
 
   // Maximum number of components to return per page.
+  // If unspecified or 0, a default of 50 is used. Maximum value is 1000.
   int32 page_size = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "pageSize"

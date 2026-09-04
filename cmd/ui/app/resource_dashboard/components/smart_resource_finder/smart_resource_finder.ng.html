@@ -18,45 +18,66 @@
 
   @for (row of rows(); track row.id) {
     <div class="query-row">
-      <div class="query-input-group">
-        <label class="query-label" [for]="'amount-input-' + row.id">Amount *</label>
+      <fieldset class="outlined-box amount-box">
+        <legend class="box-legend" [id]="'amount-label-' + row.id">Amount *</legend>
         <input
           type="number"
           min="1"
-          class="query-input-box query-amount-input"
+          class="box-input query-amount-input"
           placeholder="e.g. 1"
           [id]="'amount-input-' + row.id"
+          [attr.aria-labelledby]="'amount-label-' + row.id"
           [ngModel]="row.amount"
           (ngModelChange)="updateRowAmount($index, $event)"
         />
-      </div>
+      </fieldset>
 
-      <div class="query-input-group">
-        <label class="query-label" [for]="'resource-type-select-' + row.id">Resource type *</label>
-        <div class="select-with-remove-box">
-          <select
-            class="query-select-box"
-            [id]="'resource-type-select-' + row.id"
-            [ngModel]="row.resourceType"
-            (ngModelChange)="updateRowResourceType($index, $event)"
-          >
-            <option value="">-</option>
-            @for (resType of availableResourceTypes(); track resType) {
-              <option [value]="resType">{{ resType }}</option>
-            }
-          </select>
-          @if (rows().length > 1) {
-            <button
-              type="button"
-              mat-icon-button
-              class="remove-resource-btn"
-              aria-label="Remove resource filter"
-              (click)="removeRow($index)"
+      <div class="select-with-remove-box">
+        <fieldset class="outlined-box resource-select-box">
+          <legend class="box-legend" [id]="'resource-label-' + row.id">
+            {{ $index === 0 ? 'Primary resource *' : 'Resource type *' }}
+          </legend>
+          <div class="select-inner-container">
+            <mat-select
+              class="query-select-box"
+              panelClass="resource-type-select-panel"
+              placeholder="-"
+              [panelWidth]="null"
+              [id]="'resource-type-select-' + row.id"
+              [attr.aria-labelledby]="'resource-label-' + row.id"
+              [value]="row.resourceType"
+              (selectionChange)="onResourceTypeChange($index, $event.value)"
             >
-              <mat-icon class="remove-icon">close</mat-icon>
-            </button>
-          }
-        </div>
+              <mat-option value="">-</mat-option>
+              @for (resType of availableResourceTypes(); track resType) {
+                <mat-option [value]="resType">{{ resType }}</mat-option>
+              }
+            </mat-select>
+            @if ($index === 0) {
+              <mat-icon
+                class="primary-resource-help-icon"
+                matTooltipClass="rod-term-tooltip"
+                aria-label="Primary resource explanation"
+                tabindex="0"
+                [matTooltip]="dominantTooltip"
+                >help_outline</mat-icon
+              >
+            }
+          </div>
+        </fieldset>
+        @if (rows().length > 1) {
+          <button
+            type="button"
+            mat-icon-button
+            class="remove-resource-btn"
+            [attr.aria-label]="
+              'Remove ' + (row.resourceType || 'resource filter') + ' (row ' + ($index + 1) + ')'
+            "
+            (click)="removeRow($index)"
+          >
+            <mat-icon class="remove-icon">close</mat-icon>
+          </button>
+        }
       </div>
     </div>
   }

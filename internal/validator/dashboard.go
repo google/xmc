@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"task/go/status"
+	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
 
@@ -105,6 +106,27 @@ func ValidateCreateDashboardRequest(in *spb.CreateDashboardRequest) error {
 	if len(dash.GetChartIds()) > 0 {
 		if err := ValidateChartIDs(dash.GetChartIds()); err != nil {
 			return err
+		}
+	}
+	return validateInlineCharts(in.GetCharts())
+}
+
+// validateInlineCharts validates the charts created alongside a dashboard. Their names and IDs are
+// assigned by the server, so only the caller-supplied fields are checked: a title, and the work unit
+// coordinates that decide which experiment's ACL governs the write.
+func validateInlineCharts(charts []*dpb.Chart) error {
+	for i, chart := range charts {
+		if chart == nil {
+			return fmt.Errorf("charts[%d] cannot be nil: %w", i, status.ErrInvalidArgument)
+		}
+		if strings.TrimSpace(chart.GetTitle()) == "" {
+			return fmt.Errorf("charts[%d].title must be set and not only contain whitespace: %w", i, status.ErrInvalidArgument)
+		}
+		if chart.GetXid() <= 0 {
+			return fmt.Errorf("charts[%d].xid %d must be a positive experiment ID: %w", i, chart.GetXid(), status.ErrInvalidArgument)
+		}
+		if chart.GetWid() <= 0 {
+			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), status.ErrInvalidArgument)
 		}
 	}
 	return nil
@@ -290,13 +312,24 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	if in.GetParent() == "" {
 		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
 	}
-	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
-		return fmt.Errorf("invalid parent dashboard name: %w", err)
+	if err := ValidateChartParentName(in.GetParent()); err != nil {
+		return err
 	}
 	if in.GetPageSize() < 0 {
 		return fmt.Errorf("page_size cannot be negative: %w", status.ErrInvalidArgument)
 	}
 	return nil
+}
+
+// ValidateChartParentName validates a chart collection parent, which may be a dashboard or a work unit.
+func ValidateChartParentName(parent string) error {
+	if _, err := ValidateDashboardName(parent); err == nil {
+		return nil
+	}
+	if _, _, err := ValidateWorkUnitName(parent); err == nil {
+		return nil
+	}
+	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}' or 'experiments/{xid}/workUnits/{wid}': %w", status.ErrInvalidArgument)
 }
 
 // ValidateUpdateChartRequest validates the given UpdateChartRequest.

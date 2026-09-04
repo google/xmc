@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"go/log"
 	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
@@ -121,12 +120,6 @@ func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 	}
 }
 
-func withArtifactObservers(observers ...ArtifactObserver) testServerOpt {
-	return func(p *Params) {
-		p.ArtifactObservers = append(p.ArtifactObservers, observers...)
-	}
-}
-
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
 	p := Params{}
@@ -170,7 +163,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}...)
 	if err != nil {
-		log.FatalContextf(ctx, "Failed to create gRPC client for XID service: %v", err)
+		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 	p := Params{
@@ -220,7 +213,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 
 	healthServer.SetServingStatus("xmc.XidService", healthpb.HealthCheckResponse_SERVING)
 
-	log.InfoContextf(ctx, "gRPC server listening at %v", lis.Addr())
+	t.Logf("gRPC server listening at %v", lis.Addr())
 
 	go func() {
 		if err := s.Serve(lis); err != nil {

@@ -86,6 +86,12 @@
         color: #b45309; // amber-700
         border-color: #fde68a; // amber-200
       }
+
+      &.status-unknown {
+        background-color: #f1f3f4; // slate-100
+        color: #5f6368; // slate-600
+        border-color: #dadce0; // slate-300
+      }
     }
   }
 

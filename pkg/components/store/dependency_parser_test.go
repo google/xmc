@@ -26,11 +26,10 @@ import (
 
 func TestExtractDependencies(t *testing.T) {
 	tests := []struct {
-		name     string
-		spec     *componentspb.ComponentSpec
-		labels   map[string]string
-		selfName string
-		want     []string
+		name   string
+		spec   *componentspb.ComponentSpec
+		labels map[string]string
+		want   []string
 	}{
 		{
 			name: "combined manifests, description, and labels",
@@ -54,21 +53,20 @@ This is the main worker controller.
 				"xmc.dev/dependencies": "kueue-operator, my-worker",
 				"environment":          "production",
 			},
-			selfName: "my-worker",
 			want: []string{
 				"auth-service",
 				"kueue-operator",
 				"logging-service",
+				"my-worker",
 				"storage-service",
 				"telemetry-service",
 			},
 		},
 		{
-			name:     "nil spec and nil labels",
-			spec:     nil,
-			labels:   nil,
-			selfName: "self-comp",
-			want:     []string{},
+			name:   "nil spec and nil labels",
+			spec:   nil,
+			labels: nil,
+			want:   []string{},
 		},
 		{
 			name: "empty spec fields",
@@ -76,34 +74,31 @@ This is the main worker controller.
 				Manifests:   []string{},
 				Description: "",
 			},
-			labels:   map[string]string{},
-			selfName: "self-comp",
-			want:     []string{},
+			labels: map[string]string{},
+			want:   []string{},
 		},
 		{
 			name: "description directive with inline comment",
 			spec: &componentspb.ComponentSpec{
 				Description: "@depends-on: storage-service, auth-service # required for DB access",
 			},
-			selfName: "app",
-			want:     []string{"auth-service", "storage-service"},
+			want: []string{"auth-service", "storage-service"},
 		},
 		{
-			name: "self name filter with components prefix",
+			name: "canonicalizes components prefix in dependencies",
 			spec: &componentspb.ComponentSpec{
 				Description: "@depends-on: self-comp, dep-a",
 			},
 			labels: map[string]string{
 				"xmc.dev/depends-on": "components/self-comp, dep-b",
 			},
-			selfName: "components/self-comp",
-			want:     []string{"dep-a", "dep-b"},
+			want: []string{"dep-a", "dep-b", "self-comp"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.ExtractDependencies(tt.spec, tt.labels, tt.selfName)
+			got := store.ExtractDependencies(tt.spec, tt.labels)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("ExtractDependencies() mismatch (-want +got):\n%s", diff)
 			}
@@ -325,10 +320,9 @@ func TestExtractDependenciesFromLabels(t *testing.T) {
 
 func TestNormalizeDependencies(t *testing.T) {
 	tests := []struct {
-		name     string
-		rawDeps  []string
-		selfName string
-		want     []string
+		name    string
+		rawDeps []string
+		want    []string
 	}{
 		{
 			name: "deduplicates, strips components prefix, cleans brackets/quotes and sorts",
@@ -339,26 +333,23 @@ func TestNormalizeDependencies(t *testing.T) {
 				"self-component",
 				"invalid_name!",
 			},
-			selfName: "components/self-component",
-			want:     []string{"dep-a", "dep-b", "dep-c", "dep-d"},
+			want: []string{"dep-a", "dep-b", "dep-c", "dep-d", "self-component"},
 		},
 		{
-			name:     "empty slice input",
-			rawDeps:  []string{},
-			selfName: "any",
-			want:     []string{},
+			name:    "empty slice input",
+			rawDeps: []string{},
+			want:    []string{},
 		},
 		{
-			name:     "all self or invalid",
-			rawDeps:  []string{"self-comp", "components/self-comp", "", "---"},
-			selfName: "self-comp",
-			want:     []string{},
+			name:    "empty or invalid component names",
+			rawDeps: []string{"", "---", "invalid_name!"},
+			want:    []string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.NormalizeDependencies(tt.rawDeps, tt.selfName)
+			got := store.NormalizeDependencies(tt.rawDeps)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("NormalizeDependencies() mismatch (-want +got):\n%s", diff)
 			}

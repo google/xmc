@@ -61,6 +61,14 @@ func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpc
 	return commonhealth.NewSpannerHealthClient(p.spannerClient), p.xidClient, p.taskQueueClient
 }
 
+// SpannerClient returns the underlying Spanner client.
+func (p *ProdServer) SpannerClient() *spanner.Client {
+	if p == nil {
+		return nil
+	}
+	return p.spannerClient
+}
+
 // Close closes all underlying production client connections.
 func (p *ProdServer) Close() error {
 	if p == nil {

@@ -133,7 +133,9 @@ compat_go_test(
     embed = [":rod_data_provider_lib"],
     deps = [
         "//api/protos/rod",
+        "//internal/compat/proto",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

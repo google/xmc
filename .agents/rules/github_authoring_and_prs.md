@@ -56,11 +56,16 @@ This document defines standards and policy rules for AI agents acting as **Code 
     - **Standalone Entrypoint Exception**: Self-contained executable entrypoints (e.g. scaffolding a new CLI binary in `cmd/`, a new service binary, or a standalone script in `tools/`) are permitted without external callers because they are directly runnable on their own.
   - **Stacked PR Workflow (`gh-stack`)**: When splittable, format and manage the multi-branch chain using [`gh-stack`](conversation://skills/gh-stack).
   - **Exception Justification**: Monolithic PRs exceeding thresholds are permitted only for atomic automated migrations, large code deletions, or single-document design specs, and require explicit user confirmation.
-- **Mandatory User Confirmation Gate Before PR Creation & Draft Conversion**: NEVER execute `gh pr create` (draft or non-draft) or `gh pr ready` without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request or converting a Draft PR to Open. Draft PRs MUST NEVER be converted to Open (ready for review) without a separate, explicit user confirmation gate. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population) (Step 5) and [Section 6](../skills/xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate) for mandatory confirmation templates.
+- **Mandatory User Confirmation Gate Before PR Creation & Draft Conversion**: NEVER execute `gh pr create` (draft or non-draft) or `gh pr ready` without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request or converting a Draft PR to Open. Draft PRs MUST NEVER be converted to Open (ready for review) without a separate, explicit user confirmation gate. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population) (Step 7) and [Section 6](../skills/xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate) for mandatory confirmation templates.
 - **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).
 - **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
-- **Mandatory PR Description Update Tool Policy**: When updating an existing PR description, ALWAYS use `tools/update_pr_description.py` via the procedure detailed in [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool). Do NOT use `gh pr edit` or raw inline shell commands, as GraphQL classic projects deprecation breaks `gh pr edit`.
+- **Mandatory Assumptions Disclosure**: Every PR authored by an AI agent MUST document, in a dedicated `## Assumptions` section of the PR body, each assumption the agent made while implementing the change. The section is **always present**—when the requirements fully determined the implementation, state `None — requirements were fully specified.` rather than deleting the heading, so reviewers can distinguish "no assumptions" from "author forgot".
+  - **What Counts as an Assumption**: Any decision the agent made in place of an explicit instruction or verified fact—inferred requirements and acceptance criteria, guessed input value ranges or units, presumed upstream/downstream behavior not read from source, chosen defaults for unspecified configuration, assumed backward-compatibility or migration expectations, environments and versions believed to be in use, and any scope the agent deliberately deferred.
+  - **Disclosure Entry Format**: Record one bullet per assumption as `<assumption> — <why it was assumed> — <impact if wrong>`. The impact clause is mandatory: it tells the reviewer which assumptions are cheap to accept and which must be verified before merge.
+  - **Verify Before Assuming**: Assumptions are a last resort, not a shortcut. If an assumption is cheaply checkable by reading the code, running a test, or asking the user, resolve it instead of listing it. Reserve the section for what genuinely could not be settled during the task.
+  - **Halt on Load-Bearing Assumptions**: If proceeding under an unverified assumption would silently break a public API, protobuf schema, CLI flag, security boundary, or any core system contract, agents MUST NOT resolve it unilaterally—seek explicit user confirmation per **System Contract & API Changes** in [Core Engineering Standards](core_engineering.md#5-strict-testing-coverage--pr-granularity) before implementing.
+- **Mandatory PR Description Update Tool Policy**: When updating an existing PR description, ALWAYS use `tools/pr_review/update_pr_description.py` via the procedure detailed in [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool). Do NOT use `gh pr edit` or raw inline shell commands, as GraphQL classic projects deprecation breaks `gh pr edit`.
 - **Prohibition of Raw Log Dumps vs. Allowed Agent Artifacts**:
   - **Forbidden Raw Noise**: NEVER copy-paste un-formatted `git log` output, raw commit history, or indiscriminate wall-of-text commit listings into the PR description or PR comments.
   - **Allowed Implementation Plans & Audit Artifacts**: Posting structured **Implementation Plans**, original prompt metadata, or review iteration discussions in PR comments (or collapsible `<details>` blocks) is explicitly allowed for autocoder (`koder`) tasks to enable post-mortem debugging and prompt evaluation.
@@ -76,6 +81,11 @@ This document defines standards and policy rules for AI agents acting as **Code 
   - <Bulleted highlight of structural code adjustments>
   - <Targeted package, binary, or deployment modifications>
 
+  ## Assumptions
+  - <Assumption made during development> — <why it was assumed> — <impact if wrong>
+  - <Deferred scope or unresolved open question, if any>
+  <Replace the bullets above with `None — requirements were fully specified.` when no assumptions were made.>
+
   ## Verification & Testing
   - **Commands Executed**: `<bazel test / go test / ./tools/run_affected_tests.py>`
   - **Coverage & Test Status**: <Summary of unit/integration test results and pass state.>
@@ -86,6 +96,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
   TAG=agy
   CONV=<conversation_id>
   ```
+- **Environment & URL Sanitization Policy**: PR descriptions and public commit messages must never expose specific development environment identifiers, private cluster names, internal domain hostnames (`*.dev.xmanageriso.dev`), or test GCP project IDs. Use generalized phrasing (e.g. "Live GKE Development Environment via deployment script") for manual verification evidence.
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback Policy

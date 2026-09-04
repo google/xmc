@@ -27,13 +27,13 @@ import (
 
 	"go/flag"
 	"go/google"
-	"go/log"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
 	"golang/google_api/option/option"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/migrations/commands/commands"
 	"xmanager_cloud/storage/spanner/migrations/driver/spannerdriver"
 )
@@ -102,7 +102,7 @@ func parseConfig() *config {
 	google.Init()
 
 	if err := parseArg(cfg, flag.Args()); err != nil {
-		log.Exit(err)
+		logging.Fatal(context.Background(), "failed to parse arguments", "error", err)
 	}
 
 	cfg.migrationsDir = strings.ToLower(cfg.migrationsDir)
@@ -114,7 +114,7 @@ func parseConfig() *config {
 func main() {
 	cfg := parseConfig()
 	if err := run(cfg); err != nil {
-		log.Exitf("migration failed: %v", err)
+		logging.Fatal(context.Background(), "migration failed", "error", err)
 	}
 }
 
@@ -215,15 +215,15 @@ func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*
 func (r *runner) close() {
 	err, dbErr := r.migrator.Close()
 	if err != nil {
-		log.Errorf("Failed to close source driver: %v", err)
+		logging.Error(context.Background(), "Failed to close source driver", "error", err)
 	}
 	if dbErr != nil {
-		log.Errorf("Failed to close database driver: %v", dbErr)
+		logging.Error(context.Background(), "Failed to close database driver", "error", dbErr)
 	}
 }
 
 func (r *runner) execCommand(ctx context.Context, cmd string, arg *int) error {
-	log.InfoContextf(ctx, "Executing command: %q", cmd)
+	logging.Info(ctx, "Executing command", "command", cmd)
 	switch cmd {
 	case upCmd:
 		return commands.Up(ctx, r.migrator, r.dataClient, arg)

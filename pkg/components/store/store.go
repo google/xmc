@@ -101,7 +101,7 @@ type Store interface {
 	PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error)
 
 	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-	CompleteDeactivation(ctx context.Context, name string) error
+	CompleteDeactivation(ctx context.Context, name string, force bool) error
 
 	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
 	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
@@ -116,6 +116,7 @@ type Store interface {
 	ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error)
 
 	// GetPlatformHealth retrieves overall system component health metrics and status.
+	// PageSize defaults to 50 when <= 0, and is clamped to a maximum of 1000 per AIP-158.
 	GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error)
 }
 

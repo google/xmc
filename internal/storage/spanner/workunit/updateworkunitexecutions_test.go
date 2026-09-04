@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
-
-	"go/log"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 
@@ -96,7 +94,7 @@ func TestUpdateWorkUnitExecutions(t *testing.T) {
 	}
 
 	gotWu1, err := storageClient.FetchWorkUnit(ctx, 123, 1)
-	log.Infof("gotWu1: %v", gotWu1)
+	t.Logf("gotWu1: %v", gotWu1)
 	if err != nil {
 		t.Fatalf("After UpdateWorkUnitExecutions, FetchWorkUnit(1) failed: %v", err)
 	}
@@ -111,7 +109,7 @@ func TestUpdateWorkUnitExecutions(t *testing.T) {
 	}
 
 	gotWu2, err := storageClient.FetchWorkUnit(ctx, 123, 2)
-	log.Infof("gotWu2: %v", gotWu2)
+	t.Logf("gotWu2: %v", gotWu2)
 	if err != nil {
 		t.Fatalf("After UpdateWorkUnitExecutions, FetchWorkUnit(2) failed: %v", err)
 	}

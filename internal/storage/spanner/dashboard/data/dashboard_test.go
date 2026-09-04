@@ -15,6 +15,7 @@
 package data
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,77 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 
 	if len(mutations) != 2 {
 		t.Errorf("Expected 2 mutations (dashboard + chart link), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_Success(t *testing.T) {
+	chartID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	dash := &dpb.Dashboard{
+		Name:     "dashboards/test-data-with-charts",
+		Title:    "Test Dashboard Title",
+		Owner:    "user@example.com",
+		ChartIds: []string{chartID},
+	}
+	chart := &dpb.Chart{
+		Name:  "experiments/100/workUnits/1/charts/" + chartID,
+		Title: "Test Chart Title",
+		Xid:   100,
+		Wid:   1,
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "plot-1",
+				Title:  "Loss",
+				Type:   dpb.PlotType_SCATTER,
+			},
+		},
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart})
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 4 {
+		t.Errorf("Expected 4 mutations (chart + plot spec + dashboard + chart link), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NoCharts(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-no-charts",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+
+	mutations, err := DashboardWithChartsToInsertMutations(dash, nil)
+	if err != nil {
+		t.Fatalf("DashboardWithChartsToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (dashboard only), got %d", len(mutations))
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_InvalidChart(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:  "dashboards/test-data-invalid-chart",
+		Title: "Test Dashboard Title",
+		Owner: "user@example.com",
+	}
+	chart := &dpb.Chart{
+		Name:  "invalid-chart-name",
+		Title: "Invalid Name Chart",
+	}
+
+	if _, err := DashboardWithChartsToInsertMutations(dash, []*dpb.Chart{chart}); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with an invalid chart expected error, got nil")
+	}
+}
+
+func TestDashboardWithChartsToInsertMutations_NilDashboard(t *testing.T) {
+	if _, err := DashboardWithChartsToInsertMutations(nil, nil); err == nil {
+		t.Errorf("DashboardWithChartsToInsertMutations with nil dashboard expected error, got nil")
 	}
 }
 
@@ -243,6 +315,36 @@ func TestPlotSpecsToInsertMutations_Success(t *testing.T) {
 	}
 	if len(mutations) != 2 {
 		t.Errorf("Expected 2 mutations for 2 non-nil plots, got %d", len(mutations))
+	}
+}
+
+func TestUnmarshalPlotSpec_RoundTrip(t *testing.T) {
+	want := &dpb.PlotSpec{PlotId: "plot-1", Title: "Loss vs Epochs", Type: dpb.PlotType_SCATTER}
+	encoded, err := proto.Marshal(want)
+	if err != nil {
+		t.Fatalf("failed to encode fixture plot spec: %v", err)
+	}
+
+	got, err := UnmarshalPlotSpec("test-chart", encoded)
+	if err != nil {
+		t.Fatalf("UnmarshalPlotSpec failed: %v", err)
+	}
+
+	if !proto.Equal(got, want) {
+		t.Errorf("UnmarshalPlotSpec returned %v, want %v", got, want)
+	}
+}
+
+func TestUnmarshalPlotSpec_Corrupt(t *testing.T) {
+	// A stored spec that no longer decodes must name its chart, otherwise the failure is untraceable
+	// in a batched read that spans many of them.
+	plot, err := UnmarshalPlotSpec("test-chart", []byte{0xff, 0xff, 0xff})
+
+	if err == nil {
+		t.Fatalf("UnmarshalPlotSpec(corrupt) = %v, want an error", plot)
+	}
+	if !strings.Contains(err.Error(), "test-chart") {
+		t.Errorf("UnmarshalPlotSpec error %q does not name the chart", err)
 	}
 }
 

@@ -25,6 +25,7 @@ except ImportError:
     grpc = None  # type: ignore[assignment]
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.builders import chart_id_from_name
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 
@@ -37,6 +38,39 @@ def _is_local_endpoint(endpoint: str) -> bool:
     """Reports whether a gRPC target addresses a local, plaintext service."""
     host = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
     return host.strip("[]").lower() in _LOCAL_HOSTS
+
+
+def _reject_doubly_attached_charts(
+    dashboard: messages_pb2.Dashboard,
+    charts: Sequence[messages_pb2.Chart] | None,
+) -> None:
+    """Rejects a chart passed inline whose ID the dashboard also references.
+
+    DashboardBuilder.add_chart derives a chart_id from a Chart message's name, which is the
+    right thing to do for a chart that already exists and the wrong thing to do for one being
+    created in the same call: the server assigns inline charts a fresh ID, so the derived one
+    names nothing and the request fails with `chart "..." does not exist`. The two ways of
+    attaching a chart look interchangeable at the call site, so the mistake is caught here
+    rather than left to a server error that does not mention the inline chart at all.
+    """
+    if not charts or not dashboard.chart_ids:
+        return
+    referenced = set(dashboard.chart_ids)
+    for chart in charts:
+        if not chart.name:
+            continue
+        try:
+            chart_id = chart_id_from_name(chart.name)
+        except ValueError:
+            # A name the server is about to overwrite anyway; nothing to cross-check.
+            continue
+        if chart_id in referenced:
+            raise ValueError(
+                f"chart {chart.name!r} is passed in charts and also referenced by "
+                f"dashboard.chart_ids as {chart_id!r}. Charts created inline are named and "
+                "identified by the server, so drop the DashboardBuilder.add_chart() call; "
+                "use it only for charts returned by create_chart()."
+            )
 
 
 class XDashError(Exception):
@@ -199,15 +233,24 @@ class DashboardClient:
         self,
         dashboard: messages_pb2.Dashboard,
         dashboard_id: str | None = None,
+        charts: Sequence[messages_pb2.Chart] | None = None,
     ) -> messages_pb2.Dashboard:
         """Creates a new dashboard via the Dashboard Service.
 
         Args:
             dashboard: The Dashboard protobuf message to create.
             dashboard_id: Optional ID override (extracted from name if not provided).
+            charts: Charts to create in the same transaction as the dashboard. Each must
+                carry the xid and wid of the work unit that owns it; the server names them,
+                generates their IDs and appends those to the returned dashboard's chart_ids.
+                A chart that already exists is attached through dashboard.chart_ids instead
+                — passing it here would write a second copy of it.
 
         Returns:
             The created messages_pb2.Dashboard message.
+
+        Raises:
+            ValueError: If dashboard is unset, or if a chart is passed both inline and by ID.
         """
         if not dashboard:
             raise ValueError("dashboard message is required")
@@ -215,9 +258,11 @@ class DashboardClient:
             # rstrip first: "dashboards/d1/" would otherwise derive an empty id, which the
             # server rejects with a message that points nowhere near the trailing slash.
             dashboard_id = dashboard.name.rstrip("/").split("/")[-1]
+        _reject_doubly_attached_charts(dashboard, charts)
         req = dashboard_service_pb2.CreateDashboardRequest(
             dashboard=dashboard,
             dashboard_id=dashboard_id or "",
+            charts=charts or [],
         )
         return self._execute_rpc(self._stub.CreateDashboard, req, "CreateDashboard")
 

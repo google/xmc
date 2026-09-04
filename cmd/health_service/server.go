@@ -78,13 +78,17 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		return nil, err
 	}
 
-	if req.GetForceRefresh() {
-		if s.forceRefreshLimiter != nil && !s.forceRefreshLimiter.Allow() {
-			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded for force refresh")
+	forceRefresh := req.GetForceRefresh()
+	if forceRefresh && s.forceRefreshLimiter != nil && !s.forceRefreshLimiter.Allow() {
+		logging.Debug(ctx, "rate limit exceeded for force refresh, ignoring flag and falling back to cache")
+		forceRefresh = false
+	}
+
+	if !forceRefresh {
+		if cached := s.getHealthStatusCache(); cached != nil {
+			_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "HIT"))
+			return cached, nil
 		}
-	} else if cached := s.getHealthStatusCache(); cached != nil {
-		_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "HIT"))
-		return cached, nil
 	}
 
 	_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
@@ -133,12 +137,12 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 
 	essDbSchemaVersionStr := res.EssDbSchemaVersion
 	if essDbSchemaVersionStr == "" {
-		essDbSchemaVersionStr = "unknown"
+		essDbSchemaVersionStr = "UNAVAILABLE"
 	}
 
 	xidDbSchemaVersionStr := res.XidDbSchemaVersion
 	if xidDbSchemaVersionStr == "" {
-		xidDbSchemaVersionStr = "unknown"
+		xidDbSchemaVersionStr = "UNAVAILABLE"
 	}
 
 	appVersionStr := s.cfg.AppVersion

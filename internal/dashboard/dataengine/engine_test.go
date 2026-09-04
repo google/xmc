@@ -71,6 +71,66 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestPing(t *testing.T) {
+	pingErr := fmt.Errorf("connection refused")
+	tests := []struct {
+		name    string
+		engine  *DataEngine
+		wantErr bool
+	}{
+		{
+			name:   "reachable",
+			engine: &DataEngine{conn: &mockClickHouseConn{}},
+		},
+		{
+			name: "unreachable",
+			engine: &DataEngine{conn: &mockClickHouseConn{
+				pingFn: func(context.Context) error { return pingErr },
+			}},
+			wantErr: true,
+		},
+		{
+			// The engine is optional at startup, so callers can hold a nil one; readiness must
+			// hear about that rather than take down the process on a nil dereference.
+			name:    "nil engine",
+			engine:  nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.engine.Ping(context.Background())
+
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("Ping() = %v, want error presence %t", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestFetchChartData_NilEngine(t *testing.T) {
+	var engine *DataEngine
+
+	chartData, err := engine.FetchChartData(context.Background(), &dpb.Chart{
+		Name: "experiments/1001/workUnits/1/charts/chart-1",
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "scatter_curve",
+				Type:   dpb.PlotType_SCATTER,
+				Data:   &dpb.DataSpec{Metrics: []string{"accuracy"}},
+			},
+		},
+	}, nil)
+
+	if err == nil {
+		t.Fatal("FetchChartData() on a nil engine returned no error, want one")
+	}
+	if chartData != nil {
+		t.Errorf("FetchChartData() = %v, want nil", chartData)
+	}
+}
+
 func TestFetchChartData(t *testing.T) {
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 

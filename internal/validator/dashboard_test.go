@@ -297,6 +297,57 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			},
 			wantErr: status.ErrInvalidArgument,
 		},
+		{
+			name: "valid_request_with_inline_charts",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts: []*dpb.Chart{
+					{Title: "Baseline", Xid: 4321, Wid: 1},
+					{Title: "Tuned", Xid: 8765, Wid: 2},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_request_nil_inline_chart",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*dpb.Chart{nil},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_whitespace_title",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*dpb.Chart{{Title: "   ", Xid: 4321, Wid: 1}},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_missing_xid",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*dpb.Chart{{Title: "Baseline", Wid: 1}},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_missing_wid",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: 4321}},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_negative_xid",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: -1, Wid: 1}},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1121,9 +1172,38 @@ func TestValidateListChartsRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "valid_work_unit_parent",
+			req: &spb.ListChartsRequest{
+				Parent:   "experiments/42/workUnits/7",
+				PageSize: 10,
+			},
+			wantErr: nil,
+		},
+		{
 			name: "invalid_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "invalid-dash",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_parent_without_work_unit",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/42",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "work_unit_parent_with_non_numeric_xid",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/abc/workUnits/7",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "chart_name_is_not_a_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "dashboards/dash-1/charts/chart-1",
 			},
 			wantErr: status.ErrInvalidArgument,
 		},

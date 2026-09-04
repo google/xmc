@@ -10,7 +10,6 @@ compat_go_library(
     deps = [
         "//internal/compat/insecuresecretdataaccess",
         "//internal/compat/jwtkeyconverter",
-        "//internal/compat/log",
         "//internal/logging",
         "@com_github_tink_crypto_tink_go_v2//jwt",
     ],

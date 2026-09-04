@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 filegroup(
     name = "ess_migrations",
@@ -55,8 +56,8 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/compat/google",
-        "//internal/compat/log",
         "//internal/compat/spanner",
+        "//internal/logging",
         "//internal/storage/spanner/migrations/commands",
         "//internal/storage/spanner/migrations/driver",
         "@com_github_golang_migrate_migrate_v4//:go_default_library",
@@ -71,7 +72,13 @@ compat_go_library(
 go_binary(
     name = "migrations",
     embed = [":migrations_lib"],
+    pure = "on",
     visibility = ["//:__subpackages__"],
+)
+
+oci_image_for_service(
+    name = "spanner_migrator_image",
+    binary = ":migrations",
 )
 
 compat_go_test(

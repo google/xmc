@@ -158,8 +158,7 @@ func TestSearchWorkUnits_HappyPath(t *testing.T) {
 
 func TestListWorkUnits_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	server, _ := createExperimentStateServer(ctx, t)
-	mustCreateExperiment(ctx, t, server, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string

@@ -73,8 +73,8 @@ def start_container() -> None:
 def wait_for_cluster_health(max_wait_seconds: int = MAX_WAIT_SECONDS) -> None:
     """Polls Redpanda cluster health until healthy or timeout."""
     print("Waiting for Redpanda cluster to become healthy...")
-    start_time = time.time()
-    while time.time() - start_time < max_wait_seconds:
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < max_wait_seconds:
         res = subprocess.run(
             ["docker", "exec", CONTAINER_NAME, "rpk", "cluster", "health"],
             capture_output=True,

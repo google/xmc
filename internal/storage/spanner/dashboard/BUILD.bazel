@@ -17,6 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 compat_go_library(
     name = "dashboard",
     srcs = [
+        "chartplots.go",
         "createchart.go",
         "createdashboard.go",
         "deletechart.go",
@@ -25,6 +26,7 @@ compat_go_library(
         "getdashboard.go",
         "listcharts.go",
         "listdashboards.go",
+        "readrow.go",
         "repository.go",
         "updatechart.go",
         "updatedashboard.go",
@@ -56,6 +58,7 @@ compat_go_library(
 compat_go_test(
     name = "dashboard_test",
     srcs = [
+        "chartplots_test.go",
         "createchart_test.go",
         "createdashboard_test.go",
         "deletechart_test.go",
@@ -64,15 +67,22 @@ compat_go_test(
         "getdashboard_test.go",
         "listcharts_test.go",
         "listdashboards_test.go",
+        "readrow_test.go",
         "test_utils.go",
         "updatechart_test.go",
         "updatedashboard_test.go",
     ],
     embed = [":dashboard"],
+    # Shard across 4 parallel executors to divide heavy Spanner emulator database
+    # setup, DDL schema creation, and live CRUD queries from ~45s down to ~12s.
+    shard_count = 4,
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//internal/compat/field_mask",
+        "//internal/compat/status",
+        "//internal/storage/spanner/dashboard/data",
         "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/schema/dashboardschema",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",

@@ -71,6 +71,14 @@ vars:
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
   enable_metrics: false
 
+  # ClickHouse connection backing dashboard chart data. Applied only when enable_metrics is
+  # true. ClickHouse is Bring-Your-Own infrastructure; see deploy/addons/metrics/clickhouse.
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
+
   # Enable Foundational Component Controllers
   enable_components: false
 

@@ -13,21 +13,30 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { MatSelectHarness } from '@angular/material/select/testing';
+import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 /** Harness for interacting with <xmc-smart-resource-finder> in tests. */
 export class SmartResourceFinderHarness extends ComponentHarness {
   static hostSelector = 'xmc-smart-resource-finder';
 
   private readonly amountInputs = this.locatorForAll('.query-amount-input');
-  private readonly selectBoxes = this.locatorForAll('.query-select-box');
+  private readonly selectHarnesses = this.locatorForAll(MatSelectHarness);
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
-  private readonly optionElements = this.locatorForAll('.query-select-box option');
+  private readonly amountLegends = this.locatorForAll('.amount-box .box-legend');
+  private readonly resourceLegends = this.locatorForAll('.resource-select-box .box-legend');
+  private readonly primaryHelpIcons = this.locatorForAll('.primary-resource-help-icon');
 
   /** Gets all option labels available in the resource type dropdowns. */
   async getResourceTypeOptions(): Promise<string[]> {
-    const options = await this.optionElements();
-    return Promise.all(options.map(async (opt) => (await opt.text()).trim()));
+    const selects = await this.selectHarnesses();
+    if (selects.length === 0) return [];
+    await selects[0].open();
+    const options = await selects[0].getOptions();
+    const texts = await Promise.all(options.map((opt) => opt.getText()));
+    await selects[0].close();
+    return texts;
   }
 
   /** Gets the amount input value as a string for the given index. */
@@ -56,28 +65,29 @@ export class SmartResourceFinderHarness extends ComponentHarness {
 
   /** Gets the count of resource type select dropdowns. */
   async getResourceTypeSelectCount(): Promise<number> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     return selects.length;
   }
 
   /** Gets the selected value of a resource type select at the given index. */
   async getResourceTypeSelectValue(index: number): Promise<string> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     if (!selects[index]) {
       throw new Error(`No resource type select found at index ${index}`);
     }
-    return selects[index].getProperty<string>('value');
+    const text = await selects[index].getValueText();
+    return text === '-' ? '' : text;
   }
 
   /** Selects an option value for a resource type select at the given index. */
   async selectResourceType(index: number, optionValue: string): Promise<void> {
-    const selects = await this.selectBoxes();
+    const selects = await this.selectHarnesses();
     if (!selects[index]) {
       throw new Error(`No resource type select found at index ${index}`);
     }
-    const selectEl = selects[index];
-    await selectEl.setInputValue(optionValue);
-    await selectEl.dispatchEvent('change');
+    await selects[index].open();
+    const optText = optionValue === '' ? '-' : optionValue;
+    await selects[index].clickOptions({ text: optText });
   }
 
   /** Gets the count of remove resource filter buttons. */
@@ -93,6 +103,37 @@ export class SmartResourceFinderHarness extends ComponentHarness {
       throw new Error(`No remove button found at index ${index}`);
     }
     await removeBtns[index].click();
+  }
+
+  /** Gets the Amount box legend label. */
+  async getAmountBoxLabel(): Promise<string> {
+    const legends = await this.amountLegends();
+    if (legends.length === 0) {
+      throw new Error('No amount legend found');
+    }
+    return (await legends[0].text()).trim();
+  }
+
+  /** Gets the resource type box legend label at the given index. */
+  async getResourceBoxLabel(index = 0): Promise<string> {
+    const legends = await this.resourceLegends();
+    if (!legends[index]) {
+      throw new Error(`No resource legend found at index ${index}`);
+    }
+    return (await legends[index].text()).trim();
+  }
+
+  /** Gets whether the primary resource help icon is present. */
+  async hasPrimaryResourceHelpIcon(): Promise<boolean> {
+    const icons = await this.primaryHelpIcons();
+    return icons.length > 0;
+  }
+
+  /** Gets the primary resource help icon tooltip harness. */
+  async getPrimaryResourceHelpTooltip(): Promise<MatTooltipHarness | null> {
+    return this.locatorForOptional(
+      MatTooltipHarness.with({ selector: '.primary-resource-help-icon' }),
+    )();
   }
 
   /** Clicks the + Add resource type button. */

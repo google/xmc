@@ -35,14 +35,19 @@ import {
 import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
+  COHORT_STATE_BORROWING,
+  COHORT_STATE_SQUEEZED,
+  CohortStateInfoPipe,
   FreeTotalDisplayPipe,
-  MaxWorkloadDisplayPipe,
+  MaxSchedulableDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
+import { matchesResourceFilter } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_filter';
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
+  findQueuePredictability,
   getPendingJobsCount,
 } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_velocity';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
@@ -65,7 +70,8 @@ export interface PredictabilityViewModel {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    MaxWorkloadDisplayPipe,
+    MaxSchedulableDisplayPipe,
+    CohortStateInfoPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
     WipBannerComponent,
@@ -77,6 +83,8 @@ export class QueueCardComponent {
   readonly isSecondaryLoading = input<boolean>(false);
   readonly isSelected = input<boolean>(false);
   readonly activeResourceFilters = input<string[]>([]);
+  readonly dominantResource = input<string | null>(null);
+  readonly velocityPeriod = input<string>('1h');
   readonly selectQueue = output<string>();
 
   private readonly clipboard = inject(Clipboard);
@@ -86,32 +94,42 @@ export class QueueCardComponent {
   protected readonly capacities = computed(() => {
     const allCapacities = this.queue()?.queueCapacity ?? [];
     const filters = this.activeResourceFilters()
-      .map((f) => f.trim().toLowerCase())
+      .map((f) => f.trim())
       .filter((f) => f !== '');
     if (filters.length === 0) {
       return allCapacities;
     }
     return allCapacities.filter((cap) => {
-      const rName = (cap.resourceType || '').toLowerCase();
-      return !!rName && filters.some((f) => rName === f || rName.includes(f) || f.includes(rName));
+      const rName = cap.resourceType || '';
+      return !!rName && filters.some((f) => matchesResourceFilter(rName, f));
     });
   });
+
+  protected readonly cohortStateSqueezed = COHORT_STATE_SQUEEZED;
+  protected readonly cohortStateBorrowing = COHORT_STATE_BORROWING;
 
   // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
   protected readonly isQueueHealthy = computed(() => true);
 
   protected readonly isCopied = signal<boolean>(false);
   protected readonly predictabilityVm = computed<PredictabilityViewModel | null>(() => {
+    const dominant = this.dominantResource();
+    if (!dominant) return null;
+
     const sec = this.secondaryData();
     if (!sec?.queuePredictability?.length) return null;
-    const reqRes = calculatePendingRequestsDisplay(sec);
-    const firstPred = sec.queuePredictability[0];
-    const resType = firstPred?.pendingResourceRequests?.resourceType;
+
+    const period = this.velocityPeriod();
+    const match = findQueuePredictability(sec, period, dominant);
+    if (!match) return null;
+
+    const reqRes = calculatePendingRequestsDisplay(sec, dominant);
+    const resType = match.pendingResourceRequests?.resourceType ?? dominant;
     return {
-      jobVelocityDisplay: calculateJobVelocity(sec, '1h'),
-      resourceVelocityDisplay: calculateResourceVelocity(sec, '1h'),
+      jobVelocityDisplay: calculateJobVelocity(sec, period, dominant),
+      resourceVelocityDisplay: calculateResourceVelocity(sec, period, dominant),
       pendingJobs: getPendingJobsCount(sec),
-      requestedResourcesDisplay: resType ? `${reqRes} ${resType}` : `${reqRes} units`,
+      requestedResourcesDisplay: `${reqRes} ${resType}`,
     };
   });
 

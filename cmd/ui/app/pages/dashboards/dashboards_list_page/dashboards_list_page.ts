@@ -32,18 +32,21 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { Router, RouterLink } from '@angular/router';
 
-import { CreateDashboardDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import {
+  CreateDashboardDialogComponent,
+  CreateDashboardDialogResult,
+} from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import { extractDashboardId } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /**
- * Strips 'dashboards/' prefix to obtain a clean dashboard ID for routing.
+ * Page size requested when listing dashboards. This page renders the whole response at once and
+ * filters it client-side, so it asks for the server maximum rather than relying on the smaller
+ * server-side default, which would silently truncate the list.
  */
-export function extractDashboardId(name?: string): string {
-  if (!name) return '';
-  return name.startsWith('dashboards/') ? name.replace('dashboards/', '') : name;
-}
+const DASHBOARDS_PAGE_SIZE = 100;
 
 /**
  * Component displaying the list of available metrics dashboards.
@@ -97,7 +100,7 @@ export class DashboardsListPage implements OnInit {
 
   loadDashboards(): void {
     this.isLoading.set(true);
-    this.dashboardService.listDashboards().subscribe({
+    this.dashboardService.listDashboards({ pageSize: DASHBOARDS_PAGE_SIZE }).subscribe({
       next: (res) => {
         this.dashboards.set(res.dashboards ?? []);
         this.isLoading.set(false);
@@ -121,28 +124,39 @@ export class DashboardsListPage implements OnInit {
       disableClose: false,
     });
 
-    dialogRef.afterClosed().subscribe((dashboard?: Dashboard) => {
-      if (!dashboard) return;
-      this.createDashboard(dashboard);
+    dialogRef.afterClosed().subscribe((result?: CreateDashboardDialogResult) => {
+      if (!result) return;
+      this.createDashboard(result);
     });
   }
 
-  createDashboard(dashboard: Dashboard): void {
+  /**
+   * Creates the dashboard and the charts the dialog configured for it.
+   *
+   * Both go out in one CreateDashboard call: the server assigns the chart IDs, links them and
+   * commits everything in a single transaction, so a partial failure cannot leave behind a
+   * dashboard that renders empty or charts that nothing points at.
+   */
+  createDashboard(result: CreateDashboardDialogResult): void {
     this.isLoading.set(true);
-    this.dashboardService.createDashboard({ dashboard }).subscribe({
-      next: (created) => {
-        this.isLoading.set(false);
-        const id = extractDashboardId(created.name);
-        if (id) {
-          this.router.navigate(['/dashboards', id]);
-          return;
-        }
-        this.loadDashboards();
-      },
-      error: () => {
-        this.isLoading.set(false);
-        this.loadDashboards();
-      },
-    });
+    this.dashboardService
+      .createDashboard({ dashboard: result.dashboard, charts: result.charts })
+      .subscribe({
+        next: (created) => {
+          this.isLoading.set(false);
+          const id = extractDashboardId(created.name);
+          if (id) {
+            this.router.navigate(['/dashboards', id]);
+            return;
+          }
+          this.loadDashboards();
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          this.snackbar?.open?.('Failed to create dashboard');
+          console.error('Error creating dashboard:', err);
+          this.loadDashboards();
+        },
+      });
   }
 }

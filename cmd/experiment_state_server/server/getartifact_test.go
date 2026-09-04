@@ -69,7 +69,7 @@ func TestGetArtifact_HappyPath(t *testing.T) {
 
 func TestGetArtifact_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	server, _ := createExperimentStateServer(ctx, t)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string

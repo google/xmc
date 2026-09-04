@@ -56,6 +56,13 @@ vars:
   redis_region:
   status_message_history_enabled: true
   enable_metrics: false
+  # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
+  # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
+  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
+  clickhouse_port: "9000"
+  clickhouse_database: "default"
+  clickhouse_user: "default"
+  clickhouse_password: ""
   enable_components: false
   health_service_deployment_enabled: false
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
@@ -117,6 +124,14 @@ deployment_groups:
       - storage.objectAdmin
       - artifactregistry.reader
       - serviceusage.serviceUsageConsumer
+      # Stage 3 of the authorization pipeline falls back to the project IAM policy when a caller
+      # matches neither the email nor the domain allowlist, so every service that serves
+      # authenticated traffic on this account -- the experiment state server, ROD and the
+      # dashboard service -- needs resourcemanager.projects.getIamPolicy. Browser is the smallest
+      # predefined role that carries it. iam.securityReviewer, which xmc-hs-sa uses for the same
+      # need, would additionally hand the actuator and the reconciler read access to the IAM
+      # policies on Spanner, GCS and everything else in the project, which none of them require.
+      - browser
 
   - id: workload_sa_token_creator
     source: ./deploy/ctk_v2/modules/self-token-creator
@@ -259,6 +274,21 @@ deployment_groups:
     settings:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: rod-data-provider-service-account
+
+  # Every Kubernetes service account the chart annotates with iam.gke.io/gcp-service-account needs
+  # a matching binding here, or the pod cannot mint tokens for the account it is annotated with.
+  # test/helm/workload_identity_binding_test.py holds that list and this one in step.
+  - id: xmc_wi_binding_dashboard_service
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: dashboard-service-account
+
+  - id: xmc_wi_binding_xid
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: xid-service
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
@@ -445,6 +475,16 @@ deployment_groups:
       - name: metrics.enabled
         value: $(vars.enable_metrics)
         type: auto
+      - name: metrics.clickhouse.host
+        value: $(vars.clickhouse_host)
+      - name: metrics.clickhouse.port
+        value: $(vars.clickhouse_port)
+      - name: metrics.clickhouse.database
+        value: $(vars.clickhouse_database)
+      - name: metrics.clickhouse.user
+        value: $(vars.clickhouse_user)
+      - name: metrics.clickhouse.password
+        value: $(vars.clickhouse_password)
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.enable_metrics)
         type: auto
@@ -476,7 +516,7 @@ deployment_groups:
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
 
   - id: log_monitor
-    source: ./deploy/terraform/modules/log_monitor
+    source: ./deploy/ctk_v2/modules/log_monitor
     use: [log_monitor_service_account]
     settings:
       project_id: $(vars.project_id)

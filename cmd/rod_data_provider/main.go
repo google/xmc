@@ -55,6 +55,7 @@ func main() {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	rootCtx := logging.WithLogger(context.Background(), logger)
 
 	ctx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT, syscall.SIGTERM)

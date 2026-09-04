@@ -33,6 +33,13 @@ health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-s
 dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
+xmc_bridge_custom_image: ""
+
+componentsDeployment:
+  enabled: false
+  cmsAddress: "grpc-service:50051"
+  probeInterval: "5s"
+  probeTimeout: "2s"
 
 essDeployment:
   enabled: true
@@ -43,11 +50,21 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
-componentsDeployment:
-  enabled: false
-
 metrics:
   enabled: false
+  # ClickHouse is Bring-Your-Own (BYO) infrastructure deployed out-of-band via
+  # deploy/addons/metrics/clickhouse. The dashboard service chart data engine reads these
+  # settings to serve GetChartData. Enabling metrics also makes ClickHouse a readiness
+  # dependency of the dashboard service: its pods stay out of the Service endpoints while the
+  # data engine cannot be built, so leave this disabled on releases without a ClickHouse.
+  clickhouse:
+    host: "clickhouse.xmc-metrics.svc.cluster.local"
+    port: "9000"
+    database: "default"
+    user: "default"
+    # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
+    # through the CSI mount rather than travelling through the release as a Helm value.
+    password: ""
 
 ingestionGatewayDeployment:
   enabled: false
@@ -96,6 +113,16 @@ dashboardService:
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
 statusMessageHistoryEnabled: true
+
+reconciler:
+  monitoring:
+    # Deploy a Google Managed Prometheus PodMonitoring that scrapes the
+    # reconciler's /metrics endpoint (MLRun RED metrics).
+    enabled: false
+    # Port on which the reconciler serves its Prometheus metrics endpoint.
+    port: 8082
+    # Scrape interval for the PodMonitoring endpoint.
+    interval: 60s
 redisAddr: "YOUR_REDIS_IP:6379"
 redisPassword: "YOUR_REDIS_PASSWORD"
 gcpServiceAccount: "YOUR_GCP_SERVICE_ACCOUNT_EMAIL"
@@ -164,6 +191,9 @@ secrets:
     projectNumber: "YOUR_GCP_PROJECT_NUMBER"
     jwtSecretName: "backend-jwt-secret"
     oauthClientSecretName: "gcp-oauth-client-secret"
+    # Only read when metrics are enabled; the Secret Manager entry must exist in that case,
+    # because a missing entry fails the CSI mount for every service sharing this provider class.
+    clickhousePasswordSecretName: "clickhouse-password"
   development:
     # A placeholder for default JWT secret key for development environments.
     jwtSecret: "YOUR_JWT_SECRET"

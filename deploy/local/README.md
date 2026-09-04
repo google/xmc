@@ -160,3 +160,33 @@ kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
 kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
   "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, created_at) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
 ```
+---
+
+## 5. Local KinD Development Quickstart
+
+For detailed CLI options, configuration resolution precedence, dynamic service discovery, and architecture specifications, refer to the [Development Environment Tooling Guide](../../tools/dev_env/README.md).
+
+### Quickstart Workflow
+
+```bash
+# 1. Provision local KinD cluster, support manifests, and secrets
+python3 tools/dev_env/dev_env.py cluster create
+
+# 2. Provision Cloud Spanner development databases (batch DDL & proto descriptors)
+python3 tools/dev_env/dev_env.py spanner ensure
+
+# 3. Build microservice container images in parallel and load into KinD nodes
+python3 tools/dev_env/dev_env.py build-images all --load-kind
+
+# 4. Check cluster health and service pod readiness
+python3 tools/dev_env/dev_env.py status
+
+# 5. Stream container logs for troubleshooting
+python3 tools/dev_env/dev_env.py logs experiment_state_server -f
+
+# 6. Teardown local cluster when finished
+python3 tools/dev_env/dev_env.py cluster delete
+```
+
+> [!TIP]
+> Configuration parameters (such as project ID, Spanner instance, and microservices) can be configured via `deploy/local/xmanager-cloud-local.yaml`, environment variables, or CLI flags. See the [Configuration Architecture Guide](../../tools/dev_env/README.md#configuration-architecture-localdevconfig) for the full configuration reference and resolution precedence rules.

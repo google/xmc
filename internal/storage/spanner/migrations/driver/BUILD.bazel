@@ -20,8 +20,8 @@ compat_go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/driver",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//internal/compat/log",
         "//internal/compat/spanner",
+        "//internal/logging",
         "//internal/storage/spanner/utils:spannerutils",
         "@com_github_golang_migrate_migrate_v4//database",
         "@com_github_golang_migrate_migrate_v4//database/spanner",
