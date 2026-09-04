@@ -153,6 +153,229 @@ function ensureGitRefs(baseRef, approvedSha, currentSha, execOptions = {}) {
 }
 
 /**
+ * Shell Helper: Checks if currentSha is a fast-forward descendant of approvedSha.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {string} currentSha - Current HEAD commit SHA.
+ * @param {Object} opts - Subprocess options.
+ * @returns {boolean} True if fast-forward.
+ */
+function isFastForwardApproval(approvedSha, currentSha, opts) {
+  try {
+    const res = execGit(['merge-base', '--is-ancestor', approvedSha, currentSha], { ...opts, ignoreExitCode: true });
+    return res.status === 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Shell Helper: Returns the commit count for a given revision range.
+ * @param {string} range - Revision range string.
+ * @param {Object} opts - Subprocess options.
+ * @returns {number}
+ */
+function getCommitCountInRange(range, opts) {
+  try {
+    return parseInt(execGit(['rev-list', '--count', range], { ...opts, ignoreExitCode: false }).trim(), 10) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/**
+ * Shell Helper: Computes the git patch-id for a commit.
+ * @param {string} commitSha - Commit SHA to inspect.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null}
+ */
+function getCommitPatchId(commitSha, opts) {
+  try {
+    const diff = execGit(['diff-tree', '-p', '--root', commitSha], { ...opts, ignoreExitCode: false });
+    const patchIdOutput = execGit(['patch-id'], { ...opts, ignoreExitCode: false, input: diff }).trim();
+    return patchIdOutput.split(/\s+/)[0] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Shell Helper: Indexes approved candidates by patch-id and commit subject.
+ * @param {string} approvedRange - Revision range for approved commits.
+ * @param {Object} opts - Subprocess options.
+ * @returns {{ byPatchId: Map<string, string>, bySubject: Map<string, string[]> }}
+ */
+function indexApprovedCandidateCommits(approvedRange, opts) {
+  const byPatchId = new Map();
+  const bySubject = new Map();
+
+  let listStr = '';
+  try {
+    listStr = execGit(['log', '--reverse', '--format=%H %s', approvedRange], { ...opts, ignoreExitCode: false }).trim();
+  } catch (_) {
+    return { byPatchId, bySubject };
+  }
+
+  const candidates = listStr ? listStr.split(/\r?\n/).filter(Boolean) : [];
+  // Limit to the last 30 commits (newest) to prevent spawning excessive git processes on large ranges.
+  const activeCandidates = candidates.slice(-30);
+  const shas = [];
+  for (const line of activeCandidates) {
+    const i = line.indexOf(' ');
+    const c = i === -1 ? line : line.slice(0, i);
+    const subj = i === -1 ? '' : line.slice(i + 1).trim();
+    if (subj) {
+      if (!bySubject.has(subj)) {
+        bySubject.set(subj, []);
+      }
+      bySubject.get(subj).push(c);
+    }
+    shas.push(c);
+  }
+
+  const commitPatchIds = computeBulkCommitPatchIds(shas, opts);
+  for (const [sha, patchId] of commitPatchIds.entries()) {
+    byPatchId.set(patchId, sha);
+  }
+  return { byPatchId, bySubject };
+}
+
+/**
+ * Shell Helper: Computes git patch-ids for a list of commit SHAs in bulk.
+ * @param {Array<string>} shas - Commit SHAs.
+ * @param {Object} opts - Subprocess options.
+ * @returns {Map<string, string>} Map of commitSha -> patchId.
+ */
+function computeBulkCommitPatchIds(shas, opts) {
+  const patchIdMap = new Map();
+  if (!Array.isArray(shas) || shas.length === 0) {
+    return patchIdMap;
+  }
+  try {
+    const diffs = execGit(['log', '-p', '--no-walk', ...shas], { ...opts, ignoreExitCode: false });
+    const patchIdOutput = execGit(['patch-id'], { ...opts, ignoreExitCode: false, input: diffs });
+    for (const line of patchIdOutput.split(/\r?\n/).filter(Boolean)) {
+      const [patchId, sha] = line.split(/\s+/);
+      if (patchId && sha) {
+        patchIdMap.set(sha, patchId);
+      }
+    }
+  } catch (_) {}
+  return patchIdMap;
+}
+
+/**
+ * Shell Helper: Matches a single current commit against approved candidates via patch-id or subject.
+ * @param {string} cSha - Commit SHA.
+ * @param {string|null} subj - Commit subject line (or null to fetch via git log).
+ * @param {string|null} patchId - Pre-computed patch-id for cSha.
+ * @param {{ byPatchId: Map<string, string>, bySubject: Map<string, string|string[]> }} approvedMaps - Indexed candidates.
+ * @param {Map<string, number>} subjectSeenCount - Tracks occurrence count for duplicate subjects.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null} Matched approved commit SHA, or null.
+ */
+function matchCommitToApproved(cSha, subj, patchId, approvedMaps, subjectSeenCount, opts) {
+  if (patchId && approvedMaps.byPatchId.has(patchId)) {
+    return approvedMaps.byPatchId.get(patchId);
+  }
+  try {
+    const resolvedSubj = (subj !== null && subj !== undefined)
+      ? subj
+      : execGit(['log', '-1', '--format=%s', cSha], { ...opts, ignoreExitCode: false }).trim();
+    if (!resolvedSubj || !approvedMaps.bySubject.has(resolvedSubj)) {
+      return null;
+    }
+    const rawCandidates = approvedMaps.bySubject.get(resolvedSubj);
+    const candidates = Array.isArray(rawCandidates) ? rawCandidates : [rawCandidates];
+    const seen = subjectSeenCount.get(resolvedSubj) || 0;
+    subjectSeenCount.set(resolvedSubj, seen + 1);
+    return seen < candidates.length ? candidates[seen] : candidates[candidates.length - 1];
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Shell Helper: Resolves candidate base commit SHA from a matched approved commit and commit offset.
+ * @param {string} matchedSha - Matched approved commit SHA.
+ * @param {number} commitIndex - 0-based index of commit in current PR branch.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null} Verified base commit SHA, or null.
+ */
+function resolveParentBaseFromMatch(matchedSha, commitIndex, opts) {
+  const baseOffset = commitIndex + 1;
+  for (const target of [`${matchedSha}~${baseOffset}`, `${matchedSha}~1`]) {
+    try {
+      return execGit(['rev-parse', '--verify', target], { ...opts, ignoreExitCode: false }).trim();
+    } catch (_) {}
+  }
+  return null;
+}
+
+/**
+ * Shell Helper: Correlates current commits against indexed approved commits to find the parent base.
+ * @param {Array<string|{sha: string, subj?: string}>} currCommits - Ordered commit SHAs or commit objects in current branch.
+ * @param {{ byPatchId: Map<string, string>, bySubject: Map<string, string|string[]> }} approvedMaps - Indexed candidates.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string|null}
+ */
+function correlateStackedParentBase(currCommits, approvedMaps, opts) {
+  if (!Array.isArray(currCommits) || !approvedMaps?.byPatchId || !approvedMaps?.bySubject) {
+    return null;
+  }
+
+  const shas = currCommits.map(item => typeof item === 'string' ? item : item?.sha).filter(Boolean);
+  const currPatchIds = computeBulkCommitPatchIds(shas, opts);
+  const subjectSeenCount = new Map();
+
+  for (let i = 0; i < currCommits.length; i++) {
+    const item = currCommits[i];
+    const cSha = typeof item === 'string' ? item : item?.sha;
+    if (!cSha) continue;
+    const subj = typeof item === 'string' ? null : item?.subj;
+    const patchId = currPatchIds.get(cSha) || null;
+
+    const matched = matchCommitToApproved(cSha, subj, patchId, approvedMaps, subjectSeenCount, opts);
+    if (!matched) continue;
+
+    const parentBase = resolveParentBaseFromMatch(matched, i, opts);
+    if (parentBase) return parentBase;
+  }
+  return null;
+}
+
+/**
+ * Shell Helper: Resolves scoped approved range when parent branch in stacked PR was rebased.
+ * @param {string} currentRange - Current revision range.
+ * @param {string} approvedRange - Default approved revision range.
+ * @param {string} approvedSha - Previous approved commit SHA.
+ * @param {number} prCommitCount - Commit count in current PR branch.
+ * @param {Object} opts - Subprocess options.
+ * @returns {string}
+ */
+function resolveStackedApprovedRange(currentRange, approvedRange, approvedSha, prCommitCount, opts) {
+  try {
+    const currCommitsStr = execGit(['log', '--reverse', '--format=%H %s', currentRange], { ...opts, ignoreExitCode: false }).trim();
+    const lines = currCommitsStr ? currCommitsStr.split(/\r?\n/).filter(Boolean) : [];
+    const currCommits = lines.map(line => {
+      const i = line.indexOf(' ');
+      return i === -1 ? { sha: line, subj: '' } : { sha: line.slice(0, i), subj: line.slice(i + 1).trim() };
+    });
+    if (currCommits.length > 0) {
+      const approvedMaps = indexApprovedCandidateCommits(approvedRange, opts);
+      const correlatedBase = correlateStackedParentBase(currCommits, approvedMaps, opts);
+      if (correlatedBase) return `${correlatedBase}..${approvedSha}`;
+    }
+  } catch (_) {}
+
+  try {
+    execGit(['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], { ...opts, ignoreExitCode: false });
+    return `${approvedSha}~${prCommitCount}..${approvedSha}`;
+  } catch (_) {
+    return approvedRange;
+  }
+}
+
+/**
  * Shell Helper: Resolves commit ranges for git range-diff.
  * Handles stacked PRs (/gh-stack) where the base branch itself was rebased.
  * @param {string} baseRef - Target base branch name.
@@ -167,27 +390,21 @@ function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions = {})
     return { approvedRange: currentRange, currentRange };
   }
 
-  let approvedRange = `origin/${baseRef}..${approvedSha}`;
   const opts = { ...execOptions, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] };
 
-  try {
-    const prCommitCountStr = execGit(['rev-list', '--count', currentRange], opts).trim();
-    const prCommitCount = parseInt(prCommitCountStr, 10) || 0;
+  if (isFastForwardApproval(approvedSha, currentSha, opts)) {
+    return {
+      approvedRange: `origin/${baseRef}..${approvedSha}`,
+      currentRange
+    };
+  }
 
-    if (prCommitCount > 0) {
-      execGit(['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], opts);
-      const approvedBaseCountStr = execGit(['rev-list', '--count', approvedRange], opts).trim();
-      const approvedBaseCount = parseInt(approvedBaseCountStr, 10) || 0;
+  let approvedRange = `origin/${baseRef}..${approvedSha}`;
+  const prCommitCount = getCommitCountInRange(currentRange, opts);
+  const approvedBaseCount = getCommitCountInRange(approvedRange, opts);
 
-      // If approved range contains extra commits from a rebased parent branch in /gh-stack,
-      // scope the approved range to the PR layer commit count.
-      if (approvedBaseCount > prCommitCount) {
-        approvedRange = `${approvedSha}~${prCommitCount}..${approvedSha}`;
-      }
-    }
-  } catch (error) {
-    // Fall back to default origin/${baseRef}..${approvedSha}
-    console.log(`[incremental-approval] Failed to resolve advanced commit range, falling back: ${error.message}`);
+  if (prCommitCount > 0 && approvedBaseCount > prCommitCount) {
+    approvedRange = resolveStackedApprovedRange(currentRange, approvedRange, approvedSha, prCommitCount, opts);
   }
 
   return { approvedRange, currentRange };
@@ -340,6 +557,15 @@ module.exports = {
   buildGitEnv,
   execGit,
   ensureGitRefs,
+  isFastForwardApproval,
+  getCommitCountInRange,
+  getCommitPatchId,
+  computeBulkCommitPatchIds,
+  matchCommitToApproved,
+  resolveParentBaseFromMatch,
+  indexApprovedCandidateCommits,
+  correlateStackedParentBase,
+  resolveStackedApprovedRange,
   resolveCommitRanges,
   runGitRangeDiff,
   getCommitLineDelta,
