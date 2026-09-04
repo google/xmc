@@ -137,6 +137,9 @@ class HelmDeployer:
         values: dict[str, Any] = {
             "projectId": cfg.project_id,
             "environment": cfg.environment,
+            "clusterName": cfg.cluster_name,
+            "isDevEnvironment": True,
+            "googleApplicationCredentials": "/etc/gcp-secrets/key.json",
             "gcpServiceAccount": f"xmc-dev-sa@{cfg.project_id}.iam.gserviceaccount.com",
             "experimentStateServer": {
                 "spannerDatabaseName": (
@@ -264,6 +267,9 @@ class HelmDeployer:
         try:
             self._check_dex_rollout(ctx, timeout_flag)
             deployments = self._discover_namespace_deployments(ctx, namespace)
+            if not deployments:
+                log_info(f"No deployments found in namespace '{namespace}' to monitor.")
+                return
             for dep in deployments:
                 _LOGGER.debug(
                     "Checking rollout status for deployment/%s in namespace %s", dep, namespace
@@ -291,8 +297,8 @@ class HelmDeployer:
 
     def deploy(
         self,
-        chart_path: Path | None = None,
-        values_path: Path | None = None,
+        chart_path: Path | str | None = None,
+        values_path: Path | str | None = None,
         namespace: str = "xmc",
         timeout: int = 180,
     ) -> None:
@@ -310,13 +316,21 @@ class HelmDeployer:
         Raises:
             FileNotFoundError: If the specified Helm chart directory does not exist.
         """
-        chart_dir = chart_path or self.prepare_local_chart()
-        if not chart_dir.is_dir():
+        chart_dir = Path(chart_path) if chart_path else self.prepare_local_chart()
+        try:
+            is_dir = chart_dir.is_dir()
+        except OSError:
+            is_dir = False
+        if not is_dir:
             raise FileNotFoundError(f"Helm chart directory not found at '{chart_dir}'")
         if values_path:
-            if not values_path.is_file():
-                raise FileNotFoundError(f"Custom values file not found at '{values_path}'")
-            val_file = values_path
+            val_file = Path(values_path)
+            try:
+                is_file = val_file.is_file()
+            except OSError:
+                is_file = False
+            if not is_file:
+                raise FileNotFoundError(f"Custom values file not found at '{val_file}'")
         else:
             val_file = self.generate_values_file()
         ctx = self.kube_context

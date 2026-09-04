@@ -162,14 +162,14 @@ class TestLocalRunner(unittest.TestCase):
         with (
             patch.object(self.runner.kind_mgr, "exists", return_value=True),
             patch.object(
-                self.runner.image_builder, "build_images", return_value=["img:latest"]
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
             ) as mock_build,
             patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
         ):
             self.runner.reload(services=["reconciler"])
 
             mock_build.assert_called_once_with(services=["reconciler"])
-            mock_load.assert_called_once_with(["img:latest"])
+            mock_load.assert_called_once_with(["reconciler_image:latest"])
             self.assertTrue(mock_run.called)
             restart_call = [
                 "kubectl",
@@ -212,16 +212,46 @@ class TestLocalRunner(unittest.TestCase):
                 self.runner.change_detector, "detect_changes", return_value=mock_result
             ) as mock_detect,
             patch.object(
-                self.runner.image_builder, "build_images", return_value=["ui-image:latest"]
+                self.runner.image_builder, "build_images", return_value=["ui_image:latest"]
             ) as mock_build,
             patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
             patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
         ):
             self.runner.reload(services=None)
 
-            mock_detect.assert_called_once()
+            mock_detect.assert_called_once_with(base_ref=None)
             mock_build.assert_called_once_with(services=["ui"])
-            mock_load.assert_called_once_with(["ui-image:latest"])
+            mock_load.assert_called_once_with(["ui_image:latest"])
+            mock_helm_deploy.assert_not_called()
+            self.assertTrue(mock_run.called)
+
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_auto_detection_with_base_ref(self, mock_run: MagicMock) -> None:
+        """Verifies auto-detection passes base_ref to change detector."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["ui"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/ui/src/app.ts"],
+            reasons={"ui": ["cmd/ui/src/app.ts"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["ui_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
+        ):
+            self.runner.reload(services=None, base_ref="origin/main")
+
+            mock_detect.assert_called_once_with(base_ref="origin/main")
+            mock_build.assert_called_once_with(services=["ui"])
+            mock_load.assert_called_once_with(["ui_image:latest"])
             mock_helm_deploy.assert_not_called()
             self.assertTrue(mock_run.called)
 
@@ -250,7 +280,7 @@ class TestLocalRunner(unittest.TestCase):
         ):
             self.runner.reload(services=["auto"])
 
-            mock_detect.assert_called_once()
+            mock_detect.assert_called_once_with(base_ref=None)
             mock_helm_deploy.assert_called_once()
             mock_apply_manifests.assert_called_once()
             mock_build.assert_called_once_with(services=["reconciler"])
@@ -272,13 +302,13 @@ class TestLocalRunner(unittest.TestCase):
             patch.object(
                 self.runner.change_detector, "detect_changes", return_value=mock_result
             ) as mock_detect,
-            patch.object(self.runner.image_builder, "build_images") as mock_build,
+            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
             patch.object(self.runner.helm_deployer, "deploy") as mock_helm_deploy,
         ):
             self.runner.reload(services=None)
 
             mock_detect.assert_called_once()
-            mock_build.assert_not_called()
+            mock_build_load.assert_not_called()
             mock_helm_deploy.assert_not_called()
 
     def test_reload_all_services(self) -> None:
@@ -295,7 +325,9 @@ class TestLocalRunner(unittest.TestCase):
             self.runner.reload(services=["all"])
 
             mock_detect.assert_not_called()
-            mock_build.assert_called_once()
+            mock_build.assert_called_once_with(
+                services=sorted(self.runner.change_detector.enabled_services)
+            )
             mock_load.assert_called_once_with(["img1", "img2"])
 
     def test_reload_mixed_services_with_auto(self) -> None:
@@ -435,6 +467,193 @@ class TestLocalRunner(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             self.runner.reload(["ess"])
         self.assertIn("failure(s)", str(ctx.exception))
+
+    def test_reload_watch_mode_triggers_watch_loop(self) -> None:
+        """Verifies reload(watch=True) dispatches to _watch_loop."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner, "_watch_loop") as mock_watch,
+        ):
+            self.runner.reload(services=["reconciler"], watch=True, helm=True, interval=2.0)
+            mock_watch.assert_called_once_with(
+                services=["reconciler"],
+                interval=2.0,
+                helm=True,
+                base_ref=None,
+            )
+
+    def test_reload_helm_flag_triggers_helm_deploy(self) -> None:
+        """Verifies reload(helm=True) triggers HelmDeployer.deploy."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.kind_mgr, "apply_manifests") as mock_apply,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_deploy,
+            patch.object(self.runner.image_builder, "build_images") as mock_build,
+            patch.object(self.runner.change_detector, "detect_changes") as mock_detect,
+        ):
+            self.runner.reload(services=[], helm=True)
+            mock_deploy.assert_called_once()
+            mock_apply.assert_called_once()
+            mock_detect.assert_not_called()
+            mock_build.assert_not_called()
+
+    def test_reload_services_with_helm_keyword(self) -> None:
+        """Verifies passing 'helm' in services triggers HelmDeployer.deploy without building image."""
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.kind_mgr, "apply_manifests") as mock_apply,
+            patch.object(self.runner.helm_deployer, "deploy") as mock_deploy,
+            patch.object(self.runner.image_builder, "build_images") as mock_build,
+        ):
+            self.runner.reload(services=["helm"])
+            mock_deploy.assert_called_once()
+            mock_apply.assert_called_once()
+            mock_build.assert_not_called()
+
+    def test_get_workspace_signature(self) -> None:
+        """Verifies workspace signature mapping mtime and size."""
+        test_file = self.temp_path / "test.txt"
+        test_file.write_text("hello world")
+        with patch.object(
+            self.runner.change_detector,
+            "get_modified_files",
+            return_value=["test.txt", "nonexistent.txt"],
+        ):
+            sig = self.runner._get_workspace_signature()
+            self.assertIn("test.txt", sig)
+            self.assertGreater(sig["test.txt"][1], 0)
+            self.assertEqual(sig["nonexistent.txt"], (0, 0))
+
+    def test_reload_watch_mode_invalid_interval_raises_error(self) -> None:
+        """Verifies reload(watch=True) raises ValueError when interval <= 0."""
+        with patch.object(self.runner.kind_mgr, "exists", return_value=True):
+            with self.assertRaisesRegex(ValueError, "Watch interval must be greater than 0"):
+                self.runner.reload(watch=True, interval=0)
+            with self.assertRaisesRegex(ValueError, "Watch interval must be greater than 0"):
+                self.runner.reload(watch=True, interval=-1.5)
+
+    def test_reload_explicit_services_with_changed_files_filters_services(self) -> None:
+        """Verifies explicit services are filtered against change detector when changed_files is passed."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["reconciler"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/reconciler/main.go"],
+            reasons={"reconciler": ["cmd/reconciler/main.go"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(
+                self.runner.image_builder, "build_images", return_value=["reconciler_image:latest"]
+            ) as mock_build,
+            patch.object(self.runner.image_builder, "load_images_into_kind") as mock_load,
+            patch("tools.dev_env.local_runner.run_command"),
+        ):
+            self.runner._reload_once(
+                services=["ui", "reconciler"], changed_files=["cmd/reconciler/main.go"]
+            )
+            mock_detect.assert_called_once_with(files=["cmd/reconciler/main.go"])
+            mock_build.assert_called_once_with(services=["reconciler"])
+            mock_load.assert_called_once_with(["reconciler_image:latest"])
+
+    def test_reload_explicit_services_with_changed_files_no_match(self) -> None:
+        """Verifies no reload occurs if changed_files does not affect requested explicit services."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["ui"],
+            helm_upgrade_needed=False,
+            modified_files=["cmd/ui/main.ts"],
+            reasons={"ui": ["cmd/ui/main.ts"]},
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(
+                self.runner.change_detector, "detect_changes", return_value=mock_result
+            ) as mock_detect,
+            patch.object(self.runner.image_builder, "build_and_load_into_kind") as mock_build_load,
+        ):
+            reloaded = self.runner._reload_once(
+                services=["reconciler"], changed_files=["cmd/ui/main.ts"]
+            )
+            self.assertFalse(reloaded)
+            mock_detect.assert_called_once_with(files=["cmd/ui/main.ts"])
+            mock_build_load.assert_not_called()
+
+    @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_revert_workspace_triggers_reload(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop triggers reload with reverted files when workspace becomes clean."""
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"cmd/reconciler/main.go": (1, 10)},  # initial sig
+                    {},  # developer reverted all changes (clean)
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 2)
+            mock_reload.assert_called_with(
+                services=["reconciler"],
+                changed_files=["cmd/reconciler/main.go"],
+                base_ref=None,
+            )
+
+    @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_commit_workspace_no_reload(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop ignores clean workspace transition when files are committed without disk change."""
+        file_path = self.temp_path / "cmd/reconciler/main.go"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("package main\n")
+        st = file_path.stat()
+        file_sig = (st.st_mtime_ns, st.st_size)
+
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"cmd/reconciler/main.go": file_sig},
+                    {},
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 1)
+
+    @patch("tools.dev_env.local_runner.time.sleep")
+    def test_watch_loop_debounce_clean_workspace(self, mock_sleep: MagicMock) -> None:
+        """Verifies watch loop triggers reload with previous dirty files if workspace becomes clean during debounce."""
+        with (
+            patch.object(self.runner, "_reload_once") as mock_reload,
+            patch.object(
+                self.runner,
+                "_get_workspace_signature",
+                side_effect=[
+                    {"f.go": (1, 10)},  # initial sig
+                    {"f.go": (2, 20)},  # change detected
+                    {},  # clean after debounce
+                    KeyboardInterrupt,
+                ],
+            ),
+        ):
+            self.runner._watch_loop(services=["reconciler"], interval=1.0)
+            self.assertEqual(mock_reload.call_count, 2)
+            mock_reload.assert_called_with(
+                services=["reconciler"],
+                changed_files=["f.go"],
+                base_ref=None,
+            )
 
 
 if __name__ == "__main__":

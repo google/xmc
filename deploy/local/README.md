@@ -169,24 +169,78 @@ For detailed CLI options, configuration resolution precedence, dynamic service d
 ### Quickstart Workflow
 
 ```bash
-# 1. Provision local KinD cluster, support manifests, and secrets
-python3 tools/dev_env/dev_env.py cluster create
+# 1. Start full local environment (Spanner databases, KinD cluster, images, and Helm release)
+python3 tools/dev_env/dev_env.py up
 
-# 2. Provision Cloud Spanner development databases (batch DDL & proto descriptors)
-python3 tools/dev_env/dev_env.py spanner ensure
+# 2. Hot-reload changed microservices on demand
+python3 tools/dev_env/dev_env.py reload
 
-# 3. Build microservice container images in parallel and load into KinD nodes
-python3 tools/dev_env/dev_env.py build-images all --load-kind
+# 3. Or enable continuous live watch mode (auto-rebuilds and restarts on file save)
+python3 tools/dev_env/dev_env.py reload --watch
 
 # 4. Check cluster health and service pod readiness
 python3 tools/dev_env/dev_env.py status
 
-# 5. Stream container logs for troubleshooting
-python3 tools/dev_env/dev_env.py logs experiment_state_server -f
+# 5. Stream container logs from a specific service
+python3 tools/dev_env/dev_env.py logs reconciler -f
 
-# 6. Teardown local cluster when finished
-python3 tools/dev_env/dev_env.py cluster delete
+# 6. Tear down local environment when finished
+python3 tools/dev_env/dev_env.py down
 ```
 
 > [!TIP]
 > Configuration parameters (such as project ID, Spanner instance, and microservices) can be configured via `deploy/local/xmanager-cloud-local.yaml`, environment variables, or CLI flags. See the [Configuration Architecture Guide](../../tools/dev_env/README.md#configuration-architecture-localdevconfig) for the full configuration reference and resolution precedence rules.
+
+---
+
+## 6. Fast Reload Architecture & Optimization Roadmap
+
+### Current Baseline (Level 1: Direct Container Streaming)
+
+The current local development workflow uses **Direct Container Streaming & Fast Probes**:
+1. **Delta-Scoped Change Detection**: Only the exact files modified in a given save are evaluated by `ChangeDetector`, ignoring unrelated dirty files.
+2. **Direct KinD `containerd` Streaming**: Bazel-built OCI tarballs are piped directly into the KinD node's `containerd` via `ctr --namespace=k8s.io images import -`, bypassing the intermediate host `docker load` and `kind load` double-tar roundtrip (~15s saved).
+3. **Aggressive Dev Probes & Instant Pod Swaps**: Local deployments are patched with `initialDelaySeconds: 1`, `periodSeconds: 1`, and `terminationGracePeriodSeconds: 0`, eliminating rollout stalls.
+4. **Persistent BuildKit Cache Mounts**: Angular builds in `cmd/ui/build_ui_oci.py` utilize BuildKit `--mount=type=cache,target=/app/.angular/cache` and development configuration.
+
+#### Performance Profile
+
+| Component | Reload Latency | Dominant Phase |
+| :--- | :---: | :--- |
+| **Go Backends (ESS, XID, Reconciler)** | **~15–19s** | Bazel transitive graph analysis across 14,000+ proto/Go targets (~13s) + Pod rollout (~4s) |
+| **Angular UI** | **~35–42s** | Docker BuildKit container spawn + Angular build + tarball export (~35s) + Pod rollout (~3s) |
+
+---
+
+### Future Roadmap: Level 2 In-Pod Binary & Asset Sync (Fast Inner Loop)
+
+For sub-5-second local iteration loops, a **Level 2 In-Pod Sync** pattern can be implemented in the future (e.g. via `dev_env.py reload --fast` or `-f`):
+- **Go Backends**: Compile the bare Linux ELF binary via Bazel (`//cmd/<service>`) in ~1.5s, sync `/bin/<service>` directly into the active pod via `kubectl cp` or `hostPath`, and trigger an in-pod process restart (~50ms).
+- **Angular UI**: Execute `ng build --configuration development` on host in ~3s, and sync `dist/browser` directly into Nginx's `/usr/share/nginx/html` without restarting the pod.
+
+#### Trade-Offs & Parity Drifts to Consider
+
+When implementing Level 2 in-pod syncing, be aware of the following architectural trade-offs:
+
+1. **Pod Ephemerality Drift ("Disappearing Fixes")**:
+   - In Level 2, code is synced into the active pod's writable layer, not the immutable container image.
+   - If a pod crashes, runs out of memory (OOM), or gets rescheduled by Kubernetes, it will restart from the older base image stored in `containerd`, temporarily reverting uncommitted hot-fixes until the next sync or full build.
+2. **Dockerfile & Container Configuration Blindspots**:
+   - Level 2 only syncs compiled application artifacts (`*.go`, `*.ts`, `*.html`, `*.scss`).
+   - Edits to `Dockerfile`, `nginx.conf`, entrypoint shell scripts, or new system package dependencies (`apk add`) are completely bypassed during in-pod sync and require a full Level 1 container rebuild to take effect.
+3. **Host Toolchain vs. Container Toolchain Drift**:
+   - Host `ng build` runs using the host machine's Node.js and npm versions rather than the hermetic, container-pinned `node:22-alpine` environment.
+   - Non-hermetic Go builds could potentially pick up host glibc libraries if CGO is enabled, rather than static Alpine `musl` binaries.
+4. **Container Security Context Drift**:
+   - Production GKE deployments enforce `readOnlyRootFilesystem: true` and non-root users (`runAsUser: 1000`).
+   - In-pod hot-syncing requires target paths (`/bin/` or `/usr/share/nginx/html`) to be writable, requiring relaxed filesystem security or dedicated `emptyDir`/`hostPath` volume mounts in local dev manifests.
+5. **Process Lifecycle & PID 1 Behavior**:
+   - In production, microservice binaries execute as PID 1. If the binary exits, the container terminates.
+   - In-pod hot-restarting requires a lightweight supervisor or wrapper script inside the dev container to restart the process in-place without triggering Kubernetes `CrashLoopBackOff`.
+
+#### Recommended Hybrid Implementation Strategy
+
+To safely leverage Level 2 velocity without risking production drift:
+1. Provide Level 2 as an opt-in fast flag (e.g. `dev_env local reload -w --fast`).
+2. Automatically fall back to a full Level 1 container rebuild whenever `package.json`, `go.mod`, `Dockerfile`, or `deploy/` templates are modified.
+3. Run a full hermetic verification (`dev_env build-images` or Bazel test suite) prior to opening Pull Requests.

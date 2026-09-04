@@ -101,6 +101,8 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("test-instance", content)
         self.assertIn("test_ess_db", content)
         self.assertIn("test_xid_db", content)
+        self.assertIn("isDevEnvironment: true", content)
+        self.assertIn("/etc/gcp-secrets/key.json", content)
 
     def test_prepare_local_chart_delegates_to_sanitizer(self) -> None:
         self.mock_sanitizer.prepare_sanitized_chart.return_value = self.temp_path / "sanitized"
@@ -327,3 +329,15 @@ class TestHelmDeployer(unittest.TestCase):
                 values_path=Path("/nonexistent/values.yaml"),
             )
         self.assertIn("Custom values file not found", str(ctx.exception))
+
+    def test_deploy_string_paths_handled(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            self.deployer.deploy(chart_path="/nonexistent/chart/dir")
+
+        chart_dir = self.temp_path / "chart"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        with self.assertRaises(FileNotFoundError):
+            self.deployer.deploy(
+                chart_path=str(chart_dir),
+                values_path="/nonexistent/values.yaml",
+            )

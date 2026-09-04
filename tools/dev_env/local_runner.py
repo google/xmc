@@ -19,7 +19,7 @@ import logging
 import time
 from pathlib import Path
 
-from tools.common.tool_utils import log_info, log_success, run_command
+from tools.common.tool_utils import log_error, log_info, log_success, run_command
 from tools.dev_env.change_detector import ChangeDetector
 from tools.dev_env.config import LocalDevConfig
 from tools.dev_env.helm_deployer import HelmDeployer
@@ -118,10 +118,151 @@ class LocalRunner:
             )
         log_success("Local KinD development environment teardown complete.")
 
+    def reload(
+        self,
+        services: list[str] | None = None,
+        watch: bool = False,
+        helm: bool = False,
+        interval: float = 1.5,
+        base_ref: str | None = None,
+    ) -> bool | None:
+        """Recompiles and hot-reloads selected or modified microservices into the running cluster.
+
+        Can execute either in single-shot mode (default) or continuous watch mode (`watch=True`),
+        polling the filesystem for file saves and triggering debounced reloads.
+
+        Args:
+            services: Optional list of microservice names or aliases to rebuild and restart.
+                Supports special keywords 'auto' (detect from git) and 'all' (all enabled services).
+            watch: If True, continuously watches the repository workspace for file changes.
+            helm: If True, explicitly triggers a Helm chart upgrade and manifest sync.
+            interval: Polling interval in seconds when operating in continuous watch mode.
+            base_ref: Optional git reference or commit to compare against for change detection.
+
+        Returns:
+            True if any service or Helm upgrade was performed; False if clean; None in watch mode.
+
+        Raises:
+            RuntimeError: If the KinD cluster is not currently running.
+            ValueError: If `interval <= 0` in watch mode or if any requested service is invalid.
+        """
+        if not self.kind_mgr.exists():
+            raise RuntimeError(
+                f"KinD cluster '{self.config.cluster_name}' is not running. "
+                "Run 'python3 tools/dev_env/dev_env.py up' first."
+            )
+
+        if watch:
+            if interval <= 0:
+                raise ValueError("Watch interval must be greater than 0 seconds.")
+            self._watch_loop(
+                services=services,
+                interval=interval,
+                helm=helm,
+                base_ref=base_ref,
+            )
+            return None
+
+        return self._reload_once(
+            services=services,
+            helm=helm,
+            base_ref=base_ref,
+        )
+
+    def _get_workspace_signature(self, base_ref: str | None = None) -> dict[str, tuple[int, int]]:
+        """Computes a lightweight signature (mtime + file size) of modified git files.
+
+        Args:
+            base_ref: Optional git reference to compare against for change detection.
+
+        Returns:
+            Dictionary mapping relative file paths to (modification_time_ns, size_bytes).
+        """
+        files = self.change_detector.get_modified_files(base_ref=base_ref)
+        sig: dict[str, tuple[int, int]] = {}
+        for f in files:
+            try:
+                st = (self.repo_root / f).stat()
+                sig[f] = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                sig[f] = (0, 0)
+        _LOGGER.debug("Scanned %d modified files for workspace signature", len(sig))
+        return sig
+
+    def _watch_loop(
+        self,
+        services: list[str] | None = None,
+        interval: float = 1.5,
+        helm: bool = False,
+        base_ref: str | None = None,
+    ) -> None:
+        """Continuously polls workspace for file modifications and triggers hot-reloads.
+
+        Executes an initial reload on start, then loops with `time.sleep(interval)`.
+        When a filesystem change is observed, debounces rapid save events with a short
+        500ms sleep before invoking `_reload_once`. Handles KeyboardInterrupt gracefully.
+
+        Args:
+            services: Optional list of service names or aliases to scope reloads to.
+            interval: Polling interval in seconds between workspace signature checks.
+            helm: If True, triggers Helm upgrade on initial reload.
+            base_ref: Optional git reference to compare against for change detection.
+        """
+        log_info("👀 [Watch Mode] Watching workspace for file changes (press Ctrl+C to stop)...")
+        try:
+            self._reload_once(services=services, helm=helm, base_ref=base_ref)
+        except Exception as e:
+            log_error(f"Initial reload failed: {e}. Watching for next save...")
+
+        last_sig = self._get_workspace_signature(base_ref=base_ref)
+        try:
+            while True:
+                time.sleep(interval)
+                current_sig = self._get_workspace_signature(base_ref=base_ref)
+                if current_sig == last_sig:
+                    continue
+
+                if current_sig:
+                    time.sleep(0.5)  # debounce rapid filesystem events
+                    current_sig = self._get_workspace_signature(base_ref=base_ref)
+
+                delta_files = [f for f, sig in current_sig.items() if sig != last_sig.get(f)]
+                deleted_files: list[str] = []
+                for f in last_sig:
+                    if f not in current_sig:
+                        file_path = self.repo_root / f
+                        try:
+                            if file_path.is_file():
+                                st = file_path.stat()
+                                if (st.st_mtime_ns, st.st_size) == last_sig[f]:
+                                    continue
+                        except OSError:
+                            pass
+                        deleted_files.append(f)
+
+                changed_files = sorted(set(delta_files + deleted_files))
+
+                _LOGGER.debug("Watch detected file delta: %s", changed_files)
+                if changed_files:
+                    try:
+                        self._reload_once(
+                            services=services,
+                            changed_files=changed_files,
+                            base_ref=base_ref,
+                        )
+                    except Exception as e:
+                        log_error(f"Reload failed: {e}. Watching for next save...")
+
+                last_sig = current_sig
+        except KeyboardInterrupt:
+            log_info("\n🛑 Stopped watching workspace.")
+
     def _resolve_target_services(
         self,
         services: list[str] | None = None,
+        changed_files: list[str] | None = None,
         helm: bool = False,
+        base_ref: str | None = None,
     ) -> tuple[set[str], bool]:
         """Resolves target services and Helm requirement from args and git status."""
         target_services: set[str] = set()
@@ -131,7 +272,11 @@ class LocalRunner:
 
         if ("auto" in lowercase_services) or (not raw_services and not helm):
             log_info("=== [ChangeDetector] Auto-detecting modified services from git ===")
-            det = self.change_detector.detect_changes()
+            det = (
+                self.change_detector.detect_changes(base_ref=base_ref)
+                if changed_files is None
+                else self.change_detector.detect_changes(files=changed_files)
+            )
             target_services.update(det.services)
             if det.helm_upgrade_needed:
                 helm_needed = True
@@ -148,8 +293,14 @@ class LocalRunner:
                 enabled_services=self.change_detector.enabled_services,
                 helm=helm_needed,
             )
-            target_services.update(explicit_targets)
-            helm_needed = explicit_helm
+            if changed_files is not None:
+                det = self.change_detector.detect_changes(files=changed_files)
+                if det.helm_upgrade_needed:
+                    helm_needed = True
+                target_services.update(s for s in explicit_targets if s in det.services)
+            else:
+                target_services.update(explicit_targets)
+                helm_needed = explicit_helm
 
         return target_services, helm_needed
 
@@ -221,39 +372,45 @@ class LocalRunner:
             results = executor.map(_wait_single, deployments)
             return [r for r in results if r is not None]
 
-    def reload(self, services: list[str] | None = None, helm: bool = False) -> bool:
-        """Recompiles and hot-reloads selected or modified microservices into the running cluster.
+    def _reload_once(
+        self,
+        services: list[str] | None = None,
+        changed_files: list[str] | None = None,
+        helm: bool = False,
+        base_ref: str | None = None,
+    ) -> bool:
+        """Executes a single hot-reload iteration.
 
-        Fast inner-loop reload pipeline:
-        1. Checks that the KinD development cluster is active.
-        2. Detects modified microservices and Helm manifests via git status/diffs.
-        3. Validates and merges explicitly specified services or 'all' keyword.
-        4. Recompiles OCI container images in parallel with Bazel.
-        5. Imports new image layers into KinD cluster nodes via `kind load docker-image`.
-        6. Upgrades Helm release if chart or supporting manifests were modified or requested.
-        7. Triggers non-blocking `kubectl rollout restart` across affected deployments.
-        8. Concurrently monitors rollout completion across worker threads with timeout bounds.
-        9. Reports sub-second execution elapsed time and success status.
+        Compiles modified microservices via Bazel, loads OCI images into KinD,
+        updates Helm release if manifests or chart changed, and triggers concurrent
+        Kubernetes deployment restarts.
 
         Args:
-            services: Optional list of microservice names or aliases to reload.
-                Supports special keywords 'auto' (detect from git) and 'all' (all services).
+            services: Optional explicit list of services to reload.
+            changed_files: Optional list of specific modified files triggering this reload.
             helm: If True, forces a Helm chart upgrade.
+            base_ref: Optional git reference to compare against for change detection.
 
         Returns:
-            True if any service or Helm upgrade was performed; False if clean.
+            True if any service or Helm upgrade was performed; False if workspace was clean.
 
         Raises:
             RuntimeError: If the KinD cluster is not currently running or any rollouts fail.
             ValueError: If any explicitly requested service is unrecognized or disabled.
         """
-        if not self.kind_mgr.exists():
-            raise RuntimeError(
-                f"KinD cluster '{self.config.cluster_name}' is not running. "
-                "Run 'python3 tools/dev_env/dev_env.py up' first."
-            )
-
-        target_services, helm_needed = self._resolve_target_services(services, helm=helm)
+        _LOGGER.debug(
+            "Single reload iteration (services=%s, changed_files=%s, helm=%s, base_ref=%s)",
+            services,
+            changed_files,
+            helm,
+            base_ref,
+        )
+        target_services, helm_needed = self._resolve_target_services(
+            services=services,
+            changed_files=changed_files,
+            helm=helm,
+            base_ref=base_ref,
+        )
         if not target_services and not helm_needed:
             log_info("No modified microservices or Helm manifests detected. Working tree clean.")
             return False
@@ -264,7 +421,7 @@ class LocalRunner:
             self._rebuild_and_load_services(sorted_targets)
 
         if helm_needed:
-            log_info("=== [Helm] Manifest or chart changes detected, updating Helm release ===")
+            log_info("=== [Helm] Updating Helm release on KinD cluster ===")
             self.helm_deployer.deploy()
             self.kind_mgr.apply_manifests()
 

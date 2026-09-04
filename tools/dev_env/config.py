@@ -29,9 +29,10 @@ _LOGGER = logging.getLogger("xmc.dev_env.config")
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 DEFAULT_CONFIG_LOCATIONS: list[Path] = [
-    Path("deploy/ctk_v2/xmanager-cloud-deployment.yaml"),
     Path("deploy/local/xmanager-cloud-local.yaml"),
+    Path("deploy/ctk_v2/xmanager-cloud-deployment.yaml"),
 ]
+
 
 BASE_SERVICES: list[str] = [
     "experiment_state_server",
@@ -168,11 +169,17 @@ def _resolve_enabled_services(
 ) -> list[str]:
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
+    ig_deployment_flag = yaml_vars.get("ingestion_gateway_deployment_enabled")
+    effective_yaml_metrics: Any
+    if ig_deployment_flag is not None and not _parse_bool(ig_deployment_flag):
+        effective_yaml_metrics = False
+    else:
+        effective_yaml_metrics = yaml_vars.get("enable_metrics")
 
     enable_metrics = _resolve_bool_flag(
         getattr(args, "enable_metrics", None) if args else None,
         os.environ.get("ENABLE_METRICS"),
-        yaml_vars.get("enable_metrics"),
+        effective_yaml_metrics,
         default=False,
     )
     if enable_metrics and "ingestion_gateway" not in services:
