@@ -41,6 +41,9 @@ BASE_SERVICES: list[str] = [
     "ui",
 ]
 
+ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
+MANAGED_XPROF_GCS_BUCKET_ENV: str = "MANAGED_XPROF_GCS_BUCKET"
+
 
 @dataclass
 class LocalDevConfig:
@@ -312,14 +315,14 @@ def load_config(
 
     enable_managed_mldiagnostics = _resolve_bool_flag(
         getattr(args, "enable_managed_mldiagnostics", None) if args else None,
-        None,
+        os.environ.get(ENABLE_MANAGED_MLDIAGNOSTICS_ENV),
         yaml_vars.get("enable_managed_mldiagnostics"),
         default=False,
     )
 
     managed_xprof_gcs_bucket = _resolve_str_flag(
         getattr(args, "managed_xprof_gcs_bucket", None) if args else None,
-        None,
+        os.environ.get(MANAGED_XPROF_GCS_BUCKET_ENV),
         yaml_vars.get("managed_xprof_gcs_bucket"),
         default="",
     )

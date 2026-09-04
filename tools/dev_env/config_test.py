@@ -240,6 +240,20 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg_neg = config.load_config(args_neg, repo_root=self.root)
         self.assertFalse(cfg_neg.enable_managed_mldiagnostics)
 
+        # Environment variable fallback resolution
+        with patch.dict(
+            "os.environ",
+            {
+                config.ENABLE_MANAGED_MLDIAGNOSTICS_ENV: "true",
+                config.MANAGED_XPROF_GCS_BUCKET_ENV: "gs://env-bucket",
+            },
+            clear=True,
+        ):
+            args_env = argparse.Namespace(project_id="my-proj")
+            cfg_env = config.load_config(args_env, repo_root=self.root)
+            self.assertTrue(cfg_env.enable_managed_mldiagnostics)
+            self.assertEqual(cfg_env.managed_xprof_gcs_bucket, "gs://env-bucket")
+
         # YAML fallback resolution
         cfg_file = self.root / "mldiag_config.yaml"
         cfg_file.write_text(
