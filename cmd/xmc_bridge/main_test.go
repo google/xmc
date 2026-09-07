@@ -162,7 +162,11 @@ func attachSSAPatchReactor(fakeDynamic *dynamicfake.FakeDynamicClient) {
 		if err != nil {
 			return true, nil, err
 		}
-		u := obj.(*unstructured.Unstructured).DeepCopy()
+		unstruct, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			return true, nil, errors.New("expected *unstructured.Unstructured from tracker")
+		}
+		u := unstruct.DeepCopy()
 		if status, ok := patchMap["status"].(map[string]any); ok {
 			u.Object["status"] = status
 		}

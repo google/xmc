@@ -464,6 +464,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
 			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
 	return res, nil
@@ -683,10 +684,22 @@ func shouldSyncToCMS(existingConditions []Condition, targetStatus string, curren
 	if existingReady.Status != targetStatus {
 		return true
 	}
-	if !existingReady.LastTransitionTime.IsZero() && time.Since(existingReady.LastTransitionTime) >= defaultCMSHeartbeatInterval {
+	if existingReady.LastTransitionTime.IsZero() || time.Since(existingReady.LastTransitionTime) >= defaultCMSHeartbeatInterval {
 		return true
 	}
 	return false
+}
+
+// resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
+// This resets the heartbeat timer after a successful sync to CMS.
+func resetReadyTransitionTime(conditions []Condition) {
+	now := time.Now().UTC()
+	for i := range conditions {
+		if conditions[i].Type == ConditionTypeReady {
+			conditions[i].LastTransitionTime = now
+			return
+		}
+	}
 }
 
 // setCondition inserts or updates a Condition in the conditions slice. If the condition already
@@ -831,6 +844,7 @@ func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComp
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
 			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	return res, nil
 }
@@ -851,6 +865,7 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
 			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	return res, nil
 }

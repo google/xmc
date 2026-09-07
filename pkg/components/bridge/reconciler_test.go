@@ -1730,6 +1730,20 @@ func TestShouldSyncToCMS(t *testing.T) {
 			currentGen:   1,
 			wantSync:     true,
 		},
+		{
+			name: "zero LastTransitionTime triggers sync",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: time.Time{},
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1739,6 +1753,21 @@ func TestShouldSyncToCMS(t *testing.T) {
 				t.Errorf("shouldSyncToCMS() = %v, want %v", got, tt.wantSync)
 			}
 		})
+	}
+}
+
+func TestResetReadyTransitionTime(t *testing.T) {
+	past := time.Now().UTC().Add(-10 * time.Minute)
+	conditions := []Condition{
+		{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, LastTransitionTime: past},
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: past},
+	}
+	resetReadyTransitionTime(conditions)
+	if time.Since(conditions[1].LastTransitionTime) > 5*time.Second {
+		t.Errorf("expected Ready LastTransitionTime to be reset to now, got %v", conditions[1].LastTransitionTime)
+	}
+	if !conditions[0].LastTransitionTime.Equal(past) {
+		t.Errorf("expected Degraded LastTransitionTime to remain unchanged, got %v", conditions[0].LastTransitionTime)
 	}
 }
 
