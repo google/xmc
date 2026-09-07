@@ -217,3 +217,8 @@ kueue:
         labelKeysToCopy:
           - "xmc.google.com/experiment-id"
           - "xmc.google.com/work-unit-id"
+
+# Remote Kubernetes cluster configuration (for hybrid KinD control plane + remote GKE workload execution)
+remoteK8s:
+  enabled: false
+  secretName: "remote-k8s-config"
