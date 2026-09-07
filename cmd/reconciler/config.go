@@ -29,10 +29,7 @@ type Config struct {
 	MaxParallelExperiments           int
 	KueueSyncTickDuration            time.Duration
 	MaxConcurrentKueueSyncReconciles int
-	DetectInadmissibleWorkUnits      bool
 	StartupPodErrorCheckTime         time.Duration
-	StartupPodErrorCheckEnabled      bool
-	StatusMessageHistoryEnabled      bool
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
 	MldiagnosticsEnvironment         string
@@ -42,7 +39,6 @@ type Config struct {
 // Flags and ConfigMap configurations.
 var (
 	createNewNamespaces              bool
-	detectInadmissibleWorkUnits      bool
 	spannerDatabaseName              string
 	quotaProjectID                   string
 	batcherTickDuration              time.Duration
@@ -52,10 +48,8 @@ var (
 	kueueSyncTickDuration            time.Duration
 	maxConcurrentKueueSyncReconciles int
 	startupPodErrorCheckTime         time.Duration
-	startupPodErrorCheckEnabled      bool
 	kubeAPIQPS                       float64
 	kubeAPIBurst                     int
-	statusMessageHistoryEnabled      bool
 	mldiagnosticsEnvironment         string
 	metricsPort                      int
 )
@@ -74,17 +68,14 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
-	configutil.BoolEnv(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true)
 	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
 	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
 	configutil.DurationEnv(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
 	configutil.DurationEnv(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
 	configutil.IntEnv(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000)
 	configutil.DurationEnv(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
-	configutil.BoolEnv(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true)
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
-	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
 }
 
@@ -102,12 +93,9 @@ func Load() Config {
 		MaxParallelExperiments:           maxParallelExperiments,
 		KueueSyncTickDuration:            kueueSyncTickDuration,
 		MaxConcurrentKueueSyncReconciles: maxConcurrentKueueSyncReconciles,
-		DetectInadmissibleWorkUnits:      detectInadmissibleWorkUnits,
 		StartupPodErrorCheckTime:         startupPodErrorCheckTime,
-		StartupPodErrorCheckEnabled:      startupPodErrorCheckEnabled,
 		KubeAPIQPS:                       kubeAPIQPS,
 		KubeAPIBurst:                     kubeAPIBurst,
-		StatusMessageHistoryEnabled:      statusMessageHistoryEnabled,
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 		MetricsPort:                      metricsPort,
 	}

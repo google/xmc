@@ -39,7 +39,6 @@ def generate_runtime_config(
         refresh_interval = 30000
 
     feature_flags = {
-        "statusMessageHistoryEnabled": get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True),
         "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", False),
         "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False),
         "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),

@@ -100,7 +100,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		}
 
 		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
 		resMap := statushistory.ExtractAllResourcesFromExecutable(localWU.GetExecutable())
 		qName := localWU.GetExecutable().GetSchedulingConstraints().GetQueueName()

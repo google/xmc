@@ -40,10 +40,10 @@
   <line x1="217.32299999999998" y1="1224" x2="466.902" y2="1224" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
   <text x="225.32299999999998" y="1238" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[check Pods]</text>
 </g>
-<g class="block" data-type="alt" data-label="StartupPodErrorCheckEnabled">
+<g class="block" data-type="alt" data-label="state is STARTING">
   <rect x="217.32299999999998" y="1020" width="249.579" height="332" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1" />
   <rect x="217.32299999999998" y="1020" width="205.74999999999997" height="18" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
-  <text x="223.32299999999998" y="1029" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [StartupPodErrorCheckEnabled]</text>
+  <text x="223.32299999999998" y="1029" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [state is STARTING]</text>
 </g>
 <g class="block" data-type="alt" data-label="JobSet is being deleted">
   <rect x="30" y="336" width="577.589" height="1266" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1" />

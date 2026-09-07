@@ -24,12 +24,9 @@ data:
   batcher_tick_duration: "250ms"
   kueue_sync_tick_duration: "60s"
   max_concurrent_kueue_sync_reconciles: "1000"
-  detect_inadmissible_work_units: {{ .Values.detectInadmissibleWorkUnits | quote }}
-  startup_pod_error_check_enabled: {{ .Values.startupPodErrorCheckEnabled | quote }}
   startup_pod_error_check_time: "2m"
   kube_api_qps: "100"
   kube_api_burst: "200"
-  status_message_history_enabled: {{ .Values.statusMessageHistoryEnabled | quote }}
   metrics_port: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 | quote }}
   {{- if .Values.isDevEnvironment }}
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}

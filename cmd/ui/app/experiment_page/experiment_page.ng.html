@@ -145,11 +145,9 @@ limitations under the License.
       <mat-tab label="Artifacts">
         <xmc-artifacts-list [parentName]="'experiments/' + xid"> </xmc-artifacts-list>
       </mat-tab>
-      @if (isStatusMessageHistoryEnabled) {
-        <mat-tab label="Status History">
-          <xmc-status-messages-list [parentName]="'experiments/' + xid" />
-        </mat-tab>
-      }
+      <mat-tab label="Status History">
+        <xmc-status-messages-list [parentName]="'experiments/' + xid" />
+      </mat-tab>
     </mat-tab-group>
   </mat-card>
 }

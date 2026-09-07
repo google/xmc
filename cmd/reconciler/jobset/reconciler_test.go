@@ -1171,11 +1171,10 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{
-				Client:                      fakeClient,
-				Scheme:                      scheme,
-				Batcher:                     batcher,
-				StartupPodErrorCheckEnabled: true,
-				StartupPodErrorCheckTime:    2 * time.Minute,
+				Client:                   fakeClient,
+				Scheme:                   scheme,
+				Batcher:                  batcher,
+				StartupPodErrorCheckTime: 2 * time.Minute,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -1299,11 +1298,10 @@ func TestReconcileUnschedulablePods(t *testing.T) {
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{
-				Client:                      fakeClient,
-				Scheme:                      scheme,
-				Batcher:                     batcher,
-				StartupPodErrorCheckEnabled: true,
-				StartupPodErrorCheckTime:    2 * time.Minute,
+				Client:                   fakeClient,
+				Scheme:                   scheme,
+				Batcher:                  batcher,
+				StartupPodErrorCheckTime: 2 * time.Minute,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)

@@ -124,9 +124,7 @@ func initSpannerAndStorage(ctx context.Context, cfg Config) (*spanner.Client, st
 		return nil, nil, fmt.Errorf("failed to create spanner client: %w", err)
 	}
 
-	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{
-		StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
-	})
+	storage, err := ss.NewStorage(spannerClient)
 	if err != nil {
 		spannerClient.Close()
 		return nil, nil, fmt.Errorf("failed to create storage: %w", err)
