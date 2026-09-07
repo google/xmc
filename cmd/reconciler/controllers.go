@@ -21,7 +21,6 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
 	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
@@ -49,7 +48,6 @@ type controllerRegistrationParams struct {
 	cfg         Config
 	storage     storage.Storage
 	k8sClient   *k8sclient.Client
-	cqCache     *clusterqueue.NameCache
 	mlRunClient jobset.MLRunCreator
 	projectID   string
 	location    string
@@ -64,18 +62,6 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, nil, errors.New("k8sClient cannot be nil")
 	}
 
-	cqReconciler, err := clusterqueue.NewReconciler(clusterqueue.Params{
-		Client: p.mgr.GetClient(),
-		Scheme: p.mgr.GetScheme(),
-		Cache:  p.cqCache,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create clusterqueue reconciler: %w", err)
-	}
-	if err := cqReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
-	}
-
 	batcher := shared.NewUpdateBatcher(
 		ctx,
 		&shared.BatcherConfig{
@@ -84,6 +70,9 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		},
 		p.storage,
 	)
+	if err := p.mgr.Add(batcher); err != nil {
+		return nil, nil, fmt.Errorf("failed to add batcher runnable to manager: %w", err)
+	}
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
 		Client:                      p.mgr.GetClient(),
@@ -127,7 +116,6 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 	kueueSyncReconciler, err := kueuesync.NewReconciler(kueuesync.Params{
 		Client:                           p.mgr.GetClient(),
 		Clientset:                        p.k8sClient.Clientset(),
-		CQCache:                          p.cqCache,
 		Storage:                          p.storage,
 		UpdateBatcher:                    batcher,
 		KueueSyncTickDuration:            p.cfg.KueueSyncTickDuration,
@@ -135,6 +123,9 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create kueuesync reconciler: %w", err)
+	}
+	if err := p.mgr.Add(kueueSyncReconciler); err != nil {
+		return nil, nil, fmt.Errorf("failed to add kueue sync runnable to manager: %w", err)
 	}
 
 	return batcher, kueueSyncReconciler, nil

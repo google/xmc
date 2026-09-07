@@ -440,6 +440,34 @@ func TestBatchProcessorShutdown(t *testing.T) {
 	}
 }
 
+func TestBatchProcessorFlushesOnShutdown(t *testing.T) {
+	mockStorage := &mockStorageUpdater{}
+	// Large tick duration so periodic processing does not trigger before shutdown
+	b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: time.Hour}, mockStorage)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	b.Add(ctx, 12345, storagepkg.WorkUnitExecutionUpdate{WID: 1, EID: 1}, JobsetSource)
+
+	done := make(chan struct{})
+	go func() {
+		b.Start(ctx)
+		close(done)
+	}()
+
+	// Cancel context to trigger shutdown flush
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("batchProcessor did not shut down within timeout")
+	}
+
+	if len(mockStorage.calls[12345]) != 1 {
+		t.Errorf("expected 1 flushed update for experiment 12345, got %d", len(mockStorage.calls[12345]))
+	}
+}
+
 func getHistogramSampleCount(mfs []*metricspb.MetricFamily, name, xid string) uint64 {
 	for _, mf := range mfs {
 		if mf.GetName() == name {

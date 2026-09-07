@@ -168,6 +168,11 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	b.Updates[xid][update.WID][source] = update
 }
 
+// Start implements manager.Runnable for UpdateBatcher.
+func (b *UpdateBatcher) Start(ctx context.Context) error {
+	return b.BatchProcessor(ctx)
+}
+
 // BatchProcessor runs the background processing loop.
 func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	ctx = logging.WithLogger(ctx, logging.NewGCPLogger(slog.LevelInfo, ""))
@@ -180,6 +185,9 @@ func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			b.processBatches(flushCtx)
+			cancel()
 			return nil
 		case <-ticker.C:
 			b.processBatches(ctx)

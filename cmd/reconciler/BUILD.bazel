@@ -32,7 +32,6 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//cmd/actuator/k8s_client",
-        "//cmd/reconciler/clusterqueue",
         "//cmd/reconciler/hypercomputeclient",
         "//cmd/reconciler/jobset",
         "//cmd/reconciler/kueue_sync",

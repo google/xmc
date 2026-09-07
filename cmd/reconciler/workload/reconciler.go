@@ -31,9 +31,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
@@ -134,7 +132,6 @@ func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (
 func workloadPredicate(ctx context.Context) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			ctx := logging.Strip(ctx)
 			if e.Object == nil {
 				logging.Error(ctx, "CreateEvent object is nil")
 				return false
@@ -168,7 +165,6 @@ func workloadPredicate(ctx context.Context) predicate.Predicate {
 				return false
 			}
 
-			ctx := logging.Strip(ctx)
 			if !hasValidXMCLabels(ctx, oldWorkload) || !hasValidXMCLabels(ctx, newWorkload) {
 				return false
 			}
@@ -200,9 +196,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}()
 
 	var workload v1beta1.Workload
-	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-	// it blocks the entire logging system for some reason.
-	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &workload); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &workload); err != nil {
 		if apierrors.IsNotFound(err) {
 			logging.Warn(ctx, "Workload not found, no action needed", "workload", req.NamespacedName)
 			return ctrl.Result{}, nil
@@ -238,9 +232,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	if update != nil {
 		logging.Info(ctx, "Adding workload update to batch", "namespace", workload.Namespace, "workload", workload.GetName())
 		updatesSentTotal.WithLabelValues().Inc()
-		// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-		// it blocks the entire logging system for some reason.
-		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.WorkloadSource)
+		r.Batcher.Add(ctx, xid, *update, shared.WorkloadSource)
 	}
 
 	return ctrl.Result{}, nil
@@ -296,14 +288,14 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		return errors.New("reconciler cannot be nil")
 	}
 	logging.Debug(ctx, "Setting up workload reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
-	c, err := controller.New("workload", mgr, controller.Options{
-		Reconciler:              r,
-		MaxConcurrentReconciles: r.MaxConcurrentReconciles,
-	})
-	if err != nil {
-		return err
-	}
-	return c.Watch(&source.Kind{Type: &v1beta1.Workload{}}, &handler.EnqueueRequestForObject{}, workloadPredicate(ctx))
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("workload").
+		For(&v1beta1.Workload{}).
+		WithEventFilter(workloadPredicate(ctx)).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
+		}).
+		Complete(r)
 }
 
 func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {

@@ -32,9 +32,7 @@ import (
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
-	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	ss "xmanager_cloud/storage/spanner/spanner"
@@ -47,7 +45,6 @@ type Manager struct {
 	batcher       *shared.UpdateBatcher
 	k8sClient     *k8sclient.Client
 	spannerClient *spanner.Client
-	kueueSync     *kueuesync.Reconciler
 	cleanup       func() error
 	closeOnce     sync.Once
 	closeErr      error
@@ -86,12 +83,6 @@ func (m *Manager) Close() error {
 
 // Start starts background workers and the controller-runtime manager.
 func (m *Manager) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if m.kueueSync != nil {
-		go m.kueueSync.RunPositionInQueueSync(ctx)
-	}
 	return startManager(ctx, m.ctrlMgr)
 }
 
@@ -159,6 +150,7 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 						constants.ManagedByLabel: constants.XmcLabelValue,
 					}),
 				},
+				&v1beta1.ClusterQueue{}:      {},
 				&v1beta1.MultiKueueCluster{}: {},
 				&v1beta1.ResourceFlavor{}:    {},
 			},
@@ -166,13 +158,6 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to start manager: %w", err)
-	}
-
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &v1alpha2.JobSet{}, "metadata.name", func(rawObj runtimeclient.Object) []string {
-		jobset := rawObj.(*v1alpha2.JobSet)
-		return []string{jobset.Name}
-	}); err != nil {
-		return nil, fmt.Errorf("unable to index JobSet metadata.name: %w", err)
 	}
 
 	return mgr, nil
@@ -216,16 +201,14 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		return nil, err
 	}
 
-	cqCache := clusterqueue.NewNameCache()
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
 		newMLRunCreator(ctx, gceMeta.ProjectID, cfg.MldiagnosticsEnvironment, gceMeta.Location))
 
-	batcher, kueueSyncReconciler, err := registerControllers(ctx, controllerRegistrationParams{
+	batcher, _, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,
 		cfg:         cfg,
 		storage:     storage,
 		k8sClient:   k8sClient,
-		cqCache:     cqCache,
 		mlRunClient: mlRunClient,
 		projectID:   gceMeta.ProjectID,
 		location:    gceMeta.Location,
@@ -250,7 +233,6 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		batcher:       batcher,
 		k8sClient:     k8sClient,
 		spannerClient: spannerClient,
-		kueueSync:     kueueSyncReconciler,
 		cleanup:       cleanup,
 	}, nil
 }

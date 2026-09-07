@@ -24,7 +24,6 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 )
 
 type fakeControllerManager struct {
@@ -40,13 +39,11 @@ func TestRegisterControllers_Validation(t *testing.T) {
 	v1beta1.AddToScheme(scheme)
 
 	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
-	cqCache := clusterqueue.NewNameCache()
 
 	t.Run("nil manager returns error", func(t *testing.T) {
 		_, _, err := registerControllers(context.Background(), controllerRegistrationParams{
 			mgr:       nil,
 			k8sClient: k8sClient,
-			cqCache:   cqCache,
 		})
 		if err == nil {
 			t.Fatal("registerControllers(nil mgr) expected error, got nil")
@@ -58,7 +55,6 @@ func TestRegisterControllers_Validation(t *testing.T) {
 		_, _, err := registerControllers(context.Background(), controllerRegistrationParams{
 			mgr:       mgr,
 			k8sClient: nil,
-			cqCache:   cqCache,
 		})
 		if err == nil {
 			t.Fatal("registerControllers(nil k8sClient) expected error, got nil")

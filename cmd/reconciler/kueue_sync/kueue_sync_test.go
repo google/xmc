@@ -41,9 +41,9 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	fmpb "protobuf/field_mask_go_proto"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	storagepkg "xmanager_cloud/storage/storage"
 )
@@ -207,14 +207,15 @@ func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interf
 
 	s := runtime.NewScheme()
 	v1alpha2.AddToScheme(s)
+	v1beta1.AddToScheme(s)
 	clientscheme.AddToScheme(s)
-	cl := fake.NewClientBuilder().WithScheme(s).Build()
-	cqCache := clusterqueue.NewNameCache()
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(&v1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: ClusterQueue1},
+	}).Build()
 
 	reconciler, err := NewReconciler(Params{
 		Client:                           cl,
 		Clientset:                        cs,
-		CQCache:                          cqCache,
 		UpdateBatcher:                    updateBatcher,
 		KueueSyncTickDuration:            1 * time.Minute,
 		MaxConcurrentKueueSyncReconciles: 100,
@@ -232,10 +233,10 @@ func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interf
 func TestNewReconciler_Validation(t *testing.T) {
 	s := runtime.NewScheme()
 	v1alpha2.AddToScheme(s)
+	v1beta1.AddToScheme(s)
 	clientscheme.AddToScheme(s)
 	cl := fake.NewClientBuilder().WithScheme(s).Build()
 	cs := kubernetesfake.NewSimpleClientset()
-	cqCache := clusterqueue.NewNameCache()
 	updateBatcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{
 		TickDuration:           1 * time.Minute,
 		MaxParallelExperiments: 1,
@@ -251,7 +252,6 @@ func TestNewReconciler_Validation(t *testing.T) {
 			params: Params{
 				Client:        cl,
 				Clientset:     cs,
-				CQCache:       cqCache,
 				UpdateBatcher: updateBatcher,
 			},
 			wantErr: false,
@@ -260,7 +260,6 @@ func TestNewReconciler_Validation(t *testing.T) {
 			name: "missing client",
 			params: Params{
 				Clientset:     cs,
-				CQCache:       cqCache,
 				UpdateBatcher: updateBatcher,
 			},
 			wantErr: true,
@@ -269,16 +268,6 @@ func TestNewReconciler_Validation(t *testing.T) {
 			name: "missing clientset",
 			params: Params{
 				Client:        cl,
-				CQCache:       cqCache,
-				UpdateBatcher: updateBatcher,
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing cq cache",
-			params: Params{
-				Client:        cl,
-				Clientset:     cs,
 				UpdateBatcher: updateBatcher,
 			},
 			wantErr: true,
@@ -288,7 +277,6 @@ func TestNewReconciler_Validation(t *testing.T) {
 			params: Params{
 				Client:    cl,
 				Clientset: cs,
-				CQCache:   cqCache,
 			},
 			wantErr: true,
 		},
@@ -364,9 +352,6 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 	fakeRestClient := createFakeRestClient(t, workloadsJSON)
 	fixture := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
 	ctx, reconciler, updateBatcher := fixture.Ctx, fixture.Reconciler, fixture.UpdateBatcher
-	cqCache := clusterqueue.NewNameCache()
-	cqCache.Add(ClusterQueue1)
-	reconciler.CQCache = cqCache
 
 	js1 := &v1alpha2.JobSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -398,11 +383,15 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 	}
 	s := runtime.NewScheme()
 	v1alpha2.AddToScheme(s)
+	v1beta1.AddToScheme(s)
 	clientscheme.AddToScheme(s)
+	cq := &v1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: ClusterQueue1},
+	}
 	cl := &fakeClient{
 		Client: fake.NewClientBuilder().
 			WithScheme(s).
-			WithObjects(js1, js2, js4).
+			WithObjects(js1, js2, js4, cq).
 			Build(),
 		jobsets: []v1alpha2.JobSet{*js1, *js2, *js4},
 	}

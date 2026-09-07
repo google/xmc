@@ -37,10 +37,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controllerutil/controllerutil"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/manager/manager"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -183,8 +180,6 @@ func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
 func jobSetPredicate(ctx context.Context) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			ctx := logging.Strip(ctx)
-
 			jobSet, ok := e.Object.(*v1alpha2.JobSet)
 			if !ok {
 				logging.Error(ctx, "Predicate received unexpected object type in CreateEvent", "type", fmt.Sprintf("%T", e.Object))
@@ -207,8 +202,6 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 		},
 
 		GenericFunc: func(e event.GenericEvent) bool {
-			ctx := logging.Strip(ctx)
-
 			// Reconcile existing resources on controller startup.
 			jobSet, ok := e.Object.(*v1alpha2.JobSet)
 			if !ok {
@@ -239,7 +232,6 @@ func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alph
 		return false
 	}
 
-	ctx = logging.Strip(ctx)
 	if !hasValidXMCLabels(ctx, newJobSet) || !hasValidXMCLabels(ctx, oldJobSet) {
 		return false
 	}
@@ -269,9 +261,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	logging.Info(ctx, "Reconcile JobSet", "namespacedName", req.NamespacedName)
 
 	var jobSet v1alpha2.JobSet
-	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-	// it blocks the entire logging system for some reason.
-	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &jobSet); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &jobSet); err != nil {
 		if apierrors.IsNotFound(err) {
 			logging.Debug(ctx, "JobSet not found, no action needed", "namespace", req.Namespace, "name", req.Name)
 			return ctrl.Result{}, nil // Successfully do nothing
@@ -308,7 +298,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
 		updatesSentTotal.WithLabelValues().Inc()
-		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
+		r.Batcher.Add(ctx, xid, *update, shared.JobsetSource)
 		logging.Debug(ctx, "Added STOPPED update to batch for JobSet", "namespace", jobSet.Namespace)
 	} else {
 		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
@@ -321,9 +311,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	controllerutil.RemoveFinalizer(jobSet, constants.JobSetFinalizer)
 
 	// Patch the object in the API server
-	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-	// it blocks the entire logging system for some reason.
-	if err := r.Patch(logging.Strip(ctx), jobSet, client.MergeFrom(patchBase)); err != nil {
+	if err := r.Patch(ctx, jobSet, client.MergeFrom(patchBase)); err != nil {
 		return r.handlePatchError(ctx, jobSet, err)
 	}
 
@@ -408,9 +396,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
 	updatesSentTotal.WithLabelValues().Inc()
-	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-	// it blocks the entire logging system for some reason.
-	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
+	r.Batcher.Add(ctx, xid, *update, shared.JobsetSource)
 
 	return result, nil
 }
@@ -463,8 +449,8 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 // listJobSetPods returns all pods belonging to the given JobSet.
 func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet) ([]corev1.Pod, error) {
 	var podList corev1.PodList
-	if err := r.List(logging.Strip(ctx), &podList, client.InNamespace(jobSet.Namespace),
-		client.MatchingFields{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
+	if err := r.List(ctx, &podList, client.InNamespace(jobSet.Namespace),
+		client.MatchingLabels{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 	return podList.Items, nil
@@ -544,7 +530,7 @@ func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
 	}
-	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	if err := r.List(ctx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
 	}
 
@@ -586,27 +572,12 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	}
 
 	logging.Debug(ctx, "Starting jobset reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
-	c, err := controller.New("jobset", mgr, controller.Options{
-		Reconciler:              r,
-		MaxConcurrentReconciles: r.MaxConcurrentReconciles,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create controller: %w", err)
-	}
-
-	err = c.Watch(&source.Kind{Type: &v1alpha2.JobSet{}}, &handler.EnqueueRequestForObject{}, jobSetPredicate(ctx))
-	if err != nil {
-		return fmt.Errorf("failed to watch JobSet: %w", err)
-	}
-	logging.Debug(ctx, "Jobset reconciler controller started")
-
-	logging.Debug(ctx, "Adding batch processor runnable")
-	if err := mgr.Add(manager.RunnableFunc(r.Batcher.BatchProcessor)); err != nil {
-		return fmt.Errorf("failed to add batch processor runnable: %w", err)
-	}
-	logging.Debug(ctx, "Batch processor runnable added")
-
-	return nil
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("jobset").
+		For(&v1alpha2.JobSet{}).
+		WithEventFilter(jobSetPredicate(ctx)).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
+		Complete(r)
 }
 
 func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {

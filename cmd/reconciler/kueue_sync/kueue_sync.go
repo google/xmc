@@ -30,9 +30,9 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/labels"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
@@ -42,7 +42,6 @@ import (
 type Params struct {
 	Client                           runtimeclient.Client
 	Clientset                        kubernetes.Interface
-	CQCache                          *clusterqueue.NameCache
 	Storage                          storage.Storage
 	UpdateBatcher                    *shared.UpdateBatcher
 	KueueSyncTickDuration            time.Duration
@@ -53,7 +52,6 @@ type Params struct {
 type Reconciler struct {
 	Client                           runtimeclient.Client
 	Clientset                        kubernetes.Interface
-	CQCache                          *clusterqueue.NameCache
 	Storage                          storage.Storage
 	UpdateBatcher                    *shared.UpdateBatcher
 	KueueSyncTickDuration            time.Duration
@@ -68,16 +66,12 @@ func NewReconciler(p Params) (*Reconciler, error) {
 	if p.Clientset == nil {
 		return nil, errors.New("clientset is required")
 	}
-	if p.CQCache == nil {
-		return nil, errors.New("cq cache is required")
-	}
 	if p.UpdateBatcher == nil {
 		return nil, errors.New("update batcher is required")
 	}
 	return &Reconciler{
 		Client:                           p.Client,
 		Clientset:                        p.Clientset,
-		CQCache:                          p.CQCache,
 		Storage:                          p.Storage,
 		UpdateBatcher:                    p.UpdateBatcher,
 		KueueSyncTickDuration:            p.KueueSyncTickDuration,
@@ -115,6 +109,12 @@ var ClusterQueueGVR = schema.GroupVersionResource{
 	Group:    "kueue.x-k8s.io",
 	Version:  "v1beta1",
 	Resource: "clusterqueues",
+}
+
+// Start implements manager.Runnable for KueueSync Reconciler.
+func (r *Reconciler) Start(ctx context.Context) error {
+	r.RunPositionInQueueSync(ctx)
+	return nil
 }
 
 // RunPositionInQueueSync starts sync worker that periodically updates work unit notes about their
@@ -156,7 +156,15 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 	logging.Info(ctx, "Update Kueue WorkUnit position in queue sync.")
 	defer logging.Info(ctx, "Updated Kueue WorkUnit position in queue sync.")
 
-	cqNames := r.CQCache.Names()
+	var cqList v1beta1.ClusterQueueList
+	if err := r.Client.List(ctx, &cqList); err != nil {
+		logging.Error(ctx, "Failed to list ClusterQueues from cache", "error", err)
+		return
+	}
+	cqNames := make([]string, 0, len(cqList.Items))
+	for i := range cqList.Items {
+		cqNames = append(cqNames, cqList.Items[i].Name)
+	}
 	var workloadWaitGroup sync.WaitGroup
 	var queueWaitGroup sync.WaitGroup
 
@@ -266,7 +274,7 @@ func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *
 
 func (r *Reconciler) fetchJobSetByName(ctx context.Context, name string, namespace string) (*v1alpha2.JobSet, error) {
 	jobSet := &v1alpha2.JobSet{}
-	err := r.Client.Get(logging.Strip(ctx), runtimeclient.ObjectKey{Namespace: namespace, Name: name}, jobSet)
+	err := r.Client.Get(ctx, runtimeclient.ObjectKey{Namespace: namespace, Name: name}, jobSet)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get JobSet for workload %s: %w", name, err)
 	}
