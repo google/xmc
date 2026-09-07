@@ -148,7 +148,7 @@ test.describe('Experiments List Page - Screenshot Tests', () => {
 
     const experimentsResponsePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes('/experiments') &&
+        /\/experiments(?:\?.*)?$/.test(resp.url()) &&
         resp.request().resourceType() !== 'document' &&
         resp.status() === 200,
     );
@@ -168,7 +168,8 @@ test.describe('Experiments List Page - Screenshot Tests', () => {
     await page.addStyleTag({
       content: `
         xmc-experiments-list-page {
-          display: block !important;
+          display: flex !important;
+          flex-direction: column !important;
           box-sizing: border-box !important;
           height: 900px !important;
           min-height: 900px !important;

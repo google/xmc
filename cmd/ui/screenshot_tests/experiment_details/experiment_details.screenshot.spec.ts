@@ -303,7 +303,7 @@ export const MOCK_EXPERIMENT_STATUS_MESSAGES = {
 
 test.describe('Experiment Details Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.setViewportSize({ width: 1600, height: 1200 });
     await setupMockRoutes(page);
 
     await page.route(/\/experiments\/10293841$/, async (route) => {
@@ -384,10 +384,11 @@ test.describe('Experiment Details Page - Screenshot Tests', () => {
     await page.addStyleTag({
       content: `
         xmc-experiment-page {
-          display: block !important;
+          display: flex !important;
+          flex-direction: column !important;
           box-sizing: border-box !important;
-          height: 1050px !important;
-          min-height: 1050px !important;
+          height: 1150px !important;
+          min-height: 1150px !important;
           overflow: hidden !important;
         }
       `,
