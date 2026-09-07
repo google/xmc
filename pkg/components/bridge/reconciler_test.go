@@ -73,14 +73,17 @@ type mockHelm struct {
 	purgeCalled          bool
 	orphanCalled         bool
 	deleteCalled         bool
+	ensureCalls          int
 	lastRef              ComponentRef
 	lastOpts             HelmComponentOptions
+	actuatedGenerations  map[string]int64
 }
 
 func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
 	}
+	m.ensureCalls++
 	m.lastRef = ref
 	m.lastOpts = opts
 	if m.ensureErr == nil {
@@ -130,6 +133,23 @@ func (m *mockHelm) IsComponentActive(ref ComponentRef) bool {
 		return false
 	}
 	return m.active
+}
+
+func (m *mockHelm) IsComponentActuated(ref ComponentRef, generation int64) bool {
+	if m == nil || m.actuatedGenerations == nil {
+		return false
+	}
+	return m.active && m.actuatedGenerations[ref.String()] == generation
+}
+
+func (m *mockHelm) RecordActuation(ref ComponentRef, generation int64) {
+	if m == nil {
+		return
+	}
+	if m.actuatedGenerations == nil {
+		m.actuatedGenerations = make(map[string]int64)
+	}
+	m.actuatedGenerations[ref.String()] = generation
 }
 
 func TestNewReconciler(t *testing.T) {
@@ -810,4 +830,74 @@ func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {
 			t.Errorf("expected state DELETED, got %v", resOut.State)
 		}
 	})
+}
+
+func TestReconcileComponent_1P_GenerationGating(t *testing.T) {
+	ctx := context.Background()
+	cms := &mockCMS{}
+	prober := &mockProber{healthy: true}
+	helm := &mockHelm{}
+	r, err := NewReconciler(cms, prober, helm)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	in := ReconcileComponentInput{
+		Namespace:          "xmc",
+		Name:               "ingestion-gateway",
+		Generation:         1,
+		Spec:               spec1P,
+		Enabled:            true,
+		DeletionProtection: true,
+	}
+
+	// First pass (generation 1): should actuate Helm upgrade
+	res1, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("first ReconcileComponent failed: %v", err)
+	}
+	if res1.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected state ENABLED, got %v", res1.State)
+	}
+	if helm.ensureCalls != 1 {
+		t.Errorf("expected 1 ensureCall on initial deploy, got %d", helm.ensureCalls)
+	}
+
+	// Periodic pass (generation 1 unchanged): should skip Helm upgrade completely
+	res2, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("periodic ReconcileComponent failed: %v", err)
+	}
+	if res2.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected state ENABLED, got %v", res2.State)
+	}
+	if helm.ensureCalls != 1 {
+		t.Errorf("expected ensureCalls to remain 1 (skipped on unchanged generation), got %d", helm.ensureCalls)
+	}
+
+	// Spec update pass (generation 2): should actuate Helm upgrade again
+	in.Generation = 2
+	res3, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("spec update ReconcileComponent failed: %v", err)
+	}
+	if res3.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected state ENABLED, got %v", res3.State)
+	}
+	if helm.ensureCalls != 2 {
+		t.Errorf("expected 2 ensureCalls after generation update, got %d", helm.ensureCalls)
+	}
+
+	// Periodic pass (generation 2 unchanged): should skip Helm upgrade again
+	res4, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("periodic ReconcileComponent at gen 2 failed: %v", err)
+	}
+	if res4.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected state ENABLED, got %v", res4.State)
+	}
+	if helm.ensureCalls != 2 {
+		t.Errorf("expected ensureCalls to remain 2 (skipped on unchanged generation), got %d", helm.ensureCalls)
+	}
 }

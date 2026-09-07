@@ -55,6 +55,10 @@ type HelmManager interface {
 	Orphan1PComponent(ctx context.Context, ref ComponentRef) error
 	// IsComponentActive checks if the component is currently marked enabled in the Helm release.
 	IsComponentActive(ref ComponentRef) bool
+	// IsComponentActuated checks if the component is currently active and was actuated at the specified generation.
+	IsComponentActuated(ref ComponentRef, generation int64) bool
+	// RecordActuation records that the component was successfully actuated at the specified generation.
+	RecordActuation(ref ComponentRef, generation int64)
 }
 
 // K8sHelmManager implements HelmManager by synchronizing component values in Kubernetes ConfigMaps
@@ -70,9 +74,11 @@ type K8sHelmManager struct {
 	hasRESTGetter bool
 	runner        HelmActionRunner
 
-	mu          sync.RWMutex
-	activeState map[string]bool
-	upgradeSem  chan struct{}
+	mu                  sync.RWMutex
+	activeState         map[string]bool
+	actuatedGenerations map[string]int64
+	upgradeErrs         map[string]error
+	upgradeSem          chan struct{}
 }
 
 // HelmManagerOption configures a K8sHelmManager.
@@ -108,11 +114,13 @@ func WithRESTClientGetter(getter genericclioptions.RESTClientGetter) HelmManager
 // NewK8sHelmManager constructs an initialized K8sHelmManager.
 func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName string, opts ...HelmManagerOption) *K8sHelmManager {
 	mgr := &K8sHelmManager{
-		client:      client,
-		namespace:   namespace,
-		releaseName: releaseName,
-		activeState: make(map[string]bool),
-		upgradeSem:  make(chan struct{}, 1),
+		client:              client,
+		namespace:           namespace,
+		releaseName:         releaseName,
+		activeState:         make(map[string]bool),
+		actuatedGenerations: make(map[string]int64),
+		upgradeErrs:         make(map[string]error),
+		upgradeSem:          make(chan struct{}, 1),
 	}
 	for _, opt := range opts {
 		opt(mgr)
@@ -162,6 +170,33 @@ func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
 	return ref.Namespace, nil
 }
 
+func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.upgradeErrs == nil {
+		m.upgradeErrs = make(map[string]error)
+	}
+	if err != nil {
+		m.upgradeErrs[ref.String()] = err
+		return
+	}
+	delete(m.upgradeErrs, ref.String())
+}
+
+// GetUpgradeError returns the last error encountered during an upgrade for the given component, if any.
+func (m *K8sHelmManager) GetUpgradeError(ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	targetNamespace, err := m.validateAndResolve(ref)
+	if err != nil {
+		return err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.upgradeErrs[ComponentRef{Namespace: targetNamespace, Name: ref.Name}.String()]
+}
+
 // Close releases any resources held by the HelmManager.
 func (m *K8sHelmManager) Close() error {
 	return nil
@@ -206,26 +241,36 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return nil
 	}
 	if ref.Namespace == "" {
-		return errors.New("component namespace must not be empty")
+		err := errors.New("component namespace must not be empty")
+		m.setUpgradeErr(ref, err)
+		return err
 	}
 	releaseName := ComponentReleaseName(ref.Name)
 	if releaseName == "" {
-		return errors.New("helm release name must not be empty; cannot actuate release upgrade")
+		err := errors.New("helm release name must not be empty; cannot actuate release upgrade")
+		m.setUpgradeErr(ref, err)
+		return err
 	}
 	if m.runner == nil {
-		return errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
+		err := errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
+		m.setUpgradeErr(ref, err)
+		return err
 	}
 	targetNamespace := ref.Namespace
+	m.setUpgradeErr(ref, nil)
 
 	if err := m.acquireUpgradeLock(ctx); err != nil {
+		m.setUpgradeErr(ref, err)
 		return err
 	}
 	defer m.releaseUpgradeLock()
 
 	if err := ctx.Err(); err != nil {
+		m.setUpgradeErr(ref, err)
 		return err
 	}
 	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, nil, values)
+	m.setUpgradeErr(ref, err)
 	return err
 }
 
@@ -235,18 +280,21 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, releaseName, targ
 		return nil
 	}
 	if err := m.acquireUpgradeLock(ctx); err != nil {
+		m.setUpgradeErr(resolved, err)
 		return err
 	}
 	defer m.releaseUpgradeLock()
 
 	_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
 	if err != nil && !isReleaseNotFound(err) {
+		m.setUpgradeErr(resolved, err)
 		return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
 	}
+	m.setUpgradeErr(resolved, nil)
 	return nil
 }
 
-// Ensure1PComponent sets component values in the release ConfigMap and executes a Helm upgrade.
+// Ensure1PComponent sets component values in the release ConfigMap and executes an independent Helm upgrade.
 func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
@@ -303,6 +351,9 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	if m.activeState != nil {
 		m.activeState[key] = false
 	}
+	if m.actuatedGenerations != nil {
+		delete(m.actuatedGenerations, key)
+	}
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -334,13 +385,16 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	if m.activeState != nil {
 		delete(m.activeState, key)
 	}
+	if m.actuatedGenerations != nil {
+		delete(m.actuatedGenerations, key)
+	}
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
 	return nil
 }
 
-// Orphan1PComponent detaches component management without modifying release values in Helm.
+// Orphan1PComponent detaches component management without modifying release values or uninstalling Helm.
 func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
@@ -349,14 +403,53 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	if err != nil {
 		return err
 	}
+	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
+	m.setUpgradeErr(resolved, nil)
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
 	if m.activeState != nil {
 		delete(m.activeState, key)
 	}
+	if m.actuatedGenerations != nil {
+		delete(m.actuatedGenerations, key)
+	}
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
 	return nil
+}
+
+// IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
+func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
+	if m == nil || ref.Name == "" || ref.Namespace == "" {
+		return false
+	}
+	key := componentKey(ref.Namespace, ref.Name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.activeState[key] {
+		return false
+	}
+	if m.upgradeErrs != nil && m.upgradeErrs[key] != nil {
+		return false
+	}
+	if m.actuatedGenerations == nil {
+		return false
+	}
+	return m.actuatedGenerations[key] == generation
+}
+
+// RecordActuation records the generation at which the component was successfully actuated.
+func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
+	if m == nil || ref.Name == "" || ref.Namespace == "" {
+		return
+	}
+	key := componentKey(ref.Namespace, ref.Name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.actuatedGenerations == nil {
+		m.actuatedGenerations = make(map[string]int64)
+	}
+	m.actuatedGenerations[key] = generation
 }
 
 // IsComponentActive returns true if the component is recorded as enabled.

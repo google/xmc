@@ -737,6 +737,40 @@ func TestK8sHelmManager_ConfigMapDeclarativeSourceOfTruth(t *testing.T) {
 	}
 }
 
+func TestK8sHelmManager_ActuationTracking(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
+
+	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+
+	if mgr.IsComponentActuated(ref, 1) {
+		t.Error("expected component not to be actuated before Ensure1PComponent")
+	}
+
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+	mgr.RecordActuation(ref, 1)
+
+	if !mgr.IsComponentActuated(ref, 1) {
+		t.Error("expected component to be actuated at generation 1")
+	}
+	if mgr.IsComponentActuated(ref, 2) {
+		t.Error("expected component not to be actuated at generation 2")
+	}
+
+	// After deletion, actuation record should be cleared
+	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent failed: %v", err)
+	}
+	if mgr.IsComponentActuated(ref, 1) {
+		t.Error("expected component actuation to be cleared after deletion")
+	}
+}
+
 func TestK8sHelmManager_Close(t *testing.T) {
 	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud")
 	if err := mgr.Close(); err != nil {

@@ -86,3 +86,17 @@ func TestSDKHelmActionRunner_ResolveChart_RWMutex(t *testing.T) {
 		t.Errorf("expected resolved chart name %q, got %q", "test-chart", resolved.Name())
 	}
 }
+
+func TestSDKHelmActionRunner_Uninstall(t *testing.T) {
+	var nilRunner *SDKHelmActionRunner
+	rel, err := nilRunner.Uninstall(context.Background(), "test", "xmc")
+	if err == nil || rel != nil {
+		t.Errorf("expected error on nil runner Uninstall, got rel=%v, err=%v", rel, err)
+	}
+
+	runner := NewSDKHelmActionRunner(nil)
+	_, err = runner.Uninstall(context.Background(), "test", "xmc")
+	if err == nil {
+		t.Error("expected error from Uninstall when restClientGetter is nil")
+	}
+}

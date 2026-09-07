@@ -316,6 +316,10 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 		return nil
 	}
 	ref := resolveComponentRef(in)
+	if r.helmManager.IsComponentActuated(ref, in.Generation) {
+		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
+		return nil
+	}
 	in.HelmOpts.Ref = ref
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
@@ -324,7 +328,8 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())
 		return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
-	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace)
+	r.helmManager.RecordActuation(ref, in.Generation)
+	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace, "generation", in.Generation)
 	return nil
 }
 

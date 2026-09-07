@@ -53,26 +53,32 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `Purge1PComponent(ctx context.Context, ref ComponentRef) error`
   - `Orphan1PComponent(ctx context.Context, ref ComponentRef) error`
   - `IsComponentActive(ref ComponentRef) bool`
+  - `IsComponentActuated(ref ComponentRef, generation int64) bool`
+  - `RecordActuation(ref ComponentRef, generation int64)`
 - **`FakeHelmManager`**: In-memory test double supporting concurrent testing and error injection.
 
 ---
 
 ## Kubernetes Helm Manager (`helm_manager.go`)
 
-`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps and tracking active 1P component states:
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, executing independent per-component Helm releases, and tracking active 1P component states:
 
+- **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
+  - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
+- **Spec Generation Gating & Change Detection**:
+  - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
 - **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
 - **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
 - **Clean Lifecycle Operations**:
   - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap, records component enablement, and triggers a release upgrade.
   - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, clears active tracking state, and triggers a release upgrade.
-  - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and triggers a release upgrade.
+  - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and uninstalls the release.
   - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
-  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`RunUpgrade(ctx, releaseName, chartPath, values)`), allowing in-process Helm release upgrades without CLI child processes.
-  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the Helm release.
-- **Synchronous Upgrade Serialization**:
-  - Serializes concurrent component updates using a channel semaphore (`upgradeSem`) to prevent Helm release state conflicts and lock contention during multi-component updates while supporting context cancellation.
+  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`), allowing in-process Helm release upgrades and uninstalls without CLI child processes.
+  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the component release.
+- **Context-Aware Upgrade Lock**:
+  - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.
 
 ---
 
