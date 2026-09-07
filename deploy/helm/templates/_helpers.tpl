@@ -216,7 +216,18 @@ Common GCP Secrets Volume definition.
       secretProviderClass: "gcp-secrets-provider"
 {{- else }}
 - name: gcp-secrets-volume
-  secret:
-    secretName: backend-oauth-secrets
+  projected:
+    sources:
+    - secret:
+        name: backend-oauth-secrets
+    {{- $auth := default (dict) .Values.auth }}
+    {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
+    {{- if $gac }}
+    - secret:
+        name: gcp-sa-key
+        items:
+        - key: key.json
+          path: key.json
+    {{- end }}
 {{- end }}
 {{- end -}}

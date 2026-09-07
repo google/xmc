@@ -23,6 +23,7 @@ import (
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
+	"golang/k8s_io/client_go/v/v0_23/tools/clientcmd/clientcmd"
 	runtimeclient "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	longrunningpb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"
@@ -75,14 +76,33 @@ type Client struct {
 	preconditionsValidator preconditionsvalidator.Validator
 }
 
-// New creates a new Kubernetes client. It uses in-cluster config by default.
-func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerClient *spanner.Client) (*Client, error) {
-	var config *rest.Config
-	var err error
+func buildRESTConfig() (*rest.Config, error) {
+	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build kubeconfig from %q: %w", kubeconfig, err)
+		}
+		return config, nil
+	}
 
-	config, err = rest.InClusterConfig()
+	config, err := rest.InClusterConfig()
+	if err == nil {
+		return config, nil
+	}
+
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+		return nil, fmt.Errorf("failed to get kubernetes config (in-cluster or default): %w", err)
+	}
+	return config, nil
+}
+
+// New creates a new Kubernetes client. It respects KUBECONFIG if set, falling back to in-cluster config.
+func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerClient *spanner.Client) (*Client, error) {
+	config, err := buildRESTConfig()
+	if err != nil {
+		return nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)

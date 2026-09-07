@@ -28,6 +28,7 @@ python3 -c '
 import re, sys
 content = open("$<").read()
 content = content.replace("golang/k8s_io/apimachinery/v/v0_23/pkg/", "k8s.io/apimachinery/pkg/")
+content = content.replace("golang/k8s_io/client_go/v/v0_23/tools/clientcmd/clientcmd", "k8s.io/client-go/tools/clientcmd")
 content = content.replace("golang/k8s_io/client_go/v/v0_23/", "k8s.io/client-go/")
 content = content.replace("golang/sigs_k8s_io/controller_runtime/v/v0_11/", "sigs.k8s.io/controller-runtime/")
 content = content.replace("golang/k8s_io/api/v/v0_23/", "k8s.io/api/")
