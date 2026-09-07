@@ -214,7 +214,10 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 	populateStatusParameters(paramsMap, c.Status)
 
 	if len(c.Dependencies) > 0 {
-		paramsMap["dependencies"] = strings.Join(c.Dependencies, ", ")
+		deps := make([]string, len(c.Dependencies))
+		copy(deps, c.Dependencies)
+		sort.Strings(deps)
+		paramsMap["dependencies"] = strings.Join(deps, ", ")
 	}
 
 	for k, v := range c.Labels {
@@ -227,12 +230,12 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 	}
 	sort.Strings(keys)
 
-	params := make([]ConfigParameter, 0, len(keys))
-	for _, k := range keys {
-		params = append(params, ConfigParameter{
+	params := make([]ConfigParameter, len(keys))
+	for i, k := range keys {
+		params[i] = ConfigParameter{
 			Key:   k,
 			Value: paramsMap[k],
-		})
+		}
 	}
 
 	return ComponentConfig{
@@ -317,6 +320,9 @@ func formatCoordinatesEndpoint(coord *componentspb.ResolvedComponentCoordinates)
 	}
 	if coord.GetPort() > 0 {
 		return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(host, strconv.Itoa(int(coord.GetPort()))))
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
 	}
 	return fmt.Sprintf("%s://%s", scheme, host)
 }

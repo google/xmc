@@ -206,17 +206,31 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 	if err != nil {
 		return nil, err
 	}
-	if s.componentsProvider != nil {
-		customConfigs, err := s.componentsProvider.GetComponentsConfig(ctx)
-		if err != nil {
-			logging.Warn(ctx, "Failed to retrieve custom component configs", "error", err)
-		} else {
-			groups = append(groups, convertComponentConfigs(customConfigs)...)
-		}
+
+	customGroups, err := s.listCustomComponentConfigs(ctx)
+	if err != nil {
+		return nil, err
 	}
+	groups = append(groups, customGroups...)
+
 	return &spb.ListConfigEntriesResponse{
 		ConfigGroups: groups,
 	}, nil
+}
+
+func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
+	if s.componentsProvider == nil {
+		return nil, nil
+	}
+	customConfigs, err := s.componentsProvider.GetComponentsConfig(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		logging.Warn(ctx, "Failed to retrieve custom component configs", "error", err)
+		return nil, nil
+	}
+	return convertComponentConfigs(customConfigs), nil
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {

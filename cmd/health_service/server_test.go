@@ -459,6 +459,32 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 		t.Fatalf("Expected 1 config group on custom components error, got %d", len(resp.ConfigGroups))
 	}
 }
+func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &Config{
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel context immediately
+
+	mockProvider := &mockComponentsInfoProvider{
+		configErr: context.Canceled,
+	}
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider)
+	defer s.Close()
+
+	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
+	if err == nil {
+		t.Fatal("expected error when context is cancelled, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got: %v", err)
+	}
+}
 func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 	tests := []struct {
 		name       string

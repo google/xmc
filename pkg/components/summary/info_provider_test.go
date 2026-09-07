@@ -331,3 +331,77 @@ func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 		t.Errorf("got state %q, want COMPONENT_STATE_DISABLING", cfgMap["state"])
 	}
 }
+
+func TestFormatCoordinatesEndpoint_IPv6(t *testing.T) {
+	tests := []struct {
+		name     string
+		coord    *componentspb.ResolvedComponentCoordinates
+		expected string
+	}{
+		{
+			name: "IPv6 without port gets wrapped in brackets",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "2001:db8::1",
+			},
+			expected: "http://[2001:db8::1]",
+		},
+		{
+			name: "IPv6 with port uses JoinHostPort",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "https",
+				Host:   "2001:db8::1",
+				Port:   8443,
+			},
+			expected: "https://[2001:db8::1]:8443",
+		},
+		{
+			name: "IPv6 already wrapped without port is not double bracketed",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "[2001:db8::1]",
+			},
+			expected: "http://[2001:db8::1]",
+		},
+		{
+			name: "IPv4 without port remains unbracketed",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "192.168.1.1",
+			},
+			expected: "http://192.168.1.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatCoordinatesEndpoint(tt.coord)
+			if got != tt.expected {
+				t.Errorf("formatCoordinatesEndpoint() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractComponentConfig_SortedDependencies(t *testing.T) {
+	record := &store.ComponentRecord{
+		Name:         "multi-dep-comp",
+		State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Generation:   1,
+		Dependencies: []string{"zebra", "alpha", "charlie", "beta"},
+	}
+
+	cfg := extractComponentConfig(record)
+	var depsVal string
+	for _, p := range cfg.ConfigParameters {
+		if p.Key == "dependencies" {
+			depsVal = p.Value
+			break
+		}
+	}
+
+	want := "alpha, beta, charlie, zebra"
+	if depsVal != want {
+		t.Errorf("dependencies = %q, want %q", depsVal, want)
+	}
+}

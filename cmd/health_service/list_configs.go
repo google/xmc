@@ -95,12 +95,12 @@ func convertComponentConfigs(configs []summary.ComponentConfig) []*spb.ConfigGro
 		if len(comp.ConfigParameters) == 0 {
 			continue
 		}
-		infoList := make([]*spb.ConfigInfo, 0, len(comp.ConfigParameters))
-		for _, param := range comp.ConfigParameters {
-			infoList = append(infoList, &spb.ConfigInfo{
+		infoList := make([]*spb.ConfigInfo, len(comp.ConfigParameters))
+		for i, param := range comp.ConfigParameters {
+			infoList[i] = &spb.ConfigInfo{
 				Key:   param.Key,
 				Value: param.Value,
-			})
+			}
 		}
 		groups = append(groups, &spb.ConfigGroup{
 			DisplayName: fmt.Sprintf("%s (Custom Component)", comp.Name),
