@@ -330,6 +330,11 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return m.executeSyncUpgrade(ctx, ref, targetNamespace, values)
 	}
 
+	if err := ctx.Err(); err != nil {
+		m.setUpgradeErr(ref, err)
+		return err
+	}
+
 	select {
 	case <-m.stopCh:
 		return errors.New("helm manager is stopped")

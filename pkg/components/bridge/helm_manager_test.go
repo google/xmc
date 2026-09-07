@@ -1213,7 +1213,7 @@ func TestK8sHelmManager_TriggerUpgrade_ContextCancellation_DuringLockAcquisition
 	ctx := context.Background()
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
 
 	if err := mgr.acquireUpgradeLock(ctx); err != nil {
 		t.Fatalf("failed to acquire initial upgrade lock: %v", err)
