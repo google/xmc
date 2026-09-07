@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	cloudspanner "cloud.google.com/go/spanner"
+	cloudspanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"

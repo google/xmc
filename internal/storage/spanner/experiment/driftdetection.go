@@ -92,7 +92,7 @@ func checkConsistency(ctx context.Context, txn SpannerTransaction, xid int64) (b
 
 	var isConsistent bool
 	if err := row.ColumnByName("IsExperimentConsistent", &isConsistent); err != nil {
-		return false, fmt.Errorf("failed reading IsExperimentConsistent: %w", err)
+		return false, fmt.Errorf("failed reading column 'IsExperimentConsistent': %w", err)
 	}
 	return isConsistent, nil
 }
@@ -141,19 +141,19 @@ func formatComponentDiff(row *spanner.Row) (string, error) {
 	var componentID int64
 
 	if err := row.ColumnByName("Name", &name); err != nil {
-		return "", fmt.Errorf("failed reading component Name: %w", err)
+		return "", fmt.Errorf("failed reading column 'Name': %w", err)
 	}
 	if err := row.ColumnByName("LockedGeneration", &lockedGen); err != nil {
-		return "", fmt.Errorf("failed reading LockedGeneration: %w", err)
+		return "", fmt.Errorf("failed reading column 'LockedGeneration': %w", err)
 	}
 	if err := row.ColumnByName("ObservedGeneration", &observedGen); err != nil {
-		return "", fmt.Errorf("failed reading ObservedGeneration: %w", err)
+		return "", fmt.Errorf("failed reading column 'ObservedGeneration': %w", err)
 	}
 	if err := row.ColumnByName("State", &state); err != nil {
-		return "", fmt.Errorf("failed reading component State: %w", err)
+		return "", fmt.Errorf("failed reading column 'State': %w", err)
 	}
 	if err := row.ColumnByName("ComponentId", &componentID); err != nil {
-		return "", fmt.Errorf("failed reading ComponentId: %w", err)
+		return "", fmt.Errorf("failed reading column 'ComponentId': %w", err)
 	}
 
 	if !name.Valid {
