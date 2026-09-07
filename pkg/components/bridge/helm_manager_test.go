@@ -722,3 +722,42 @@ func TestK8sHelmManager_Close(t *testing.T) {
 		t.Fatalf("expected nil error on Close, got: %v", err)
 	}
 }
+
+func TestK8sHelmManager_TriggerUpgrade_UninitializedRunner_LogsWarning(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent with uninitialized runner failed: %v", err)
+	}
+}
+
+func TestK8sHelmManager_TriggerUpgrade_ContextCancellation_DuringLockAcquisition(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
+
+	if err := mgr.acquireUpgradeLock(ctx); err != nil {
+		t.Fatalf("failed to acquire initial upgrade lock: %v", err)
+	}
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	ref := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
+	err := mgr.triggerUpgrade(cancelCtx, ref, map[string]any{"foo": "bar"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled when acquiring lock with canceled context, got: %v", err)
+	}
+
+	mgr.releaseUpgradeLock()
+
+	if err := mgr.triggerUpgrade(ctx, ref, map[string]any{"foo": "bar"}); err != nil {
+		t.Fatalf("expected upgrade to succeed after releasing lock, got: %v", err)
+	}
+}

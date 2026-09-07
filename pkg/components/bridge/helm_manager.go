@@ -75,6 +75,7 @@ type K8sHelmManager struct {
 	activeState map[string]bool
 	upgradeErrs map[string]error
 	upgradeMu   sync.Mutex
+	upgradeSem  chan struct{}
 }
 
 // HelmManagerOption configures a K8sHelmManager.
@@ -120,6 +121,7 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		releaseName: releaseName,
 		activeState: make(map[string]bool),
 		upgradeErrs: make(map[string]error),
+		upgradeSem:  make(chan struct{}, 1),
 	}
 	for _, opt := range opts {
 		opt(mgr)
@@ -224,15 +226,56 @@ func (m *K8sHelmManager) loadAllComponentValues(ctx context.Context, namespace s
 	return merged, nil
 }
 
+func (m *K8sHelmManager) acquireUpgradeLock(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	if m.upgradeSem == nil {
+		m.upgradeSem = make(chan struct{}, 1)
+	}
+	sem := m.upgradeSem
+	m.mu.Unlock()
+
+	select {
+	case sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *K8sHelmManager) releaseUpgradeLock() {
+	if m == nil {
+		return
+	}
+	m.mu.RLock()
+	sem := m.upgradeSem
+	m.mu.RUnlock()
+	if sem != nil {
+		select {
+		case <-sem:
+		default:
+		}
+	}
+}
+
 func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, values map[string]any) error {
-	if m == nil || m.runner == nil {
+	if m == nil {
+		return nil
+	}
+	if m.runner == nil {
+		logging.Warn(ctx, "Skipping Helm upgrade because HelmActionRunner is uninitialized", "release", m.releaseName, "namespace", ref.Namespace, "component", ref.Name)
 		return nil
 	}
 	targetNamespace := m.resolveNamespace(ref.Namespace)
 	m.setUpgradeErr(ref, nil)
 
-	m.upgradeMu.Lock()
-	defer m.upgradeMu.Unlock()
+	if err := m.acquireUpgradeLock(ctx); err != nil {
+		m.setUpgradeErr(ref, err)
+		return err
+	}
+	defer m.releaseUpgradeLock()
 
 	mergedValues, err := m.loadAllComponentValues(ctx, targetNamespace)
 	if err != nil {
