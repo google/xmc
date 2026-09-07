@@ -22,6 +22,15 @@ flowchart LR
 
 ## 2. CLI Usage & Flags
 
+### Execution via Go Directly (Fast Local Build)
+
+Compile and run directly using standard Go tooling without Bazel overhead:
+
+```bash
+go build -o bin/component-linter ./cmd/component-linter
+./bin/component-linter -manifests-dir=examples/components/profiles/default [flags]
+```
+
 ### Execution via Bazel
 
 Run the CLI directly using Bazel:

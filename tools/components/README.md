@@ -35,9 +35,11 @@ bazel run //tools/components:run_linter -- --scan-roots examples/components/prof
 ### Execution via Python Directly
 
 ```bash
-# Run with a pre-compiled binary for fast execution
+# Build locally via Go (recommended for fast iteration)
+go build -o bin/component-linter ./cmd/component-linter
+
+# Auto-discovers bin/component-linter or bazel-bin
 python3 tools/components/run_linter.py \
-  --linter-binary="bazel-bin/cmd/component-linter/component-linter_/component-linter" \
   --scan-roots examples/components/profiles/default \
   --output=text
 ```
@@ -47,7 +49,7 @@ python3 tools/components/run_linter.py \
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--scan-roots` | `list[str]` | `deploy/profiles`, `deploy/components`, `examples/components/profiles` | Space-separated list of root directories to scan recursively for component profiles. |
-| `--linter-binary` | `string` | `""` | Path to a pre-compiled `component-linter` binary. If omitted, falls back to `bazel run //cmd/component-linter:component-linter`. |
+| `--linter-binary` | `string` | `""` | Path to a pre-compiled `component-linter` binary. If omitted, checks `bin/component-linter` and `bazel-bin/`, falling back to `bazel run //cmd/component-linter:component-linter`. |
 | `--output` | `string` | `"text"` | Output format: `text` (human-readable console) or `json` (machine-readable structured report). |
 | `--strict` | `bool` | `False` | When set, fails with non-zero exit code if no component profile targets are discovered. |
 
