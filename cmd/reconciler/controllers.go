@@ -54,12 +54,12 @@ type controllerRegistrationParams struct {
 	clusterName string
 }
 
-func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, *kueuesync.Reconciler, error) {
+func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, error) {
 	if p.mgr == nil {
-		return nil, nil, errors.New("manager cannot be nil")
+		return nil, errors.New("manager cannot be nil")
 	}
 	if p.k8sClient == nil {
-		return nil, nil, errors.New("k8sClient cannot be nil")
+		return nil, errors.New("k8sClient cannot be nil")
 	}
 
 	batcher := shared.NewUpdateBatcher(
@@ -71,7 +71,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		p.storage,
 	)
 	if err := p.mgr.Add(batcher); err != nil {
-		return nil, nil, fmt.Errorf("failed to add batcher runnable to manager: %w", err)
+		return nil, fmt.Errorf("failed to add batcher runnable to manager: %w", err)
 	}
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
@@ -88,10 +88,10 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		MLRunClient:                 p.mlRunClient,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
 	}
 	if err := jobsetReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup jobset controller: %w", err)
+		return nil, fmt.Errorf("unable to setup jobset controller: %w", err)
 	}
 
 	workloadReconciler, err := workload.NewReconciler(workload.Params{
@@ -107,10 +107,10 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		DetectInadmissibleWorkUnits: p.cfg.DetectInadmissibleWorkUnits,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create workload reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create workload reconciler: %w", err)
 	}
 	if err := workloadReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup workload controller: %w", err)
+		return nil, fmt.Errorf("unable to setup workload controller: %w", err)
 	}
 
 	kueueSyncReconciler, err := kueuesync.NewReconciler(kueuesync.Params{
@@ -122,11 +122,11 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		MaxConcurrentKueueSyncReconciles: p.cfg.MaxConcurrentKueueSyncReconciles,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create kueuesync reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create kueuesync reconciler: %w", err)
 	}
 	if err := p.mgr.Add(kueueSyncReconciler); err != nil {
-		return nil, nil, fmt.Errorf("failed to add kueue sync runnable to manager: %w", err)
+		return nil, fmt.Errorf("failed to add kueue sync runnable to manager: %w", err)
 	}
 
-	return batcher, kueueSyncReconciler, nil
+	return batcher, nil
 }

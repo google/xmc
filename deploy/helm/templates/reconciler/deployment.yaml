@@ -29,6 +29,7 @@ spec:
     spec:
       serviceAccountName: reconciler-service-account
       securityContext:
+        runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -39,6 +40,7 @@ spec:
           allowPrivilegeEscalation: false
           privileged: false
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
           runAsUser: 1000
           runAsGroup: 1000
           capabilities:

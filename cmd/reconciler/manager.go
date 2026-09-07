@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
@@ -204,7 +205,7 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
 		newMLRunCreator(ctx, gceMeta.ProjectID, cfg.MldiagnosticsEnvironment, gceMeta.Location))
 
-	batcher, _, err := registerControllers(ctx, controllerRegistrationParams{
+	batcher, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,
 		cfg:         cfg,
 		storage:     storage,
@@ -216,6 +217,14 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if batcher != nil {
+		cleanups = append(cleanups, func() error {
+			flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			batcher.Flush(flushCtx)
+			return nil
+		})
 	}
 
 	cleanup := func() error {

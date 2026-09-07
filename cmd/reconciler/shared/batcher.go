@@ -185,14 +185,21 @@ func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			b.processBatches(flushCtx)
-			cancel()
+			func() {
+				flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				defer cancel()
+				b.processBatches(flushCtx)
+			}()
 			return nil
 		case <-ticker.C:
 			b.processBatches(ctx)
 		}
 	}
+}
+
+// Flush immediately flushes any pending batches of updates. Returns true if any batches were processed.
+func (b *UpdateBatcher) Flush(ctx context.Context) bool {
+	return b.processBatches(ctx)
 }
 
 // processBatches processes one batch of updates. Returns true if any batches were processed.

@@ -41,7 +41,7 @@ func TestRegisterControllers_Validation(t *testing.T) {
 	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
 
 	t.Run("nil manager returns error", func(t *testing.T) {
-		_, _, err := registerControllers(context.Background(), controllerRegistrationParams{
+		_, err := registerControllers(context.Background(), controllerRegistrationParams{
 			mgr:       nil,
 			k8sClient: k8sClient,
 		})
@@ -52,7 +52,7 @@ func TestRegisterControllers_Validation(t *testing.T) {
 
 	t.Run("nil k8sClient returns error", func(t *testing.T) {
 		mgr := &fakeControllerManager{scheme: scheme}
-		_, _, err := registerControllers(context.Background(), controllerRegistrationParams{
+		_, err := registerControllers(context.Background(), controllerRegistrationParams{
 			mgr:       mgr,
 			k8sClient: nil,
 		})

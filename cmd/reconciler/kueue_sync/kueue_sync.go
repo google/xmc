@@ -73,12 +73,16 @@ func NewReconciler(p Params) (*Reconciler, error) {
 	if maxConcurrent <= 0 {
 		maxConcurrent = 1
 	}
+	tickDuration := p.KueueSyncTickDuration
+	if tickDuration <= 0 {
+		tickDuration = defaultKueueSyncTickDuration
+	}
 	return &Reconciler{
 		Client:                           p.Client,
 		Clientset:                        p.Clientset,
 		Storage:                          p.Storage,
 		UpdateBatcher:                    p.UpdateBatcher,
-		KueueSyncTickDuration:            p.KueueSyncTickDuration,
+		KueueSyncTickDuration:            tickDuration,
 		MaxConcurrentKueueSyncReconciles: maxConcurrent,
 	}, nil
 }
@@ -87,6 +91,7 @@ const (
 	pendingWorkloadsAPIPathTemplate = "/apis/visibility.kueue.x-k8s.io/v1beta2/clusterqueues/%s/pendingworkloads"
 	maxConcurrentQueueFetches       = 10
 	limitForPendingWorkloadsAPICall = "10000"
+	defaultKueueSyncTickDuration    = 60 * time.Second
 )
 
 // pendingWorkload is a summary of a pending workload in a ClusterQueue.
@@ -179,9 +184,14 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 	}
 	workloadSem := make(chan struct{}, limit)
 
+queueLoop:
 	for _, cqName := range cqNames {
+		select {
+		case <-ctx.Done():
+			break queueLoop
+		case queueSem <- struct{}{}:
+		}
 		queueWaitGroup.Add(1)
-		queueSem <- struct{}{}
 		go func(cqName string) {
 			defer queueWaitGroup.Done()
 			defer func() { <-queueSem }()
@@ -207,8 +217,12 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 					Namespace:             pw.Metadata.Namespace,
 				}
 
+				select {
+				case <-ctx.Done():
+					return
+				case workloadSem <- struct{}{}:
+				}
 				workloadWaitGroup.Add(1)
-				workloadSem <- struct{}{}
 				go func(info WorkloadPositionInfo) {
 					defer workloadWaitGroup.Done()
 					defer func() { <-workloadSem }()

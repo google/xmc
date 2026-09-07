@@ -137,9 +137,6 @@ content = content.replace("xmanager_cloud/storage/spanner/migrations/commands/co
 content = content.replace("xmanager_cloud/storage/spanner/migrations/driver/spannerdriver", "xmanager_cloud/internal/storage/spanner/migrations/driver")
 content = content.replace("xmanager_cloud/storage/storage", "xmanager_cloud/internal/storage")
 content = content.replace("xmanager_cloud/storage/data/data", "xmanager_cloud/internal/storage/data")
-content = content.replace("c.Watch(&source.Kind{Type: &v1beta1.ClusterQueue{}}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{})", "c.Watch(source.Kind[client.Object](mgr.GetCache(), &v1beta1.ClusterQueue{}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{}))")
-content = content.replace("c.Watch(&source.Kind{Type: &v1beta1.Workload{}}, &handler.EnqueueRequestForObject{}, workloadPredicate(ctx))", "c.Watch(source.Kind[client.Object](mgr.GetCache(), &v1beta1.Workload{}, &handler.EnqueueRequestForObject{}, workloadPredicate(ctx)))")
-content = content.replace("c.Watch(&source.Kind{Type: &v1alpha2.JobSet{}}, &handler.EnqueueRequestForObject{}, jobSetPredicate(ctx))", "c.Watch(source.Kind[client.Object](mgr.GetCache(), &v1alpha2.JobSet{}, &handler.EnqueueRequestForObject{}, jobSetPredicate(ctx)))")
 content = content.replace("func (c *clientWithError) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {", "func (c *clientWithError) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {")
 content = content.replace("return c.Client.Get(ctx, key, obj)", "return c.Client.Get(ctx, key, obj, opts...)")
 # deduplicate trailing name/name pattern ONLY for k8s.io and sigs.k8s.io packages

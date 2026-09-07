@@ -1165,9 +1165,6 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithRuntimeObjects(objs...).
-				WithIndex(&corev1.Pod{}, v1alpha2.JobSetNameKey, func(obj client.Object) []string {
-					return []string{obj.(*corev1.Pod).Labels[v1alpha2.JobSetNameKey]}
-				}).
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{
@@ -1293,9 +1290,6 @@ func TestReconcileUnschedulablePods(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithRuntimeObjects(js, unschedulablePod.DeepCopy()).
-				WithIndex(&corev1.Pod{}, v1alpha2.JobSetNameKey, func(obj client.Object) []string {
-					return []string{obj.(*corev1.Pod).Labels[v1alpha2.JobSetNameKey]}
-				}).
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{

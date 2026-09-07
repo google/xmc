@@ -27,7 +27,6 @@ import (
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/fields/fields"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/serializer/serializer"
@@ -37,7 +36,6 @@ import (
 	fakerest "golang/k8s_io/client_go/v/v0_23/rest/fake/fake"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	fmpb "protobuf/field_mask_go_proto"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -133,34 +131,6 @@ var testPendingWorkloads = pendingWorkloadList{
 			PositionInClusterQueue: 5,
 		},
 	},
-}
-
-type fakeClient struct {
-	client.Client
-	jobsets []v1alpha2.JobSet
-}
-
-func (f *fakeClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	listOpts := client.ListOptions{}
-	listOpts.ApplyOptions(opts)
-	if listOpts.FieldSelector != nil {
-		jobSetList, ok := list.(*v1alpha2.JobSetList)
-		if !ok {
-			return fmt.Errorf("can only list JobSetList with field selector")
-		}
-		var jobsets []v1alpha2.JobSet
-		for _, js := range f.jobsets {
-			if listOpts.Namespace != "" && js.Namespace != listOpts.Namespace {
-				continue
-			}
-			if listOpts.FieldSelector.Matches(fields.Set{"metadata.name": js.Name}) {
-				jobsets = append(jobsets, js)
-			}
-		}
-		jobSetList.Items = jobsets
-		return nil
-	}
-	return f.Client.List(ctx, list, opts...)
 }
 
 // fakeCoreV1Impl provides a fake corev1.CoreV1Interface implementation that returns a fake RESTClient.
@@ -295,7 +265,7 @@ func TestNewReconciler_Validation(t *testing.T) {
 	}
 }
 
-func TestNewReconciler_DefaultConcurrency(t *testing.T) {
+func TestNewReconciler_Defaults(t *testing.T) {
 	s := runtime.NewScheme()
 	v1alpha2.AddToScheme(s)
 	v1beta1.AddToScheme(s)
@@ -310,22 +280,30 @@ func TestNewReconciler_DefaultConcurrency(t *testing.T) {
 	tests := []struct {
 		name          string
 		maxConcurrent int
+		tickDuration  time.Duration
 		wantLimit     int
+		wantTick      time.Duration
 	}{
 		{
-			name:          "zero defaults to 1",
+			name:          "zero values use defaults",
 			maxConcurrent: 0,
+			tickDuration:  0,
 			wantLimit:     1,
+			wantTick:      defaultKueueSyncTickDuration,
 		},
 		{
-			name:          "negative defaults to 1",
+			name:          "negative values use defaults",
 			maxConcurrent: -10,
+			tickDuration:  -5 * time.Second,
 			wantLimit:     1,
+			wantTick:      defaultKueueSyncTickDuration,
 		},
 		{
-			name:          "positive preserved",
+			name:          "positive values preserved",
 			maxConcurrent: 50,
+			tickDuration:  30 * time.Second,
 			wantLimit:     50,
+			wantTick:      30 * time.Second,
 		},
 	}
 
@@ -336,12 +314,16 @@ func TestNewReconciler_DefaultConcurrency(t *testing.T) {
 				Clientset:                        cs,
 				UpdateBatcher:                    updateBatcher,
 				MaxConcurrentKueueSyncReconciles: tc.maxConcurrent,
+				KueueSyncTickDuration:            tc.tickDuration,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 			if rec.MaxConcurrentKueueSyncReconciles != tc.wantLimit {
 				t.Errorf("MaxConcurrentKueueSyncReconciles = %d, want %d", rec.MaxConcurrentKueueSyncReconciles, tc.wantLimit)
+			}
+			if rec.KueueSyncTickDuration != tc.wantTick {
+				t.Errorf("KueueSyncTickDuration = %v, want %v", rec.KueueSyncTickDuration, tc.wantTick)
 			}
 		})
 	}
@@ -440,14 +422,10 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 	cq := &v1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{Name: ClusterQueue1},
 	}
-	cl := &fakeClient{
-		Client: fake.NewClientBuilder().
-			WithScheme(s).
-			WithObjects(js1, js2, js4, cq).
-			Build(),
-		jobsets: []v1alpha2.JobSet{*js1, *js2, *js4},
-	}
-	reconciler.Client = cl
+	reconciler.Client = fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(js1, js2, js4, cq).
+		Build()
 
 	reconciler.updateWorkUnitNotesAboutPosition(ctx)
 
