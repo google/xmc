@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"cloud.google.com/go/spanner"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -186,9 +186,12 @@ func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *e
 		expStatus.StructuredStatusMessage = driftMsg
 		return
 	}
-	if currentMsg.GetSeverity() == essmsgpb.StructuredMessage_WARNING {
-		if !strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
-			currentMsg.UserFacingText = fmt.Sprintf("%s; %s", currentMsg.GetUserFacingText(), driftMsg.GetUserFacingText())
-		}
+	if currentMsg.GetSeverity() != essmsgpb.StructuredMessage_WARNING || strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
+		return
 	}
+	if currentMsg.GetUserFacingText() == "" {
+		currentMsg.UserFacingText = driftMsg.GetUserFacingText()
+		return
+	}
+	currentMsg.UserFacingText = fmt.Sprintf("%s; %s", currentMsg.GetUserFacingText(), driftMsg.GetUserFacingText())
 }
