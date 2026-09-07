@@ -1558,9 +1558,6 @@ type mockProberDirect struct {
 func (m *mockProberDirect) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
 	return m.probeRes, m.err
 }
-func (m *mockProberDirect) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
-	return m.probeRes, m.err
-}
 func (m *mockProberDirect) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
 	return m.probeRes, m.err
 }

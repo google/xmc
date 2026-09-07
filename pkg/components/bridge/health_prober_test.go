@@ -18,58 +18,16 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("OK"))
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer ts.Close()
-
+func TestNetworkHealthProber_ProbeTCP(t *testing.T) {
 	prober := NewNetworkHealthProber(
-		WithHealthHTTPClient(ts.Client()),
 		WithHealthDialer(&net.Dialer{}),
 		WithHealthProbeTimeout(2*time.Second),
 	)
 	ctx := context.Background()
-
-	t.Run("HTTP healthy and unhealthy", func(t *testing.T) {
-		res, err := prober.ProbeHTTP(ctx, ts.URL+"/health", 2*time.Second)
-		if err != nil || !res.Healthy || res.StatusCode != http.StatusOK {
-			t.Fatalf("expected healthy HTTP probe: res=%+v, err=%v", res, err)
-		}
-		resErr, err := prober.ProbeHTTP(ctx, ts.URL+"/error", 2*time.Second)
-		if err != nil || resErr.Healthy || resErr.StatusCode != http.StatusInternalServerError {
-			t.Fatalf("expected unhealthy HTTP probe: res=%+v, err=%v", resErr, err)
-		}
-	})
-
-	t.Run("HTTP error paths", func(t *testing.T) {
-		if _, err := prober.ProbeHTTP(ctx, "", 0); err == nil {
-			t.Error("expected error on empty URL")
-		}
-		if _, err := prober.ProbeHTTP(ctx, "://bad", 0); err == nil {
-			t.Error("expected error on invalid URL")
-		}
-		canceledCtx, cancel := context.WithCancel(ctx)
-		cancel()
-		if _, err := prober.ProbeHTTP(canceledCtx, ts.URL+"/health", time.Second); err == nil {
-			t.Error("expected error on canceled context")
-		}
-		resFail, err := prober.ProbeHTTP(ctx, "http://127.0.0.1:1", time.Second)
-		if err != nil || resFail.Healthy {
-			t.Errorf("expected failed HTTP probe: res=%+v, err=%v", resFail, err)
-		}
-	})
 
 	t.Run("TCP healthy and error paths", func(t *testing.T) {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -110,52 +68,16 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 			t.Errorf("expected failed TCP probe: res=%+v, err=%v", resFail, err)
 		}
 	})
-
-	t.Run("Probe protocol routing", func(t *testing.T) {
-		resHTTP, err := prober.Probe(ctx, ts.URL+"/health", time.Second)
-		if err != nil || !resHTTP.Healthy {
-			t.Errorf("Probe() HTTP routing failed: res=%+v, err=%v", resHTTP, err)
-		}
-		resUpperHTTP, err := prober.Probe(ctx, "HTTP://"+ts.Listener.Addr().String()+"/health", time.Second)
-		if err != nil || !resUpperHTTP.Healthy {
-			t.Errorf("Probe() uppercase HTTP routing failed: res=%+v, err=%v", resUpperHTTP, err)
-		}
-		resTCP, err := prober.Probe(ctx, "127.0.0.1:1", time.Second)
-		if err != nil || resTCP.Healthy {
-			t.Errorf("Probe() TCP routing failed: res=%+v, err=%v", resTCP, err)
-		}
-	})
-	t.Run("bounded body drain", func(t *testing.T) {
-		largePayload := make([]byte, 128*1024)
-		tsLarge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(largePayload)
-		}))
-		defer tsLarge.Close()
-
-		res, err := prober.ProbeHTTP(ctx, tsLarge.URL, 2*time.Second)
-		if err != nil || !res.Healthy || res.StatusCode != http.StatusOK {
-			t.Fatalf("expected healthy bounded body drain probe: res=%+v, err=%v", res, err)
-		}
-	})
 }
 
-func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
-	defer ts.Close()
-
+func TestNetworkHealthProber_DefaultProberTCP(t *testing.T) {
 	p := NewNetworkHealthProber(
 		nil,
-		WithHealthHTTPClient(nil),
 		WithHealthDialer(nil),
 		WithHealthProbeTimeout(0),
 	)
 	ctx := context.Background()
 
-	resHTTP, err := p.ProbeHTTP(ctx, ts.URL, 0)
-	if err != nil || !resHTTP.Healthy {
-		t.Errorf("expected healthy default ProbeHTTP: res=%+v, err=%v", resHTTP, err)
-	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
@@ -172,11 +94,8 @@ func TestNetworkHealthProber_NilReceiverSafety(t *testing.T) {
 	var nilProber *NetworkHealthProber
 	ctx := context.Background()
 
-	if _, err := nilProber.Probe(ctx, "http://localhost", time.Second); err == nil {
+	if _, err := nilProber.Probe(ctx, "localhost:80", time.Second); err == nil {
 		t.Error("expected error from nil NetworkHealthProber.Probe")
-	}
-	if _, err := nilProber.ProbeHTTP(ctx, "http://localhost", time.Second); err == nil {
-		t.Error("expected error from nil NetworkHealthProber.ProbeHTTP")
 	}
 	if _, err := nilProber.ProbeTCP(ctx, "localhost:80", time.Second); err == nil {
 		t.Error("expected error from nil NetworkHealthProber.ProbeTCP")
@@ -186,9 +105,6 @@ func TestNetworkHealthProber_NilReceiverSafety(t *testing.T) {
 	nilFake.SetResult("http://localhost", nil) // should not panic
 	if _, err := nilFake.Probe(ctx, "http://localhost", time.Second); err == nil {
 		t.Error("expected error from nil FakeHealthProber.Probe")
-	}
-	if _, err := nilFake.ProbeHTTP(ctx, "http://localhost", time.Second); err == nil {
-		t.Error("expected error from nil FakeHealthProber.ProbeHTTP")
 	}
 	if _, err := nilFake.ProbeTCP(ctx, "localhost:80", time.Second); err == nil {
 		t.Error("expected error from nil FakeHealthProber.ProbeTCP")
@@ -200,16 +116,16 @@ func TestFakeHealthProber(t *testing.T) {
 	ctx := context.Background()
 
 	// Default success
-	res, err := fake.Probe(ctx, "http://target:8080", time.Second)
+	res, err := fake.Probe(ctx, "target:8080", time.Second)
 	if err != nil || !res.Healthy {
 		t.Errorf("expected default healthy result, got res=%+v, err=%v", res, err)
 	}
 
 	// Preconfigured result
-	fake.SetResult("http://target:8080", &HealthProbeResult{
+	fake.SetResult("target:8080", &HealthProbeResult{
 		Healthy: false, StatusCode: 503, Message: "Service Unavailable",
 	})
-	res, err = fake.ProbeHTTP(ctx, "http://target:8080", time.Second)
+	res, err = fake.Probe(ctx, "target:8080", time.Second)
 	if err != nil || res.Healthy || res.StatusCode != 503 {
 		t.Errorf("expected preconfigured unhealthy result, got res=%+v, err=%v", res, err)
 	}
