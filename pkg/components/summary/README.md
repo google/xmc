@@ -36,6 +36,7 @@ The primary interface exposed by the package:
 ```go
 type CustomComponentsInfoProvider interface {
 	GetComponentsHealth(ctx context.Context) ([]ComponentHealth, error)
+	GetComponentsConfig(ctx context.Context) ([]ComponentConfig, error)
 }
 ```
 
@@ -45,6 +46,10 @@ type CustomComponentsInfoProvider interface {
   - `Type`: Component classification (`ComponentTypeCustom1PComponent`, `ComponentTypeCustom3PWrapper`, etc.).
   - `HealthState`: Derived health status (`HealthStateHealthy`, `HealthStateUnhealthy`, `HealthStateDisabled`, `HealthStateUnspecified`).
   - `StatusMessage`: Human-readable explanation of status or error condition.
+- **`ComponentConfig`**: Captures runtime configuration:
+  - `Name`: Component identifier.
+  - `Type`: Component classification.
+  - `ConfigParameters`: Deterministically sorted slice of `ConfigParameter` key-value pairs (`Key`, `Value`).
 
 ---
 
@@ -62,3 +67,27 @@ The provider evaluates component health deterministically using the component's 
 
 ### Platform Health Isolation Invariant
 In `cmd/health_service/server.go`, core platform services returning `HEALTH_STATE_UNSPECIFIED` (e.g., unconfigured Log Monitor or database client initialization failures) trigger an `UNHEALTHY` overall platform state. In contrast, custom components with `HEALTH_STATE_UNSPECIFIED` (representing disabled optional components) are explicitly ignored during overall platform health calculation.
+
+---
+
+## Configuration Parameter Extraction
+
+`GetComponentsConfig` flattens complex component specifications and observed statuses into predictable, user-facing key-value pairs:
+
+1. **Spec Metadata**:
+   - `version`: Component release tag (e.g. `v2.1.0`).
+   - `type`: Protobuf component enum name.
+   - `description`: Human-readable summary.
+2. **Kubernetes Wrapper References**:
+   - `wrapper.crd_kind`, `wrapper.crd_group`, `wrapper.crd_version`
+   - `wrapper.target_namespace`, `wrapper.target_name`
+3. **Lifecycle Controls**:
+   - `lifecycle.grace_period` (e.g. `30s`)
+   - `lifecycle.draining_timeout` (e.g. `2m0s`)
+4. **Resolved Endpoints**:
+   - `endpoint`: Formatted scheme, host, and port (e.g. `http://service.namespace:8080`).
+   - **RFC 3986 Compliance**: IPv6 host literals without explicit ports are enclosed in square brackets (e.g. `http://[2001:db8::1]`).
+5. **Deterministic Dependencies**:
+   - `dependencies`: Component dependencies are copied and lexicographically sorted via `sort.Strings` before joining (`strings.Join(deps, ", ")`), guaranteeing deterministic output across calls and avoiding UI/test flakiness.
+6. **User Labels**:
+   - `label.<key>`: Any metadata labels attached to the component.
