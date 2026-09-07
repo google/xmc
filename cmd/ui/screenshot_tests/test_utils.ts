@@ -14,7 +14,28 @@
 
 import type { Page, Route } from '@playwright/test';
 
-export const MOCK_USER = {
+import type {
+  ClusterQueueSecondaryMetrics,
+  DashboardJob,
+  ListClusterQueuesResponse,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import type {
+  ListArtifactsResponse,
+  ListExperimentsResponse,
+  ListStatusMessagesResponse,
+  ListWorkUnitsResponse,
+} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import type { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import type { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import type {
+  HealthStatusResponse,
+  ListConfigEntriesResponse,
+  UserInfoResponse,
+} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+
+import type { UserResponse } from '../app/service/auth.service';
+
+export const MOCK_USER: UserResponse = {
   email: 'admin@google.com',
   name: 'Test User',
   pictureUrl: '',
@@ -22,12 +43,12 @@ export const MOCK_USER = {
   allowedDomains: ['google.com'],
 };
 
-export const MOCK_USER_INFO = {
+export const MOCK_USER_INFO: UserInfoResponse = {
   userEmail: 'test@google.com',
   privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
-export const MOCK_HEALTH_STATUS = {
+export const MOCK_HEALTH_STATUS: HealthStatusResponse = {
   healthState: 'HEALTH_STATE_UNHEALTHY',
   systemInfo: {
     appVersion: '1.5.1',
@@ -74,7 +95,7 @@ export const MOCK_HEALTH_STATUS = {
   healthCheckTime: { seconds: 1717804800, nanos: 0 },
 };
 
-export const MOCK_CONFIGS = {
+export const MOCK_CONFIGS: ListConfigEntriesResponse = {
   configGroups: [
     {
       displayName: 'Main Configuration',
@@ -86,7 +107,7 @@ export const MOCK_CONFIGS = {
   ],
 };
 
-export const MOCK_CLUSTER_QUEUES = {
+export const MOCK_CLUSTER_QUEUES: ListClusterQueuesResponse = {
   queues: [
     {
       queueName: 'gpu-cluster-queue',
@@ -99,7 +120,7 @@ export const MOCK_CLUSTER_QUEUES = {
   ],
 };
 
-export const MOCK_JOBS = [
+export const MOCK_JOBS: DashboardJob[] = [
   {
     xid: 10293841,
     workUnitId: 1,
@@ -118,7 +139,7 @@ export const MOCK_JOBS = [
   },
 ];
 
-export const MOCK_PREDICTABILITY_DATA = {
+export const MOCK_PREDICTABILITY_DATA: Record<string, ClusterQueueSecondaryMetrics> = {
   'gpu-cluster-queue': {
     queuePredictability: [
       {
@@ -155,7 +176,7 @@ export const MOCK_PREDICTABILITY_DATA = {
   },
 };
 
-export const MOCK_EXPERIMENTS_LIST = {
+export const MOCK_EXPERIMENTS_LIST: ListExperimentsResponse = {
   experiments: [
     {
       name: 'experiments/10293841',
@@ -268,7 +289,7 @@ export const MOCK_EXPERIMENTS_LIST = {
   nextPageToken: 'page_token_2',
 };
 
-export const MOCK_EXPERIMENT_DETAILS = {
+export const MOCK_EXPERIMENT_DETAILS: Experiment = {
   name: 'experiments/10293841',
   title: 'Gemini 1.5 Pro Fine-Tuning - Run 42',
   creator: 'jdoe@google.com',
@@ -321,7 +342,7 @@ export const MOCK_EXPERIMENT_DETAILS = {
   ],
 };
 
-export const MOCK_EXPERIMENT_WORK_UNITS = {
+export const MOCK_EXPERIMENT_WORK_UNITS: ListWorkUnitsResponse = {
   workUnits: [
     {
       name: 'experiments/10293841/workUnits/1',
@@ -430,7 +451,7 @@ export const MOCK_EXPERIMENT_WORK_UNITS = {
   nextPageToken: '',
 };
 
-export const MOCK_EXPERIMENT_ARTIFACTS = {
+export const MOCK_EXPERIMENT_ARTIFACTS: ListArtifactsResponse = {
   artifacts: [
     {
       name: 'artifacts/101',
@@ -507,7 +528,7 @@ export const MOCK_EXPERIMENT_ARTIFACTS = {
   ],
 };
 
-export const MOCK_EXPERIMENT_STATUS_MESSAGES = {
+export const MOCK_EXPERIMENT_STATUS_MESSAGES: ListStatusMessagesResponse = {
   statusMessages: [
     {
       name: 'experiments/10293841/statusMessages/1',
@@ -553,7 +574,7 @@ export const MOCK_EXPERIMENT_STATUS_MESSAGES = {
   ],
 };
 
-export const MOCK_WORK_UNIT_DETAILS = {
+export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
   name: 'experiments/10293841/workUnits/1',
   workUnitType: 'STANDARD',
   priority: 'HIGH',
@@ -634,7 +655,7 @@ export const MOCK_WORK_UNIT_DETAILS = {
   },
 };
 
-export const MOCK_WORK_UNIT_ARTIFACTS = {
+export const MOCK_WORK_UNIT_ARTIFACTS: ListArtifactsResponse = {
   artifacts: [
     {
       name: 'artifacts/201',
@@ -681,7 +702,7 @@ export const MOCK_WORK_UNIT_ARTIFACTS = {
   ],
 };
 
-export const MOCK_WORK_UNIT_STATUS_MESSAGES = {
+export const MOCK_WORK_UNIT_STATUS_MESSAGES: ListStatusMessagesResponse = {
   statusMessages: [
     {
       name: 'experiments/10293841/workUnits/1/statusMessages/1',
