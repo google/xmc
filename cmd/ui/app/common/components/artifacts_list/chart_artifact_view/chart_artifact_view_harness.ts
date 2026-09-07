@@ -24,12 +24,19 @@ export class ChartArtifactViewHarness extends ComponentHarness {
   static hostSelector = 'xmc-chart-artifact-view';
 
   private readonly title = this.locatorFor('.chart-artifact-title');
+  private readonly notice = this.locatorForOptional('.notice-container');
   private readonly metricChips = this.locatorForAll('.metric-chip');
   private readonly summaryBoxes = this.locatorForAll(SummaryBoxHarness);
   private readonly plotCards = this.locatorForAll(PlotCardHarness);
 
   async getTitle(): Promise<string> {
     return (await this.title()).text();
+  }
+
+  /** The explanation shown in place of the plots, or null when the chart is renderable. */
+  async getNotice(): Promise<string | null> {
+    const notice = await this.notice();
+    return notice ? notice.text() : null;
   }
 
   async getMetricNames(): Promise<string[]> {
