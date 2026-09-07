@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -153,6 +154,126 @@ func TestDashboardObserver_OnArtifactCreated_Success(t *testing.T) {
 	if up.UpdateMask == nil || len(up.UpdateMask.Paths) != 1 || up.UpdateMask.Paths[0] != "payload" {
 		t.Errorf("up.UpdateMask = %v, want ['payload']", up.UpdateMask)
 	}
+}
+
+func TestDashboardObserver_OnArtifactCreated_NoPlotsWithoutMetricNames(t *testing.T) {
+	t.Parallel()
+	mockDash := &mockDashboardClient{}
+	toolClient := toollibs.NewDashboardToolClient(mockDash)
+	var wg sync.WaitGroup
+	recStorage := &recordingStorage{MockStorage: &storage.MockStorage{}}
+	obs := NewDashboardObserver(toolClient, recStorage, &wg)
+
+	artifact := &essmsgpb.Artifact{
+		Name:   "artifacts/300",
+		Parent: "experiments/100/workUnits/200",
+		Payload: &essmsgpb.ArtifactPayload{
+			Type: &essmsgpb.ArtifactPayload_Chart{
+				Chart: &essmsgpb.ChartArtifact{Title: "No Metrics"},
+			},
+		},
+	}
+
+	obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
+	wg.Wait()
+
+	if len(mockDash.reqs) != 1 {
+		t.Fatalf("len(mockDash.reqs) = %d, want 1", len(mockDash.reqs))
+	}
+	if plots := mockDash.reqs[0].GetChart().GetPlots(); len(plots) != 0 {
+		t.Errorf("len(chart.Plots) = %d, want 0", len(plots))
+	}
+}
+
+func TestPlotSpecsForMetrics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("skips blank metric names", func(t *testing.T) {
+		t.Parallel()
+		plots := plotSpecsForMetrics([]string{"  ", "", "loss"})
+		if len(plots) != 2 {
+			t.Fatalf("len(plots) = %d, want 2", len(plots))
+		}
+		if got := plots[0].GetPlotId(); got != "loss_latest" {
+			t.Errorf("plots[0].PlotId = %q, want 'loss_latest'", got)
+		}
+	})
+
+	t.Run("disambiguates metric names that slugify alike", func(t *testing.T) {
+		t.Parallel()
+		plots := plotSpecsForMetrics([]string{"train/loss", "train_loss", "TRAIN.LOSS"})
+		want := []string{
+			"train_loss_latest", "train_loss_curve",
+			"train_loss_2_latest", "train_loss_2_curve",
+			"train_loss_3_latest", "train_loss_3_curve",
+		}
+		if len(plots) != len(want) {
+			t.Fatalf("len(plots) = %d, want %d", len(plots), len(want))
+		}
+		for i, w := range want {
+			if got := plots[i].GetPlotId(); got != w {
+				t.Errorf("plots[%d].PlotId = %q, want %q", i, got, w)
+			}
+		}
+	})
+
+	t.Run("does not reuse an ID a metric name already claimed", func(t *testing.T) {
+		t.Parallel()
+		// "foo_2" is both a metric in its own right and the suffix the third metric would be
+		// given by a naive occurrence counter, which would hand out foo_2 twice. The UI keys
+		// plot data by ID, so the duplicate would draw one metric's series under both plots.
+		plots := plotSpecsForMetrics([]string{"foo", "foo_2", "foo"})
+		want := []string{
+			"foo_latest", "foo_curve",
+			"foo_2_latest", "foo_2_curve",
+			"foo_3_latest", "foo_3_curve",
+		}
+		if len(plots) != len(want) {
+			t.Fatalf("len(plots) = %d, want %d", len(plots), len(want))
+		}
+		seen := make(map[string]bool, len(plots))
+		for i, w := range want {
+			got := plots[i].GetPlotId()
+			if got != w {
+				t.Errorf("plots[%d].PlotId = %q, want %q", i, got, w)
+			}
+			if seen[got] {
+				t.Errorf("plots[%d].PlotId = %q is a duplicate", i, got)
+			}
+			seen[got] = true
+		}
+	})
+
+	t.Run("falls back to a placeholder slug when a name has no usable characters", func(t *testing.T) {
+		t.Parallel()
+		plots := plotSpecsForMetrics([]string{"///"})
+		if len(plots) != 2 {
+			t.Fatalf("len(plots) = %d, want 2", len(plots))
+		}
+		if got := plots[0].GetPlotId(); got != "metric_latest" {
+			t.Errorf("plots[0].PlotId = %q, want 'metric_latest'", got)
+		}
+	})
+
+	t.Run("caps the number of metrics it expands", func(t *testing.T) {
+		t.Parallel()
+		metrics := make([]string, maxProvisionedMetrics+5)
+		for i := range metrics {
+			metrics[i] = fmt.Sprintf("metric/%d", i)
+		}
+		plots := plotSpecsForMetrics(metrics)
+		if want := 2 * maxProvisionedMetrics; len(plots) != want {
+			t.Errorf("len(plots) = %d, want %d", len(plots), want)
+		}
+	})
+
+	t.Run("maps scatter plots against the step axis", func(t *testing.T) {
+		t.Parallel()
+		plots := plotSpecsForMetrics([]string{"loss"})
+		if got := plots[1].GetMapping().GetX(); got != "step" {
+			t.Errorf("plots[1].Mapping.X = %q, want 'step'", got)
+		}
+	})
 }
 
 func TestDashboardObserver_OnArtifactCreated_DefaultTitle(t *testing.T) {
