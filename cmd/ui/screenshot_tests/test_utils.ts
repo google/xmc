@@ -44,7 +44,7 @@ export const MOCK_USER: UserResponse = {
 };
 
 export const MOCK_USER_INFO: UserInfoResponse = {
-  userEmail: 'test@google.com',
+  userEmail: 'admin@google.com',
   privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
 };
 
