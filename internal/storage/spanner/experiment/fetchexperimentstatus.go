@@ -32,7 +32,14 @@ func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*ess
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
-	return r.fetchExperimentStatusTransaction(ctx, xid, txn)
+	expStatus, err := r.fetchExperimentStatusTransaction(ctx, xid, txn)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.evaluateExperimentDrift(ctx, txn, xid, expStatus); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+	return expStatus, nil
 }
 
 func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.ExperimentStatus, error) {
@@ -51,10 +58,6 @@ func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid i
 	var expStatus essmsgpb.ExperimentStatus
 	if err := row.ColumnByName("Status", &expStatus); err != nil {
 		return nil, fmt.Errorf("failed to read column Status: %w", err)
-	}
-
-	if err := r.evaluateExperimentDrift(ctx, txn, xid, &expStatus); err != nil {
-		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
 	}
 
 	logging.Info(ctx, "Fetched ExperimentStatus from storage", "status", &expStatus)

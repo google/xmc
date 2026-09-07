@@ -33,10 +33,17 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
-	return r.FetchExperimentTransaction(ctx, xid, txn)
+	exp, err := r.FetchExperimentTransaction(ctx, xid, txn)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.evaluateExperimentDrift(ctx, txn, xid, exp.GetStatus()); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+	return exp, nil
 }
 
-// fetchExperimentTransaction retrieves a single Experiment from storage by its unique
+// FetchExperimentTransaction retrieves a single Experiment from storage by its unique
 // numerical ID in a transaction.
 func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.Experiment, error) {
 	logging.Info(ctx, "Fetch experiment row")
@@ -54,10 +61,6 @@ func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, 
 	exp, err := spannerdata.ExperimentRowToProto(row)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Experiment row to proto: %w", err)
-	}
-
-	if err := r.evaluateExperimentDrift(ctx, txn, xid, exp.GetStatus()); err != nil {
-		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
 	}
 
 	logging.Info(ctx, "Fetched experiment from storage", "experiment", exp)
