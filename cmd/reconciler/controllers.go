@@ -86,17 +86,16 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
-		Client:                      p.mgr.GetClient(),
-		Scheme:                      p.mgr.GetScheme(),
-		Project:                     p.projectID,
-		Location:                    p.location,
-		ClusterName:                 p.clusterName,
-		Batcher:                     batcher,
-		MaxConcurrentReconciles:     p.cfg.MaxConcurrentReconciles,
-		StartupPodErrorCheckTime:    p.cfg.StartupPodErrorCheckTime,
-		StartupPodErrorCheckEnabled: p.cfg.StartupPodErrorCheckEnabled,
-		Storage:                     p.storage,
-		MLRunClient:                 p.mlRunClient,
+		Client:                   p.mgr.GetClient(),
+		Scheme:                   p.mgr.GetScheme(),
+		Project:                  p.projectID,
+		Location:                 p.location,
+		ClusterName:              p.clusterName,
+		Batcher:                  batcher,
+		MaxConcurrentReconciles:  p.cfg.MaxConcurrentReconciles,
+		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
+		Storage:                  p.storage,
+		MLRunClient:              p.mlRunClient,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
@@ -114,8 +113,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 			Location:    p.location,
 			ClusterName: p.clusterName,
 		},
-		MaxConcurrentReconciles:     p.cfg.MaxConcurrentReconciles,
-		DetectInadmissibleWorkUnits: p.cfg.DetectInadmissibleWorkUnits,
+		MaxConcurrentReconciles: p.cfg.MaxConcurrentReconciles,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create workload reconciler: %w", err)

@@ -99,7 +99,6 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         "-quota_project_id=${var.project_id}",
         "-log_keyword=${var.logging_sink_custom_keyword}",
         "-max_concurrent_updates=${var.max_concurrent_updates}",
-        "-status_message_history_enabled=${var.status_message_history_enabled}",
       ]
     }
   }

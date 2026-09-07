@@ -72,9 +72,3 @@ variable "max_concurrent_updates" {
   description = "The maximum number of concurrent updates to Spanner during one batch log processing."
   default     = 10
 }
-
-variable "status_message_history_enabled" {
-  type        = bool
-  description = "Whether to enable status message history."
-  default     = true
-}

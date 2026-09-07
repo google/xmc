@@ -22,29 +22,27 @@ import (
 
 // Config holds the configuration for the log monitor application.
 type Config struct {
-	ProjectID                   string
-	SubscriptionID              string
-	Port                        string
-	BatchSize                   int
-	BatchInterval               time.Duration
-	SpannerDatabaseName         string
-	QuotaProjectID              string
-	LogKeyword                  string
-	MaxConcurrentUpdates        int
-	StatusMessageHistoryEnabled bool
+	ProjectID            string
+	SubscriptionID       string
+	Port                 string
+	BatchSize            int
+	BatchInterval        time.Duration
+	SpannerDatabaseName  string
+	QuotaProjectID       string
+	LogKeyword           string
+	MaxConcurrentUpdates int
 }
 
 var (
-	projectID                   string
-	subscriptionID              string
-	port                        string
-	batchSize                   int
-	batchInterval               time.Duration
-	spannerDatabaseName         string
-	quotaProjectID              string
-	logKeyword                  string
-	maxConcurrentUpdates        int
-	statusMessageHistoryEnabled bool
+	projectID            string
+	subscriptionID       string
+	port                 string
+	batchSize            int
+	batchInterval        time.Duration
+	spannerDatabaseName  string
+	quotaProjectID       string
+	logKeyword           string
+	maxConcurrentUpdates int
 )
 
 func init() {
@@ -61,22 +59,20 @@ func init() {
 	flag.StringVar(&quotaProjectID, "quota_project_id", "", "The ID of the quota project to use.")
 	flag.StringVar(&logKeyword, "log_keyword", "XMC LOG:", "The keyword that is used in logging sink to filter logs.")
 	flag.IntVar(&maxConcurrentUpdates, "max_concurrent_updates", 10, "The maximum number of concurrent updates to Spanner.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 }
 
 // LoadConfig validates and returns the configuration loaded from flags and environment variables.
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		ProjectID:                   projectID,
-		SubscriptionID:              subscriptionID,
-		Port:                        port,
-		BatchSize:                   batchSize,
-		BatchInterval:               batchInterval,
-		SpannerDatabaseName:         spannerDatabaseName,
-		QuotaProjectID:              quotaProjectID,
-		LogKeyword:                  logKeyword,
-		MaxConcurrentUpdates:        maxConcurrentUpdates,
-		StatusMessageHistoryEnabled: statusMessageHistoryEnabled,
+		ProjectID:            projectID,
+		SubscriptionID:       subscriptionID,
+		Port:                 port,
+		BatchSize:            batchSize,
+		BatchInterval:        batchInterval,
+		SpannerDatabaseName:  spannerDatabaseName,
+		QuotaProjectID:       quotaProjectID,
+		LogKeyword:           logKeyword,
+		MaxConcurrentUpdates: maxConcurrentUpdates,
 	}
 
 	if cfg.ProjectID == "" {

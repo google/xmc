@@ -185,8 +185,8 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			}
 			executionDeltas = append(executionDeltas, executionDelta)
 
-			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage(), txn)
-			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage(), txn)
+			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage(), txn)
+			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage(), txn)
 
 			qName := queueNames[update.WID]
 			resMap := statushistory.ExtractAllResourcesFromExecutable(executables[update.WID])

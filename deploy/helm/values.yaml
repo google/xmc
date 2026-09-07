@@ -112,10 +112,6 @@ dashboardServiceDeployment:
 dashboardService:
   gcpServiceAccount: ""
 
-detectInadmissibleWorkUnits: true
-startupPodErrorCheckEnabled: true
-statusMessageHistoryEnabled: true
-
 reconciler:
   monitoring:
     # Deploy a Google Managed Prometheus PodMonitoring that scrapes the

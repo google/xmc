@@ -356,27 +356,27 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "defaults",
                 "environ": {},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
-                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
+                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    ' false, "isNonProdAuth": false};'
                 ),
             },
             {
                 "testcase_name": "performance_dashboard_true",
                 "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
-                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": true, "isNonProdAuth": false};'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
+                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    ' true, "isNonProdAuth": false};'
                 ),
             },
             {
                 "testcase_name": "is_non_prod_auth_true",
                 "environ": {"XMC_NON_PROD_AUTH": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
-                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
+                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    ' false, "isNonProdAuth": true};'
                 ),
             },
         ]

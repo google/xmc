@@ -99,7 +99,6 @@ isDevEnvironment: true
 imageTag: latest
 gcpServiceAccount: "xmc-dev-sa@{self.cfg.project_id}.iam.gserviceaccount.com"
 taskSignatureTtlSeconds: 300
-statusMessageHistoryEnabled: false
 redisAddr: "redis-service.xmc.svc.cluster.local:6379"
 
 xid_custom_image: "xid_service_image:latest"
