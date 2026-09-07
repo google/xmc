@@ -175,8 +175,7 @@ func initCustomComponentsProvider(ctx context.Context, cfg *Config) (summary.Cus
 
 	compSpannerClient, err := spanner.NewClient(ctx, cfg.EssSpannerDatabase)
 	if err != nil {
-		logging.Error(ctx, "Failed to create Spanner client for components store; custom components info provider disabled", "error", err)
-		return nil, nil
+		logging.Fatal(ctx, "Failed to create Spanner client for components store", "error", err)
 	}
 
 	compStore := store.NewSpannerStore(compSpannerClient)
@@ -184,9 +183,8 @@ func initCustomComponentsProvider(ctx context.Context, cfg *Config) (summary.Cus
 
 	storeProvider, err := summary.NewStoreComponentsProvider(compStore)
 	if err != nil {
-		logging.Error(ctx, "Failed to create custom components info provider", "error", err)
 		compSpannerClient.Close()
-		return nil, nil
+		logging.Fatal(ctx, "Failed to create custom components info provider", "error", err)
 	}
 	return storeProvider, compSpannerClient
 }

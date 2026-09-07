@@ -391,11 +391,15 @@ func TestNewServer_NilValidation(t *testing.T) {
 	assertPanics("nil guard", func() { newServer(cfg, checker, nil) })
 }
 
-func TestCalculateHealthStatus_DisabledCustomComponent(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	checker := &mockHealthChecker{
-		result: RunChecksResult{
-			Components: []*spb.ComponentHealth{
+func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
+	tests := []struct {
+		name       string
+		components []*spb.ComponentHealth
+		wantHealth spb.HealthState
+	}{
+		{
+			name: "disabled custom component with unspecified state does not degrade health",
+			components: []*spb.ComponentHealth{
 				{
 					Name:        "ESS",
 					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
@@ -407,14 +411,58 @@ func TestCalculateHealthStatus_DisabledCustomComponent(t *testing.T) {
 					HealthState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
 				},
 			},
+			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
+		{
+			name: "core service with unspecified state degrades health to unhealthy",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "Log Monitor",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+				},
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+		},
+		{
+			name: "custom component with unhealthy state degrades health to unhealthy",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "custom-monitor",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+					HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				},
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
-	defer s.Close()
 
-	resp := s.calculateHealthStatus(context.Background())
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
-		t.Errorf("expected HEALTHY overall state when custom component is disabled (UNSPECIFIED), got %v", resp.HealthState)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Port: "8080", GRPCPort: "50051"}
+			checker := &mockHealthChecker{
+				result: RunChecksResult{
+					Components: tt.components,
+				},
+			}
+			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+			defer s.Close()
+
+			resp := s.calculateHealthStatus(context.Background())
+			if resp.HealthState != tt.wantHealth {
+				t.Errorf("calculateHealthStatus() state = %v, want %v", resp.HealthState, tt.wantHealth)
+			}
+		})
 	}
 }
 

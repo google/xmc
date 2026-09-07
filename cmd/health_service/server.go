@@ -139,7 +139,10 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
 	for _, c := range res.Components {
-		if c.HealthState == spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
+			if c.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT && c.HealthState == spb.HealthState_HEALTH_STATE_UNSPECIFIED {
+				continue
+			}
 			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
 			logging.Warn(ctx, "Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
 		}
