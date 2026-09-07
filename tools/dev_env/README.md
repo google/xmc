@@ -562,7 +562,7 @@ For verifying real JobSet execution, Kueue quota admission, multi-slice TPU topo
      --region <REGION> \
      --project <PROJECT_ID>
    ```
-   This command creates an entry in your local `~/.kube/config` following GKE's standard naming convention:
+   Running `gcloud container clusters get-credentials` creates an entry in your local `~/.kube/config` following GKE's standard naming convention:
    ```text
    gke_<PROJECT_ID>_<REGION>_<CLUSTER_NAME>
    ```

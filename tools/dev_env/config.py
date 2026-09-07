@@ -91,25 +91,28 @@ class LocalDevConfig:
             self.gcp_service_account = f"{sa}@{self.project_id}.iam.gserviceaccount.com"
 
 
-def _parse_bool(val: Any) -> bool:
-    """Parses a boolean value from bool, numeric, or string representations."""
+_TRUTHY_STRINGS = frozenset({"true", "1", "yes", "y", "t", "on"})
+_FALSY_STRINGS = frozenset({"false", "0", "no", "n", "f", "off"})
+
+
+def _parse_bool(val: Any) -> bool | None:
+    """Parses a boolean value; returns True/False if recognized, else None."""
     if isinstance(val, bool):
         return val
     if isinstance(val, (int, float)):
         return bool(val)
     if isinstance(val, str):
-        return val.strip().lower() in ("true", "1", "yes", "y", "t", "on")
-    return False
-
-
-_BOOL_STRINGS = frozenset({"true", "false", "1", "0", "yes", "no", "y", "n", "t", "f", "on", "off"})
+        s = val.strip().lower()
+        if s in _TRUTHY_STRINGS:
+            return True
+        if s in _FALSY_STRINGS:
+            return False
+    return None
 
 
 def _is_bool_flag(val: Any) -> bool:
     """Checks whether a value represents a boolean flag (truthy or falsy)."""
-    if isinstance(val, bool):
-        return True
-    return isinstance(val, str) and val.strip().lower() in _BOOL_STRINGS
+    return _parse_bool(val) is not None
 
 
 def _resolve_bool_flag(
@@ -119,12 +122,10 @@ def _resolve_bool_flag(
     default: bool = False,
 ) -> bool:
     """Resolves a boolean flag applying precedence: CLI > Env > YAML > Default."""
-    if cli_val is not None:
-        return _parse_bool(cli_val)
-    if env_val is not None:
-        return _parse_bool(env_val)
-    if yaml_val is not None:
-        return _parse_bool(yaml_val)
+    for val in (cli_val, env_val, yaml_val):
+        parsed = _parse_bool(val)
+        if parsed is not None:
+            return parsed
     return default
 
 
@@ -148,6 +149,28 @@ def _resolve_str_flag(
         if cleaned is not None:
             return cleaned
     return default
+
+
+def _resolve_field(
+    args: argparse.Namespace | None,
+    yaml_vars: dict[str, Any],
+    cli_attr: str,
+    env_var: str,
+    yaml_key: str | tuple[str, ...],
+    default: str = "",
+) -> str:
+    """Resolves a string configuration value applying CLI > Env > YAML > Default."""
+    cli_val = getattr(args, cli_attr, None) if args else None
+    env_val = os.environ.get(env_var)
+    yaml_val = None
+    if isinstance(yaml_key, tuple):
+        for k in yaml_key:
+            yaml_val = yaml_vars.get(k)
+            if yaml_val is not None:
+                break
+    else:
+        yaml_val = yaml_vars.get(yaml_key)
+    return _resolve_str_flag(cli_val, env_val, yaml_val, default=default)
 
 
 def resolve_config_path(
@@ -298,32 +321,20 @@ def load_config(
         default="dev",
     )
 
-    spanner_instance = _resolve_str_flag(
-        getattr(args, "spanner_instance", None) if args else None,
-        os.environ.get("SPANNER_INSTANCE"),
-        yaml_vars.get("spanner_instance"),
-        default="",
+    spanner_instance = _resolve_field(
+        args, yaml_vars, "spanner_instance", "SPANNER_INSTANCE", "spanner_instance", default=""
     )
 
-    ess_database = _resolve_str_flag(
-        getattr(args, "ess_database", None) if args else None,
-        os.environ.get("ESS_DATABASE"),
-        yaml_vars.get("ess_database"),
-        default="",
+    ess_database = _resolve_field(
+        args, yaml_vars, "ess_database", "ESS_DATABASE", "ess_database", default=""
     )
 
-    xid_database = _resolve_str_flag(
-        getattr(args, "xid_database", None) if args else None,
-        os.environ.get("XID_DATABASE"),
-        yaml_vars.get("xid_database"),
-        default="",
+    xid_database = _resolve_field(
+        args, yaml_vars, "xid_database", "XID_DATABASE", "xid_database", default=""
     )
 
-    cluster_name = _resolve_str_flag(
-        getattr(args, "cluster_name", None) if args else None,
-        os.environ.get("CLUSTER_NAME"),
-        yaml_vars.get("cluster_name"),
-        default="",
+    cluster_name = _resolve_field(
+        args, yaml_vars, "cluster_name", "CLUSTER_NAME", "cluster_name", default=""
     )
 
     auto_migrate = _resolve_bool_flag(
@@ -335,13 +346,9 @@ def load_config(
 
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 
-    remote_raw = (
-        getattr(args, "remote_k8s_context", None)
-        if args and getattr(args, "remote_k8s_context", None) is not None
-        else (getattr(args, "remote_k8s", None) if args else None)
-    )
-    remote_env = os.environ.get("REMOTE_K8S_CONTEXT") or os.environ.get("GKE_CONTEXT")
-    remote_yaml = yaml_vars.get("remote_k8s_context") or yaml_vars.get("remote_k8s")
+    remote_raw = getattr(args, "remote_k8s_context", None) if args else None
+    remote_env = os.environ.get("REMOTE_K8S_CONTEXT")
+    remote_yaml = yaml_vars.get("remote_k8s_context")
 
     is_bool = _is_bool_flag(remote_raw)
     remote_k8s_context = _resolve_str_flag(
@@ -368,22 +375,28 @@ def load_config(
     elif not enable_remote_k8s:
         remote_k8s_context = ""
 
-    remote_k8s_namespace = _resolve_str_flag(
-        getattr(args, "remote_k8s_namespace", None) if args else None,
-        os.environ.get("REMOTE_K8S_NAMESPACE") or os.environ.get("K8S_NAMESPACE"),
-        yaml_vars.get("namespace"),
+    remote_k8s_namespace = _resolve_field(
+        args,
+        yaml_vars,
+        "remote_k8s_namespace",
+        "REMOTE_K8S_NAMESPACE",
+        ("remote_k8s_namespace", "namespace"),
         default="xmc",
     )
-    remote_k8s_service_account = _resolve_str_flag(
-        getattr(args, "remote_k8s_service_account", None) if args else None,
-        os.environ.get("REMOTE_K8S_SERVICE_ACCOUNT"),
-        yaml_vars.get("remote_k8s_service_account"),
+    remote_k8s_service_account = _resolve_field(
+        args,
+        yaml_vars,
+        "remote_k8s_service_account",
+        "REMOTE_K8S_SERVICE_ACCOUNT",
+        "remote_k8s_service_account",
         default="actuator-service-account",
     )
-    gcp_service_account = _resolve_str_flag(
-        getattr(args, "gcp_service_account", None) if args else None,
-        os.environ.get("GCP_SERVICE_ACCOUNT"),
-        yaml_vars.get("gcp_service_account") or yaml_vars.get("gcpServiceAccount"),
+    gcp_service_account = _resolve_field(
+        args,
+        yaml_vars,
+        "gcp_service_account",
+        "GCP_SERVICE_ACCOUNT",
+        ("gcp_service_account", "gcpServiceAccount"),
         default="",
     )
 

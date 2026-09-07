@@ -288,11 +288,11 @@ class ConfigResolutionTest(unittest.TestCase):
         "os.environ",
         {
             "PROJECT_ID": "env-p",
-            "GKE_CONTEXT": "gke_env-p_us-central1_env-cluster",
+            "REMOTE_K8S_CONTEXT": "gke_env-p_us-central1_env-cluster",
         },
     )
     def test_remote_k8s_from_env(self) -> None:
-        """Verifies GKE_CONTEXT environment variable resolves remote_k8s_context."""
+        """Verifies REMOTE_K8S_CONTEXT environment variable resolves remote_k8s_context."""
         cfg = config.load_config(argparse.Namespace(), repo_root=self.root)
         self.assertEqual(cfg.remote_k8s_context, "gke_env-p_us-central1_env-cluster")
 
