@@ -93,7 +93,6 @@ func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespac
 	upgrade := action.NewUpgrade(actionConfig)
 	upgrade.Namespace = namespace
 	upgrade.Install = true
-	upgrade.ReuseValues = true
 
 	targetChart, err := r.resolveChart(releaseName, chartObj)
 	if err != nil {

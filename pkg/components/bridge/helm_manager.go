@@ -230,6 +230,10 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	}
 	targetNamespace := m.resolveNamespace(ref.Namespace)
 	m.setUpgradeErr(ref, nil)
+
+	m.upgradeMu.Lock()
+	defer m.upgradeMu.Unlock()
+
 	mergedValues, err := m.loadAllComponentValues(ctx, targetNamespace)
 	if err != nil {
 		m.setUpgradeErr(ref, err)
@@ -238,8 +242,6 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	for k, v := range values {
 		mergedValues[k] = v
 	}
-	m.upgradeMu.Lock()
-	defer m.upgradeMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		m.setUpgradeErr(ref, err)
 		return err
