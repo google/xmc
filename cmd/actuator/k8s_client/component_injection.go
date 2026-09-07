@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
+	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
@@ -32,7 +34,13 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// evaluateComponentSnapshots discovers required component snapshots and evaluates the placement gate and drift warnings.
+// componentAccess encapsulates resolved access configurations from a component custom resource.
+type componentAccess struct {
+	envVars       map[string]string
+	secretEnvVars map[string]string
+}
+
+// evaluateComponentSnapshots discovers required component snapshots, evaluates placement/drift, and injects environment variables.
 func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb.WorkUnit, namespace string, jobSet *jobsetv1alpha2.JobSet) error {
 	snapshots, err := parseComponentSnapshotsAnnotation(workUnit, jobSet)
 	if err != nil || len(snapshots) == 0 {
@@ -65,6 +73,11 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 		if err := evaluateComponentPlacement(ctx, compName, lockedGen, comp, jobSet); err != nil {
 			return err
 		}
+		access, err := extractComponentAccess(comp)
+		if err != nil {
+			return fmt.Errorf("failed to extract access configuration for component %q: %w", compName, err)
+		}
+		injectAccessIntoJobSet(jobSet, access)
 	}
 	return nil
 }
@@ -253,4 +266,131 @@ func extractObservedGeneration(comp *unstructured.Unstructured) int64 {
 		}
 	}
 	return 0
+}
+
+// extractComponentAccess parses access metadata from status.access of the Component CR.
+func extractComponentAccess(comp *unstructured.Unstructured) (componentAccess, error) {
+	if comp == nil || comp.Object == nil {
+		return componentAccess{}, nil
+	}
+	access, ok, err := unstructured.NestedMap(comp.Object, "status", "access")
+	if err != nil {
+		return componentAccess{}, fmt.Errorf("failed to parse status.access: %w", err)
+	}
+	if !ok || access == nil {
+		return componentAccess{}, nil
+	}
+	return componentAccess{
+		envVars:       extractStringMap(access["envVars"]),
+		secretEnvVars: extractStringMap(access["secretEnvVars"]),
+	}, nil
+}
+
+// extractStringMap converts an unstructured map[string]any to map[string]string, converting scalar types to strings.
+func extractStringMap(raw any) map[string]string {
+	m, ok := raw.(map[string]any)
+	if !ok || len(m) == 0 {
+		return nil
+	}
+	res := make(map[string]string, len(m))
+	for k, v := range m {
+		if v == nil {
+			continue
+		}
+		switch val := v.(type) {
+		case string:
+			res[k] = val
+		case json.Number:
+			res[k] = val.String()
+		default:
+			res[k] = fmt.Sprintf("%v", val)
+		}
+	}
+	return res
+}
+
+// injectAccessIntoJobSet injects plain and secret environment variables across all replicated jobs.
+func injectAccessIntoJobSet(jobSet *jobsetv1alpha2.JobSet, access componentAccess) {
+	if jobSet == nil || (len(access.envVars) == 0 && len(access.secretEnvVars) == 0) {
+		return
+	}
+	envVars := buildComponentEnvVars(access.envVars, access.secretEnvVars)
+	for i := range jobSet.Spec.ReplicatedJobs {
+		podSpec := &jobSet.Spec.ReplicatedJobs[i].Template.Spec.Template.Spec
+		injectIntoContainers(podSpec.Containers, envVars)
+		injectIntoContainers(podSpec.InitContainers, envVars)
+	}
+}
+
+// buildComponentEnvVars constructs plain and secret environment variable definitions.
+func buildComponentEnvVars(plainEnv, secretEnv map[string]string) []corev1.EnvVar {
+	envVars := buildPlainEnvVars(plainEnv)
+	return append(envVars, buildSecretEnvVars(secretEnv)...)
+}
+
+func buildPlainEnvVars(plainEnv map[string]string) []corev1.EnvVar {
+	if len(plainEnv) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(plainEnv))
+	for k := range plainEnv {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	envVars := make([]corev1.EnvVar, 0, len(keys))
+	for _, k := range keys {
+		envVars = append(envVars, corev1.EnvVar{Name: k, Value: plainEnv[k]})
+	}
+	return envVars
+}
+
+func buildSecretEnvVars(secretEnv map[string]string) []corev1.EnvVar {
+	if len(secretEnv) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(secretEnv))
+	for k := range secretEnv {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	envVars := make([]corev1.EnvVar, 0, len(keys))
+	for _, k := range keys {
+		val := secretEnv[k]
+		secretName, key, ok := strings.Cut(val, ":")
+		if !ok || secretName == "" || key == "" {
+			continue
+		}
+		envVars = append(envVars, corev1.EnvVar{
+			Name: k,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: secretName,
+					},
+					Key: key,
+				},
+			},
+		})
+	}
+	return envVars
+}
+
+// injectIntoContainers appends environment variables to a container slice.
+func injectIntoContainers(containers []corev1.Container, envVars []corev1.EnvVar) {
+	for i := range containers {
+		c := &containers[i]
+		for _, ev := range envVars {
+			appendOrUpdateEnvVar(c, ev)
+		}
+	}
+}
+
+func appendOrUpdateEnvVar(c *corev1.Container, ev corev1.EnvVar) {
+	for i, existing := range c.Env {
+		if existing.Name == ev.Name {
+			c.Env[i] = ev
+			return
+		}
+	}
+	c.Env = append(c.Env, ev)
 }

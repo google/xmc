@@ -514,3 +514,265 @@ func TestCreateWorkUnit_ComponentSnapshotInjection_MissingComponent_Retryable(t 
 		t.Errorf("error %q does not contain %q", err.Error(), expectedSub)
 	}
 }
+
+func TestCreateWorkUnit_ComponentSnapshotInjection_EnvVars_Success(t *testing.T) {
+	ctx, actuatorClient, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	actuatorClient.RuntimeConfig.EnableComponents = true
+
+	compCR := createTestComponentCR("audit-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
+		[]map[string]any{
+			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
+			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
+		},
+		map[string]any{
+			"envVars": map[string]any{
+				"AUDIT_MODE": "verbose",
+			},
+			"secretEnvVars": map[string]any{
+				"AUDIT_TOKEN": "audit-secret:token-key",
+			},
+		},
+	)
+	actuatorClient.SetManagerClient(createFakeManagerClient(compCR))
+
+	payload := proto.Clone(createPayload).(*actuatortaskpb.ActuatorPayload)
+	payload.WorkUnit = createWorkUnitWithSnapshots(testNamespace, `{"audit-sidecar": 1}`)
+
+	if err := actuatorClient.CreateWorkUnit(ctx, payload); err != nil {
+		t.Fatalf("CreateWorkUnit failed: %v", err)
+	}
+
+	jobSetUnstructured, err := dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Get(ctx, testJobSetName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("dynamicClient.Resource().Get() failed: %v", err)
+	}
+	if jobSetUnstructured == nil {
+		t.Fatalf("expected JobSet to be created")
+	}
+
+	replicatedJobs, ok, err := unstructured.NestedSlice(jobSetUnstructured.Object, "spec", "replicatedJobs")
+	if err != nil || !ok || len(replicatedJobs) == 0 {
+		t.Fatalf("failed to retrieve replicatedJobs: %v", err)
+	}
+	firstRj := replicatedJobs[0].(map[string]any)
+	containers, ok, err := unstructured.NestedSlice(firstRj, "template", "spec", "template", "spec", "containers")
+	if err != nil || !ok || len(containers) == 0 {
+		t.Fatalf("failed to retrieve containers: %v", err)
+	}
+	firstContainer := containers[0].(map[string]any)
+	envList, ok, err := unstructured.NestedSlice(firstContainer, "env")
+	if err != nil || !ok {
+		t.Fatalf("failed to retrieve env: %v", err)
+	}
+
+	foundPlain := false
+	foundSecret := false
+	for _, raw := range envList {
+		ev := raw.(map[string]any)
+		if ev["name"] == "AUDIT_MODE" && ev["value"] == "verbose" {
+			foundPlain = true
+		}
+		if ev["name"] == "AUDIT_TOKEN" {
+			valFrom, ok := ev["valueFrom"].(map[string]any)
+			if ok {
+				secRef, ok := valFrom["secretKeyRef"].(map[string]any)
+				if ok && secRef["name"] == "audit-secret" && secRef["key"] == "token-key" {
+					foundSecret = true
+				}
+			}
+		}
+	}
+	if !foundPlain {
+		t.Errorf("expected AUDIT_MODE=verbose in created JobSet container")
+	}
+	if !foundSecret {
+		t.Errorf("expected AUDIT_TOKEN secretKeyRef in created JobSet container")
+	}
+}
+
+func TestConstructJobSet_ComponentSnapshot_EnvVars_Injection(t *testing.T) {
+	ctx, client := setupComponentTestClient()
+	targetNS := constants.XmcLabelValue
+
+	compCR := createTestComponentCR("env-comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
+		[]map[string]any{
+			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
+			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
+		},
+		map[string]any{
+			"envVars": map[string]any{
+				"PLAIN_VAR":   "plain_val",
+				"EXISTING_EV": "overridden_val",
+			},
+			"secretEnvVars": map[string]any{
+				"SECRET_VAR": "my-secret:secret-token",
+			},
+		},
+	)
+	client.SetManagerClient(createFakeManagerClient(compCR))
+
+	workUnit := createWorkUnitWithSnapshots(targetNS, `{"env-comp": 1}`)
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet failed: %v", err)
+	}
+
+	if len(jobSet.Spec.ReplicatedJobs) == 0 {
+		t.Fatalf("expected at least 1 replicatedJob")
+	}
+
+	containers := jobSet.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(containers) == 0 {
+		t.Fatalf("expected at least 1 container")
+	}
+
+	envMap := make(map[string]corev1.EnvVar)
+	for _, ev := range containers[0].Env {
+		envMap[ev.Name] = ev
+	}
+
+	if ev, ok := envMap["PLAIN_VAR"]; !ok || ev.Value != "plain_val" {
+		t.Errorf("expected PLAIN_VAR=plain_val, got: %v", ev)
+	}
+
+	if ev, ok := envMap["SECRET_VAR"]; !ok {
+		t.Errorf("expected SECRET_VAR to be present")
+	} else if ev.ValueFrom == nil || ev.ValueFrom.SecretKeyRef == nil {
+		t.Errorf("expected SECRET_VAR to have SecretKeyRef, got: %v", ev)
+	} else {
+		if ev.ValueFrom.SecretKeyRef.Name != "my-secret" || ev.ValueFrom.SecretKeyRef.Key != "secret-token" {
+			t.Errorf("expected SecretKeyRef my-secret:secret-token, got %s:%s",
+				ev.ValueFrom.SecretKeyRef.Name, ev.ValueFrom.SecretKeyRef.Key)
+		}
+	}
+}
+
+func TestConstructJobSet_ComponentSnapshot_EnvVars_UpdateExisting(t *testing.T) {
+	c := &corev1.Container{
+		Name: "worker",
+		Env: []corev1.EnvVar{
+			{Name: "VAR_A", Value: "initial_a"},
+			{Name: "VAR_B", Value: "initial_b"},
+		},
+	}
+	appendOrUpdateEnvVar(c, corev1.EnvVar{Name: "VAR_A", Value: "updated_a"})
+	appendOrUpdateEnvVar(c, corev1.EnvVar{Name: "VAR_C", Value: "new_c"})
+
+	if len(c.Env) != 3 {
+		t.Fatalf("expected 3 env vars, got %d", len(c.Env))
+	}
+	if c.Env[0].Value != "updated_a" {
+		t.Errorf("expected VAR_A to be updated_a, got %s", c.Env[0].Value)
+	}
+	if c.Env[2].Value != "new_c" {
+		t.Errorf("expected VAR_C to be new_c, got %s", c.Env[2].Value)
+	}
+}
+
+func TestConstructJobSet_ComponentSnapshot_AccessExtraction_Error(t *testing.T) {
+	ctx, client := setupComponentTestClient()
+	targetNS := constants.XmcLabelValue
+
+	compCR := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": fmt.Sprintf("%s/%s", constants.ComponentCRDGroup, constants.ComponentCRDVersion),
+			"kind":       constants.ComponentCRDKind,
+			"metadata": map[string]any{
+				"name":      "invalid-access-comp",
+				"namespace": targetNS,
+			},
+			"spec": map[string]any{
+				"enabled": true,
+			},
+			"status": map[string]any{
+				"observedGeneration": int64(1),
+				"state":              "COMPONENT_STATE_ENABLED",
+				"conditions": []any{
+					map[string]any{"type": "Ready", "status": "True"},
+				},
+				"access": "not-a-map",
+			},
+		},
+	}
+	client.SetManagerClient(createFakeManagerClient(compCR))
+
+	workUnit := createWorkUnitWithSnapshots(targetNS, `{"invalid-access-comp": 1}`)
+	_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	if err == nil || !strings.Contains(err.Error(), "failed to extract access configuration") {
+		t.Fatalf("expected access extraction error, got: %v", err)
+	}
+}
+
+func TestConstructJobSet_ComponentSnapshot_EmptyAccess(t *testing.T) {
+	ctx, client := setupComponentTestClient()
+	targetNS := constants.XmcLabelValue
+
+	compCR := createTestComponentCR("empty-access-comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
+		[]map[string]any{
+			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
+		},
+		nil,
+	)
+	client.SetManagerClient(createFakeManagerClient(compCR))
+
+	workUnit := createWorkUnitWithSnapshots(targetNS, `{"empty-access-comp": 1}`)
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet failed with nil access: %v", err)
+	}
+	if jobSet == nil {
+		t.Fatalf("expected jobSet created")
+	}
+}
+
+func TestExtractStringMap_Types(t *testing.T) {
+	raw := map[string]any{
+		"str":    "hello",
+		"number": json.Number("42"),
+		"int":    123,
+		"nilVal": nil,
+	}
+	m := extractStringMap(raw)
+	if m["str"] != "hello" {
+		t.Errorf("expected str=hello, got %q", m["str"])
+	}
+	if m["number"] != "42" {
+		t.Errorf("expected number=42, got %q", m["number"])
+	}
+	if m["int"] != "123" {
+		t.Errorf("expected int=123, got %q", m["int"])
+	}
+	if _, exists := m["nilVal"]; exists {
+		t.Errorf("expected nilVal to be omitted")
+	}
+
+	if empty := extractStringMap(nil); empty != nil {
+		t.Errorf("expected nil for nil input")
+	}
+	if empty := extractStringMap("not-a-map"); empty != nil {
+		t.Errorf("expected nil for non-map input")
+	}
+}
+
+func TestBuildSecretEnvVars_EdgeCases(t *testing.T) {
+	cases := map[string]string{
+		"VALID":      "sec:key",
+		"NO_COLON":   "no-colon-val",
+		"EMPTY_NAME": ":key-only",
+		"EMPTY_KEY":  "sec-only:",
+	}
+	envVars := buildSecretEnvVars(cases)
+	if len(envVars) != 1 {
+		t.Fatalf("expected exactly 1 valid secret env var, got %d", len(envVars))
+	}
+	if envVars[0].Name != "VALID" {
+		t.Errorf("expected VALID secret env var, got %s", envVars[0].Name)
+	}
+	if envVars[0].ValueFrom.SecretKeyRef.Name != "sec" || envVars[0].ValueFrom.SecretKeyRef.Key != "key" {
+		t.Errorf("expected sec:key, got %s:%s", envVars[0].ValueFrom.SecretKeyRef.Name, envVars[0].ValueFrom.SecretKeyRef.Key)
+	}
+
+	if empty := buildSecretEnvVars(nil); empty != nil {
+		t.Errorf("expected nil for empty secretEnv")
+	}
+}
