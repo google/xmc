@@ -1,0 +1,163 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import 'jasmine';
+
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { Component, signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { of } from 'rxjs';
+
+import {
+  ChartArtifactPayload,
+  ChartTypedArtifact,
+  PayloadType,
+} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import { ChartData, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+
+import { ChartArtifactView, isSummaryBoxPlot } from './chart_artifact_view';
+import { ChartArtifactViewHarness } from './chart_artifact_view_harness';
+
+const CHART_NAME = 'experiments/9001/workUnits/1/charts/b6f1c0a2';
+
+function chartArtifact(payload: ChartArtifactPayload): ChartTypedArtifact {
+  return {
+    type: PayloadType.CHART,
+    artifact: { name: 'experiments/9001/workUnits/1/artifacts/1' },
+    payload,
+  };
+}
+
+const PROVISIONED_PAYLOAD: ChartArtifactPayload = {
+  title: 'Training progress',
+  metricNames: ['chart_demo/loss', 'chart_demo/accuracy'],
+  status: 'SUCCESS',
+  chart: {
+    name: CHART_NAME,
+    title: 'Training progress',
+    xid: 9001,
+    wid: 1,
+    plotLayout: { type: LayoutType.GRID, columns: 2 },
+    plots: [
+      {
+        plotId: 'chart_demo_loss_latest',
+        title: 'chart_demo/loss (latest)',
+        type: PlotType.SUMMARY_BOX,
+        data: { metrics: ['chart_demo/loss'] },
+      },
+      {
+        plotId: 'chart_demo_loss_curve',
+        title: 'chart_demo/loss vs steps',
+        type: PlotType.SCATTER,
+        data: { metrics: ['chart_demo/loss'] },
+        mapping: { x: 'step' },
+      },
+    ],
+  },
+};
+
+const MOCK_CHART_DATA: ChartData = {
+  name: CHART_NAME,
+  xid: '9001',
+  wid: '1',
+  plotsData: [
+    {
+      plotId: 'chart_demo_loss_latest',
+      type: 'SUMMARY_BOX',
+      summaryData: { metricName: 'chart_demo/loss', latestValue: 0.42, meanValue: 0.71 },
+    },
+    {
+      plotId: 'chart_demo_loss_curve',
+      type: 'SCATTER',
+      scatterSeries: {
+        metricName: 'chart_demo/loss',
+        points: [
+          { step: '0', avgValue: 1.8 },
+          { step: '50', avgValue: 0.42 },
+        ],
+      },
+    },
+  ],
+};
+
+@Component({
+  standalone: true,
+  imports: [ChartArtifactView],
+  template: ` <xmc-chart-artifact-view [artifact]="artifact()" /> `,
+})
+class TestHostComponent {
+  readonly artifact = signal<ChartTypedArtifact>(chartArtifact(PROVISIONED_PAYLOAD));
+}
+
+describe('ChartArtifactView', () => {
+  let fixture: ComponentFixture<TestHostComponent>;
+  let host: TestHostComponent;
+  let harness: ChartArtifactViewHarness;
+  let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
+
+  async function setUp(): Promise<void> {
+    fixture = TestBed.createComponent(TestHostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    harness = await TestbedHarnessEnvironment.loader(fixture).getHarness(ChartArtifactViewHarness);
+  }
+
+  beforeEach(async () => {
+    dashboardServiceSpy = jasmine.createSpyObj('DashboardService', ['getChartData']);
+    dashboardServiceSpy.getChartData.and.returnValue(of(MOCK_CHART_DATA));
+
+    await TestBed.configureTestingModule({
+      imports: [TestHostComponent, NoopAnimationsModule],
+      providers: [{ provide: DashboardService, useValue: dashboardServiceSpy }],
+    }).compileComponents();
+  });
+
+  it('renders the artifact title and its metric names', async () => {
+    await setUp();
+
+    expect(await harness.getTitle()).toBe('Training progress');
+    expect(await harness.getMetricNames()).toEqual(['chart_demo/loss', 'chart_demo/accuracy']);
+  });
+
+  it('fetches chart data for the chart recorded on the artifact', async () => {
+    await setUp();
+
+    expect(dashboardServiceSpy.getChartData).toHaveBeenCalledWith({ name: CHART_NAME });
+  });
+
+  it('draws the plot specs carried by the artifact', async () => {
+    await setUp();
+
+    expect(await harness.getSummaryBoxCount()).toBe(1);
+    expect(await harness.getPlotCardCount()).toBe(2);
+  });
+
+  it('falls back to a generic title when the artifact has none', async () => {
+    await setUp();
+    host.artifact.set(chartArtifact({ ...PROVISIONED_PAYLOAD, title: undefined }));
+    fixture.detectChanges();
+
+    expect(await harness.getTitle()).toBe('Chart artifact');
+  });
+
+  it('recognises summary boxes by proto JSON name and by enum tag', () => {
+    // The numeric tag is what a serializer that did not apply the proto JSON mapping emits.
+    expect(isSummaryBoxPlot({ plotId: 'a', type: PlotType.SUMMARY_BOX })).toBeTrue();
+    expect(isSummaryBoxPlot({ plotId: 'b', type: 1 })).toBeTrue();
+    expect(isSummaryBoxPlot({ plotId: 'c', type: PlotType.SCATTER })).toBeFalse();
+    expect(isSummaryBoxPlot({ plotId: 'd' })).toBeFalse();
+  });
+});
