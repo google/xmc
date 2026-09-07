@@ -2179,43 +2179,6 @@ func TestConstructDiagnosticsConsoleURL(t *testing.T) {
 	}
 }
 
-func TestEnsureProfilesTab(t *testing.T) {
-	tests := []struct {
-		name   string
-		rawURL string
-		want   string
-	}{
-		{
-			name:   "appends query param when query string exists",
-			rawURL: "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj",
-			want:   "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj&tab=profiles",
-		},
-		{
-			name:   "appends initial query param when no query string exists",
-			rawURL: "https://console.cloud.google.com/kubernetes/aiml/run/loc/id",
-			want:   "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?tab=profiles",
-		},
-		{
-			name:   "preserves existing tab parameter",
-			rawURL: "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj&tab=overview",
-			want:   "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj&tab=overview",
-		},
-		{
-			name:   "preserves existing profiles tab parameter",
-			rawURL: "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj&tab=profiles",
-			want:   "https://console.cloud.google.com/kubernetes/aiml/run/loc/id?project=proj&tab=profiles",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ensureProfilesTab(tc.rawURL)
-			if got != tc.want {
-				t.Errorf("ensureProfilesTab(%q) = %q, want %q", tc.rawURL, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestMLRunURL(t *testing.T) {
 	r := &Reconciler{
 		Project:  "test-project",
@@ -2247,16 +2210,10 @@ func TestMLRunURL(t *testing.T) {
 			want:    "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-3?project=test-project&tab=profiles",
 		},
 		{
-			name:    "res with api url appends profiles tab",
+			name:    "res with api url returns api url directly",
 			res:     map[string]any{"url": "https://console.cloud.google.com/aiml/run?project=p"},
 			mlRunID: "run-4",
-			want:    "https://console.cloud.google.com/aiml/run?project=p&tab=profiles",
-		},
-		{
-			name:    "res with api url preserving existing tab",
-			res:     map[string]any{"url": "https://console.cloud.google.com/aiml/run?project=p&tab=metrics"},
-			mlRunID: "run-5",
-			want:    "https://console.cloud.google.com/aiml/run?project=p&tab=metrics",
+			want:    "https://console.cloud.google.com/aiml/run?project=p",
 		},
 	}
 	for _, tc := range tests {
