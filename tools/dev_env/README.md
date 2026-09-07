@@ -60,6 +60,10 @@ python3 tools/dev_env/dev_env.py up --no-build-images
 - `--no-build-images`: Skip OCI image compilation and side-loading.
 - `--no-deploy-helm`: Skip Helm chart deployment.
 - `--no-auto-migrate`: Skip automatic Cloud Spanner schema migration execution.
+- `--remote-k8s`: Target remote GKE Kubernetes context (or pass `--remote-k8s` as flag to auto-derive from deployment config) to enable Hybrid Mode.
+- `--remote-k8s-context`: Explicit kubectl context for the remote GKE cluster.
+- `--remote-k8s-namespace`: Namespace on the remote cluster hosting the ServiceAccount and JobSets (default: `xmc`).
+- `--remote-k8s-service-account`: ServiceAccount used to mint the remote access token (default: `actuator-service-account`).
 
 ---
 
@@ -510,6 +514,42 @@ To keep local startup near-instantaneous (~35s) and memory overhead minimal, Kin
 2. **Dual-KinD Multi-Cluster MultiKueue (`--multi-cluster`)**:
    - Bootstraps two KinD clusters on the same Docker bridge network (`xmc-mgmt` and `xmc-worker`).
    - Because MultiKueue only requires control-plane API server connectivity (`kube-apiserver` client traffic over the internal Docker network `https://xmc-worker-control-plane:6443`) and does *not* require pod overlay routing, cross-cluster workload dispatching and status synchronization can be validated 100% locally without cloud infrastructure.
+
+### 3. Hybrid Execution Model: KinD Control Plane + Remote GKE Data Plane (`--remote-k8s`)
+
+For real end-to-end verification of actual JobSet execution, Kueue quota admission, multi-slice TPU topologies, or agentic regression testing without deploying the full control plane into GKE, XMC supports a **hybrid execution topology**:
+
+```
++-------------------------------------------------------------+
+|               Local Host / Docker (KinD)                    |
+|                                                             |
+|  [ Web UI / Gateway ]  <--->  [ Dex OIDC ]                 |
+|           |                                                 |
+|  [ ESS / XID Services ] <------------------------+          |
+|           |                                      |          |
+|  [ Actuator & Reconciler ]                       |          |
+|           | (Static Kubeconfig via /etc/remote-k8s)         |
++-----------|--------------------------------------|----------+
+            | (HTTPS)                              | (RPC)
+            v                                      v
++------------------------------------+  +---------------------+
+|        Remote GKE Data Plane       |  |  GCP Cloud Spanner  |
+|                                    |  +---------------------+
+|  • Kueue Controller Manager        |  | • experiment-db     |
+|  • JobSet Controller Manager       |  | • xids-db           |
+|  • Real Nodes / TPUs / Worker Pods |  +---------------------+
++------------------------------------+
+```
+
+#### How It Works:
+1. **Static Kubeconfig Injection**: When `--remote-k8s` is passed to `dev_env up`, `remote_k8s_manager.py` extracts the remote cluster endpoint and CA certificate from the developer's local `kubectl` context, mints a scoped bearer token for `actuator-service-account` on the remote GKE cluster, and mounts it into the KinD cluster as the `remote-k8s-config` Secret.
+2. **Zero-In-Container-Dependencies**: Neither `gcloud` nor Google Cloud SDK is required inside the Actuator or Reconciler container images. Both binaries consume standard Kubernetes REST clients pointed to `/etc/remote-k8s/kubeconfig`.
+3. **Database Sharing**: All local control-plane services connect directly to the remote Cloud Spanner instance, ensuring state changes committed by ESS, Actuator, or Reconciler are immediately consistent with the real database.
+4. **Execution Flow**:
+   - Developer/agent submits an experiment to local ESS (`localhost:8080`).
+   - KinD Actuator processes the task and creates the `JobSet` resource on the **remote GKE cluster**.
+   - Remote Kueue admits the workload; remote JobSet controller spawns pods on remote nodes/TPUs.
+   - KinD Reconciler observes remote JobSet status transitions and writes updates back into Cloud Spanner.
 
 ---
 

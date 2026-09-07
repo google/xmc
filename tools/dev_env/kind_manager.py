@@ -313,7 +313,23 @@ class KindManager:
         self._ensure_backend_oauth_secrets(ctx)
         self._ensure_validation_tls_secret(ctx)
         self._ensure_redis_secret(ctx)
+        if self.config.remote_k8s_context:
+            self._ensure_remote_k8s_secret(ctx)
         log_success("Kubernetes secrets successfully configured.")
+
+    def _ensure_remote_k8s_secret(self, ctx: str) -> None:
+        """Configures remote Kubernetes cluster credentials secret in KinD."""
+        from tools.dev_env.remote_k8s_manager import setup_remote_k8s_secret
+
+        cfg = self.config
+        setup_remote_k8s_secret(
+            kind_context=ctx,
+            remote_context=cfg.remote_k8s_context,
+            remote_namespace=cfg.remote_k8s_namespace,
+            target_namespace="xmc",
+            service_account=cfg.remote_k8s_service_account,
+            secret_name="remote-k8s-config",
+        )
 
     def create_secrets(self, cluster_name: str | None = None) -> None:
         """Alias for ensure_secrets."""
@@ -508,6 +524,11 @@ class KindManager:
             return {"cluster_name": name, "running": False, "pods": {}, "health": {}}
 
         log_info("Cluster Status: RUNNING")
+        if self.config.remote_k8s_context:
+            log_info(
+                f"Mode: HYBRID (Workload Cluster: {self.config.remote_k8s_context}, "
+                f"Namespace: {self.config.remote_k8s_namespace})"
+            )
         pods_info: dict[str, str] = {}
         for ns in ["xmc", "dex"]:
             log_info(f"--- Pods in namespace '{ns}' ---")

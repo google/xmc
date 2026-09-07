@@ -103,6 +103,10 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("test_xid_db", content)
         self.assertIn("isDevEnvironment: true", content)
         self.assertIn("/etc/gcp-secrets/key.json", content)
+        self.assertIn(
+            "gcpServiceAccount: xmc-v2-local-dev-xmc-wl-sa@test-proj.iam.gserviceaccount.com",
+            content,
+        )
 
     def test_prepare_local_chart_delegates_to_sanitizer(self) -> None:
         self.mock_sanitizer.prepare_sanitized_chart.return_value = self.temp_path / "sanitized"
@@ -139,6 +143,24 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("ingestionGatewayDeployment", content)
         self.assertIn("ess_custom_image", content)
         self.assertIn("dashboard_service_custom_image", content)
+
+    def test_generate_values_file_with_remote_k8s(self) -> None:
+        cfg = LocalDevConfig(
+            project_id="test-proj",
+            remote_k8s_context="gke_proj_us-central1_cluster-1",
+        )
+        val_path = self.deployer.generate_values_file(config=cfg)
+        content = val_path.read_text(encoding="utf-8")
+
+        self.assertIn("remoteK8s:", content)
+        self.assertIn("enabled: true", content)
+        self.assertIn("secretName: remote-k8s-config", content)
+        self.assertIn("clusterName: cluster-1", content)
+        self.assertIn("clusterLocation: us-central1", content)
+        self.assertIn(
+            "gcpServiceAccount: xmc-v2-dev-xmc-wl-sa@test-proj.iam.gserviceaccount.com",
+            content,
+        )
 
     @patch("tools.dev_env.helm_deployer.run_command")
     def test_wait_for_rollouts(self, mock_run: MagicMock) -> None:

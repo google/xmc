@@ -56,6 +56,10 @@ class LocalDevConfig:
     auto_migrate: bool = True
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
+    remote_k8s_context: str = ""
+    remote_k8s_namespace: str = "xmc"
+    remote_k8s_service_account: str = "actuator-service-account"
+    gcp_service_account: str = ""
 
     def __post_init__(self) -> None:
         """Applies dynamic defaults and validates required configuration fields."""
@@ -73,6 +77,18 @@ class LocalDevConfig:
             self.xid_database = f"xids-db-{self.environment}"
         if not self.cluster_name:
             self.cluster_name = f"xmc-{self.environment}"
+        self.remote_k8s_context = self.remote_k8s_context.strip() if self.remote_k8s_context else ""
+        self.remote_k8s_namespace = self.remote_k8s_namespace or "xmc"
+        self.remote_k8s_service_account = (
+            self.remote_k8s_service_account or "actuator-service-account"
+        )
+        if not self.gcp_service_account:
+            sa = (
+                f"xmc-v2-{self.environment}-xmc-wl-sa"
+                if (self.remote_k8s_context or self.environment not in ("dev", "local"))
+                else "xmc-dev-sa"
+            )
+            self.gcp_service_account = f"{sa}@{self.project_id}.iam.gserviceaccount.com"
 
 
 def _parse_bool(val: Any) -> bool:
@@ -309,6 +325,59 @@ def load_config(
 
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 
+    remote_raw = (
+        getattr(args, "remote_k8s_context", None)
+        if args and getattr(args, "remote_k8s_context", None) is not None
+        else (getattr(args, "remote_k8s", None) if args else None)
+    )
+    remote_env = os.environ.get("REMOTE_K8S_CONTEXT") or os.environ.get("GKE_CONTEXT")
+    remote_yaml = yaml_vars.get("remote_k8s_context") or yaml_vars.get("remote_k8s")
+
+    is_bool = isinstance(remote_raw, bool) or (
+        isinstance(remote_raw, str) and _parse_bool(remote_raw)
+    )
+    remote_k8s_context = _resolve_str_flag(
+        None if is_bool else remote_raw,
+        None if remote_env and _parse_bool(remote_env) else remote_env,
+        None if remote_yaml and _parse_bool(remote_yaml) else remote_yaml,
+        default="",
+    )
+    enable_remote_k8s = _resolve_bool_flag(
+        remote_raw if is_bool else None,
+        os.environ.get("REMOTE_K8S"),
+        yaml_vars.get("enable_remote_k8s"),
+        default=False,
+    )
+
+    if enable_remote_k8s and not remote_k8s_context:
+        reg = _resolve_str_flag(
+            getattr(args, "region", None) if args else None,
+            os.environ.get("REGION") or os.environ.get("GCP_REGION"),
+            yaml_vars.get("region"),
+            default="us-central1",
+        )
+        dep = yaml_vars.get("deployment_name") or f"xmc-v2-{environment}"
+        remote_k8s_context = f"gke_{project_id}_{reg}_xmc-{dep}-{environment}"
+
+    remote_k8s_namespace = _resolve_str_flag(
+        getattr(args, "remote_k8s_namespace", None) if args else None,
+        os.environ.get("REMOTE_K8S_NAMESPACE") or os.environ.get("K8S_NAMESPACE"),
+        yaml_vars.get("namespace"),
+        default="xmc",
+    )
+    remote_k8s_service_account = _resolve_str_flag(
+        getattr(args, "remote_k8s_service_account", None) if args else None,
+        os.environ.get("REMOTE_K8S_SERVICE_ACCOUNT"),
+        yaml_vars.get("remote_k8s_service_account"),
+        default="actuator-service-account",
+    )
+    gcp_service_account = _resolve_str_flag(
+        getattr(args, "gcp_service_account", None) if args else None,
+        os.environ.get("GCP_SERVICE_ACCOUNT"),
+        yaml_vars.get("gcp_service_account") or yaml_vars.get("gcpServiceAccount"),
+        default="",
+    )
+
     cfg = LocalDevConfig(
         project_id=project_id,
         environment=environment,
@@ -319,6 +388,10 @@ def load_config(
         auto_migrate=auto_migrate,
         enabled_services=enabled_services,
         config_path=resolved_path,
+        remote_k8s_context=remote_k8s_context,
+        remote_k8s_namespace=remote_k8s_namespace,
+        remote_k8s_service_account=remote_k8s_service_account,
+        gcp_service_account=gcp_service_account,
     )
     _LOGGER.debug(
         "Resolved LocalDevConfig: project_id=%s, environment=%s, spanner_instance=%s, cluster_name=%s, config_path=%s",
