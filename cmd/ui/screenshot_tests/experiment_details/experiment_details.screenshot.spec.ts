@@ -379,6 +379,19 @@ test.describe('Experiment Details Page - Screenshot Tests', () => {
     });
 
     await setupScreenshotEnvironment(page);
+
+    // Ensure fixed container height for deterministic cross-environment visual bounding box capture
+    await page.addStyleTag({
+      content: `
+        xmc-experiment-page {
+          display: block !important;
+          box-sizing: border-box !important;
+          height: 1050px !important;
+          min-height: 1050px !important;
+          overflow: hidden !important;
+        }
+      `,
+    });
   });
 
   test('should match baseline screenshot for the Experiment Details page (Work Units tab)', async ({

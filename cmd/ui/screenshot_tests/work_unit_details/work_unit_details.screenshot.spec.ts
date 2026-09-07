@@ -197,7 +197,7 @@ export const MOCK_WORK_UNIT_STATUS_MESSAGES = {
 
 test.describe('WorkUnit Details Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.setViewportSize({ width: 1600, height: 1100 });
     await setupMockRoutes(page);
 
     await page.route(/\/experiments\/10293841$/, async (route) => {
@@ -279,6 +279,19 @@ test.describe('WorkUnit Details Page - Screenshot Tests', () => {
     });
 
     await setupScreenshotEnvironment(page);
+
+    // Ensure fixed container height for deterministic cross-environment visual bounding box capture
+    await page.addStyleTag({
+      content: `
+        xmc-work-unit-page {
+          display: block !important;
+          box-sizing: border-box !important;
+          height: 1050px !important;
+          min-height: 1050px !important;
+          overflow: hidden !important;
+        }
+      `,
+    });
   });
 
   test('should match baseline screenshot for the WorkUnit Details page (Jobs tab)', async ({
