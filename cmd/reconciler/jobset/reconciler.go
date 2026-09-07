@@ -782,14 +782,26 @@ func mlRunOwnedByXManager(mlRun map[string]any) bool {
 }
 
 // mlRunURL returns the URL to surface for an MLRun: the API-provided url when
-// present, otherwise the deterministic Cloud Console diagnostics URL for the id.
+// present (with &tab=profiles appended if missing), otherwise the deterministic
+// Cloud Console diagnostics URL for the id.
 func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
 	if res != nil {
 		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
-			return urlVal
+			return ensureProfilesTab(urlVal)
 		}
 	}
 	return constructDiagnosticsConsoleURL(r.Location, mlRunID, r.Project)
+}
+
+// ensureProfilesTab ensures the MLRun URL contains the profiles tab parameter.
+func ensureProfilesTab(rawURL string) string {
+	if strings.Contains(rawURL, "tab=") {
+		return rawURL
+	}
+	if strings.Contains(rawURL, "?") {
+		return rawURL + "&tab=profiles"
+	}
+	return rawURL + "?tab=profiles"
 }
 
 // upsertExistingMLRun handles an MLRun create conflict. It locates the existing run
@@ -835,12 +847,12 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 }
 
 // constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view
-// URL in Google Cloud Console.
+// URL in Google Cloud Console with the profiles tab preselected.
 func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	if location == "" || mlRunID == "" || project == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
+	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s&tab=profiles", location, mlRunID, project)
 }
 
 // artifactListPageSize bounds the single ListArtifacts page read by
