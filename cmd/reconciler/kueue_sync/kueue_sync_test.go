@@ -295,6 +295,58 @@ func TestNewReconciler_Validation(t *testing.T) {
 	}
 }
 
+func TestNewReconciler_DefaultConcurrency(t *testing.T) {
+	s := runtime.NewScheme()
+	v1alpha2.AddToScheme(s)
+	v1beta1.AddToScheme(s)
+	clientscheme.AddToScheme(s)
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	cs := kubernetesfake.NewSimpleClientset()
+	updateBatcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{
+		TickDuration:           1 * time.Minute,
+		MaxParallelExperiments: 1,
+	}, &mockStorage{})
+
+	tests := []struct {
+		name          string
+		maxConcurrent int
+		wantLimit     int
+	}{
+		{
+			name:          "zero defaults to 1",
+			maxConcurrent: 0,
+			wantLimit:     1,
+		},
+		{
+			name:          "negative defaults to 1",
+			maxConcurrent: -10,
+			wantLimit:     1,
+		},
+		{
+			name:          "positive preserved",
+			maxConcurrent: 50,
+			wantLimit:     50,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, err := NewReconciler(Params{
+				Client:                           cl,
+				Clientset:                        cs,
+				UpdateBatcher:                    updateBatcher,
+				MaxConcurrentKueueSyncReconciles: tc.maxConcurrent,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
+			}
+			if rec.MaxConcurrentKueueSyncReconciles != tc.wantLimit {
+				t.Errorf("MaxConcurrentKueueSyncReconciles = %d, want %d", rec.MaxConcurrentKueueSyncReconciles, tc.wantLimit)
+			}
+		})
+	}
+}
+
 func createFakeRestClient(t *testing.T, workloadsJSON []byte) *fakerest.RESTClient {
 	t.Helper()
 	return &fakerest.RESTClient{

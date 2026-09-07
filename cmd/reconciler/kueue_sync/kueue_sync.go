@@ -69,13 +69,17 @@ func NewReconciler(p Params) (*Reconciler, error) {
 	if p.UpdateBatcher == nil {
 		return nil, errors.New("update batcher is required")
 	}
+	maxConcurrent := p.MaxConcurrentKueueSyncReconciles
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1
+	}
 	return &Reconciler{
 		Client:                           p.Client,
 		Clientset:                        p.Clientset,
 		Storage:                          p.Storage,
 		UpdateBatcher:                    p.UpdateBatcher,
 		KueueSyncTickDuration:            p.KueueSyncTickDuration,
-		MaxConcurrentKueueSyncReconciles: p.MaxConcurrentKueueSyncReconciles,
+		MaxConcurrentKueueSyncReconciles: maxConcurrent,
 	}, nil
 }
 
@@ -169,8 +173,11 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 	var queueWaitGroup sync.WaitGroup
 
 	queueSem := make(chan struct{}, maxConcurrentQueueFetches)
-	workloadSemSize := (r.MaxConcurrentKueueSyncReconciles / maxConcurrentQueueFetches) + 1
-	workloadSem := make(chan struct{}, workloadSemSize)
+	limit := r.MaxConcurrentKueueSyncReconciles
+	if limit <= 0 {
+		limit = 1
+	}
+	workloadSem := make(chan struct{}, limit)
 
 	for _, cqName := range cqNames {
 		queueWaitGroup.Add(1)
