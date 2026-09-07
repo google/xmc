@@ -156,6 +156,80 @@ func TestDashboardObserver_OnArtifactCreated_Success(t *testing.T) {
 	}
 }
 
+func TestDashboardObserver_OnArtifactCreated_DerivesPlotsFromMetricNames(t *testing.T) {
+	t.Parallel()
+	mockDash := &mockDashboardClient{
+		createChartResp: &dashboard_apipb.Chart{
+			Name:  "experiments/100/workUnits/200/charts/b6f1c0a2",
+			Title: "Custom Title",
+		},
+	}
+	toolClient := toollibs.NewDashboardToolClient(mockDash)
+	var wg sync.WaitGroup
+	recStorage := &recordingStorage{MockStorage: &storage.MockStorage{}}
+	obs := NewDashboardObserver(toolClient, recStorage, &wg)
+
+	artifact := &essmsgpb.Artifact{
+		Name:   "artifacts/300",
+		Parent: "experiments/100/workUnits/200",
+		Payload: &essmsgpb.ArtifactPayload{
+			Type: &essmsgpb.ArtifactPayload_Chart{
+				Chart: &essmsgpb.ChartArtifact{
+					Title:       "Custom Title",
+					MetricNames: []string{"chart_demo/loss", "chart_demo/accuracy"},
+				},
+			},
+		},
+	}
+
+	obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
+	wg.Wait()
+
+	if len(mockDash.reqs) != 1 {
+		t.Fatalf("len(mockDash.reqs) = %d, want 1", len(mockDash.reqs))
+	}
+	chart := mockDash.reqs[0].GetChart()
+
+	wantPlots := []struct {
+		plotID string
+		typ    dashboard_apipb.PlotType
+		metric string
+	}{
+		{"chart_demo_loss_latest", dashboard_apipb.PlotType_SUMMARY_BOX, "chart_demo/loss"},
+		{"chart_demo_loss_curve", dashboard_apipb.PlotType_SCATTER, "chart_demo/loss"},
+		{"chart_demo_accuracy_latest", dashboard_apipb.PlotType_SUMMARY_BOX, "chart_demo/accuracy"},
+		{"chart_demo_accuracy_curve", dashboard_apipb.PlotType_SCATTER, "chart_demo/accuracy"},
+	}
+	if len(chart.GetPlots()) != len(wantPlots) {
+		t.Fatalf("len(chart.Plots) = %d, want %d", len(chart.GetPlots()), len(wantPlots))
+	}
+	for i, want := range wantPlots {
+		got := chart.GetPlots()[i]
+		if got.GetPlotId() != want.plotID {
+			t.Errorf("chart.Plots[%d].PlotId = %q, want %q", i, got.GetPlotId(), want.plotID)
+		}
+		if got.GetType() != want.typ {
+			t.Errorf("chart.Plots[%d].Type = %v, want %v", i, got.GetType(), want.typ)
+		}
+		if metrics := got.GetData().GetMetrics(); len(metrics) != 1 || metrics[0] != want.metric {
+			t.Errorf("chart.Plots[%d].Data.Metrics = %v, want [%q]", i, metrics, want.metric)
+		}
+	}
+	if chart.GetPlotLayout().GetType() != dashboard_apipb.LayoutSpec_GRID {
+		t.Errorf("chart.PlotLayout.Type = %v, want GRID", chart.GetPlotLayout().GetType())
+	}
+
+	// The artifact must carry the server-assigned chart, otherwise a reader has the metric
+	// names but no way to find the chart that plots them.
+	if len(recStorage.updateUpdates) != 1 {
+		t.Fatalf("len(recStorage.updateUpdates) = %d, want 1", len(recStorage.updateUpdates))
+	}
+	gotChart := recStorage.updateUpdates[0].Artifact.GetPayload().GetChart().GetChart()
+	if gotChart.GetName() != "experiments/100/workUnits/200/charts/b6f1c0a2" {
+		t.Errorf("artifact chart name = %q, want the name CreateChart returned", gotChart.GetName())
+	}
+}
+
 func TestDashboardObserver_OnArtifactCreated_NoPlotsWithoutMetricNames(t *testing.T) {
 	t.Parallel()
 	mockDash := &mockDashboardClient{}

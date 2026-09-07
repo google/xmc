@@ -215,7 +215,7 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		}
 
 		// Call Dashboard service.
-		_, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
+		created, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
 			Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 			Chart: &dashboard_apipb.Chart{
 				Title: title,
@@ -236,6 +236,10 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		} else {
 			logging.Info(ctxBg, "Background Chart provisioning succeeded")
 			cArtifact.Status = essmsgpb.ChartArtifact_SUCCESS
+			// Record the chart the service assigned. It is the only link from the artifact to
+			// its plots: without the server-assigned resource name a reader holds a list of
+			// metric names and no way to find the chart that draws them.
+			cArtifact.Chart = created
 		}
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
