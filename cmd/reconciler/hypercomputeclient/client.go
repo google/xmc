@@ -473,13 +473,8 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 	for _, field := range []string{"createTime", "updateTime", "endTime"} {
 		delete(payload, field)
 	}
-	// Everything else from the GET (including orchestrator/workloadDetails) is
-	// re-sent unchanged. The API only accepts update_mask=* (per-field paths such as
-	// "labels" are rejected as "unsupported update mask path"), and * clears any field
-	// absent from the body. Dropping orchestrator would therefore try to clear it,
-	// which the API rejects: "orchestrator ... cannot be modified to
-	// ORCHESTRATOR_UNSPECIFIED" after creation.
 
+	// The current backend only accepts update_mask=*|workload_details, so it uses * here. TODO: update to per field masks once backend supports it.
 	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
 	params := url.Values{"update_mask": {"*"}}
 

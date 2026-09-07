@@ -676,11 +676,14 @@ const createdByXManagerLabelValue = "xmanager"
 // bucket and the profile is never surfaced.
 //
 // It is applied to the run via a follow-up UpdateMLRun (create-then-update), not
-// on the create request: the backend performs the folder scan when the marker is
-// set via an update, so setting it at creation (before the workload has written
-// its profile) leaves the run empty. Applying it is safe: XMC assigns a unique
-// per-work-unit gcs_path (so distinct runs never see each other's profiles even
-// with a recursive scan), and on-demand capture still works with the marker set.
+// on the create request: creating an MLRun with list_existing_sessions_only sets
+// the run directly to the COMPLETED stage, which disallows further on-demand
+// profiling. By creating the MLRun first (keeping it in the ACTIVE stage) and then
+// applying the marker via a follow-up update, the backend scans the run's GCS
+// folder for programmatically-written profiles while still allowing subsequent
+// on-demand profiling. Applying it is safe: XMC assigns a unique per-work-unit
+// gcs_path (so distinct runs never see each other's profiles even with a
+// recursive scan).
 const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 
 // mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
@@ -701,8 +704,9 @@ func buildMLRunLabels(xid, wid int64) map[string]string {
 // buildMLRunSessionScanLabels returns the ownership labels plus the
 // list_existing_sessions_only marker. The marker is applied to the MLRun via a
 // follow-up UpdateMLRun (see applySessionScanLabel), never on the create request:
-// the Diagon profiler-session backend only (re)scans the run's GCS folder for
-// programmatically-written profiles when the marker is set via an update.
+// creating the MLRun with this marker sets it directly to the COMPLETED stage,
+// which disallows further on-demand profiling. Applying it via an update triggers
+// the GCS folder scan while keeping on-demand profiling available.
 func buildMLRunSessionScanLabels(xid, wid int64) map[string]string {
 	labels := buildMLRunLabels(xid, wid)
 	labels[listExistingSessionsOnlyLabel] = "true"
@@ -766,9 +770,10 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		return ""
 	}
 	// Create-then-update: apply the list_existing_sessions_only marker via a
-	// follow-up UpdateMLRun rather than on the create request above, so the Diagon
-	// profiler-session backend scans the run's GCS folder for the
-	// programmatically-written profile.
+	// follow-up UpdateMLRun rather than on the create request above. Creating an
+	// MLRun with this marker sets it directly to the COMPLETED stage and blocks
+	// further on-demand profiling; updating it post-create triggers the folder scan
+	// while preserving on-demand profiling support.
 	return r.applySessionScanLabel(ctx, mlRunID, scanLabels, r.mlRunURL(res, mlRunID))
 }
 
