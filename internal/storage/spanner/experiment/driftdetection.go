@@ -109,7 +109,7 @@ func fetchDriftDetails(ctx context.Context, txn SpannerTransaction, xid int64) (
 	iter := txn.Query(ctx, stmt)
 	defer iter.Stop()
 
-	var diffs []string
+	diffs := make([]string, 0, maxDriftDetails+1)
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
@@ -132,37 +132,28 @@ func fetchDriftDetails(ctx context.Context, txn SpannerTransaction, xid int64) (
 	return diffs, nil
 }
 
+type componentDiffData struct {
+	Name               spanner.NullString `spanner:"Name"`
+	LockedGeneration   int64              `spanner:"LockedGeneration"`
+	ObservedGeneration spanner.NullInt64  `spanner:"ObservedGeneration"`
+	State              spanner.NullInt64  `spanner:"State"`
+	ComponentID        int64              `spanner:"ComponentId"`
+}
+
 // formatComponentDiff parses a single drifted component row and formats its description.
 func formatComponentDiff(row *spanner.Row) (string, error) {
-	var name spanner.NullString
-	var lockedGen int64
-	var observedGen spanner.NullInt64
-	var state spanner.NullInt64
-	var componentID int64
-
-	if err := row.ColumnByName("Name", &name); err != nil {
-		return "", fmt.Errorf("failed reading column 'Name': %w", err)
-	}
-	if err := row.ColumnByName("LockedGeneration", &lockedGen); err != nil {
-		return "", fmt.Errorf("failed reading column 'LockedGeneration': %w", err)
-	}
-	if err := row.ColumnByName("ObservedGeneration", &observedGen); err != nil {
-		return "", fmt.Errorf("failed reading column 'ObservedGeneration': %w", err)
-	}
-	if err := row.ColumnByName("State", &state); err != nil {
-		return "", fmt.Errorf("failed reading column 'State': %w", err)
-	}
-	if err := row.ColumnByName("ComponentId", &componentID); err != nil {
-		return "", fmt.Errorf("failed reading column 'ComponentId': %w", err)
+	var data componentDiffData
+	if err := row.ToStruct(&data); err != nil {
+		return "", fmt.Errorf("failed to convert row to struct for component diff: %w", err)
 	}
 
-	if !name.Valid {
-		return fmt.Sprintf("Component ID %d (missing from catalog, snapshot generation %d)", componentID, lockedGen), nil
+	if !data.Name.Valid {
+		return fmt.Sprintf("Component ID %d (missing from catalog, snapshot generation %d)", data.ComponentID, data.LockedGeneration), nil
 	}
-	if state.Valid && state.Int64 == componentStateDeleted {
-		return fmt.Sprintf("%s (deleted from catalog, snapshot generation %d)", name.StringVal, lockedGen), nil
+	if data.State.Valid && data.State.Int64 == componentStateDeleted {
+		return fmt.Sprintf("%s (deleted from catalog, snapshot generation %d)", data.Name.StringVal, data.LockedGeneration), nil
 	}
-	return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", name.StringVal, lockedGen, observedGen.Int64), nil
+	return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", data.Name.StringVal, data.LockedGeneration, data.ObservedGeneration.Int64), nil
 }
 
 // formatDriftWarningMessage constructs a StructuredMessage with WARNING severity.
@@ -182,13 +173,25 @@ func formatDriftWarningMessage(diffs []string) *essmsgpb.StructuredMessage {
 // attachDriftWarningMessage safely sets or merges the drift notice into expStatus.
 func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *essmsgpb.StructuredMessage) {
 	currentMsg := expStatus.GetStructuredStatusMessage()
+
+	// If no current message, or it's less severe than WARNING, overwrite it.
 	if currentMsg == nil || currentMsg.GetSeverity() < essmsgpb.StructuredMessage_WARNING {
 		expStatus.StructuredStatusMessage = driftMsg
 		return
 	}
-	if currentMsg.GetSeverity() != essmsgpb.StructuredMessage_WARNING || strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
+
+	// If the current message is more severe than WARNING, do nothing.
+	if currentMsg.GetSeverity() > essmsgpb.StructuredMessage_WARNING {
 		return
 	}
+
+	// At this point, currentMsg.GetSeverity() == essmsgpb.StructuredMessage_WARNING.
+	// If it already contains drift info, do nothing to avoid duplicates.
+	if strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
+		return
+	}
+
+	// Append drift info to the existing WARNING message.
 	if currentMsg.GetUserFacingText() == "" {
 		currentMsg.UserFacingText = driftMsg.GetUserFacingText()
 		return
