@@ -84,3 +84,11 @@ Once components pass the placement gate, Actuator resolves runtime configuration
 - **Plain Environment Variables**: Key-value pairs declared under `status.access.envVars` are injected into both primary containers and `initContainers` across all `replicatedJobs`. Existing variables of the same name are updated in place.
 - **Secret Environment Variables**: Declarations under `status.access.secretEnvVars` (formatted as `"<secret_name>:<secret_key>"`) are resolved into `corev1.SecretKeyRef` selectors referencing the target Secret and key.
 
+### 6. Secret Volume Mounts Injection
+For component credentials and configuration files requiring filesystem mounts:
+- **Volume Definition**: Declarations under `status.access.secretVolumeMounts` (formatted as `"<secret_name>:<mount_path>"`) attach secret volumes to `podSpec.Volumes`.
+- **RFC 1123 Sanitization**: Secret names are converted to RFC 1123 compliant volume names (lowercase alphanumeric and hyphens, capped at 50 characters).
+- **Collision Deduplication**: Repeated references to the same Kubernetes Secret reuse the existing volume definition. Duplicate volume name collisions are disambiguated with incremental numeric suffixes.
+- **Container Mounting**: Read-only volume mounts are attached to all primary containers and `initContainers`. Mount paths must be absolute (starting with `/`), and duplicate container mount paths are deduplicated.
+
+

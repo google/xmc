@@ -776,3 +776,218 @@ func TestBuildSecretEnvVars_EdgeCases(t *testing.T) {
 		t.Errorf("expected nil for empty secretEnv")
 	}
 }
+
+func TestCreateWorkUnit_ComponentSnapshotInjection_Volumes_Success(t *testing.T) {
+	ctx, actuatorClient, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	actuatorClient.RuntimeConfig.EnableComponents = true
+
+	compCR := createTestComponentCR("vol-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
+		[]map[string]any{
+			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
+			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
+		},
+		map[string]any{
+			"secretVolumeMounts": map[string]any{
+				"vol-key": "app-secret:/etc/app/certs",
+			},
+		},
+	)
+	actuatorClient.SetManagerClient(createFakeManagerClient(compCR))
+
+	payload := proto.Clone(createPayload).(*actuatortaskpb.ActuatorPayload)
+	payload.WorkUnit = createWorkUnitWithSnapshots(testNamespace, `{"vol-sidecar": 1}`)
+
+	if err := actuatorClient.CreateWorkUnit(ctx, payload); err != nil {
+		t.Fatalf("CreateWorkUnit failed: %v", err)
+	}
+
+	jobSetUnstructured, err := dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Get(ctx, testJobSetName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("dynamicClient.Resource().Get() failed: %v", err)
+	}
+	if jobSetUnstructured == nil {
+		t.Fatalf("expected JobSet to be created")
+	}
+
+	replicatedJobs, ok, err := unstructured.NestedSlice(jobSetUnstructured.Object, "spec", "replicatedJobs")
+	if err != nil || !ok || len(replicatedJobs) == 0 {
+		t.Fatalf("failed to retrieve replicatedJobs: %v", err)
+	}
+	firstRj := replicatedJobs[0].(map[string]any)
+	podSpecMap, ok, err := unstructured.NestedMap(firstRj, "template", "spec", "template", "spec")
+	if err != nil || !ok {
+		t.Fatalf("failed to retrieve podSpec: %v", err)
+	}
+
+	volumes, ok, err := unstructured.NestedSlice(podSpecMap, "volumes")
+	if err != nil || !ok {
+		t.Fatalf("failed to retrieve volumes: %v", err)
+	}
+	foundVol := false
+	for _, vRaw := range volumes {
+		v := vRaw.(map[string]any)
+		if sec, ok := v["secret"].(map[string]any); ok && sec["secretName"] == "app-secret" {
+			foundVol = true
+			break
+		}
+	}
+	if !foundVol {
+		t.Errorf("expected secret volume app-secret in created JobSet volumes")
+	}
+
+	containers, ok, err := unstructured.NestedSlice(podSpecMap, "containers")
+	if err != nil || !ok || len(containers) == 0 {
+		t.Fatalf("failed to retrieve containers: %v", err)
+	}
+	firstContainer := containers[0].(map[string]any)
+	mounts, ok, err := unstructured.NestedSlice(firstContainer, "volumeMounts")
+	if err != nil || !ok {
+		t.Fatalf("failed to retrieve volumeMounts: %v", err)
+	}
+	foundMount := false
+	for _, mRaw := range mounts {
+		m := mRaw.(map[string]any)
+		readOnly, _ := m["readOnly"].(bool)
+		if m["mountPath"] == "/etc/app/certs" && readOnly {
+			foundMount = true
+			break
+		}
+	}
+	if !foundMount {
+		t.Errorf("expected readOnly volume mount /etc/app/certs in created JobSet container")
+	}
+}
+
+func TestConstructJobSet_ComponentSnapshot_SecretVolumeMounts(t *testing.T) {
+	ctx, client := setupComponentTestClient()
+	targetNS := constants.XmcLabelValue
+
+	compCR := createTestComponentCR("vol-comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
+		[]map[string]any{
+			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
+		},
+		map[string]any{
+			"secretVolumeMounts": map[string]any{
+				"mount-1": "cred-secret:/etc/certs",
+				"mount-2": "cred-secret:/etc/keys",
+				"mount-3": "config-secret:/etc/config",
+			},
+		},
+	)
+	client.SetManagerClient(createFakeManagerClient(compCR))
+
+	workUnit := createWorkUnitWithSnapshots(targetNS, `{"vol-comp": 1}`)
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet failed: %v", err)
+	}
+
+	podSpec := jobSet.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+	var secretVolumes []corev1.Volume
+	for _, v := range podSpec.Volumes {
+		if v.Secret != nil {
+			secretVolumes = append(secretVolumes, v)
+		}
+	}
+	if len(secretVolumes) != 2 {
+		t.Fatalf("expected 2 secret volumes in PodSpec, got %d (total volumes: %d)", len(secretVolumes), len(podSpec.Volumes))
+	}
+
+	volMap := make(map[string]string)
+	for _, v := range secretVolumes {
+		volMap[v.Name] = v.Secret.SecretName
+	}
+	if len(volMap) != 2 {
+		t.Errorf("expected 2 secret volumes, got %v", volMap)
+	}
+
+	containers := podSpec.Containers
+	if len(containers) == 0 {
+		t.Fatalf("expected containers")
+	}
+	mountsByPath := make(map[string]corev1.VolumeMount)
+	for _, m := range containers[0].VolumeMounts {
+		mountsByPath[m.MountPath] = m
+	}
+	for _, expectedPath := range []string{"/etc/certs", "/etc/keys", "/etc/config"} {
+		m, ok := mountsByPath[expectedPath]
+		if !ok {
+			t.Errorf("expected mount path %q in container", expectedPath)
+		} else if !m.ReadOnly {
+			t.Errorf("expected volume mount %q to be ReadOnly", expectedPath)
+		}
+	}
+}
+
+func TestBuildSecretVolumeMounts_InvalidSpecs(t *testing.T) {
+	podSpec := &corev1.PodSpec{}
+	specs := map[string]string{
+		"NO_COLON": "nocolon",
+		"EMPTY_S":  ":/path",
+		"EMPTY_M":  "sec:",
+		"RELATIVE": "sec:relative/path",
+	}
+	mounts := buildSecretVolumeMounts(podSpec, specs)
+	if len(mounts) != 0 {
+		t.Errorf("expected 0 mounts for invalid specs, got %d", len(mounts))
+	}
+	if len(podSpec.Volumes) != 0 {
+		t.Errorf("expected 0 volumes in PodSpec, got %d", len(podSpec.Volumes))
+	}
+	if empty := buildSecretVolumeMounts(nil, nil); empty != nil {
+		t.Errorf("expected nil for nil input")
+	}
+}
+
+func TestSanitizeVolumeName(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"Secret.Name_123", "secret-name-123"},
+		{"---special---", "special"},
+		{"", "secret-vol"},
+		{strings.Repeat("a", 60), strings.Repeat("a", 50)},
+	}
+	for _, tc := range cases {
+		got := sanitizeVolumeName(tc.input)
+		if got != tc.expected {
+			t.Errorf("sanitizeVolumeName(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestGetOrAddSecretVolume_NameDisambiguation(t *testing.T) {
+	podSpec := &corev1.PodSpec{
+		Volumes: []corev1.Volume{
+			{Name: "my-sec", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "original-sec"}}},
+		},
+	}
+	// Asking for "my-sec" with different secret name should create "my-sec-1"
+	vol1 := getOrAddSecretVolume(podSpec, "my-sec")
+	if vol1 != "my-sec-1" {
+		t.Errorf("expected disambiguated volume name my-sec-1, got %q", vol1)
+	}
+
+	// Asking again for "original-sec" should return "my-sec"
+	volOrig := getOrAddSecretVolume(podSpec, "original-sec")
+	if volOrig != "my-sec" {
+		t.Errorf("expected existing volume name my-sec, got %q", volOrig)
+	}
+}
+
+func TestAppendVolumeMountIfNotPresent_Deduplication(t *testing.T) {
+	c := &corev1.Container{
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "vol-a", MountPath: "/data"},
+		},
+	}
+	appendVolumeMountIfNotPresent(c, corev1.VolumeMount{Name: "vol-b", MountPath: "/data"})
+	if len(c.VolumeMounts) != 1 {
+		t.Errorf("expected mount path /data to be deduplicated, got %d mounts", len(c.VolumeMounts))
+	}
+	appendVolumeMountIfNotPresent(c, corev1.VolumeMount{Name: "vol-c", MountPath: "/other"})
+	if len(c.VolumeMounts) != 2 {
+		t.Errorf("expected 2 mounts, got %d", len(c.VolumeMounts))
+	}
+}
