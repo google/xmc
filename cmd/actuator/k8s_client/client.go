@@ -78,7 +78,8 @@ type Client struct {
 
 func buildRESTConfig() (*rest.Config, error) {
 	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to build kubeconfig from %q: %w", kubeconfig, err)
 		}
@@ -88,6 +89,9 @@ func buildRESTConfig() (*rest.Config, error) {
 	config, err := rest.InClusterConfig()
 	if err == nil {
 		return config, nil
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
 	}
 
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
