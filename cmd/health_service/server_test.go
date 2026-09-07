@@ -445,6 +445,18 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 			},
 			wantHealth: spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		},
+		{
+			name: "nil component in list is safely skipped",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				nil,
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
 	}
 
 	for _, tt := range tests {

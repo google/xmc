@@ -140,7 +140,9 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	if c.componentsProvider != nil {
 		go func() {
 			defer wg.Done()
-			customHealths, customErr = c.componentsProvider.GetComponentsHealth(ctx)
+			compCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
 		}()
 	}
 
