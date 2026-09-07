@@ -28,8 +28,40 @@ import (
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
+	"golang/grpc/metadata/metadata"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
+
+// authForwardKeys are the credential headers the Dashboard Service reads off a call, in the
+// order it looks for them. See jwtFromMetadata in internal/auth.
+var authForwardKeys = []string{"x-goog-iap-jwt-assertion", "authorization"}
+
+// withForwardedAuth copies the caller's credentials from ctx's incoming metadata onto its
+// outgoing metadata, so the CreateChart RPC below travels as the user who created the
+// artifact.
+//
+// It has to be done by hand twice over. grpc-go does not propagate incoming metadata to
+// outgoing calls, and the Dashboard Service connection is dialed with insecure credentials
+// and no per-RPC credentials, so without this the call arrives with no token at all and
+// CreateChart rejects it with Unauthenticated. Nor would the Experiment State Server's own
+// identity help if it had one: CreateChart authorizes against the *user's* WRITER role on the
+// experiment, so the user's token is the one that has to make the trip.
+func withForwardedAuth(ctx context.Context) (context.Context, bool) {
+	incoming, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx, false
+	}
+	outgoing := metadata.MD{}
+	for _, key := range authForwardKeys {
+		if values := incoming.Get(key); len(values) > 0 {
+			outgoing.Set(key, values...)
+		}
+	}
+	if len(outgoing) == 0 {
+		return ctx, false
+	}
+	return metadata.NewOutgoingContext(ctx, outgoing), true
+}
 
 type dashboardObserver struct {
 	client  *toollibs.DashboardToolClient
@@ -74,8 +106,16 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 			title = fmt.Sprintf("Chart for XID %d WID %d", xid, wid)
 		}
 
+		ctxAuth, forwarded := withForwardedAuth(ctxBg)
+		if !forwarded {
+			// Not fatal here -- let the Dashboard Service be the one to decide -- but the call
+			// is almost certainly about to come back Unauthenticated, and that is far easier to
+			// act on from this line than from the error it turns into.
+			logging.Warn(ctxBg, "No caller credentials to forward to Dashboard service; CreateChart will likely be rejected")
+		}
+
 		// Call Dashboard service.
-		_, err := o.client.CreateChart(ctxBg, &dashboard_pb.CreateChartRequest{
+		_, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
 			Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 			Chart: &dashboard_apipb.Chart{
 				Title: title,

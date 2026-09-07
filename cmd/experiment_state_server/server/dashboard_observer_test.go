@@ -25,8 +25,21 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
 
+	"golang/grpc/metadata/metadata"
 	"golang/protobuf/v2/proto/proto"
 )
+
+func chartArtifactFixture() *essmsgpb.Artifact {
+	return &essmsgpb.Artifact{
+		Name:   "artifacts/300",
+		Parent: "experiments/100/workUnits/200",
+		Payload: &essmsgpb.ArtifactPayload{
+			Type: &essmsgpb.ArtifactPayload_Chart{
+				Chart: &essmsgpb.ChartArtifact{Title: "Custom Title"},
+			},
+		},
+	}
+}
 
 type recordingStorage struct {
 	*storage.MockStorage
@@ -206,6 +219,127 @@ func TestDashboardObserver_OnArtifactCreated_ClientError(t *testing.T) {
 	}
 	if chart.GetErrorMessage() != clientErr.Error() {
 		t.Errorf("Chart error message = %q, want %q", chart.GetErrorMessage(), clientErr.Error())
+	}
+}
+
+func TestWithForwardedAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		incoming metadata.MD
+		// noIncoming builds the context without any incoming metadata at all, which is not the
+		// same as incoming metadata that happens to be empty.
+		noIncoming bool
+		wantOK     bool
+		wantOut    metadata.MD
+	}{
+		{
+			name:     "forwards a bearer token",
+			incoming: metadata.Pairs("authorization", "Bearer token-abc"),
+			wantOK:   true,
+			wantOut:  metadata.Pairs("authorization", "Bearer token-abc"),
+		},
+		{
+			name:     "forwards an IAP assertion",
+			incoming: metadata.Pairs("x-goog-iap-jwt-assertion", "assertion-abc"),
+			wantOK:   true,
+			wantOut:  metadata.Pairs("x-goog-iap-jwt-assertion", "assertion-abc"),
+		},
+		{
+			name: "forwards both credentials and nothing else",
+			incoming: metadata.Pairs(
+				"authorization", "Bearer token-abc",
+				"x-goog-iap-jwt-assertion", "assertion-abc",
+				"x-request-id", "req-1",
+			),
+			wantOK: true,
+			wantOut: metadata.Pairs(
+				"authorization", "Bearer token-abc",
+				"x-goog-iap-jwt-assertion", "assertion-abc",
+			),
+		},
+		{
+			name:     "reports no credentials when the call carried none",
+			incoming: metadata.Pairs("x-request-id", "req-1"),
+			wantOK:   false,
+		},
+		{
+			name:       "reports no credentials when the call carried no metadata",
+			noIncoming: true,
+			wantOK:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			if !tc.noIncoming {
+				ctx = metadata.NewIncomingContext(ctx, tc.incoming)
+			}
+
+			got, ok := withForwardedAuth(ctx)
+			if ok != tc.wantOK {
+				t.Errorf("withForwardedAuth() ok = %v, want %v", ok, tc.wantOK)
+			}
+			outgoing, hasOutgoing := metadata.FromOutgoingContext(got)
+			if !tc.wantOK {
+				if hasOutgoing {
+					t.Errorf("withForwardedAuth() attached outgoing metadata %v, want none", outgoing)
+				}
+				return
+			}
+			if !hasOutgoing {
+				t.Fatal("withForwardedAuth() attached no outgoing metadata, want the credentials")
+			}
+			if diff := len(outgoing) - len(tc.wantOut); diff != 0 {
+				t.Errorf("len(outgoing) = %d, want %d (got %v)", len(outgoing), len(tc.wantOut), outgoing)
+			}
+			for key, want := range tc.wantOut {
+				if got := outgoing.Get(key); len(got) != 1 || got[0] != want[0] {
+					t.Errorf("outgoing[%q] = %v, want %v", key, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestDashboardObserver_OnArtifactCreated_ForwardsCallerCredentials(t *testing.T) {
+	t.Parallel()
+	mockDash := &mockDashboardClient{}
+	toolClient := toollibs.NewDashboardToolClient(mockDash)
+	var wg sync.WaitGroup
+	obs := NewDashboardObserver(toolClient, &storage.MockStorage{}, &wg)
+
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer token-abc"))
+	obs.OnArtifactCreated(ctx, chartArtifactFixture())
+	wg.Wait()
+
+	if len(mockDash.outgoingMD) != 1 {
+		t.Fatalf("len(mockDash.outgoingMD) = %d, want 1", len(mockDash.outgoingMD))
+	}
+	// Without this the Dashboard Service sees an anonymous call and rejects CreateChart with
+	// Unauthenticated, which the UI then shows in place of the chart.
+	if got := mockDash.outgoingMD[0].Get("authorization"); len(got) != 1 || got[0] != "Bearer token-abc" {
+		t.Errorf("CreateChart outgoing authorization = %v, want ['Bearer token-abc']", got)
+	}
+}
+
+func TestDashboardObserver_OnArtifactCreated_UncredentialedCallerStillCalls(t *testing.T) {
+	t.Parallel()
+	mockDash := &mockDashboardClient{}
+	toolClient := toollibs.NewDashboardToolClient(mockDash)
+	var wg sync.WaitGroup
+	obs := NewDashboardObserver(toolClient, &storage.MockStorage{}, &wg)
+
+	// Whether an uncredentialed call is acceptable is the Dashboard Service's decision, not the
+	// observer's, so it logs and calls anyway rather than failing the artifact itself.
+	obs.OnArtifactCreated(t.Context(), chartArtifactFixture())
+	wg.Wait()
+
+	if len(mockDash.reqs) != 1 {
+		t.Fatalf("len(mockDash.reqs) = %d, want 1", len(mockDash.reqs))
 	}
 }
 
