@@ -102,7 +102,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
 
     @patch("tools.dev_env.remote_k8s_manager.run_command")
     def test_mint_service_account_token_success(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(stdout="  jwt-token-xyz  \n", returncode=0)
+        mock_run.return_value = MagicMock(stdout=b"  jwt-token-xyz  \n", returncode=0)
         token = remote_k8s_manager.mint_service_account_token(
             context="gke-ctx",
             namespace="xmc",

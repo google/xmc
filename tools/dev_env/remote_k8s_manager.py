@@ -48,7 +48,8 @@ def extract_remote_cluster_endpoint_and_ca(context: str) -> tuple[str, str]:
     cmd = ["kubectl", "config", "view", "--raw", "--minify", "--context", context, "-o", "json"]
     try:
         res = run_command(cmd, check=True, capture_output=True, log_cmd=False)
-        clusters = json.loads(res.stdout).get("clusters", [])
+        stdout = res.stdout.decode("utf-8") if isinstance(res.stdout, bytes) else res.stdout
+        clusters = json.loads(stdout).get("clusters", [])
     except Exception as e:
         raise RuntimeError(
             f"Failed to query remote cluster configuration for context '{context}': {e}"
@@ -108,7 +109,8 @@ def mint_service_account_token(
     ]
     try:
         res = run_command(cmd, check=True, capture_output=True, log_cmd=False)
-        token = res.stdout.strip()
+        stdout = res.stdout.decode("utf-8") if isinstance(res.stdout, bytes) else res.stdout
+        token = stdout.strip()
         if not token:
             raise RuntimeError("Token output was empty.")
         return token

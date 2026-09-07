@@ -102,6 +102,28 @@ def _parse_bool(val: Any) -> bool:
     return False
 
 
+def _is_bool_flag(val: Any) -> bool:
+    """Checks whether a value represents a boolean flag (truthy or falsy)."""
+    if isinstance(val, bool):
+        return True
+    if isinstance(val, str):
+        return val.strip().lower() in (
+            "true",
+            "false",
+            "1",
+            "0",
+            "yes",
+            "no",
+            "y",
+            "n",
+            "t",
+            "f",
+            "on",
+            "off",
+        )
+    return False
+
+
 def _resolve_bool_flag(
     cli_val: Any,
     env_val: Any,
@@ -333,13 +355,11 @@ def load_config(
     remote_env = os.environ.get("REMOTE_K8S_CONTEXT") or os.environ.get("GKE_CONTEXT")
     remote_yaml = yaml_vars.get("remote_k8s_context") or yaml_vars.get("remote_k8s")
 
-    is_bool = isinstance(remote_raw, bool) or (
-        isinstance(remote_raw, str) and _parse_bool(remote_raw)
-    )
+    is_bool = _is_bool_flag(remote_raw)
     remote_k8s_context = _resolve_str_flag(
         None if is_bool else remote_raw,
-        None if remote_env and _parse_bool(remote_env) else remote_env,
-        None if remote_yaml and _parse_bool(remote_yaml) else remote_yaml,
+        None if _is_bool_flag(remote_env) else remote_env,
+        None if _is_bool_flag(remote_yaml) else remote_yaml,
         default="",
     )
     enable_remote_k8s = _resolve_bool_flag(
