@@ -835,12 +835,12 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 }
 
 // constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view
-// URL in Google Cloud Console.
+// URL in Google Cloud Console with the profiles tab preselected.
 func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	if location == "" || mlRunID == "" || project == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
+	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s&tab=profiles", location, mlRunID, project)
 }
 
 // artifactListPageSize bounds the single ListArtifacts page read by
