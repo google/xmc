@@ -193,7 +193,9 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return nil
 	})
 
-	storage, err := ss.NewStorage(spannerClient)
+	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{
+		EnableComponents: cfg.EnableComponents,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}

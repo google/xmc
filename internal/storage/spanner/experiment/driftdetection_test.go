@@ -27,13 +27,19 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
+func newTestStorageWithComponents(ctx context.Context, t *testing.T, essClient *cloudspanner.Client) *spanner.Storage {
+	t.Helper()
+	storage, err := spanner.NewStorageWithConfig(essClient, spanner.StorageConfig{EnableComponents: true})
+	if err != nil {
+		t.Fatalf("NewStorageWithConfig failed: %v", err)
+	}
+	return storage
+}
+
 func TestDriftDetection_ConsistentSnapshots(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1001)
 	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -75,10 +81,7 @@ func TestDriftDetection_ConsistentSnapshots(t *testing.T) {
 func TestDriftDetection_GenerationDiverged(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1002)
 	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -134,10 +137,7 @@ func TestDriftDetection_GenerationDiverged(t *testing.T) {
 func TestDriftDetection_ComponentSoftDeleted(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1003)
 	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -178,10 +178,7 @@ func TestDriftDetection_ComponentSoftDeleted(t *testing.T) {
 func TestDriftDetection_TerminalExperimentFiltered(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1004)
 	expProto := spanner.BlankExperimentProto(xid)
@@ -219,10 +216,7 @@ func TestDriftDetection_TerminalExperimentFiltered(t *testing.T) {
 func TestDriftDetection_PendingReconciliationNotDrifted(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1005)
 	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -257,10 +251,7 @@ func TestDriftDetection_PendingReconciliationNotDrifted(t *testing.T) {
 func TestDriftDetection_NoSnapshots_Consistent(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1006)
 	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -282,10 +273,7 @@ func TestDriftDetection_NoSnapshots_Consistent(t *testing.T) {
 func TestDriftDetection_MergeWithExistingLowerSeverityMessage(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1007)
 	expProto := spanner.BlankExperimentProto(xid)
@@ -334,10 +322,7 @@ func TestDriftDetection_MergeWithExistingLowerSeverityMessage(t *testing.T) {
 func TestDriftDetection_PreserveHigherSeverityMessage(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
+	storage := newTestStorageWithComponents(ctx, t, essClient)
 
 	const xid = int64(1008)
 	expProto := spanner.BlankExperimentProto(xid)
@@ -379,5 +364,98 @@ func TestDriftDetection_PreserveHigherSeverityMessage(t *testing.T) {
 	}
 	if got, want := msg.GetUserFacingText(), "Fatal crash on worker 0"; got != want {
 		t.Errorf("UserFacingText = %q, want %q", got, want)
+	}
+}
+
+func TestDriftDetection_ComponentsDisabled_SkipsDriftCheck(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	// Default NewStorage has EnableComponents = false.
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	const xid = int64(1099)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
+
+	// Live component is diverged.
+	componentMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(299), "diverged-comp", "storage", []byte{}, int64(1), int64(2), int64(2), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), int64(299), int64(1), []byte{}},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations failed: %v", err)
+	}
+
+	parsedXID, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+
+	gotExp, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment failed: %v", err)
+	}
+	// Since components are disabled, drift check is skipped completely.
+	if gotExp.GetStatus().GetStructuredStatusMessage() != nil {
+		t.Errorf("Expected nil structured status message when EnableComponents is false, got: %v", gotExp.GetStatus().GetStructuredStatusMessage())
+	}
+}
+
+func TestDriftDetection_CacheHitsWithinTTL(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage := newTestStorageWithComponents(ctx, t, essClient)
+
+	const xid = int64(1100)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
+
+	componentMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(300), "cached-comp", "storage", []byte{}, int64(1), int64(2), int64(2), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), int64(300), int64(1), []byte{}},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations failed: %v", err)
+	}
+
+	parsedXID, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+
+	// First call: populates the cache
+	gotExp1, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment 1 failed: %v", err)
+	}
+	if gotExp1.GetStatus().GetStructuredStatusMessage() == nil {
+		t.Fatalf("Expected non-nil structured status message on first fetch")
+	}
+
+	// Mutate component to match snapshot (observed = 1), so database would evaluate as consistent.
+	resolveMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(300), "cached-comp", "storage", []byte{}, int64(1), int64(1), int64(1), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{resolveMutation}); err != nil {
+		t.Fatalf("Apply resolve mutation failed: %v", err)
+	}
+
+	// Second call: within 30s TTL window, hits in-memory cache and still returns cached drift warning
+	gotExp2, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment 2 failed: %v", err)
+	}
+	if gotExp2.GetStatus().GetStructuredStatusMessage() == nil {
+		t.Errorf("Expected cached drift warning to be returned from in-memory cache within TTL")
 	}
 }

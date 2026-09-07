@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"google.golang.org/api/iterator"
@@ -41,12 +43,78 @@ ORDER BY c.Name ASC`
 
 	componentStateDeleted = 5
 	maxDriftDetails       = 10
+	driftCacheTTL         = 30 * time.Second
+	maxDriftCacheItems    = 1000
 )
+
+type driftCacheEntry struct {
+	isConsistent bool
+	diffs        []string
+	expiresAt    time.Time
+}
+
+type driftCache struct {
+	mu      sync.RWMutex
+	entries map[int64]driftCacheEntry
+}
+
+func newDriftCache() *driftCache {
+	return &driftCache{
+		entries: make(map[int64]driftCacheEntry),
+	}
+}
+
+func (c *driftCache) get(xid int64, now time.Time) (driftCacheEntry, bool) {
+	if c == nil {
+		return driftCacheEntry{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.entries[xid]
+	if !ok || now.After(entry.expiresAt) {
+		return driftCacheEntry{}, false
+	}
+	return entry, true
+}
+
+func (c *driftCache) set(xid int64, isConsistent bool, diffs []string, now time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.entries) >= maxDriftCacheItems {
+		for k, v := range c.entries {
+			if now.After(v.expiresAt) {
+				delete(c.entries, k)
+			}
+		}
+	}
+
+	c.entries[xid] = driftCacheEntry{
+		isConsistent: isConsistent,
+		diffs:        diffs,
+		expiresAt:    now.Add(driftCacheTTL),
+	}
+}
 
 // evaluateExperimentDrift checks whether an active experiment's component snapshots have diverged
 // from live component catalog generations. If drift is detected, a warning notice is attached to the status.
 func (r *Repository) evaluateExperimentDrift(ctx context.Context, txn SpannerTransaction, xid int64, expStatus *essmsgpb.ExperimentStatus) error {
+	if !r.enableComponents {
+		return nil
+	}
 	if expStatus == nil || expStatus.GetActiveState() != essmsgpb.ExperimentStatus_ACTIVE {
+		return nil
+	}
+
+	now := time.Now()
+	if entry, ok := r.driftCache.get(xid, now); ok {
+		if entry.isConsistent {
+			return nil
+		}
+		attachDriftWarningMessage(expStatus, formatDriftWarningMessage(entry.diffs))
 		return nil
 	}
 
@@ -55,6 +123,7 @@ func (r *Repository) evaluateExperimentDrift(ctx context.Context, txn SpannerTra
 		return fmt.Errorf("failed to evaluate consistency: %w", err)
 	}
 	if isConsistent {
+		r.driftCache.set(xid, true, nil, now)
 		return nil
 	}
 
@@ -63,6 +132,7 @@ func (r *Repository) evaluateExperimentDrift(ctx context.Context, txn SpannerTra
 		return fmt.Errorf("failed to fetch drift details: %w", err)
 	}
 
+	r.driftCache.set(xid, false, diffs, now)
 	driftMsg := formatDriftWarningMessage(diffs)
 	attachDriftWarningMessage(expStatus, driftMsg)
 	logging.Info(ctx, "Attached component drift warning notice", "xid", xid, "warning", driftMsg.GetUserFacingText())
