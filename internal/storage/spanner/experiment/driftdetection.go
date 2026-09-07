@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	selectExperimentConsistencySQL = `SELECT IsExperimentConsistent, HasPendingReconciliation
+	selectExperimentConsistencySQL = `SELECT IsExperimentConsistent
 FROM ExperimentConsistencyInfo
 WHERE BitReversedXid = @bitReversedXid`
 
@@ -36,7 +36,7 @@ WHERE BitReversedXid = @bitReversedXid`
 FROM ExperimentComponentSnapshots s
 INNER JOIN@{JOIN_METHOD=APPLY_JOIN} Components c ON s.ComponentId = c.ComponentId
 WHERE s.BitReversedXid = @bitReversedXid
-  AND (c.State = 5 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
+  AND (c.State = @deletedState OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
 ORDER BY c.Name ASC`
 
 	componentStateDeleted = 5
@@ -102,6 +102,7 @@ func fetchDriftDetails(ctx context.Context, txn SpannerTransaction, xid int64) (
 		SQL: selectDriftedComponentsSQL,
 		Params: map[string]any{
 			"bitReversedXid": spannerutils.ReverseBits(xid),
+			"deletedState":   componentStateDeleted,
 		},
 	}
 	iter := txn.Query(ctx, stmt)
@@ -149,10 +150,7 @@ func formatComponentDiff(row *spanner.Row) (string, error) {
 	if state == componentStateDeleted {
 		return fmt.Sprintf("%s (deleted from catalog, snapshot generation %d)", name, lockedGen), nil
 	}
-	if observedGen.Valid && lockedGen != observedGen.Int64 {
-		return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", name, lockedGen, observedGen.Int64), nil
-	}
-	return fmt.Sprintf("%s (diverged from snapshot generation %d)", name, lockedGen), nil
+	return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", name, lockedGen, observedGen.Int64), nil
 }
 
 // formatDriftWarningMessage constructs a StructuredMessage with WARNING severity.
