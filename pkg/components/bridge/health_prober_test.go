@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,6 +139,55 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 			t.Fatalf("expected healthy bounded body drain probe: res=%+v, err=%v", res, err)
 		}
 	})
+	t.Run("whitespace trimmed URL", func(t *testing.T) {
+		res, err := prober.ProbeHTTP(ctx, "  "+ts.URL+"/health  \n\t", time.Second)
+		if err != nil || !res.Healthy || res.StatusCode != http.StatusOK {
+			t.Fatalf("expected healthy response from whitespace-padded URL: res=%+v, err=%v", res, err)
+		}
+	})
+	t.Run("body read error preserves status code", func(t *testing.T) {
+		client := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusTeapot,
+					Body:       &errReadCloser{err: errors.New("simulated body read error")},
+					Header:     make(http.Header),
+				}, nil
+			}),
+		}
+		p := NewNetworkHealthProber(WithHealthHTTPClient(client))
+		res, err := p.ProbeHTTP(ctx, "http://example.com/health", time.Second)
+		if err != nil {
+			t.Fatalf("unexpected probe error: %v", err)
+		}
+		if res.Healthy {
+			t.Fatalf("expected unhealthy probe result on body read failure: %+v", res)
+		}
+		if res.StatusCode != http.StatusTeapot {
+			t.Errorf("expected StatusCode %d, got %d", http.StatusTeapot, res.StatusCode)
+		}
+		if !strings.Contains(res.Message, "HTTP body read failed") {
+			t.Errorf("expected body read error message, got %q", res.Message)
+		}
+	})
+}
+
+type errReadCloser struct {
+	err error
+}
+
+func (e *errReadCloser) Read(p []byte) (n int, err error) {
+	return 0, e.err
+}
+
+func (e *errReadCloser) Close() error {
+	return nil
+}
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {

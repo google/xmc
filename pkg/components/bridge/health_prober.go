@@ -130,7 +130,8 @@ func (p *NetworkHealthProber) ProbeHTTP(ctx context.Context, targetURL string, t
 	if p == nil {
 		return nil, errors.New("network health prober is nil")
 	}
-	if strings.TrimSpace(targetURL) == "" {
+	targetURL = strings.TrimSpace(targetURL)
+	if targetURL == "" {
 		return nil, errors.New("targetURL must not be empty")
 	}
 	if _, err := url.ParseRequestURI(targetURL); err != nil {
@@ -167,7 +168,7 @@ func (p *NetworkHealthProber) ProbeHTTP(ctx context.Context, targetURL string, t
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return &HealthProbeResult{Healthy: false, Latency: time.Since(start), Message: fmt.Sprintf("HTTP body read failed: %v", err)}, nil
+		return &HealthProbeResult{Healthy: false, StatusCode: resp.StatusCode, Latency: time.Since(start), Message: fmt.Sprintf("HTTP body read failed: %v", err)}, nil
 	}
 	healthy := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusBadRequest
 	msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
