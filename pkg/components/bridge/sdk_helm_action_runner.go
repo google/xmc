@@ -26,6 +26,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/logging/logging"
 )
@@ -91,15 +92,26 @@ func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespac
 		return nil, fmt.Errorf("failed to initialize Helm action configuration: %w", err)
 	}
 
-	upgrade := action.NewUpgrade(actionConfig)
-	upgrade.Namespace = namespace
-	upgrade.Install = true
-
 	targetChart, err := r.resolveChart(releaseName, chartObj)
 	if err != nil {
 		return nil, err
 	}
 
+	histClient := action.NewHistory(actionConfig)
+	histClient.Max = 1
+	if _, histErr := histClient.Run(releaseName); errors.Is(histErr, driver.ErrReleaseNotFound) {
+		install := action.NewInstall(actionConfig)
+		install.ReleaseName = releaseName
+		install.Namespace = namespace
+		rel, err := install.RunWithContext(ctx, targetChart, values)
+		if err != nil {
+			return nil, fmt.Errorf("helm install failed for release %q in namespace %q: %w", releaseName, namespace, err)
+		}
+		return rel, nil
+	}
+
+	upgrade := action.NewUpgrade(actionConfig)
+	upgrade.Namespace = namespace
 	rel, err := upgrade.RunWithContext(ctx, releaseName, targetChart, values)
 	if err != nil {
 		return nil, fmt.Errorf("helm upgrade failed for release %q in namespace %q: %w", releaseName, namespace, err)
@@ -149,5 +161,15 @@ func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.C
 	if r.chartObj != nil {
 		return r.chartObj, nil
 	}
-	return nil, fmt.Errorf("no chart object or valid chartPath specified for release %q", releaseName)
+	return defaultComponentChart(releaseName), nil
+}
+
+func defaultComponentChart(name string) *chart.Chart {
+	return &chart.Chart{
+		Metadata: &chart.Metadata{
+			APIVersion: "v2",
+			Name:       name,
+			Version:    "0.1.0",
+		},
+	}
 }

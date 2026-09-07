@@ -55,6 +55,7 @@ go_library(
         "@sh_helm_helm_v3//pkg/chart/loader",
         "@sh_helm_helm_v3//pkg/cli",
         "@sh_helm_helm_v3//pkg/release",
+        "@sh_helm_helm_v3//pkg/storage/driver",
     ],
 )
 
