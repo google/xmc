@@ -65,6 +65,7 @@ STEPS = [
     "compile",
     "images",
     "apis",
+    "network",
     "primary",
     "compute",
     "gateway-api",
@@ -492,8 +493,8 @@ def step_apis(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None
     log_success("APIs enabled successfully.")
 
 
-def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
-    """Deploys the primary group (Network, Databases & certs) and configures DNS.
+def step_network(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
+    """Deploys the network group (VPC, Subnets, Gateway IP, base IAM SAs) and configures DNS.
 
     Args:
         config: The loaded DeploymentConfig instance.
@@ -503,8 +504,8 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     Raises:
         RuntimeError: If Gateway IP extraction fails.
     """
-    log_info("Deploying primary group (Network, Databases & certs)...")
-    run_gcluster_deploy(config.deployment_name, "primary")
+    log_info("Deploying network group (VPC, static IP, and service accounts)...")
+    run_gcluster_deploy(config.deployment_name, "network")
 
     gw_ip_name = f"xmc-gateway-static-ip-{config.environment}"
     log_info(f"Extracting static Gateway IP ({gw_ip_name})...")
@@ -528,8 +529,21 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     if not gateway_ip:
         raise RuntimeError("Failed to extract gateway IP address (empty output).")
 
-    log_success(f"Core Infrastructure deployed. Gateway IP: {gateway_ip}")
+    log_success(f"Network infrastructure deployed. Gateway IP: {gateway_ip}")
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
+
+
+def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
+    """Deploys the primary group (Cloud Spanner, schema migrations, PSA, Redis, and Cert Manager).
+
+    Args:
+        config: The loaded DeploymentConfig instance.
+        dns_project: GCP Project ID hosting the DNS zone (unused).
+        dns_zone: Cloud DNS Managed Zone name (unused).
+    """
+    log_info("Deploying primary group (Spanner, Redis, Cert Manager)...")
+    run_gcluster_deploy(config.deployment_name, "primary")
+    log_success("Primary data group (Spanner, Redis, Cert Manager) deployed successfully.")
 
 
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
@@ -769,6 +783,7 @@ def run_deployment(args: argparse.Namespace) -> None:
         "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
         "images": lambda: step_images(config),
         "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
+        "network": lambda: step_network(config, args.dns_project, args.dns_zone),
         "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
         "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
         "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
@@ -788,9 +803,37 @@ def run_deployment(args: argparse.Namespace) -> None:
 
     current_step = ""
     try:
-        for step in execution_steps:
+        i = 0
+        while i < len(execution_steps):
+            step = execution_steps[i]
+            # Parallelize primary (Spanner/Redis) and compute (GKE) when scheduled consecutively
+            if (
+                i + 1 < len(execution_steps)
+                and step == "primary"
+                and execution_steps[i + 1] == "compute"
+            ):
+                import concurrent.futures
+
+                log_info(
+                    "Deploying 'primary' (Spanner/Redis) and 'compute' (GKE) groups"
+                    " in parallel to accelerate provisioning..."
+                )
+                current_step = "primary & compute"
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    f_primary = executor.submit(step_map["primary"])
+                    f_compute = executor.submit(step_map["compute"])
+                    done, _ = concurrent.futures.wait(
+                        [f_primary, f_compute],
+                        return_when=concurrent.futures.FIRST_EXCEPTION,
+                    )
+                    for f in done:
+                        f.result()
+                i += 2
+                continue
+
             current_step = step
             step_map[step]()
+            i += 1
     except Exception as e:
         log_error(f"Command failed during step '{current_step}': {e}")
         dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
