@@ -967,6 +967,11 @@ func TestIsRetryableError(t *testing.T) {
 			err:  nil,
 			want: false,
 		},
+		{
+			name: "typed_nil_status_error",
+			err:  func() error { var e *apierrors.StatusError; return e }(),
+			want: false,
+		},
 	}
 
 	for _, tc := range testCases {

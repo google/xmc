@@ -189,6 +189,9 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 }
 
 func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
@@ -202,6 +205,9 @@ func isRetryableError(err error) bool {
 	}
 	var statusErr *apierrors.StatusError
 	if errors.As(err, &statusErr) {
+		if statusErr == nil {
+			return false
+		}
 		err = statusErr
 	}
 	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) ||
