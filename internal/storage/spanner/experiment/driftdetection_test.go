@@ -253,3 +253,131 @@ func TestDriftDetection_PendingReconciliationNotDrifted(t *testing.T) {
 		t.Errorf("Expected nil structured status message during pending reconciliation, got: %v", gotExp.GetStatus().GetStructuredStatusMessage())
 	}
 }
+
+func TestDriftDetection_NoSnapshots_Consistent(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	const xid = int64(1006)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
+
+	parsedXID, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+
+	gotExp, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment failed: %v", err)
+	}
+	if gotExp.GetStatus().GetStructuredStatusMessage() != nil {
+		t.Errorf("Expected nil structured status message for experiment with no snapshots, got: %v", gotExp.GetStatus().GetStructuredStatusMessage())
+	}
+}
+
+func TestDriftDetection_MergeWithExistingLowerSeverityMessage(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	const xid = int64(1007)
+	expProto := spanner.BlankExperimentProto(xid)
+	expProto.Status.StructuredStatusMessage = &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_INFO,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "All workers scheduled successfully",
+	}
+	createdExp := spanner.CreateAndStoreExperiment(ctx, t, storage, expProto)
+
+	componentMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(207), "ray-cluster", "compute", []byte{}, int64(1), int64(2), int64(2), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), int64(207), int64(1), []byte{}},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations failed: %v", err)
+	}
+
+	parsedXID, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+
+	gotExp, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment failed: %v", err)
+	}
+
+	msg := gotExp.GetStatus().GetStructuredStatusMessage()
+	if msg == nil {
+		t.Fatalf("Expected non-nil structured status message")
+	}
+	if got, want := msg.GetSeverity(), essmsgpb.StructuredMessage_WARNING; got != want {
+		t.Errorf("Severity = %v, want %v", got, want)
+	}
+	wantPrefix := "All workers scheduled successfully; Component drift detected"
+	if !strings.HasPrefix(msg.GetUserFacingText(), wantPrefix) {
+		t.Errorf("UserFacingText %q does not have prefix %q", msg.GetUserFacingText(), wantPrefix)
+	}
+}
+
+func TestDriftDetection_PreserveHigherSeverityMessage(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	const xid = int64(1008)
+	expProto := spanner.BlankExperimentProto(xid)
+	expProto.Status.StructuredStatusMessage = &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_ERROR,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Fatal crash on worker 0",
+	}
+	createdExp := spanner.CreateAndStoreExperiment(ctx, t, storage, expProto)
+
+	componentMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(208), "storage-vol", "storage", []byte{}, int64(1), int64(2), int64(2), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), int64(208), int64(1), []byte{}},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations failed: %v", err)
+	}
+
+	parsedXID, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+
+	gotExp, err := storage.FetchExperiment(ctx, parsedXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment failed: %v", err)
+	}
+
+	msg := gotExp.GetStatus().GetStructuredStatusMessage()
+	if msg == nil {
+		t.Fatalf("Expected non-nil structured status message")
+	}
+	if got, want := msg.GetSeverity(), essmsgpb.StructuredMessage_ERROR; got != want {
+		t.Errorf("Severity = %v, want %v", got, want)
+	}
+	if got, want := msg.GetUserFacingText(), "Fatal crash on worker 0"; got != want {
+		t.Errorf("UserFacingText = %q, want %q", got, want)
+	}
+}

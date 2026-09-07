@@ -1,0 +1,64 @@
+# Experiment State Server (ESS)
+
+The **Experiment State Server (ESS)** is the central control plane service in XManager on Cloud (XMC). It manages the lifecycle, execution states, structured status messages, and metadata for distributed experiments, workloads, and work units.
+
+---
+
+## Service Responsibilities
+
+- **Experiment Lifecycle & State Management**: Tracks active, completed, failed, and aborted experiments (`Experiments` and `WorkUnits` tables in Cloud Spanner).
+- **gRPC & HTTP APIs**: Implements AIP-compliant APIs defined in `api/protos/experiment/` (`GetExperiment`, `FetchExperimentStatus`, `ListExperiments`, `CreateExperiment`, `UpdateExperiment`).
+- **Component Drift Evaluation**: Dynamically evaluates live component drift against locked snapshot generations on read endpoints, propagating warning banners to client consoles (see [Dynamic Drift Detection](#dynamic-drift-detection)).
+- **Authentication & Authorization**: Integrates OAuth2/OIDC token verification and Google Cloud IAM validation (`auth_dev.go` / `auth_prod.go`).
+
+---
+
+## Directory Structure
+
+```
+cmd/experiment_state_server/
+├── main.go                     # Service entrypoint, flag parsing, and gRPC/HTTP server bootstrap
+├── auth_dev.go / auth_prod.go  # Environment-specific authentication interceptors
+├── health.go                   # Health check probe handlers (liveness and readiness)
+├── server/                     # gRPC API handler implementations
+│   ├── getexperiment.go        # Fetch single experiment handler
+│   ├── getexperimentstatus.go  # Fetch experiment status handler
+│   ├── listexperiments.go      # List and filter experiments handler
+│   └── ...
+└── config/                     # Server configuration definitions
+```
+
+---
+
+## Storage Layer
+
+ESS delegates persistence to the relational Cloud Spanner storage package under `internal/storage/spanner/`:
+- `internal/storage/spanner/experiment/`: Experiment metadata, status transactions, and snapshot consistency queries.
+- `internal/storage/spanner/workunit/`: Distributed work unit scheduling, state transitions, and failure diagnostics.
+- `internal/storage/spanner/schema/`: Schema definitions and DDL migrations.
+
+---
+
+## Dynamic Drift Detection
+
+When components are updated or deleted in the global catalog, active running experiments may diverge from their locked snapshots. ESS detects this dynamically during read operations without background cron jobs:
+
+1. **Read Path Evaluation**: On `GetExperiment` and `GetExperimentStatus` RPCs, ESS queries Cloud Spanner's `ExperimentConsistencyInfo` view using the experiment's primary key (`BitReversedXid`).
+2. **Warning Propagation**: When divergence is detected, ESS constructs a `StructuredMessage` with `WARNING` severity detailing the specific component generation differences and attaches it to the response `ExperimentStatus`.
+3. **Transaction Safety**: Drift checks execute in isolated read-only transactions, ensuring read-write transactions (`FetchExperimentTransaction`) remain strictly side-effect free.
+
+For comprehensive details on the Components subsystem, see [pkg/components/README.md](../../pkg/components/README.md).
+
+---
+
+## Testing & Verification
+
+Run hermetic unit and integration tests using Bazel:
+
+```bash
+# Test ESS server handlers
+bazel test //cmd/experiment_state_server/...
+
+# Test Spanner storage and drift detection against the emulator
+bazel test //internal/storage/spanner/experiment:experiment_test
+```

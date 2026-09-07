@@ -90,11 +90,14 @@ func checkConsistency(ctx context.Context, txn SpannerTransaction, xid int64) (b
 		return false, fmt.Errorf("querying consistency view failed for xid %d: %w", xid, err)
 	}
 
-	var isConsistent bool
+	var isConsistent spanner.NullBool
 	if err := row.ColumnByName("IsExperimentConsistent", &isConsistent); err != nil {
 		return false, fmt.Errorf("failed reading column 'IsExperimentConsistent': %w", err)
 	}
-	return isConsistent, nil
+	if !isConsistent.Valid {
+		return true, nil
+	}
+	return isConsistent.Bool, nil
 }
 
 // fetchDriftDetails queries drifted component generation comparisons for an experiment.
@@ -173,25 +176,26 @@ func formatDriftWarningMessage(diffs []string) *essmsgpb.StructuredMessage {
 // attachDriftWarningMessage safely sets or merges the drift notice into expStatus.
 func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *essmsgpb.StructuredMessage) {
 	currentMsg := expStatus.GetStructuredStatusMessage()
-
-	// If no current message, or it's less severe than WARNING, overwrite it.
-	if currentMsg == nil || currentMsg.GetSeverity() < essmsgpb.StructuredMessage_WARNING {
+	if currentMsg == nil {
 		expStatus.StructuredStatusMessage = driftMsg
 		return
 	}
 
-	// If the current message is more severe than WARNING, do nothing.
+	// Preserve higher-severity messages (e.g., ERROR, FATAL) without modification.
 	if currentMsg.GetSeverity() > essmsgpb.StructuredMessage_WARNING {
 		return
 	}
 
-	// At this point, currentMsg.GetSeverity() == essmsgpb.StructuredMessage_WARNING.
-	// If it already contains drift info, do nothing to avoid duplicates.
+	// Prevent duplicate drift notices.
 	if strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
 		return
 	}
 
-	// Append drift info to the existing WARNING message.
+	// Upgrade severity if current severity is lower than WARNING (e.g. INFO, UNSPECIFIED).
+	if currentMsg.GetSeverity() < essmsgpb.StructuredMessage_WARNING {
+		currentMsg.Severity = essmsgpb.StructuredMessage_WARNING
+	}
+
 	if currentMsg.GetUserFacingText() == "" {
 		currentMsg.UserFacingText = driftMsg.GetUserFacingText()
 		return
