@@ -22,7 +22,7 @@ customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
 This protects health check latency and prevents slow database read locks from impacting overall health check throughput.
 
 ### 3. Graceful Degradation & Fail-Fast Initialization
-- **Explicit Flag Guard**: Custom component discovery is controlled by the `--enable_components` flag (environment variable: `HEALTH_ENABLE_COMPONENTS`).
+- **Explicit Flag Guard**: Custom component discovery is controlled by the `--enable_components` flag (environment variable: `enable_components`).
 - **Fail-Fast on Database Misconfiguration**: If `--enable_components` is explicitly set to `true`, failure to initialize the Cloud Spanner client or create the store provider triggers `logging.Fatal`, halting daemon startup to prevent a false sense of operational security.
 - **In-Memory Fallback for Tests & Local Dev**: When `EssSpannerDatabase` is empty (e.g., local development or hermetic unit tests), the provider falls back to a thread-safe `store.NewMemoryStore()`.
 

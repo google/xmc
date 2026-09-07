@@ -32,4 +32,5 @@ data:
   health_status_cache_ttl: {{ .Values.healthService.cacheTTL | quote }}
   health_status_force_refresh_max_requests: {{ .Values.healthService.forceRefreshMaxRequests | quote }}
   health_status_force_refresh_window: {{ .Values.healthService.forceRefreshWindow | quote }}
+  enable_components: {{ .Values.componentsDeployment.enabled | default false | quote }}
 {{- end }}

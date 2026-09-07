@@ -74,7 +74,7 @@ func init() {
 	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
 	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
 	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
-	configutil.BoolEnv(&cfg.EnableComponents, "health_enable_components", false)
+	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {
