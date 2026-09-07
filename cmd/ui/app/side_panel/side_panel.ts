@@ -36,7 +36,7 @@ import { SidePanelService } from './side_panel_service';
   selector: 'xmc-side-panel',
   standalone: true,
   templateUrl: './side_panel.ng.html',
-  styleUrl: './side_panel.css',
+  styleUrl: './side_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, MatSidenavModule],
 })

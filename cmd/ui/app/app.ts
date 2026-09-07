@@ -34,7 +34,7 @@ import { SidePanel } from './side_panel/side_panel';
   templateUrl: './app.ng.html',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styleUrl: './app.css',
+  styleUrl: './app.scss',
   imports: [
     RouterOutlet,
     Header,

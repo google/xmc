@@ -74,7 +74,7 @@ function notWhitespaceOnly(control: AbstractControl): ValidationErrors | null {
   selector: 'xmc-edit-experiment-form',
   standalone: true,
   templateUrl: './edit_experiment_form.ng.html',
-  styleUrl: './edit_experiment_form.css',
+  styleUrl: './edit_experiment_form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,

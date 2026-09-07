@@ -31,7 +31,7 @@ import { experimentFiltersToQueryParams } from 'xmanager_cloud/ui/app/experiment
   selector: 'xmc-header',
   standalone: true,
   templateUrl: './header.ng.html',
-  styleUrl: './header.css',
+  styleUrl: './header.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,

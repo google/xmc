@@ -64,9 +64,7 @@ def translate_imports(content: str) -> str:
     content = content.replace("'third_party/xmanager_cloud/ui/consts'", "'consts'")
     content = content.replace('"third_party/xmanager_cloud/ui/consts"', '"consts"')
     content = content.replace("'third_party/xmanager_cloud/ui/custom_colors'", "'custom_colors'")
-    content = content.replace('"third_party/xmanager_cloud/ui/custom_colors"', '"custom_colors"')
-    content = content.replace(".css'", ".scss'")
-    return content.replace('.css"', '.scss"')
+    return content.replace('"third_party/xmanager_cloud/ui/custom_colors"', '"custom_colors"')
 
 
 def copy_flat(src_dir: str, dest_dir: str):

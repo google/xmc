@@ -82,7 +82,7 @@ import { WorkUnitsTable } from './work_units_table/work_units_table';
     StatusMessagesList,
   ],
   templateUrl: './experiment_page.ng.html',
-  styleUrl: './experiment_page.css',
+  styleUrl: './experiment_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExperimentPage {

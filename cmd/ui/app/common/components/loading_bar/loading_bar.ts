@@ -21,7 +21,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
   selector: 'xmc-loading-bar',
   standalone: true,
   templateUrl: './loading_bar.ng.html',
-  styleUrl: './loading_bar.css',
+  styleUrl: './loading_bar.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatProgressBarModule],
 })

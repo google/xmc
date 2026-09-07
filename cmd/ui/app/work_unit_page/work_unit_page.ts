@@ -49,7 +49,7 @@ import { WorkUnitPageStore } from './work_unit_page_store';
   selector: 'xmc-work-unit-page',
   standalone: true,
   templateUrl: './work_unit_page.ng.html',
-  styleUrl: './work_unit_page.css',
+  styleUrl: './work_unit_page.scss',
   imports: [
     CommonModule,
     WorkUnitDetails,

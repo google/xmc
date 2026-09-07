@@ -41,7 +41,7 @@ export enum StatusOption {
   selector: 'xmc-status-chip',
   standalone: true,
   templateUrl: './status_chip.ng.html',
-  styleUrl: './status_chip.css',
+  styleUrl: './status_chip.scss',
   imports: [MatChipsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
