@@ -135,7 +135,15 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
 
-		if _, err := o.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
+		// Recording the outcome has to outlive the deadline that governed CreateChart. If
+		// CreateChart is what burned those two minutes, writing under the same context fails
+		// before it reaches Spanner, so the FAILED status is never persisted and the artifact
+		// sits in PROVISIONING for good -- the UI then reports a chart that is "still being
+		// provisioned" by a goroutine that exited long ago.
+		storeCtx, storeCancel := context.WithTimeout(context.WithoutCancel(ctxBg), 15*time.Second)
+		defer storeCancel()
+
+		if _, err := o.storage.UpdateArtifact(storeCtx, &storage.ArtifactUpdate{
 			AID:        aid,
 			Artifact:   artifactToProvision,
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"payload"}},
