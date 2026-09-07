@@ -102,26 +102,14 @@ def _parse_bool(val: Any) -> bool:
     return False
 
 
+_BOOL_STRINGS = frozenset({"true", "false", "1", "0", "yes", "no", "y", "n", "t", "f", "on", "off"})
+
+
 def _is_bool_flag(val: Any) -> bool:
     """Checks whether a value represents a boolean flag (truthy or falsy)."""
     if isinstance(val, bool):
         return True
-    if isinstance(val, str):
-        return val.strip().lower() in (
-            "true",
-            "false",
-            "1",
-            "0",
-            "yes",
-            "no",
-            "y",
-            "n",
-            "t",
-            "f",
-            "on",
-            "off",
-        )
-    return False
+    return isinstance(val, str) and val.strip().lower() in _BOOL_STRINGS
 
 
 def _resolve_bool_flag(
@@ -363,21 +351,22 @@ def load_config(
         default="",
     )
     enable_remote_k8s = _resolve_bool_flag(
-        remote_raw if is_bool else None,
+        remote_raw if is_bool else (True if remote_k8s_context else None),
         os.environ.get("REMOTE_K8S"),
         yaml_vars.get("enable_remote_k8s"),
-        default=False,
+        default=bool(remote_k8s_context),
     )
-
     if enable_remote_k8s and not remote_k8s_context:
-        reg = _resolve_str_flag(
-            getattr(args, "region", None) if args else None,
-            os.environ.get("REGION") or os.environ.get("GCP_REGION"),
-            yaml_vars.get("region"),
-            default="us-central1",
+        reg = (
+            getattr(args, "region", None)
+            or os.environ.get("REGION")
+            or yaml_vars.get("region")
+            or "us-central1"
         )
         dep = yaml_vars.get("deployment_name") or f"xmc-v2-{environment}"
         remote_k8s_context = f"gke_{project_id}_{reg}_xmc-{dep}-{environment}"
+    elif not enable_remote_k8s:
+        remote_k8s_context = ""
 
     remote_k8s_namespace = _resolve_str_flag(
         getattr(args, "remote_k8s_namespace", None) if args else None,

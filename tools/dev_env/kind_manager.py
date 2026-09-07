@@ -321,13 +321,12 @@ class KindManager:
         """Configures remote Kubernetes cluster credentials secret in KinD."""
         from tools.dev_env.remote_k8s_manager import setup_remote_k8s_secret
 
-        cfg = self.config
         setup_remote_k8s_secret(
             kind_context=ctx,
-            remote_context=cfg.remote_k8s_context,
-            remote_namespace=cfg.remote_k8s_namespace,
+            remote_context=self.config.remote_k8s_context,
+            remote_namespace=self.config.remote_k8s_namespace,
             target_namespace="xmc",
-            service_account=cfg.remote_k8s_service_account,
+            service_account=self.config.remote_k8s_service_account,
             secret_name="remote-k8s-config",
         )
 

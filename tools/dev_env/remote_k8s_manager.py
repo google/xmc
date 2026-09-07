@@ -31,20 +31,7 @@ _LOGGER = logging.getLogger("xmc.dev_env.remote_k8s")
 
 
 def extract_remote_cluster_endpoint_and_ca(context: str) -> tuple[str, str]:
-    """Extracts the API server URL and base64 CA certificate from host kubeconfig.
-
-    Runs `kubectl config view --raw --minify --context <context> -o json` to retrieve
-    the cluster connection parameters without relying on local file paths.
-
-    Args:
-        context: The kubectl context name of the target remote cluster.
-
-    Returns:
-        Tuple of (server_url, ca_data_base64).
-
-    Raises:
-        RuntimeError: If cluster information cannot be queried or is missing required fields.
-    """
+    """Extracts API server URL and base64 CA certificate from host kubeconfig."""
     cmd = ["kubectl", "config", "view", "--raw", "--minify", "--context", context, "-o", "json"]
     try:
         res = run_command(cmd, check=True, capture_output=True, log_cmd=False)
@@ -78,24 +65,7 @@ def mint_service_account_token(
     service_account: str = "actuator-service-account",
     duration: str = "24h",
 ) -> str:
-    """Mints a self-contained ServiceAccount bearer token on the remote cluster.
-
-    Uses the Kubernetes TokenRequest API via `kubectl create token` to generate
-    a secure bearer token that requires zero GCP/gcloud credentials inside the
-    container.
-
-    Args:
-        context: The kubectl context name of the target remote cluster.
-        namespace: The namespace where the ServiceAccount resides.
-        service_account: Name of the ServiceAccount to authenticate as.
-        duration: Token validity period (default: 24h).
-
-    Returns:
-        The minted JWT bearer token string.
-
-    Raises:
-        RuntimeError: If token generation fails.
-    """
+    """Mints a self-contained ServiceAccount bearer token via the TokenRequest API."""
     cmd = [
         "kubectl",
         "--context",
@@ -195,35 +165,29 @@ def setup_remote_k8s_secret(
     ]
     try:
         run_command(create_cmd, check=True, log_cmd=False, log_on_error=False)
-        run_command(
-            [
-                *k_cmd,
-                "annotate",
-                "secret",
-                secret_name,
-                "-n",
-                target_namespace,
-                "meta.helm.sh/release-name=xmc",
-                f"meta.helm.sh/release-namespace={target_namespace}",
-                "--overwrite",
-            ],
-            check=False,
-            log_cmd=False,
-        )
-        run_command(
-            [
-                *k_cmd,
-                "label",
-                "secret",
-                secret_name,
-                "-n",
-                target_namespace,
-                "app.kubernetes.io/managed-by=Helm",
-                "--overwrite",
-            ],
-            check=False,
-            log_cmd=False,
-        )
+        ann_cmd = [
+            *k_cmd,
+            "annotate",
+            "secret",
+            secret_name,
+            "-n",
+            target_namespace,
+            "meta.helm.sh/release-name=xmc",
+            f"meta.helm.sh/release-namespace={target_namespace}",
+            "--overwrite",
+        ]
+        lbl_cmd = [
+            *k_cmd,
+            "label",
+            "secret",
+            secret_name,
+            "-n",
+            target_namespace,
+            "app.kubernetes.io/managed-by=Helm",
+            "--overwrite",
+        ]
+        run_command(ann_cmd, check=False, log_cmd=False)
+        run_command(lbl_cmd, check=False, log_cmd=False)
     except subprocess.CalledProcessError:
         raise RuntimeError(
             f"Failed to create secret '{secret_name}' in namespace '{target_namespace}'"

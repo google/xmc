@@ -272,6 +272,18 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.remote_k8s_namespace, "xmc")
         self.assertEqual(cfg.remote_k8s_service_account, "actuator-service-account")
 
+    def test_remote_k8s_explicit_context_parameter(self) -> None:
+        """Verifies explicit remote_k8s_context parameter is preserved as-is."""
+        args = argparse.Namespace(
+            project_id="test-proj",
+            remote_k8s_context="gke_test-proj_us-west1_my-workload-cluster",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_test-proj_us-west1_my-workload-cluster",
+        )
+
     @patch.dict(
         "os.environ",
         {

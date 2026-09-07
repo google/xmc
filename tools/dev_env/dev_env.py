@@ -297,28 +297,25 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         nargs="?",
         const="true",
         default=None,
-        help=(
-            "Enable hybrid mode targeting a remote Kubernetes cluster for workload execution. "
-            "Pass context name explicitly (e.g. gke_PROJECT_REGION_CLUSTER) or omit to auto-derive."
-        ),
+        help="Target remote Kubernetes cluster context for hybrid workload execution.",
     )
     p.add_argument(
         "--remote-k8s-namespace",
         dest="remote_k8s_namespace",
         default=None,
-        help="Namespace on the remote Kubernetes cluster (default: 'xmc').",
+        help="Namespace on remote Kubernetes cluster (default: 'xmc').",
     )
     p.add_argument(
         "--remote-k8s-service-account",
         dest="remote_k8s_service_account",
         default=None,
-        help="ServiceAccount on the remote cluster used for token generation (default: 'actuator-service-account').",
+        help="ServiceAccount on remote cluster for token generation.",
     )
     p.add_argument(
         "--gcp-service-account",
         dest="gcp_service_account",
         default=None,
-        help="GCP IAM Service Account email for workload identity and OIDC token generation.",
+        help="GCP IAM Service Account email for workload identity.",
     )
 
 
