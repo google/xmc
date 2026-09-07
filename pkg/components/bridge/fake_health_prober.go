@@ -67,6 +67,11 @@ func (f *FakeHealthProber) Probe(ctx context.Context, target string, timeout tim
 	return &HealthProbeResult{Healthy: true, Message: "Probe succeeded"}, nil
 }
 
+// ProbeHTTP delegates to Probe.
+func (f *FakeHealthProber) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
+	return f.Probe(ctx, targetURL, timeout)
+}
+
 // ProbeTCP delegates to Probe.
 func (f *FakeHealthProber) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
 	return f.Probe(ctx, address, timeout)

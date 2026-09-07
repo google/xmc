@@ -20,7 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -41,16 +44,19 @@ type HealthProbeResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// HealthProber performs active TCP and network connectivity probes against component endpoints.
+// HealthProber performs active HTTP and TCP network probes against component endpoints.
 type HealthProber interface {
-	// Probe dispatches a health probe to target.
+	// Probe dispatches a health probe to target, automatically inferring HTTP vs TCP based on protocol prefix.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
+	// ProbeHTTP executes an HTTP GET health check against targetURL.
+	ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error)
 	// ProbeTCP verifies TCP network socket establishment against address (host:port).
 	ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error)
 }
 
-// NetworkHealthProber implements HealthProber for TCP network connectivity.
+// NetworkHealthProber implements HealthProber for HTTP and TCP network connectivity.
 type NetworkHealthProber struct {
+	httpClient   *http.Client
 	dialer       *net.Dialer
 	probeTimeout time.Duration
 }
@@ -59,6 +65,15 @@ var _ HealthProber = (*NetworkHealthProber)(nil)
 
 // HealthProberOption configures a NetworkHealthProber instance.
 type HealthProberOption func(*NetworkHealthProber)
+
+// WithHealthHTTPClient sets a custom HTTP client for HTTP health probing.
+func WithHealthHTTPClient(c *http.Client) HealthProberOption {
+	return func(p *NetworkHealthProber) {
+		if p != nil && c != nil {
+			p.httpClient = c
+		}
+	}
+}
 
 // WithHealthDialer sets a custom net.Dialer for TCP health probing.
 func WithHealthDialer(d *net.Dialer) HealthProberOption {
@@ -81,6 +96,7 @@ func WithHealthProbeTimeout(t time.Duration) HealthProberOption {
 // NewNetworkHealthProber creates a new NetworkHealthProber instance with optional configurations.
 func NewNetworkHealthProber(opts ...HealthProberOption) *NetworkHealthProber {
 	p := &NetworkHealthProber{
+		httpClient:   &http.Client{},
 		dialer:       &net.Dialer{},
 		probeTimeout: defaultHealthProbeTimeout,
 	}
@@ -92,18 +108,73 @@ func NewNetworkHealthProber(opts ...HealthProberOption) *NetworkHealthProber {
 	return p
 }
 
-// Probe dispatches a health probe to target.
+// Probe dispatches a health probe by protocol prefix (http://, https://, tcp://, or bare host:port).
 func (p *NetworkHealthProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
 	if p == nil {
 		return nil, errors.New("network health prober is nil")
 	}
 	trimmed := strings.TrimSpace(target)
 	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return p.ProbeHTTP(ctx, trimmed, timeout)
+	}
 	tcpTrimmed := trimmed
 	if strings.HasPrefix(lower, "tcp://") {
 		tcpTrimmed = trimmed[6:]
 	}
 	return p.ProbeTCP(ctx, tcpTrimmed, timeout)
+}
+
+// ProbeHTTP executes a bounded HTTP GET probe against targetURL, reading up to 64KB of the response body.
+func (p *NetworkHealthProber) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
+	if p == nil {
+		return nil, errors.New("network health prober is nil")
+	}
+	if strings.TrimSpace(targetURL) == "" {
+		return nil, errors.New("targetURL must not be empty")
+	}
+	if _, err := url.ParseRequestURI(targetURL); err != nil {
+		return nil, fmt.Errorf("invalid probe URL %q: %w", targetURL, err)
+	}
+	if timeout <= 0 {
+		timeout = p.probeTimeout
+		if timeout <= 0 {
+			timeout = defaultHealthProbeTimeout
+		}
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create probe request: %w", err)
+	}
+	client := p.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	start := time.Now()
+	resp, err := client.Do(req)
+	latency := time.Since(start)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return &HealthProbeResult{Healthy: false, Latency: latency, Message: fmt.Sprintf("HTTP probe failed: %v", err)}, nil
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024)); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return &HealthProbeResult{Healthy: false, Latency: time.Since(start), Message: fmt.Sprintf("HTTP body read failed: %v", err)}, nil
+	}
+	healthy := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusBadRequest
+	msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+	if !healthy {
+		msg = fmt.Sprintf("HTTP %d (unhealthy status)", resp.StatusCode)
+	}
+	return &HealthProbeResult{Healthy: healthy, StatusCode: resp.StatusCode, Latency: time.Since(start), Message: msg}, nil
 }
 
 // ProbeTCP tests TCP network socket connectivity to address (host:port).
