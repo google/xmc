@@ -326,7 +326,7 @@ func extractStringMap(raw any) map[string]string {
 
 // injectAccessIntoJobSet injects environment variables and volume mounts across all replicated jobs.
 func injectAccessIntoJobSet(jobSet *jobsetv1alpha2.JobSet, access componentAccess) {
-	if jobSet == nil {
+	if jobSet == nil || (len(access.envVars) == 0 && len(access.secretEnvVars) == 0 && len(access.secretVolumeMounts) == 0) {
 		return
 	}
 	envVars := buildComponentEnvVars(access.envVars, access.secretEnvVars)
