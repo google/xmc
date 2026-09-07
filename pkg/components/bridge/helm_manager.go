@@ -109,12 +109,6 @@ func WithRESTClientGetter(getter genericclioptions.RESTClientGetter) HelmManager
 
 // NewK8sHelmManager constructs an initialized K8sHelmManager.
 func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName string, opts ...HelmManagerOption) *K8sHelmManager {
-	if releaseName == "" {
-		releaseName = DefaultHelmReleaseName
-	}
-	if namespace == "" {
-		namespace = DefaultNamespace
-	}
 	mgr := &K8sHelmManager{
 		client:      client,
 		namespace:   namespace,
@@ -149,7 +143,10 @@ func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
 	if ref.Name == "" {
 		return "", errors.New("component name must not be empty")
 	}
-	return m.resolveNamespace(ref.Namespace), nil
+	if ref.Namespace == "" {
+		return "", errors.New("component namespace must not be empty")
+	}
+	return ref.Namespace, nil
 }
 
 func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
@@ -264,11 +261,22 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	if m == nil {
 		return nil
 	}
-	if m.runner == nil {
-		logging.Warn(ctx, "Skipping Helm upgrade because HelmActionRunner is uninitialized", "release", m.releaseName, "namespace", ref.Namespace, "component", ref.Name)
-		return nil
+	if ref.Namespace == "" {
+		err := errors.New("component namespace must not be empty")
+		m.setUpgradeErr(ref, err)
+		return err
 	}
-	targetNamespace := m.resolveNamespace(ref.Namespace)
+	if m.releaseName == "" {
+		err := errors.New("helm release name must not be empty; cannot actuate release upgrade")
+		m.setUpgradeErr(ref, err)
+		return err
+	}
+	if m.runner == nil {
+		err := errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
+		m.setUpgradeErr(ref, err)
+		return err
+	}
+	targetNamespace := ref.Namespace
 	m.setUpgradeErr(ref, nil)
 
 	if err := m.acquireUpgradeLock(ctx); err != nil {
@@ -417,24 +425,13 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 
 // IsComponentActive returns true if the component is recorded as enabled.
 func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
-	if m == nil || ref.Name == "" {
+	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	targetNamespace := m.resolveNamespace(ref.Namespace)
-	key := componentKey(targetNamespace, ref.Name)
+	key := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.activeState[key]
-}
-
-func (m *K8sHelmManager) resolveNamespace(ns string) string {
-	if ns != "" {
-		return ns
-	}
-	if m != nil && m.namespace != "" {
-		return m.namespace
-	}
-	return DefaultNamespace
 }
 
 // persistComponentValues serializes the synthesized component Helm values map into JSON and writes it

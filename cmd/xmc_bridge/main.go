@@ -96,17 +96,8 @@ type ComponentCondition struct {
 // Returns an error if flag parsing fails or if intervals/timeouts are non-positive.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
-	if defaultCMS == "" {
-		defaultCMS = "localhost:50051"
-	}
 	defaultNS := os.Getenv("NAMESPACE")
-	if defaultNS == "" {
-		defaultNS = "xmc"
-	}
 	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
-	if defaultReleaseName == "" {
-		defaultReleaseName = bridge.DefaultHelmReleaseName
-	}
 	defaultProbeInterval := 5 * time.Second
 	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
 		d, err := time.ParseDuration(val)
@@ -137,6 +128,15 @@ func ParseConfig(args []string) (*Config, error) {
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
+	}
+	if *cmsAddress == "" {
+		return nil, errors.New("cms-address must be specified")
+	}
+	if *namespace == "" {
+		return nil, errors.New("namespace must be specified")
+	}
+	if *releaseName == "" {
+		return nil, errors.New("release-name must be specified")
 	}
 	if *probeInterval <= 0 {
 		return nil, fmt.Errorf("probe-interval must be a positive duration, got %v", *probeInterval)

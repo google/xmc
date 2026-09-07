@@ -35,7 +35,8 @@ import (
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
 
 	ref := ComponentRef{
 		Namespace: "xmc",
@@ -129,7 +130,8 @@ func TestK8sHelmManager_Lifecycle(t *testing.T) {
 func TestK8sHelmManager_NamespaceIsolation(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
 
 	refXMC := ComponentRef{
 		Namespace: "xmc",
@@ -237,10 +239,7 @@ func TestK8sHelmManager_Guards(t *testing.T) {
 		t.Error("expected false on nil receiver IsComponentActive")
 	}
 
-	mgr := NewK8sHelmManager(nil, "", "")
-	if mgr.resolveNamespace("") != DefaultNamespace {
-		t.Errorf("expected default namespace %q, got %q", DefaultNamespace, mgr.resolveNamespace(""))
-	}
+	mgr := NewK8sHelmManager(nil, "xmc", "xmanager-cloud")
 
 	emptyRef := ComponentRef{}
 	if err := mgr.Ensure1PComponent(ctx, emptyRef, HelmComponentOptions{}); err == nil {
@@ -255,6 +254,21 @@ func TestK8sHelmManager_Guards(t *testing.T) {
 	if err := mgr.Orphan1PComponent(ctx, emptyRef); err == nil {
 		t.Error("expected error on empty componentName for Orphan1PComponent")
 	}
+
+	emptyNsRef := ComponentRef{Namespace: "", Name: "test-comp"}
+	if err := mgr.Ensure1PComponent(ctx, emptyNsRef, HelmComponentOptions{}); err == nil {
+		t.Error("expected error on empty namespace for Ensure1PComponent")
+	}
+	if err := mgr.Delete1PComponent(ctx, emptyNsRef); err == nil {
+		t.Error("expected error on empty namespace for Delete1PComponent")
+	}
+	if err := mgr.Purge1PComponent(ctx, emptyNsRef); err == nil {
+		t.Error("expected error on empty namespace for Purge1PComponent")
+	}
+	if err := mgr.Orphan1PComponent(ctx, emptyNsRef); err == nil {
+		t.Error("expected error on empty namespace for Orphan1PComponent")
+	}
+
 	if err := nilMgr.Orphan1PComponent(ctx, refTest); err != nil {
 		t.Errorf("expected nil error on nil receiver Orphan1PComponent, got %v", err)
 	}
@@ -274,7 +288,8 @@ func TestK8sHelmManager_Guards(t *testing.T) {
 func TestK8sHelmManager_Orphan(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
 
 	ref := ComponentRef{
 		Namespace: "xmc",
@@ -310,7 +325,8 @@ func TestK8sHelmManager_Orphan(t *testing.T) {
 func TestK8sHelmManager_NoOpUpdateGuard(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
 
 	ref := ComponentRef{
 		Namespace: "xmc",
@@ -723,7 +739,7 @@ func TestK8sHelmManager_Close(t *testing.T) {
 	}
 }
 
-func TestK8sHelmManager_TriggerUpgrade_UninitializedRunner_LogsWarning(t *testing.T) {
+func TestK8sHelmManager_TriggerUpgrade_UninitializedRunner_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
@@ -731,8 +747,30 @@ func TestK8sHelmManager_TriggerUpgrade_UninitializedRunner_LogsWarning(t *testin
 	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
 	opts := HelmComponentOptions{Ref: ref, Enabled: true}
 
-	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
-		t.Fatalf("Ensure1PComponent with uninitialized runner failed: %v", err)
+	err := mgr.Ensure1PComponent(ctx, ref, opts)
+	if err == nil {
+		t.Fatal("expected error on Ensure1PComponent with uninitialized runner, got nil")
+	}
+	if !strings.Contains(err.Error(), "helm action runner is uninitialized") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestK8sHelmManager_TriggerUpgrade_EmptyReleaseName_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "", WithActionRunner(runner))
+
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+
+	err := mgr.Ensure1PComponent(ctx, ref, opts)
+	if err == nil {
+		t.Fatal("expected error on Ensure1PComponent with empty releaseName, got nil")
+	}
+	if !strings.Contains(err.Error(), "helm release name must not be empty") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
 
