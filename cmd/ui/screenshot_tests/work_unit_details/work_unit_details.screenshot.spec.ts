@@ -256,13 +256,13 @@ test.describe('WorkUnit Details Page - Screenshot Tests', () => {
 
     const expResponsePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes('/experiments/10293841') &&
+        /\/experiments\/10293841(?:\?.*)?$/.test(resp.url()) &&
         resp.request().resourceType() !== 'document' &&
         resp.status() === 200,
     );
     const workUnitResponsePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes('/workUnits/1') &&
+        /\/workUnits\/1(?:\?.*)?$/.test(resp.url()) &&
         resp.request().resourceType() !== 'document' &&
         resp.status() === 200,
     );
