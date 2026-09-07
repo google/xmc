@@ -32,14 +32,15 @@ const (
 FROM ExperimentConsistencyInfo
 WHERE BitReversedXid = @bitReversedXid`
 
-	selectDriftedComponentsSQL = `SELECT c.Name, s.LockedGeneration, c.ObservedGeneration, c.State
+	selectDriftedComponentsSQL = `SELECT c.Name, s.LockedGeneration, c.ObservedGeneration, c.State, s.ComponentId
 FROM ExperimentComponentSnapshots s
-INNER JOIN@{JOIN_METHOD=APPLY_JOIN} Components c ON s.ComponentId = c.ComponentId
+LEFT JOIN@{JOIN_METHOD=APPLY_JOIN} Components c ON s.ComponentId = c.ComponentId
 WHERE s.BitReversedXid = @bitReversedXid
-  AND (c.State = @deletedState OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
+  AND (c.ComponentId IS NULL OR c.State = @deletedState OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
 ORDER BY c.Name ASC`
 
 	componentStateDeleted = 5
+	maxDriftDetails       = 10
 )
 
 // evaluateExperimentDrift checks whether an active experiment's component snapshots have diverged
@@ -117,6 +118,10 @@ func fetchDriftDetails(ctx context.Context, txn SpannerTransaction, xid int64) (
 		if err != nil {
 			return nil, fmt.Errorf("reading drifted component row failed: %w", err)
 		}
+		if len(diffs) >= maxDriftDetails {
+			diffs = append(diffs, "...")
+			break
+		}
 
 		diff, err := formatComponentDiff(row)
 		if err != nil {
@@ -129,10 +134,11 @@ func fetchDriftDetails(ctx context.Context, txn SpannerTransaction, xid int64) (
 
 // formatComponentDiff parses a single drifted component row and formats its description.
 func formatComponentDiff(row *spanner.Row) (string, error) {
-	var name string
+	var name spanner.NullString
 	var lockedGen int64
 	var observedGen spanner.NullInt64
-	var state int64
+	var state spanner.NullInt64
+	var componentID int64
 
 	if err := row.ColumnByName("Name", &name); err != nil {
 		return "", fmt.Errorf("failed reading component Name: %w", err)
@@ -146,11 +152,17 @@ func formatComponentDiff(row *spanner.Row) (string, error) {
 	if err := row.ColumnByName("State", &state); err != nil {
 		return "", fmt.Errorf("failed reading component State: %w", err)
 	}
-
-	if state == componentStateDeleted {
-		return fmt.Sprintf("%s (deleted from catalog, snapshot generation %d)", name, lockedGen), nil
+	if err := row.ColumnByName("ComponentId", &componentID); err != nil {
+		return "", fmt.Errorf("failed reading ComponentId: %w", err)
 	}
-	return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", name, lockedGen, observedGen.Int64), nil
+
+	if !name.Valid {
+		return fmt.Sprintf("Component ID %d (missing from catalog, snapshot generation %d)", componentID, lockedGen), nil
+	}
+	if state.Valid && state.Int64 == componentStateDeleted {
+		return fmt.Sprintf("%s (deleted from catalog, snapshot generation %d)", name.StringVal, lockedGen), nil
+	}
+	return fmt.Sprintf("%s (snapshot generation %d != live observed generation %d)", name.StringVal, lockedGen, observedGen.Int64), nil
 }
 
 // formatDriftWarningMessage constructs a StructuredMessage with WARNING severity.
