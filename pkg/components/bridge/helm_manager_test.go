@@ -567,12 +567,38 @@ func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
 	if mgr.runner == nil {
 		t.Error("expected runner to be initialized by WithKubeconfig")
 	}
+	if sdkRunner, ok := mgr.runner.(*SDKHelmActionRunner); !ok || sdkRunner.chartPath != "deploy/helm" {
+		t.Errorf("expected SDKHelmActionRunner with chartPath deploy/helm, got %+v", mgr.runner)
+	}
+
+	// Verify options order independence (WithChartPath before WithKubeconfig).
+	mgrReversed := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
+		WithChartPath("deploy/helm/reversed"),
+		WithKubeconfig("/tmp/nonexistent-kubeconfig"),
+	)
+	if sdkRunner, ok := mgrReversed.runner.(*SDKHelmActionRunner); !ok || sdkRunner.chartPath != "deploy/helm/reversed" {
+		t.Errorf("expected SDKHelmActionRunner with chartPath deploy/helm/reversed, got %+v", mgrReversed.runner)
+	}
+
+	// Verify explicit WithActionRunner takes precedence over default SDK runner creation.
+	mockRunner := &mockHelmActionRunner{}
+	mgrWithRunner := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
+		WithActionRunner(mockRunner),
+		WithKubeconfig("/tmp/nonexistent-kubeconfig"),
+	)
+	if mgrWithRunner.runner != mockRunner {
+		t.Errorf("expected explicit action runner to take precedence, got %+v", mgrWithRunner.runner)
+	}
 
 	mgrGetter := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
 		WithRESTClientGetter(nil),
+		WithChartPath("deploy/helm/getter"),
 	)
 	if mgrGetter.runner == nil {
 		t.Error("expected runner to be initialized by WithRESTClientGetter")
+	}
+	if sdkRunner, ok := mgrGetter.runner.(*SDKHelmActionRunner); !ok || sdkRunner.chartPath != "deploy/helm/getter" {
+		t.Errorf("expected SDKHelmActionRunner with chartPath deploy/helm/getter, got %+v", mgrGetter.runner)
 	}
 
 	if err := mgr.GetUpgradeError(ComponentRef{}); err == nil {

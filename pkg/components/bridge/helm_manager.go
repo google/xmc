@@ -61,11 +61,15 @@ type HelmManager interface {
 // K8sHelmManager implements HelmManager by synchronizing component values in Kubernetes ConfigMaps
 // and executing Helm release upgrades via the Helm Go SDK.
 type K8sHelmManager struct {
-	client      kubernetes.Interface
-	namespace   string
-	releaseName string
-	chartPath   string
-	runner      HelmActionRunner
+	client        kubernetes.Interface
+	namespace     string
+	releaseName   string
+	chartPath     string
+	kubeconfig    string
+	hasKubeconfig bool
+	restGetter    genericclioptions.RESTClientGetter
+	hasRESTGetter bool
+	runner        HelmActionRunner
 
 	mu          sync.RWMutex
 	activeState map[string]bool
@@ -86,21 +90,20 @@ func WithChartPath(chartPath string) HelmManagerOption {
 	return func(m *K8sHelmManager) { m.chartPath = chartPath }
 }
 
-// WithKubeconfig initializes an SDKHelmActionRunner using the specified kubeconfig path.
+// WithKubeconfig sets the kubeconfig path for release upgrades.
 func WithKubeconfig(kubeconfig string) HelmManagerOption {
 	return func(m *K8sHelmManager) {
-		settings := cli.New()
-		settings.SetNamespace(m.namespace)
-		if kubeconfig != "" {
-			settings.KubeConfig = kubeconfig
-		}
-		m.runner = NewSDKHelmActionRunner(settings.RESTClientGetter(), WithRunnerChartPath(m.chartPath))
+		m.kubeconfig = kubeconfig
+		m.hasKubeconfig = true
 	}
 }
 
-// WithRESTClientGetter initializes an SDKHelmActionRunner with the provided RESTClientGetter.
+// WithRESTClientGetter sets the RESTClientGetter for release upgrades.
 func WithRESTClientGetter(getter genericclioptions.RESTClientGetter) HelmManagerOption {
-	return func(m *K8sHelmManager) { m.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(m.chartPath)) }
+	return func(m *K8sHelmManager) {
+		m.restGetter = getter
+		m.hasRESTGetter = true
+	}
 }
 
 // NewK8sHelmManager constructs an initialized K8sHelmManager.
@@ -121,8 +124,17 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 	for _, opt := range opts {
 		opt(mgr)
 	}
-	if sdkRunner, ok := mgr.runner.(*SDKHelmActionRunner); ok && sdkRunner != nil {
-		sdkRunner.chartPath = mgr.chartPath
+	if mgr.runner == nil && (mgr.hasKubeconfig || mgr.hasRESTGetter) {
+		getter := mgr.restGetter
+		if getter == nil {
+			settings := cli.New()
+			settings.SetNamespace(mgr.namespace)
+			if mgr.kubeconfig != "" {
+				settings.KubeConfig = mgr.kubeconfig
+			}
+			getter = settings.RESTClientGetter()
+		}
+		mgr.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(mgr.chartPath))
 	}
 	return mgr
 }

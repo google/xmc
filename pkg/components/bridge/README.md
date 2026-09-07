@@ -71,8 +71,8 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
   - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`RunUpgrade(ctx, releaseName, chartPath, values)`), allowing in-process Helm release upgrades without CLI child processes.
   - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the Helm release.
-- **Asynchronous Upgrade Worker Queue**:
-  - Serializes and debounces concurrent component updates through a buffered channel (`upgradeChan`) and worker goroutine (`syncUpgradeWorker`), preventing concurrent Helm release state conflicts and lock contention during multi-component updates.
+- **Synchronous Upgrade Serialization**:
+  - Serializes concurrent component updates using a mutex (`upgradeMu`) to prevent Helm release state conflicts and lock contention during multi-component updates.
 
 ---
 
