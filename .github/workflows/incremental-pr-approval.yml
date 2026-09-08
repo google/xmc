@@ -42,7 +42,10 @@ jobs:
       - name: 'Restore trusted scripts and ownership from base branch'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          AUTH_HEADER="AUTHORIZATION: basic $(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64)"
+          git -c "http.extraheader=${AUTH_HEADER}" fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" --depth=1 || true
           git checkout "origin/${BASE_REF}" -- .github/scripts/ .github/workflows/ OWNERS
 
       - name: 'Evaluate Incremental Approval'

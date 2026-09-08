@@ -22,7 +22,7 @@ import { RouterLink } from '@angular/router';
   selector: 'xmc-tag',
   standalone: true,
   templateUrl: './tag.ng.html',
-  styleUrl: './tag.css',
+  styleUrl: './tag.scss',
   imports: [MatChipsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -56,7 +56,7 @@ export interface TimeFilterValue {
   selector: 'xmc-status-messages-list-filter',
   standalone: true,
   templateUrl: './status_messages_list_filter.ng.html',
-  styleUrl: './status_messages_list_filter.css',
+  styleUrl: './status_messages_list_filter.scss',
   imports: [
     FormsModule,
     MatButtonModule,

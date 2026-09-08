@@ -34,7 +34,45 @@ class PlaywrightTestExecutor:
         self.venv_dir = os.path.join(self.cfg.workspace_root, ".venv_e2e")
 
     def setup_venv(self) -> str:
-        """Sets up Python virtual environment and installs dependencies."""
+        """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
+        # 1. Proactively discover and export pre-baked browser binaries so either execution
+        # path (pre-baked system Python or fallback .venv_e2e) avoids downloading Chromium.
+        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+            browser_candidates = [
+                "/ms-playwright",
+                os.path.expanduser("~/.cache/ms-playwright"),
+                os.path.expanduser("~/Library/Caches/ms-playwright"),
+                os.path.expanduser("~/AppData/Local/ms-playwright"),
+            ]
+            for path in browser_candidates:
+                try:
+                    if os.path.isdir(path) and os.listdir(path):
+                        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
+                        logger.info("Discovered pre-baked Playwright browsers at %s.", path)
+                        break
+                except OSError:
+                    continue
+
+        # 2. Fast Path: Use system Python directly if playwright and requests are already installed
+        # and pre-baked browser binaries are present (0s setup).
+        if (
+            os.environ.get("GITHUB_ACTIONS") == "true"
+            or os.environ.get("XMC_USE_PREBAKED_ENV") == "true"
+            or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        ):
+            try:
+                import playwright  # noqa: F401
+                import requests  # noqa: F401
+
+                if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+                    logger.info(
+                        "Using pre-baked Playwright environment at %s (0s setup).",
+                        sys.executable,
+                    )
+                    return sys.executable
+            except Exception:
+                pass
+
         python_bin = sys.executable
         if not os.path.exists(os.path.join(self.venv_dir, "bin", "python")):
             logger.info("Creating Python virtualenv at %s...", self.venv_dir)
@@ -71,7 +109,7 @@ class PlaywrightTestExecutor:
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (
-            f"{self.cfg.workspace_root}:{existing_pythonpath}"
+            f"{self.cfg.workspace_root}{os.pathsep}{existing_pythonpath}"
             if existing_pythonpath
             else self.cfg.workspace_root
         )

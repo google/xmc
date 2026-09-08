@@ -85,32 +85,30 @@ var (
 
 // Params holds dependencies and configuration for constructing a JobSet Reconciler.
 type Params struct {
-	Client                      client.Client
-	Scheme                      *runtime.Scheme
-	Batcher                     *shared.UpdateBatcher
-	Project                     string
-	Location                    string
-	ClusterName                 string
-	MaxConcurrentReconciles     int
-	StartupPodErrorCheckTime    time.Duration
-	StartupPodErrorCheckEnabled bool
-	Storage                     ReconcilerStorage
-	MLRunClient                 MLRunCreator
+	Client                   client.Client
+	Scheme                   *runtime.Scheme
+	Batcher                  *shared.UpdateBatcher
+	Project                  string
+	Location                 string
+	ClusterName              string
+	MaxConcurrentReconciles  int
+	StartupPodErrorCheckTime time.Duration
+	Storage                  ReconcilerStorage
+	MLRunClient              MLRunCreator
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
 type Reconciler struct {
-	client.Client               // Embed the controller-runtime client
-	Scheme                      *runtime.Scheme
-	Batcher                     *shared.UpdateBatcher
-	Project                     string
-	Location                    string
-	ClusterName                 string
-	MaxConcurrentReconciles     int
-	StartupPodErrorCheckTime    time.Duration
-	StartupPodErrorCheckEnabled bool
-	Storage                     ReconcilerStorage
-	MLRunClient                 MLRunCreator
+	client.Client            // Embed the controller-runtime client
+	Scheme                   *runtime.Scheme
+	Batcher                  *shared.UpdateBatcher
+	Project                  string
+	Location                 string
+	ClusterName              string
+	MaxConcurrentReconciles  int
+	StartupPodErrorCheckTime time.Duration
+	Storage                  ReconcilerStorage
+	MLRunClient              MLRunCreator
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -125,17 +123,16 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		return nil, errors.New("batcher is required")
 	}
 	return &Reconciler{
-		Client:                      p.Client,
-		Scheme:                      p.Scheme,
-		Batcher:                     p.Batcher,
-		Project:                     p.Project,
-		Location:                    p.Location,
-		ClusterName:                 p.ClusterName,
-		MaxConcurrentReconciles:     p.MaxConcurrentReconciles,
-		StartupPodErrorCheckTime:    p.StartupPodErrorCheckTime,
-		StartupPodErrorCheckEnabled: p.StartupPodErrorCheckEnabled,
-		Storage:                     p.Storage,
-		MLRunClient:                 p.MLRunClient,
+		Client:                   p.Client,
+		Scheme:                   p.Scheme,
+		Batcher:                  p.Batcher,
+		Project:                  p.Project,
+		Location:                 p.Location,
+		ClusterName:              p.ClusterName,
+		MaxConcurrentReconciles:  p.MaxConcurrentReconciles,
+		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
+		Storage:                  p.Storage,
+		MLRunClient:              p.MLRunClient,
 	}, nil
 }
 
@@ -362,7 +359,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	var podErrorMsg, startupWarningMsg string
 	state := ToWorkUnitState(jobSet)
 
-	if state == spb.WorkUnitStatus_STARTING && r.StartupPodErrorCheckEnabled {
+	if state == spb.WorkUnitStatus_STARTING {
 		checkRes := r.handleStartupPodChecks(ctx, jobSet)
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
@@ -889,12 +886,12 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 }
 
 // constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view
-// URL in Google Cloud Console.
+// URL in Google Cloud Console with the profiles tab preselected.
 func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	if location == "" || mlRunID == "" || project == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
+	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s&tab=profiles", location, mlRunID, project)
 }
 
 // artifactListPageSize bounds the single ListArtifacts page read by

@@ -56,12 +56,23 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
+        {{- $auth := default (dict) .Values.auth }}
+        {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
+        {{- if $gac }}
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ $gac | quote }}
+        {{- end }}
         {{- if .Values.managedXprofGcsBucket }}
         - name: MANAGED_XPROF_GCS_PATH
           valueFrom:
             configMapKeyRef:
               name: managed-xprof-gcs-config
               key: gcs_path
+        {{- end }}
+        {{- $remoteK8s := default (dict) .Values.remoteK8s }}
+        {{- if $remoteK8s.enabled }}
+        - name: KUBECONFIG
+          value: "/etc/remote-k8s/kubeconfig"
         {{- end }}
         args:
         - "-alsologtostderr"
@@ -96,6 +107,16 @@ spec:
         - name: validation-public-key-volume
           mountPath: /etc/verification-key
           readOnly: true
+        {{- if $gac }}
+        - name: gcp-secrets-fallback
+          mountPath: /etc/gcp-secrets
+          readOnly: true
+        {{- end }}
+        {{- if $remoteK8s.enabled }}
+        - name: remote-k8s-config-volume
+          mountPath: /etc/remote-k8s
+          readOnly: true
+        {{- end }}
       volumes:
       - name: validation-public-key-volume
         secret:
@@ -103,3 +124,19 @@ spec:
           items:
           - key: tls.crt
             path: tls.crt
+      {{- if $gac }}
+      - name: gcp-secrets-fallback
+        secret:
+          secretName: gcp-sa-key
+          items:
+          - key: key.json
+            path: key.json
+      {{- end }}
+      {{- if $remoteK8s.enabled }}
+      - name: remote-k8s-config-volume
+        secret:
+          secretName: {{ default "remote-k8s-config" $remoteK8s.secretName | quote }}
+          items:
+          - key: kubeconfig
+            path: kubeconfig
+      {{- end }}

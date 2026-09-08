@@ -35,7 +35,7 @@ import {
   selector: 'xmc-status-message-filter',
   standalone: true,
   templateUrl: './status_message_filter.ng.html',
-  styleUrl: './status_message_filter.css',
+  styleUrl: './status_message_filter.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,

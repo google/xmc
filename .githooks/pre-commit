@@ -96,6 +96,13 @@ check_go() {
     echo "   To install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6"
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
+
+  if [ -d "tools/lint/check_go_determinism" ]; then
+    echo "--> Running Go Test Determinism & State Leakage Checker..."
+    if ! go run ./tools/lint/check_go_determinism; then
+      FAILED=1
+    fi
+  fi
 }
 
 check_ui() {
@@ -166,6 +173,7 @@ check_license() {
     -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
+    -ignore "**/dist/**"
     -ignore "**/venv/**"
     -ignore "**/ctk-out/**"
     -ignore "**.json"
@@ -244,9 +252,9 @@ check_python() {
 check_mypy() {
   local py_files
   if [ "$MODE" = "check" ]; then
-    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" || true)
+    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
   else
-    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' || true)
+    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' | grep -v 'tools/dev_env.py' || true)
   fi
 
   if [ -z "$py_files" ]; then
@@ -328,20 +336,57 @@ check_terraform() {
     echo "--> WARNING: tflint or docker not found. TFLint check skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
+}
 
-  echo "--> Running Terraform Security Scanner (Trivy)..."
+check_helm() {
+  local helm_files
+  if [ "$MODE" = "check" ]; then
+    helm_files=$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)
+  else
+    helm_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/helm/' || true)
+  fi
+
+  if [ -z "$helm_files" ]; then
+    return
+  fi
+
+  if command -v helm >/dev/null 2>&1; then
+    echo "--> Running Helm Chart Linter (helm lint)..."
+    if ! helm lint deploy/helm; then
+      echo "❌ Helm lint failed."
+      FAILED=1
+    fi
+  else
+    echo "--> WARNING: helm not found. Helm chart linting skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+}
+
+check_security() {
+  local sec_files
+  if [ "$MODE" = "check" ]; then
+    sec_files=$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) || true)
+  else
+    sec_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/' || true)
+  fi
+
+  if [ -z "$sec_files" ]; then
+    return
+  fi
+
+  echo "--> Running Infrastructure & Workload Security Scanner (Trivy)..."
   if command -v trivy >/dev/null 2>&1; then
-    if ! trivy config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL deploy/; then
+    if ! trivy config --skip-check-update --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL /src/deploy; then
+    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL /src/deploy; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi
   else
-    echo "--> WARNING: trivy or docker not found. Terraform security check skipped."
+    echo "--> WARNING: trivy or docker not found. Security check skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
@@ -354,6 +399,8 @@ main() {
   check_python
   check_mypy
   check_terraform
+  check_helm
+  check_security
 
   if [ "$MODE" = "fix" ]; then
     if ! git diff --quiet; then

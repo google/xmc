@@ -260,11 +260,10 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 	scheme := newScheme()
 
 	testCases := []struct {
-		name                        string
-		workload                    *v1beta1.Workload
-		detectInadmissibleWorkUnits bool
-		wantSubstring               string
-		batcherEntries              int
+		name           string
+		workload       *v1beta1.Workload
+		wantSubstring  string
+		batcherEntries int
 	}{
 		{
 			name: "inadmissible queue not found",
@@ -285,9 +284,8 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 					},
 				},
 			},
-			detectInadmissibleWorkUnits: true,
-			wantSubstring:               `Work unit is inadmissible because queue "my-queue" was not found.`,
-			batcherEntries:              1,
+			wantSubstring:  `Work unit is inadmissible because queue "my-queue" was not found.`,
+			batcherEntries: 1,
 		},
 		{
 			name: "inadmissible generic",
@@ -308,32 +306,8 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 					},
 				},
 			},
-			detectInadmissibleWorkUnits: true,
-			wantSubstring:               "Work unit is inadmissible, please check the workload status for more details: Some other reason",
-			batcherEntries:              1,
-		},
-		{
-			name: "inadmissible detection disabled",
-			workload: &v1beta1.Workload{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-workload-inadmissible-detection-disabled",
-					Namespace: "default",
-				},
-				Spec: workloadSpecWithNecessaryLabels,
-				Status: v1beta1.WorkloadStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:    "QuotaReserved",
-							Status:  metav1.ConditionFalse,
-							Reason:  "Inadmissible",
-							Message: "LocalQueue my-queue doesn't exist",
-						},
-					},
-				},
-			},
-			detectInadmissibleWorkUnits: false,
-			wantSubstring:               "",
-			batcherEntries:              1,
+			wantSubstring:  "Work unit is inadmissible, please check the workload status for more details: Some other reason",
+			batcherEntries: 1,
 		},
 		{
 			name: "quota reserved but not inadmissible",
@@ -354,9 +328,8 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 					},
 				},
 			},
-			detectInadmissibleWorkUnits: true,
-			wantSubstring:               "",
-			batcherEntries:              1,
+			wantSubstring:  "",
+			batcherEntries: 1,
 		},
 		{
 			name: "inadmissible no status",
@@ -377,9 +350,8 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 					},
 				},
 			},
-			detectInadmissibleWorkUnits: true,
-			wantSubstring:               "Work unit is inadmissible, please check the workload status for more details: Some other reason",
-			batcherEntries:              1,
+			wantSubstring:  "Work unit is inadmissible, please check the workload status for more details: Some other reason",
+			batcherEntries: 1,
 		},
 	}
 
@@ -388,11 +360,10 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{tc.workload}...).Build()
 			storageUpdater := &mockStorageUpdater{}
 			rec, err := NewReconciler(Params{
-				Client:                      cl,
-				Scheme:                      scheme,
-				Batcher:                     shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storageUpdater),
-				ManagementClusterInfo:       &spb.ClusterInfo{Project: "mgmt-project"},
-				DetectInadmissibleWorkUnits: tc.detectInadmissibleWorkUnits,
+				Client:                cl,
+				Scheme:                scheme,
+				Batcher:               shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storageUpdater),
+				ManagementClusterInfo: &spb.ClusterInfo{Project: "mgmt-project"},
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)

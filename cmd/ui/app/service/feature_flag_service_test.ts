@@ -37,10 +37,6 @@ describe('FeatureFlagService', () => {
   describe('when XMC_FEATURE_FLAGS is undefined', () => {
     const state = setup();
 
-    it('isStatusMessageHistoryEnabled should be false', () => {
-      expect(state.service.isStatusMessageHistoryEnabled).toBeFalse();
-    });
-
     it('isAdminPanelEnabled should be false', () => {
       expect(state.service.isAdminPanelEnabled).toBeFalse();
     });
@@ -59,24 +55,6 @@ describe('FeatureFlagService', () => {
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
-    describe('when statusMessageHistoryEnabled is true', () => {
-      const state = setup({ statusMessageHistoryEnabled: true });
-
-      it('isStatusMessageHistoryEnabled should be true if statusMessageHistoryEnabled is true', () => {
-        expect(state.service.isStatusMessageHistoryEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('statusMessageHistoryEnabled')).toBeTrue();
-      });
-    });
-
-    describe('when statusMessageHistoryEnabled is false', () => {
-      const state = setup({ statusMessageHistoryEnabled: false });
-
-      it('isStatusMessageHistoryEnabled should be false if statusMessageHistoryEnabled is false', () => {
-        expect(state.service.isStatusMessageHistoryEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('statusMessageHistoryEnabled')).toBeFalse();
-      });
-    });
-
     describe('when adminPanelEnabled is true', () => {
       const state = setup({ adminPanelEnabled: true });
 

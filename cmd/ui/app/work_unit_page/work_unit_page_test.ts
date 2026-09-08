@@ -22,7 +22,6 @@ import { of } from 'rxjs';
 import { StatusMessagesListHarness } from 'xmanager_cloud/ui/app/common/components/status_messages_list/testing/status_messages_list_harness';
 import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 
@@ -31,9 +30,6 @@ import { WorkUnitPage } from './work_unit_page';
 
 describe('WorkUnitPage Component', () => {
   const state = cleanState(() => {
-    const featureFlagService = {
-      isStatusMessageHistoryEnabled: true,
-    };
     const workUnitsService = jasmine.createSpyObj<WorkUnitsService>('WorkUnitsService', [
       'getWorkUnit',
       'searchWorkUnits',
@@ -70,7 +66,6 @@ describe('WorkUnitPage Component', () => {
       imports: [WorkUnitPage, NoopAnimationsModule],
       providers: [
         provideRouter([]),
-        { provide: FeatureFlagService, useValue: featureFlagService },
         { provide: WorkUnitsService, useValue: workUnitsService },
         { provide: ExperimentService, useValue: experimentService },
         { provide: ArtifactService, useValue: artifactService },
@@ -80,7 +75,6 @@ describe('WorkUnitPage Component', () => {
     });
 
     return {
-      featureFlagService,
       workUnitsService,
       experimentService,
       artifactService,
@@ -92,8 +86,7 @@ describe('WorkUnitPage Component', () => {
     expect(comp).toBeTruthy();
   });
 
-  it('should show Status History tab if feature flag is enabled', async () => {
-    state.featureFlagService.isStatusMessageHistoryEnabled = true;
+  it('should show Status History tab', async () => {
     bootstrap(WorkUnitPage);
 
     const tabGroup = await getHarness(MatTabGroupHarness);
@@ -101,14 +94,5 @@ describe('WorkUnitPage Component', () => {
 
     const harness = await getHarness(StatusMessagesListHarness);
     expect(harness).toBeTruthy();
-  });
-
-  it('should hide Status History tab if feature flag is disabled', async () => {
-    state.featureFlagService.isStatusMessageHistoryEnabled = false;
-    bootstrap(WorkUnitPage);
-
-    const tabGroup = await getHarness(MatTabGroupHarness);
-    const tabs = await tabGroup.getTabs({ label: 'Status History' });
-    expect(tabs.length).toBe(0);
   });
 });

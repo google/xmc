@@ -42,7 +42,7 @@ const STACK_TRACE_PREVIEW_LINES = 5;
   selector: 'xmc-status-message',
   standalone: true,
   templateUrl: './status_message.ng.html',
-  styleUrl: './status_message.css',
+  styleUrl: './status_message.scss',
   imports: [
     CommonModule,
     DatePipe,

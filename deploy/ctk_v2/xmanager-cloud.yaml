@@ -54,7 +54,6 @@ vars:
   use_redis_queue: true
   deploy_redis: true
   redis_region:
-  status_message_history_enabled: true
   enable_metrics: false
   # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
   # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
@@ -463,9 +462,6 @@ deployment_groups:
         value: $(vars.authorized_iam_role)
       - name: auth.adminIamRole
         value: $(vars.admin_iam_role)
-      - name: statusMessageHistoryEnabled
-        value: $(vars.status_message_history_enabled)
-        type: auto
       - name: healthServiceDeployment.enabled
         value: $(vars.health_service_deployment_enabled)
         type: auto
@@ -525,4 +521,3 @@ deployment_groups:
       image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
       deletion_protection: $(vars.deletion_protection)
-      status_message_history_enabled: $(vars.status_message_history_enabled)

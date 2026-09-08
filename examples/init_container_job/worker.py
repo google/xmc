@@ -44,9 +44,9 @@ def main() -> None:
         )
 
     duration_mins = int(os.environ.get("DURATION_MINUTES", "1"))
-    end_time = time.time() + (duration_mins * 60)
+    end_time = time.monotonic() + (duration_mins * 60)
     counter = 1
-    while time.time() < end_time:
+    while time.monotonic() < end_time:
         print(f"[{prefix} | {pod_name}] Heartbeat tick #{counter}", flush=True)
         counter += 1
         time.sleep(10)

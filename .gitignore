@@ -1,6 +1,7 @@
 # Bazel build products and symlinks
 /bazel-*
 .env
+/bin/
 
 # Environment-specific values overrides
 /deploy/helm/environments/values-*.yaml
@@ -25,6 +26,7 @@ cmd/ui/playwright-report/
 /ctk-out
 
 # Local development config
+/.xmc_dev/
 deploy/local/xmanager-cloud-local.yaml
 deploy/local/*-local.yaml
 

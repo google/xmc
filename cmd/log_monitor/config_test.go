@@ -15,7 +15,6 @@ package main
 
 import (
 	"flag"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -33,14 +32,6 @@ func TestDefaultPort(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	// Save original env vars and restore them after test
-	origProjectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-	origSubscriptionID := os.Getenv("PUBSUB_SUBSCRIPTION_ID")
-	defer func() {
-		os.Setenv("GOOGLE_CLOUD_PROJECT", origProjectID)
-		os.Setenv("PUBSUB_SUBSCRIPTION_ID", origSubscriptionID)
-	}()
-
 	tests := []struct {
 		name        string
 		inputConfig Config
@@ -50,28 +41,26 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Valid config",
 			inputConfig: Config{
-				ProjectID:                   "test-project",
-				SubscriptionID:              "test-subscription",
-				Port:                        "8080",
-				BatchSize:                   100,
-				BatchInterval:               5 * time.Second,
-				SpannerDatabaseName:         "test-db",
-				QuotaProjectID:              "xmc-test-project-1",
-				LogKeyword:                  "XMC LOG:",
-				MaxConcurrentUpdates:        10,
-				StatusMessageHistoryEnabled: true,
+				ProjectID:            "test-project",
+				SubscriptionID:       "test-subscription",
+				Port:                 "8080",
+				BatchSize:            100,
+				BatchInterval:        5 * time.Second,
+				SpannerDatabaseName:  "test-db",
+				QuotaProjectID:       "xmc-test-project-1",
+				LogKeyword:           "XMC LOG:",
+				MaxConcurrentUpdates: 10,
 			},
 			wantConfig: &Config{
-				ProjectID:                   "test-project",
-				SubscriptionID:              "test-subscription",
-				Port:                        "8080",
-				BatchSize:                   100,
-				BatchInterval:               5 * time.Second,
-				SpannerDatabaseName:         "test-db",
-				QuotaProjectID:              "xmc-test-project-1",
-				LogKeyword:                  "XMC LOG:",
-				MaxConcurrentUpdates:        10,
-				StatusMessageHistoryEnabled: true,
+				ProjectID:            "test-project",
+				SubscriptionID:       "test-subscription",
+				Port:                 "8080",
+				BatchSize:            100,
+				BatchInterval:        5 * time.Second,
+				SpannerDatabaseName:  "test-db",
+				QuotaProjectID:       "xmc-test-project-1",
+				LogKeyword:           "XMC LOG:",
+				MaxConcurrentUpdates: 10,
 			},
 			expectError: false,
 		},
@@ -186,7 +175,6 @@ func TestLoadConfig(t *testing.T) {
 			quotaProjectID = tc.inputConfig.QuotaProjectID
 			logKeyword = tc.inputConfig.LogKeyword
 			maxConcurrentUpdates = tc.inputConfig.MaxConcurrentUpdates
-			statusMessageHistoryEnabled = tc.inputConfig.StatusMessageHistoryEnabled
 
 			got, err := LoadConfig()
 

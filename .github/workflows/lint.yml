@@ -53,6 +53,16 @@ jobs:
             ui:
               - 'cmd/ui/**'
               - '.github/workflows/lint.yml'
+            helm:
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
+            security:
+              - 'deploy/**/*.tf'
+              - 'deploy/**/*.tfvars'
+              - 'deploy/**/*.yaml'
+              - 'deploy/**/*.yml'
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff)
       - name: 'Install Ruff'
@@ -94,6 +104,10 @@ jobs:
           fi
           golangci-lint run --timeout=5m
 
+      - name: 'Check Go Test Determinism'
+        run: |
+          go run ./tools/lint/check_go_determinism
+
       - name: 'Install & Run Buildifier'
         run: |
           if ! command -v buildifier &>/dev/null; then
@@ -133,13 +147,15 @@ jobs:
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'
         if: steps.changes.outputs.ui == 'true'
-        uses: 'actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af' # v4.1.0
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
 
       - name: 'Install UI Dependencies'
         if: steps.changes.outputs.ui == 'true'
-        run: npm ci --legacy-peer-deps
+        run: npm ci --legacy-peer-deps --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
       - name: 'Run Prettier Check'
@@ -182,9 +198,32 @@ jobs:
         if: steps.changes.outputs.terraform == 'true'
         run: 'tflint --recursive'
 
+      # 5. Component Manifests & Profiles Linting
+      - name: 'Run Component Manifest Linter'
+        uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
+
+      # 6. Helm Chart Linting
+      - name: 'Install Helm'
+        if: steps.changes.outputs.helm == 'true'
+        run: |
+          if ! command -v helm &>/dev/null; then
+            mkdir -p "${RUNNER_TEMP}/helm"
+            curl -sSfL "https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz" \
+              | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
+            chmod +x "${RUNNER_TEMP}/helm/helm"
+            echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
+          fi
+
+      - name: 'Run Helm Lint'
+        if: steps.changes.outputs.helm == 'true'
+        run: helm lint deploy/helm
+
+      # 7. Infrastructure & Workload Security Scanning (Trivy)
       # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
-        if: steps.changes.outputs.terraform == 'true'
+      - name: 'Run Trivy Security Scanner (deploy/)'
+        if: steps.changes.outputs.security == 'true'
         uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
         with:
           scan-type: 'config'
@@ -192,4 +231,4 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/ctk_v2/modules'
+          scan-ref: 'deploy/'

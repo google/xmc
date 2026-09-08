@@ -44,19 +44,13 @@ var _ storage.WorkUnitStore = (*Repository)(nil)
 
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {
-	client                      *spanner.Client
-	experimentRepo              ExperimentTxStore
-	workUnitsQueryGen           querytools.QueryGenerator
-	statusMessageHistoryEnabled bool
-}
-
-// RepositoryConfig configures optional settings for Repository.
-type RepositoryConfig struct {
-	StatusMessageHistoryEnabled bool
+	client            *spanner.Client
+	experimentRepo    ExperimentTxStore
+	workUnitsQueryGen querytools.QueryGenerator
 }
 
 // NewRepository creates a new WorkUnit repository instance with initialized query generator.
-func NewRepository(client *spanner.Client, expRepo ExperimentTxStore, cfg RepositoryConfig) (*Repository, error) {
+func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Repository, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}
@@ -67,9 +61,8 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore, cfg Reposi
 	}
 
 	return &Repository{
-		client:                      client,
-		experimentRepo:              expRepo,
-		workUnitsQueryGen:           workUnitsQueryGen,
-		statusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
+		client:            client,
+		experimentRepo:    expRepo,
+		workUnitsQueryGen: workUnitsQueryGen,
 	}, nil
 }

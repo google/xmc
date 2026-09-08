@@ -18,6 +18,7 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { App } from './app/app';
 import { appConfig } from './app/app_config';
 
+// Bootstrap the Angular application with the root component and application config.
 bootstrapApplication(App, appConfig).catch((err) => {
   console.error(err);
 });

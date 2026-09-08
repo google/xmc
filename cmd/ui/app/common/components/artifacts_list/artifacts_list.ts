@@ -45,7 +45,7 @@ enum ArtifactFilter {
   selector: 'xmc-artifacts-list',
   standalone: true,
   templateUrl: './artifacts_list.ng.html',
-  styleUrl: './artifacts_list.css',
+  styleUrl: './artifacts_list.scss',
   imports: [AsyncPipe, MatIconModule, ArtifactsColumn, MatButtonToggleModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

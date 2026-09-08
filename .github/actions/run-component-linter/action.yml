@@ -1,0 +1,100 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Run Component Manifest Linter'
+description: 'Validates Component manifest profiles and static compatibility rules using component-linter'
+
+inputs:
+  scan-roots:
+    description: 'Space-separated directory roots to scan for component profiles'
+    required: false
+    default: 'deploy/profiles deploy/components examples/components/profiles'
+  output-format:
+    description: 'Output format (text or json)'
+    required: false
+    default: 'text'
+  strict:
+    description: 'Fail if no component profile directories are found'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Check Changed Component & Linter Paths'
+      id: 'changes'
+      uses: 'dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36' # v3.0.2
+      with:
+        filters: |
+          lint:
+            - 'deploy/profiles/**'
+            - 'deploy/components/**'
+            - 'examples/components/**'
+            - 'api/protos/components/**'
+            - 'pkg/components/**'
+            - 'cmd/component-linter/**'
+            - 'tools/components/**'
+            - '.github/actions/run-component-linter/**'
+            - '.github/workflows/lint.yml'
+
+    - name: 'Set up Go'
+      if: steps.changes.outputs.lint == 'true'
+      uses: 'actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34' # v5.3.0
+      with:
+        go-version: '1.26.0'
+        cache: false
+
+    - name: 'Build component-linter Binary'
+      if: steps.changes.outputs.lint == 'true'
+      id: 'build-linter'
+      shell: bash
+      run: |
+        echo "Building component-linter CLI binary via Go..."
+        OUT_DIR="${RUNNER_TEMP:-/tmp}/xmc-bin"
+        mkdir -p "${OUT_DIR}"
+        LINTER_BIN="${OUT_DIR}/component-linter"
+        go build -o "${LINTER_BIN}" ./cmd/component-linter
+        if [ ! -x "${LINTER_BIN}" ]; then
+          echo "Error: Built linter binary not found or not executable!" >&2
+          exit 1
+        fi
+        echo "binary_path=${LINTER_BIN}" >> "${GITHUB_OUTPUT}"
+
+    - name: 'Run Component Manifest Linter'
+      if: steps.changes.outputs.lint == 'true'
+      shell: bash
+      env:
+        LINTER_BIN: ${{ steps.build-linter.outputs.binary_path }}
+        SCAN_ROOTS: ${{ inputs.scan-roots }}
+        OUTPUT_FORMAT: ${{ inputs.output-format }}
+        STRICT_FLAG: ${{ inputs.strict }}
+      run: |
+        EXTRA_ARGS=()
+        if [ "${STRICT_FLAG}" = "true" ]; then
+          EXTRA_ARGS+=("--strict")
+        fi
+        if [ -n "${SCAN_ROOTS}" ]; then
+          read -r -a ROOTS_ARR <<< "${SCAN_ROOTS}"
+          EXTRA_ARGS+=("--scan-roots" "${ROOTS_ARR[@]}")
+        fi
+        python3 tools/components/run_linter.py \
+          --linter-binary="${LINTER_BIN}" \
+          --output="${OUTPUT_FORMAT}" \
+          "${EXTRA_ARGS[@]}"
+
+    - name: 'Log Linter Skip Summary'
+      if: steps.changes.outputs.lint != 'true'
+      shell: bash
+      run: |
+        echo "NOTICE: Component manifest linter skipped (no relevant component files modified)."

@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 // validateDAG validates DAG construction, enabled-state completeness, and dependency cycles.
@@ -30,7 +30,7 @@ func (l *Linter) validateDAG(compManifests []*ComponentManifest, compMap map[str
 
 func checkDependencyCompleteness(compManifests []*ComponentManifest, compMap map[string]*ComponentManifest, res *ValidationResult) {
 	for _, c := range compManifests {
-		cName := store.CanonicalComponentName(c.Metadata.Name)
+		cName := naming.CanonicalComponentName(c.Metadata.Name)
 		if cName == "" {
 			continue
 		}
@@ -41,7 +41,7 @@ func checkDependencyCompleteness(compManifests []*ComponentManifest, compMap map
 		}
 
 		for _, dep := range c.Spec.Dependencies {
-			depName := store.CanonicalComponentName(dep.Name)
+			depName := naming.CanonicalComponentName(dep.Name)
 			if depName == "" {
 				continue
 			}
@@ -79,7 +79,7 @@ func buildDependencyGraph(compMap map[string]*ComponentManifest) map[string][]st
 		deps := make([]string, 0, numDeps)
 		seen := make(map[string]bool, numDeps)
 		for _, dep := range comp.Spec.Dependencies {
-			dName := store.CanonicalComponentName(dep.Name)
+			dName := naming.CanonicalComponentName(dep.Name)
 			if dName != "" && !seen[dName] {
 				seen[dName] = true
 				deps = append(deps, dName)

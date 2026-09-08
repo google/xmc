@@ -29,7 +29,6 @@ import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/
 import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import { ArtifactsList } from 'xmanager_cloud/ui/app/common/components/artifacts_list/artifacts_list';
 import { StatusMessagesList } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 
 import {
   getStatusMessages,
@@ -49,7 +48,7 @@ import { WorkUnitPageStore } from './work_unit_page_store';
   selector: 'xmc-work-unit-page',
   standalone: true,
   templateUrl: './work_unit_page.ng.html',
-  styleUrl: './work_unit_page.css',
+  styleUrl: './work_unit_page.scss',
   imports: [
     CommonModule,
     WorkUnitDetails,
@@ -68,7 +67,6 @@ import { WorkUnitPageStore } from './work_unit_page_store';
 export class WorkUnitPage implements OnInit {
   private readonly store = inject(WorkUnitPageStore);
   private readonly route = inject(ActivatedRoute);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   workUnit: Signal<WorkUnit | null> = this.store.workUnit;
   experiment: Signal<Experiment | null> = this.store.experiment;
@@ -79,10 +77,6 @@ export class WorkUnitPage implements OnInit {
   statusMessages: Signal<StructuredMessage[]> = computed(() => {
     return getStatusMessages(this.workUnit()?.currentWorkUnitExecution?.status);
   });
-
-  get isStatusMessageHistoryEnabled(): boolean {
-    return this.featureFlagService.isStatusMessageHistoryEnabled;
-  }
 
   isLoading: Signal<boolean> = this.store.isLoading;
 

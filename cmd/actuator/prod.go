@@ -110,7 +110,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 			return nil
 		})
 
-		storageClient, err = ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
+		storageClient, err = ss.NewStorage(spannerClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create storage: %w", err)
 		}

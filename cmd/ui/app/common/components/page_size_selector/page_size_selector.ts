@@ -23,7 +23,7 @@ import { MatSelectChange, MatSelectModule } from '@angular/material/select';
   standalone: true,
   imports: [MatFormFieldModule, MatSelectModule, MatOptionModule],
   templateUrl: './page_size_selector.ng.html',
-  styleUrl: './page_size_selector.css',
+  styleUrl: './page_size_selector.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PageSizeSelector {
