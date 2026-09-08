@@ -105,6 +105,19 @@ func (f *FakeHelmManager) disableAppliedValues(name, key string) {
 	dep["enabled"] = false
 }
 
+func (f *FakeHelmManager) detachComponentLocked(ref ComponentRef) error {
+	if f.DeleteErr != nil {
+		return f.DeleteErr
+	}
+	if f.ActiveComponents != nil {
+		delete(f.ActiveComponents, ref.String())
+	}
+	if f.ActuatedGenerations != nil {
+		delete(f.ActuatedGenerations, ref.String())
+	}
+	return nil
+}
+
 // Purge1PComponent permanently removes component values and tracking in memory.
 func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
 	if f == nil {
@@ -115,14 +128,8 @@ func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.DeleteErr != nil {
-		return f.DeleteErr
-	}
-	if f.ActiveComponents != nil {
-		delete(f.ActiveComponents, ref.String())
-	}
-	if f.ActuatedGenerations != nil {
-		delete(f.ActuatedGenerations, ref.String())
+	if err := f.detachComponentLocked(ref); err != nil {
+		return err
 	}
 	if f.AppliedValues != nil {
 		delete(f.AppliedValues, ref.String())
@@ -140,16 +147,7 @@ func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRe
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.DeleteErr != nil {
-		return f.DeleteErr
-	}
-	if f.ActiveComponents != nil {
-		delete(f.ActiveComponents, ref.String())
-	}
-	if f.ActuatedGenerations != nil {
-		delete(f.ActuatedGenerations, ref.String())
-	}
-	return nil
+	return f.detachComponentLocked(ref)
 }
 
 // IsComponentActive checks whether the component is recorded as active.
