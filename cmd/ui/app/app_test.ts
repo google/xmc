@@ -62,9 +62,6 @@ describe('App Component', () => {
       get isAdminPanelEnabled() {
         return false;
       },
-      get isStatusMessageHistoryEnabled() {
-        return true;
-      },
       get isNonProdAuth() {
         return isNonProdAuthFlag;
       },

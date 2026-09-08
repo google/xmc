@@ -119,7 +119,7 @@ function ensureGitRefs(baseRef, approvedSha, currentSha, execOptions = {}) {
 
   const isRefPresent = (ref) => {
     try {
-      execGit(['rev-parse', '--verify', '--quiet', ref], execOptions);
+      execGit(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], execOptions);
       return true;
     } catch (_) {
       return false;
@@ -170,15 +170,18 @@ function isFastForwardApproval(approvedSha, currentSha, opts) {
 
 /**
  * Shell Helper: Returns the commit count for a given revision range.
+ * Returns null if git rev-list fails (e.g. invalid revision range).
  * @param {string} range - Revision range string.
  * @param {Object} opts - Subprocess options.
- * @returns {number}
+ * @returns {number|null}
  */
 function getCommitCountInRange(range, opts) {
   try {
-    return parseInt(execGit(['rev-list', '--count', range], { ...opts, ignoreExitCode: false }).trim(), 10) || 0;
+    const output = execGit(['rev-list', '--count', range], { ...opts, ignoreExitCode: false }).trim();
+    const count = parseInt(output, 10);
+    return isNaN(count) ? null : count;
   } catch (_) {
-    return 0;
+    return null;
   }
 }
 
@@ -400,10 +403,10 @@ function resolveCommitRanges(baseRef, approvedSha, currentSha, execOptions = {})
   }
 
   let approvedRange = `origin/${baseRef}..${approvedSha}`;
-  const prCommitCount = getCommitCountInRange(currentRange, opts);
+  const prCommitCount = getCommitCountInRange(currentRange, opts) || 0;
   const approvedBaseCount = getCommitCountInRange(approvedRange, opts);
 
-  if (prCommitCount > 0 && approvedBaseCount > prCommitCount) {
+  if (prCommitCount > 0 && (approvedBaseCount === null || approvedBaseCount > prCommitCount)) {
     approvedRange = resolveStackedApprovedRange(currentRange, approvedRange, approvedSha, prCommitCount, opts);
   }
 

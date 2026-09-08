@@ -16,6 +16,7 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -562,4 +563,53 @@ func TestWorkUnitOperations_UpdateOperationOnError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNew_WithKubeconfig(t *testing.T) {
+	t.Run("valid kubeconfig", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "kubeconfig-*")
+		if err != nil {
+			t.Fatalf("os.CreateTemp failed: %v", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		kubeconfigContent := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: http://127.0.0.1:65534
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: fake-token
+`
+		if _, err := tmpFile.WriteString(kubeconfigContent); err != nil {
+			t.Fatalf("tmpFile.WriteString failed: %v", err)
+		}
+		tmpFile.Close()
+
+		t.Setenv("KUBECONFIG", tmpFile.Name())
+		client, err := New(ActuatorRuntimeConfig{}, nil, nil)
+		if err != nil {
+			t.Fatalf("New() with valid KUBECONFIG failed: %v", err)
+		}
+		if client == nil {
+			t.Fatal("New() returned nil client, want non-nil")
+		}
+	})
+
+	t.Run("invalid kubeconfig path", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "/non/existent/path/kubeconfig")
+		_, err := New(ActuatorRuntimeConfig{}, nil, nil)
+		if err == nil {
+			t.Fatal("New() with non-existent KUBECONFIG succeeded, want error")
+		}
+	})
 }

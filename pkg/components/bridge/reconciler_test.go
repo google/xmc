@@ -70,29 +70,62 @@ func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.Compone
 type mockHelm struct {
 	ensureErr, deleteErr error
 	active               bool
+	purgeCalled          bool
+	orphanCalled         bool
+	deleteCalled         bool
+	lastRef              ComponentRef
+	lastOpts             HelmComponentOptions
 }
 
-func (m *mockHelm) Ensure1PComponent(ctx context.Context, ns, name string, opts HelmComponentOptions) error {
+func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
 	if m == nil {
 		return nil
 	}
+	m.lastRef = ref
+	m.lastOpts = opts
 	if m.ensureErr == nil {
 		m.active = true
 	}
 	return m.ensureErr
 }
 
-func (m *mockHelm) Delete1PComponent(ctx context.Context, ns, name string) error {
+func (m *mockHelm) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
 	}
+	m.deleteCalled = true
+	m.lastRef = ref
 	if m.deleteErr == nil {
 		m.active = false
 	}
 	return m.deleteErr
 }
 
-func (m *mockHelm) IsComponentActive(name string) bool {
+func (m *mockHelm) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	m.purgeCalled = true
+	m.lastRef = ref
+	if m.deleteErr == nil {
+		m.active = false
+	}
+	return m.deleteErr
+}
+
+func (m *mockHelm) Orphan1PComponent(ctx context.Context, ref ComponentRef) error {
+	if m == nil {
+		return nil
+	}
+	m.orphanCalled = true
+	m.lastRef = ref
+	if m.deleteErr == nil {
+		m.active = false
+	}
+	return m.deleteErr
+}
+
+func (m *mockHelm) IsComponentActive(ref ComponentRef) bool {
 	if m == nil {
 		return false
 	}
@@ -187,6 +220,21 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantRemoveFin: true,
 		},
 		{
+			name: "deletion successful 1P orphan policy",
+			cms:  &mockCMS{},
+			helm: &mockHelm{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2,
+				Spec: &componentspb.ComponentSpec{
+					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
+				},
+				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
+		},
+		{
 			name: "deletion successful 3P",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
@@ -214,6 +262,27 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				IsDeleting: true, HasFinalizer: true,
 			},
 			wantErr: true,
+		},
+		{
+			name: "deletion CMS validation failure blocks 1P teardown",
+			cms:  &mockCMS{delErr: status.Error(codes.FailedPrecondition, "active dependents exist")},
+			helm: &mockHelm{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true,
+			},
+			wantErr: true,
+		},
+		{
+			name: "deletion CMS NotFound idempotent retry proceeds to 1P teardown",
+			cms:  &mockCMS{delErr: status.Error(codes.NotFound, "already deleted")},
+			helm: &mockHelm{active: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				IsDeleting: true, HasFinalizer: true,
+			},
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
 		},
 		{
 			name: "disabled component",
@@ -577,4 +646,168 @@ func TestExtractHelpers(t *testing.T) {
 	if parseWrapperRef(m) != nil {
 		t.Errorf("parseWrapperRef not-a-map failed")
 	}
+}
+
+func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, nil, helm)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+
+	in := ReconcileComponentInput{
+		Namespace: "custom-ns",
+		Name:      "custom-comp",
+		Enabled:   true,
+		Spec: &componentspb.ComponentSpec{
+			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		},
+		HelmOpts: HelmComponentOptions{
+			// Ref intentionally empty
+		},
+	}
+
+	res := &ReconcileResult{}
+	if err := r.ensure1PComponent(ctx, in, res); err != nil {
+		t.Fatalf("ensure1PComponent failed: %v", err)
+	}
+
+	wantRef := ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
+	if helm.lastRef != wantRef {
+		t.Errorf("expected lastRef %v, got %v", wantRef, helm.lastRef)
+	}
+	if helm.lastOpts.Ref != wantRef {
+		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helm.lastOpts.Ref)
+	}
+}
+
+func TestResolveComponentRef(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      ReconcileComponentInput
+		wantRef ComponentRef
+	}{
+		{
+			name: "both name and namespace empty in HelmOpts",
+			in: ReconcileComponentInput{
+				Namespace: "default-ns",
+				Name:      "default-name",
+				HelmOpts:  HelmComponentOptions{},
+			},
+			wantRef: ComponentRef{Namespace: "default-ns", Name: "default-name"},
+		},
+		{
+			name: "ref name set but namespace empty in HelmOpts",
+			in: ReconcileComponentInput{
+				Namespace: "fallback-ns",
+				Name:      "original-name",
+				HelmOpts: HelmComponentOptions{
+					Ref: ComponentRef{Name: "custom-name"},
+				},
+			},
+			wantRef: ComponentRef{Namespace: "fallback-ns", Name: "custom-name"},
+		},
+		{
+			name: "ref namespace set but name empty in HelmOpts",
+			in: ReconcileComponentInput{
+				Namespace: "original-ns",
+				Name:      "fallback-name",
+				HelmOpts: HelmComponentOptions{
+					Ref: ComponentRef{Namespace: "custom-ns"},
+				},
+			},
+			wantRef: ComponentRef{Namespace: "custom-ns", Name: "fallback-name"},
+		},
+		{
+			name: "both ref name and namespace set in HelmOpts",
+			in: ReconcileComponentInput{
+				Namespace: "ignored-ns",
+				Name:      "ignored-name",
+				HelmOpts: HelmComponentOptions{
+					Ref: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+				},
+			},
+			wantRef: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveComponentRef(tc.in)
+			if got != tc.wantRef {
+				t.Errorf("resolveComponentRef() = %+v, want %+v", got, tc.wantRef)
+			}
+		})
+	}
+}
+
+func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {
+	ctx := context.Background()
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+
+	t.Run("CMS validation failure halts deletion before K8s teardown", func(t *testing.T) {
+		helm := &mockHelm{active: true}
+		cms := &mockCMS{delErr: status.Error(codes.FailedPrecondition, "active dependents block deletion")}
+		r, err := NewReconciler(cms, nil, helm)
+		if err != nil {
+			t.Fatalf("NewReconciler failed: %v", err)
+		}
+
+		in := ReconcileComponentInput{
+			Namespace:  "xmc",
+			Name:       "ingestion",
+			Generation: 2,
+			Spec:       spec1P,
+			IsDeleting: true,
+		}
+		res := &ReconcileResult{}
+		_, err = r.reconcileDeletion(ctx, in, "xmc.ingestion", res)
+		if err == nil {
+			t.Fatal("expected error from CMS validation failure, got nil")
+		}
+		if helm.purgeCalled || helm.orphanCalled {
+			t.Error("expected 1P Helm teardown NOT to be called when CMS ExecuteDeletion fails")
+		}
+		if !helm.active {
+			t.Error("expected Helm component to remain active when CMS ExecuteDeletion fails")
+		}
+		if res.RemoveFinalizer {
+			t.Error("expected RemoveFinalizer to be false when CMS ExecuteDeletion fails")
+		}
+	})
+
+	t.Run("CMS NotFound on retry proceeds to K8s teardown idempotently", func(t *testing.T) {
+		helm := &mockHelm{active: true}
+		cms := &mockCMS{delErr: status.Error(codes.NotFound, "component already deleted in CMS")}
+		r, err := NewReconciler(cms, nil, helm)
+		if err != nil {
+			t.Fatalf("NewReconciler failed: %v", err)
+		}
+
+		in := ReconcileComponentInput{
+			Namespace:  "xmc",
+			Name:       "ingestion",
+			Generation: 2,
+			Spec:       spec1P,
+			IsDeleting: true,
+		}
+		res := &ReconcileResult{}
+		resOut, err := r.reconcileDeletion(ctx, in, "xmc.ingestion", res)
+		if err != nil {
+			t.Fatalf("expected nil error on idempotent retry, got: %v", err)
+		}
+		if !helm.purgeCalled {
+			t.Error("expected 1P Helm purge to be called on idempotent CMS retry")
+		}
+		if helm.active {
+			t.Error("expected Helm component to be inactive after purge")
+		}
+		if !resOut.RemoveFinalizer {
+			t.Error("expected RemoveFinalizer to be true after successful teardown")
+		}
+		if resOut.State != componentspb.ComponentState_COMPONENT_STATE_DELETED {
+			t.Errorf("expected state DELETED, got %v", resOut.State)
+		}
+	})
 }

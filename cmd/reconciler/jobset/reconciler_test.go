@@ -1171,11 +1171,10 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{
-				Client:                      fakeClient,
-				Scheme:                      scheme,
-				Batcher:                     batcher,
-				StartupPodErrorCheckEnabled: true,
-				StartupPodErrorCheckTime:    2 * time.Minute,
+				Client:                   fakeClient,
+				Scheme:                   scheme,
+				Batcher:                  batcher,
+				StartupPodErrorCheckTime: 2 * time.Minute,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -1299,11 +1298,10 @@ func TestReconcileUnschedulablePods(t *testing.T) {
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r, err := NewReconciler(Params{
-				Client:                      fakeClient,
-				Scheme:                      scheme,
-				Batcher:                     batcher,
-				StartupPodErrorCheckEnabled: true,
-				StartupPodErrorCheckTime:    2 * time.Minute,
+				Client:                   fakeClient,
+				Scheme:                   scheme,
+				Batcher:                  batcher,
+				StartupPodErrorCheckTime: 2 * time.Minute,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -2127,6 +2125,100 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isStaleExecutionForMLRun(tc.executionName, tc.reconciledEID); got != tc.want {
 				t.Errorf("isStaleExecutionForMLRun(%q, %d) = %v, want %v", tc.executionName, tc.reconciledEID, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConstructDiagnosticsConsoleURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		location string
+		mlRunID  string
+		project  string
+		want     string
+	}{
+		{
+			name:     "valid parameters construct url with profiles tab",
+			location: "us-central1",
+			mlRunID:  "xmc-test-run-123",
+			project:  "test-project",
+			want:     "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/xmc-test-run-123?project=test-project&tab=profiles",
+		},
+		{
+			name:     "empty location returns empty string",
+			location: "",
+			mlRunID:  "xmc-test-run-123",
+			project:  "test-project",
+			want:     "",
+		},
+		{
+			name:     "empty mlRunID returns empty string",
+			location: "us-central1",
+			mlRunID:  "",
+			project:  "test-project",
+			want:     "",
+		},
+		{
+			name:     "empty project returns empty string",
+			location: "us-central1",
+			mlRunID:  "xmc-test-run-123",
+			project:  "",
+			want:     "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := constructDiagnosticsConsoleURL(tc.location, tc.mlRunID, tc.project)
+			if got != tc.want {
+				t.Errorf("constructDiagnosticsConsoleURL(%q, %q, %q) = %q, want %q", tc.location, tc.mlRunID, tc.project, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMLRunURL(t *testing.T) {
+	r := &Reconciler{
+		Project:  "test-project",
+		Location: "us-central1",
+	}
+
+	tests := []struct {
+		name    string
+		res     map[string]any
+		mlRunID string
+		want    string
+	}{
+		{
+			name:    "nil res falls back to constructed url with profiles tab",
+			res:     nil,
+			mlRunID: "run-1",
+			want:    "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
+		},
+		{
+			name:    "res without url falls back to constructed url",
+			res:     map[string]any{"other": "field"},
+			mlRunID: "run-2",
+			want:    "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-2?project=test-project&tab=profiles",
+		},
+		{
+			name:    "res with empty url falls back to constructed url",
+			res:     map[string]any{"url": ""},
+			mlRunID: "run-3",
+			want:    "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-3?project=test-project&tab=profiles",
+		},
+		{
+			name:    "res with api url returns api url directly",
+			res:     map[string]any{"url": "https://console.cloud.google.com/aiml/run?project=p"},
+			mlRunID: "run-4",
+			want:    "https://console.cloud.google.com/aiml/run?project=p",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := r.mlRunURL(tc.res, tc.mlRunID)
+			if got != tc.want {
+				t.Errorf("r.mlRunURL(%v, %q) = %q, want %q", tc.res, tc.mlRunID, got, tc.want)
 			}
 		})
 	}

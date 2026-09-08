@@ -27,7 +27,6 @@ import {
   DEFAULT_REFRESH_INTERVAL_MS,
 } from 'xmanager_cloud/ui/app/service/constants';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
@@ -76,9 +75,6 @@ describe('ExperimentPage Component', () => {
       'StatusMessageService',
       ['listStatusMessages'],
     );
-    const featureFlagService = {
-      isStatusMessageHistoryEnabled: true,
-    };
     const autoReloadServiceMock = {
       createReloader: () => ({
         reloader$: NEVER,
@@ -115,7 +111,6 @@ describe('ExperimentPage Component', () => {
         { provide: SidePanelService, useValue: sidePanelService },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: ArtifactService, useValue: artifactService },
-        { provide: FeatureFlagService, useValue: featureFlagService },
         { provide: StatusMessageService, useValue: statusMessageService },
         { provide: AutoReloadService, useValue: autoReloadServiceMock },
       ],
@@ -130,7 +125,6 @@ describe('ExperimentPage Component', () => {
       mockActivatedRoute,
       paramMap,
       artifactService,
-      featureFlagService,
     };
   }, beforeEach);
 
@@ -206,23 +200,10 @@ describe('ExperimentPage Component', () => {
     });
   });
 
-  describe('Feature flags', () => {
-    it('should show Status History tab if feature flag is enabled', async () => {
-      state.featureFlagService.isStatusMessageHistoryEnabled = true;
+  it('should show Status History tab', async () => {
+    bootstrap(ExperimentPage);
+    const harness = await getHarness(ExperimentPageHarness);
 
-      bootstrap(ExperimentPage);
-      const harness = await getHarness(ExperimentPageHarness);
-
-      expect(await harness.hasStatusHistoryTab()).toBeTrue();
-    });
-
-    it('should hide Status History tab if feature flag is disabled', async () => {
-      state.featureFlagService.isStatusMessageHistoryEnabled = false;
-
-      bootstrap(ExperimentPage);
-      const harness = await getHarness(ExperimentPageHarness);
-
-      expect(await harness.hasStatusHistoryTab()).toBeFalse();
-    });
+    expect(await harness.hasStatusHistoryTab()).toBeTrue();
   });
 });

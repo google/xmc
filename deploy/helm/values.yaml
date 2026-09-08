@@ -40,6 +40,8 @@ componentsDeployment:
   cmsAddress: "grpc-service:50051"
   probeInterval: "5s"
   probeTimeout: "2s"
+  rbac:
+    clusterScope: false
 
 essDeployment:
   enabled: true
@@ -110,10 +112,6 @@ dashboardServiceDeployment:
 
 dashboardService:
   gcpServiceAccount: ""
-
-detectInadmissibleWorkUnits: true
-startupPodErrorCheckEnabled: true
-statusMessageHistoryEnabled: true
 
 reconciler:
   monitoring:
@@ -216,3 +214,8 @@ kueue:
         labelKeysToCopy:
           - "xmc.google.com/experiment-id"
           - "xmc.google.com/work-unit-id"
+
+# Remote Kubernetes cluster configuration (for hybrid KinD control plane + remote GKE workload execution)
+remoteK8s:
+  enabled: false
+  secretName: "remote-k8s-config"

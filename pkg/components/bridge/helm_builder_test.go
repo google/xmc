@@ -15,8 +15,6 @@
 package bridge
 
 import (
-	"context"
-	"errors"
 	"reflect"
 	"testing"
 
@@ -27,8 +25,10 @@ import (
 func TestBuildHelmValues(t *testing.T) {
 	t.Run("basic 1p component with parameters and image tag", func(t *testing.T) {
 		opts := HelmComponentOptions{
-			ComponentName:       "ingestion-gateway",
-			Namespace:           "xmc",
+			Ref: ComponentRef{
+				Namespace: "xmc",
+				Name:      "ingestion-gateway",
+			},
 			Enabled:             true,
 			ImageTag:            "v1.2.3",
 			DrainTimeoutSeconds: 30,
@@ -71,17 +71,46 @@ func TestBuildHelmValues(t *testing.T) {
 		}
 	})
 
+	t.Run("non-image parameters do not emit image key", func(t *testing.T) {
+		opts := HelmComponentOptions{
+			Ref: ComponentRef{
+				Namespace: "xmc",
+				Name:      "ingestion-gateway",
+			},
+			Enabled: true,
+			Parameters: map[string]string{
+				"minPartitions": "128",
+				"tlsEnabled":    "true",
+			},
+		}
+
+		values := BuildHelmValues(opts)
+		depValues, ok := values["ingestionGatewayDeployment"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected ingestionGatewayDeployment key in values, got %+v", values)
+		}
+
+		if _, exists := depValues["image"]; exists {
+			t.Errorf("expected no 'image' key when only non-image parameters provided, but found: %v", depValues["image"])
+		}
+		if _, exists := values["global"]; exists {
+			t.Errorf("expected no 'global' key when imageTag is empty, but found: %+v", values["global"])
+		}
+		if depValues["minPartitions"] != int64(128) {
+			t.Errorf("expected minPartitions = 128, got %v", depValues["minPartitions"])
+		}
+	})
+
 	t.Run("component name key mapping", func(t *testing.T) {
 		tests := []struct {
 			name    string
 			wantKey string
 		}{
 			{"ingestion-gateway", "ingestionGatewayDeployment"},
-			{"ingestion_gateway", "ingestionGatewayDeployment"},
-			{"rod", "rodDeployment"},
 			{"rod-data-provider", "rodDeployment"},
 			{"health-service", "healthServiceDeployment"},
 			{"metrics", "metrics"},
+			{"xmc-bridge", "componentsDeployment"},
 			{"custom-service", "customServiceDeployment"},
 		}
 
@@ -96,8 +125,10 @@ func TestBuildHelmValues(t *testing.T) {
 
 	t.Run("raw values merging", func(t *testing.T) {
 		opts := HelmComponentOptions{
-			ComponentName: "custom-worker",
-			Enabled:       true,
+			Ref: ComponentRef{
+				Name: "custom-worker",
+			},
+			Enabled: true,
 			RawValues: map[string]any{
 				"resources": map[string]any{
 					"limits": map[string]any{"cpu": "500m"},
@@ -137,7 +168,7 @@ func TestParseHelmComponentOptions(t *testing.T) {
 	}
 
 	opts := ParseHelmComponentOptions("ingestion-gateway", "xmc", rawSpec, spec)
-	if opts.ComponentName != "ingestion-gateway" || opts.Namespace != "xmc" {
+	if opts.Ref.Name != "ingestion-gateway" || opts.Ref.Namespace != "xmc" {
 		t.Errorf("unexpected name/namespace in %+v", opts)
 	}
 	if opts.ReleaseName != "custom-xmc-release" {
@@ -159,58 +190,87 @@ func TestParseHelmComponentOptions(t *testing.T) {
 	}
 
 	emptyOpts := ParseHelmComponentOptions("test", "default", nil, nil)
-	if emptyOpts.ComponentName != "test" || !emptyOpts.Enabled {
+	if emptyOpts.Ref.Name != "test" || !emptyOpts.Enabled {
 		t.Errorf("unexpected empty options: %+v", emptyOpts)
 	}
 }
 
-func TestFakeHelmManager(t *testing.T) {
-	ctx := context.Background()
-	mgr := NewFakeHelmManager()
-
-	opts := HelmComponentOptions{
-		ComponentName: "ingestion-gateway",
-		Namespace:     "xmc",
-		Enabled:       true,
-		ImageTag:      "v1.0.0",
+func TestResolveImage(t *testing.T) {
+	tests := []struct {
+		name       string
+		component  string
+		imageTag   string
+		parameters map[string]string
+		wantImage  string
+	}{
+		{
+			name:       "full image parameter override (tier 1)",
+			component:  "ingestion-gateway",
+			imageTag:   "v1.0.0",
+			parameters: map[string]string{"image": "custom.registry.io/custom-image:custom-tag"},
+			wantImage:  "custom.registry.io/custom-image:custom-tag",
+		},
+		{
+			name:       "custom imageRepository + tag (tier 2)",
+			component:  "ingestion-gateway",
+			imageTag:   "v1.2.0",
+			parameters: map[string]string{"imageRepository": "custom.registry.io/repo"},
+			wantImage:  "custom.registry.io/repo:v1.2.0",
+		},
+		{
+			name:       "default repository + tag override (tier 3)",
+			component:  "ingestion-gateway",
+			imageTag:   "v3.0.0",
+			parameters: nil,
+			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway:v3.0.0",
+		},
+		{
+			name:       "default repository + latest (tier 4)",
+			component:  "rod-data-provider",
+			imageTag:   "",
+			parameters: nil,
+			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider:latest",
+		},
 	}
 
-	if err := mgr.Ensure1PComponent(ctx, "xmc", "ingestion-gateway", opts); err != nil {
-		t.Fatalf("Ensure1PComponent failed: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolveImage(tt.component, tt.imageTag, tt.parameters)
+			if got != tt.wantImage {
+				t.Errorf("ResolveImage(%q, %q, %+v) = %q, want %q", tt.component, tt.imageTag, tt.parameters, got, tt.wantImage)
+			}
+		})
+	}
+}
+
+func TestDefaultComponentRepository(t *testing.T) {
+	tests := []struct {
+		name      string
+		component string
+		wantRepo  string
+	}{
+		{
+			name:      "ingestion gateway",
+			component: "ingestion-gateway",
+			wantRepo:  "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway",
+		},
+		{
+			name:      "rod data provider",
+			component: "rod-data-provider",
+			wantRepo:  "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider",
+		},
+		{
+			name:      "health service",
+			component: "health-service",
+			wantRepo:  "us-docker.pkg.dev/xmc-prod/xmc/health-service",
+		},
 	}
 
-	if !mgr.IsComponentActive("ingestion-gateway") {
-		t.Error("expected ingestion-gateway to be active")
-	}
-
-	if err := mgr.Delete1PComponent(ctx, "xmc", "ingestion-gateway"); err != nil {
-		t.Fatalf("Delete1PComponent failed: %v", err)
-	}
-
-	if mgr.IsComponentActive("ingestion-gateway") {
-		t.Error("expected ingestion-gateway to be inactive after delete")
-	}
-
-	// Test error injection
-	mgr.EnsureErr = errors.New("ensure error")
-	if err := mgr.Ensure1PComponent(ctx, "xmc", "ingestion-gateway", opts); err == nil {
-		t.Fatal("expected error on EnsureErr injection")
-	}
-
-	mgr.DeleteErr = errors.New("delete error")
-	if err := mgr.Delete1PComponent(ctx, "xmc", "ingestion-gateway"); err == nil {
-		t.Fatal("expected error on DeleteErr injection")
-	}
-
-	// Test nil receiver
-	var nilMgr *FakeHelmManager
-	if err := nilMgr.Ensure1PComponent(ctx, "xmc", "ingestion-gateway", opts); err != nil {
-		t.Errorf("expected nil error on nil receiver, got %v", err)
-	}
-	if err := nilMgr.Delete1PComponent(ctx, "xmc", "ingestion-gateway"); err != nil {
-		t.Errorf("expected nil error on nil receiver, got %v", err)
-	}
-	if nilMgr.IsComponentActive("ingestion-gateway") {
-		t.Error("expected false on nil receiver IsComponentActive")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DefaultComponentRepository(tt.component); got != tt.wantRepo {
+				t.Errorf("DefaultComponentRepository(%q) = %q, want %q", tt.component, got, tt.wantRepo)
+			}
+		})
 	}
 }

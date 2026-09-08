@@ -19,7 +19,6 @@ domainSuffix: "local.xmc.dev"
 isDevEnvironment: true
 imageTag: latest
 taskSignatureTtlSeconds: 300
-statusMessageHistoryEnabled: false
 redisAddr: "redis-service.xmc.svc.cluster.local:6379"
 
 # Local container image tags loaded directly into KinD nodes via ImageBuilder.
