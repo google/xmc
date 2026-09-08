@@ -31,10 +31,19 @@ import (
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID.
 func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	return r.FetchExperimentTransaction(ctx, xid, r.client.Single())
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+	exp, err := r.FetchExperimentTransaction(ctx, xid, txn)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.evaluateExperimentDrift(ctx, txn, xid, exp.GetStatus()); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+	return exp, nil
 }
 
-// fetchExperimentTransaction retrieves a single Experiment from storage by its unique
+// FetchExperimentTransaction retrieves a single Experiment from storage by its unique
 // numerical ID in a transaction.
 func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.Experiment, error) {
 	logging.Info(ctx, "Fetch experiment row")

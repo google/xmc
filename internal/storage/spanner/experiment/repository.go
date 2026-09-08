@@ -38,10 +38,17 @@ type SpannerTransaction interface {
 type Repository struct {
 	client              *spanner.Client
 	experimentsQueryGen querytools.QueryGenerator
+	enableComponents    bool
+	driftCache          *driftCache
+}
+
+// RepositoryConfig configures optional settings for Repository.
+type RepositoryConfig struct {
+	EnableComponents bool
 }
 
 // NewRepository creates a new Experiment repository instance with initialized query generator.
-func NewRepository(client *spanner.Client) (*Repository, error) {
+func NewRepository(client *spanner.Client, cfg RepositoryConfig) (*Repository, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}
@@ -54,5 +61,7 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 	return &Repository{
 		client:              client,
 		experimentsQueryGen: experimentsQueryGen,
+		enableComponents:    cfg.EnableComponents,
+		driftCache:          newDriftCache(),
 	}, nil
 }

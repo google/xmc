@@ -163,3 +163,30 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestGetExperimentStatus_DriftWarningPropagation(t *testing.T) {
+	ctx := context.Background()
+	req := &apipb.GetExperimentStatusRequest{Name: "experiments/123"}
+	driftMsg := &msgpb.StructuredMessage{
+		Severity:       msgpb.StructuredMessage_WARNING,
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Component snapshot drift detected",
+	}
+	mockStorage := &storage.MockStorage{
+		ExperimentStatus: &msgpb.ExperimentStatus{
+			StructuredStatusMessage: driftMsg,
+		},
+	}
+	xidClient := &mockXidClient{
+		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(xidClient))
+
+	got, err := server.GetExperimentStatus(ctx, req)
+	if err != nil {
+		t.Fatalf("GetExperimentStatus(%v) returned unexpected error: %v", req, err)
+	}
+	if diff := cmp.Diff(driftMsg, got.GetStructuredStatusMessage(), protocmp.Transform()); diff != "" {
+		t.Errorf("GetExperimentStatus() StructuredStatusMessage mismatch (-want +got):\n%s", diff)
+	}
+}
