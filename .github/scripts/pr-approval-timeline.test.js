@@ -446,6 +446,38 @@ test('findLatestApproval ignores manually dismissed reviews in timeline (GraphQL
   assert.strictEqual(result, null);
 });
 
+test('findLatestApproval ignores manual dismissals containing merge-base text in custom message', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      id: 1,
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'The merge-base changed, please re-review before merging.',
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.strictEqual(result, null);
+});
+
 test('findLatestApproval ignores manual dismissals without dismissal message when trigger commit is absent', () => {
   const reviews = [
     {

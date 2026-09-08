@@ -81,7 +81,7 @@ function extractDismissalContext(sortedEvents) {
     // when the base branch is updated or rebased ("The merge-base changed after approval.").
     const isSystemMergeBaseDismissal =
       typeof dismissalMessage === 'string' &&
-      /merge-base changed/i.test(dismissalMessage);
+      /^The merge-base changed after approval\.?$/i.test(dismissalMessage.trim());
 
     const isAutomatic = hasTriggerCommit || isSystemMergeBaseDismissal;
     const isManual = !isAutomatic;
