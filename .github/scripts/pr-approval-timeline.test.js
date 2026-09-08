@@ -312,6 +312,76 @@ test('findLatestApproval blocks auto-approval when dismissed review had CHANGES_
   assert.strictEqual(result, null);
 });
 
+test('findLatestApproval recovers prior approval when dismissed due to merge-base changed (GraphQL)', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      id: 1,
+      __typename: 'PullRequestReview',
+      databaseId: 1,
+      author: { login: 'alice' },
+      state: 'DISMISSED',
+      commit: { oid: 'sha-111111' },
+      submittedAt: '2026-08-25T10:00:00Z'
+    },
+    {
+      __typename: 'ReviewDismissedEvent',
+      previousReviewState: 'APPROVED',
+      dismissalMessage: 'The merge-base changed after approval.',
+      pullRequestCommit: null,
+      review: { databaseId: 1 }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.ok(result);
+  assert.strictEqual(result.approver, 'alice');
+  assert.strictEqual(result.approvedSha, 'sha-111111');
+  assert.strictEqual(result.isDismissed, true);
+});
+
+test('findLatestApproval recovers prior approval when dismissed due to merge-base changed (REST)', () => {
+  const reviews = [
+    {
+      id: 1,
+      user: { login: 'alice' },
+      state: 'DISMISSED',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    }
+  ];
+  const timelineEvents = [
+    {
+      id: 1,
+      event: 'reviewed',
+      user: { login: 'alice' },
+      state: 'dismissed',
+      commit_id: 'sha-111111',
+      submitted_at: '2026-08-25T10:00:00Z'
+    },
+    {
+      event: 'review_dismissed',
+      dismissed_review: {
+        review_id: 1,
+        state: 'approved',
+        dismissal_message: 'The merge-base changed after approval.'
+      }
+    }
+  ];
+  const result = findLatestApproval(reviews, 'charlie', timelineEvents);
+  assert.ok(result);
+  assert.strictEqual(result.approver, 'alice');
+  assert.strictEqual(result.approvedSha, 'sha-111111');
+  assert.strictEqual(result.isDismissed, true);
+});
+
 test('findLatestApproval ignores manually dismissed reviews in timeline (REST)', () => {
   const reviews = [
     {
