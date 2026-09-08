@@ -22,8 +22,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark.resolve_test_scope import (
-    _discover_static_rdeps_targets,
-    _parse_build_file_test_targets,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     find_enclosing_bazel_package,
@@ -215,47 +213,6 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
         self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
 
-    def test_discover_static_rdeps_targets_root_dir_matching(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "BUILD.bazel").write_text('py_test(name = "root_test")\n')
-            (tmppath / "pkg1").mkdir()
-            (tmppath / "pkg1" / "BUILD.bazel").write_text('go_test(name = "pkg1_test")\n')
-            (tmppath / "cmd" / "ui").mkdir(parents=True)
-            (tmppath / "cmd" / "ui" / "BUILD.bazel").write_text(
-                'py_test(name = "server_test")\npy_test(name = "ui_unit_tests")\n'
-            )
-
-            # Test root file does not match all subpackages
-            targets_root = _discover_static_rdeps_targets(["root_script.py"], cwd=tmppath)
-            self.assertIn("//:root_test", targets_root)
-            self.assertNotIn("//pkg1:pkg1_test", targets_root)
-
-            # Test cmd/ui/server.py matches cmd/ui:server_test but excludes ui_unit_tests
-            targets_ui = _discover_static_rdeps_targets(["cmd/ui/server.py"], cwd=tmppath)
-            self.assertIn("//cmd/ui:server_test", targets_ui)
-            self.assertNotIn("//cmd/ui:ui_unit_tests", targets_ui)
-
-    def test_parse_build_file_test_targets_ast(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            build_path = Path(tmpdir) / "BUILD.bazel"
-            build_path.write_text(
-                "compat_go_test(\n"
-                '    name = "manual_test",\n'
-                '    tags = ["manual", "local"],\n'
-                ")\n"
-                "go_test(\n"
-                '    name = "unit_test",\n'
-                '    tags = ["unit"],\n'
-                ")\n"
-                "py_test(\n"
-                '    name = "py_unit_test",\n'
-                ")\n"
-            )
-            targets = _parse_build_file_test_targets(build_path)
-            self.assertEqual(targets, ["unit_test", "py_unit_test"])
-            self.assertNotIn("manual_test", targets)
-
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
         mock_diff = unittest.mock.Mock(
@@ -321,51 +278,6 @@ class TestResolveTestScope(unittest.TestCase):
             # File at root
             pkg_root = find_enclosing_bazel_package("compat.bzl", cwd=base)
             self.assertEqual(pkg_root, "//")
-
-    def test_discover_static_rdeps_targets_with_migration_sql(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            (base / "BUILD.bazel").touch()
-            mig_dir = base / "internal" / "storage" / "spanner" / "migrations"
-            mig_dir.mkdir(parents=True)
-            (mig_dir / "BUILD.bazel").write_text(
-                'compat_go_test(\n    name = "migrations_test",\n)\n',
-                encoding="utf-8",
-            )
-            nested_sql_dir = mig_dir / "ess"
-            nested_sql_dir.mkdir()
-            (nested_sql_dir / "001_baseline.up.sql").touch()
-
-            targets = _discover_static_rdeps_targets(
-                ["internal/storage/spanner/migrations/ess/001_baseline.up.sql"],
-                cwd=base,
-            )
-            self.assertIn("//internal/storage/spanner/migrations:migrations_test", targets)
-
-    def test_discover_static_rdeps_targets_path_prefix_boundary(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            (base / "BUILD.bazel").touch()
-            pkg_spanner = base / "internal" / "storage" / "spanner"
-            pkg_spanner.mkdir(parents=True)
-            (pkg_spanner / "BUILD.bazel").write_text(
-                'go_test(\n    name = "spanner_test",\n)\n',
-                encoding="utf-8",
-            )
-            pkg_spanner_alt = base / "internal" / "storage" / "spanner_alt"
-            pkg_spanner_alt.mkdir(parents=True)
-            (pkg_spanner_alt / "BUILD.bazel").write_text(
-                'go_test(\n    name = "spanner_alt_test",\n)\n',
-                encoding="utf-8",
-            )
-
-            # Modifying spanner should match spanner_test but NOT spanner_alt_test
-            targets = _discover_static_rdeps_targets(
-                ["internal/storage/spanner/client.go"],
-                cwd=base,
-            )
-            self.assertIn("//internal/storage/spanner:spanner_test", targets)
-            self.assertNotIn("//internal/storage/spanner_alt:spanner_alt_test", targets)
 
     def test_find_enclosing_bazel_package_robustness(self):
         with tempfile.TemporaryDirectory() as tmpdir:
