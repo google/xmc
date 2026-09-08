@@ -15,15 +15,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 
 	"golang/grpc/metadata/metadata"
@@ -264,7 +268,7 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 
 	t.Run("skips blank metric names", func(t *testing.T) {
 		t.Parallel()
-		plots := plotSpecsForMetrics([]string{"  ", "", "loss"})
+		plots := plotSpecsForMetrics(t.Context(), []string{"  ", "", "loss"})
 		if len(plots) != 2 {
 			t.Fatalf("len(plots) = %d, want 2", len(plots))
 		}
@@ -275,7 +279,7 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 
 	t.Run("disambiguates metric names that slugify alike", func(t *testing.T) {
 		t.Parallel()
-		plots := plotSpecsForMetrics([]string{"train/loss", "train_loss", "TRAIN.LOSS"})
+		plots := plotSpecsForMetrics(t.Context(), []string{"train/loss", "train_loss", "TRAIN.LOSS"})
 		want := []string{
 			"train_loss_latest", "train_loss_curve",
 			"train_loss_2_latest", "train_loss_2_curve",
@@ -296,7 +300,7 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 		// "foo_2" is both a metric in its own right and the suffix the third metric would be
 		// given by a naive occurrence counter, which would hand out foo_2 twice. The UI keys
 		// plot data by ID, so the duplicate would draw one metric's series under both plots.
-		plots := plotSpecsForMetrics([]string{"foo", "foo_2", "foo"})
+		plots := plotSpecsForMetrics(t.Context(), []string{"foo", "foo_2", "foo"})
 		want := []string{
 			"foo_latest", "foo_curve",
 			"foo_2_latest", "foo_2_curve",
@@ -320,7 +324,7 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 
 	t.Run("falls back to a placeholder slug when a name has no usable characters", func(t *testing.T) {
 		t.Parallel()
-		plots := plotSpecsForMetrics([]string{"///"})
+		plots := plotSpecsForMetrics(t.Context(), []string{"///"})
 		if len(plots) != 2 {
 			t.Fatalf("len(plots) = %d, want 2", len(plots))
 		}
@@ -335,15 +339,22 @@ func TestPlotSpecsForMetrics(t *testing.T) {
 		for i := range metrics {
 			metrics[i] = fmt.Sprintf("metric/%d", i)
 		}
-		plots := plotSpecsForMetrics(metrics)
+		var logs bytes.Buffer
+		ctx := logging.WithLogger(t.Context(), slog.New(slog.NewJSONHandler(&logs, nil)))
+		plots := plotSpecsForMetrics(ctx, metrics)
 		if want := 2 * maxProvisionedMetrics; len(plots) != want {
 			t.Errorf("len(plots) = %d, want %d", len(plots), want)
+		}
+		// The dropped metrics are invisible in the rendered chart, so the log line is the only
+		// answer to why a metric the caller named has no plot.
+		if got := logs.String(); !strings.Contains(got, `"dropped":5`) {
+			t.Errorf("plotSpecsForMetrics() logged %q, want a warning reporting 5 dropped metrics", got)
 		}
 	})
 
 	t.Run("maps scatter plots against the step axis", func(t *testing.T) {
 		t.Parallel()
-		plots := plotSpecsForMetrics([]string{"loss"})
+		plots := plotSpecsForMetrics(t.Context(), []string{"loss"})
 		if got := plots[1].GetMapping().GetX(); got != "step" {
 			t.Errorf("plots[1].Mapping.X = %q, want 'step'", got)
 		}

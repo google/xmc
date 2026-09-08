@@ -141,19 +141,23 @@ func uniquePlotID(metric string, used map[string]bool) string {
 // summary box holding the latest value plus a step-indexed curve, per metric. A chart with
 // no plots is not an empty chart to the data engine, it is a chart with nothing to query,
 // so it renders blank however much data the work unit logged.
-func plotSpecsForMetrics(metricNames []string) []*dashboard_apipb.PlotSpec {
+func plotSpecsForMetrics(ctx context.Context, metricNames []string) []*dashboard_apipb.PlotSpec {
 	// Size to what the loop below will actually keep, not to the client-supplied list: the
 	// break at 2*maxProvisionedMetrics means a list of a million names would otherwise
 	// reserve two million pointers to hold forty.
 	capacity := min(len(metricNames), maxProvisionedMetrics)
 	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*capacity)
 	used := make(map[string]bool, capacity)
-	for _, metric := range metricNames {
+	for i, metric := range metricNames {
 		metric = strings.TrimSpace(metric)
 		if metric == "" {
 			continue
 		}
 		if len(plots) >= 2*maxProvisionedMetrics {
+			// The chart renders without them and nothing else says so, so the truncation is
+			// otherwise invisible to whoever asks why a metric they logged has no plot.
+			logging.Warn(ctx, "ChartArtifact names more metrics than can be provisioned; dropping the rest",
+				"provisioned", maxProvisionedMetrics, "dropped", len(metricNames)-i)
 			break
 		}
 		id := uniquePlotID(metric, used)
@@ -225,7 +229,7 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 				Title: title,
 				Xid:   xid,
 				Wid:   wid,
-				Plots: plotSpecsForMetrics(cArtifact.GetMetricNames()),
+				Plots: plotSpecsForMetrics(ctxBg, cArtifact.GetMetricNames()),
 				PlotLayout: &dashboard_apipb.LayoutSpec{
 					Type:    dashboard_apipb.LayoutSpec_GRID,
 					Columns: plotLayoutColumns,
