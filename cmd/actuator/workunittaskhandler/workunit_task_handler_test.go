@@ -927,6 +927,51 @@ func TestIsRetryableError(t *testing.T) {
 			err:  fmt.Errorf("unknown error"),
 			want: false,
 		},
+		{
+			name: "wrapped_service_unavailable_error",
+			err:  fmt.Errorf("failed to create JobSet: %w", apierrors.NewServiceUnavailable("required component not found")),
+			want: true,
+		},
+		{
+			name: "doubly_wrapped_service_unavailable_error",
+			err:  fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", apierrors.NewServiceUnavailable("required component unhealthy"))),
+			want: true,
+		},
+		{
+			name: "context_deadline_exceeded",
+			err:  context.DeadlineExceeded,
+			want: true,
+		},
+		{
+			name: "wrapped_context_deadline_exceeded",
+			err:  fmt.Errorf("request timeout: %w", context.DeadlineExceeded),
+			want: true,
+		},
+		{
+			name: "wrapped_timeout_error",
+			err:  fmt.Errorf("network failure: %w", mockTimeoutErr{active: true}),
+			want: true,
+		},
+		{
+			name: "inactive_timeout_error",
+			err:  mockTimeoutErr{active: false},
+			want: false,
+		},
+		{
+			name: "wrapped_non_retryable_error",
+			err:  fmt.Errorf("failed: %w", apierrors.NewBadRequest("invalid")),
+			want: false,
+		},
+		{
+			name: "nil_error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "typed_nil_status_error",
+			err:  func() error { var e *apierrors.StatusError; return e }(),
+			want: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -938,3 +983,9 @@ func TestIsRetryableError(t *testing.T) {
 		})
 	}
 }
+
+type mockTimeoutErr struct{ active bool }
+
+func (m mockTimeoutErr) Error() string   { return "mock timeout" }
+func (m mockTimeoutErr) Timeout() bool   { return m.active }
+func (m mockTimeoutErr) Temporary() bool { return m.active }
