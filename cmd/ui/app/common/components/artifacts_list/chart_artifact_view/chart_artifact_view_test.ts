@@ -235,10 +235,12 @@ describe('ChartArtifactView', () => {
     expect(await harness.getTitle()).toBe('Chart artifact');
   });
 
+  // The thrown message is deliberately not the component's fallback string: an assertion
+  // against the fallback would pass whether or not the error is ever read.
   it('reports a failed data fetch and stops loading', async () => {
     await setUp();
     dashboardServiceSpy.getChartData.and.returnValue(
-      throwError(() => new Error('Failed to load chart metrics')),
+      throwError(() => new Error('chart data service is unavailable')),
     );
 
     const view = fixture.debugElement.children[0].componentInstance as ChartArtifactView;
@@ -248,8 +250,19 @@ describe('ChartArtifactView', () => {
       error: () => string | null;
       isLoading: () => boolean;
     };
-    expect(internals.error()).toBe('Failed to load chart metrics');
+    expect(internals.error()).toBe('chart data service is unavailable');
     expect(internals.isLoading()).toBeFalse();
+  });
+
+  it('falls back to a generic message when the failure carries none', async () => {
+    await setUp();
+    dashboardServiceSpy.getChartData.and.returnValue(throwError(() => new Error()));
+
+    const view = fixture.debugElement.children[0].componentInstance as ChartArtifactView;
+    view.fetchChartData();
+
+    const internals = view as unknown as { error: () => string | null };
+    expect(internals.error()).toBe('Failed to load chart metrics');
   });
 
   it('normalises a status given as an enum tag to its proto JSON name', () => {
