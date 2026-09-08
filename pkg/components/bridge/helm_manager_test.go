@@ -477,12 +477,16 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 }
 
 type mockHelmActionRunner struct {
-	mu           sync.Mutex
-	lastRelease  string
-	lastNS       string
-	lastValues   map[string]any
-	upgradeErr   error
-	upgradeCalls int
+	mu              sync.Mutex
+	lastRelease     string
+	lastNS          string
+	lastValues      map[string]any
+	upgradeErr      error
+	upgradeCalls    int
+	uninstallCalls  int
+	uninstallErr    error
+	lastUninstall   string
+	lastUninstallNS string
 }
 
 func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
@@ -496,6 +500,18 @@ func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespa
 		return nil, m.upgradeErr
 	}
 	return &release.Release{Name: releaseName, Namespace: namespace}, nil
+}
+
+func (m *mockHelmActionRunner) Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.uninstallCalls++
+	m.lastUninstall = releaseName
+	m.lastUninstallNS = namespace
+	if m.uninstallErr != nil {
+		return nil, m.uninstallErr
+	}
+	return &release.UninstallReleaseResponse{Release: &release.Release{Name: releaseName, Namespace: namespace}}, nil
 }
 
 func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
@@ -514,17 +530,18 @@ func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
 		ImageTag: "v1.2.3",
 	}
 
-	// 1. Ensure component triggers synchronous upgrade
+	// 1. Ensure component triggers synchronous upgrade with per-component release name
 	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
 		t.Fatalf("Ensure1PComponent failed: %v", err)
 	}
 
+	expectedRelease := ComponentReleaseName("rod-data-provider")
 	runner.mu.Lock()
 	if runner.upgradeCalls != 1 {
 		t.Errorf("expected 1 upgrade call, got %d", runner.upgradeCalls)
 	}
-	if runner.lastRelease != "xmanager-cloud" {
-		t.Errorf("expected release xmanager-cloud, got %q", runner.lastRelease)
+	if runner.lastRelease != expectedRelease {
+		t.Errorf("expected release %q, got %q", expectedRelease, runner.lastRelease)
 	}
 	if runner.lastNS != "xmc" {
 		t.Errorf("expected namespace xmc, got %q", runner.lastNS)
@@ -536,19 +553,17 @@ func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
 	}
 	runner.mu.Unlock()
 
-	// 2. Delete component triggers upgrade with enabled=false
+	// 2. Delete component triggers uninstallation of component release
 	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
 		t.Fatalf("Delete1PComponent failed: %v", err)
 	}
 
 	runner.mu.Lock()
-	if runner.upgradeCalls != 2 {
-		t.Errorf("expected 2 upgrade calls, got %d", runner.upgradeCalls)
+	if runner.uninstallCalls != 1 {
+		t.Errorf("expected 1 uninstall call, got %d", runner.uninstallCalls)
 	}
-	compMapDel, ok := runner.lastValues["rodDeployment"].(map[string]any)
-	enabledDel, _ := compMapDel["enabled"].(bool)
-	if !ok || enabledDel {
-		t.Errorf("expected rodDeployment.enabled=false on delete, got %v", runner.lastValues)
+	if runner.lastUninstall != expectedRelease {
+		t.Errorf("expected uninstall release %q, got %q", expectedRelease, runner.lastUninstall)
 	}
 	runner.mu.Unlock()
 
@@ -678,8 +693,8 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 		t.Fatalf("unexpected Ensure1PComponent error: %v", err)
 	}
 
-	// Inject error for delete upgrade
-	runner.upgradeErr = errors.New("deletion lock error")
+	// Inject error for delete uninstall
+	runner.uninstallErr = errors.New("deletion lock error")
 	err := mgr.Delete1PComponent(ctx, ref)
 	if err == nil || !strings.Contains(err.Error(), "deletion lock error") {
 		t.Fatalf("expected deletion upgrade error, got %v", err)
@@ -688,9 +703,9 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 		t.Fatalf("expected recorded upgrade error on delete, got nil")
 	}
 
-	// On second reconciliation, key is already deleted from ConfigMap, but previous upgrade failed.
+	// On second reconciliation, previous uninstall failed.
 	// Delete1PComponent must retry.
-	runner.upgradeErr = nil
+	runner.uninstallErr = nil
 	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
 		t.Fatalf("expected retry Delete1PComponent to succeed, got %v", err)
 	}
@@ -719,16 +734,31 @@ func TestK8sHelmManager_ConfigMapDeclarativeSourceOfTruth(t *testing.T) {
 		t.Fatalf("Ensure1PComponent B failed: %v", err)
 	}
 
-	// Verify that the second upgrade call for component B included component A's values from ConfigMap
+	// Verify ConfigMap persists both components declaratively
+	cm, err := client.CoreV1().ConfigMaps("xmc").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get ConfigMap: %v", err)
+	}
+	if _, ok := cm.Data["rod-data-provider.json"]; !ok {
+		t.Error("expected rod-data-provider.json in ConfigMap")
+	}
+	if _, ok := cm.Data["ingestion-gateway.json"]; !ok {
+		t.Error("expected ingestion-gateway.json in ConfigMap")
+	}
+
+	// Verify that component B was actuated under its own isolated release
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 	if runner.upgradeCalls != 2 {
 		t.Fatalf("expected 2 upgrade calls, got %d", runner.upgradeCalls)
 	}
-	_, hasRod := runner.lastValues["rodDeployment"]
+	expectedReleaseB := ComponentReleaseName("ingestion-gateway")
+	if runner.lastRelease != expectedReleaseB {
+		t.Errorf("expected last release %q, got %q", expectedReleaseB, runner.lastRelease)
+	}
 	_, hasIngestion := runner.lastValues["ingestionGatewayDeployment"]
-	if !hasRod || !hasIngestion {
-		t.Errorf("expected both rodDeployment and ingestionGatewayDeployment in merged upgrade values, got keys: %+v", runner.lastValues)
+	if !hasIngestion {
+		t.Errorf("expected ingestionGatewayDeployment in upgrade values, got keys: %+v", runner.lastValues)
 	}
 }
 
@@ -760,14 +790,12 @@ func TestK8sHelmManager_TriggerUpgrade_EmptyReleaseName_ReturnsError(t *testing.
 	ctx := context.Background()
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
-	mgr := NewK8sHelmManager(client, "xmc", "", WithActionRunner(runner))
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
 
-	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
-	opts := HelmComponentOptions{Ref: ref, Enabled: true}
-
-	err := mgr.Ensure1PComponent(ctx, ref, opts)
+	ref := ComponentRef{Namespace: "xmc", Name: ""}
+	err := mgr.triggerUpgrade(ctx, ref, nil)
 	if err == nil {
-		t.Fatal("expected error on Ensure1PComponent with empty releaseName, got nil")
+		t.Fatal("expected error on triggerUpgrade with empty component name, got nil")
 	}
 	if !strings.Contains(err.Error(), "helm release name must not be empty") {
 		t.Fatalf("unexpected error message: %v", err)

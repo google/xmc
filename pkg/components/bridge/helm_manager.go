@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
@@ -48,9 +47,9 @@ const (
 type HelmManager interface {
 	// Ensure1PComponent sets the component's enablement flag and values in the Helm release and triggers an upgrade.
 	Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error
-	// Delete1PComponent sets the component's enablement flag to false in the Helm release ConfigMap.
+	// Delete1PComponent uninstalls the 1P component Helm release and records it as disabled in the ConfigMap.
 	Delete1PComponent(ctx context.Context, ref ComponentRef) error
-	// Purge1PComponent permanently removes the component values from the release ConfigMap.
+	// Purge1PComponent permanently uninstalls the Helm release and removes component values from the ConfigMap.
 	Purge1PComponent(ctx context.Context, ref ComponentRef) error
 	// Orphan1PComponent retains the component values while detaching bridge ownership.
 	Orphan1PComponent(ctx context.Context, ref ComponentRef) error
@@ -135,6 +134,22 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 	return mgr
 }
 
+// ComponentReleaseName returns the Helm release name for an individual 1P component.
+func ComponentReleaseName(componentName string) string {
+	if componentName == "" {
+		return ""
+	}
+	return fmt.Sprintf("xmc-cmp-%s", componentName)
+}
+
+func isReleaseNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "release: not found") || strings.Contains(msg, "not found")
+}
+
 func componentKey(namespace, componentName string) string {
 	return namespace + "/" + componentName
 }
@@ -181,48 +196,6 @@ func (m *K8sHelmManager) Close() error {
 	return nil
 }
 
-func (m *K8sHelmManager) loadAllComponentValues(ctx context.Context, namespace string) (map[string]any, error) {
-	if m == nil || m.client == nil {
-		return make(map[string]any), nil
-	}
-	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return make(map[string]any), nil
-		}
-		return nil, fmt.Errorf("failed to fetch component values ConfigMap: %w", err)
-	}
-
-	var keys []string
-	for k := range cm.Data {
-		if strings.HasSuffix(k, ".json") {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	merged := make(map[string]any)
-	for _, k := range keys {
-		var compValues map[string]any
-		if err := json.Unmarshal([]byte(cm.Data[k]), &compValues); err != nil {
-			logging.Warn(ctx, "Failed to unmarshal component values from ConfigMap", "key", k, "error", err)
-			continue
-		}
-		for subK, subV := range compValues {
-			if existingMap, ok := merged[subK].(map[string]any); ok {
-				if newMap, ok := subV.(map[string]any); ok {
-					for innerK, innerV := range newMap {
-						existingMap[innerK] = innerV
-					}
-					continue
-				}
-			}
-			merged[subK] = subV
-		}
-	}
-	return merged, nil
-}
-
 func (m *K8sHelmManager) acquireUpgradeLock(ctx context.Context) error {
 	if m == nil {
 		return nil
@@ -266,7 +239,8 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		m.setUpgradeErr(ref, err)
 		return err
 	}
-	if m.releaseName == "" {
+	releaseName := ComponentReleaseName(ref.Name)
+	if releaseName == "" {
 		err := errors.New("helm release name must not be empty; cannot actuate release upgrade")
 		m.setUpgradeErr(ref, err)
 		return err
@@ -285,19 +259,11 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	}
 	defer m.releaseUpgradeLock()
 
-	mergedValues, err := m.loadAllComponentValues(ctx, targetNamespace)
-	if err != nil {
-		m.setUpgradeErr(ref, err)
-		return fmt.Errorf("failed to load component values from ConfigMap for sync upgrade: %w", err)
-	}
-	for k, v := range values {
-		mergedValues[k] = v
-	}
 	if err := ctx.Err(); err != nil {
 		m.setUpgradeErr(ref, err)
 		return err
 	}
-	_, err = m.runner.Upgrade(ctx, m.releaseName, targetNamespace, nil, mergedValues)
+	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, nil, values)
 	m.setUpgradeErr(ref, err)
 	return err
 }
@@ -330,11 +296,11 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	m.activeState[key] = opts.Enabled
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "enabled", opts.Enabled)
+	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled)
 	return nil
 }
 
-// Delete1PComponent disables the component values in the release ConfigMap (enabled: false) and triggers a Helm upgrade.
+// Delete1PComponent uninstalls the 1P component Helm release and records it as disabled in the ConfigMap.
 func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
@@ -349,14 +315,20 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 		return fmt.Errorf("failed to disable Helm values for %q: %w", ref.Name, err)
 	}
 
-	opts := HelmComponentOptions{
-		Ref:     resolved,
-		Enabled: false,
+	releaseName := ComponentReleaseName(ref.Name)
+	if m.runner != nil {
+		if err := m.acquireUpgradeLock(ctx); err != nil {
+			m.setUpgradeErr(resolved, err)
+			return err
+		}
+		_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
+		m.releaseUpgradeLock()
+		if err != nil && !isReleaseNotFound(err) {
+			m.setUpgradeErr(resolved, err)
+			return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
+		}
 	}
-	disabledValues := BuildHelmValues(opts)
-	if err := m.triggerUpgrade(ctx, resolved, disabledValues); err != nil {
-		return err
-	}
+	m.setUpgradeErr(resolved, nil)
 
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
@@ -365,11 +337,11 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	}
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Disabled 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace)
+	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
 	return nil
 }
 
-// Purge1PComponent permanently removes component values from the release ConfigMap and executes a Helm upgrade.
+// Purge1PComponent permanently uninstalls the Helm release and removes component values from the ConfigMap.
 func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
 	if m == nil {
 		return nil
@@ -384,14 +356,20 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 		return fmt.Errorf("failed to purge Helm values for %q: %w", ref.Name, err)
 	}
 
-	opts := HelmComponentOptions{
-		Ref:     resolved,
-		Enabled: false,
+	releaseName := ComponentReleaseName(ref.Name)
+	if m.runner != nil {
+		if err := m.acquireUpgradeLock(ctx); err != nil {
+			m.setUpgradeErr(resolved, err)
+			return err
+		}
+		_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
+		m.releaseUpgradeLock()
+		if err != nil && !isReleaseNotFound(err) {
+			m.setUpgradeErr(resolved, err)
+			return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
+		}
 	}
-	disabledValues := BuildHelmValues(opts)
-	if err := m.triggerUpgrade(ctx, resolved, disabledValues); err != nil {
-		return err
-	}
+	m.setUpgradeErr(resolved, nil)
 
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
@@ -400,7 +378,7 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	}
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Purged 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace)
+	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
 	return nil
 }
 

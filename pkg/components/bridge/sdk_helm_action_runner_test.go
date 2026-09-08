@@ -51,6 +51,18 @@ func TestSDKHelmActionRunner_Options(t *testing.T) {
 	if err == nil {
 		t.Error("expected error from Upgrade when restClientGetter is nil")
 	}
+
+	// Calling Uninstall on nil runner returns error
+	resp, err := nilRunner.Uninstall(context.Background(), "test", "xmc")
+	if err == nil || resp != nil {
+		t.Errorf("expected error on nil runner Uninstall, got resp=%v, err=%v", resp, err)
+	}
+
+	// Calling Uninstall with nil restClientGetter should fail at actionConfig.Init
+	_, err = runner.Uninstall(context.Background(), "test", "xmc")
+	if err == nil {
+		t.Error("expected error from Uninstall when restClientGetter is nil")
+	}
 }
 
 func TestSDKHelmActionRunner_ResolveChart_RWMutex(t *testing.T) {

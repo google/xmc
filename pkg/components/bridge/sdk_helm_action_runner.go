@@ -30,9 +30,10 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// HelmActionRunner abstracts the execution of Helm release upgrades via the Helm Go SDK or test doubles.
+// HelmActionRunner abstracts the execution of Helm release upgrades and uninstalls via the Helm Go SDK or test doubles.
 type HelmActionRunner interface {
 	Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error)
+	Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error)
 }
 
 // SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
@@ -102,6 +103,26 @@ func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespac
 	rel, err := upgrade.RunWithContext(ctx, releaseName, targetChart, values)
 	if err != nil {
 		return nil, fmt.Errorf("helm upgrade failed for release %q in namespace %q: %w", releaseName, namespace, err)
+	}
+	return rel, nil
+}
+
+// Uninstall uninstalls a Helm release using the Helm Go SDK action engine.
+func (r *SDKHelmActionRunner) Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error) {
+	if r == nil || r.restClientGetter == nil {
+		return nil, errors.New("helm action runner or restClientGetter is uninitialized")
+	}
+	actionConfig := new(action.Configuration)
+	if err := actionConfig.Init(r.restClientGetter, namespace, r.helmDriver, func(format string, v ...interface{}) {
+		logging.Debug(ctx, fmt.Sprintf(format, v...))
+	}); err != nil {
+		return nil, fmt.Errorf("failed to initialize Helm action configuration: %w", err)
+	}
+
+	uninstall := action.NewUninstall(actionConfig)
+	rel, err := uninstall.Run(releaseName)
+	if err != nil {
+		return nil, fmt.Errorf("helm uninstall failed for release %q in namespace %q: %w", releaseName, namespace, err)
 	}
 	return rel, nil
 }
