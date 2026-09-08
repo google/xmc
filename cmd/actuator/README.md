@@ -78,3 +78,9 @@ If the component is healthy and enabled, but `status.observedGeneration` differs
 - Placement is **not blocked**.
 - Actuator logs a warning (`"Component generation drift detected"`).
 - Actuator attaches the `xmc.dev/component-drift-warning` annotation to the synthesized JobSet.
+
+### 5. Environment Variable Injection
+Once components pass the placement gate, Actuator resolves runtime configurations from `status.access`:
+- **Plain Environment Variables**: Key-value pairs declared under `status.access.envVars` are injected into both primary containers and `initContainers` across all `replicatedJobs`. Existing variables of the same name are updated in place.
+- **Secret Environment Variables**: Declarations under `status.access.secretEnvVars` (formatted as `"<secret_name>:<secret_key>"`) are resolved into `corev1.SecretKeyRef` selectors referencing the target Secret and key.
+
