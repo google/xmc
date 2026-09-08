@@ -32,6 +32,18 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: 'Set up Bazel'
+      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+    - name: 'Restore Bazel Repository Cache'
+      id: 'cache-bazel-repo-restore'
+      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      with:
+        path: ~/.cache/bazel-repo
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        restore-keys: |
+          bazel-repo-${{ runner.os }}-
+
     - name: 'Resolve Backend Test Scope'
       id: 'scope'
       env:
@@ -48,20 +60,6 @@ runs:
           --event "${EVENT_NAME}" \
           --ref "${GITHUB_REF}" \
           --github-output "${GITHUB_OUTPUT}"
-
-    - name: 'Set up Bazel'
-      if: steps.scope.outputs.run_backend == 'true'
-      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
-
-    - name: 'Restore Bazel Repository Cache'
-      if: steps.scope.outputs.run_backend == 'true'
-      id: 'cache-bazel-repo-restore'
-      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-      with:
-        path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
-        restore-keys: |
-          bazel-repo-${{ runner.os }}-
 
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'

@@ -333,13 +333,19 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             timeout=30,
             cwd=cwd,
         )
-        if res.stdout.strip():
+        if res.returncode == 0 and res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
             return [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
-    except Exception:
-        pass
+        if res.returncode != 0:
+            print(
+                f"Warning: bazel query failed with exit code {res.returncode}: {res.stderr.strip()}",
+                file=sys.stderr,
+            )
+    except Exception as e:
+        print(f"Warning: bazel query encountered exception: {e}", file=sys.stderr)
 
-    return _discover_static_rdeps_targets(files, cwd=cwd)
+    # Return empty list on failure so resolve_test_scope safely falls back to the full test suite
+    return []
 
 
 def resolve_test_scope(

@@ -180,8 +180,40 @@ class TestResolveTestScope(unittest.TestCase):
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
         mock_run.side_effect = Exception("Bazel timeout")
-        targets = discover_bazel_rdeps_targets(["nonexistent/path/foo.go"])
+        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
         self.assertEqual(targets, [])
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_discover_bazel_rdeps_targets_nonzero_exit_code(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: Failed to run bazel query",
+        )
+        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
+        self.assertEqual(targets, [])
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_rdeps_failure_falls_back_to_all(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: query failed",
+        )
+        scope = resolve_test_scope(["pkg/auth/oauth2/handlers.go"], use_rdeps=True)
+        self.assertTrue(scope["run_backend"])
+        self.assertEqual(scope["backend_mode"], "all")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_rdeps_exception_falls_back_to_all(self, mock_run):
+        mock_run.side_effect = FileNotFoundError("No such file or directory: 'bazel'")
+        scope = resolve_test_scope(["pkg/auth/oauth2/handlers.go"], use_rdeps=True)
+        self.assertTrue(scope["run_backend"])
+        self.assertEqual(scope["backend_mode"], "all")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
 
     def test_discover_static_rdeps_targets_root_dir_matching(self):
         with tempfile.TemporaryDirectory() as tmpdir:
