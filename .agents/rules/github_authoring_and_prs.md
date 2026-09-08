@@ -134,6 +134,6 @@ Whenever creating, modifying, or reviewing GitHub Actions workflow files under `
 
 3. **Ephemeral In-Memory Git Authentication (`persist-credentials: false`)**:
    - Workflows utilizing `actions/checkout` should enforce `persist-credentials: false` (excluding actions needing default git credentials) to prevent repository credentials from persisting on the runner's disk in `.git/config`.
-   - If a subsequent workflow step must execute `git fetch` or communicate with the remote repository, pass `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in the step's `env:` block and provide in-memory authentication via `http.extraheader` (e.g. `git -c "http.extraheader=AUTHORIZATION: basic $(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64)" fetch ...`).
+   - If a subsequent workflow step must execute `git fetch` or communicate with the remote repository, pass `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in the step's `env:` block and provide in-memory authentication via `http.extraheader` (e.g. `git -c "http.extraheader=Authorization: basic $(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 | tr -d '\n')" fetch ...`).
    - Never write tokens to `.git/config` on disk or set `persist-credentials: true` globally when an ephemeral per-command header fulfills the requirement.
 
