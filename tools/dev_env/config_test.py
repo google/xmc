@@ -169,6 +169,7 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.cluster_name, "xmc-dev")
         self.assertTrue(cfg.auto_migrate)
         self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
+        self.assertEqual(cfg.gcp_service_account, "xmc-dev-sa@my-proj.iam.gserviceaccount.com")
         self.assertIsNone(cfg.config_path)
 
     @patch.dict("os.environ", {}, clear=True)
@@ -242,6 +243,72 @@ class ConfigResolutionTest(unittest.TestCase):
         args = argparse.Namespace(config=str(cfg_file))
         cfg = config.load_config(args, repo_root=self.root)
         self.assertNotIn("ingestion_gateway", cfg.enabled_services)
+
+    def test_remote_k8s_explicit_cli(self) -> None:
+        """Verifies explicitly passing remote_k8s_context via CLI is resolved."""
+        args = argparse.Namespace(
+            project_id="test-p",
+            remote_k8s_context="gke_proj_us-central1_cluster-1",
+            remote_k8s_namespace="custom-ns",
+            remote_k8s_service_account="custom-sa",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(cfg.remote_k8s_context, "gke_proj_us-central1_cluster-1")
+        self.assertEqual(cfg.remote_k8s_namespace, "custom-ns")
+        self.assertEqual(cfg.remote_k8s_service_account, "custom-sa")
+
+    def test_remote_k8s_auto_derive_from_flag(self) -> None:
+        """Verifies boolean remote_k8s flag auto-derives GKE context name."""
+        args = argparse.Namespace(
+            project_id="test-proj",
+            environment="dev",
+            remote_k8s_context="true",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_test-proj_us-central1_xmc-xmc-v2-dev-dev",
+        )
+        self.assertEqual(cfg.remote_k8s_namespace, "xmc")
+        self.assertEqual(cfg.remote_k8s_service_account, "actuator-service-account")
+
+    def test_remote_k8s_explicit_context_parameter(self) -> None:
+        """Verifies explicit remote_k8s_context parameter is preserved as-is."""
+        args = argparse.Namespace(
+            project_id="test-proj",
+            remote_k8s_context="gke_test-proj_us-west1_my-workload-cluster",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_test-proj_us-west1_my-workload-cluster",
+        )
+
+    @patch.dict(
+        "os.environ",
+        {
+            "PROJECT_ID": "env-p",
+            "REMOTE_K8S_CONTEXT": "gke_env-p_us-central1_env-cluster",
+        },
+    )
+    def test_remote_k8s_from_env(self) -> None:
+        """Verifies REMOTE_K8S_CONTEXT environment variable resolves remote_k8s_context."""
+        cfg = config.load_config(argparse.Namespace(), repo_root=self.root)
+        self.assertEqual(cfg.remote_k8s_context, "gke_env-p_us-central1_env-cluster")
+
+    def test_remote_k8s_from_yaml(self) -> None:
+        """Verifies remote_k8s boolean in YAML enables remote K8s and derives context."""
+        cfg_file = self.root / "remote_k8s_config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  remote_k8s: true\n  environment: dev\n",
+            encoding="utf-8",
+        )
+        args = argparse.Namespace(config=str(cfg_file))
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_yaml-p_us-central1_xmc-xmc-v2-dev-dev",
+        )
 
     def test_mldiagnostics_and_xprof_bucket_flags(self) -> None:
         """Verifies managed mldiagnostics and xprof bucket are resolved from CLI and YAML."""
@@ -366,6 +433,26 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
             config.LocalDevConfig(project_id="")
         with self.assertRaises(ValueError):
             config.LocalDevConfig(project_id="   ")
+
+    def test_gcp_service_account_remote_k8s_defaulting(self) -> None:
+        """Verifies gcp_service_account defaults to workload SA in remote k8s or custom env."""
+        cfg_remote = config.LocalDevConfig(
+            project_id="test-p",
+            environment="vluk-test",
+            remote_k8s_context="gke_test-p_us-central1_test-cluster",
+        )
+        self.assertEqual(
+            cfg_remote.gcp_service_account,
+            "xmc-v2-vluk-test-xmc-wl-sa@test-p.iam.gserviceaccount.com",
+        )
+
+    def test_gcp_service_account_explicit_override(self) -> None:
+        """Verifies explicit gcp_service_account overrides dynamic default."""
+        cfg = config.LocalDevConfig(
+            project_id="test-p",
+            gcp_service_account="custom-sa@test-p.iam.gserviceaccount.com",
+        )
+        self.assertEqual(cfg.gcp_service_account, "custom-sa@test-p.iam.gserviceaccount.com")
 
 
 class ResolveFlagsTest(unittest.TestCase):

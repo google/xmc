@@ -268,6 +268,28 @@ class KindManagerTest(unittest.TestCase):
         oauth_create = next(c for c in calls if "backend-oauth-secrets" in c and "create" in c)
         self.assertFalse(any("--from-file=key.json" in arg for arg in oauth_create))
 
+    @mock.patch("tools.dev_env.remote_k8s_manager.setup_remote_k8s_secret")
+    @mock.patch("tools.dev_env.kind_manager.run_command")
+    def test_ensure_secrets_with_remote_k8s(
+        self, mock_run: mock.MagicMock, mock_setup_remote: mock.MagicMock
+    ) -> None:
+        self.config.remote_k8s_context = "gke_remote_ctx"
+        self.config.remote_k8s_namespace = "xmc-remote"
+        self.config.remote_k8s_service_account = "test-sa"
+        adc_file = Path(self.temp_dir.name) / "adc.json"
+        adc_file.write_text("{}")
+        with mock.patch.object(self.manager, "_resolve_adc_file", return_value=adc_file):
+            self.manager.ensure_secrets()
+
+        mock_setup_remote.assert_called_once_with(
+            kind_context="kind-test-kind",
+            remote_context="gke_remote_ctx",
+            remote_namespace="xmc-remote",
+            target_namespace="xmc",
+            service_account="test-sa",
+            secret_name="remote-k8s-config",
+        )
+
     def test_default_temp_dir_under_home(self) -> None:
         km = KindManager(config=self.config)
         self.assertEqual(km.temp_dir, Path.home() / ".xmc" / "dev" / "test-kind")

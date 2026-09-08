@@ -461,7 +461,12 @@ class LocalRunner:
             f"• Cloud Spanner Instance: {self.config.spanner_instance}",
             f"• ESS Database:           {self.config.ess_database}",
             f"• XID Database:           {self.config.xid_database}",
-            f"• Kubernetes Context:     {self.kind_mgr.kube_context}",
-            "=" * 80,
+            f"• Local KinD Context:     {self.kind_mgr.kube_context}",
         ]
+        if self.config.remote_k8s_context:
+            lines.append(
+                f"• Remote Workload Cluster: {self.config.remote_k8s_context} (Hybrid Mode)"
+            )
+            lines.append(f"• Remote Namespace:        {self.config.remote_k8s_namespace}")
+        lines.append("=" * 80)
         log_info("\n" + "\n".join(lines) + "\n")

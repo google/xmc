@@ -310,6 +310,33 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         default=None,
         help="GCS bucket URL for Managed XProf profiling data (e.g. gs://my-bucket).",
     )
+    p.add_argument(
+        "--remote-k8s",
+        "--remote-k8s-context",
+        dest="remote_k8s_context",
+        nargs="?",
+        const="true",
+        default=None,
+        help="Target remote Kubernetes cluster context for hybrid workload execution.",
+    )
+    p.add_argument(
+        "--remote-k8s-namespace",
+        dest="remote_k8s_namespace",
+        default=None,
+        help="Namespace on remote Kubernetes cluster (default: 'xmc').",
+    )
+    p.add_argument(
+        "--remote-k8s-service-account",
+        dest="remote_k8s_service_account",
+        default=None,
+        help="ServiceAccount on remote cluster for token generation.",
+    )
+    p.add_argument(
+        "--gcp-service-account",
+        dest="gcp_service_account",
+        default=None,
+        help="GCP IAM Service Account email for workload identity.",
+    )
 
 
 def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
