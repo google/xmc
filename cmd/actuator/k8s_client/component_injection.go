@@ -81,11 +81,12 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 			return fmt.Errorf("failed to extract access configuration for component %q: %w", compName, err)
 		}
 		injectAccessIntoJobSet(jobSet, access)
-		logging.Debug(ctx, "Injected component environment variables into JobSet",
+		logging.Debug(ctx, "Injected component access configurations into JobSet",
 			"component", compName,
 			"lockedGeneration", lockedGen,
 			"plainEnvVars", len(access.envVars),
 			"secretEnvVars", len(access.secretEnvVars),
+			"secretVolumes", len(access.secretVolumeMounts),
 		)
 	}
 	return nil
