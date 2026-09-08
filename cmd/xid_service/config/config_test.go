@@ -89,6 +89,7 @@ func TestConfig_RegisterFlags(t *testing.T) {
 
 	args := []string{
 		"-xid_audience=https://custom-audience.example.com",
+		"-xid_jwks_url=https://auth.example.com/keys",
 	}
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("fs.Parse failed: %v", err)
@@ -97,12 +98,16 @@ func TestConfig_RegisterFlags(t *testing.T) {
 	if c.Audience != "https://custom-audience.example.com" {
 		t.Errorf("c.Audience = %q, want %q", c.Audience, "https://custom-audience.example.com")
 	}
+	if c.JWKSURL != "https://auth.example.com/keys" {
+		t.Errorf("c.JWKSURL = %q, want %q", c.JWKSURL, "https://auth.example.com/keys")
+	}
 }
 
 func TestConfig_RegisterConfigs(t *testing.T) {
 	t.Setenv("xid_grpc_port", "9090")
 	t.Setenv("xid_quota_project_id", "my-test-proj")
 	t.Setenv("xid_spanner_database_name", "projects/p/instances/i/databases/d")
+	t.Setenv("xid_jwks_url", "https://auth.example.com/keys")
 
 	var c Config
 	c.registerConfigs()
@@ -115,5 +120,8 @@ func TestConfig_RegisterConfigs(t *testing.T) {
 	}
 	if c.SpannerDatabaseName != "projects/p/instances/i/databases/d" {
 		t.Errorf("c.SpannerDatabaseName = %q, want %q", c.SpannerDatabaseName, "projects/p/instances/i/databases/d")
+	}
+	if c.JWKSURL != "https://auth.example.com/keys" {
+		t.Errorf("c.JWKSURL = %q, want %q", c.JWKSURL, "https://auth.example.com/keys")
 	}
 }

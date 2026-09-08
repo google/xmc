@@ -534,3 +534,36 @@ func TestJWKSCooldownOnFailedRefreshWithLargeCacheTTL(t *testing.T) {
 		t.Fatalf("expected fetchCount to remain 1 due to failure cooldown, got %d", count)
 	}
 }
+
+func TestJWKSPreflightContextCancellation(t *testing.T) {
+	privKey, jwk := generateTestRSAKey(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(JWKS{
+			Keys: []JWK{jwk},
+		})
+	}))
+	defer server.Close()
+
+	validator := NewValidator(ValidatorConfig{
+		JWKSURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Pre-canceled context
+
+	testClaims := &Claims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"https://actuator.api.example.com/actuate"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	tokenStr := mintTestToken(t, privKey, jwk.Kid, testClaims)
+
+	err := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}

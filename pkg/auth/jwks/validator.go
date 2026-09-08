@@ -61,7 +61,12 @@ type (
 		JWKSURL, ExpectedIssuer, ExpectedServiceAccount string
 		AllowedAudiences                                []string
 		HTTPClient                                      *http.Client
-		CacheTTL, MinRefreshInterval                    time.Duration
+		// CacheTTL specifies how long successfully fetched JWKS keys are cached (default: 1 hour).
+		CacheTTL time.Duration
+		// MinRefreshInterval specifies the minimum cooldown interval between outbound
+		// refresh attempts for unknown key IDs (kid) or following failed refreshes,
+		// mitigating cache stampedes and key flooding attacks (default: 1 minute).
+		MinRefreshInterval time.Duration
 	}
 
 	// Validator validates OIDC tokens against a standard JWKS endpoint.
@@ -154,7 +159,43 @@ func (v *Validator) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKey, e
 	return newKeys, nil
 }
 
+func (v *Validator) refreshKeysSingleflight(ctx context.Context) (map[string]*rsa.PublicKey, error) {
+	res, err, _ := v.sfGroup.Do("fetchKeys", func() (any, error) {
+		fetchTimeout := v.httpClient.Timeout
+		if fetchTimeout <= 0 {
+			fetchTimeout = 15 * time.Second
+		}
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
+		defer cancel()
+
+		newKeys, fetchErr := v.fetchKeys(fetchCtx)
+		v.mu.Lock()
+		v.lastAttempt = time.Now()
+		if fetchErr == nil {
+			v.keys = newKeys
+			v.lastFetch = time.Now()
+		}
+		v.mu.Unlock()
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		return newKeys, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	newKeys, ok := res.(map[string]*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("unexpected key map type from singleflight fetch")
+	}
+	return newKeys, nil
+}
+
 func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	v.mu.RLock()
 	key, exists := v.findKeyLocked(kid)
 	lastFetch := v.lastFetch
@@ -172,22 +213,7 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 	}
 
-	res, err, _ := v.sfGroup.Do("fetchKeys", func() (any, error) {
-		fetchCtx := context.WithoutCancel(ctx)
-		newKeys, fetchErr := v.fetchKeys(fetchCtx)
-		v.mu.Lock()
-		v.lastAttempt = time.Now()
-		if fetchErr == nil {
-			v.keys = newKeys
-			v.lastFetch = time.Now()
-		}
-		v.mu.Unlock()
-		if fetchErr != nil {
-			return nil, fetchErr
-		}
-		return newKeys, nil
-	})
-
+	newKeys, err := v.refreshKeysSingleflight(ctx)
 	if err != nil {
 		v.mu.RLock()
 		staleKey, staleExists := v.findKeyLocked(kid)
@@ -199,7 +225,6 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 		return nil, err
 	}
 
-	newKeys := res.(map[string]*rsa.PublicKey)
 	if pubKey, ok := newKeys[kid]; ok {
 		return pubKey, nil
 	}
