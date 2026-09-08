@@ -72,7 +72,6 @@ type K8sHelmManager struct {
 
 	mu          sync.RWMutex
 	activeState map[string]bool
-	upgradeErrs map[string]error
 	upgradeMu   sync.Mutex
 	upgradeSem  chan struct{}
 }
@@ -113,7 +112,6 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		namespace:   namespace,
 		releaseName: releaseName,
 		activeState: make(map[string]bool),
-		upgradeErrs: make(map[string]error),
 		upgradeSem:  make(chan struct{}, 1),
 	}
 	for _, opt := range opts {
@@ -164,33 +162,6 @@ func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
 	return ref.Namespace, nil
 }
 
-func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.upgradeErrs == nil {
-		m.upgradeErrs = make(map[string]error)
-	}
-	if err != nil {
-		m.upgradeErrs[ref.String()] = err
-		return
-	}
-	delete(m.upgradeErrs, ref.String())
-}
-
-// GetUpgradeError returns the last error encountered during an upgrade for the given component, if any.
-func (m *K8sHelmManager) GetUpgradeError(ref ComponentRef) error {
-	if m == nil {
-		return nil
-	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
-		return err
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.upgradeErrs[ComponentRef{Namespace: targetNamespace, Name: ref.Name}.String()]
-}
-
 // Close releases any resources held by the HelmManager.
 func (m *K8sHelmManager) Close() error {
 	return nil
@@ -235,37 +206,44 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return nil
 	}
 	if ref.Namespace == "" {
-		err := errors.New("component namespace must not be empty")
-		m.setUpgradeErr(ref, err)
-		return err
+		return errors.New("component namespace must not be empty")
 	}
 	releaseName := ComponentReleaseName(ref.Name)
 	if releaseName == "" {
-		err := errors.New("helm release name must not be empty; cannot actuate release upgrade")
-		m.setUpgradeErr(ref, err)
-		return err
+		return errors.New("helm release name must not be empty; cannot actuate release upgrade")
 	}
 	if m.runner == nil {
-		err := errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
-		m.setUpgradeErr(ref, err)
-		return err
+		return errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
 	}
 	targetNamespace := ref.Namespace
-	m.setUpgradeErr(ref, nil)
 
 	if err := m.acquireUpgradeLock(ctx); err != nil {
-		m.setUpgradeErr(ref, err)
 		return err
 	}
 	defer m.releaseUpgradeLock()
 
 	if err := ctx.Err(); err != nil {
-		m.setUpgradeErr(ref, err)
 		return err
 	}
 	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, nil, values)
-	m.setUpgradeErr(ref, err)
 	return err
+}
+
+func (m *K8sHelmManager) uninstallRelease(ctx context.Context, releaseName, targetNamespace string, resolved ComponentRef) error {
+	if m.runner == nil {
+		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", targetNamespace, "component", resolved.Name)
+		return nil
+	}
+	if err := m.acquireUpgradeLock(ctx); err != nil {
+		return err
+	}
+	defer m.releaseUpgradeLock()
+
+	_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
+	if err != nil && !isReleaseNotFound(err) {
+		return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
+	}
+	return nil
 }
 
 // Ensure1PComponent sets component values in the release ConfigMap and executes a Helm upgrade.
@@ -316,19 +294,9 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	}
 
 	releaseName := ComponentReleaseName(ref.Name)
-	if m.runner != nil {
-		if err := m.acquireUpgradeLock(ctx); err != nil {
-			m.setUpgradeErr(resolved, err)
-			return err
-		}
-		_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
-		m.releaseUpgradeLock()
-		if err != nil && !isReleaseNotFound(err) {
-			m.setUpgradeErr(resolved, err)
-			return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
-		}
+	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
+		return err
 	}
-	m.setUpgradeErr(resolved, nil)
 
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
@@ -357,19 +325,9 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	}
 
 	releaseName := ComponentReleaseName(ref.Name)
-	if m.runner != nil {
-		if err := m.acquireUpgradeLock(ctx); err != nil {
-			m.setUpgradeErr(resolved, err)
-			return err
-		}
-		_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
-		m.releaseUpgradeLock()
-		if err != nil && !isReleaseNotFound(err) {
-			m.setUpgradeErr(resolved, err)
-			return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
-		}
+	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
+		return err
 	}
-	m.setUpgradeErr(resolved, nil)
 
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()

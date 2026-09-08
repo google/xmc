@@ -576,18 +576,9 @@ func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
 	if err == nil || !errors.Is(err, runner.upgradeErr) {
 		t.Errorf("expected simulated helm failure error, got %v", err)
 	}
-	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
-		t.Error("expected GetUpgradeError to return non-nil error")
-	}
 }
 
 func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
-	var nilMgr *K8sHelmManager
-	ref := ComponentRef{Namespace: "xmc", Name: "test"}
-	if err := nilMgr.GetUpgradeError(ref); err != nil {
-		t.Errorf("expected nil error on nil receiver GetUpgradeError, got %v", err)
-	}
-
 	mgr := NewK8sHelmManager(nil, "xmc", "xmanager-cloud",
 		WithKubeconfig("/tmp/nonexistent-kubeconfig"),
 		WithChartPath("deploy/helm"),
@@ -631,10 +622,6 @@ func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
 	if sdkRunner, ok := mgrGetter.runner.(*SDKHelmActionRunner); !ok || sdkRunner.chartPath != "deploy/helm/getter" {
 		t.Errorf("expected SDKHelmActionRunner with chartPath deploy/helm/getter, got %+v", mgrGetter.runner)
 	}
-
-	if err := mgr.GetUpgradeError(ComponentRef{}); err == nil {
-		t.Error("expected error on empty componentName in GetUpgradeError")
-	}
 }
 
 func TestK8sHelmManager_RetryFailedUpgrade_Ensure(t *testing.T) {
@@ -658,18 +645,12 @@ func TestK8sHelmManager_RetryFailedUpgrade_Ensure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "transient Helm lock conflict") {
 		t.Fatalf("expected transient upgrade error, got %v", err)
 	}
-	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
-		t.Fatalf("expected recorded upgrade error, got nil")
-	}
 
 	// On second reconciliation, ConfigMap is not modified, but previous upgrade failed.
 	// Ensure1PComponent must retry rather than exiting early.
 	runner.upgradeErr = nil
 	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
 		t.Fatalf("expected retry Ensure1PComponent to succeed, got %v", err)
-	}
-	if gotErr := mgr.GetUpgradeError(ref); gotErr != nil {
-		t.Errorf("expected upgrade error cleared after successful retry, got %v", gotErr)
 	}
 	if runner.upgradeCalls != 2 {
 		t.Errorf("expected 2 runner calls after retry, got %d", runner.upgradeCalls)
@@ -699,18 +680,12 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "deletion lock error") {
 		t.Fatalf("expected deletion upgrade error, got %v", err)
 	}
-	if gotErr := mgr.GetUpgradeError(ref); gotErr == nil {
-		t.Fatalf("expected recorded upgrade error on delete, got nil")
-	}
 
 	// On second reconciliation, previous uninstall failed.
 	// Delete1PComponent must retry.
 	runner.uninstallErr = nil
 	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
 		t.Fatalf("expected retry Delete1PComponent to succeed, got %v", err)
-	}
-	if gotErr := mgr.GetUpgradeError(ref); gotErr != nil {
-		t.Errorf("expected upgrade error cleared after successful delete retry, got %v", gotErr)
 	}
 }
 
@@ -825,5 +800,59 @@ func TestK8sHelmManager_TriggerUpgrade_ContextCancellation_DuringLockAcquisition
 
 	if err := mgr.triggerUpgrade(ctx, ref, map[string]any{"foo": "bar"}); err != nil {
 		t.Fatalf("expected upgrade to succeed after releasing lock, got: %v", err)
+	}
+}
+
+type panickingHelmActionRunner struct {
+	mockHelmActionRunner
+	panicOnUninstall bool
+}
+
+func (p *panickingHelmActionRunner) Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error) {
+	if p.panicOnUninstall {
+		panic("simulated uninstall panic")
+	}
+	return p.mockHelmActionRunner.Uninstall(ctx, releaseName, namespace)
+}
+
+func TestK8sHelmManager_UninstallRelease_NilRunner(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	// Manager without runner
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud")
+
+	ref := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
+	// Delete1PComponent and Purge1PComponent should skip uninstallation safely without error
+	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("expected Delete1PComponent with nil runner to succeed, got %v", err)
+	}
+	if err := mgr.Purge1PComponent(ctx, ref); err != nil {
+		t.Fatalf("expected Purge1PComponent with nil runner to succeed, got %v", err)
+	}
+}
+
+func TestK8sHelmManager_UninstallRelease_PanicSafeLockDefer(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	panickingRunner := &panickingHelmActionRunner{panicOnUninstall: true}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(panickingRunner))
+
+	ref := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
+
+	// Verify that panic in runner.Uninstall is caught and lock is still released
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic from panicking runner, got nil")
+			}
+		}()
+		_ = mgr.Delete1PComponent(ctx, ref)
+	}()
+
+	// Since defer m.releaseUpgradeLock() ran during panic unwind, subsequent lock acquisition must not hang
+	panickingRunner.panicOnUninstall = false
+	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("expected Delete1PComponent to succeed after recovered panic, got: %v", err)
 	}
 }
