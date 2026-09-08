@@ -56,10 +56,6 @@ export interface UrlTypedArtifact extends BaseTypedArtifact {
 export interface ChartArtifactPayload {
   title?: string;
   metricNames?: string[];
-  // Output-only. The Chart the Experiment State Server provisioned for this artifact,
-  // carrying the resource name its data is fetched by and the plot specs to draw. Absent
-  // until provisioning completes, and on artifacts created before the server started
-  // recording it.
   chart?: Chart;
   status?: 'STATUS_UNSPECIFIED' | 'PROVISIONING' | 'SUCCESS' | 'FAILED';
   errorMessage?: string;

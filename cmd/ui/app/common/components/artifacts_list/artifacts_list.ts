@@ -24,6 +24,7 @@ import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/pr
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import {
   groupAndSortArtifacts,
+  sortArtifactsByPriority,
   toTypedArtifact,
 } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import {
@@ -120,9 +121,11 @@ export class ArtifactsList implements OnInit {
     }
     return artifacts$.pipe(
       map((artifacts) =>
-        artifacts
-          .map(toTypedArtifact)
-          .filter((typed): typed is ChartTypedArtifact => typed.type === PayloadType.CHART),
+        sortArtifactsByPriority(
+          artifacts
+            .map(toTypedArtifact)
+            .filter((typed): typed is ChartTypedArtifact => typed.type === PayloadType.CHART),
+        ),
       ),
     );
   }
