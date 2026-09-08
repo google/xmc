@@ -297,6 +297,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 		return nil
 	}
 	ref := resolveComponentRef(in)
+	if !r.helmManager.IsComponentActive(ref) {
+		return nil
+	}
 	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())

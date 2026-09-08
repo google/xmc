@@ -317,7 +317,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "disabled component 1P Helm delete failure",
 			cms:  &mockCMS{},
-			helm: &mockHelm{deleteErr: errors.New("cannot stop release")},
+			helm: &mockHelm{active: true, deleteErr: errors.New("cannot stop release")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: false,
@@ -899,5 +899,38 @@ func TestReconcileComponent_1P_GenerationGating(t *testing.T) {
 	}
 	if helm.ensureCalls != 2 {
 		t.Errorf("expected ensureCalls to remain 2 (skipped on unchanged generation), got %d", helm.ensureCalls)
+	}
+}
+
+func TestReconciler_DeleteDisabledHelmComponent_SkipsWhenInactive(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{
+		active:    false,
+		deleteErr: errors.New("Delete1PComponent should not be called when component is inactive"),
+	}
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, helm)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	in := ReconcileComponentInput{
+		Namespace:    "xmc",
+		Name:         "metrics",
+		Generation:   1,
+		Spec:         spec1P,
+		Enabled:      false,
+		HasFinalizer: true,
+	}
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("expected ReconcileComponent to succeed without invoking Delete1PComponent, got %v", err)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("expected state DISABLED, got %v", res.State)
+	}
+	if helm.deleteCalled {
+		t.Errorf("expected Delete1PComponent NOT to be called when component is inactive")
 	}
 }
