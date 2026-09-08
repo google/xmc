@@ -7,6 +7,8 @@ This document provides standards for skill architecture, workflow automation, an
 ## 1. Extracting Complex Logic to Executable Python Scripts
 - **Executable Scripts over Inline Commands**: Never embed multi-step parsing logic, string manipulation, or inline shell code (e.g., `python3 -c "..."`) inside Markdown skill definitions or shell invocations. Always write Python code to standalone `.py` script files via `write_to_file` or rely on pre-written tools in `tools/`.
 - **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `tools/` or skill-specific script directories.
+- **No Redundant Root Script Wrappers**: When placing automation tools or scripts within a domain-specific subdirectory (e.g., `tools/stacks/<tool>.py` or `tools/pr_review/<tool>.py`), do NOT create duplicate or forwarding wrapper scripts in the root `tools/` directory. Scripts within domain packages must be directly executable (e.g., `python3 tools/stacks/<tool>.py` or `python3 -m tools.stacks.<tool>`). Keep the root `tools/` directory free of forwarding bloat.
+- **Accurate Tooling Categorization**: Accurately describe internal automation, maintenance scripts, and CLI helpers as developer/CI tooling. Never describe internal developer scripts as user-facing binaries in PR descriptions or documentation.
 - **Automated Verification**: Accompany every extracted script with unit tests (e.g., `tool_name_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
 
 ## 2. DRY & KISS in Skill & Rule Design

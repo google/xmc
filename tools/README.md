@@ -17,7 +17,7 @@ tools/
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
 ├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
 ├── xmc-diag/           # Cluster diagnostics and health inspection utilities
-└── *.py                # Backward-compatible forwarding wrappers
+└── *.py                # Repository-wide entrypoints and git hook scripts
 ```
 
 ---
@@ -73,12 +73,11 @@ Offline syntax walkers and static validation tooling:
 
 ---
 
-## Backward Compatibility & Forwarding Wrappers
+## Repository Entrypoints & Direct Invocations
 
-For backward compatibility with existing developer scripts and agent skill definitions, top-level forwarding wrappers and repository-level utilities are maintained directly in `tools/`:
-- **Repository Entrypoints & Hooks**: Tools invoked directly by git hooks or top-level entrypoints (`analyze_diff_size.py`, `dev_env.py`) remain at the `tools/` root for immediate access.
-- **Forwarding Wrappers**: Executing `./tools/<script>.py` or `python tools/<script>.py` transparently delegates to the corresponding modular script in `tools/<subpackage>/<script>.py`.
-- **Bazel Aliases**: Bazel targets under `//tools:...` alias to their respective `//tools/<subpackage>:...` targets.
+- **Repository Entrypoints & Hooks**: Standalone tools invoked directly by git hooks or repository-wide entrypoints (e.g. `analyze_diff_size.py`, `run_affected_tests.py`) remain at the `tools/` root for immediate access.
+- **Direct Domain Execution**: Scripts organized into subpackages (`tools/pr_review/`, `tools/dev_env/`, `tools/benchmark/`, etc.) must be executed directly (e.g. `python3 tools/pr_review/<script>.py` or `bazel run //tools/pr_review:<target>`). Do NOT create duplicate or forwarding wrapper scripts in the root `tools/` directory.
+- **Bazel Targets**: Bazel targets are defined directly within their respective subpackages (`//tools/<subpackage>:...`).
 
 ---
 

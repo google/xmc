@@ -15,6 +15,7 @@ This document defines standards for shell script usage across the codebase.
 set -euo pipefail
 ```
 - **Variable Expansion Quoting & Braces**: Always double-quote variable expansions and use explicit curly braces (`"${VAR}"`) to prevent word splitting, variable name ambiguity, path globbing issues, and shell expansion vulnerabilities.
+- **Git Commit Peeling Invariant (`^{commit}`)**: When checking whether a commit object physically exists in the local Git repository object database via `git rev-parse`, always append `^{commit}` to the revision (e.g., `git rev-parse --verify --quiet "${REF}^{commit}"`). Without `^{commit}`, `git rev-parse --verify` only validates the 40-character hexadecimal syntax for full SHAs without checking repository object storage, causing missing commits to be falsely treated as present.
 - **Executable File Modes**: Ensure shell scripts have appropriate executable permissions set (`chmod +x`).
 
 ## 3. Command Substitution & Payload Truncation Safety
