@@ -232,6 +232,9 @@ func TestWithForwardedAuth(t *testing.T) {
 	tests := []struct {
 		name     string
 		incoming metadata.MD
+		// outgoing is metadata already on the context before the call, standing in for an
+		// interceptor that attached its own headers upstream.
+		outgoing metadata.MD
 		// noIncoming builds the context without any incoming metadata at all, which is not the
 		// same as incoming metadata that happens to be empty.
 		noIncoming bool
@@ -273,6 +276,16 @@ func TestWithForwardedAuth(t *testing.T) {
 			noIncoming: true,
 			wantOK:     false,
 		},
+		{
+			name:     "adds the credentials to outgoing metadata already on the context",
+			incoming: metadata.Pairs("authorization", "Bearer token-abc"),
+			outgoing: metadata.Pairs("x-trace-id", "trace-1"),
+			wantOK:   true,
+			wantOut: metadata.Pairs(
+				"authorization", "Bearer token-abc",
+				"x-trace-id", "trace-1",
+			),
+		},
 	}
 
 	for _, tc := range tests {
@@ -281,6 +294,9 @@ func TestWithForwardedAuth(t *testing.T) {
 			ctx := t.Context()
 			if !tc.noIncoming {
 				ctx = metadata.NewIncomingContext(ctx, tc.incoming)
+			}
+			if len(tc.outgoing) > 0 {
+				ctx = metadata.NewOutgoingContext(ctx, tc.outgoing)
 			}
 
 			got, ok := withForwardedAuth(ctx)

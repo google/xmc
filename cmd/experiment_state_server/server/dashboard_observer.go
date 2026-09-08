@@ -51,13 +51,24 @@ func withForwardedAuth(ctx context.Context) (context.Context, bool) {
 	if !ok {
 		return ctx, false
 	}
-	outgoing := metadata.MD{}
+	// Build on whatever outgoing metadata ctx already carries rather than replacing it.
+	// Nothing sets any today -- this is the only NewOutgoingContext in the tree, and the
+	// Dashboard connection is dialed without interceptors -- but a tracing or request-ID
+	// interceptor added later would otherwise have its headers silently dropped here.
+	outgoing, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		outgoing = outgoing.Copy()
+	} else {
+		outgoing = metadata.MD{}
+	}
+	forwarded := false
 	for _, key := range authForwardKeys {
 		if values := incoming.Get(key); len(values) > 0 {
 			outgoing.Set(key, values...)
+			forwarded = true
 		}
 	}
-	if len(outgoing) == 0 {
+	if !forwarded {
 		return ctx, false
 	}
 	return metadata.NewOutgoingContext(ctx, outgoing), true
