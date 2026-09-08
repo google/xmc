@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/sync/singleflight"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -60,7 +61,7 @@ type (
 		JWKSURL, ExpectedIssuer, ExpectedServiceAccount string
 		AllowedAudiences                                []string
 		HTTPClient                                      *http.Client
-		CacheTTL                                        time.Duration
+		CacheTTL, MinRefreshInterval                    time.Duration
 	}
 
 	// Validator validates OIDC tokens against a standard JWKS endpoint.
@@ -70,6 +71,7 @@ type (
 		keys       map[string]*rsa.PublicKey
 		lastFetch  time.Time
 		mu         sync.RWMutex
+		sfGroup    singleflight.Group
 	}
 )
 
@@ -80,6 +82,9 @@ func NewValidator(cfg ValidatorConfig) *Validator {
 	}
 	if cfg.CacheTTL == 0 {
 		cfg.CacheTTL = 1 * time.Hour
+	}
+	if cfg.MinRefreshInterval == 0 {
+		cfg.MinRefreshInterval = 1 * time.Minute
 	}
 	return &Validator{
 		cfg:        cfg,
@@ -151,30 +156,51 @@ func (v *Validator) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKey, e
 func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.RLock()
 	key, exists := v.findKeyLocked(kid)
-	fresh := exists && !v.lastFetch.IsZero() && time.Since(v.lastFetch) < v.cfg.CacheTTL
+	lastFetch := v.lastFetch
 	v.mu.RUnlock()
-	if fresh {
+
+	minInterval := min(v.cfg.MinRefreshInterval, v.cfg.CacheTTL)
+	if exists && !lastFetch.IsZero() && time.Since(lastFetch) < v.cfg.CacheTTL {
 		return key, nil
 	}
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if key, exists := v.findKeyLocked(kid); exists && !v.lastFetch.IsZero() && time.Since(v.lastFetch) < v.cfg.CacheTTL {
-		return key, nil
+	if !exists && !lastFetch.IsZero() && time.Since(lastFetch) < minInterval {
+		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 	}
 
-	newKeys, err := v.fetchKeys(ctx)
+	res, err, _ := v.sfGroup.Do("fetchKeys", func() (any, error) {
+		newKeys, fetchErr := v.fetchKeys(ctx)
+		if fetchErr != nil {
+			v.mu.Lock()
+			v.lastFetch = time.Now().Add(-v.cfg.CacheTTL + minInterval)
+			v.mu.Unlock()
+			return nil, fetchErr
+		}
+		v.mu.Lock()
+		v.keys = newKeys
+		v.lastFetch = time.Now()
+		v.mu.Unlock()
+		return newKeys, nil
+	})
+
 	if err != nil {
-		if staleKey, staleExists := v.findKeyLocked(kid); staleExists {
+		v.mu.RLock()
+		staleKey, staleExists := v.findKeyLocked(kid)
+		v.mu.RUnlock()
+		if staleExists {
 			logging.Warn(ctx, "JWKS refresh failed, using cached key", "error", err)
 			return staleKey, nil
 		}
 		return nil, err
 	}
-	v.keys = newKeys
-	v.lastFetch = time.Now()
-	if key, ok := v.findKeyLocked(kid); ok {
-		return key, nil
+
+	newKeys := res.(map[string]*rsa.PublicKey)
+	if pubKey, ok := newKeys[kid]; ok {
+		return pubKey, nil
+	}
+	if kid == "" && len(newKeys) == 1 {
+		for _, k := range newKeys {
+			return k, nil
+		}
 	}
 	return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 }

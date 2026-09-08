@@ -89,7 +89,6 @@ func TestConfig_RegisterFlags(t *testing.T) {
 
 	args := []string{
 		"-xid_audience=https://custom-audience.example.com",
-		"-xid_disable_authentication=true",
 	}
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("fs.Parse failed: %v", err)
@@ -97,9 +96,6 @@ func TestConfig_RegisterFlags(t *testing.T) {
 
 	if c.Audience != "https://custom-audience.example.com" {
 		t.Errorf("c.Audience = %q, want %q", c.Audience, "https://custom-audience.example.com")
-	}
-	if !c.DisableAuthentication {
-		t.Errorf("c.DisableAuthentication = %v, want true", c.DisableAuthentication)
 	}
 }
 

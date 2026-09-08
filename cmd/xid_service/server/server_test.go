@@ -47,7 +47,7 @@ type testAuthorizerWrapper struct {
 }
 
 func (w *testAuthorizerWrapper) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
-	return "test@example.com", "test_user_id", nil
+	return "test@example.com", "user_id", nil
 }
 
 func createTestAuthorizer(ctx context.Context, t *testing.T) auth.AuthorizerInterface {
