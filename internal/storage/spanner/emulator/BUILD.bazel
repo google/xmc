@@ -75,3 +75,24 @@ go_test(
         "@org_golang_google_api//iterator",
     ],
 )
+
+go_test(
+    name = "components_test",
+    srcs = ["components_test.go"],
+    deps = [
+        ":emulator",
+        "//api/protos/components/v1alpha1",
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/storage/data",
+        "//internal/storage/spanner/data",
+        "//pkg/components/naming",
+        "//pkg/components/store",
+        "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

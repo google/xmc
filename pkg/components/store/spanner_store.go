@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -69,6 +70,13 @@ ORDER BY cd.ComponentId, dep.Name ASC`
 	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
 FROM ExperimentComponentSnapshots
 WHERE ComponentId = @id AND LockedGeneration = @gen
+LIMIT 1`
+
+	selectSnapshotByNameAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime
+FROM ExperimentComponentSnapshots s
+JOIN Components c ON s.ComponentId = c.ComponentId
+WHERE c.Name = @name AND s.LockedGeneration = @gen
+ORDER BY c.ComponentId DESC
 LIMIT 1`
 )
 
@@ -756,6 +764,9 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 
 	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 	if err != nil {
+		if errors.Is(err, ErrComponentNotFound) && generation > 0 {
+			return s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
+		}
 		return nil, nil, err
 	}
 
@@ -826,6 +837,84 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
 	}
+	if snapRec.Status != nil {
+		snapRec.State = snapRec.Status.State
+		snapRec.ObservedGeneration = &snapRec.Status.ObservedGeneration
+	}
+	snapRec.Etag = generateEtag(snapRec)
+
+	var coords *componentspb.ResolvedComponentCoordinates
+	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
+		coords = cloneCoordinates(snapRec.Status.Coordinates)
+	}
+
+	return snapRec, coords, nil
+}
+
+func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, queryable spannerQueryable, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	stmt := spanner.Statement{
+		SQL: selectSnapshotByNameAndGenSQL,
+		Params: map[string]any{
+			"name": canonicalName,
+			"gen":  targetGen,
+		},
+	}
+	iter := queryable.Query(ctx, stmt)
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if err != nil {
+		if errors.Is(err, iterator.Done) {
+			return nil, nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
+		}
+		return nil, nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
+	}
+
+	var (
+		compID        int64
+		lockedGen     int64
+		configProto   []byte
+		accessPayload []byte
+		createTime    time.Time
+		updateTime    time.Time
+	)
+	if err := row.ColumnByName("ComponentId", &compID); err != nil {
+		return nil, nil, fmt.Errorf("failed to read ComponentId: %w", err)
+	}
+	if err := row.ColumnByName("LockedGeneration", &lockedGen); err != nil {
+		return nil, nil, fmt.Errorf("failed to read LockedGeneration: %w", err)
+	}
+	if err := row.ColumnByName("ConfigProto", &configProto); err != nil {
+		return nil, nil, fmt.Errorf("failed to read ConfigProto: %w", err)
+	}
+	if err := row.ColumnByName("AccessPayload", &accessPayload); err != nil {
+		return nil, nil, fmt.Errorf("failed to read AccessPayload: %w", err)
+	}
+	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read CreateTime: %w", err)
+	}
+	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read UpdateTime: %w", err)
+	}
+
+	snapRec := &ComponentRecord{
+		ComponentID: compID,
+		Name:        canonicalName,
+		Generation:  lockedGen,
+		CreateTime:  createTime,
+		UpdateTime:  updateTime,
+	}
+	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
+	}
+	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
+	}
+	if snapRec.Status != nil {
+		snapRec.State = snapRec.Status.State
+		snapRec.ObservedGeneration = &snapRec.Status.ObservedGeneration
+	}
+	snapRec.Etag = generateEtag(snapRec)
 
 	var coords *componentspb.ResolvedComponentCoordinates
 	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
