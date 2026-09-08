@@ -267,6 +267,32 @@ func TestWithForwardedAuth(t *testing.T) {
 			),
 		},
 		{
+			name: "forwards the caller identity alongside the credential",
+			incoming: metadata.Pairs(
+				"authorization", "Bearer token-abc",
+				"x-goog-user-email", "user@example.com",
+			),
+			wantOK: true,
+			wantOut: metadata.Pairs(
+				"authorization", "Bearer token-abc",
+				"x-goog-user-email", "user@example.com",
+			),
+		},
+		{
+			// The email is an identity hint the Dashboard Service only honors next to a valid
+			// token, so on its own it is not something to report as forwarded credentials.
+			name:     "does not count the caller identity as a credential",
+			incoming: metadata.Pairs("x-goog-user-email", "user@example.com"),
+			wantOK:   false,
+		},
+		{
+			// internal/auth ignores a header whose first value is empty, so forwarding one and
+			// calling it a credential would suppress the warning for a call that has none.
+			name:     "treats an empty credential as absent",
+			incoming: metadata.Pairs("authorization", ""),
+			wantOK:   false,
+		},
+		{
 			name:     "reports no credentials when the call carried none",
 			incoming: metadata.Pairs("x-request-id", "req-1"),
 			wantOK:   false,

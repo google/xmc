@@ -36,6 +36,12 @@ import (
 // order it looks for them. See jwtFromMetadata in internal/auth.
 var authForwardKeys = []string{"x-goog-iap-jwt-assertion", "authorization"}
 
+// identityForwardKeys travel with the credentials but are not credentials. resolveUserEmail in
+// internal/auth prefers x-goog-user-email over the token's own email claim, so dropping it here
+// would authorize the chart against a different principal than the rest of the caller's
+// requests. Carrying one of these and no token is still an uncredentialed call.
+var identityForwardKeys = []string{"x-goog-user-email"}
+
 // withForwardedAuth copies the caller's credentials from ctx's incoming metadata onto its
 // outgoing metadata, so the CreateChart RPC below travels as the user who created the
 // artifact.
@@ -63,15 +69,28 @@ func withForwardedAuth(ctx context.Context) (context.Context, bool) {
 	}
 	forwarded := false
 	for _, key := range authForwardKeys {
-		if values := incoming.Get(key); len(values) > 0 {
-			outgoing.Set(key, values...)
+		if copyMetadataValue(incoming, outgoing, key) {
 			forwarded = true
 		}
+	}
+	for _, key := range identityForwardKeys {
+		copyMetadataValue(incoming, outgoing, key)
 	}
 	if !forwarded {
 		return ctx, false
 	}
 	return metadata.NewOutgoingContext(ctx, outgoing), true
+}
+
+// copyMetadataValue copies key from incoming to outgoing, reporting whether it carried anything.
+// A present but empty value counts as absent, which is how internal/auth reads these headers.
+func copyMetadataValue(incoming, outgoing metadata.MD, key string) bool {
+	values := incoming.Get(key)
+	if len(values) == 0 || values[0] == "" {
+		return false
+	}
+	outgoing.Set(key, values...)
+	return true
 }
 
 type dashboardObserver struct {
@@ -119,9 +138,6 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 
 		ctxAuth, forwarded := withForwardedAuth(ctxBg)
 		if !forwarded {
-			// Not fatal here -- let the Dashboard Service be the one to decide -- but the call
-			// is almost certainly about to come back Unauthenticated, and that is far easier to
-			// act on from this line than from the error it turns into.
 			logging.Warn(ctxBg, "No caller credentials to forward to Dashboard service; CreateChart will likely be rejected")
 		}
 
@@ -146,11 +162,9 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
 
-		// Recording the outcome has to outlive the deadline that governed CreateChart. If
-		// CreateChart is what burned those two minutes, writing under the same context fails
-		// before it reaches Spanner, so the FAILED status is never persisted and the artifact
-		// sits in PROVISIONING for good -- the UI then reports a chart that is "still being
-		// provisioned" by a goroutine that exited long ago.
+		// Recording the outcome has to outlive the deadline that governed CreateChart, or a
+		// CreateChart that burned the whole two minutes leaves the artifact in PROVISIONING
+		// for good.
 		storeCtx, storeCancel := context.WithTimeout(context.WithoutCancel(ctxBg), 15*time.Second)
 		defer storeCancel()
 
