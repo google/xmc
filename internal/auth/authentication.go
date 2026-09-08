@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 
 	"golang/grpc/metadata/metadata"
@@ -31,11 +32,6 @@ var validate = idtoken.Validate
 
 // AuthenticateUserFromContext authenticates a user's identity from the context.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
-	// This is a temporary workaround to allow testing without IAP.
-	if a.disableAuthentication {
-		return "test@example.com", "test_user_id", nil
-	}
-
 	jwt, err := jwtFromMetadata(ctx)
 	if err != nil {
 		return "", "", err
@@ -48,6 +44,11 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	}
 	if ident != nil {
 		return ident.email, ident.userID, nil
+	}
+
+	// Try to validate the token against JWKS if a validator is configured.
+	if jwksIdent := a.authenticateViaJWKS(ctx, jwt); jwksIdent != nil {
+		return jwksIdent.email, jwksIdent.userID, nil
 	}
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
@@ -85,6 +86,31 @@ type authIdentity struct {
 	userID string
 }
 
+func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) *authIdentity {
+	if a.jwksValidator == nil {
+		return nil
+	}
+	claims, err := a.jwksValidator.ValidateClaimsAnyAudience(ctx, jwt, a.iapAudiences)
+	if err != nil || claims == nil {
+		logging.Debug(ctx, "authenticateViaJWKS: JWKS validation failed", "error", err)
+		return nil
+	}
+	email := claims.Email
+	if _, err := mail.ParseAddress(email); err != nil {
+		email = claims.Subject
+		if _, err := mail.ParseAddress(email); err != nil {
+			logging.Warn(ctx, "authenticateViaJWKS: token does not contain a valid email address", "email", claims.Email, "sub", claims.Subject)
+			return nil
+		}
+	}
+	userID := claims.Subject
+	if userID == "" {
+		userID = email
+	}
+	logging.Info(ctx, "Authenticated request via JWKS", "email", email, "user_id", userID)
+	return &authIdentity{email: email, userID: userID}
+}
+
 func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*authIdentity, error) {
 	if len(a.jwtSecret) == 0 {
 		return nil, nil
@@ -102,42 +128,12 @@ func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*
 	return &authIdentity{email: claims.Email, userID: claims.Email}, nil
 }
 
-func extractEmailFromMetadata(ctx context.Context) (string, bool) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		logging.Info(ctx, "gRPC metadata not in context, falling back to JWT payload")
-		return "", false
-	}
-	emails := md.Get("x-goog-user-email")
-	if len(emails) > 0 && emails[0] != "" {
-		logging.Info(ctx, "Using x-goog-user-email from metadata", "email", emails[0])
-		return emails[0], true
-	}
-	if len(emails) == 0 {
-		logging.Info(ctx, "x-goog-user-email not in metadata, falling back to JWT payload")
-	} else {
-		logging.Info(ctx, "x-goog-user-email is empty in metadata, falling back to JWT payload")
-	}
-	return "", false
-}
-
-// resolveUserEmail resolves the user's email by trying gRPC metadata first, then falling back to the JWT payload.
+// resolveUserEmail resolves the user's email strictly and exclusively from the verified JWT payload claims.
 func resolveUserEmail(ctx context.Context, payload *idtoken.Payload) (string, error) {
-	if email, ok := extractEmailFromMetadata(ctx); ok {
-		return email, nil
-	}
-	return extractEmailFromPayload(ctx, payload)
-}
-
-func extractEmailFromPayload(ctx context.Context, payload *idtoken.Payload) (string, error) {
 	email, ok := payload.Claims["email"].(string)
-	if !ok {
-		logging.Warn(ctx, "Email claim is missing or not a string")
-		return "", fmt.Errorf("email claim is missing or not a string: %w", status.ErrUnauthenticated)
-	}
-	if email == "" {
-		logging.Warn(ctx, "Email claim is empty")
-		return "", fmt.Errorf("email claim is empty: %w", status.ErrUnauthenticated)
+	if !ok || email == "" {
+		logging.Warn(ctx, "Email claim is missing or empty")
+		return "", fmt.Errorf("email claim is missing or empty: %w", status.ErrUnauthenticated)
 	}
 	return email, nil
 }
@@ -156,14 +152,8 @@ func jwtFromMetadata(ctx context.Context) (string, error) {
 	}
 
 	authValues := md.Get("authorization")
-	if len(authValues) > 0 && authValues[0] != "" {
-		tokenStr := authValues[0]
-		if strings.HasPrefix(tokenStr, "Bearer ") {
-			return strings.TrimPrefix(tokenStr, "Bearer "), nil
-		}
-		if strings.HasPrefix(tokenStr, "bearer ") {
-			return strings.TrimPrefix(tokenStr, "bearer "), nil
-		}
+	if len(authValues) > 0 && len(authValues[0]) > 7 && strings.EqualFold(authValues[0][:7], "bearer ") {
+		return authValues[0][7:], nil
 	}
 
 	logging.Warn(ctx, "Missing IAP JWT or Bearer token in metadata")
