@@ -46,7 +46,7 @@ func newStorage(ctx context.Context, config *Config) (StorageComponents, error) 
 		return StorageComponents{}, fmt.Errorf("failed to create spanner client: %w", err)
 	}
 
-	stg, err := ss.NewStorageWithConfig(sc, ss.StorageConfig{StatusMessageHistoryEnabled: config.StatusMessageHistoryEnabled})
+	stg, err := ss.NewStorage(sc)
 	if err != nil {
 		sc.Close()
 		return StorageComponents{}, fmt.Errorf("failed to create storage: %w", err)

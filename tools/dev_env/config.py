@@ -42,6 +42,9 @@ BASE_SERVICES: list[str] = [
     "ui",
 ]
 
+ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
+MANAGED_XPROF_GCS_BUCKET_ENV: str = "MANAGED_XPROF_GCS_BUCKET"
+
 
 @dataclass
 class LocalDevConfig:
@@ -54,6 +57,8 @@ class LocalDevConfig:
     xid_database: str = ""
     cluster_name: str = ""
     auto_migrate: bool = True
+    enable_managed_mldiagnostics: bool = False
+    managed_xprof_gcs_bucket: str = ""
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
     remote_k8s_context: str = ""
@@ -69,6 +74,14 @@ class LocalDevConfig:
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
             )
+        if self.managed_xprof_gcs_bucket:
+            cleaned = self.managed_xprof_gcs_bucket.strip().rstrip("/")
+            if not cleaned.startswith("gs://") or cleaned == "gs:":
+                raise ValueError(
+                    f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
+                    "The bucket URI must start with 'gs://' and specify a bucket name."
+                )
+            self.managed_xprof_gcs_bucket = cleaned
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
@@ -344,6 +357,20 @@ def load_config(
         default=True,
     )
 
+    enable_managed_mldiagnostics = _resolve_bool_flag(
+        getattr(args, "enable_managed_mldiagnostics", None) if args else None,
+        os.environ.get(ENABLE_MANAGED_MLDIAGNOSTICS_ENV),
+        yaml_vars.get("enable_managed_mldiagnostics"),
+        default=False,
+    )
+
+    managed_xprof_gcs_bucket = _resolve_str_flag(
+        getattr(args, "managed_xprof_gcs_bucket", None) if args else None,
+        os.environ.get(MANAGED_XPROF_GCS_BUCKET_ENV),
+        yaml_vars.get("managed_xprof_gcs_bucket"),
+        default="",
+    )
+
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 
     remote_raw = getattr(args, "remote_k8s_context", None) if args else None
@@ -360,7 +387,7 @@ def load_config(
     enable_remote_k8s = _resolve_bool_flag(
         remote_raw if is_bool else (True if remote_k8s_context else None),
         os.environ.get("REMOTE_K8S"),
-        yaml_vars.get("enable_remote_k8s"),
+        yaml_vars.get("remote_k8s"),
         default=bool(remote_k8s_context),
     )
     if enable_remote_k8s and not remote_k8s_context:
@@ -408,6 +435,8 @@ def load_config(
         xid_database=xid_database,
         cluster_name=cluster_name,
         auto_migrate=auto_migrate,
+        enable_managed_mldiagnostics=enable_managed_mldiagnostics,
+        managed_xprof_gcs_bucket=managed_xprof_gcs_bucket,
         enabled_services=enabled_services,
         config_path=resolved_path,
         remote_k8s_context=remote_k8s_context,

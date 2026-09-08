@@ -94,6 +94,9 @@ class DevEnvCliTest(unittest.TestCase):
             "test-cluster",
             "--auto-migrate",
             "--enable-metrics",
+            "--enable-managed-mldiagnostics",
+            "--managed-xprof-gcs-bucket",
+            "gs://test-bucket",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -114,10 +117,33 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.cluster_name, "test-cluster")
         self.assertTrue(called_args.auto_migrate)
         self.assertTrue(called_args.enable_metrics)
+        self.assertTrue(called_args.enable_managed_mldiagnostics)
+        self.assertEqual(called_args.managed_xprof_gcs_bucket, "gs://test-bucket")
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")
         self.assertIsNone(called_args.only)
+
+    @patch("tools.dev_env.deploy_dev_env.run_deployment")
+    def test_gke_deploy_negative_managed_mldiagnostics(self, mock_run: MagicMock) -> None:
+        """Verifies --no-enable-managed-mldiagnostics sets enable_managed_mldiagnostics to False."""
+        args = [
+            "gke-deploy",
+            "--config",
+            "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--dns-project",
+            "test-dns-proj",
+            "--dns-zone",
+            "test-dns-zone",
+            "--no-enable-managed-mldiagnostics",
+        ]
+        parsed = self.parser.parse_args(args)
+        parsed.func(parsed)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertFalse(called_args.enable_managed_mldiagnostics)
 
     def test_gke_deploy_missing_required_args(self) -> None:
         """Verifies gke-deploy fails when required flags are omitted."""
@@ -180,6 +206,23 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertTrue(called_args.run_migrations)
         self.assertEqual(called_args.only, "images")
         self.assertIsNone(called_args.start_from)
+
+    @patch("tools.dev_env.upgrade_dev_env.run_upgrade")
+    def test_gke_upgrade_negative_managed_mldiagnostics(self, mock_run: MagicMock) -> None:
+        """Verifies --no-enable-managed-mldiagnostics sets enable_managed_mldiagnostics to False in gke-upgrade."""
+        args = [
+            "gke-upgrade",
+            "--config",
+            "deploy/ctk_v2/test.yaml",
+            "--project-id",
+            "test-p",
+            "--no-enable-managed-mldiagnostics",
+        ]
+        parsed = self.parser.parse_args(args)
+        parsed.func(parsed)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertFalse(called_args.enable_managed_mldiagnostics)
 
     def test_gke_upgrade_mutually_exclusive_flags(self) -> None:
         """Verifies gke-upgrade exits if --start-from and --only are both set."""
@@ -691,6 +734,22 @@ class DevEnvCliTest(unittest.TestCase):
         )
         self.assertFalse(parsed_neg.enable_health_service)
         self.assertFalse(parsed_neg.enable_dashboard_service)
+
+    def test_parser_mldiagnostics_feature_flags(self) -> None:
+        """Verifies mldiagnostics flags and negative flags parse into namespace."""
+        parsed = self.parser.parse_args(
+            [
+                "gke-upgrade",
+                "--enable-managed-mldiagnostics",
+                "--managed-xprof-gcs-bucket",
+                "gs://my-bucket",
+            ]
+        )
+        self.assertTrue(parsed.enable_managed_mldiagnostics)
+        self.assertEqual(parsed.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+        parsed_neg = self.parser.parse_args(["gke-upgrade", "--no-enable-managed-mldiagnostics"])
+        self.assertFalse(parsed_neg.enable_managed_mldiagnostics)
 
 
 if __name__ == "__main__":

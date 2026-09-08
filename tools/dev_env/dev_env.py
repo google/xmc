@@ -291,6 +291,26 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         help="Disable dashboard service.",
     )
     p.add_argument(
+        "--enable-managed-mldiagnostics",
+        dest="enable_managed_mldiagnostics",
+        action="store_true",
+        default=None,
+        help="Enable Google Cloud Managed ML Diagnostics.",
+    )
+    p.add_argument(
+        "--no-enable-managed-mldiagnostics",
+        dest="enable_managed_mldiagnostics",
+        action="store_false",
+        default=None,
+        help="Disable Google Cloud Managed ML Diagnostics.",
+    )
+    p.add_argument(
+        "--managed-xprof-gcs-bucket",
+        dest="managed_xprof_gcs_bucket",
+        default=None,
+        help="GCS bucket URL for Managed XProf profiling data (e.g. gs://my-bucket).",
+    )
+    p.add_argument(
         "--remote-k8s",
         "--remote-k8s-context",
         dest="remote_k8s_context",

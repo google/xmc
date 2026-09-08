@@ -173,6 +173,7 @@ check_license() {
     -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
+    -ignore "**/dist/**"
     -ignore "**/venv/**"
     -ignore "**/ctk-out/**"
     -ignore "**.json"

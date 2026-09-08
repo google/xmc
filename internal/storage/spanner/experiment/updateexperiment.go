@@ -80,7 +80,7 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 		// 4. Apply the mutation to the transaction.
 		mutated = true
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, update.XID, nil, nil, originalExperiment.GetStatus().GetStructuredStatusMessage(), updatedExperiment.GetStatus().GetStructuredStatusMessage(), txn)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, update.XID, nil, nil, originalExperiment.GetStatus().GetStructuredStatusMessage(), updatedExperiment.GetStatus().GetStructuredStatusMessage(), txn)
 
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})

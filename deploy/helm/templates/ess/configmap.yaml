@@ -30,7 +30,6 @@ data:
   ess_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   ess_signature_ttl_seconds: {{ .Values.taskSignatureTtlSeconds | quote }}
   ess_allowed_origins: {{ .Values.auth.allowedOrigins | quote }}
-  ess_status_message_history_enabled: {{ .Values.statusMessageHistoryEnabled | quote }}
   redis_addr: {{ .Values.redisAddr | quote }}
   enable_components: {{ .Values.componentsDeployment.enabled | quote }}
 {{- end }}

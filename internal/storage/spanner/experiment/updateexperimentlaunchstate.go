@@ -83,7 +83,7 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 			updatedExp.Status.StructuredStatusMessage = newStructuredMessage
 		}
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage(), txn)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage(), txn)
 
 		// 5. Buffer a write mutation for the experiment row.
 		mutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)

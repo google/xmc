@@ -50,7 +50,6 @@ type Config struct {
 	SigningKeyFile              string
 	SignatureTTLSeconds         int
 	AllowedOrigins              string
-	StatusMessageHistoryEnabled bool
 	RedisAddr                   string
 	DashboardServiceAddr        string
 	EnableComponents            bool
@@ -82,7 +81,6 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.InvokerSA, "ess_service_account", "")
 	configutil.IntEnv(&c.SignatureTTLSeconds, "ess_signature_ttl_seconds", client.DefaultSignatureTTLSeconds)
 	configutil.StringEnv(&c.AllowedOrigins, "ess_allowed_origins", "")
-	configutil.BoolEnv(&c.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", true)
 	configutil.StringEnv(&c.RedisAddr, "redis_addr", "")
 	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "")
 	configutil.BoolEnv(&c.EnableComponents, "enable_components", false)

@@ -27,7 +27,7 @@ sequenceDiagram
         else JobSet is running
             Reconciler->>Reconciler: syncJobSetStatus()
             Reconciler->>Reconciler: Parse labels (xid, wid, eid)
-            alt StartupPodErrorCheckEnabled
+            alt state is STARTING
                 Reconciler->>Reconciler: handleStartupPodChecks()
                 alt age < StartupPodErrorCheckTime
                     Reconciler->>Reconciler: RequeueAfter

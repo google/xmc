@@ -26,28 +26,13 @@ import (
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
-func TestSaveStatusMessageHistoryIfChanged_Disabled(t *testing.T) {
-	fix := setupTest(t, false)
-	ctx, essClient := fix.ctx, fix.essClient
-
-	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
-	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "new"}
-
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, false, 123, nil, nil, currentMsg, newMsg, nil)
-
-	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
-	if len(messages) > 0 {
-		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when disabled, want 0", len(messages))
-	}
-}
-
 func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
-	fix := setupTest(t, true)
+	fix := setupTest(t)
 	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
 
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, nil, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, nil, nil)
 
 	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
@@ -56,13 +41,13 @@ func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
-	fix := setupTest(t, true)
+	fix := setupTest(t)
 	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
 	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
 
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, newMsg, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
 
 	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
@@ -71,7 +56,7 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
-	fix := setupTest(t, true)
+	fix := setupTest(t)
 	ctx, storage, essClient := fix.ctx, fix.storage, fix.essClient
 
 	const xid int64 = 123
@@ -87,7 +72,7 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 	}
 
 	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, xid, nil, nil, currentMsg, newMsg, txn)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentMsg, newMsg, txn)
 		return nil
 	})
 	if err != nil {
@@ -106,7 +91,7 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *testing.T) {
-	fix := setupTest(t, true)
+	fix := setupTest(t)
 	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{
@@ -118,7 +103,7 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 		CreateTime:     &timestamppb.Timestamp{Seconds: 200},
 	}
 
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, newMsg, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
 
 	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
@@ -132,13 +117,13 @@ type testFixture struct {
 	essClient *cloudspanner.Client
 }
 
-func setupTest(t *testing.T, historyEnabled bool) testFixture {
+func setupTest(t *testing.T) testFixture {
 	t.Helper()
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorageWithConfig(essClient, spanner.StorageConfig{StatusMessageHistoryEnabled: historyEnabled})
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorageWithConfig() err = %v, want nil", err)
+		t.Fatalf("NewStorage() err = %v, want nil", err)
 	}
 	return testFixture{
 		ctx:       ctx,

@@ -68,7 +68,7 @@ func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experim
 			return err
 		}
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage(), tx)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage(), tx)
 
 		return nil
 	})

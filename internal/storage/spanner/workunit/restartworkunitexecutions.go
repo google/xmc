@@ -104,7 +104,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 				NewMessage:     newExecution.GetStatus().GetSystemMessage(),
 			})
 
-			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
+			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
 
 			qName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName()
 			resMap := statushistory.ExtractAllResourcesFromExecutable(wu.GetExecutable())
