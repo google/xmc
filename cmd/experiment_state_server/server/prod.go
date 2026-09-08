@@ -33,6 +33,7 @@ import (
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
@@ -132,9 +133,17 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
+	audiences := []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, audiences, cfg.IAPIssuer, []byte(oauthCfg.JWTSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
+	}
+	if cfg.JWKSURL != "" {
+		auth.SetJWKSValidator(jwks.NewValidator(jwks.ValidatorConfig{
+			JWKSURL:          cfg.JWKSURL,
+			AllowedAudiences: audiences,
+			ExpectedIssuer:   cfg.IAPIssuer,
+		}))
 	}
 	return auth, nil
 }
