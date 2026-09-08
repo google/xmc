@@ -68,6 +68,7 @@ metrics:
     # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
 
+
 ingestionGatewayDeployment:
   enabled: false
   hpa:

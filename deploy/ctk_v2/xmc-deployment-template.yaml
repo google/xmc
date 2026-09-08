@@ -71,6 +71,17 @@ vars:
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
   enable_metrics: false
 
+  # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
+  # Requires GKE cluster version 1.35.0-gke.3065000 or later.
+  enable_managed_mldiagnostics: false
+
+  # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
+  # When set, the actuator injects the GCS destination into workload JobSets so
+  # Managed ML Diagnostics (xprof) traces are written to GCS. Requires a GKE
+  # cluster on 1.35.0-gke.3065000+ created/updated with
+  # --enable-managed-mldiagnostics (see README > Managed ML Diagnostics).
+  managed_xprof_gcs_bucket: ""
+
   # ClickHouse connection backing dashboard chart data. Applied only when enable_metrics is
   # true. ClickHouse is Bring-Your-Own infrastructure; see deploy/addons/metrics/clickhouse.
   clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
