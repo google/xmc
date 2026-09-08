@@ -16,6 +16,7 @@ import { ComponentHarness } from '@angular/cdk/testing';
 
 import { PlotCardHarness } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card_harness';
 import { SummaryBoxHarness } from 'xmanager_cloud/ui/app/common/components/dashboard/summary_box/summary_box_harness';
+import { ErrorBannerHarness } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner_harness';
 
 /**
  * Component harness for ChartArtifactView.
@@ -28,9 +29,15 @@ export class ChartArtifactViewHarness extends ComponentHarness {
   private readonly metricChips = this.locatorForAll('.metric-chip');
   private readonly summaryBoxes = this.locatorForAll(SummaryBoxHarness);
   private readonly plotCards = this.locatorForAll(PlotCardHarness);
+  private readonly errorBanner = this.locatorForOptional(ErrorBannerHarness);
 
   async getTitle(): Promise<string> {
     return (await this.title()).text();
+  }
+
+  /** The banner shown when the chart data request failed, or null when it did not. */
+  async getErrorBanner(): Promise<ErrorBannerHarness | null> {
+    return this.errorBanner();
   }
 
   /** The explanation shown in place of the plots, or null when the chart is renderable. */

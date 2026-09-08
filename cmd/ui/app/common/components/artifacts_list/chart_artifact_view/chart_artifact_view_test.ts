@@ -236,33 +236,37 @@ describe('ChartArtifactView', () => {
   });
 
   // The thrown message is deliberately not the component's fallback string: an assertion
-  // against the fallback would pass whether or not the error is ever read.
-  it('reports a failed data fetch and stops loading', async () => {
-    await setUp();
+  // against the fallback would pass whether or not the error is ever read. The banner is only
+  // reached once loading has finished, so finding it also covers the loading flag clearing.
+  it('reports a failed data fetch in an error banner', async () => {
     dashboardServiceSpy.getChartData.and.returnValue(
       throwError(() => new Error('chart data service is unavailable')),
     );
+    await setUp();
 
-    const view = fixture.debugElement.children[0].componentInstance as ChartArtifactView;
-    view.fetchChartData();
-
-    const internals = view as unknown as {
-      error: () => string | null;
-      isLoading: () => boolean;
-    };
-    expect(internals.error()).toBe('chart data service is unavailable');
-    expect(internals.isLoading()).toBeFalse();
+    const banner = await harness.getErrorBanner();
+    expect(banner).not.toBeNull();
+    expect(await banner!.getMessage()).toBe('chart data service is unavailable');
   });
 
   it('falls back to a generic message when the failure carries none', async () => {
-    await setUp();
     dashboardServiceSpy.getChartData.and.returnValue(throwError(() => new Error()));
+    await setUp();
 
-    const view = fixture.debugElement.children[0].componentInstance as ChartArtifactView;
-    view.fetchChartData();
+    const banner = await harness.getErrorBanner();
+    expect(await banner!.getMessage()).toBe('Failed to load chart metrics');
+  });
 
-    const internals = view as unknown as { error: () => string | null };
-    expect(internals.error()).toBe('Failed to load chart metrics');
+  it('re-fetches and clears the banner when the retry is taken', async () => {
+    dashboardServiceSpy.getChartData.and.returnValue(throwError(() => new Error('unavailable')));
+    await setUp();
+    const banner = await harness.getErrorBanner();
+
+    dashboardServiceSpy.getChartData.and.returnValue(of(MOCK_CHART_DATA));
+    await banner!.clickRetry();
+
+    expect(dashboardServiceSpy.getChartData).toHaveBeenCalledTimes(2);
+    expect(await harness.getErrorBanner()).toBeNull();
   });
 
   it('normalises a status given as an enum tag to its proto JSON name', () => {

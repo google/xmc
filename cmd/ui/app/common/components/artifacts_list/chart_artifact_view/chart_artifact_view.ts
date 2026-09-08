@@ -25,6 +25,7 @@ import {
 } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { PlotDataPipe } from 'xmanager_cloud/ui/app/common/components/dashboard/chart_card/chart_card';
 import { PlotCardComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card';
+import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
 import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
@@ -80,6 +81,7 @@ export function chartStatusName(status: unknown): ChartStatus | undefined {
   styleUrl: './chart_artifact_view.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ErrorBannerComponent,
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,

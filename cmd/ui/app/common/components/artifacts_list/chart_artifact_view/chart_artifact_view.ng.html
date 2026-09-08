@@ -45,12 +45,8 @@ limitations under the License.
     <div class="loading-container">
       <mat-spinner diameter="32" />
     </div>
-  } @else if (error()) {
-    <div class="error-container">
-      <mat-icon class="error-icon">error_outline</mat-icon>
-      <span>{{ error() }}</span>
-      <button mat-stroked-button type="button" (click)="fetchChartData()">Retry</button>
-    </div>
+  } @else if (error(); as errorText) {
+    <xmc-error-banner [message]="errorText" (retry)="fetchChartData()" />
   } @else {
     @if (summaryPlots().length) {
       <div class="summary-boxes-row">
