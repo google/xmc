@@ -135,7 +135,7 @@ func (r *Repository) evaluateExperimentDrift(ctx context.Context, txn SpannerTra
 	r.driftCache.set(xid, false, diffs, now)
 	driftMsg := formatDriftWarningMessage(diffs)
 	attachDriftWarningMessage(expStatus, driftMsg)
-	logging.Info(ctx, "Attached component drift warning notice", "xid", xid, "warning", driftMsg.GetUserFacingText())
+	logging.Warn(ctx, "Attached component drift warning notice", "xid", xid, "warning", driftMsg.GetUserFacingText())
 
 	return nil
 }
