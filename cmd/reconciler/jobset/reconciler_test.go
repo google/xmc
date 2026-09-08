@@ -1749,6 +1749,15 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantGroup:  "group-abc",
 			wantBucket: "gs://bucket/folder",
 		},
+		{
+			name:       "successful creation with zero creation timestamp leaves CreateTime empty",
+			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:     &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "test-jobset", Namespace: "test-ns"}},
+			wantCalls:  1,
+			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-62135596800000",
+			wantGroup:  "group-abc",
+			wantBucket: "gs://bucket/folder",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1792,6 +1801,13 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			}
 			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
+			}
+			var wantCreateTime string
+			if tc.jobSet != nil && !tc.jobSet.CreationTimestamp.IsZero() {
+				wantCreateTime = tc.jobSet.CreationTimestamp.UTC().Format(time.RFC3339Nano)
+			}
+			if mock.lastOpts.WorkloadDetails.CreateTime != wantCreateTime {
+				t.Errorf("WorkloadDetails.CreateTime = %q, want %q", mock.lastOpts.WorkloadDetails.CreateTime, wantCreateTime)
 			}
 		})
 	}

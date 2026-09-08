@@ -704,6 +704,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)
 	}
 
+	var createTime string
+	if !jobSet.CreationTimestamp.IsZero() {
+		createTime = jobSet.CreationTimestamp.UTC().Format(time.RFC3339Nano)
+	}
+
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
 	labels := buildMLRunLabels(xid, wid)
@@ -715,10 +720,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		Artifacts:    artifacts,
 		Orchestrator: "GKE",
 		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
-			Kind:      "JobSet",
-			Cluster:   clusterPath,
-			Namespace: jobSet.Namespace,
-			ID:        jobSet.Name,
+			Kind:       "JobSet",
+			Cluster:    clusterPath,
+			Namespace:  jobSet.Namespace,
+			ID:         jobSet.Name,
+			CreateTime: createTime,
 		},
 	}
 
