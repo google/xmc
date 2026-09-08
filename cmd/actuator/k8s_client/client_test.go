@@ -15,6 +15,7 @@ package k8sclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -572,7 +574,6 @@ func TestNew_WithKubeconfig(t *testing.T) {
 			t.Fatalf("os.CreateTemp failed: %v", err)
 		}
 		defer os.Remove(tmpFile.Name())
-
 		kubeconfigContent := `apiVersion: v1
 kind: Config
 clusters:
@@ -612,4 +613,68 @@ users:
 			t.Fatal("New() with non-existent KUBECONFIG succeeded, want error")
 		}
 	})
+}
+
+func TestBuildRESTConfig_InClusterDetected_FailsFast(t *testing.T) {
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+
+	orig := inClusterConfig
+	inClusterConfig = func() (*rest.Config, error) {
+		return nil, errors.New("open /var/run/secrets/kubernetes.io/serviceaccount/token: no such file or directory")
+	}
+	t.Cleanup(func() { inClusterConfig = orig })
+
+	_, err := buildRESTConfig()
+	if err == nil {
+		t.Fatal("buildRESTConfig() with in-cluster environment succeeded unexpectedly, want error")
+	}
+	expectedSub := "running in-cluster (KUBERNETES_SERVICE_HOST is set), but failed to load in-cluster config"
+	if !strings.Contains(err.Error(), expectedSub) {
+		t.Errorf("buildRESTConfig() error = %q, want substring %q", err.Error(), expectedSub)
+	}
+}
+
+func TestBuildRESTConfig_InClusterDetected_Succeeds(t *testing.T) {
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+
+	expectedCfg := &rest.Config{Host: "https://10.0.0.1:443"}
+	orig := inClusterConfig
+	inClusterConfig = func() (*rest.Config, error) {
+		return expectedCfg, nil
+	}
+	t.Cleanup(func() { inClusterConfig = orig })
+
+	cfg, err := buildRESTConfig()
+	if err != nil {
+		t.Fatalf("buildRESTConfig() with valid in-cluster environment failed: %v", err)
+	}
+	if cfg != expectedCfg {
+		t.Errorf("buildRESTConfig() = %v, want %v", cfg, expectedCfg)
+	}
+}
+
+func TestBuildRESTConfig_DefaultFallback_FailsWhenNoConfig(t *testing.T) {
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	t.Setenv("HOME", t.TempDir())
+
+	orig := inClusterConfig
+	inClusterConfig = func() (*rest.Config, error) {
+		return nil, rest.ErrNotInCluster
+	}
+	t.Cleanup(func() { inClusterConfig = orig })
+
+	_, err := buildRESTConfig()
+	if err == nil {
+		t.Fatal("buildRESTConfig() without any config succeeded unexpectedly, want error")
+	}
+	expectedSub := "failed to load default kubeconfig"
+	if !strings.Contains(err.Error(), expectedSub) {
+		t.Errorf("buildRESTConfig() error = %q, want substring %q", err.Error(), expectedSub)
+	}
 }
