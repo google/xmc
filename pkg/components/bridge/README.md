@@ -134,9 +134,8 @@ Parses discovered endpoints and connection secrets from third-party operator CRD
 
 To supplement Kubernetes CR condition checks with real data plane health verification, the bridge performs active network health probes:
 
-- **Bounded HTTP GET Probing (`ProbeHTTP`)**: Executes HTTP/HTTPS health checks with context timeouts, closing connections cleanly and draining response bodies up to a bounded 64KB limit.
 - **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
-- **Protocol-Agnostic Probing (`Probe`)**: Automatically sniffs URL schemes (`http://`, `https://`, `tcp://`, or bare `host:port`) and dispatches to the appropriate probe implementation.
+- **Protocol Probing (`Probe`)**: Automatically normalizes `tcp://` prefixes and bare `host:port` target addresses to test TCP network connectivity.
 - **`HealthProber` Interface & `FakeHealthProber`**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
 
 ---
@@ -165,7 +164,7 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
 - **Dynamic 3P CRD Status Detection & Coordinate Resolution**: Query third-party operator CRDs dynamically using normalized JSONPath queries and publish structured connection coordinates into CMS.
-- **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
+- **Active Network Health Probing**: Verifies runtime data-plane health across raw TCP sockets.
 - **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
 
