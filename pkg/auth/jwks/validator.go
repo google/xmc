@@ -66,12 +66,13 @@ type (
 
 	// Validator validates OIDC tokens against a standard JWKS endpoint.
 	Validator struct {
-		cfg        ValidatorConfig
-		httpClient *http.Client
-		keys       map[string]*rsa.PublicKey
-		lastFetch  time.Time
-		mu         sync.RWMutex
-		sfGroup    singleflight.Group
+		cfg         ValidatorConfig
+		httpClient  *http.Client
+		keys        map[string]*rsa.PublicKey
+		lastFetch   time.Time
+		lastAttempt time.Time
+		mu          sync.RWMutex
+		sfGroup     singleflight.Group
 	}
 )
 
@@ -157,28 +158,33 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 	v.mu.RLock()
 	key, exists := v.findKeyLocked(kid)
 	lastFetch := v.lastFetch
+	lastAttempt := v.lastAttempt
 	v.mu.RUnlock()
 
 	minInterval := min(v.cfg.MinRefreshInterval, v.cfg.CacheTTL)
 	if exists && !lastFetch.IsZero() && time.Since(lastFetch) < v.cfg.CacheTTL {
 		return key, nil
 	}
-	if !exists && !lastFetch.IsZero() && time.Since(lastFetch) < minInterval {
+	if !lastAttempt.IsZero() && time.Since(lastAttempt) < minInterval {
+		if exists {
+			return key, nil
+		}
 		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 	}
 
 	res, err, _ := v.sfGroup.Do("fetchKeys", func() (any, error) {
-		newKeys, fetchErr := v.fetchKeys(ctx)
+		fetchCtx := context.WithoutCancel(ctx)
+		newKeys, fetchErr := v.fetchKeys(fetchCtx)
+		v.mu.Lock()
+		v.lastAttempt = time.Now()
+		if fetchErr == nil {
+			v.keys = newKeys
+			v.lastFetch = time.Now()
+		}
+		v.mu.Unlock()
 		if fetchErr != nil {
-			v.mu.Lock()
-			v.lastFetch = time.Now().Add(-v.cfg.CacheTTL + minInterval)
-			v.mu.Unlock()
 			return nil, fetchErr
 		}
-		v.mu.Lock()
-		v.keys = newKeys
-		v.lastFetch = time.Now()
-		v.mu.Unlock()
 		return newKeys, nil
 	})
 
