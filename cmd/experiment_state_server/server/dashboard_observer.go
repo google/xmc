@@ -142,8 +142,12 @@ func uniquePlotID(metric string, used map[string]bool) string {
 // no plots is not an empty chart to the data engine, it is a chart with nothing to query,
 // so it renders blank however much data the work unit logged.
 func plotSpecsForMetrics(metricNames []string) []*dashboard_apipb.PlotSpec {
-	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*len(metricNames))
-	used := make(map[string]bool, len(metricNames))
+	// Size to what the loop below will actually keep, not to the client-supplied list: the
+	// break at 2*maxProvisionedMetrics means a list of a million names would otherwise
+	// reserve two million pointers to hold forty.
+	capacity := min(len(metricNames), maxProvisionedMetrics)
+	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*capacity)
+	used := make(map[string]bool, capacity)
 	for _, metric := range metricNames {
 		metric = strings.TrimSpace(metric)
 		if metric == "" {
