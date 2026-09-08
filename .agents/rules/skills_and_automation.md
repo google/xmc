@@ -32,6 +32,7 @@ This document provides standards for skill architecture, workflow automation, an
   - **Exit Code 1**: Handled Error. Parse `"message"` and `"instruction"` fields to remediate inputs.
   - **Exit Code 2**: Unhandled Error. Inspect `"message"` and `"traceback"` fields to determine root cause.
 - **Shell Command & Inline Code Execution Safety**: Avoid double-quoted inline shell code invocations (`python3 -c "..."`) when passing Markdown, JSON, or multiline parameters. Execute standalone `.py` script files or pass explicit CLI flags.
+- **Non-Interactive CLI & PTY TUI Invariant**: Always invoke CLI commands with non-interactive or machine-readable flags (e.g., `gh stack view --json`, `gh stack submit --auto`, `gh stack merge <branch> --yes`, `npm --yes`, `apt-get -y`, `terraform -auto-approve`). Never run bare TUI commands that detect a PTY and block indefinitely.
 - **Localized Directory Scope (Strict Path Lock Policy)**: When executing operations or inspecting workspace state (e.g. `./ctk-out/`), agents MUST restrict searches strictly to the immediate working directory. Global recursive searches across parent directories, home folders, or system root (`find_by_name` across `~` or `/`) are strictly prohibited.
 
 ## 6. Context-Aware Execution & Test Scope Constraints
