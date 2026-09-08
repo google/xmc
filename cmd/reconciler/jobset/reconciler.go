@@ -768,16 +768,13 @@ func parseExistingMLRunID(errText string) string {
 
 // mlRunOwnedByXManager reports whether an MLRun resource carries our
 // created_by=xmanager label. A GET response decodes labels as map[string]any, so we
-// type-assert defensively. Also supports legacy created-by label for backward compatibility.
+// type-assert defensively.
 func mlRunOwnedByXManager(mlRun map[string]any) bool {
 	labels, ok := mlRun["labels"].(map[string]any)
 	if !ok {
 		return false
 	}
 	owner, _ := labels["created_by"].(string)
-	if owner == "" {
-		owner, _ = labels["created-by"].(string)
-	}
 	return owner == createdByXManagerLabelValue
 }
 

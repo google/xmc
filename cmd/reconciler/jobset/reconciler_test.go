@@ -1903,18 +1903,8 @@ func TestMLRunOwnedByXManager(t *testing.T) {
 		want  bool
 	}{
 		{name: "no labels", mlRun: map[string]any{}, want: false},
-		{name: "other owner created_by", mlRun: map[string]any{"labels": map[string]any{"created_by": "someone"}}, want: false},
-		{name: "other owner legacy created-by", mlRun: map[string]any{"labels": map[string]any{"created-by": "someone"}}, want: false},
-		{name: "owned created_by", mlRun: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}, want: true},
-		{name: "owned legacy created-by", mlRun: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}, want: true},
-		{
-			name: "created_by takes precedence over created-by",
-			mlRun: map[string]any{"labels": map[string]any{
-				"created_by": createdByXManagerLabelValue,
-				"created-by": "someone-else",
-			}},
-			want: true,
-		},
+		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created_by": "someone"}}, want: false},
+		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
