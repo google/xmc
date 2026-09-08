@@ -267,7 +267,6 @@ func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config) auth.Authorizer
 		1*time.Minute,
 		audiences,
 		auth.DefaultIAPIssuer,
-		oauthCfg.DisableAuthentication,
 		[]byte(oauthCfg.JWTSecret),
 	)
 	if err != nil {

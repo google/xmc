@@ -222,7 +222,6 @@ func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Conf
 		1*time.Minute,
 		[]string{oauthCfg.ClientID},
 		auth.DefaultIAPIssuer,
-		oauthCfg.MockAuth,
 		[]byte(oauthCfg.JWTSecret),
 	)
 	if err != nil {
