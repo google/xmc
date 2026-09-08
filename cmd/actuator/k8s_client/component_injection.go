@@ -36,8 +36,9 @@ import (
 
 // componentAccess encapsulates resolved access configurations from a component custom resource.
 type componentAccess struct {
-	envVars       map[string]string
-	secretEnvVars map[string]string
+	envVars            map[string]string
+	secretEnvVars      map[string]string
+	secretVolumeMounts map[string]string
 }
 
 // evaluateComponentSnapshots discovers required component snapshots, evaluates placement/drift, and injects environment variables.
@@ -80,11 +81,12 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 			return fmt.Errorf("failed to extract access configuration for component %q: %w", compName, err)
 		}
 		injectAccessIntoJobSet(jobSet, access)
-		logging.Debug(ctx, "Injected component environment variables into JobSet",
+		logging.Debug(ctx, "Injected component access configurations into JobSet",
 			"component", compName,
 			"lockedGeneration", lockedGen,
 			"plainEnvVars", len(access.envVars),
 			"secretEnvVars", len(access.secretEnvVars),
+			"secretVolumes", len(access.secretVolumeMounts),
 		)
 	}
 	return nil
@@ -294,8 +296,9 @@ func extractComponentAccess(comp *unstructured.Unstructured) (componentAccess, e
 		return componentAccess{}, nil
 	}
 	return componentAccess{
-		envVars:       extractStringMap(access["envVars"]),
-		secretEnvVars: extractStringMap(access["secretEnvVars"]),
+		envVars:            extractStringMap(access["envVars"]),
+		secretEnvVars:      extractStringMap(access["secretEnvVars"]),
+		secretVolumeMounts: extractStringMap(access["secretVolumeMounts"]),
 	}, nil
 }
 
@@ -322,16 +325,17 @@ func extractStringMap(raw any) map[string]string {
 	return res
 }
 
-// injectAccessIntoJobSet injects plain and secret environment variables across all replicated jobs.
+// injectAccessIntoJobSet injects environment variables and volume mounts across all replicated jobs.
 func injectAccessIntoJobSet(jobSet *jobsetv1alpha2.JobSet, access componentAccess) {
-	if jobSet == nil || (len(access.envVars) == 0 && len(access.secretEnvVars) == 0) {
+	if jobSet == nil || (len(access.envVars) == 0 && len(access.secretEnvVars) == 0 && len(access.secretVolumeMounts) == 0) {
 		return
 	}
 	envVars := buildComponentEnvVars(access.envVars, access.secretEnvVars)
 	for i := range jobSet.Spec.ReplicatedJobs {
 		podSpec := &jobSet.Spec.ReplicatedJobs[i].Template.Spec.Template.Spec
-		injectIntoContainers(podSpec.Containers, envVars)
-		injectIntoContainers(podSpec.InitContainers, envVars)
+		mounts := buildSecretVolumeMounts(podSpec, access.secretVolumeMounts)
+		injectIntoContainers(podSpec.Containers, envVars, mounts)
+		injectIntoContainers(podSpec.InitContainers, envVars, mounts)
 	}
 }
 
@@ -388,12 +392,91 @@ func buildSecretEnvVars(secretEnv map[string]string) []corev1.EnvVar {
 	return envVars
 }
 
-// injectIntoContainers appends environment variables to a container slice.
-func injectIntoContainers(containers []corev1.Container, envVars []corev1.EnvVar) {
+// buildSecretVolumeMounts ensures volumes exist in PodSpec and returns VolumeMount slices for containers.
+func buildSecretVolumeMounts(podSpec *corev1.PodSpec, secretVolumeMounts map[string]string) []corev1.VolumeMount {
+	if podSpec == nil || len(secretVolumeMounts) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(secretVolumeMounts))
+	for k := range secretVolumeMounts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	mounts := make([]corev1.VolumeMount, 0, len(keys))
+	for _, k := range keys {
+		val := secretVolumeMounts[k]
+		secretName, mountPath, ok := strings.Cut(val, ":")
+		if !ok || secretName == "" || mountPath == "" || !strings.HasPrefix(mountPath, "/") {
+			continue
+		}
+		volName := getOrAddSecretVolume(podSpec, secretName)
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: mountPath,
+			ReadOnly:  true,
+		})
+	}
+	return mounts
+}
+
+// getOrAddSecretVolume finds or appends a secret volume in PodSpec and returns its volume name.
+func getOrAddSecretVolume(podSpec *corev1.PodSpec, secretName string) string {
+	for _, v := range podSpec.Volumes {
+		if v.Secret != nil && v.Secret.SecretName == secretName {
+			return v.Name
+		}
+	}
+	existingNames := make(map[string]bool, len(podSpec.Volumes))
+	for _, v := range podSpec.Volumes {
+		existingNames[v.Name] = true
+	}
+	baseName := sanitizeVolumeName(secretName)
+	volName := baseName
+	for i := 1; existingNames[volName]; i++ {
+		volName = fmt.Sprintf("%s-%d", baseName, i)
+	}
+	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+		Name: volName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: secretName,
+			},
+		},
+	})
+	return volName
+}
+
+// sanitizeVolumeName converts Kubernetes secret names into RFC 1123 compliant volume names.
+func sanitizeVolumeName(name string) string {
+	name = strings.ToLower(name)
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	cleaned := strings.Trim(b.String(), "-")
+	if len(cleaned) > 50 {
+		cleaned = strings.TrimRight(cleaned[:50], "-")
+	}
+	if cleaned == "" {
+		cleaned = "secret-vol"
+	}
+	return cleaned
+}
+
+// injectIntoContainers appends environment variables and volume mounts to a container slice.
+func injectIntoContainers(containers []corev1.Container, envVars []corev1.EnvVar, mounts []corev1.VolumeMount) {
 	for i := range containers {
 		c := &containers[i]
 		for _, ev := range envVars {
 			appendOrUpdateEnvVar(c, ev)
+		}
+		for _, m := range mounts {
+			appendVolumeMountIfNotPresent(c, m)
 		}
 	}
 }
@@ -406,4 +489,14 @@ func appendOrUpdateEnvVar(c *corev1.Container, ev corev1.EnvVar) {
 		}
 	}
 	c.Env = append(c.Env, ev)
+}
+
+// appendVolumeMountIfNotPresent appends a volume mount to container if the mount path is not already present.
+func appendVolumeMountIfNotPresent(c *corev1.Container, mount corev1.VolumeMount) {
+	for _, existing := range c.VolumeMounts {
+		if existing.MountPath == mount.MountPath {
+			return
+		}
+	}
+	c.VolumeMounts = append(c.VolumeMounts, mount)
 }
