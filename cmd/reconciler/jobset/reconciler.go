@@ -660,7 +660,7 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 }
 
 // createdByXManagerLabelValue marks an MLRun as owned by the XManager reconciler.
-// On a create conflict, a run carrying created-by equal to this value is treated as
+// On a create conflict, a run carrying created_by equal to this value is treated as
 // our own (idempotent success); a run without it is adopted (updated) with our fields.
 const createdByXManagerLabelValue = "xmanager"
 
@@ -670,12 +670,12 @@ var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]
 
 // buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
 // Extracted so create and upsert apply an identical label set (including the
-// created-by marker that lets us detect ownership on a create conflict).
+// created_by marker that lets us detect ownership on a create conflict).
 func buildMLRunLabels(xid, wid int64) map[string]string {
 	return map[string]string{
-		"experiment-id": fmt.Sprintf("%d", xid),
-		"workunit-id":   fmt.Sprintf("%d", wid),
-		"created-by":    createdByXManagerLabelValue,
+		"experiment_id": fmt.Sprintf("%d", xid),
+		"workunit_id":   fmt.Sprintf("%d", wid),
+		"created_by":    createdByXManagerLabelValue,
 	}
 }
 
@@ -767,14 +767,14 @@ func parseExistingMLRunID(errText string) string {
 }
 
 // mlRunOwnedByXManager reports whether an MLRun resource carries our
-// created-by=xmanager label. A GET response decodes labels as map[string]any, so we
+// created_by=xmanager label. A GET response decodes labels as map[string]any, so we
 // type-assert defensively.
 func mlRunOwnedByXManager(mlRun map[string]any) bool {
 	labels, ok := mlRun["labels"].(map[string]any)
 	if !ok {
 		return false
 	}
-	owner, _ := labels["created-by"].(string)
+	owner, _ := labels["created_by"].(string)
 	return owner == createdByXManagerLabelValue
 }
 

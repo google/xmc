@@ -1790,6 +1790,9 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
+			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
+				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -1900,8 +1903,8 @@ func TestMLRunOwnedByXManager(t *testing.T) {
 		want  bool
 	}{
 		{name: "no labels", mlRun: map[string]any{}, want: false},
-		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created-by": "someone"}}, want: false},
-		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}, want: true},
+		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created_by": "someone"}}, want: false},
+		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1924,7 +1927,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	}{
 		{
 			name:            "already exists and owned is idempotent success",
-			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}},
+			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}},
 			wantURLContains: "console.cloud.google.com",
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
@@ -1932,7 +1935,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		{
 			name: "already exists and foreign is updated",
 			client: &mockMLRunCreator{
-				getRes:    map[string]any{"labels": map[string]any{"created-by": "someone-else"}},
+				getRes:    map[string]any{"labels": map[string]any{"created_by": "someone-else"}},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
 			wantURLContains: "https://mlrun/updated",
@@ -2221,5 +2224,19 @@ func TestMLRunURL(t *testing.T) {
 				t.Errorf("r.mlRunURL(%v, %q) = %q, want %q", tc.res, tc.mlRunID, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
+// using snake_case keys (created_by, experiment_id, workunit_id).
+func TestBuildMLRunLabels(t *testing.T) {
+	got := buildMLRunLabels(12, 3)
+	want := map[string]string{
+		"experiment_id": "12",
+		"workunit_id":   "3",
+		"created_by":    createdByXManagerLabelValue,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
 	}
 }
