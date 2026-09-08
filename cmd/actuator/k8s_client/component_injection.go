@@ -57,6 +57,8 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 	}
 	sort.Strings(compNames)
 
+	logging.Debug(ctx, "Evaluating component snapshots for JobSet", "components", compNames)
+
 	for _, compName := range compNames {
 		lockedGen := snapshots[compName]
 		comp, err := c.getComponent(ctx, compName, namespace)
@@ -78,6 +80,12 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 			return fmt.Errorf("failed to extract access configuration for component %q: %w", compName, err)
 		}
 		injectAccessIntoJobSet(jobSet, access)
+		logging.Debug(ctx, "Injected component environment variables into JobSet",
+			"component", compName,
+			"lockedGeneration", lockedGen,
+			"plainEnvVars", len(access.envVars),
+			"secretEnvVars", len(access.secretEnvVars),
+		)
 	}
 	return nil
 }
@@ -148,6 +156,11 @@ func (c *Client) getComponent(ctx context.Context, name, targetNamespace string)
 	if err == nil || !apierrors.IsNotFound(err) || targetNamespace == constants.DefaultComponentsNamespace {
 		return comp, err
 	}
+	logging.Debug(ctx, "Component not found in target namespace, falling back to default components namespace",
+		"component", name,
+		"targetNamespace", targetNamespace,
+		"fallbackNamespace", constants.DefaultComponentsNamespace,
+	)
 	return c.fetchComponentResource(ctx, name, constants.DefaultComponentsNamespace)
 }
 
