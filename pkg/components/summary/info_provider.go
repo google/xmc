@@ -224,6 +224,10 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 		paramsMap[fmt.Sprintf("label.%s", k)] = v
 	}
 
+	if c.Spec != nil {
+		populateCustomParameters(paramsMap, c.Spec.GetParameters())
+	}
+
 	keys := make([]string, 0, len(paramsMap))
 	for k := range paramsMap {
 		keys = append(keys, k)
@@ -264,7 +268,10 @@ func populateSpecParameters(paramsMap map[string]string, spec *componentspb.Comp
 	if lc := spec.GetLifecycleControl(); lc != nil {
 		populateLifecycleParameters(paramsMap, lc)
 	}
-	for k, v := range spec.GetParameters() {
+}
+
+func populateCustomParameters(paramsMap map[string]string, customParams map[string]string) {
+	for k, v := range customParams {
 		if _, exists := paramsMap[k]; exists {
 			paramsMap[fmt.Sprintf("param.%s", k)] = v
 		} else {

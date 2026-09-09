@@ -413,27 +413,34 @@ func TestExtractComponentConfig_SortedDependencies(t *testing.T) {
 }
 
 func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
-	ctx := context.Background()
-	memStore := store.NewMemoryStore()
-	provider, err := NewStoreComponentsProvider(memStore)
-	if err != nil {
-		t.Fatalf("NewStoreComponentsProvider failed: %v", err)
-	}
-
-	_, _ = memStore.SetComponentIntent(ctx, "collision-comp", &componentspb.ComponentSpec{
-		Version: "v1.0.0",
-		Parameters: map[string]string{
-			"version": "v2-override",
-			"custom":  "value",
+	record := &store.ComponentRecord{
+		Name:         "collision-comp",
+		State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Generation:   1,
+		Dependencies: []string{"dep1"},
+		Spec: &componentspb.ComponentSpec{
+			Version: "v1.0.0",
+			Parameters: map[string]string{
+				"version":      "v2-override",
+				"endpoint":     "custom-endpoint",
+				"dependencies": "custom-deps",
+				"custom":       "value",
+			},
 		},
-	}, nil, 1)
-
-	configList, err := provider.GetComponentsConfig(ctx)
-	if err != nil {
-		t.Fatalf("GetComponentsConfig failed: %v", err)
+		Status: &componentspb.ComponentAccessStatus{
+			Ready: true,
+			Coordinates: &componentspb.ResolvedComponentCoordinates{
+				ServiceName: "svc",
+				Port:        8080,
+				Scheme:      "http",
+				Host:        "svc.xmc.svc.cluster.local",
+			},
+		},
 	}
+
+	cfg := extractComponentConfig(record)
 	cfgMap := make(map[string]string)
-	for _, p := range configList[0].ConfigParameters {
+	for _, p := range cfg.ConfigParameters {
 		cfgMap[p.Key] = p.Value
 	}
 	if cfgMap["version"] != "v1.0.0" {
@@ -441,6 +448,18 @@ func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
 	}
 	if cfgMap["param.version"] != "v2-override" {
 		t.Errorf("expected param.version to be v2-override, got %s", cfgMap["param.version"])
+	}
+	if cfgMap["endpoint"] != "http://svc.xmc.svc.cluster.local:8080" {
+		t.Errorf("expected endpoint to remain system endpoint, got %s", cfgMap["endpoint"])
+	}
+	if cfgMap["param.endpoint"] != "custom-endpoint" {
+		t.Errorf("expected param.endpoint to be custom-endpoint, got %s", cfgMap["param.endpoint"])
+	}
+	if cfgMap["dependencies"] != "dep1" {
+		t.Errorf("expected dependencies to be dep1, got %s", cfgMap["dependencies"])
+	}
+	if cfgMap["param.dependencies"] != "custom-deps" {
+		t.Errorf("expected param.dependencies to be custom-deps, got %s", cfgMap["param.dependencies"])
 	}
 	if cfgMap["custom"] != "value" {
 		t.Errorf("expected custom to be value, got %s", cfgMap["custom"])

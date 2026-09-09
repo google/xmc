@@ -21,10 +21,10 @@ customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
 ```
 This protects health check latency and prevents slow database read locks from impacting overall health check throughput.
 
-### 3. Graceful Degradation & Fail-Fast Initialization
+### 3. Graceful Degradation & Resilient Startup
 - **Explicit Flag Guard**: Custom component discovery is controlled by the `--enable_components` flag (environment variable: `enable_components`).
-- **Fail-Fast on Database Misconfiguration**: If `--enable_components` is explicitly set to `true`, failure to initialize the Cloud Spanner client or create the store provider triggers `logging.Fatal`, halting daemon startup to prevent a false sense of operational security.
-- **In-Memory Fallback for Tests & Local Dev**: When `EssSpannerDatabase` is empty (e.g., local development or hermetic unit tests), the provider falls back to a thread-safe `store.NewMemoryStore()`.
+- **Resilient Startup on Store Initialization**: If `--enable_components` is enabled but `EssSpannerDatabase` is not configured or the Cloud Spanner client cannot be initialized, the daemon logs a warning and disables custom component discovery (`logging.Warn`) without crashing the daemon. The health checker then reports custom components as disabled.
+- **Hermetic Dependency Injection**: Tests and mock environments explicitly provide their own store (e.g., `store.NewMemoryStore()`) via dependency injection into `NewStoreComponentsProvider(store)`. Production code does not contain hidden or implicit in-memory fallbacks, ensuring fail-fast observability.
 
 ---
 
@@ -78,8 +78,9 @@ In `cmd/health_service/server.go`, core platform services returning `HEALTH_STAT
    - `version`: Component release tag (e.g. `v2.1.0`).
    - `type`: Protobuf component enum name.
    - `description`: Human-readable summary.
-2. **Component Parameters**:
-   - Component-specific tuning parameters from `spec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `storageSize`) are surfaced directly as configuration keys. If a parameter key collides with a reserved platform metadata attribute (such as `version` or `type`), it is disambiguated with `param.<key>`.
+2. **Component Parameters (`spec.parameters`)**:
+   - Service-specific tuning parameters declared on `ComponentSpec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `bufferBytes`) are surfaced directly as configuration keys.
+   - **Collision Disambiguation**: If a user parameter key collides with a reserved system metadata attribute (such as `version`, `type`, `endpoint`, `state`, or `dependencies`), the system attribute is preserved and the custom parameter is safely disambiguated with the `param.<key>` prefix.
 3. **Kubernetes Wrapper References**:
    - `wrapper.crd_kind`, `wrapper.crd_group`, `wrapper.crd_version`
    - `wrapper.target_namespace`, `wrapper.target_name`
