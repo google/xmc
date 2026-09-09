@@ -40,7 +40,9 @@ try:
         FlagTransitionDict,
         GatedSubsystemStatus,
         ReleaseMetadataResult,
+        VersionRecommendationDict,
     )
+    from tools.release.semver_engine import calculate_version_recommendation
 except ImportError:
     from common.tool_utils import HandledError, run_tool  # type: ignore[no-redef]
     from feature_flags import (  # type: ignore[no-redef]
@@ -59,7 +61,9 @@ except ImportError:
         FlagTransitionDict,
         GatedSubsystemStatus,
         ReleaseMetadataResult,
+        VersionRecommendationDict,
     )
+    from semver_engine import calculate_version_recommendation  # type: ignore[no-redef]
 
 __all__ = [
     "CommitDict",
@@ -69,6 +73,8 @@ __all__ = [
     "FlagTransitionDict",
     "GatedSubsystemStatus",
     "ReleaseMetadataResult",
+    "VersionRecommendationDict",
+    "calculate_version_recommendation",
     "discover_feature_flags",
     "extract_flag_transitions",
     "extract_release_metadata",
@@ -137,6 +143,9 @@ def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
     commits = get_git_commits(base_ref, target_ref, repo_dir)
     raw_commits: list[CommitDict] = [cast(CommitDict, asdict(c)) for c in commits]
 
+    # 4. Calculate recommended semantic version increment
+    rec = calculate_version_recommendation(base_ref, commits, transitions, approved_flags)
+
     result: ReleaseMetadataResult = {
         "metadata": {
             "base_ref": base_ref,
@@ -145,6 +154,7 @@ def extract_release_metadata(args: argparse.Namespace) -> ReleaseMetadataResult:
             "pr_count": len([c for c in commits if c.pr_number is not None]),
             "approved_flags": sorted(approved_flags),
         },
+        "recommended_version": cast(VersionRecommendationDict, asdict(rec)),
         "flag_transitions": [cast(FlagTransitionDict, asdict(t)) for t in transitions],
         "gated_subsystems_status": gated_matrix,
         "raw_commits": raw_commits,

@@ -121,6 +121,8 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(res["metadata"]["commit_count"], 2)
         self.assertEqual(res["metadata"]["pr_count"], 2)
         self.assertEqual(res["metadata"]["approved_flags"], ["rod_deployment_enabled"])
+        self.assertEqual(res["recommended_version"]["recommended_bump"], "minor")
+        self.assertEqual(res["recommended_version"]["recommended_version"], "0.6.0")
         self.assertEqual(len(res["flag_transitions"]), 1)
         self.assertEqual(len(res["gated_subsystems_status"]), 2)
         self.assertEqual(len(res["raw_commits"]), 2)

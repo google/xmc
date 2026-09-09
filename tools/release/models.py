@@ -112,10 +112,42 @@ class GatedSubsystemStatus(TypedDict):
     helm_value: bool | None
 
 
+@dataclass
+class VersionRecommendation:
+    """Calculated semantic version bump recommendation."""
+
+    current_version: str
+    recommended_version: str
+    recommended_bump: str  # major, minor, patch, none
+    has_breaking_changes: bool = False
+    has_promotions: bool = False
+    has_approved_features: bool = False
+    has_ootb_features: bool = False
+    has_ootb_fixes: bool = False
+    has_migrations: bool = False
+    rationale: list[str] = field(default_factory=list)
+
+
+class VersionRecommendationDict(TypedDict):
+    """Serialized semantic version recommendation dictionary."""
+
+    current_version: str
+    recommended_version: str
+    recommended_bump: str
+    has_breaking_changes: bool
+    has_promotions: bool
+    has_approved_features: bool
+    has_ootb_features: bool
+    has_ootb_fixes: bool
+    has_migrations: bool
+    rationale: list[str]
+
+
 class ReleaseMetadataResult(TypedDict, total=False):
     """Structured release metadata output."""
 
     metadata: ReleaseMetadataSummary
+    recommended_version: VersionRecommendationDict
     flag_transitions: list[FlagTransitionDict]
     gated_subsystems_status: list[GatedSubsystemStatus]
     raw_commits: list[CommitDict]
