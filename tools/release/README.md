@@ -127,18 +127,61 @@ The tool emits structured JSON metadata:
 
 ---
 
-## 5. Package Architecture
+## 5. Release Publisher CLI (`publish_release.py`)
 
-- [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, and output generation.
+`publish_release.py` creates an annotated git tag, pushes it to remote origin, and publishes the official release on GitHub via the `gh` CLI.
+
+### CLI Usage
+
+```bash
+# Publish release tag and notes on GitHub
+python3 tools/release/publish_release.py \
+  --tag 0.6.0 \
+  --notes-file /tmp/release_notes_v0.6.0.md
+
+# Publish with custom release title
+python3 tools/release/publish_release.py \
+  --tag 0.6.0 \
+  --title "XMC 0.6.0 - Enhanced Telemetry and Dashboard" \
+  --notes-file /tmp/release_notes_v0.6.0.md
+
+# Create release without pushing git tag (for local testing or dry run)
+python3 tools/release/publish_release.py \
+  --tag 0.6.0 \
+  --notes-file /tmp/release_notes_v0.6.0.md \
+  --skip-push
+```
+
+### CLI Arguments Reference
+
+| Flag | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--tag` | `-t` | *(required)* | Release semantic version tag (e.g. `0.6.0` or `v0.6.0`) |
+| `--notes-file` | `-f` | *(required)* | Path to markdown file containing formatted release notes |
+| `--title` | | `Release <tag>` | Release title on GitHub |
+| `--target-commit` | `-c` | `HEAD` | Target commit SHA, branch, or tag |
+| `--repo-dir` | `-r` | `.` | Path to git repository root |
+| `--remote` | | `origin` | Git remote name |
+| `--skip-push` | | `false` | Skip pushing local tag to remote (publish notes only) |
+| `--draft` | | `false` | Create release as draft on GitHub |
+| `--prerelease` | | `false` | Mark release as prerelease on GitHub |
+| `--force` | | `false` | Overwrite existing local or remote tag |
+
+---
+
+## 6. Package Architecture
+
+- [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, SemVer recommendation, and output generation.
 - [`feature_flags.py`](feature_flags.py): Discovers feature toggles from CTK and Helm manifests and computes flag transitions between releases.
-- [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, and `git show` with error handling.
-- [`models.py`](models.py): Strongly-typed dataclasses and TypedDicts for release metadata, commits, and flag transitions.
+- [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, `git remote`, and `git show` with error handling.
+- [`models.py`](models.py): Strongly-typed dataclasses and TypedDicts for release metadata, commits, flag transitions, and publication results.
+- [`publish_release.py`](publish_release.py): Annotated git tag creation, tag push, and GitHub release publication via `gh release create`.
 - [`semver_engine.py`](semver_engine.py): Semantic version calculation and release increment recommendation engine.
 - [`yaml_parser.py`](yaml_parser.py): Robust YAML AST parsing and indentation fallback scanner for extracting nested boolean configurations.
 
 ---
 
-## 6. Testing
+## 7. Testing
 
 Run unit tests via Bazel:
 
@@ -146,6 +189,8 @@ Run unit tests via Bazel:
 bazel test //tools/release:extract_release_metadata_test \
   //tools/release:feature_flags_test \
   //tools/release:git_ops_test \
+  //tools/release:publish_release_test \
   //tools/release:semver_engine_test \
   //tools/release:yaml_parser_test
 ```
+

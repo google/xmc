@@ -23,6 +23,7 @@ from tools.common.tool_utils import HandledError
 from tools.release.git_ops import (
     get_git_commits,
     get_git_file_content,
+    get_git_remote_url,
     get_latest_tag_before,
     parse_remote_url,
 )
@@ -99,6 +100,25 @@ malformed_line_with_missing_separators
         )
         with self.assertRaises(HandledError):
             get_git_commits("invalid", "invalid", Path("."))
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_git_remote_url_success(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(stdout="git@github.com:myorg/myrepo.git\n", returncode=0)
+        self.assertEqual(get_git_remote_url(Path(".")), "git@github.com:myorg/myrepo.git")
+        self.assertEqual(
+            get_git_remote_url(Path("."), remote="upstream"), "git@github.com:myorg/myrepo.git"
+        )
+        self.assertEqual(mock_run.call_args[0][0], ["git", "remote", "get-url", "upstream"])
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_git_remote_url_fallback(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["git"])
+        with self.assertRaises(HandledError):
+            get_git_remote_url(Path("."))
+
+        mock_run.side_effect = FileNotFoundError()
+        with self.assertRaises(HandledError):
+            get_git_remote_url(Path("."))
 
     def test_parse_remote_url(self) -> None:
         self.assertEqual(parse_remote_url("git@github.com:google/xmc.git"), ("google", "xmc"))
