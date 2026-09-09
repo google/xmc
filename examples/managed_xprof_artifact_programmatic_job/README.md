@@ -47,6 +47,8 @@ python launch.py
 
 Optional flags:
 
+- `--tpu_type`: TPU accelerator type (e.g. `tpu-v5-lite-podslice`). When set, automatically configures TPU resources, schedules on `tpu-queue`, and defaults to the TPU worker image.
+- `--tpu_topology`: TPU accelerator topology (e.g. `2x2`). Required when `--tpu_type` is set.
 - `--num_work_units`: Number of work units to launch (default `2`), each with its
   own ManagedXprof artifact.
 - `--display_name`: Display name for the ManagedXprof artifact (XProf UI title).

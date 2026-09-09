@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A raw-JAX CPU workload that profiles programmatically, then serves on-demand.
+"""A raw-JAX TPU and CPU workload that profiles programmatically, then serves on-demand.
 
 This worker relies solely on the environment variables injected by the XMC
 Actuator. It reads the per-work-unit GCS destination from
@@ -21,7 +21,7 @@ Actuator. It reads the per-work-unit GCS destination from
 to write the profile there directly. The Diagon backend then discovers and loads
 the profile from that GCS folder using the customized ManagedXprof MLRun labels.
 
-The workload executes on CPUs using JAX.
+The workload executes on TPUs (e.g. TPU v5e / ct5lp) or CPUs using JAX.
 The first ``--programmatic_steps`` steps (default 10) are captured
 programmatically via ``start_trace`` / ``stop_trace``. The remaining steps, up to
 ``--total_steps`` (default 10000), run against a live JAX profiler server so an
@@ -86,7 +86,7 @@ def _resolve_profile_dir() -> str:
 
 @jax.jit
 def _matmul_step(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-    """JIT-compiled matrix multiplication executed on CPU."""
+    """JIT-compiled matrix multiplication executed on TPU or CPU."""
     return jnp.dot(x, y)
 
 
@@ -97,7 +97,7 @@ def _run_traced_workload(
     matrix_size: int,
     profiler_port: int,
 ) -> None:
-    """Runs a stepping workload on CPU: programmatic capture first, then on-demand."""
+    """Runs a stepping workload on TPU/CPU: programmatic capture first, then on-demand."""
     devices = jax.devices()
     backend = jax.default_backend()
     print(f"JAX default backend: {backend}", flush=True)

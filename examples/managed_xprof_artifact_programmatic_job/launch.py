@@ -71,7 +71,17 @@ _IMAGE_PATH = flags.DEFINE_string(
 _QUEUE_NAME = flags.DEFINE_string(
     "queue_name",
     None,
-    "Scheduling queue name (e.g. cpu-queue).",
+    "Scheduling queue name (e.g. tpu-queue or cpu-queue).",
+)
+_TPU_TYPE = flags.DEFINE_string(
+    "tpu_type",
+    None,
+    "TPU accelerator type (e.g. tpu-v5-lite-podslice). If set, configures TPU resources.",
+)
+_TPU_TOPOLOGY = flags.DEFINE_string(
+    "tpu_topology",
+    None,
+    "TPU accelerator topology (e.g. 2x2). Required when tpu_type is set.",
 )
 # Skip git push snapshot during local test launch.
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
@@ -130,23 +140,36 @@ def _configure_dev_endpoint_if_needed() -> None:
 def _build_work_unit(
     image_path: str,
     queue_name: str,
+    tpu_type: str | None = None,
+    tpu_topology: str | None = None,
 ) -> work_unit_pb2.WorkUnit:
     """Builds a single-job WorkUnit running the JAX profiler workload.
 
     Args:
       image_path: The container image to run.
       queue_name: The scheduling queue for the work unit.
+      tpu_type: Optional TPU accelerator type.
+      tpu_topology: Optional TPU accelerator topology.
 
     Returns:
       A WorkUnit proto ready to be created via the ESS.
     """
-    resources = resources_pb2.ResourceSet(
-        cpu_resources=resources_pb2.CpuResources(
-            cpu_millicores=1000,
-            memory_bytes=4 * 1024 * 1024 * 1024,
-        ),
-    )
-    matrix_size = "2000"
+    if tpu_type and tpu_topology:
+        resources = resources_pb2.ResourceSet(
+            tpu_resources=resources_pb2.TpuResources(
+                type=tpu_type,
+                topology=tpu_topology,
+            ),
+        )
+        matrix_size = "4096"
+    else:
+        resources = resources_pb2.ResourceSet(
+            cpu_resources=resources_pb2.CpuResources(
+                cpu_millicores=1000,
+                memory_bytes=4 * 1024 * 1024 * 1024,
+            ),
+        )
+        matrix_size = "2000"
 
     return work_unit_pb2.WorkUnit(
         work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
@@ -192,13 +215,19 @@ def main(argv: Sequence[str]) -> None:
     if not project_id:
         raise app.UsageError("PROJECT_ID environment variable must be set.")
 
+    tpu_type = _TPU_TYPE.value or os.environ.get("TPU_TYPE")
+    tpu_topology = _TPU_TOPOLOGY.value or os.environ.get("TPU_TOPOLOGY")
+
     image_path = _IMAGE_PATH.value
     if not image_path:
-        image_path = os.environ.get("IMAGE_PATH") or f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest"
+        if tpu_type:
+            image_path = f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-tpu-job:latest"
+        else:
+            image_path = os.environ.get("IMAGE_PATH") or f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest"
 
     queue_name = _QUEUE_NAME.value
     if not queue_name:
-        queue_name = os.environ.get("QUEUE_NAME") or "cpu-queue"
+        queue_name = "tpu-queue" if tpu_type else (os.environ.get("QUEUE_NAME") or "cpu-queue")
 
     print(
         "Creating experiment attaching a work-unit-level ManagedXprof artifact"
@@ -216,7 +245,12 @@ def main(argv: Sequence[str]) -> None:
         xid = int(experiment.resource_name.split("/")[-1])
 
         for _ in range(_NUM_WORK_UNITS.value):
-            work_unit = _build_work_unit(image_path, queue_name)
+            work_unit = _build_work_unit(
+                image_path,
+                queue_name,
+                tpu_type=tpu_type,
+                tpu_topology=tpu_topology,
+            )
             created_wu = stub.create_work_unit(
                 ess_api_pb2.CreateWorkUnitRequest(
                     parent=experiment.resource_name,

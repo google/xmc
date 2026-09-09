@@ -22,7 +22,18 @@ if [ -z "${PROJECT_ID}" ]; then
 fi
 
 CPU_IMAGE="us-docker.pkg.dev/${PROJECT_ID}/xmc/programmatic-xprof-job:latest"
+TPU_IMAGE="us-docker.pkg.dev/${PROJECT_ID}/xmc/programmatic-xprof-tpu-job:latest"
 
-echo "Building and pushing CPU image: ${CPU_IMAGE}"
-docker build -t "${CPU_IMAGE}" -f Dockerfile .
-docker push "${CPU_IMAGE}"
+TARGET="${1:-all}"
+
+if [[ "${TARGET}" == "cpu" || "${TARGET}" == "all" ]]; then
+  echo "Building and pushing CPU image: ${CPU_IMAGE}"
+  docker build -t "${CPU_IMAGE}" -f Dockerfile .
+  docker push "${CPU_IMAGE}"
+fi
+
+if [[ "${TARGET}" == "tpu" || "${TARGET}" == "all" ]]; then
+  echo "Building and pushing TPU image: ${TPU_IMAGE}"
+  docker build -t "${TPU_IMAGE}" -f Dockerfile.tpu .
+  docker push "${TPU_IMAGE}"
+fi
