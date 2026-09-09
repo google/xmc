@@ -776,6 +776,12 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 	}
 
 	if targetGen > rec.Generation {
+		// If the active component is at a lower generation than requested (e.g. name was reused
+		// after soft-deleting an older incarnation that reached a higher generation), attempt
+		// resolving historically by name before returning NotFound.
+		if snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen); err == nil {
+			return snapRec, coords, nil
+		}
 		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
 	}
 
@@ -842,6 +848,7 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 		obsGen := snapRec.Status.ObservedGeneration
 		snapRec.ObservedGeneration = &obsGen
 	}
+	snapRec.Dependencies = ExtractDependencies(snapRec.Spec, snapRec.Labels)
 	snapRec.Etag = generateEtag(snapRec)
 
 	var coords *componentspb.ResolvedComponentCoordinates
@@ -917,21 +924,7 @@ func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, quer
 		snapRec.ObservedGeneration = &obsGen
 	}
 
-	depStmt := spanner.Statement{
-		SQL: selectDependenciesByComponentIDSQL,
-		Params: map[string]any{
-			"id": compID,
-		},
-	}
-	depIter := queryable.Query(ctx, depStmt)
-	defer depIter.Stop()
-
-	deps, err := fetchDependencies(depIter)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch dependencies for historical component %q: %w", canonicalName, err)
-	}
-	snapRec.Dependencies = deps
-
+	snapRec.Dependencies = ExtractDependencies(snapRec.Spec, snapRec.Labels)
 	snapRec.Etag = generateEtag(snapRec)
 
 	var coords *componentspb.ResolvedComponentCoordinates

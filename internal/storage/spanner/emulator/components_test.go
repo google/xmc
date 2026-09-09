@@ -84,8 +84,9 @@ func seedExperiment(ctx context.Context, t *testing.T, client *spanner.Client, x
 func seedComponentSnapshot(ctx context.Context, t *testing.T, client *spanner.Client, bitReversedXid int64, comp *store.ComponentRecord, lockedGen int64) {
 	t.Helper()
 	compProto := &componentspb.Component{
-		Name: naming.FullComponentName(comp.Name),
-		Spec: comp.Spec,
+		Name:   naming.FullComponentName(comp.Name),
+		Spec:   comp.Spec,
+		Labels: comp.Labels,
 	}
 	configBytes, err := proto.Marshal(compProto)
 	if err != nil {
@@ -808,6 +809,73 @@ func TestHistoricalSnapshotResolution_SoftDeletedComponent(t *testing.T) {
 	}
 	if histCoords.GetServiceName() != "hist-svc" || histCoords.GetPort() != 8080 {
 		t.Errorf("expected coordinates hist-svc:8080, got %v", histCoords)
+	}
+}
+
+func TestHistoricalSnapshotResolution_RecreatedLowerGeneration(t *testing.T) {
+	ctx := context.Background()
+	client, s := setupTestEnv(ctx, t)
+
+	const xid = int64(10015)
+	bitReversedXid := seedExperiment(ctx, t, client, xid, essmsgpb.ExperimentStatus_ACTIVE)
+
+	// Step 1: Create older component at gen 1, advance to gen 2
+	specV1 := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0-older",
+	}
+	_, err := s.SetComponentIntent(ctx, "reused-comp", specV1, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	specV2 := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v2.0.0-older",
+	}
+	_, err = s.SetComponentIntent(ctx, "reused-comp", specV2, nil, 2)
+	if err != nil {
+		t.Fatalf("SetComponentIntent gen 2 failed: %v", err)
+	}
+
+	accessV2 := &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ObservedGeneration: 2,
+	}
+	compV2, err := s.UpdateObservedGeneration(ctx, "reused-comp", 2, accessV2, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration gen 2 failed: %v", err)
+	}
+
+	// Step 2: Seed snapshot at gen 2
+	seedComponentSnapshot(ctx, t, client, bitReversedXid, compV2, 2)
+
+	// Step 3: Soft-delete older component
+	err = s.ExecuteDeletion(ctx, "reused-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	if err != nil {
+		t.Fatalf("ExecuteDeletion failed: %v", err)
+	}
+
+	// Step 4: Recreate new component with same name at generation 1
+	specNew := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0-new",
+	}
+	_, err = s.SetComponentIntent(ctx, "reused-comp", specNew, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent for recreated component failed: %v", err)
+	}
+
+	// Step 5: ResolveComponentSnapshot for gen 2 when active is gen 1 (targetGen > rec.Generation)
+	// Must fall back to historical snapshots and resolve the gen 2 snapshot of older incarnation
+	resolved, _, err := s.ResolveComponentSnapshot(ctx, "reused-comp", 2)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot for gen 2 failed: %v", err)
+	}
+	if resolved.Spec.GetVersion() != "v2.0.0-older" {
+		t.Errorf("expected version v2.0.0-older, got %q", resolved.Spec.GetVersion())
+	}
+	if resolved.Generation != 2 {
+		t.Errorf("expected generation 2, got %d", resolved.Generation)
 	}
 }
 
