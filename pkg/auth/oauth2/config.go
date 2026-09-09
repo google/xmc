@@ -60,6 +60,8 @@ type Config struct {
 	CookieDomain          string
 	AllowedHosts          []string
 	OIDCIssuerURL         string
+	Username              string
+	Password              string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -80,6 +82,9 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	username, _ := getEnvOrFile("OIDC_USERNAME", getEnv("AUTH_USERNAME", ""))
+	password, _ := getEnvOrFile("OIDC_PASSWORD", getEnv("AUTH_PASSWORD", ""))
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
 	redirectURL := getEnv("REDIRECT_URL", "http://localhost:8080/api/callback")
@@ -106,6 +111,8 @@ func LoadConfig() (*Config, error) {
 		ClientID:              clientID,
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
+		Username:              username,
+		Password:              password,
 		RedirectURL:           redirectURL,
 		AuthURL:               getEnv("AUTH_URL", defaultAuthURL),
 		TokenURL:              getEnv("TOKEN_URL", defaultTokenURL),

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
@@ -27,6 +28,7 @@ import (
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
@@ -148,12 +150,15 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
+	tokenValidator := initJWKSTokenValidator(cfg)
+
 	handler, err := workunittaskhandler.New(workunittaskhandler.Params{
 		K8sClient:              k8sClient,
 		ProjectID:              projectID,
 		Audience:               cfg.Audience,
 		XManagerServiceAccount: cfg.XManagerServiceAccount,
 		JWTVerifier:            keyReloader.Verifier,
+		TokenValidator:         tokenValidator,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
@@ -199,4 +204,32 @@ func actuatorCleanupWorkerID(ctx context.Context) string {
 		hostname = "unknown"
 	}
 	return fmt.Sprintf("%s-%s", constants.ActuatorCleanupWorkerID, hostname)
+}
+
+func appendIfNonEmpty(list []string, item string) []string {
+	if item != "" && !slices.Contains(list, item) {
+		return append(list, item)
+	}
+	return list
+}
+
+func initJWKSTokenValidator(cfg *Config) workunittaskhandler.TokenValidator {
+	if cfg.JWKSURL == "" {
+		return nil
+	}
+
+	allowedAudiences := appendIfNonEmpty(nil, cfg.Audience)
+	allowedAudiences = appendIfNonEmpty(allowedAudiences, os.Getenv("CLIENT_ID"))
+	allowedAudiences = appendIfNonEmpty(allowedAudiences, os.Getenv("OIDC_CLIENT_ID"))
+
+	allowedSAs := appendIfNonEmpty(nil, cfg.XManagerServiceAccount)
+	allowedSAs = appendIfNonEmpty(allowedSAs, os.Getenv("OIDC_USERNAME"))
+	allowedSAs = appendIfNonEmpty(allowedSAs, os.Getenv("AUTH_USERNAME"))
+
+	return jwks.NewValidator(jwks.ValidatorConfig{
+		JWKSURL:                cfg.JWKSURL,
+		ExpectedIssuer:         cfg.OIDCIssuerURL,
+		AllowedAudiences:       allowedAudiences,
+		AllowedServiceAccounts: allowedSAs,
+	})
 }

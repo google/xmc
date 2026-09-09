@@ -15,40 +15,10 @@ package client
 
 import (
 	"context"
-	"testing"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
-
-// mockAndConfigureRedisClient configures a fake Redis client for the Task Queue client.
-func mockAndConfigureRedisClient(t *testing.T, taskQueueClient *Client) *redisclient.FakeClient {
-	t.Helper()
-	fakeClient := redisclient.NewFakeClient()
-	taskQueueClient.redisClient = fakeClient
-	return fakeClient
-}
-
-// GetFakeRedisClient returns the underlying fake Redis client from a task queue client.
-func GetFakeRedisClient(c *Client) *redisclient.FakeClient {
-	if fake, ok := c.redisClient.(*redisclient.FakeClient); ok {
-		return fake
-	}
-	return nil
-}
-
-// MockGenerateOIDCTokenForTest mocks the OIDC token generation for testing.
-func MockGenerateOIDCTokenForTest() func() {
-	original := generateOIDCToken
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "mock-oidc-token", nil
-	}
-	return func() {
-		generateOIDCToken = original
-	}
-}
 
 // EnqueuedTask represents a task enqueued for testing.
 type EnqueuedTask struct {
@@ -60,7 +30,6 @@ type EnqueuedTask struct {
 
 // FakeClient is a fake implementation of the taskqueue.Client interface for testing.
 type FakeClient struct {
-	// --- Captured Inputs ---
 	// LastEnqueuedAction holds the last action that was passed to EnqueueWorkUnitTask.
 	LastEnqueuedAction *actuatortaskpb.Action
 	// LastEnqueuedTarget holds the last target that was passed to EnqueueWorkUnitTask.
@@ -73,11 +42,9 @@ type FakeClient struct {
 	// EnqueuedTasks holds all enqueued tasks.
 	EnqueuedTasks []EnqueuedTask
 
-	// --- Method Configurations ---
 	// EnqueueErr is the error that will be returned by EnqueueWorkUnitTask.
 	EnqueueErr error
 	// EnqueueFunc is an optional function that will be called by EnqueueWorkUnitTask.
-	// If set, it will be called instead of returning EnqueueErr.
 	EnqueueFunc func(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
 }
 
@@ -105,16 +72,4 @@ func (c *FakeClient) EnqueueWorkUnitTask(ctx context.Context, target string, wor
 // Close is a no-op for the mock client.
 func (c *FakeClient) Close() error {
 	return nil
-}
-
-// CreateTaskQueueClient creates a task queue client for testing.
-func CreateTaskQueueClient(ctx context.Context, t *testing.T) *Client {
-	t.Helper()
-	keyFunc := securitytest.MustCreateTestSigner(t)
-	taskQueueClient, err := New(ctx, "test-project", "test-sa", "http://actuator.example.com", "test-audience", keyFunc, DefaultSignatureTTLSeconds, "")
-	if err != nil {
-		t.Fatalf("Failed to create task queue client: %v", err)
-	}
-	mockAndConfigureRedisClient(t, taskQueueClient)
-	return taskQueueClient
 }

@@ -32,9 +32,11 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/security/securitytest"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	tpb "xmanager_cloud/task_queue/proto/task_go_proto"
+	"xmanager_cloud/task_queue_redis/redisclient"
 	"xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -44,11 +46,17 @@ import (
 
 func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
-	cleanup := tq.MockGenerateOIDCTokenForTest()
-	defer cleanup()
-	realTaskQueueClient := tq.CreateTaskQueueClient(ctx, t)
+	fakeRedis := redisclient.NewFakeClient()
+	keyFunc := securitytest.MustCreateTestSigner(t)
+	tokenProvider := tq.TokenProviderFunc(func(_ context.Context, _, _ string) (string, error) {
+		return "mock-oidc-token", nil
+	})
+	realTaskQueueClient, err := tq.New(ctx, "test-project", "test-sa", "http://actuator.example.com", "test-audience", keyFunc, tq.DefaultSignatureTTLSeconds, "", tq.WithTokenProvider(tokenProvider), tq.WithRedisPublisher(fakeRedis))
+	if err != nil {
+		t.Fatalf("Failed to create task queue client: %v", err)
+	}
 	server, _ := createExperimentStateServer(ctx, t, withWorkUnitActuator(realTaskQueueClient))
-	redisFake := tq.GetFakeRedisClient(realTaskQueueClient)
+	redisFake := fakeRedis
 
 	exp := &msgpb.Experiment{
 		Title: "test experiment for createworkunit",

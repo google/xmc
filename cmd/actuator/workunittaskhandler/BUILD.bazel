@@ -17,6 +17,7 @@ compat_go_library(
         "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",
         "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
         "@io_k8s_apimachinery//pkg/api/errors",
+        "@org_golang_google_api//googleapi",
         "@org_golang_google_api//idtoken",
         "@org_golang_google_protobuf//encoding/protojson:go_default_library",
     ],
@@ -35,6 +36,7 @@ compat_go_test(
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_apimachinery//pkg/util/validation/field",
         "@io_k8s_utils//ptr",
+        "@org_golang_google_api//googleapi",
         "@org_golang_google_api//idtoken",
     ],
 )
