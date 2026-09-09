@@ -18,15 +18,22 @@ package summary
 import (
 	"context"
 	"fmt"
+	"net"
+	"sort"
+	"strconv"
+	"strings"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 )
 
-// CustomComponentsInfoProvider defines the interface for component health check retrieval.
+// CustomComponentsInfoProvider defines the interface for component health check and configuration retrieval.
 type CustomComponentsInfoProvider interface {
 	// GetComponentsHealth returns health status for all custom components.
 	GetComponentsHealth(ctx context.Context) ([]ComponentHealth, error)
+
+	// GetComponentsConfig returns configuration parameters for all custom components.
+	GetComponentsConfig(ctx context.Context) ([]ComponentConfig, error)
 }
 
 // ComponentType distinguishes between 1P native and 3P custom components.
@@ -80,6 +87,19 @@ type ComponentHealth struct {
 	Type          ComponentType
 	HealthState   HealthState
 	StatusMessage string
+}
+
+// ConfigParameter exposes a standardized configuration property.
+type ConfigParameter struct {
+	Key   string
+	Value string
+}
+
+// ComponentConfig represents configuration parameters of a specific component.
+type ComponentConfig struct {
+	Name             string
+	Type             ComponentType
+	ConfigParameters []ConfigParameter
 }
 
 // Ensure StoreComponentsProvider implements CustomComponentsInfoProvider at compile time.
@@ -164,4 +184,100 @@ func mapComponentType(spec *componentspb.ComponentSpec) ComponentType {
 	default:
 		return ComponentTypeUnspecified
 	}
+}
+
+// GetComponentsConfig retrieves configuration parameters for all components.
+func (p *StoreComponentsProvider) GetComponentsConfig(ctx context.Context) ([]ComponentConfig, error) {
+	comps, err := p.store.ListComponents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list components for config: %w", err)
+	}
+
+	results := make([]ComponentConfig, 0, len(comps))
+	for _, c := range comps {
+		if c == nil {
+			continue
+		}
+		results = append(results, extractComponentConfig(c))
+	}
+	return results, nil
+}
+
+func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
+	cType := mapComponentType(c.Spec)
+	paramsMap := make(map[string]string)
+
+	if c.Spec != nil && c.Spec.GetVersion() != "" {
+		paramsMap["version"] = c.Spec.GetVersion()
+	}
+
+	populateStatusParameters(paramsMap, c.Status)
+
+	if c.Spec != nil {
+		populateCustomParameters(paramsMap, c.Spec.GetParameters())
+	}
+
+	keys := make([]string, 0, len(paramsMap))
+	for k := range paramsMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	params := make([]ConfigParameter, len(keys))
+	for i, k := range keys {
+		params[i] = ConfigParameter{
+			Key:   k,
+			Value: paramsMap[k],
+		}
+	}
+
+	return ComponentConfig{
+		Name:             c.Name,
+		Type:             cType,
+		ConfigParameters: params,
+	}
+}
+
+func populateCustomParameters(paramsMap map[string]string, customParams map[string]string) {
+	for k, v := range customParams {
+		if _, exists := paramsMap[k]; exists {
+			paramsMap[fmt.Sprintf("param.%s", k)] = v
+		} else {
+			paramsMap[k] = v
+		}
+	}
+}
+
+func populateStatusParameters(paramsMap map[string]string, status *componentspb.ComponentAccessStatus) {
+	if status == nil || status.GetCoordinates() == nil {
+		return
+	}
+	endpoint := formatCoordinatesEndpoint(status.GetCoordinates())
+	if endpoint != "" {
+		paramsMap["endpoint"] = endpoint
+	}
+}
+
+func formatCoordinatesEndpoint(coord *componentspb.ResolvedComponentCoordinates) string {
+	if coord == nil {
+		return ""
+	}
+	scheme := coord.GetScheme()
+	if scheme == "" {
+		scheme = "http"
+	}
+	host := coord.GetHost()
+	if host == "" {
+		host = coord.GetServiceName()
+	}
+	if host == "" {
+		return ""
+	}
+	if coord.GetPort() > 0 {
+		return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(host, strconv.Itoa(int(coord.GetPort()))))
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return fmt.Sprintf("%s://%s", scheme, host)
 }

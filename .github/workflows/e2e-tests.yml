@@ -16,18 +16,21 @@ name: 'XMC Headless E2E Tests'
 
 on:
   merge_group:
-  push:
-    branches:
-      - main
+  workflow_call:
+    secrets:
+      GCP_E2E_PROJECT_ID:
+        required: false
+      GCP_E2E_WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      GCP_E2E_SERVICE_ACCOUNT:
+        required: false
+      GCP_E2E_SPANNER_INSTANCE:
+        required: false
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-v2-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   run-e2e:
@@ -35,6 +38,10 @@ jobs:
     runs-on: 'arc-runner-set'
     environment: e2e-test
     timeout-minutes: 60
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: 'Checkout'
