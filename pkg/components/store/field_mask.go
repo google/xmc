@@ -31,6 +31,7 @@ import (
 //   - "manifests"
 //   - "description"
 //   - "generation"
+//   - "parameters"
 //
 // Unmapped, unknown, or sub-nested paths are ignored without mutating other fields.
 // If base is nil, an empty ComponentSpec is used as the base (useful for creation with update_mask).
@@ -103,6 +104,16 @@ func applyComplexField(result, update *componentspb.ComponentSpec, path string) 
 			result.Manifests = append([]string(nil), update.GetManifests()...)
 		} else {
 			result.Manifests = nil
+		}
+	case "parameters":
+		if update.GetParameters() != nil {
+			params := make(map[string]string, len(update.GetParameters()))
+			for k, v := range update.GetParameters() {
+				params[k] = v
+			}
+			result.Parameters = params
+		} else {
+			result.Parameters = nil
 		}
 	}
 }

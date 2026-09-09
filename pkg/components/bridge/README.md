@@ -45,6 +45,22 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
 ---
 
+## Component Specification & Parameter Parsing (`ParseSpecFromUnstructured`)
+
+The bridge reconciler ingests Kubernetes Custom Resource manifests and unmarshals them into strongly typed `componentspb.ComponentSpec` protobufs:
+
+- **Structured Parameters (`spec.parameters`)**:
+  - Key-value tuning parameters declared under `spec.parameters` (e.g. `topicName`, `port`, `bufferBytes`, `brokerEndpoints`) are parsed into `map<string, string> parameters` on `ComponentSpec`.
+  - **Safe Numeric Formatting**: Unstructured JSON unmarshaling in Go parses numbers as `float64`. To prevent scientific notation formatting on large integers ($\ge 1,000,000$, such as `1048576` for 1MB becoming `"1e+06"`), `parseParameters` checks if `val == float64(int64(val))` and uses `strconv.FormatInt(int64(val), 10)` for integral values, while preserving decimals via `strconv.FormatFloat(val, 'f', -1, 64)`. Booleans and integers are explicitly formatted via `strconv`.
+- **Manifests & Wrapper References**:
+  - `spec.manifests`: Slice of raw YAML strings for declarative workload resources.
+  - `spec.wrapperRef`: Target CRD coordinates (`crdKind`, `crdGroup`, `crdVersion`, `targetName`, `targetNamespace`) for third-party operators.
+- **Operational Defaults**:
+  - `deletionProtection`: Defaults to `true` if omitted to prevent accidental data loss.
+  - `enabled`: Defaults to `true` if omitted.
+
+---
+
 ## 3P Custom Wrapper Status Detection (`status_detector.go`, `k8s_status_detector.go`, `fake_status_detector.go`)
 
 Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler defines an extensible status detection contract to evaluate their health without hardcoding proprietary schemas:

@@ -229,6 +229,93 @@ func TestApplySpecUpdateMask(t *testing.T) {
 				Generation:       base.Generation,
 			},
 		},
+		{
+			name: "UpdateParameters",
+			base: base,
+			update: &componentspb.ComponentSpec{
+				Parameters: map[string]string{
+					"topic":   "events",
+					"brokers": "kafka:9092",
+				},
+			},
+			paths: []string{"parameters"},
+			wantSpec: &componentspb.ComponentSpec{
+				Type:             base.Type,
+				Version:          base.Version,
+				DeletionPolicy:   base.DeletionPolicy,
+				WrapperRef:       base.WrapperRef,
+				LifecycleControl: base.LifecycleControl,
+				Manifests:        base.Manifests,
+				Description:      base.Description,
+				Generation:       base.Generation,
+				Parameters: map[string]string{
+					"topic":   "events",
+					"brokers": "kafka:9092",
+				},
+			},
+		},
+		{
+			name: "ClearParameters",
+			base: &componentspb.ComponentSpec{
+				Type:    base.Type,
+				Version: base.Version,
+				Parameters: map[string]string{
+					"topic": "events",
+				},
+			},
+			update: &componentspb.ComponentSpec{
+				Parameters: nil,
+			},
+			paths: []string{"parameters"},
+			wantSpec: &componentspb.ComponentSpec{
+				Type:       base.Type,
+				Version:    base.Version,
+				Parameters: nil,
+			},
+		},
+		{
+			name: "EmptyParameters",
+			base: &componentspb.ComponentSpec{
+				Type:    base.Type,
+				Version: base.Version,
+				Parameters: map[string]string{
+					"topic": "events",
+				},
+			},
+			update: &componentspb.ComponentSpec{
+				Parameters: map[string]string{},
+			},
+			paths: []string{"parameters"},
+			wantSpec: &componentspb.ComponentSpec{
+				Type:       base.Type,
+				Version:    base.Version,
+				Parameters: map[string]string{},
+			},
+		},
+		{
+			name: "PreserveParametersWhenNotInMask",
+			base: &componentspb.ComponentSpec{
+				Type:    base.Type,
+				Version: "v1.0.0",
+				Parameters: map[string]string{
+					"topic": "events",
+				},
+			},
+			update: &componentspb.ComponentSpec{
+				Version: "v2.0.0",
+				Parameters: map[string]string{
+					"topic": "new-events",
+				},
+			},
+			paths: []string{"version"},
+			wantSpec: &componentspb.ComponentSpec{
+				Type:    base.Type,
+				Version: "v2.0.0",
+				Parameters: map[string]string{
+					"topic": "events",
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
