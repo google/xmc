@@ -45,7 +45,7 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
 ---
 
-## 3P Custom Wrapper Status Detection (`status_detector.go`, `fake_status_detector.go`)
+## 3P Custom Wrapper Status Detection (`status_detector.go`, `k8s_status_detector.go`, `fake_status_detector.go`)
 
 Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler defines an extensible status detection contract to evaluate their health without hardcoding proprietary schemas:
 
@@ -57,7 +57,7 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
   - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
   - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation.
   - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
-  - `K8sStatusDetector`: Production implementation using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), and normalized JSONPath evaluation.
+  - `K8sStatusDetector`: Production implementation (`k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), and normalized JSONPath evaluation. Companion tests in `k8s_status_detector_test.go`.
 - **Dynamic JSONPath Engine (`EvaluateJSONPath`)**: Evaluates arbitrary JSONPath queries against unstructured objects with automatic syntax normalization (`{.field}`, `field`, `$[0]`) and sibling condition failure message discovery.
 - **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
@@ -89,16 +89,17 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
+  - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
 - **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
 - **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
 - **Clean Lifecycle Operations**:
   - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap, records component enablement, and triggers a release upgrade.
-  - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, clears active tracking state, and triggers a release upgrade.
+  - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, clears active tracking state, and uninstalls/updates the release.
   - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and uninstalls the release.
   - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
   - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`), allowing in-process Helm release upgrades and uninstalls without CLI child processes.
-  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the component release.
+  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
 - **Context-Aware Upgrade Lock**:
   - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.
 - **Asynchronous Upgrade Worker Queue & Per-Component Coalescing**:
@@ -156,6 +157,25 @@ The reconciler unifies third-party CRD inspection and active health probing in `
   - `SCHEME`: Access protocol scheme (`http`, `https`, `tcp`).
   - `SECRET_NAME`: Credentials secret name reference.
 - **`BridgeProber`**: Aggregates `StatusDetector` and `HealthProber` into a unified prober implementation for controller initialization.
+- **Profile 3 Operator-less Support (`reconcileOperatorlessWrapper`)**: For workloads lacking Kubernetes CRD wrappers (`spec.wrapperRef` omitted, endpoint provided), the reconciler bypasses dynamic CRD status discovery and evaluates data-plane readiness exclusively through direct active network health probing.
+
+---
+
+## Controller Hardening & Status Mutation (`cmd/xmc_bridge/main.go`, `reconciler.go`)
+
+Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
+
+- **Server-Side Apply (SSA) Status Mutation**:
+  - The controller persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using a dedicated `fieldManager = "xmc-bridge"`.
+  - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
+- **Hybrid CMS Heartbeat Throttling (`shouldSyncToCMS`)**:
+  - To eliminate Cloud Spanner write amplification caused by periodic steady-state health probe ticks, the bridge decouples Kubernetes data-plane polling from Spanner persistence.
+  - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:
+    1. Initial component reconciliation (no prior `Ready` condition recorded).
+    2. Status transitions (e.g., `Ready=True <-> Ready=False`).
+    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`).
+    4. Heartbeat interval expiration (coarse 5-minute interval via `defaultCMSHeartbeatInterval`).
+  - `resetReadyTransitionTime` updates `LastTransitionTime` on the `Ready` condition to current UTC time after successful CMS synchronization, resetting the heartbeat timer.
 
 ---
 
@@ -170,6 +190,10 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
 - **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
 - **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
+- **Server-Side Apply Status Mutation**: Applies atomic SSA patches (`fieldManager=xmc-bridge`) to eliminate multi-controller status conflicts.
+- **Hybrid CMS Heartbeat Throttling**: Bypasses Cloud Spanner write amplification by throttling routine probe writes to 5-minute heartbeats or state changes.
+- **Profile 3 Operator-less Support**: Direct health checking and CMS coordinate publication for external SaaS or static endpoints lacking CRDs.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
+
 
 

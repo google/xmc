@@ -460,8 +460,11 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, readyReason, healthMsg)
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, degradedReason, healthMsg)
 
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	if shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
+		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
+			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
 	return res, nil
@@ -655,6 +658,50 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int
 	return err
 }
 
+const defaultCMSHeartbeatInterval = 5 * time.Minute
+
+// shouldSyncToCMS determines whether an UpdateObservedGeneration RPC to CMS should be executed.
+// Under the Hybrid Probing Model (Drift 1), periodic steady-state health probe ticks bypass
+// CMS and Cloud Spanner to eliminate write amplification. CMS is only invoked when:
+// 1. Initial reconciliation (no existing Ready condition reported).
+// 2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
+// 3. Metadata generation update (CR spec modified).
+// 4. Coarse heartbeat interval expiration (>= 5 minutes).
+func shouldSyncToCMS(existingConditions []Condition, targetStatus string, currentGen int64) bool {
+	var existingReady *Condition
+	for i := range existingConditions {
+		if existingConditions[i].Type == ConditionTypeReady {
+			existingReady = &existingConditions[i]
+			break
+		}
+	}
+	if existingReady == nil {
+		return true
+	}
+	if existingReady.ObservedGeneration != currentGen {
+		return true
+	}
+	if existingReady.Status != targetStatus {
+		return true
+	}
+	if existingReady.LastTransitionTime.IsZero() || time.Since(existingReady.LastTransitionTime) >= defaultCMSHeartbeatInterval {
+		return true
+	}
+	return false
+}
+
+// resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
+// This resets the heartbeat timer after a successful sync to CMS.
+func resetReadyTransitionTime(conditions []Condition) {
+	now := time.Now().UTC()
+	for i := range conditions {
+		if conditions[i].Type == ConditionTypeReady {
+			conditions[i].LastTransitionTime = now
+			return
+		}
+	}
+}
+
 // setCondition inserts or updates a Condition in the conditions slice. If the condition already
 // existed with the same status, its lastTransitionTime is preserved; otherwise, it is updated to time.Now().UTC().
 func setCondition(conditions *[]Condition, existing []Condition, condType, status string, gen int64, reason, message string) {
@@ -681,7 +728,7 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
 		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
 	}
-	if ref.Name == "" {
+	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath == "" {
 		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
 	}
 	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
@@ -699,6 +746,9 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	ref, unreadyReason, unreadyMsg := resolveAndValidateWrapperRef(in)
 	if unreadyReason != "" {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
+	}
+	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath != "" {
+		return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, in.WrapperOpts.EndpointJSONPath)
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
@@ -745,6 +795,21 @@ func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in Reconcil
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
 }
 
+// reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
+// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
+func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, endpoint string) (*ReconcileResult, error) {
+	if ok, reason, msg := r.verifyEndpointHealth(ctx, endpoint); !ok {
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
+	}
+	resStatus := &ResourceStatus{
+		Found:    true,
+		Ready:    true,
+		Endpoint: endpoint,
+		Message:  "Static endpoint is reachable and healthy",
+	}
+	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
 // verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
 func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
 	if endpoint == "" || r.prober == nil {
@@ -775,8 +840,11 @@ func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComp
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
+		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	return res, nil
 }
@@ -793,8 +861,11 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, "ComponentHealthy", msg)
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentHealthy", msg)
 
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusTrue, in.Generation) {
+		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
+			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		}
+		resetReadyTransitionTime(res.Conditions)
 	}
 	return res, nil
 }

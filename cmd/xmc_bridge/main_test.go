@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	clientgotesting "k8s.io/client-go/testing"
 )
 
 type mockCMS struct {
@@ -146,12 +148,42 @@ func TestBuildKubeConfig(t *testing.T) {
 	})
 }
 
+func attachSSAPatchReactor(fakeDynamic *dynamicfake.FakeDynamicClient) {
+	fakeDynamic.PrependReactor("patch", "components", func(action clientgotesting.Action) (handled bool, ret runtime.Object, err error) {
+		patchAction, ok := action.(clientgotesting.PatchAction)
+		if !ok {
+			return false, nil, nil
+		}
+		var patchMap map[string]any
+		if err := json.Unmarshal(patchAction.GetPatch(), &patchMap); err != nil {
+			return true, nil, err
+		}
+		obj, err := fakeDynamic.Tracker().Get(componentGVR, patchAction.GetNamespace(), patchAction.GetName())
+		if err != nil {
+			return true, nil, err
+		}
+		unstruct, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			return true, nil, errors.New("expected *unstructured.Unstructured from tracker")
+		}
+		u := unstruct.DeepCopy()
+		if status, ok := patchMap["status"].(map[string]any); ok {
+			u.Object["status"] = status
+		}
+		if err := fakeDynamic.Tracker().Update(componentGVR, u, patchAction.GetNamespace()); err != nil {
+			return true, nil, err
+		}
+		return true, u, nil
+	})
+}
+
 func TestController_RunReconcilePass(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
 		componentGVR: "ComponentList",
 	})
+	attachSSAPatchReactor(fakeDynamic)
 
 	compObj := &unstructured.Unstructured{
 		Object: map[string]any{
@@ -348,6 +380,7 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 	fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
 		componentGVR: "ComponentList",
 	})
+	attachSSAPatchReactor(fakeDynamic)
 
 	compObj := &unstructured.Unstructured{
 		Object: map[string]any{
@@ -424,15 +457,15 @@ func TestController_SyncFinalizers_NilResult(t *testing.T) {
 func TestController_ReconcileItem(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
-	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
-	r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create reconciler: %v", err)
-	}
-	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+	fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		componentGVR: "ComponentList",
+	})
+	attachSSAPatchReactor(fakeDynamic)
 
 	item := &unstructured.Unstructured{
 		Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
 			"metadata": map[string]any{
 				"name":      "test-item",
 				"namespace": "xmc",
@@ -442,6 +475,15 @@ func TestController_ReconcileItem(t *testing.T) {
 			},
 		},
 	}
+	if _, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Create(ctx, item, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create test-item: %v", err)
+	}
+
+	r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create reconciler: %v", err)
+	}
+	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
 
 	// Should safely reconcile without panicking
 	ctrl.reconcileItem(ctx, item)

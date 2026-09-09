@@ -1642,3 +1642,185 @@ func TestPopulateAccessEnvVars(t *testing.T) {
 		}
 	})
 }
+
+func TestShouldSyncToCMS(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name         string
+		conditions   []Condition
+		targetStatus string
+		currentGen   int64
+		wantSync     bool
+	}{
+		{
+			name:         "initial reconciliation with empty conditions",
+			conditions:   nil,
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     true,
+		},
+		{
+			name: "steady state unchanged health within heartbeat interval",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: now.Add(-1 * time.Minute),
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     false,
+		},
+		{
+			name: "readiness state transition from False to True",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusFalse,
+					ObservedGeneration: 1,
+					LastTransitionTime: now.Add(-1 * time.Minute),
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     true,
+		},
+		{
+			name: "readiness state transition from True to False",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: now.Add(-1 * time.Minute),
+				},
+			},
+			targetStatus: ConditionStatusFalse,
+			currentGen:   1,
+			wantSync:     true,
+		},
+		{
+			name: "metadata generation increment",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: now.Add(-1 * time.Minute),
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   2,
+			wantSync:     true,
+		},
+		{
+			name: "coarse heartbeat expired after 5 minutes",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: now.Add(-6 * time.Minute),
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     true,
+		},
+		{
+			name: "zero LastTransitionTime triggers sync",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 1,
+					LastTransitionTime: time.Time{},
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   1,
+			wantSync:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSyncToCMS(tt.conditions, tt.targetStatus, tt.currentGen)
+			if got != tt.wantSync {
+				t.Errorf("shouldSyncToCMS() = %v, want %v", got, tt.wantSync)
+			}
+		})
+	}
+}
+
+func TestResetReadyTransitionTime(t *testing.T) {
+	past := time.Now().UTC().Add(-10 * time.Minute)
+	conditions := []Condition{
+		{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, LastTransitionTime: past},
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: past},
+	}
+	resetReadyTransitionTime(conditions)
+	if time.Since(conditions[1].LastTransitionTime) > 5*time.Second {
+		t.Errorf("expected Ready LastTransitionTime to be reset to now, got %v", conditions[1].LastTransitionTime)
+	}
+	if !conditions[0].LastTransitionTime.Equal(past) {
+		t.Errorf("expected Degraded LastTransitionTime to remain unchanged, got %v", conditions[0].LastTransitionTime)
+	}
+}
+
+func TestReconcile_OperatorlessProfile3(t *testing.T) {
+	ctx := context.Background()
+	cms := &mockCMS{}
+	prober := &mockProber{
+		probeRes: &HealthProbeResult{Healthy: true, Message: "Service operational"},
+	}
+	r, err := NewReconciler(cms, prober, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+
+	specProfile3 := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+	}
+
+	// Case 1: Operator-less component with static endpoint probes healthy
+	in := ReconcileComponentInput{
+		Namespace:          "xmc",
+		Name:               "external-saas-db",
+		Generation:         1,
+		Spec:               specProfile3,
+		HasFinalizer:       true,
+		DeletionProtection: true,
+		Enabled:            true,
+		WrapperOpts: WrapperRef{
+			EndpointJSONPath: "http://external-db.example.com:5432",
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent failed: %v", err)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected COMPONENT_STATE_ENABLED, got %v", res.State)
+	}
+	if res.Access == nil || res.Access.EnvVars["ENDPOINT"] != "http://external-db.example.com:5432" {
+		t.Errorf("expected endpoint published in access env vars: %+v", res.Access)
+	}
+
+	// Case 2: Operator-less component with failing endpoint probes unready
+	unhealthyProber := &mockProber{
+		probeRes: &HealthProbeResult{Healthy: false, Message: "Connection timed out"},
+	}
+	rUnhealthy, _ := NewReconciler(cms, unhealthyProber, nil)
+	resUnhealthy, err := rUnhealthy.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("unexpected error on unready probe: %v", err)
+	}
+	if resUnhealthy.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("expected COMPONENT_STATE_PENDING_RECONCILIATION, got %v", resUnhealthy.State)
+	}
+}

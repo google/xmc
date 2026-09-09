@@ -100,3 +100,20 @@ func TestSDKHelmActionRunner_Uninstall(t *testing.T) {
 		t.Error("expected error from Uninstall when restClientGetter is nil")
 	}
 }
+
+func TestSDKHelmActionRunner_ResolveChart_DefaultFallback(t *testing.T) {
+	runner := NewSDKHelmActionRunner(nil)
+	resolved, err := runner.resolveChart("xmc-cmp-ray-operator", nil)
+	if err != nil {
+		t.Fatalf("unexpected error resolving default chart: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("expected non-nil default chart")
+	}
+	if resolved.Name() != "xmc-cmp-ray-operator" {
+		t.Errorf("expected chart name %q, got %q", "xmc-cmp-ray-operator", resolved.Name())
+	}
+	if resolved.Metadata == nil || resolved.Metadata.APIVersion != "v2" {
+		t.Errorf("expected v2 metadata, got %v", resolved.Metadata)
+	}
+}
