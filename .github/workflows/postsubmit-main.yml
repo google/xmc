@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: 'XMC Post-Submit Master Pipeline'
+name: 'XMC Post-Submit Main Pipeline'
 
 on:
   push:
@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: post-submit-master-${{ github.ref }}
+  group: post-submit-main-${{ github.ref }}
   # Do not cancel in-progress runs on main to preserve full commit test history
   cancel-in-progress: false
 
@@ -173,6 +173,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { run } = require('./.github/scripts/postsubmit-master.js');
+            const { run } = require('./.github/scripts/postsubmit-main.js');
             await run({ github, context, core });
 

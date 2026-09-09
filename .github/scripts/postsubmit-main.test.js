@@ -20,13 +20,13 @@ const {
   getFailedJobs,
   formatFailureCommentBody,
   run,
-} = require('./postsubmit-master');
+} = require('./postsubmit-main');
 
 test('getDedupMarker constructs standard HTML comment with SHA', () => {
   const sha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
   assert.strictEqual(
     getDedupMarker(sha),
-    '<!-- xmc-postsubmit-master-failure: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -->'
+    '<!-- xmc-postsubmit-main-failure: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -->'
   );
 });
 
@@ -111,7 +111,7 @@ test('formatFailureCommentBody generates complete markdown table with icons and 
     ],
   });
 
-  assert.match(body, /<!-- xmc-postsubmit-master-failure: c094d151fd62003048085bf3a7bdc311caef4305 -->/);
+  assert.match(body, /<!-- xmc-postsubmit-main-failure: c094d151fd62003048085bf3a7bdc311caef4305 -->/);
   assert.match(body, /### 🚨 Post-Submit Test Regression on `main`/);
   assert.match(body, /Hello @octocat,/);
   assert.match(body, /\[`c094d15`\]\(https:\/\/github\.com\/google\/xmc\/commit\/c094d151fd62003048085bf3a7bdc311caef4305\)/);
@@ -162,7 +162,7 @@ test('run terminates early when all jobs succeed', async () => {
 
   assert.strictEqual(res.status, 'success');
   assert.strictEqual(res.failedCount, 0);
-  assert.ok(logs.some(l => l.includes('All post-submit master pipeline jobs succeeded.')));
+  assert.ok(logs.some(l => l.includes('All post-submit main pipeline jobs succeeded.')));
 });
 
 test('run handles direct push when no PR is associated with commit', async () => {
@@ -229,7 +229,7 @@ test('run skips posting comment if deduplication marker is already present on PR
         listComments: async () => ({
           data: [
             { id: 1, body: 'Some generic comment' },
-            { id: 2, body: `<!-- xmc-postsubmit-master-failure: ${headSha} -->\nOlder failure log` },
+            { id: 2, body: `<!-- xmc-postsubmit-main-failure: ${headSha} -->\nOlder failure log` },
           ],
         }),
         createComment: async () => {
@@ -309,7 +309,7 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
   assert.strictEqual(postedComment.owner, 'google');
   assert.strictEqual(postedComment.repo, 'xmc');
   assert.match(postedComment.body, /Hello @test-author,/);
-  assert.match(postedComment.body, /<!-- xmc-postsubmit-master-failure: 4444444444444444444444444444444444444444 -->/);
+  assert.match(postedComment.body, /<!-- xmc-postsubmit-main-failure: 4444444444444444444444444444444444444444 -->/);
   assert.match(postedComment.body, /Backend & Go Unit Tests.*❌ `failure`/);
   assert.match(postedComment.body, /KinD & Playwright Headless E2E.*❌ `cancelled`/);
   assert.match(postedComment.body, /Angular UI Unit Tests.*✅ `success`/);

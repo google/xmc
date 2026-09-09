@@ -18,7 +18,7 @@
  * @returns {string} HTML comment marker.
  */
 function getDedupMarker(headSha) {
-  return `<!-- xmc-postsubmit-master-failure: ${headSha} -->`;
+  return `<!-- xmc-postsubmit-main-failure: ${headSha} -->`;
 }
 
 /**
@@ -137,7 +137,7 @@ async function run({ github, context, core, needsContext }) {
   const failedJobs = getFailedJobs(jobResults);
 
   if (failedJobs.length === 0) {
-    core.info('All post-submit master pipeline jobs succeeded.');
+    core.info('All post-submit main pipeline jobs succeeded.');
     return { status: 'success', failedCount: 0 };
   }
 
