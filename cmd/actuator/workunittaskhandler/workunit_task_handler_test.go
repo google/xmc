@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"golang/google_api/googleapi/googleapi"
 	"golang/google_api/idtoken/idtoken"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
@@ -402,6 +403,36 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "context deadline exceeded",
 			wantShouldBeRetried:    true,
+		},
+		{
+			name:      "token_validation_transient_googleapi_503",
+			oidcToken: "fake-token",
+			tokenValidator: &mockTokenValidator{
+				err: &googleapi.Error{Code: http.StatusServiceUnavailable, Message: "service unavailable"},
+			},
+			xmanagerServiceAccount: testServiceAccount,
+			wantErrMsg:             "service unavailable",
+			wantShouldBeRetried:    true,
+		},
+		{
+			name:      "token_validation_transient_googleapi_429",
+			oidcToken: "fake-token",
+			tokenValidator: &mockTokenValidator{
+				err: &googleapi.Error{Code: http.StatusTooManyRequests, Message: "rate limit exceeded"},
+			},
+			xmanagerServiceAccount: testServiceAccount,
+			wantErrMsg:             "rate limit exceeded",
+			wantShouldBeRetried:    true,
+		},
+		{
+			name:      "token_validation_non_transient_googleapi_401",
+			oidcToken: "fake-token",
+			tokenValidator: &mockTokenValidator{
+				err: &googleapi.Error{Code: http.StatusUnauthorized, Message: "unauthorized"},
+			},
+			xmanagerServiceAccount: testServiceAccount,
+			wantErrMsg:             "unauthorized",
+			wantShouldBeRetried:    false,
 		},
 	}
 
@@ -1152,6 +1183,66 @@ func TestIsRetryableError(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "googleapi_503_service_unavailable",
+			err:  &googleapi.Error{Code: http.StatusServiceUnavailable, Message: "Service Unavailable"},
+			want: true,
+		},
+		{
+			name: "googleapi_429_too_many_requests",
+			err:  &googleapi.Error{Code: http.StatusTooManyRequests, Message: "Too Many Requests"},
+			want: true,
+		},
+		{
+			name: "googleapi_500_internal_server_error",
+			err:  &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
+			want: true,
+		},
+		{
+			name: "googleapi_502_bad_gateway",
+			err:  &googleapi.Error{Code: http.StatusBadGateway, Message: "Bad Gateway"},
+			want: true,
+		},
+		{
+			name: "googleapi_504_gateway_timeout",
+			err:  &googleapi.Error{Code: http.StatusGatewayTimeout, Message: "Gateway Timeout"},
+			want: true,
+		},
+		{
+			name: "googleapi_400_bad_request",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Message: "Bad Request"},
+			want: false,
+		},
+		{
+			name: "googleapi_404_not_found",
+			err:  &googleapi.Error{Code: http.StatusNotFound, Message: "Not Found"},
+			want: false,
+		},
+		{
+			name: "wrapped_googleapi_503",
+			err:  fmt.Errorf("api call failed: %w", &googleapi.Error{Code: http.StatusServiceUnavailable, Message: "Service Unavailable"}),
+			want: true,
+		},
+		{
+			name: "mock_status_code_503",
+			err:  mockStatusCodeErr{code: http.StatusServiceUnavailable},
+			want: true,
+		},
+		{
+			name: "mock_status_code_400",
+			err:  mockStatusCodeErr{code: http.StatusBadRequest},
+			want: false,
+		},
+		{
+			name: "mock_http_status_code_429",
+			err:  mockHTTPStatusCodeErr{code: http.StatusTooManyRequests},
+			want: true,
+		},
+		{
+			name: "mock_http_status_code_404",
+			err:  mockHTTPStatusCodeErr{code: http.StatusNotFound},
+			want: false,
+		},
+		{
 			name: "nil_error",
 			err:  nil,
 			want: false,
@@ -1178,3 +1269,13 @@ type mockTimeoutErr struct{ active bool }
 func (m mockTimeoutErr) Error() string   { return "mock timeout" }
 func (m mockTimeoutErr) Timeout() bool   { return m.active }
 func (m mockTimeoutErr) Temporary() bool { return m.active }
+
+type mockStatusCodeErr struct{ code int }
+
+func (m mockStatusCodeErr) Error() string   { return fmt.Sprintf("status code %d", m.code) }
+func (m mockStatusCodeErr) StatusCode() int { return m.code }
+
+type mockHTTPStatusCodeErr struct{ code int }
+
+func (m mockHTTPStatusCodeErr) Error() string       { return fmt.Sprintf("http status code %d", m.code) }
+func (m mockHTTPStatusCodeErr) HTTPStatusCode() int { return m.code }

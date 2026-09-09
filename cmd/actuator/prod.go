@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
@@ -219,20 +218,13 @@ func initJWKSTokenValidator(cfg *Config) workunittaskhandler.TokenValidator {
 		return nil
 	}
 
-	allowedAudiences := []string{cfg.Audience}
+	allowedAudiences := appendIfNonEmpty(nil, cfg.Audience)
 	allowedAudiences = appendIfNonEmpty(allowedAudiences, os.Getenv("CLIENT_ID"))
 	allowedAudiences = appendIfNonEmpty(allowedAudiences, os.Getenv("OIDC_CLIENT_ID"))
 
 	allowedSAs := appendIfNonEmpty(nil, cfg.XManagerServiceAccount)
 	allowedSAs = appendIfNonEmpty(allowedSAs, os.Getenv("OIDC_USERNAME"))
 	allowedSAs = appendIfNonEmpty(allowedSAs, os.Getenv("AUTH_USERNAME"))
-
-	isDevOIDC := strings.Contains(cfg.OIDCIssuerURL, "dex") || strings.Contains(cfg.JWKSURL, "dex") ||
-		strings.Contains(cfg.JWKSURL, "localhost") || strings.Contains(cfg.JWKSURL, "127.0.0.1")
-	if isDevOIDC {
-		allowedAudiences = appendIfNonEmpty(allowedAudiences, "xmc-client")
-		allowedSAs = appendIfNonEmpty(allowedSAs, "admin@xmc.local")
-	}
 
 	return jwks.NewValidator(jwks.ValidatorConfig{
 		JWKSURL:                cfg.JWKSURL,

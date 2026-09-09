@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	"golang/google_api/googleapi/googleapi"
 	"golang/google_api/idtoken/idtoken"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/prometheus/client/prometheus/promauto/promauto"
@@ -297,6 +298,14 @@ func isRetryableError(err error) bool {
 	}
 	var tempErr interface{ Temporary() bool }
 	if errors.As(err, &tempErr) && tempErr.Temporary() {
+		return true
+	}
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) && isTransientHTTPStatus(gErr.Code) {
+		return true
+	}
+	var statusCodeErr interface{ StatusCode() int }
+	if errors.As(err, &statusCodeErr) && isTransientHTTPStatus(statusCodeErr.StatusCode()) {
 		return true
 	}
 	var httpStatusErr interface{ HTTPStatusCode() int }

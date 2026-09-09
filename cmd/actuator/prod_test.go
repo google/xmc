@@ -211,3 +211,33 @@ func TestWorkerIDHelpers(t *testing.T) {
 		}
 	})
 }
+
+func TestInitJWKSTokenValidator(t *testing.T) {
+	t.Run("empty_jwks_url", func(t *testing.T) {
+		cfg := &Config{
+			JWKSURL: "",
+		}
+		validator := initJWKSTokenValidator(cfg)
+		if validator != nil {
+			t.Errorf("initJWKSTokenValidator() = %v, want nil", validator)
+		}
+	})
+
+	t.Run("populated_jwks_url", func(t *testing.T) {
+		t.Setenv("CLIENT_ID", "env-client-id")
+		t.Setenv("OIDC_CLIENT_ID", "env-oidc-client-id")
+		t.Setenv("OIDC_USERNAME", "oidc-user@example.com")
+		t.Setenv("AUTH_USERNAME", "auth-user@example.com")
+
+		cfg := &Config{
+			JWKSURL:                "http://localhost:8080/jwks",
+			OIDCIssuerURL:          "http://localhost:8080",
+			Audience:               "config-audience",
+			XManagerServiceAccount: "config-sa@example.com",
+		}
+		validator := initJWKSTokenValidator(cfg)
+		if validator == nil {
+			t.Fatalf("initJWKSTokenValidator() returned nil, want non-nil validator")
+		}
+	})
+}
