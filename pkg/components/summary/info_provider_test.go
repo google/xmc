@@ -230,6 +230,10 @@ func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
 			TargetNamespace: "xmc-redpanda",
 			TargetName:      "rp-cluster",
 		},
+		Parameters: map[string]string{
+			"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+			"defaultTopic":    "xmc-metrics",
+		},
 	}, map[string]string{
 		"tier": "storage",
 	}, 2)
@@ -258,6 +262,8 @@ func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
 	}
 
 	expectedParams := []ConfigParameter{
+		{Key: "brokerEndpoints", Value: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"},
+		{Key: "defaultTopic", Value: "xmc-metrics"},
 		{Key: "description", Value: "Streaming engine"},
 		{Key: "endpoint", Value: "http://redpanda.xmc-redpanda.svc.cluster.local:9092"},
 		{Key: "generation", Value: "2"},
@@ -403,5 +409,40 @@ func TestExtractComponentConfig_SortedDependencies(t *testing.T) {
 	want := "alpha, beta, charlie, zebra"
 	if depsVal != want {
 		t.Errorf("dependencies = %q, want %q", depsVal, want)
+	}
+}
+
+func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
+	ctx := context.Background()
+	memStore := store.NewMemoryStore()
+	provider, err := NewStoreComponentsProvider(memStore)
+	if err != nil {
+		t.Fatalf("NewStoreComponentsProvider failed: %v", err)
+	}
+
+	_, _ = memStore.SetComponentIntent(ctx, "collision-comp", &componentspb.ComponentSpec{
+		Version: "v1.0.0",
+		Parameters: map[string]string{
+			"version": "v2-override",
+			"custom":  "value",
+		},
+	}, nil, 1)
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	cfgMap := make(map[string]string)
+	for _, p := range configList[0].ConfigParameters {
+		cfgMap[p.Key] = p.Value
+	}
+	if cfgMap["version"] != "v1.0.0" {
+		t.Errorf("expected version to remain v1.0.0, got %s", cfgMap["version"])
+	}
+	if cfgMap["param.version"] != "v2-override" {
+		t.Errorf("expected param.version to be v2-override, got %s", cfgMap["param.version"])
+	}
+	if cfgMap["custom"] != "value" {
+		t.Errorf("expected custom to be value, got %s", cfgMap["custom"])
 	}
 }

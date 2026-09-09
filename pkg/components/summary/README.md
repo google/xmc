@@ -78,16 +78,18 @@ In `cmd/health_service/server.go`, core platform services returning `HEALTH_STAT
    - `version`: Component release tag (e.g. `v2.1.0`).
    - `type`: Protobuf component enum name.
    - `description`: Human-readable summary.
-2. **Kubernetes Wrapper References**:
+2. **Component Parameters**:
+   - Component-specific tuning parameters from `spec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `storageSize`) are surfaced directly as configuration keys. If a parameter key collides with a reserved platform metadata attribute (such as `version` or `type`), it is disambiguated with `param.<key>`.
+3. **Kubernetes Wrapper References**:
    - `wrapper.crd_kind`, `wrapper.crd_group`, `wrapper.crd_version`
    - `wrapper.target_namespace`, `wrapper.target_name`
-3. **Lifecycle Controls**:
+4. **Lifecycle Controls**:
    - `lifecycle.grace_period` (e.g. `30s`)
    - `lifecycle.draining_timeout` (e.g. `2m0s`)
-4. **Resolved Endpoints**:
+5. **Resolved Endpoints**:
    - `endpoint`: Formatted scheme, host, and port (e.g. `http://service.namespace:8080`).
    - **RFC 3986 Compliance**: IPv6 host literals without explicit ports are enclosed in square brackets (e.g. `http://[2001:db8::1]`).
-5. **Deterministic Dependencies**:
+6. **Deterministic Dependencies**:
    - `dependencies`: Component dependencies are copied and lexicographically sorted via `sort.Strings` before joining (`strings.Join(deps, ", ")`), guaranteeing deterministic output across calls and avoiding UI/test flakiness.
-6. **User Labels**:
+7. **User Labels**:
    - `label.<key>`: Any metadata labels attached to the component.

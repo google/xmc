@@ -264,6 +264,13 @@ func populateSpecParameters(paramsMap map[string]string, spec *componentspb.Comp
 	if lc := spec.GetLifecycleControl(); lc != nil {
 		populateLifecycleParameters(paramsMap, lc)
 	}
+	for k, v := range spec.GetParameters() {
+		if _, exists := paramsMap[k]; exists {
+			paramsMap[fmt.Sprintf("param.%s", k)] = v
+		} else {
+			paramsMap[k] = v
+		}
+	}
 }
 
 func populateWrapperParameters(paramsMap map[string]string, wrapper *componentspb.WrapperRef) {
