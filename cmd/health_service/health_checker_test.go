@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 
 	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/pkg/components/summary"
 
 	"google.golang.org/api/option"
 	run "google.golang.org/api/run/v2"
@@ -663,5 +665,151 @@ func TestRunChecks(t *testing.T) {
 				t.Errorf("expected XID version %q, got %q", tc.wantXidDbSchemaVersion, res.XidDbSchemaVersion)
 			}
 		})
+	}
+}
+
+type mockComponentsInfoProvider struct {
+	healthList []summary.ComponentHealth
+	healthErr  error
+}
+
+func (m *mockComponentsInfoProvider) GetComponentsHealth(ctx context.Context) ([]summary.ComponentHealth, error) {
+	return m.healthList, m.healthErr
+}
+
+func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	xidListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to create xid listener: %v", err)
+	}
+	defer xidListener.Close()
+
+	xidServer := grpc.NewServer()
+	xidHealthServer := health.NewServer()
+	xidHealthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(xidServer, xidHealthServer)
+	go func() {
+		_ = xidServer.Serve(xidListener)
+	}()
+	defer xidServer.Stop()
+
+	mockProvider := &mockComponentsInfoProvider{
+		healthList: []summary.ComponentHealth{
+			{
+				Name:          "clickhouse",
+				Type:          summary.ComponentTypeCustom3PWrapper,
+				HealthState:   summary.HealthStateHealthy,
+				StatusMessage: "Healthy and Operational",
+			},
+			{
+				Name:          "gateway",
+				Type:          summary.ComponentTypeCustom1PComponent,
+				HealthState:   summary.HealthStateUnhealthy,
+				StatusMessage: "Pending GKE reconciliation",
+			},
+			{
+				Name:          "redis-custom",
+				Type:          summary.ComponentTypeCustom1PComponent,
+				HealthState:   summary.HealthStateDisabled,
+				StatusMessage: "Component disabled",
+			},
+		},
+	}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
+		},
+		ComponentsProvider: mockProvider,
+	})
+	if err != nil {
+		t.Fatalf("failed to create health checker: %v", err)
+	}
+	defer checker.Close()
+
+	res := checker.RunChecks(context.Background())
+
+	customComps := make(map[string]*spb.ComponentHealth)
+	for _, comp := range res.Components {
+		if comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
+			customComps[comp.Name] = comp
+		}
+	}
+
+	if len(customComps) != 2 {
+		t.Fatalf("expected 2 custom components (disabled filtered out), got %d", len(customComps))
+	}
+
+	ch, ok := customComps["clickhouse"]
+	if !ok || ch.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY || ch.ErrorMessage != "" {
+		t.Errorf("unexpected clickhouse health: %+v", ch)
+	}
+
+	gw, ok := customComps["gateway"]
+	if !ok || gw.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || gw.ErrorMessage != "Pending GKE reconciliation" {
+		t.Errorf("unexpected gateway health: %+v", gw)
+	}
+}
+
+func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	xidListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to create xid listener: %v", err)
+	}
+	defer xidListener.Close()
+
+	xidServer := grpc.NewServer()
+	xidHealthServer := health.NewServer()
+	xidHealthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(xidServer, xidHealthServer)
+	go func() {
+		_ = xidServer.Serve(xidListener)
+	}()
+	defer xidServer.Stop()
+
+	mockProvider := &mockComponentsInfoProvider{
+		healthErr: errors.New("spanner connection failure"),
+	}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
+		},
+		ComponentsProvider: mockProvider,
+	})
+	if err != nil {
+		t.Fatalf("failed to create health checker: %v", err)
+	}
+	defer checker.Close()
+
+	// Should not crash, and should report Custom Components Provider as UNHEALTHY
+	res := checker.RunChecks(context.Background())
+	var customComps []*spb.ComponentHealth
+	for _, comp := range res.Components {
+		if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
+			customComps = append(customComps, comp)
+		}
+	}
+	if len(customComps) != 1 {
+		t.Fatalf("expected 1 custom component error placeholder, got %d", len(customComps))
+	}
+	if customComps[0].Name != "Custom Components Provider" || customComps[0].HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("unexpected component health: %+v", customComps[0])
 	}
 }
