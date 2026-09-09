@@ -30,7 +30,16 @@ import (
 // FetchExperimentStatus retrieves the ExperimentStatus for a given XID.
 func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*essmsgpb.ExperimentStatus, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	return r.fetchExperimentStatusTransaction(ctx, xid, r.client.Single())
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+	expStatus, err := r.fetchExperimentStatusTransaction(ctx, xid, txn)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.evaluateExperimentDrift(ctx, txn, xid, expStatus); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+	return expStatus, nil
 }
 
 func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.ExperimentStatus, error) {

@@ -16,6 +16,7 @@ package cms
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1041,5 +1042,201 @@ func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Snap CMS test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-snap",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	coords := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-cluster",
+		Namespace:   "default",
+		ServiceName: "cms-snap-svc",
+		Port:        8080,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Success path
+	resp, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name:       "components/cms-snap",
+		Generation: proto.Int64(1),
+	})
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot unexpected error: %v", err)
+	}
+	if resp.GetComponent().GetName() != "components/cms-snap" {
+		t.Errorf("GetName() = %q, want 'components/cms-snap'", resp.GetComponent().GetName())
+	}
+	if resp.GetState() != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("GetState() = %v, want ENABLED", resp.GetState())
+	}
+	if resp.GetCoordinates().GetServiceName() != "cms-snap-svc" {
+		t.Errorf("Coordinates.ServiceName = %q, want 'cms-snap-svc'", resp.GetCoordinates().GetServiceName())
+	}
+
+	// 2. Negative generation -> InvalidArgument
+	_, err = server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name:       "components/cms-snap",
+		Generation: proto.Int64(-1),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ResolveComponentSnapshot(negative gen) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 3. Nonexistent component -> NotFound
+	_, err = server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+		Name: "components/nonexistent",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("ResolveComponentSnapshot(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	spec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.1.0",
+		Description: "Req CMS test",
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "components/cms-req",
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Satisfied
+	resp, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		RequiredType:   componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		MinimumVersion: "v2.0.0",
+	})
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if !resp.GetSatisfied() {
+		t.Errorf("GetSatisfied() = false, want true (reason: %q)", resp.GetReason())
+	}
+	if resp.GetComponent() == nil || resp.GetComponent().GetName() != "components/cms-req" {
+		t.Errorf("GetComponent() = %v, want 'components/cms-req'", resp.GetComponent())
+	}
+
+	// 2. Unsatisfied (higher version)
+	respUnsat, err := server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		RequiredType:   componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		MinimumVersion: "v3.0.0",
+	})
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unsatisfied check failed: %v", err)
+	}
+	if respUnsat.GetSatisfied() {
+		t.Error("GetSatisfied() = true for v3.0.0 min version, want false")
+	}
+
+	// 3. Invalid minimum version -> InvalidArgument
+	_, err = server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:           "components/cms-req",
+		MinimumVersion: "invalid.semver.string",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ValidateComponentRequirement(invalid semver) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 4. Invalid required type enum -> InvalidArgument
+	_, err = server.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{
+		Name:         "components/cms-req",
+		RequiredType: componentspb.ComponentType(99),
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ValidateComponentRequirement(invalid type) got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("cms-health-%d", i)
+		spec := &componentspb.ComponentSpec{
+			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version: "v1.0.0",
+		}
+		if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+			Name: name,
+			Spec: spec,
+		}); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
+		}
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
+		}
+	}
+
+	// 1. Success path
+	resp, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: 2,
+	})
+	if err != nil {
+		t.Fatalf("GetPlatformHealth failed: %v", err)
+	}
+	if len(resp.GetComponents()) != 2 {
+		t.Errorf("len(Components) = %d, want 2", len(resp.GetComponents()))
+	}
+	if resp.GetTotalHealthy() != 3 {
+		t.Errorf("TotalHealthy = %d, want 3", resp.GetTotalHealthy())
+	}
+	if resp.GetTotalUnhealthy() != 0 {
+		t.Errorf("TotalUnhealthy = %d, want 0", resp.GetTotalUnhealthy())
+	}
+	if resp.GetNextPageToken() == "" {
+		t.Error("NextPageToken is empty, want token")
+	}
+
+	// 2. Negative page size -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		PageSize: -1,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(negative page size) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 3. Nil request -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(nil request) got code %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 4. Invalid filter -> InvalidArgument
+	_, err = server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{
+		Filter: "invalid_key=value",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetPlatformHealth(invalid filter) got code %v, want InvalidArgument", status.Code(err))
 	}
 }

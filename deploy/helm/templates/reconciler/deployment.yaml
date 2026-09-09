@@ -44,9 +44,31 @@ spec:
           capabilities:
             drop:
             - ALL
+        ports:
+        # Dedicated metrics port served by the reconciler's own metrics server,
+        # which exposes the global default registry (the reconciler's promauto
+        # metrics, e.g. jobset_reconciler_mlrun_*). The manager's built-in
+        # server (":8081") serves only the controller-runtime registry and is
+        # not scraped. Named so PodMonitoring can reference it.
+        - containerPort: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 }}
+          name: metrics
         envFrom:
         - configMapRef:
             name: reconciler-config
+        {{- $auth := default (dict) .Values.auth }}
+        {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
+        {{- $remoteK8s := default (dict) .Values.remoteK8s }}
+        {{- if or $gac $remoteK8s.enabled }}
+        env:
+        {{- if $gac }}
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ $gac | quote }}
+        {{- end }}
+        {{- if $remoteK8s.enabled }}
+        - name: KUBECONFIG
+          value: "/etc/remote-k8s/kubeconfig"
+        {{- end }}
+        {{- end }}
         args:
         - "-alsologtostderr"
         - "--logtostderr"
@@ -76,3 +98,35 @@ spec:
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 20
+        {{- if or $gac $remoteK8s.enabled }}
+        volumeMounts:
+        {{- if $gac }}
+        - name: gcp-secrets-fallback
+          mountPath: /etc/gcp-secrets
+          readOnly: true
+        {{- end }}
+        {{- if $remoteK8s.enabled }}
+        - name: remote-k8s-config-volume
+          mountPath: /etc/remote-k8s
+          readOnly: true
+        {{- end }}
+        {{- end }}
+      {{- if or $gac $remoteK8s.enabled }}
+      volumes:
+      {{- if $gac }}
+      - name: gcp-secrets-fallback
+        secret:
+          secretName: gcp-sa-key
+          items:
+          - key: key.json
+            path: key.json
+      {{- end }}
+      {{- if $remoteK8s.enabled }}
+      - name: remote-k8s-config-volume
+        secret:
+          secretName: {{ default "remote-k8s-config" $remoteK8s.secretName | quote }}
+          items:
+          - key: kubeconfig
+            path: kubeconfig
+      {{- end }}
+      {{- end }}

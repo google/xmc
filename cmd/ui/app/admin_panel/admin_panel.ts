@@ -23,6 +23,7 @@ import {
   ListConfigEntriesResponse,
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
+import { ErrorBannerComponent } from '../common/components/error_banner/error_banner';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
 import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
@@ -40,6 +41,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
     SystemInfoCardComponent,
     HealthStatusSectionComponent,
     ConfigEntriesCardComponent,
+    ErrorBannerComponent,
   ],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
@@ -50,12 +52,15 @@ export class AdminPanelPage {
   private readonly snackbarService = inject(SnackbarService);
 
   protected readonly healthStatusError = signal<unknown>(null);
+  protected readonly configEntriesError = signal<unknown>(null);
+  protected readonly isConfigLoading = signal<boolean>(false);
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
   protected readonly isRefreshing = signal<boolean>(false);
 
   private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
+  private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   protected readonly healthStatus = toSignal(
     this.refreshTrigger$.pipe(
@@ -73,7 +78,7 @@ export class AdminPanelPage {
               return of(this.lastKnownStatus);
             }
             this.healthStatusError.set(error);
-            return of({} as HealthStatusResponse);
+            return of(undefined);
           }),
           finalize(() => this.isRefreshing.set(false)),
         ),
@@ -82,15 +87,30 @@ export class AdminPanelPage {
   );
 
   protected readonly healthConfigs = toSignal(
-    this.healthService.getHealthConfigs().pipe(
-      catchError((error) => {
-        console.error('Failed to fetch health configs', error);
-        return of({} as ListConfigEntriesResponse);
+    this.configRefreshTrigger$.pipe(
+      tap(() => {
+        this.isConfigLoading.set(true);
+        this.configEntriesError.set(null);
       }),
+      switchMap(() =>
+        this.healthService.getHealthConfigs().pipe(
+          tap(() => {
+            this.isConfigLoading.set(false);
+          }),
+          catchError((error) => {
+            console.error('Failed to fetch health configs', error);
+            this.isConfigLoading.set(false);
+            this.configEntriesError.set(error);
+            return of({} as ListConfigEntriesResponse);
+          }),
+        ),
+      ),
     ),
   );
 
-  protected readonly isLoading = computed(() => this.healthStatus() === undefined);
+  protected readonly isLoading = computed(
+    () => this.healthStatus() === undefined && !this.healthStatusError(),
+  );
 
   protected readonly lastUpdated = computed(() => {
     const status = this.healthStatus();
@@ -105,7 +125,16 @@ export class AdminPanelPage {
     return '';
   });
 
+  protected onRetry(): void {
+    this.healthStatusError.set(null);
+    this.refreshTrigger$.next(true);
+  }
+
   protected onRefresh(): void {
     this.refreshTrigger$.next(true);
+  }
+
+  protected onRetryConfigs(): void {
+    this.configRefreshTrigger$.next();
   }
 }

@@ -80,7 +80,7 @@ export function createMockComparisonDashboard(overrides?: Partial<Dashboard>): D
     name: 'dashboards/vcc_comparison',
     title: 'VCC baseline tune comparison',
     description: 'Comparative evaluation of VCC baseline tuning across hyperparameter runs',
-    charts: createMockComparisonCharts(),
+    chartIds: ['baseline', 'tuned_v1', 'tuned_v2'],
     ...overrides,
   };
 }
@@ -95,7 +95,7 @@ export function createMockDashboardList(): Dashboard[] {
       name: 'dashboards/testdata_overview',
       title: 'Data Engine Golden Testcases',
       description: 'Overview of all testcases',
-      charts: [],
+      chartIds: [],
     },
   ];
 }

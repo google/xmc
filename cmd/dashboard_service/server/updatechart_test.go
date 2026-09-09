@@ -54,10 +54,14 @@ func TestUpdateChart(t *testing.T) {
 					CreateTime:  timestamppb.New(now.Add(-time.Hour)),
 				}, nil
 			},
-			updateChartFn: func(ctx context.Context, chart *dpb.Chart) error {
+			// Stands in for the storage merge: wid and xid come from the stored chart, the
+			// remaining fields from the request.
+			updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
 				updatedInRepo = chart
-				chart.UpdateTime = timestamppb.New(now)
-				return nil
+				merged := proto.Clone(chart).(*dpb.Chart)
+				merged.Xid, merged.Wid = 100, 1
+				merged.UpdateTime = timestamppb.New(now)
+				return merged, nil
 			},
 		}
 		authMock := &mockAuthorizer{
@@ -113,12 +117,18 @@ func TestUpdateChart(t *testing.T) {
 		if updatedInRepo == nil {
 			t.Fatalf("Repository UpdateChart was not invoked")
 		}
+		// The handler must hand the request through untouched: merging it against a chart it read
+		// separately is what the storage transaction exists to prevent.
+		if !proto.Equal(updatedInRepo, req.GetChart()) {
+			t.Errorf("Repository received %v, want the request chart %v", updatedInRepo, req.GetChart())
+		}
 		if capturedXIDReq == nil || capturedXIDReq.GetName() != "xids/100" || capturedXIDReq.GetUser() != "writer@example.com" || capturedXIDReq.GetRoleType() != xpb.XidAcls_WRITER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedXIDReq)
 		}
 	})
 
-	t.Run("successful partial update with field mask", func(t *testing.T) {
+	t.Run("field mask is forwarded to storage for merging", func(t *testing.T) {
+		var capturedMask *fieldmaskpb.FieldMask
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{
@@ -130,9 +140,19 @@ func TestUpdateChart(t *testing.T) {
 					Plots:       []*dpb.PlotSpec{{PlotId: "p1", Title: "Original Plot"}},
 				}, nil
 			},
-			updateChartFn: func(ctx context.Context, chart *dpb.Chart) error {
-				chart.UpdateTime = timestamppb.New(now)
-				return nil
+			// The merge itself lives in storage, where it can run against the state the write
+			// commits against; here it is faked so the handler's plumbing can be asserted.
+			updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+				capturedMask = updateMask
+				return &dpb.Chart{
+					Name:        chart.GetName(),
+					Title:       "Old Title",
+					Description: chart.GetDescription(),
+					Xid:         100,
+					Wid:         1,
+					Plots:       []*dpb.PlotSpec{{PlotId: "p1", Title: "Original Plot"}},
+					UpdateTime:  timestamppb.New(now),
+				}, nil
 			},
 		}
 		authMock := &mockAuthorizer{
@@ -163,6 +183,9 @@ func TestUpdateChart(t *testing.T) {
 			t.Fatalf("UpdateChart failed: %v", err)
 		}
 
+		if capturedMask == nil || len(capturedMask.GetPaths()) != 1 || capturedMask.GetPaths()[0] != "description" {
+			t.Errorf("Repository received update mask %v, want paths [description]", capturedMask)
+		}
 		if resp.GetTitle() != "Old Title" {
 			t.Errorf("Title: got %q, want 'Old Title' (unchanged)", resp.GetTitle())
 		}
@@ -352,8 +375,8 @@ func TestUpdateChart(t *testing.T) {
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{Name: "charts/chart-1", Title: "Title", Xid: 100}, nil
 			},
-			updateChartFn: func(ctx context.Context, chart *dpb.Chart) error {
-				return errors.New("write timeout")
+			updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+				return nil, errors.New("write timeout")
 			},
 		}
 		xidMock := &mockXidClient{
@@ -376,8 +399,8 @@ func TestUpdateChart(t *testing.T) {
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{Name: "charts/chart-1", Title: "Title", Xid: 100}, nil
 			},
-			updateChartFn: func(ctx context.Context, chart *dpb.Chart) error {
-				return status.Error(codes.NotFound, "chart not found")
+			updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+				return nil, status.Error(codes.NotFound, "chart not found")
 			},
 		}
 		xidMock := &mockXidClient{
@@ -400,8 +423,8 @@ func TestUpdateChart(t *testing.T) {
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{Name: "charts/chart-1", Title: "Title", Xid: 100}, nil
 			},
-			updateChartFn: func(ctx context.Context, chart *dpb.Chart) error {
-				return nil
+			updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+				return chart, nil
 			},
 		}
 		var capturedMD metadata.MD

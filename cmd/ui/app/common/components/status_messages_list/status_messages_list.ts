@@ -59,7 +59,7 @@ const DEFAULT_PAGE_SIZE = 25;
   selector: 'xmc-status-messages-list',
   standalone: true,
   templateUrl: './status_messages_list.ng.html',
-  styleUrl: './status_messages_list.css',
+  styleUrl: './status_messages_list.scss',
   imports: [
     MatIconModule,
     MatProgressSpinnerModule,

@@ -36,14 +36,15 @@ type SpannerTransaction interface {
 
 // Repository manages persistence for experiment entities in Cloud Spanner.
 type Repository struct {
-	client                      *spanner.Client
-	experimentsQueryGen         querytools.QueryGenerator
-	statusMessageHistoryEnabled bool
+	client              *spanner.Client
+	experimentsQueryGen querytools.QueryGenerator
+	enableComponents    bool
+	driftCache          *driftCache
 }
 
 // RepositoryConfig configures optional settings for Repository.
 type RepositoryConfig struct {
-	StatusMessageHistoryEnabled bool
+	EnableComponents bool
 }
 
 // NewRepository creates a new Experiment repository instance with initialized query generator.
@@ -58,8 +59,9 @@ func NewRepository(client *spanner.Client, cfg RepositoryConfig) (*Repository, e
 	}
 
 	return &Repository{
-		client:                      client,
-		experimentsQueryGen:         experimentsQueryGen,
-		statusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
+		client:              client,
+		experimentsQueryGen: experimentsQueryGen,
+		enableComponents:    cfg.EnableComponents,
+		driftCache:          newDriftCache(),
 	}, nil
 }

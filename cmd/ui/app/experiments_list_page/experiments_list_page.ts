@@ -35,7 +35,7 @@ import { queryParamsToExperimentFilters } from './utils/query_params';
   selector: 'xmc-experiments-list-page',
   standalone: true,
   templateUrl: './experiments_list_page.ng.html',
-  styleUrl: './experiments_list_page.css',
+  styleUrl: './experiments_list_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatCardModule, MatIconModule, MatButtonModule, ExperimentsTable, PageSizeSelector],
   providers: [ExperimentsListPageStore],

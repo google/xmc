@@ -24,6 +24,7 @@ import (
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	runtimeclient "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"k8s.io/client-go/tools/clientcmd"
 	longrunningpb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
@@ -56,6 +57,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether pods can run with host networking when requested.
 	AllowHostNetwork bool
+
+	// Decides whether the components feature is enabled.
+	EnableComponents bool
 }
 
 // Priorities holds experiment and work unit priorities.
@@ -75,14 +79,45 @@ type Client struct {
 	preconditionsValidator preconditionsvalidator.Validator
 }
 
-// New creates a new Kubernetes client. It uses in-cluster config by default.
-func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerClient *spanner.Client) (*Client, error) {
-	var config *rest.Config
-	var err error
+var inClusterConfig = rest.InClusterConfig
 
-	config, err = rest.InClusterConfig()
+// buildRESTConfig constructs a Kubernetes *rest.Config using the following resolution order:
+//  1. Explicit KUBECONFIG environment variable (if set).
+//  2. In-cluster pod service account environment (rest.InClusterConfig).
+//     If running inside a cluster (KUBERNETES_SERVICE_HOST is set) but in-cluster config fails,
+//     fail fast with an explicit error instead of falling back to host files.
+//  3. Standard local kubeconfig loading rules (e.g. ~/.kube/config).
+func buildRESTConfig() (*rest.Config, error) {
+	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to build kubeconfig from %q: %w", kubeconfig, err)
+		}
+		return config, nil
+	}
+
+	config, err := inClusterConfig()
+	if err == nil {
+		return config, nil
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return nil, fmt.Errorf("running in-cluster (KUBERNETES_SERVICE_HOST is set), but failed to load in-cluster config: %w", err)
+	}
+
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+		return nil, fmt.Errorf("failed to load default kubeconfig: %w", err)
+	}
+	return config, nil
+}
+
+// New creates a new Kubernetes client. It respects KUBECONFIG if set, falling back to in-cluster config.
+func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerClient *spanner.Client) (*Client, error) {
+	config, err := buildRESTConfig()
+	if err != nil {
+		return nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -95,14 +130,25 @@ func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerCl
 		return nil, fmt.Errorf("failed to create dynamic kubernetes client: %w", err)
 	}
 
+	managerClient, err := runtimeclient.New(config, runtimeclient.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
+	}
+
 	return &Client{
 		clientset:              clientset,
 		dynamicClient:          dynamicClient,
+		ManagerClient:          managerClient,
 		storage:                storage,
 		spannerClient:          spannerClient,
 		RuntimeConfig:          runtimeConfig,
 		preconditionsValidator: preconditionsvalidator.New(),
 	}, nil
+}
+
+// SetManagerClient sets the controller-runtime Reader client (e.g. cached reader or test double).
+func (c *Client) SetManagerClient(managerClient runtimeclient.Reader) {
+	c.ManagerClient = managerClient
 }
 
 // NewWithClients creates a new Kubernetes client with the given clientset and dynamic client.

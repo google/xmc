@@ -59,7 +59,6 @@ compat_go_library(
         "//internal/auth",
         "//internal/common/health",
         "//internal/compat/field_mask",
-        "//internal/compat/log",
         "//internal/compat/longrunning",
         "//internal/compat/metadata",
         "//internal/compat/proto",
@@ -73,6 +72,7 @@ compat_go_library(
         "//internal/task_queue:client",
         "//internal/toollibs/execution_environments",
         "//internal/validator",
+        "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_apimachinery//pkg/api/resource",
@@ -122,6 +122,8 @@ compat_go_test(
         "utils_test.go",
     ],
     embed = [":server"],
+    # Shard across 10 parallel executors to distribute extensive server RPC
+    # integration tests and live Spanner emulator operations across CI slots.
     shard_count = 10,
     deps = [
         "//api/protos/experiment:api_go_proto",
@@ -135,7 +137,6 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/compat/field_mask",
         "//internal/compat/health",
-        "//internal/compat/log",
         "//internal/compat/longrunning",
         "//internal/compat/metadata",
         "//internal/compat/proto",

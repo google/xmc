@@ -26,6 +26,21 @@ python3 ./tools/common/setup_venv.py --venv-dir ./tools/venv --requirements ./to
 
 ---
 
+## Local Development & Hybrid Execution (`tools/dev_env`)
+
+For rapid inner-loop development without deploying full environments to GKE, developers can run the XMC control plane locally inside a Docker-based KinD cluster:
+
+* **Full Local KinD Bootstrap**: `python3 tools/dev_env/dev_env.py up`
+* **Hybrid Mode (KinD Control Plane + Remote GKE Data Plane)**: `python3 tools/dev_env/dev_env.py up --remote-k8s-cluster <CLUSTER_NAME>` (or `--remote-k8s`)
+  Connects the local KinD control plane to a remote GKE cluster for real JobSet execution, Kueue quota admission, and TPU topologies.
+* **Smart Fast Microservice Reload**: `python3 tools/dev_env/dev_env.py reload`
+  Recompiles modified Go/Python/UI services and updates running KinD pods in ~5-10 seconds.
+* **Cluster Teardown**: `python3 tools/dev_env/dev_env.py down`
+
+For complete architectural details, prerequisites, and CLI options, see the [Development Environment Tooling Guide](../tools/dev_env/README.md).
+
+---
+
 ## Protocol Buffers & gRPC Stubs
 
 All proto files are located inside the [api/protos](../api/protos) directory. They share the `cloud.xmanager.v1` package name and are built with modern **Bazel** rules, translating internal-style import paths (e.g. `third_party/xmanager_cloud/...`) automatically.

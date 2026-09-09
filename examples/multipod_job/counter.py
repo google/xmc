@@ -29,11 +29,11 @@ def main() -> None:
         flush=True,
     )
 
-    start_time = time.time()
+    start_time = time.monotonic()
     end_time = start_time + (duration_minutes * 60.0)
     counter = 1
 
-    while time.time() < end_time:
+    while time.monotonic() < end_time:
         print(f"[{prefix}] {counter}", flush=True)
         counter += 1
         time.sleep(3.0)

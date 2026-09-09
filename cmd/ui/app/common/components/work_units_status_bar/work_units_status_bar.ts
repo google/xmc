@@ -29,7 +29,7 @@ import {
   selector: 'xmc-work-units-status-bar',
   standalone: true,
   templateUrl: './work_units_status_bar.ng.html',
-  styleUrl: './work_units_status_bar.css',
+  styleUrl: './work_units_status_bar.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, MatMenuModule],
 })

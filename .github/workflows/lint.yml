@@ -53,10 +53,23 @@ jobs:
             ui:
               - 'cmd/ui/**'
               - '.github/workflows/lint.yml'
+            helm:
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
+            security:
+              - 'deploy/**/*.tf'
+              - 'deploy/**/*.tfvars'
+              - 'deploy/**/*.yaml'
+              - 'deploy/**/*.yml'
+              - 'deploy/helm/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff)
       - name: 'Install Ruff'
-        run: pip install --no-cache-dir ruff
+        run: |
+          if ! command -v ruff &>/dev/null; then
+            pip install --no-cache-dir ruff
+          fi
 
       - name: 'Run Ruff Lint Check'
         run: ruff check .
@@ -80,43 +93,45 @@ jobs:
             exit 1
           fi
 
-      - name: 'Cache golangci-lint binary'
-        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        with:
-          path: ~/go/bin/golangci-lint
-          key: ${{ runner.os }}-golangci-lint-bin-v1.64.6-go1.26
-
       - name: 'Install & Run golangci-lint'
         run: |
-          GOPATH_BIN="$(go env GOPATH)/bin"
-          if [ ! -f "$GOPATH_BIN/golangci-lint" ]; then
-            echo "--> Installing golangci-lint (v1.64.6)..."
-            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
+          if ! command -v golangci-lint &>/dev/null; then
+            GOPATH_BIN="$(go env GOPATH)/bin"
+            mkdir -p "$GOPATH_BIN"
+            echo "--> Downloading pre-built golangci-lint (v1.64.6)..."
+            curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v1.64.6/golangci-lint-1.64.6-linux-amd64.tar.gz" | tar -xz -C "$GOPATH_BIN" --strip-components=1 "golangci-lint-1.64.6-linux-amd64/golangci-lint"
+            chmod +x "$GOPATH_BIN/golangci-lint"
           fi
-          "$GOPATH_BIN/golangci-lint" run --timeout=5m
+          golangci-lint run --timeout=5m
+
+      - name: 'Check Go Test Determinism'
+        run: |
+          go run ./tools/lint/check_go_determinism
 
       - name: 'Install & Run Buildifier'
         run: |
-          GOPATH_BIN="$(go env GOPATH)/bin"
-          if [ ! -f "$GOPATH_BIN/buildifier" ]; then
+          if ! command -v buildifier &>/dev/null; then
+            GOPATH_BIN="$(go env GOPATH)/bin"
+            mkdir -p "$GOPATH_BIN"
             echo "--> Downloading buildifier (v8.0.3)..."
             curl -sSfL https://github.com/bazelbuild/buildtools/releases/download/v8.0.3/buildifier-linux-amd64 -o "$GOPATH_BIN/buildifier"
             chmod +x "$GOPATH_BIN/buildifier"
           fi
           BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
           if [ -n "$BAZEL_FILES" ]; then
-            "$GOPATH_BIN/buildifier" -mode=check $BAZEL_FILES
+            buildifier -mode=check $BAZEL_FILES
           fi
 
       - name: 'Install & Run addlicense'
         run: |
-          GOPATH_BIN="$(go env GOPATH)/bin"
-          if [ ! -f "$GOPATH_BIN/addlicense" ]; then
+          if ! command -v addlicense &>/dev/null; then
+            GOPATH_BIN="$(go env GOPATH)/bin"
+            mkdir -p "$GOPATH_BIN"
             echo "--> Downloading addlicense (v1.1.1)..."
             curl -sSfL https://github.com/google/addlicense/releases/download/v1.1.1/addlicense_1.1.1_Linux_x86_64.tar.gz | tar -xz -C "$GOPATH_BIN" addlicense
             chmod +x "$GOPATH_BIN/addlicense"
           fi
-          "$GOPATH_BIN/addlicense" -check -c "Google LLC" -l apache \
+          addlicense -check -c "Google LLC" -l apache \
             -ignore "third_party/**" \
             -ignore "**/third_party/**" \
             -ignore "**/node_modules/**" \
@@ -132,13 +147,15 @@ jobs:
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'
         if: steps.changes.outputs.ui == 'true'
-        uses: 'actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af' # v4.1.0
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
 
       - name: 'Install UI Dependencies'
         if: steps.changes.outputs.ui == 'true'
-        run: npm ci --legacy-peer-deps
+        run: npm ci --legacy-peer-deps --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
       - name: 'Run Prettier Check'
@@ -164,9 +181,14 @@ jobs:
 
       - name: 'Set up TFLint'
         if: steps.changes.outputs.terraform == 'true'
-        uses: 'terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987' # v4.0.0
-        with:
-          tflint_version: 'v0.50.0'
+        run: |
+          if ! command -v tflint &>/dev/null; then
+            mkdir -p "${RUNNER_TEMP}/bin"
+            curl -sSfL "https://github.com/terraform-linters/tflint/releases/download/v0.50.0/tflint_linux_amd64.zip" -o "${RUNNER_TEMP}/tflint.zip"
+            unzip "${RUNNER_TEMP}/tflint.zip" -d "${RUNNER_TEMP}/bin"
+            chmod +x "${RUNNER_TEMP}/bin/tflint"
+            echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          fi
 
       - name: 'Init TFLint'
         if: steps.changes.outputs.terraform == 'true'
@@ -176,9 +198,32 @@ jobs:
         if: steps.changes.outputs.terraform == 'true'
         run: 'tflint --recursive'
 
+      # 5. Component Manifests & Profiles Linting
+      - name: 'Run Component Manifest Linter'
+        uses: './.github/actions/run-component-linter'
+        with:
+          strict: 'true'
+
+      # 6. Helm Chart Linting
+      - name: 'Install Helm'
+        if: steps.changes.outputs.helm == 'true'
+        run: |
+          if ! command -v helm &>/dev/null; then
+            mkdir -p "${RUNNER_TEMP}/helm"
+            curl -sSfL "https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz" \
+              | tar -xz -C "${RUNNER_TEMP}/helm" --strip-components=1 linux-amd64/helm
+            chmod +x "${RUNNER_TEMP}/helm/helm"
+            echo "${RUNNER_TEMP}/helm" >> "${GITHUB_PATH}"
+          fi
+
+      - name: 'Run Helm Lint'
+        if: steps.changes.outputs.helm == 'true'
+        run: helm lint deploy/helm
+
+      # 7. Infrastructure & Workload Security Scanning (Trivy)
       # zizmor: ignore[impostor-commit]
-      - name: 'Run Trivy IaC Scanner (deploy/ctk_v2/modules)'
-        if: steps.changes.outputs.terraform == 'true'
+      - name: 'Run Trivy Security Scanner (deploy/)'
+        if: steps.changes.outputs.security == 'true'
         uses: 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25' # v0.36.0
         with:
           scan-type: 'config'
@@ -186,4 +231,4 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/ctk_v2/modules'
+          scan-ref: 'deploy/'

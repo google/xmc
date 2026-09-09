@@ -27,6 +27,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/semver"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -50,11 +52,11 @@ func (s *Server) Store() store.Store {
 
 // validateComponentName validates and returns the canonical component name.
 func validateComponentName(name string) (string, error) {
-	canonical := store.CanonicalComponentName(name)
+	canonical := naming.CanonicalComponentName(name)
 	if canonical == "" {
 		return "", status.Error(codes.InvalidArgument, "component name is required")
 	}
-	if !store.IsValidComponentName(canonical) {
+	if !naming.IsValidComponentName(canonical) {
 		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
 	}
 	return canonical, nil
@@ -107,13 +109,13 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}
 
 	if version := specToSet.GetVersion(); version != "" {
-		if _, err := store.Parse(version); err != nil {
+		if _, err := semver.Parse(version); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
 	if req.GetValidateOnly() {
 		protoComp := &componentspb.Component{
-			Name: store.FullComponentName(canonicalName),
+			Name: naming.FullComponentName(canonicalName),
 			Spec: proto.Clone(specToSet).(*componentspb.ComponentSpec),
 			Status: &componentspb.ComponentAccessStatus{
 				State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -250,30 +252,63 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-// Note: To be implemented in subsequent snapshot resolution tasks.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method ResolveComponentSnapshot not implemented")
+	gen := req.GetGeneration()
+	if gen < 0 {
+		return nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
+	}
+
+	rec, coords, err := s.store.ResolveComponentSnapshot(ctx, canonicalName, gen)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &componentspb.ResolveComponentSnapshotResponse{
+		Component: store.ToProtoComponent(rec),
+		State:     rec.State,
+	}
+	if coords != nil {
+		resp.Coordinates = proto.Clone(coords).(*componentspb.ResolvedComponentCoordinates)
+	}
+	return resp, nil
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
-// Note: To be implemented in subsequent dependency validation tasks.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	if _, err := validateNamedRequest(s, req); err != nil {
+	canonicalName, err := validateNamedRequest(s, req)
+	if err != nil {
 		return nil, err
 	}
 	if minVersion := req.GetMinimumVersion(); minVersion != "" {
-		if _, err := store.Parse(minVersion); err != nil {
+		if _, err := semver.Parse(minVersion); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid minimum version %q: %v", minVersion, err)
 		}
 	}
-	return nil, status.Error(codes.Unimplemented, "method ValidateComponentRequirement not implemented")
+	if _, ok := componentspb.ComponentType_name[int32(req.GetRequiredType())]; !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid required type %d", req.GetRequiredType())
+	}
+
+	res, err := s.store.ValidateComponentRequirement(ctx, canonicalName, req.GetRequiredType(), req.GetMinimumVersion())
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &componentspb.ValidateComponentRequirementResponse{
+		Satisfied: res.IsSatisfied,
+		Reason:    res.Reason,
+	}
+	if res.Component != nil {
+		resp.Component = store.ToProtoComponent(res.Component)
+	}
+	return resp, nil
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
-// Note: To be implemented in subsequent platform health monitoring tasks.
+// If pageSize is unspecified or 0, the store defaults to 50 (max 1000) per AIP-158.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
@@ -281,5 +316,9 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	if err := s.checkStoreReady(); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented")
+	if _, err := store.NormalizePageSize(req.GetPageSize()); err != nil {
+		return nil, err
+	}
+
+	return s.store.GetPlatformHealth(ctx, req.GetFilter(), req.GetPageSize(), req.GetPageToken())
 }

@@ -16,6 +16,7 @@ package clickhouse
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -23,25 +24,21 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
+// writePasswordFile creates a password file of the shape the CSI driver mounts and returns its path.
+func writePasswordFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "clickhouse-password")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to write password file: %v", err)
+	}
+	return path
+}
+
 func TestGetOptions(t *testing.T) {
-	// Helper to clear env vars after test
+	// Helper to set env vars with automatic cleanup
 	setEnv := func(t *testing.T, key, val string) {
 		t.Helper()
-		old := os.Getenv(key)
-		if err := os.Setenv(key, val); err != nil {
-			t.Fatalf("failed to set env %s: %v", key, err)
-		}
-		t.Cleanup(func() {
-			if old == "" {
-				if err := os.Unsetenv(key); err != nil {
-					t.Errorf("failed to unset env %s: %v", key, err)
-				}
-			} else {
-				if err := os.Setenv(key, old); err != nil {
-					t.Errorf("failed to restore env %s: %v", key, err)
-				}
-			}
-		})
+		t.Setenv(key, val)
 	}
 
 	baseOptions := &clickhouse.Options{
@@ -70,7 +67,7 @@ func TestGetOptions(t *testing.T) {
 			name: "default values",
 			setup: func(t *testing.T) {
 				// Clear relevant env vars to ensure defaults
-				for _, env := range []string{"CLICKHOUSE_DSN", "CLICKHOUSE_HOST", "CLICKHOUSE_PORT", "CLICKHOUSE_DATABASE", "CLICKHOUSE_USER", "CLICKHOUSE_PASSWORD"} {
+				for _, env := range []string{"CLICKHOUSE_DSN", "CLICKHOUSE_HOST", "CLICKHOUSE_PORT", "CLICKHOUSE_DATABASE", "CLICKHOUSE_USER", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_PASSWORD_FILE"} {
 					setEnv(t, env, "")
 				}
 			},
@@ -111,6 +108,34 @@ func TestGetOptions(t *testing.T) {
 			}),
 		},
 		{
+			name: "password file preferred over password env var",
+			setup: func(t *testing.T) {
+				setEnv(t, "CLICKHOUSE_PASSWORD", "env-password")
+				// The trailing newline is what Secret Manager payloads carry in practice.
+				setEnv(t, "CLICKHOUSE_PASSWORD_FILE", writePasswordFile(t, "file-password\n"))
+			},
+			want: modifyOptions(baseOptions, func(opt *clickhouse.Options) {
+				opt.Auth.Password = "file-password"
+			}),
+		},
+		{
+			name: "password file keeps significant whitespace",
+			setup: func(t *testing.T) {
+				// A space is a legal password character, so only the line terminator may be stripped.
+				setEnv(t, "CLICKHOUSE_PASSWORD_FILE", writePasswordFile(t, " pa ss \r\n"))
+			},
+			want: modifyOptions(baseOptions, func(opt *clickhouse.Options) {
+				opt.Auth.Password = " pa ss "
+			}),
+		},
+		{
+			name: "unreadable password file",
+			setup: func(t *testing.T) {
+				setEnv(t, "CLICKHOUSE_PASSWORD_FILE", filepath.Join(t.TempDir(), "absent"))
+			},
+			wantErr: true,
+		},
+		{
 			name: "invalid port",
 			setup: func(t *testing.T) {
 				setEnv(t, "CLICKHOUSE_PORT", "invalid")
@@ -144,6 +169,43 @@ func TestGetOptions(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got.Auth, tt.want.Auth) {
 				t.Errorf("GetOptions().Auth = %v, want %v", got.Auth, tt.want.Auth)
+			}
+		})
+	}
+}
+
+func TestConfigured(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want bool
+	}{
+		{
+			name: "no clickhouse variables",
+			env:  map[string]string{"CLICKHOUSE_DSN": "", "CLICKHOUSE_HOST": ""},
+			want: false,
+		},
+		{
+			// The host is what the helm chart renders, and only when metrics are enabled.
+			name: "host configured",
+			env:  map[string]string{"CLICKHOUSE_DSN": "", "CLICKHOUSE_HOST": "ch.example.internal"},
+			want: true,
+		},
+		{
+			name: "dsn configured",
+			env:  map[string]string{"CLICKHOUSE_DSN": "clickhouse://ch:9000", "CLICKHOUSE_HOST": ""},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			if got := Configured(); got != tt.want {
+				t.Errorf("Configured() = %v, want %v", got, tt.want)
 			}
 		})
 	}

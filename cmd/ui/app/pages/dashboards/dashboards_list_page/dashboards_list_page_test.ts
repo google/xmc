@@ -18,7 +18,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { createMockDashboardList } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
@@ -32,10 +32,15 @@ import {
   setupModule,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { DashboardsListPage, extractDashboardId } from './dashboards_list_page';
+import { DashboardsListPage } from './dashboards_list_page';
 
 const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
 const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
+
+/** Baseline dialog result: one chart to create alongside the dashboard. */
+function createDialogResult(charts: Chart[] = [{ title: 'Baseline', xid: 4321, wid: 1 }]) {
+  return { dashboard: { title: 'New Evaluation' }, charts };
+}
 
 describe('DashboardsListPage', () => {
   const state = cleanState(() => {
@@ -107,9 +112,6 @@ describe('DashboardsListPage', () => {
 
   it('should extract dashboard ID correctly', () => {
     const component = bootstrap(DashboardsListPage);
-    expect(extractDashboardId('dashboards/vcc_comparison')).toBe('vcc_comparison');
-    expect(extractDashboardId('my_dashboard')).toBe('my_dashboard');
-    expect(extractDashboardId('')).toBe('');
     expect(component.getDashboardId('dashboards/test_id')).toBe('test_id');
   });
 
@@ -122,38 +124,60 @@ describe('DashboardsListPage', () => {
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
   });
 
-  it('should navigate to dashboard page when createDashboard returns dashboard with id', () => {
+  it('should send the dialog charts alongside the dashboard in a single create call', () => {
     const component = bootstrap(DashboardsListPage);
     const router = get(Router);
     spyOn(router, 'navigate');
-    const newDash: Dashboard = {
+    const createdDashboard: Dashboard = {
       name: 'dashboards/new_evaluation',
       title: 'New Evaluation',
-      charts: [],
+      chartIds: ['chart-uuid-1', 'chart-uuid-2'],
     };
-    state.dashboardServiceSpy.createDashboard.and.returnValue(of(newDash));
+    state.dashboardServiceSpy.createDashboard.and.returnValue(of(createdDashboard));
 
-    component.createDashboard(newDash);
+    component.createDashboard(
+      createDialogResult([
+        { title: 'Baseline', xid: 4321, wid: 1 },
+        { title: 'Tuned', xid: 8765, wid: 2 },
+      ]),
+    );
 
-    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledTimes(1);
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({
+      dashboard: { title: 'New Evaluation' },
+      charts: [
+        { title: 'Baseline', xid: 4321, wid: 1 },
+        { title: 'Tuned', xid: 8765, wid: 2 },
+      ],
+    });
     expect(router.navigate).toHaveBeenCalledWith(['/dashboards', 'new_evaluation']);
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(1);
+  });
+
+  it('should create a dashboard with no charts when the dialog returned none', () => {
+    const component = bootstrap(DashboardsListPage);
+    state.dashboardServiceSpy.createDashboard.and.returnValue(
+      of({ name: 'dashboards/empty', title: 'New Evaluation' }),
+    );
+
+    component.createDashboard(createDialogResult([]));
+
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({
+      dashboard: { title: 'New Evaluation' },
+      charts: [],
+    });
   });
 
   it('should reload dashboards when createDashboard returns dashboard without id', () => {
     const component = bootstrap(DashboardsListPage);
     const router = get(Router);
     spyOn(router, 'navigate');
-    const newDash: Dashboard = {
-      name: '',
-      title: 'New Evaluation',
-      charts: [],
-    };
-    state.dashboardServiceSpy.createDashboard.and.returnValue(of(newDash));
+    state.dashboardServiceSpy.createDashboard.and.returnValue(
+      of({ name: '', title: 'New Evaluation' }),
+    );
 
-    component.createDashboard(newDash);
+    component.createDashboard(createDialogResult());
 
-    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
     expect(router.navigate).not.toHaveBeenCalled();
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
   });
@@ -166,13 +190,10 @@ describe('DashboardsListPage', () => {
       throwError(() => new Error('Creation failed')),
     );
 
-    component.createDashboard({
-      name: 'dashboards/new_evaluation',
-      title: 'New Evaluation',
-      charts: [],
-    });
+    component.createDashboard(createDialogResult());
 
     expect(router.navigate).not.toHaveBeenCalled();
+    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to create dashboard');
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
     expect(component.isLoading()).toBeFalse();
   });

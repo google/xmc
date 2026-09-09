@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 @use '@angular/material' as mat;
-@import '@angular/material/prebuilt-themes/azure-blue';
-@import 'custom_colors';
+@use '@angular/material/prebuilt-themes/azure-blue';
+@use 'custom_colors' as *;
 
 html {
   background-color: var(--mat-sys-surface, #f8f9fa);

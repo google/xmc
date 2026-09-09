@@ -69,16 +69,15 @@
   padding: 64px 24px;
   color: #5f6368;
   font-size: 14px;
-
-  &.config-loading-container {
-    padding: 32px 24px;
-  }
 }
 
 .error-container {
   display: flex;
   justify-content: center;
   padding: 48px 24px;
-  color: var(--mat-sys-error, #d93025);
-  font-size: 14px;
+  box-sizing: border-box;
+
+  xmc-error-banner {
+    max-width: 640px;
+  }
 }

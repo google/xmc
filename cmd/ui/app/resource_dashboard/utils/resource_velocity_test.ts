@@ -20,6 +20,7 @@ import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
+  findQueuePredictability,
   formatRate,
   getPendingJobsCount,
 } from './resource_velocity';
@@ -53,6 +54,19 @@ describe('Resource Velocity Utilities', () => {
           count: 16,
         },
       },
+      {
+        velocityRange: 'RANGE_PRESET_LAST_HOUR',
+        pendingJobs: 2,
+        jobVelocity: 25.0,
+        resourceVelocity: {
+          resourceType: 'cpu',
+          velocity: 120,
+        },
+        pendingResourceRequests: {
+          resourceType: 'cpu',
+          count: 48,
+        },
+      },
     ],
   };
 
@@ -73,25 +87,66 @@ describe('Resource Velocity Utilities', () => {
   });
 
   describe('calculateResourceVelocity', () => {
-    it('should return resource velocity string for matching timeframe', () => {
+    it('should return resource velocity string for matching timeframe and dominant resource', () => {
       expect(calculateResourceVelocity({}, '1h')).toBe('~0 units/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 nvidia.com/gpu/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 nvidia.com/gpu/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '1h', 'nvidia.com/gpu')).toBe(
+        '~4.5 nvidia.com/gpu/hr',
+      );
+      expect(calculateResourceVelocity(mockSecondaryData, '24h', 'nvidia.com/gpu')).toBe(
+        '~2.1 nvidia.com/gpu/hr',
+      );
+      expect(calculateResourceVelocity(mockSecondaryData, '1h', 'cpu')).toBe('~120 cpu/hr');
     });
   });
 
   describe('calculateJobVelocity', () => {
-    it('should return job velocity string for matching timeframe', () => {
+    it('should return job velocity string for matching timeframe and dominant resource', () => {
       expect(calculateJobVelocity({}, '1h')).toBe('0 jobs/hr');
-      expect(calculateJobVelocity(mockSecondaryData, '1h')).toBe('12.5 jobs/hr');
-      expect(calculateJobVelocity(mockSecondaryData, '24h')).toBe('8.2 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '1h', 'nvidia.com/gpu')).toBe('12.5 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '24h', 'nvidia.com/gpu')).toBe('8.2 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '1h', 'cpu')).toBe('25 jobs/hr');
+    });
+  });
+
+  describe('findQueuePredictability', () => {
+    it('should return exact match for timeframe and dominant resource', () => {
+      const match = findQueuePredictability(mockSecondaryData, '1h', 'nvidia.com/gpu');
+      expect(match).toBeDefined();
+      expect(match?.jobVelocity).toBe(12.5);
+    });
+
+    it('should return undefined when timeframe does not exist for dominant resource', () => {
+      const match = findQueuePredictability(mockSecondaryData, '7d', 'nvidia.com/gpu');
+      expect(match).toBeUndefined();
+    });
+
+    it('should fallback to first entry when dominantResource is null or empty', () => {
+      const match = findQueuePredictability(mockSecondaryData, '7d');
+      expect(match).toBeDefined();
+      expect(match?.velocityRange).toBe('RANGE_PRESET_LAST_HOUR');
     });
   });
 
   describe('calculatePendingRequestsDisplay', () => {
-    it('should return pending resource requests display text', () => {
+    it('should return pending resource requests display text for dominant resource', () => {
       expect(calculatePendingRequestsDisplay({})).toBe('0');
-      expect(calculatePendingRequestsDisplay(mockSecondaryData)).toBe('16');
+      expect(calculatePendingRequestsDisplay(mockSecondaryData, 'nvidia.com/gpu')).toBe('16');
+      expect(calculatePendingRequestsDisplay(mockSecondaryData, 'cpu')).toBe('48');
+    });
+
+    it('should find pending requests count even if only non-1h range preset exists', () => {
+      const weeklyOnlyData: ClusterQueueSecondaryMetrics = {
+        queuePredictability: [
+          {
+            velocityRange: 'RANGE_PRESET_LAST_WEEK',
+            pendingResourceRequests: {
+              resourceType: 'nvidia.com/gpu',
+              count: 32,
+            },
+          },
+        ],
+      };
+      expect(calculatePendingRequestsDisplay(weeklyOnlyData, 'nvidia.com/gpu')).toBe('32');
     });
   });
 });

@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 
-	"go/log"
 	lropb "longrunning/operations_go_proto"
 	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -152,11 +151,11 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 
 	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
 	if err != nil {
-		log.ErrorContextf(ctx, "Failed to enqueue work unit for scheduling %s: %v", newWorkUnit.GetName(), err)
+		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "name", newWorkUnit.GetName(), "error", err)
 		enqueueErr := err
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(newWorkUnit.GetCurrentWorkUnitExecution().GetName())
 		if err != nil {
-			log.ErrorContextf(ctx, "Failed to validate work unit execution name: %v", err)
+			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
 			return fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
 		}
 

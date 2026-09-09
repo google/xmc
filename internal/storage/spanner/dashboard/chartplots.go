@@ -21,11 +21,11 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
-	"google.golang.org/protobuf/proto"
 
 	fepb "api/filter/filter_expression_go_proto"
 	aipfilter "api/filter/go/filter"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 	"xmanager_cloud/validator/validator"
@@ -83,11 +83,11 @@ func (r *Repository) fetchPlotsByChartIDs(ctx context.Context, txn *spanner.Read
 		if err := row.Columns(&chartID, &plotSpecBytes); err != nil {
 			return nil, err
 		}
-		var plotSpec dpb.PlotSpec
-		if err := proto.Unmarshal(plotSpecBytes, &plotSpec); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal plot spec for chart %q: %w", chartID, err)
+		plotSpec, err := data.UnmarshalPlotSpec(chartID, plotSpecBytes)
+		if err != nil {
+			return nil, err
 		}
-		plotsByChartID[chartID] = append(plotsByChartID[chartID], &plotSpec)
+		plotsByChartID[chartID] = append(plotsByChartID[chartID], plotSpec)
 	}
 	return plotsByChartID, nil
 }

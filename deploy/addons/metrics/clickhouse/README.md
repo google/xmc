@@ -90,6 +90,14 @@ helm install clickstack-operators clickstack/clickstack-operators --namespace xm
 helm install my-clickstack clickstack/clickstack
 ```
 
+### 6. Initialize Metrics Schema
+
+Initialize the physical metrics tables, Kafka queue consumer table, and materialized view using the schema definition in [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql):
+
+```bash
+kubectl exec -i -n xmc-metrics statefulset/my-clickstack-clickhouse-clickhouse-0-0 -- clickhouse-client < deploy/clickhouse/schema.sql
+```
+
 ---
 
 ## Verification & Connection Testing
@@ -145,10 +153,28 @@ Read the addon-generated password to populate `metrics.clickhouse.password`:
 kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode
 ```
 
+##### Sourcing the password from Secret Manager
+
+`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and leave the value empty:
+
+```bash
+printf '%s' "$CLICKHOUSE_PASSWORD" | gcloud secrets create clickhouse-password --data-file=-
+```
+
+```yaml
+secrets:
+  csi:
+    enabled: true
+    projectNumber: "123456789"
+    clickhousePasswordSecretName: "clickhouse-password"
+```
+
+The Secret Manager entry named there must exist, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing. The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
+
 Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
 
 > [!IMPORTANT]
-> The dashboard service builds its chart data engine at startup from these variables. If they are absent or wrong, the pod still starts and serves dashboard CRUD, but every `GetChartData` request fails with `FailedPrecondition: data engine is not configured`.
+> Setting these variables declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Leave `metrics.enabled` set to `false` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
 
 #### Local Tooling & Port-Forwarded Sessions
 

@@ -60,7 +60,7 @@ func TestGetExperiment_HappyPath(t *testing.T) {
 
 func TestGetExperiment_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	server, _ := createExperimentStateServer(ctx, t)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -159,5 +159,35 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 				t.Errorf("GetExperiment(%v) returned error %v, want %v", goodReq, err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestGetExperiment_DriftWarningPropagation(t *testing.T) {
+	ctx := context.Background()
+	req := &apipb.GetExperimentRequest{Name: "experiments/123"}
+	driftMsg := &msgpb.StructuredMessage{
+		Severity:       msgpb.StructuredMessage_WARNING,
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Component snapshot drift detected",
+	}
+	mockStorage := &storage.MockStorage{
+		Experiment: &msgpb.Experiment{
+			Name: "experiments/123",
+			Status: &msgpb.ExperimentStatus{
+				StructuredStatusMessage: driftMsg,
+			},
+		},
+	}
+	xidClient := &mockXidClient{
+		getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(xidClient))
+
+	got, err := server.GetExperiment(ctx, req)
+	if err != nil {
+		t.Fatalf("GetExperiment(%v) returned unexpected error: %v", req, err)
+	}
+	if diff := cmp.Diff(driftMsg, got.GetStatus().GetStructuredStatusMessage(), protocmp.Transform()); diff != "" {
+		t.Errorf("GetExperiment() StructuredStatusMessage mismatch (-want +got):\n%s", diff)
 	}
 }

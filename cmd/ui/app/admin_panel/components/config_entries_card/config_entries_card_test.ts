@@ -29,12 +29,24 @@ import { ConfigEntriesCardComponent, ConfigGroup } from './config_entries_card';
 import { ConfigEntriesCardHarness } from './testing/config_entries_card_harness';
 
 @Component({
-  template: `<xmc-config-entries-card [configGroups]="groups()"></xmc-config-entries-card>`,
+  template: `<xmc-config-entries-card
+    [configGroups]="groups()"
+    [errorMessage]="errorMessage()"
+    [loading]="loading()"
+    (retry)="onRetry()"
+  ></xmc-config-entries-card>`,
   standalone: true,
   imports: [ConfigEntriesCardComponent],
 })
 class TestHostComponent {
   readonly groups = signal<ConfigGroup[] | undefined>(undefined);
+  readonly errorMessage = signal<string | null>(null);
+  readonly loading = signal<boolean>(false);
+  retryCount = 0;
+
+  onRetry(): void {
+    this.retryCount++;
+  }
 }
 
 describe('ConfigEntriesCardComponent', () => {
@@ -184,5 +196,85 @@ describe('ConfigEntriesCardComponent', () => {
     expect(names).toEqual(['Configuration', 'Named Group']);
     expect(isCollapsed).toBeTrue();
     expect(entries).toEqual([{ key: 'named.key', value: 'named.value' }]);
+  });
+
+  it('should display error banner when errorMessage is set', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.errorMessage.set('Failed to load configuration entries.');
+    host.groups.set(undefined);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasErrorBanner()).toBeTrue();
+    expect(await harness.getErrorBannerText()).toContain('Failed to load configuration entries.');
+  });
+
+  it('should emit retry output when clicking retry button in error banner', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.errorMessage.set('Failed to load configuration entries.');
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasErrorBanner()).toBeTrue();
+    expect(await harness.hasRetryButton()).toBeTrue();
+
+    await harness.clickRetry();
+    await flush();
+
+    expect(host.retryCount).toBe(1);
+  });
+
+  it('should display loading spinner when loading is true', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.loading.set(true);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.hasSpinner()).toBeTrue();
+    expect(await harness.hasErrorBanner()).toBeFalse();
+  });
+
+  it('should collapse and expand identically named groups independently', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.groups.set([
+      {
+        displayName: 'Identical Group',
+        configs: [{ key: 'first.key', value: 'first.value' }],
+      },
+      {
+        displayName: 'Identical Group',
+        configs: [{ key: 'second.key', value: 'second.value' }],
+      },
+    ]);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    expect(await harness.getGroupDisplayNames()).toEqual(['Identical Group', 'Identical Group']);
+
+    // Collapse only the first group
+    await harness.toggleGroup(0);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeTrue();
+    expect(await harness.isGroupCollapsed(1)).toBeFalse();
+
+    const entries = await harness.getConfigEntries();
+    expect(entries).toEqual([{ key: 'second.key', value: 'second.value' }]);
+
+    // Collapse the second group as well
+    await harness.toggleGroup(1);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeTrue();
+    expect(await harness.isGroupCollapsed(1)).toBeTrue();
+    expect(await harness.getConfigEntries()).toEqual([]);
+
+    // Expand only the first group back
+    await harness.toggleGroup(0);
+    await flush();
+
+    expect(await harness.isGroupCollapsed(0)).toBeFalse();
+    expect(await harness.isGroupCollapsed(1)).toBeTrue();
+    expect(await harness.getConfigEntries()).toEqual([{ key: 'first.key', value: 'first.value' }]);
   });
 });

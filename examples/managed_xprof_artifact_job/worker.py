@@ -43,8 +43,8 @@ def main(argv):
     print(f"JAX profiler server started on port {_PROFILER_PORT.value}", flush=True)
 
     key = jax.random.PRNGKey(0)
-    deadline = time.time() + run_seconds
-    while time.time() < deadline:
+    deadline = time.monotonic() + run_seconds
+    while time.monotonic() < deadline:
         key, subkey = jax.random.split(key)
         x = jax.random.normal(key, (5000, 5000))
         y = jax.random.normal(subkey, (5000, 5000))

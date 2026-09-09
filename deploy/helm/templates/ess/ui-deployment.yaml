@@ -31,10 +31,30 @@ spec:
         app: ui
     spec:
       serviceAccountName: xmc-ui
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: xmc-ui
         image: {{ .Values.ui.image | quote }}
         imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-cache-nginx
+          mountPath: /var/cache/nginx
+        - name: var-run
+          mountPath: /var/run
         ports:
         - containerPort: 8080
           name: http
@@ -45,8 +65,6 @@ spec:
           value: {{ .Values.ui.refreshIntervalMs | quote }}
         - name: XMC_DEFAULT_TO_CURSOR_PAGINATION
           value: {{ .Values.ui.enableCursorPagination | quote }}
-        - name: XMC_STATUS_MESSAGE_HISTORY_ENABLED
-          value: {{ .Values.statusMessageHistoryEnabled | quote }}
         - name: XMC_ADMIN_PANEL_ENABLED
           value: {{ .Values.healthServiceDeployment.enabled | quote }}
         - name: XMC_RESOURCE_DASHBOARD_ENABLED
@@ -60,4 +78,11 @@ spec:
           limits:
             cpu: "200m"
             memory: "256Mi"
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: var-cache-nginx
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
 {{- end }}

@@ -7,6 +7,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 ## 1. Code Review & Inspection Guidelines
 - **Comprehensive Rule Enforcement**: When performing Pull Request (PR) reviews, AI agents must enforce all project codebase guidelines, architectural principles (SRP, DRY, KISS, linear control flow), security policies, and language-specific style guides—not merely verify basic syntax or formatting.
 - **Contract & API Integrity**: Verify that breaking changes to public APIs, protobuf schemas, CLI flags, or system configurations are explicitly documented and confirmed by the author.
+- **Assumptions Disclosure Audit**: For agent-authored PRs, verify the PR body contains a populated `## Assumptions` section per [Mandatory Assumptions Disclosure](github_authoring_and_prs.md#3-pull-request-creation--pr-sizing-standards). Flag a missing section, and challenge disclosures that are vague (`assumed the existing behavior is correct`), omit the impact-if-wrong clause, or list something the author could have verified from the codebase. Where an assumption is load-bearing for correctness or a system contract, request verification or explicit user sign-off before approval. Conversely, treat an implementation choice the reviewer must reverse-engineer from the diff as an undisclosed assumption.
 - **Review Checklist & Rule Discovery**: When inspecting code diffs, reviewers must check modified file extensions (e.g., via `git diff --name-only`) and enforce the matching language guidelines before providing review feedback:
   - Enforce foundational guidelines defined in [Core Engineering Standards](core_engineering.md), including the strict prohibition of generic dumping-ground names (`util`, `helper`, `misc`, etc.) and compound suffixes (`urlutil`, `stringhelper`) for files, methods, packages, or directories. Flag any generic naming during review as an SRP violation.
   - Enforce language-specific guidelines under `rules/languages/` matching modified file extensions: [Python Guidelines](languages/python.md), [Go Guidelines](languages/golang.md), [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md), [Shell Scripting Guidelines](languages/shell.md), [Markdown Guidelines](languages/markdown.md).
@@ -29,4 +30,11 @@ Key tools for PR comment processing:
 - **Fetch Inline Comment Context**: `./tools/pr_review/fetch_pr_comment.py "<comment_url>"`
 - **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>"`
 - **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
+
+---
+
+## 3. Commit Management During PR Review Rounds
+- **Incremental Follow-Up Commits**: When addressing review comments, authors must ALWAYS append new, distinct commits to the PR branch.
+- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations. Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
+- **Merge-Time Squashing**: Commit cleanup and squashing is handled at merge time via GitHub's "Squash and merge" feature or when landing the PR, never during intermediate review feedback cycles.
 

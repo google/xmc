@@ -30,6 +30,7 @@ go_library(
         "//internal/compat/metadata",
         "//internal/compat/status",
         "//internal/logging",
+        "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
         "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_api//idtoken",
@@ -48,6 +49,8 @@ go_test(
     deps = [
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/metadata",
+        "//pkg/auth/jwks",
+        "@com_github_golang_jwt_jwt_v5//:jwt",
         "@org_golang_google_api//idtoken",
     ],
 )

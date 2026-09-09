@@ -98,7 +98,7 @@ func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.W
 	}
 }
 
-func insertMockItems(t *testing.T, ctx context.Context, client *spanner.Client, mockItems []WorkUnitStatusHistoryItem) {
+func insertMockItems(ctx context.Context, t *testing.T, client *spanner.Client, mockItems []WorkUnitStatusHistoryItem) {
 	t.Helper()
 	if len(mockItems) == 0 {
 		return
@@ -203,7 +203,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			_, essClient := emulator.Setup(ctx, t)
-			insertMockItems(t, ctx, essClient, tt.mockItems)
+			insertMockItems(ctx, t, essClient, tt.mockItems)
 
 			got, err := FetchBatchQueueVelocity(ctx, essClient, tt.queueNames, tt.window)
 			if err != nil {
@@ -279,7 +279,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			_, essClient := emulator.Setup(ctx, t)
-			insertMockItems(t, ctx, essClient, tt.mockItems)
+			insertMockItems(ctx, t, essClient, tt.mockItems)
 
 			got, err := FetchBatchPendingQueueMetrics(ctx, essClient, tt.queueNames)
 			if err != nil {

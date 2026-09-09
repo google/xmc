@@ -46,7 +46,6 @@ import { WorkUnitsStatusBar } from 'xmanager_cloud/ui/app/common/components/work
 import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
 import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 import { EditExperimentFormData } from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
@@ -82,7 +81,7 @@ import { WorkUnitsTable } from './work_units_table/work_units_table';
     StatusMessagesList,
   ],
   templateUrl: './experiment_page.ng.html',
-  styleUrl: './experiment_page.css',
+  styleUrl: './experiment_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExperimentPage {
@@ -103,15 +102,10 @@ export class ExperimentPage {
   private readonly confirmDialogService = inject(ConfirmDialogService);
   private readonly sidePanelService = inject(SidePanelService);
   private readonly autoReloadService = inject(AutoReloadService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
     emitOnStart: false,
   });
   private readonly destroyRef = inject(DestroyRef);
-
-  get isStatusMessageHistoryEnabled(): boolean {
-    return this.featureFlagService.isStatusMessageHistoryEnabled;
-  }
 
   constructor() {
     const route = inject(ActivatedRoute);

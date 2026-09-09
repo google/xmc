@@ -12,16 +12,94 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
+
+py_library(
+    name = "chart_test_lib",
+    srcs = ["chart_test_lib.py"],
+    # Kept importable as a top-level module so that the same import works under bazel and under
+    # the `python3 -m unittest discover` invocation the CI job uses.
+    imports = ["."],
+)
 
 # Tagged manual/local because rendering the chart shells out to a host-installed helm binary,
 # matching the convention used by //test/metrics/infra:infra_test for its container dependency.
+# The manual tag keeps `bazel test //...` from failing on machines without helm; CI installs helm
+# and runs these suites directly via the run-chart-tests job in .github/workflows/unit-tests.yml.
+py_test(
+    name = "chart_test_lib_test",
+    srcs = ["chart_test_lib_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "chart_test_lib_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
 py_test(
     name = "dashboard_service_clickhouse_config_test",
     srcs = ["dashboard_service_clickhouse_config_test.py"],
     data = ["//deploy/helm:chart"],
-    imports = ["../.."],
+    imports = [
+        ".",
+        "../..",
+    ],
     main = "dashboard_service_clickhouse_config_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
+    name = "workload_identity_binding_test",
+    srcs = ["workload_identity_binding_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/helm:chart",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "workload_identity_binding_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
+    name = "dashboard_service_probes_test",
+    srcs = ["dashboard_service_probes_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "dashboard_service_probes_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
+    name = "reconciler_monitoring_config_test",
+    srcs = ["reconciler_monitoring_config_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = ["../.."],
+    main = "reconciler_monitoring_config_test.py",
     tags = [
         "local",
         "manual",

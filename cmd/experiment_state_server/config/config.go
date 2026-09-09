@@ -42,7 +42,6 @@ type Config struct {
 	IAPIssuer                   string
 	HTTPAudience                string
 	GRPCAudience                string
-	DisableAuthentication       bool
 	TLSCertFile                 string
 	TLSKeyFile                  string
 	InvokerSA                   string
@@ -50,10 +49,10 @@ type Config struct {
 	SigningKeyFile              string
 	SignatureTTLSeconds         int
 	AllowedOrigins              string
-	StatusMessageHistoryEnabled bool
 	RedisAddr                   string
 	DashboardServiceAddr        string
 	EnableComponents            bool
+	JWKSURL                     string
 }
 
 var cfg Config
@@ -63,6 +62,7 @@ func init() {
 	flag.StringVar(&cfg.GRPCPort, "ess_grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&cfg.HTTPPort, "ess_http_port", "8080", "The HTTP server port to listen on.")
 	flag.StringVar(&cfg.ActuatorAudience, "ess_actuator_audience", "", "The audience for OIDC tokens to authenticate to Actuator.")
+	flag.StringVar(&cfg.JWKSURL, "ess_jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 	flag.StringVar(&cfg.TLSCertFile, "ess_tls_cert_file", "/etc/tls/tls.crt", "Path to the TLS certificate file")
 	flag.StringVar(&cfg.TLSKeyFile, "ess_tls_key_file", "/etc/tls/tls.key", "Path to the TLS key file")
 	flag.StringVar(&cfg.DefaultExecutionEnvironment, "ess_default_execution_environment", "gke", "The default execution environment to use if not specified in the request.")
@@ -82,10 +82,10 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.InvokerSA, "ess_service_account", "")
 	configutil.IntEnv(&c.SignatureTTLSeconds, "ess_signature_ttl_seconds", client.DefaultSignatureTTLSeconds)
 	configutil.StringEnv(&c.AllowedOrigins, "ess_allowed_origins", "")
-	configutil.BoolEnv(&c.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", true)
 	configutil.StringEnv(&c.RedisAddr, "redis_addr", "")
 	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "")
 	configutil.BoolEnv(&c.EnableComponents, "enable_components", false)
+	configutil.StringEnv(&c.JWKSURL, "ess_jwks_url", "")
 }
 
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.

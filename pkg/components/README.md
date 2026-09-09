@@ -11,7 +11,9 @@ The Components subsystem coordinates component definitions, versioning, and runt
 - **Source of Truth (SOT)**: Google Cloud Spanner acts as the authoritative relational database storing the global component catalog, versions, dependencies, and rollout states.
 - **Component Manager Service (CMS)**: A gRPC service hosted within the Experiment Service Server (ESS) providing control plane APIs for component registration, dependency validation, and lifecycle operations.
 - **GitOps Bridge (`cmd/xmc-bridge`)**: A bidirectional synchronizer reconciling Kubernetes Custom Resources (`Component.xmc.dev`) with the authoritative Spanner catalog.
-- **In-Memory Store (`pkg/components/store`)**: A thread-safe in-memory cache and graph validation engine with prospective DAG cycle detection, fast lookups, and snapshot resolution.
+- **Production Spanner Store (`pkg/components/store/spanner_store.go`)**: A production Cloud Spanner persistence driver with ACID read-write transactions, prospective cycle checking, soft-deletion active name index release, and snapshot queries.
+- **In-Memory Store (`pkg/components/store/memory_store.go`)**: A thread-safe in-memory cache and test double implementation.
+- **Dynamic Drift Detection (`internal/storage/spanner/experiment/driftdetection.go`)**: Evaluates component drift dynamically on ESS experiment read endpoints (`FetchExperiment`, `FetchExperimentStatus`) by querying Cloud Spanner's `ExperimentConsistencyInfo` view, surfacing warnings to the UI console.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -21,10 +23,12 @@ The Components subsystem coordinates component definitions, versioning, and runt
 │  └─────────────────────────┬─────────────────────────┘  │
 │                            │                            │
 │  ┌─────────────────────────▼─────────────────────────┐  │
-│  │             Storage Engine / MemoryStore          │  │
+│  │         Storage Engine (SpannerStore / Memory)    │  │
 │  │   ┌─────────────────────┬─────────────────────┐   │  │
 │  │   │ Dependency Parser   │ Graph Validator     │   │  │
 │  │   │ & Normalization     │ (3-Color DFS)       │   │  │
+│  │   ├─────────────────────┼─────────────────────┤   │  │
+│  │   │ Deactivation Engine │ Snapshot Resolver   │   │  │
 │  │   └─────────────────────┴─────────────────────┘   │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -113,6 +117,95 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
 
 ---
 
+### 5. Production Cloud Spanner Persistence Driver (`pkg/components/store/spanner_store.go`)
+
+`SpannerStore` provides the production database persistence layer implementing the `store.Store` interface against Cloud Spanner.
+
+#### Relational Table Schema
+- **`Components`**: Stores component intent and status (`ComponentId`, `Name`, `ComponentClass`, `ConfigProto`, `AccessPayload`, `State`, `Generation`, `ObservedGeneration`, `CreateTime`, `UpdateTime`, `ActiveName`).
+- **`ComponentDependencies`**: Relational dependency graph (`ComponentId`, `DependencyComponentId`) interleaved in `Components` with `ON DELETE CASCADE` and foreign key constraints.
+- **`ExperimentComponentSnapshots`**: Immutable historical generation snapshots locked to experiment runs (`ComponentId`, `LockedGeneration`, `ConfigProto`, `AccessPayload`).
+
+#### Key Architectural Invariants
+1. **Strict Query Parameterization**: All queries use static statements with `@parameter` binding (`spanner.Statement`), eliminating SQL injection risks.
+2. **Soft-Deletion & ActiveName Unique Index Release**:
+   - Schema defines: `ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED` with `CREATE UNIQUE NULL_FILTERED INDEX Idx_Components_ActiveName ON Components(ActiveName)`.
+   - When a component is soft-deleted (`State = 5`), Spanner evaluates `ActiveName` to `NULL`, immediately releasing the unique index constraint to allow reusing the component name with a new `ComponentId` while preserving historical snapshot references and foreign keys.
+3. **Lock Footprint Optimization**:
+   - Frequent controller synchronization loops (`UpdateObservedGeneration`) and deactivation status checks use targeted parameterized queries (`queryComponentWithDeps`, `queryActiveDependents`), preventing table-wide shared locks and transaction contention.
+4. **Historical Generation Snapshots**:
+   - Resolves live generation coordinates from `Components` or historical pinned coordinates from `ExperimentComponentSnapshots`.
+
+---
+
+### 6. Dynamic Drift Detection & Warning Propagation (`internal/storage/spanner/experiment/driftdetection.go`)
+
+To alert users when active experiments run against stale or deleted component configurations without introducing periodic background reconciliation loops or polling cron jobs, the Experiment State Server (ESS) evaluates component drift dynamically during experiment read RPCs.
+
+#### Propagation Architecture
+
+```
+┌────────────────────────────────────────────────────────┐
+│               Cloud Spanner Database                   │
+│  ┌────────────────────────┐  ┌──────────────────────┐  │
+│  │  Components (Catalog)  │  │ Component Snapshots  │  │
+│  └───────────┬────────────┘  └──────────┬───────────┘  │
+│              └────────────┬─────────────┘              │
+│                           ▼                            │
+│         [View: ExperimentConsistencyInfo]              │
+│         (ActiveState=1, BitReversedXid PK)             │
+└───────────────────────────┬────────────────────────────┘
+                            │
+              Top-Level Read Entry Points
+              (FetchExperiment, FetchExperimentStatus)
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│            Experiment State Server (ESS)               │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Fast Path: Check IsExperimentConsistent (View)   │  │
+│  │ (Zero extra queries when consistent or inactive) │  │
+│  ├──────────────────────────────────────────────────┤  │
+│  │ Slow Path: Query Drift Details (APPLY_JOIN)      │  │
+│  │ (Extract divergent generations & soft-deletions) │  │
+│  ├──────────────────────────────────────────────────┤  │
+│  │ Attach Warning to StructuredStatusMessage        │  │
+│  │ (Upgrade < WARNING to WARNING; preserve ERROR)   │  │
+│  └──────────────────────────────────────────────────┘  │
+└───────────────────────────┬────────────────────────────┘
+                            │
+               ESS Read Responses (gRPC / REST)
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│                   XMC UI Console                       │
+│    Renders Component Drift Banner & Warning Notice     │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Key Design Invariants
+
+1. **Direct View Querying Without CMS Overhead**:
+   - ESS queries the Cloud Spanner view `ExperimentConsistencyInfo` directly using the experiment's primary key (`BitReversedXid = @bitReversedXid`), bypassing CMS gRPC hops and avoiding full-table scans.
+2. **Terminal Workload Filtering**:
+   - The view filters exclusively by `WHERE e.ActiveState = 1`. Inactive and terminal experiments automatically return no rows from the view, bypassing drift evaluation entirely and preserving terminal snapshot records.
+3. **Optimized Two-Tier Query Strategy**:
+   - **Fast Path**: Evaluates `IsExperimentConsistent BOOL` and `HasPendingReconciliation BOOL` from the view. If consistent (`true`) or no snapshots exist, no additional queries are executed.
+   - **Slow Path**: Only when `IsExperimentConsistent == false`, ESS issues a secondary query joining `ExperimentComponentSnapshots` and `Components` using the `JOIN@{JOIN_METHOD=APPLY_JOIN}` optimizer hint to retrieve specific component names, locked snapshot generations, and live observed generations (bounded to `maxDriftDetails = 10`).
+4. **Resilient Status Message Merging**:
+   - Preserves higher-severity messages (`ERROR`, `FATAL`) untouched.
+   - Upgrades lower-severity messages (`INFO`, `UNSPECIFIED`) to `WARNING` severity and appends human-readable drift details without losing existing status text.
+   - Eliminates duplicate drift notices on repeated read calls.
+5. **Strict Transaction Isolation**:
+   - Drift evaluation executes exclusively within top-level read entry points (`FetchExperiment`, `FetchExperimentStatus`) using independent read-only transactions (`ReadOnlyTransaction`).
+   - Core read-write transaction methods (`FetchExperimentTransaction`, `fetchExperimentStatusTransaction`) remain completely side-effect free, preventing phantom reads, transaction aborts, or concurrent mutation deadlocks.
+6. **Feature Flag Gating (`enable_components`)**:
+   - Drift detection is strictly gated by the server configuration flag `enable_components` (`cfg.EnableComponents`). When `enable_components = false` (default across non-component clusters), drift evaluation is bypassed immediately, guaranteeing zero extra Spanner queries and zero regression risk on unmigrated databases.
+7. **Hot-Path Polling Cache (30-second TTL)**:
+   - To mitigate high-frequency polling overhead on `GetExperimentStatus` (where the UI console or CLI commands poll status every 1–2 seconds), ESS maintains a thread-safe in-memory cache with a 30-second TTL. If status is polled multiple times within 30 seconds, consistency evaluation is served directly from memory, eliminating redundant Spanner view queries.
+
+---
+
 ## Component Lifecycle State Machine
 
 ```
@@ -141,4 +234,14 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
 2. **Idempotency**: Deactivation operations are idempotent and will not error if called repeatedly on terminal/stable states.
 3. **Transition Timestamps**: Every state transition updates `rec.Status.LastTransitionTime` and regenerates the record `Etag`.
 
+---
 
+## 6. Workload Consumption & Runtime Injection (`cmd/actuator`)
+
+WorkUnits consume components at runtime through the Actuator daemon without querying Cloud Spanner directly during JobSet synthesis:
+
+1. **Snapshot Pinning**: During WorkUnit creation, the Experiment State Server locks component generations into the `xmc.dev/component-snapshots` annotation on the JobSet executable.
+2. **Controller-Runtime Lookup**: Actuator reads `Component` custom resources (`xmc.dev/v1alpha1`) via `controller-runtime` (target namespace with cluster-wide `"xmc"` fallback) without querying Cloud Spanner.
+3. **Placement Gating**: Actuator blocks placement and requeues the task if required components are missing (hydration lag), disabled, or unhealthy (`Ready=False`/`Unknown` or `Degraded=True`).
+4. **Drift Warning**: If a component's generation drifts past the snapshot lock, Actuator allows placement but logs a warning and annotates the JobSet with `xmc.dev/component-drift-warning`.
+5. **Configuration Injection**: Actuator injects plain environment variables (`status.access.envVars`) into all primary and init containers across all replicated jobs.

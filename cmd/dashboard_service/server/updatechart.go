@@ -22,32 +22,31 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/validator/validator"
 )
 
-// fetchAndAuthorizeChart loads the target chart and verifies caller write authorization on its experiment.
-func (s *Server) fetchAndAuthorizeChart(ctx context.Context, user, chartName, chartID string) (*dpb.Chart, error) {
+// authorizeChartWrite verifies caller write authorization on the experiment a chart belongs to.
+//
+// The chart is read only to learn that experiment. The update itself re-reads it inside its own
+// transaction, so nothing from this snapshot is carried into the write.
+func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chartID string) error {
 	existing, err := s.repo.GetChart(ctx, chartID)
 	if err != nil {
 		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "chart %q not found", chartName)
+			return status.Errorf(codes.NotFound, "chart %q not found", chartName)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to get chart: %v", err)
+		return status.Errorf(codes.Internal, "failed to get chart: %v", err)
 	}
 	if existing == nil {
-		return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
+		return status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
 	}
 
 	targetXID := s.resolveChartXID(existing, chartName)
 	if targetXID <= 0 {
-		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
+		return status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
 	}
 
-	if err := s.authorizeExperimentWrite(ctx, user, targetXID); err != nil {
-		return nil, err
-	}
-	return existing, nil
+	return s.authorizeExperimentWrite(ctx, user, targetXID)
 }
 
 // UpdateChart handles updating an existing chart with authorization, field mask merging, and persistence.
@@ -70,22 +69,19 @@ func (s *Server) UpdateChart(ctx context.Context, req *spb.UpdateChartRequest) (
 		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
 	}
 
-	existing, err := s.fetchAndAuthorizeChart(ctx, user, req.GetChart().GetName(), chartID)
-	if err != nil {
+	if err := s.authorizeChartWrite(ctx, user, req.GetChart().GetName(), chartID); err != nil {
 		return nil, err
 	}
 
-	merged, err := data.MergeCharts(existing, req.GetChart(), req.GetUpdateMask())
+	// The field mask is handed to the repository rather than applied here: the merge has to run
+	// against the state the write commits against, which only the storage transaction can see.
+	updated, err := s.repo.UpdateChart(ctx, req.GetChart(), req.GetUpdateMask())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to merge chart updates: %v", err)
-	}
-
-	if err := s.repo.UpdateChart(ctx, merged); err != nil {
 		if isNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "chart %q not found", req.GetChart().GetName())
 		}
 		return nil, status.Errorf(codes.Internal, "failed to update chart: %v", err)
 	}
 
-	return merged, nil
+	return updated, nil
 }

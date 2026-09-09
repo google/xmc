@@ -55,6 +55,7 @@ func main() {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	slog.SetDefault(logger)
 	rootCtx := logging.WithLogger(context.Background(), logger)
 
 	ctx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT, syscall.SIGTERM)
@@ -139,7 +140,7 @@ func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVeloci
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
 	}
-	wuStore, err := workunit.NewRepository(spannerClient, nil, workunit.RepositoryConfig{})
+	wuStore, err := workunit.NewRepository(spannerClient, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
 	}

@@ -63,4 +63,18 @@ func TestValidationResult_Diagnostics(t *testing.T) {
 			t.Errorf("expected %d diagnostics and HasErrors()=true", n)
 		}
 	})
+
+	t.Run("marshal json serialization", func(t *testing.T) {
+		t.Parallel()
+		res := linter.NewValidationResult()
+		res.AddError("manifest.yaml", 15, "SCHEMA_ERROR", "field missing")
+		res.AddWarning("manifest.yaml", 25, "DEPRECATION", "version deprecated")
+		data, err := res.MarshalJSON()
+		if err != nil {
+			t.Fatalf("MarshalJSON() failed: %v", err)
+		}
+		if len(data) == 0 {
+			t.Errorf("expected non-empty JSON data")
+		}
+	})
 }

@@ -30,10 +30,6 @@ import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/ap
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';
 
-const ROW_SELECTOR = {
-  selector: ':not(.detail-row)',
-};
-
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
     {
@@ -43,6 +39,10 @@ const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
       currentWorkUnitExecution: {
         status: {
           state: 'RUNNING',
+        },
+        metadata: {
+          mlrunUrl:
+            'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
         },
       },
     },
@@ -115,7 +115,7 @@ describe('WorkUnitsTable Component', () => {
     expect(comp).toBeTruthy();
 
     const harness = await getHarness(WorkUnitsTableHarness);
-    const rows = await harness.getRows(ROW_SELECTOR);
+    const rows = await harness.getDataRows();
     expect(rows.length).toBe(3);
     const cells = await rows[0].getCellTextByColumnName();
     expect(cells['ID']).toBe('1');
@@ -179,7 +179,7 @@ describe('WorkUnitsTable Component', () => {
     it('should be enabled for running work unit', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
-      const rows = await harness.getRows(ROW_SELECTOR);
+      const rows = await harness.getDataRows();
       const cells = await rows[1].getCells();
       const button = await cells[cells.length - 1].getHarness(
         MatButtonHarness.with({ text: 'link' }),
@@ -194,7 +194,7 @@ describe('WorkUnitsTable Component', () => {
     it('should be disabled for stopped work unit', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
-      const rows = await harness.getRows(ROW_SELECTOR);
+      const rows = await harness.getDataRows();
       const cells = await rows[2].getCells();
       const button = await cells[cells.length - 1].getHarness(
         MatButtonHarness.with({ text: 'link' }),
@@ -206,6 +206,36 @@ describe('WorkUnitsTable Component', () => {
       expect(await tooltip.getTooltipText()).toBe(
         'There are no GKE resources for stopped work units',
       );
+    });
+  });
+
+  describe('Run Profile button', () => {
+    it('should render run profile link for work unit with mlrunUrl', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      const button = await harness.getRunProfileButton(0);
+      expect(button).not.toBeNull();
+
+      const tooltip = await harness.getRunProfileTooltip(0);
+      expect(tooltip).not.toBeNull();
+      await tooltip!.show();
+      expect(await tooltip!.getTooltipText()).toBe('Run Profile');
+
+      const link = await harness.getRunProfileLink(0);
+      expect(link).toEqual({
+        href: 'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
+        target: '_blank',
+        rel: 'noreferrer',
+      });
+    });
+
+    it('should not render troubleshoot button for work unit without mlrunUrl', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      const button = await harness.getRunProfileButton(1);
+      expect(button).toBeNull();
     });
   });
 

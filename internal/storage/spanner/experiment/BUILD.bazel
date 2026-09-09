@@ -18,6 +18,7 @@ compat_go_library(
     name = "experiment",
     srcs = [
         "createexperiment.go",
+        "driftdetection.go",
         "fetchexperiment.go",
         "fetchexperimentstatus.go",
         "listexperiments.go",
@@ -45,6 +46,7 @@ compat_go_library(
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
@@ -63,6 +65,7 @@ compat_go_test(
     name = "experiment_test",
     srcs = [
         "createexperiment_test.go",
+        "driftdetection_test.go",
         "fetchexperiment_test.go",
         "fetchexperimentstatus_test.go",
         "listexperiments_test.go",
@@ -79,7 +82,9 @@ compat_go_test(
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/storage/spanner/experiment",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
+        "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

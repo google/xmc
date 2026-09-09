@@ -54,14 +54,6 @@ jobs:
             exit 1
           fi
 
-      - name: 'Start Async Disk Space Cleanup'
-        run: |
-          echo "=== Starting background cleanup of unnecessary files ==="
-          if [ -d /usr/local/lib/android ] || [ -d /usr/share/dotnet ]; then
-            sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
-            echo "CLEANUP_PID=$!" >> $GITHUB_ENV
-          fi
-
       - name: 'Authenticate to Google Cloud via Workload Identity Federation'
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
         with:
@@ -69,20 +61,21 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}'
 
+      - name: 'Configure Docker Auth for GCP Artifact Registry'
+        run: |
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+
       - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f' # v2.2.1
+        run: |
+          if ! command -v gcloud &>/dev/null; then
+            curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends google-cloud-cli
+          fi
+          gcloud version | head -n 1
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
-
-      - name: 'Restore Bazel Repository Cache'
-        id: 'cache-bazel-repo-restore'
-        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        with:
-          path: ~/.cache/bazel-repo
-          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
-          restore-keys: |
-            bazel-repo-${{ runner.os }}-
 
       - name: 'Configure Bazel Cache Settings'
         env:
@@ -105,66 +98,39 @@ jobs:
         run: |
           mkdir -p "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          export PATH="${HOME}/.local/bin:${PATH}"
 
-          echo "=== Installing Kubectl, KinD, and Helm in Parallel ==="
-          (
-            if ! command -v kubectl &>/dev/null; then
-              curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
-              chmod +x "${HOME}/.local/bin/kubectl"
-            fi
-          ) &
-          PID_KUBECTL=$!
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
+            chmod +x "${HOME}/.local/bin/kubectl"
+          fi
 
-          (
-            if ! command -v kind &>/dev/null; then
-              curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
-              chmod +x "${HOME}/.local/bin/kind"
-            fi
-          ) &
-          PID_KIND=$!
+          if ! command -v kind &>/dev/null; then
+            curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
+            chmod +x "${HOME}/.local/bin/kind"
+          fi
 
-          (
-            if ! command -v helm &>/dev/null; then
-              HELM_VERSION="v3.17.1"
-              curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
-              tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
-              mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
-              rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
-            fi
-          ) &
-          PID_HELM=$!
-
-          wait "${PID_KUBECTL}" "${PID_KIND}" "${PID_HELM}"
+          if ! command -v helm &>/dev/null; then
+            HELM_VERSION="v3.20.1"
+            curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+            mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
+            rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+          fi
 
           kubectl version --client
           kind --version
-          helm version
-
-      - name: 'Wait for Disk Space Cleanup'
-        run: |
-          if [ -n "${CLEANUP_PID:-}" ]; then
-            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
-            wait "${CLEANUP_PID}" || true
-          fi
-          echo "=== Available Disk Space Before E2E Test Execution ==="
-          df -h /
+          helm version --short
 
       - name: 'Run E2E Test Suite'
         env:
           GCP_PROJECT_ID: '${{ secrets.GCP_E2E_PROJECT_ID }}'
           SPANNER_INSTANCE: '${{ secrets.GCP_E2E_SPANNER_INSTANCE }}'
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+          XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
-
-      - name: 'Save Bazel Repository Cache'
-        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        # Only save repository cache on main branch pushes when external dependencies change.
-        if: github.ref == 'refs/heads/main' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
-        with:
-          path: ~/.cache/bazel-repo
-          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
 
       - name: 'Upload E2E Screenshots & Diagnostic Logs'
         if: always()

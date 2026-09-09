@@ -52,7 +52,7 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 
 // StorageConfig holds configuration for the Storage.
 type StorageConfig struct {
-	StatusMessageHistoryEnabled bool
+	EnableComponents bool
 }
 
 // NewStorageWithConfig creates a new instance of the Spanner-backed storage with the given configuration.
@@ -62,15 +62,13 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 	}
 
 	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{
-		StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
+		EnableComponents: cfg.EnableComponents,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment repository: %w", err)
 	}
 
-	wuRepo, err := workunit.NewRepository(client, expRepo, workunit.RepositoryConfig{
-		StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
-	})
+	wuRepo, err := workunit.NewRepository(client, expRepo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workunit repository: %w", err)
 	}

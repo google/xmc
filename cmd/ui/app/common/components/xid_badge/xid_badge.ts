@@ -26,7 +26,7 @@ import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service'
   selector: 'xmc-xid-badge',
   standalone: true,
   templateUrl: './xid_badge.ng.html',
-  styleUrl: './xid_badge.css',
+  styleUrl: './xid_badge.scss',
   imports: [MatChipsModule, MatIconModule, MatTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

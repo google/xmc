@@ -39,6 +39,18 @@ export interface ComparisonExperimentEntry {
   title?: string;
 }
 
+/**
+ * Outcome of a confirmed create-dashboard dialog.
+ *
+ * Charts are a sibling resource rather than a field of `Dashboard`, so the dialog hands back the
+ * dashboard draft and the charts to provision separately. The caller creates the charts first and
+ * then links them by ID, because the dashboard resource only ever carries `chart_ids`.
+ */
+export interface CreateDashboardDialogResult {
+  dashboard: Dashboard;
+  charts: Chart[];
+}
+
 export function getDefaultPlotSpecs(): PlotSpec[] {
   return [
     {
@@ -68,6 +80,8 @@ export function getDefaultPlotSpecs(): PlotSpec[] {
   ];
 }
 
+// Charts are built without a `name`: CreateChart assigns the canonical resource name from the
+// parent work unit and a server-generated chart UUID, so any client-side name is discarded.
 export function buildBaseChart(
   baseXid: number,
   baseWid: number,
@@ -75,7 +89,6 @@ export function buildBaseChart(
   plots: PlotSpec[],
 ): Chart {
   return {
-    name: `experiments/${baseXid}/charts/baseline`,
     title: title?.trim() || `Baseline Run (XID ${baseXid})`,
     xid: baseXid,
     wid: baseWid,
@@ -88,31 +101,13 @@ export function buildComparisonCharts(
   comparisons: ComparisonExperimentEntry[],
   plots: PlotSpec[],
 ): Chart[] {
-  return comparisons.map((comp, idx) => ({
-    name: `experiments/${comp.xid}/charts/comparison_${idx + 1}`,
+  return comparisons.map((comp) => ({
     title: comp.title || `Experiment ${comp.xid}`,
     xid: comp.xid,
     wid: comp.wid,
     plots,
     plotLayout: { type: LayoutType.GRID },
   }));
-}
-
-/**
- * Builds a valid dashboard resource name from the user-provided title.
- * Converts the title into a sanitized, URL-friendly resource identifier (slug) by:
- * 1. Converting all characters to lowercase.
- * 2. Replacing any sequence of non-alphanumeric characters with a single underscore.
- * 3. Trimming leading and trailing underscores.
- */
-export function buildDashboardResourceName(title: string): string {
-  const lowercaseTitle = title.toLowerCase();
-  // Replace any continuous sequence of non-alphanumeric characters with a single underscore.
-  const titleWithUnderscores = lowercaseTitle.replace(/[^a-z0-9]+/g, '_');
-  // Strip any leading or trailing underscores from the resulting identifier.
-  const sanitizedTitleId = titleWithUnderscores.replace(/^_+|_+$/g, '');
-
-  return `dashboards/${sanitizedTitleId || `dash_${Date.now()}`}`;
 }
 
 /**
@@ -245,14 +240,18 @@ export class CreateDashboardDialogComponent {
     );
     const comparisonCharts = buildComparisonCharts(this.comparisons(), this.plots());
 
+    // `name` is left unset: CreateDashboard assigns the resource name from a server-generated
+    // dashboard UUID. `chart_ids` is filled in by the caller once the charts have been created.
     const dashboard: Dashboard = {
-      name: buildDashboardResourceName(rawTitle),
       title: rawTitle,
       description: formVal.description?.trim() || undefined,
       chartLayout: { type: LayoutType.SIDE_BY_SIDE },
-      charts: [baseChart, ...comparisonCharts],
     };
 
-    this.dialogRef.close(dashboard);
+    const result: CreateDashboardDialogResult = {
+      dashboard,
+      charts: [baseChart, ...comparisonCharts],
+    };
+    this.dialogRef.close(result);
   }
 }

@@ -867,17 +867,174 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 }
 
-func TestMemoryStore_UnimplementedStubs(t *testing.T) {
+func TestMemoryStore_ResolveComponentSnapshot(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
 
-	if _, _, err := ms.ResolveComponentSnapshot(ctx, "comp-1", 1); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ResolveComponentSnapshot got code %v, want Unimplemented", status.Code(err))
+	spec1 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Spec Gen 1",
 	}
-	if _, err := ms.ValidateComponentRequirement(ctx, "comp-1", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.0.0"); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ValidateComponentRequirement got code %v, want Unimplemented", status.Code(err))
+	if _, err := ms.SetComponentIntent(ctx, "comp-snap", spec1, map[string]string{"env": "prod"}, 1); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
 	}
-	if _, err := ms.GetPlatformHealth(ctx, "", 10, ""); status.Code(err) != codes.Unimplemented {
-		t.Errorf("GetPlatformHealth got code %v, want Unimplemented", status.Code(err))
+
+	coords1 := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-1",
+		Namespace:   "default",
+		ServiceName: "snap-svc-v1",
+		Port:        8080,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords1, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 1"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// 1. Resolve Gen 1 snapshot
+	snap1, snapCoords1, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(1) failed: %v", err)
+	}
+	if snap1.Generation != 1 {
+		t.Errorf("snap1.Generation = %d, want 1", snap1.Generation)
+	}
+	if snap1.Spec.GetVersion() != "v1.0.0" {
+		t.Errorf("snap1.Spec.Version = %q, want 'v1.0.0'", snap1.Spec.GetVersion())
+	}
+	if snapCoords1 == nil || snapCoords1.GetServiceName() != "snap-svc-v1" {
+		t.Errorf("snapCoords1.ServiceName = %v, want 'snap-svc-v1'", snapCoords1)
+	}
+
+	// 2. Update to Gen 2
+	spec2 := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.0.0",
+		Description: "Spec Gen 2",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-snap", spec2, map[string]string{"env": "prod-v2"}, 2); err != nil {
+		t.Fatalf("SetComponentIntent(2) failed: %v", err)
+	}
+	coords2 := &componentspb.ResolvedComponentCoordinates{
+		ClusterName: "gke-1",
+		Namespace:   "default",
+		ServiceName: "snap-svc-v2",
+		Port:        9090,
+	}
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 2, &componentspb.ComponentAccessStatus{Coordinates: coords2, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 2"); err != nil {
+		t.Fatalf("UpdateObservedGeneration(2) failed: %v", err)
+	}
+
+	// 3. Verify Gen 1 historical snapshot remains completely immutable
+	snap1Historical, snapCoords1Historical, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(1 historical) failed: %v", err)
+	}
+	if snap1Historical.Generation != 1 {
+		t.Errorf("snap1Historical.Generation = %d, want 1", snap1Historical.Generation)
+	}
+	if snap1Historical.Spec.GetVersion() != "v1.0.0" {
+		t.Errorf("snap1Historical.Spec.Version = %q, want 'v1.0.0'", snap1Historical.Spec.GetVersion())
+	}
+	if snap1Historical.Spec.GetDescription() != "Spec Gen 1" {
+		t.Errorf("snap1Historical.Spec.Description = %q, want 'Spec Gen 1'", snap1Historical.Spec.GetDescription())
+	}
+	if snapCoords1Historical == nil || snapCoords1Historical.GetServiceName() != "snap-svc-v1" {
+		t.Errorf("snapCoords1Historical.ServiceName = %v, want 'snap-svc-v1'", snapCoords1Historical)
+	}
+
+	// 4. Resolve Gen 2 snapshot (and generation=0 for latest)
+	snap2, snapCoords2, err := ms.ResolveComponentSnapshot(ctx, "comp-snap", 0)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot(0 latest) failed: %v", err)
+	}
+	if snap2.Generation != 2 {
+		t.Errorf("snap2.Generation = %d, want 2", snap2.Generation)
+	}
+	if snap2.Spec.GetVersion() != "v2.0.0" {
+		t.Errorf("snap2.Spec.Version = %q, want 'v2.0.0'", snap2.Spec.GetVersion())
+	}
+	if snapCoords2 == nil || snapCoords2.GetServiceName() != "snap-svc-v2" {
+		t.Errorf("snapCoords2.ServiceName = %v, want 'snap-svc-v2'", snapCoords2)
+	}
+}
+
+func TestMemoryStore_ValidateComponentRequirement(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.4.0",
+	}
+	if _, err := ms.SetComponentIntent(ctx, "comp-req", spec, nil, 0); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	// 1. Pending reconciliation -> not satisfied
+	resPending, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.0.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if resPending.IsSatisfied {
+		t.Error("IsSatisfied = true for pending reconciliation component, want false")
+	}
+
+	// 2. Transition to ENABLED -> satisfied
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+	resEnabled, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.2.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if !resEnabled.IsSatisfied {
+		t.Errorf("IsSatisfied = false for ENABLED component, want true (reason: %q)", resEnabled.Reason)
+	}
+
+	// 3. Higher version requirement -> unsatisfied
+	resHigher, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v2.0.0")
+	if err != nil {
+		t.Fatalf("ValidateComponentRequirement unexpected error: %v", err)
+	}
+	if resHigher.IsSatisfied {
+		t.Error("IsSatisfied = true for higher version requirement, want false")
+	}
+}
+
+func TestMemoryStore_GetPlatformHealth(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("health-comp-%d", i)
+		spec := &componentspb.ComponentSpec{
+			Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version: "v1.0.0",
+		}
+		if _, err := ms.SetComponentIntent(ctx, name, spec, nil, 0); err != nil {
+			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
+		}
+		state := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+		ready := i%2 == 0
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: ready}, state, "OK"); err != nil {
+			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
+		}
+	}
+
+	resp, err := ms.GetPlatformHealth(ctx, "state=ENABLED", 2, "")
+	if err != nil {
+		t.Fatalf("GetPlatformHealth failed: %v", err)
+	}
+	if len(resp.GetComponents()) != 2 {
+		t.Errorf("len(Components) = %d, want 2", len(resp.GetComponents()))
+	}
+	if resp.GetTotalHealthy() != 3 {
+		t.Errorf("TotalHealthy = %d, want 3", resp.GetTotalHealthy())
+	}
+	if resp.GetTotalUnhealthy() != 2 {
+		t.Errorf("TotalUnhealthy = %d, want 2", resp.GetTotalUnhealthy())
+	}
+	if resp.GetNextPageToken() == "" {
+		t.Error("NextPageToken is empty, want token")
 	}
 }

@@ -60,6 +60,29 @@ linters-settings:
     rules:
       - name: function-result-limit
         arguments: [3]
+      - name: error-strings
+      - name: error-naming
+      - name: error-return
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: superfluous-else
+      - name: early-return
+      - name: defer
+      - name: string-format
+      - name: useless-break
+      - name: time-naming
+      - name: unexported-return
+      - name: increment-decrement
+      - name: range
+      - name: receiver-naming
+      - name: get-return
+      - name: bool-literal-in-expr
+      - name: constant-logical-expr
+      - name: bare-return
+      - name: time-equal
+      - name: waitgroup-by-value
+      - name: atomic
 
 issues:
   exclude-dirs:

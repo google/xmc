@@ -23,6 +23,7 @@ from tools.common.tool_utils import HandledError
 from tools.pr_review.generate_review_checklist import (
     _parse_graphql_nodes,
     _parse_rest_comment,
+    extract_severity,
     fetch_unresolved_comments,
     format_checklist_markdown,
     generate_review_checklist,
@@ -182,6 +183,30 @@ class TestGenerateReviewChecklist(unittest.TestCase):
             fetch_unresolved_comments("google", "xmc", 145)
         self.assertIn("Authentication failed", ctx.exception.message)
 
+    def test_extract_severity(self):
+        """Test extract_severity accurately classifies SVG badges and text tags."""
+        self.assertEqual(
+            extract_severity(
+                "![critical](https://www.gstatic.com/codereviewagent/critical-priority.svg)"
+            ),
+            "CRITICAL",
+        )
+        self.assertEqual(
+            extract_severity("![high](https://www.gstatic.com/codereviewagent/high-priority.svg)"),
+            "HIGH",
+        )
+        self.assertEqual(
+            extract_severity(
+                "![medium](https://www.gstatic.com/codereviewagent/medium-priority.svg)"
+            ),
+            "MEDIUM",
+        )
+        self.assertEqual(
+            extract_severity("![low](https://www.gstatic.com/codereviewagent/low-priority.svg)"),
+            "LOW",
+        )
+        self.assertEqual(extract_severity("Random comment text"), None)
+
     def test_format_checklist_markdown(self):
         """Test formatting markdown checklist with comments."""
         comments = [
@@ -192,14 +217,15 @@ class TestGenerateReviewChecklist(unittest.TestCase):
                 "line": 42,
                 "body": "Fix this line\nSecond line comment",
                 "url": "https://github.com/google/xmc/pull/145#discussion_r1",
+                "severity": "HIGH",
             }
         ]
         md = format_checklist_markdown("google", "xmc", 145, comments)
         self.assertIn("# PR Review Checklist: google/xmc#145", md)
-        self.assertIn("Total Unresolved Comments: 1", md)
+        self.assertIn("Total Unresolved Comments: 1 (High/Critical: 1)", md)
         expected_item = (
             "- [ ] **[cmd/main.go:42](https://github.com/google/xmc/pull/145#discussion_r1)**"
-            " (@reviewer1) (Comment ID 1)"
+            " [HIGH] (@reviewer1) (Comment ID 1)"
         )
         self.assertIn(expected_item, md)
         self.assertIn("  > Fix this line", md)
@@ -208,7 +234,7 @@ class TestGenerateReviewChecklist(unittest.TestCase):
     def test_format_checklist_markdown_empty(self):
         """Test formatting markdown checklist with no comments."""
         md = format_checklist_markdown("google", "xmc", 145, [])
-        self.assertIn("Total Unresolved Comments: 0", md)
+        self.assertIn("Total Unresolved Comments: 0 (High/Critical: 0)", md)
         self.assertIn("No unresolved review comments found.", md)
 
     def test_generate_review_checklist_invalid_pr(self):
@@ -230,8 +256,9 @@ class TestGenerateReviewChecklist(unittest.TestCase):
                 "author": "reviewer1",
                 "file_path": "cmd/main.go",
                 "line": 42,
-                "body": "Fix this line",
+                "body": "![high](https://www.gstatic.com/codereviewagent/high-priority.svg)\nFix this",
                 "url": "https://github.com/google/xmc/pull/145#discussion_r1",
+                "severity": "HIGH",
             }
         ]
 
@@ -246,6 +273,8 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertEqual(result["repo"], "xmc")
         self.assertEqual(result["pr_number"], 145)
         self.assertEqual(result["unresolved_comment_count"], 1)
+        self.assertEqual(result["high_critical_count"], 1)
+        self.assertTrue(result["needs_rereview"])
 
         mock_write_text.assert_called_once()
 

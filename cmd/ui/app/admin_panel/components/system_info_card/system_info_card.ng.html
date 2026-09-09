@@ -29,11 +29,15 @@
         </div>
         <div class="info-group">
           <span class="info-label">ESS DB Schema</span>
-          <span class="info-value ess-schema-value">{{ systemInfo().essDbSchemaVersion }}</span>
+          <span class="info-value ess-schema-value" [class.is-placeholder]="isEssUnavailable()">{{
+            essDbSchemaVersion()
+          }}</span>
         </div>
         <div class="info-group">
           <span class="info-label">XID DB Schema</span>
-          <span class="info-value xid-schema-value">{{ systemInfo().xidDbSchemaVersion }}</span>
+          <span class="info-value xid-schema-value" [class.is-placeholder]="isXidUnavailable()">{{
+            xidDbSchemaVersion()
+          }}</span>
         </div>
       </div>
     </div>

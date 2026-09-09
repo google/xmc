@@ -14,6 +14,8 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { ErrorBannerHarness } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner_harness';
+
 import { ConfigEntriesCardHarness } from '../components/config_entries_card/testing/config_entries_card_harness';
 import { HealthStatusSectionHarness } from '../components/health_status_section/testing/health_status_section_harness';
 import { SystemInfoCardHarness } from '../components/system_info_card/testing/system_info_card_harness';
@@ -23,8 +25,9 @@ export class AdminPanelHarness extends ComponentHarness {
   static hostSelector = 'xmc-admin-panel, [data-component-selector="xmc-admin-panel"]';
 
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
-  private readonly _errorContainer = this.locatorForOptional('.error-container');
+  private readonly _pageErrorBanner = this.locatorForOptional(ErrorBannerHarness);
   private readonly _spinner = this.locatorForOptional('mat-spinner');
+  private readonly _footer = this.locatorForOptional('.admin-panel-footer');
 
   async getTimestampText(): Promise<string | null> {
     const el = await this._timestampBadge();
@@ -32,13 +35,31 @@ export class AdminPanelHarness extends ComponentHarness {
   }
 
   async getErrorText(): Promise<string | null> {
-    const el = await this._errorContainer();
-    return el ? el.text() : null;
+    const banner = await this._pageErrorBanner();
+    return (await banner?.getMessage()) ?? null;
+  }
+
+  async hasPageErrorBanner(): Promise<boolean> {
+    const banner = await this._pageErrorBanner();
+    return banner !== null;
+  }
+
+  async clickPageErrorRetry(): Promise<void> {
+    const banner = await this._pageErrorBanner();
+    if (!banner) {
+      throw new Error('Page error banner not found');
+    }
+    await banner.clickRetry();
   }
 
   async hasSpinner(): Promise<boolean> {
     const el = await this._spinner();
     return el !== null;
+  }
+
+  async getFooterText(): Promise<string | null> {
+    const el = await this._footer();
+    return el ? el.text() : null;
   }
 
   async getSystemInfoCard(): Promise<SystemInfoCardHarness | null> {

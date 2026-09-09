@@ -33,7 +33,6 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import {
   BaseSidePanelContent,
@@ -67,7 +66,6 @@ export class QueueJobsTableData implements BaseSidePanelData {
     MatTooltipModule,
     StatusChip,
     ResourceChip,
-    WipBannerComponent,
     QueueJobPositionPipe,
     QueueJobStatusPipe,
     QueueJobResourcesPipe,
@@ -114,6 +112,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
             this.isLoading.set(false);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
             this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
+            for (const job of resp?.jobs ?? []) {
+              if (!job.user) {
+                console.error(
+                  `Job "${job.xid ? `Experiment #${job.xid}` : 'unknown'}" is missing an assigned user.`,
+                );
+              }
+            }
           }),
           catchError(() => {
             this.isLoading.set(false);

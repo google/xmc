@@ -221,8 +221,8 @@ func TestGetHealthStatus(t *testing.T) {
 				AppVersion:         "unknown",
 				BuildVersion:       "unknown",
 				ObservabilityUrl:   "",
-				EssDbSchemaVersion: "unknown",
-				XidDbSchemaVersion: "unknown",
+				EssDbSchemaVersion: "UNAVAILABLE",
+				XidDbSchemaVersion: "UNAVAILABLE",
 			},
 			expectedComponents: map[string]spb.HealthState{
 				"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
@@ -435,8 +435,8 @@ func TestGetUserInfo(t *testing.T) {
 
 func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		// Use production-like values (15s cache, 5 requests per 5s rate limit)
-		tf := newTestFixture(t, 15*time.Second, 5, 5*time.Second)
+		// Use safe millisecond durations for fast, deterministic execution robust to CI runner jitter (500ms cache, 5 requests per 300ms rate limit)
+		tf := newTestFixture(t, 500*time.Millisecond, 5, 300*time.Millisecond)
 		defer tf.close()
 
 		ctx := context.Background()
@@ -446,12 +446,12 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 
 		// 2. Second call immediately - Cache Hit (X-Cache: HIT)
 		resp2 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "HIT")
-		if resp1.HealthCheckTime.AsTime() != resp2.HealthCheckTime.AsTime() {
+		if !resp1.HealthCheckTime.AsTime().Equal(resp2.HealthCheckTime.AsTime()) {
 			t.Error("expected cached response to have the same health check time")
 		}
 
-		// 3. Sleep past TTL (15s) to expire cache
-		time.Sleep(16 * time.Second)
+		// 3. Sleep past TTL (500ms) to expire cache
+		time.Sleep(600 * time.Millisecond)
 
 		// 4. Third call - Cache Miss (X-Cache: MISS)
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 2, "MISS")
@@ -466,8 +466,8 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 		// 6. 6th Force refresh immediately - Rate limit exceeded, falls back to cache (X-Cache: HIT)
 		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "HIT")
 
-		// 7. Sleep past rate limit window (5s) to reset rate limit
-		time.Sleep(6 * time.Second)
+		// 7. Sleep past rate limit window (300ms) to reset rate limit
+		time.Sleep(350 * time.Millisecond)
 
 		// 8. Force refresh succeeds again
 		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 8)

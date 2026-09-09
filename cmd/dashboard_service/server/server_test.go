@@ -35,7 +35,7 @@ import (
 )
 
 type (
-	createDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard) error
+	createDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
 	getDashboardFunc    = func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
 	listDashboardsFunc  = func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	updateDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
@@ -44,7 +44,7 @@ type (
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
 	listChartsFunc      = func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
 	deleteChartFunc     = func(ctx context.Context, chartId string) error
-	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
+	updateChartFunc     = func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error)
 )
 
 type mockRepository struct {
@@ -67,9 +67,9 @@ func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) erro
 	return nil
 }
 
-func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error {
+func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
 	if m.createDashboardFn != nil {
-		return m.createDashboardFn(ctx, dashboard)
+		return m.createDashboardFn(ctx, dashboard, charts)
 	}
 	return nil
 }
@@ -123,11 +123,11 @@ func (m *mockRepository) DeleteChart(ctx context.Context, chartId string) error 
 	return nil
 }
 
-func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
+func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
 	if m.updateChartFn != nil {
-		return m.updateChartFn(ctx, chart)
+		return m.updateChartFn(ctx, chart, updateMask)
 	}
-	return nil
+	return chart, nil
 }
 
 type mockAuthorizer struct {

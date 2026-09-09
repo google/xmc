@@ -22,6 +22,8 @@ go_library(
     importpath = "xmanager_cloud/pkg/components/cms",
     deps = [
         "//api/protos/components/v1alpha1",
+        "//pkg/components/naming",
+        "//pkg/components/semver",
         "//pkg/components/store",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

@@ -23,7 +23,7 @@ import { safeWindow } from 'safevalues/dom';
   selector: 'xmc-home-page',
   standalone: true,
   templateUrl: './home_page.ng.html',
-  styleUrl: './home_page.css',
+  styleUrl: './home_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomePage {

@@ -73,22 +73,20 @@ var (
 
 // Params holds dependencies and configuration for constructing a Workload Reconciler.
 type Params struct {
-	Client                      client.Client
-	Scheme                      *runtime.Scheme
-	Batcher                     *shared.UpdateBatcher
-	ManagementClusterInfo       *actuatorpb.ClusterInfo
-	MaxConcurrentReconciles     int
-	DetectInadmissibleWorkUnits bool
+	Client                  client.Client
+	Scheme                  *runtime.Scheme
+	Batcher                 *shared.UpdateBatcher
+	ManagementClusterInfo   *actuatorpb.ClusterInfo
+	MaxConcurrentReconciles int
 }
 
 // Reconciler implements reconcile.Reconciler for Workloads.
 type Reconciler struct {
 	client.Client
-	Scheme                      *runtime.Scheme
-	Batcher                     *shared.UpdateBatcher
-	ManagementClusterInfo       *actuatorpb.ClusterInfo
-	MaxConcurrentReconciles     int
-	DetectInadmissibleWorkUnits bool
+	Scheme                  *runtime.Scheme
+	Batcher                 *shared.UpdateBatcher
+	ManagementClusterInfo   *actuatorpb.ClusterInfo
+	MaxConcurrentReconciles int
 }
 
 // NewReconciler creates and validates a new Workload Reconciler.
@@ -103,12 +101,11 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		return nil, errors.New("batcher is required")
 	}
 	return &Reconciler{
-		Client:                      p.Client,
-		Scheme:                      p.Scheme,
-		Batcher:                     p.Batcher,
-		ManagementClusterInfo:       p.ManagementClusterInfo,
-		MaxConcurrentReconciles:     p.MaxConcurrentReconciles,
-		DetectInadmissibleWorkUnits: p.DetectInadmissibleWorkUnits,
+		Client:                  p.Client,
+		Scheme:                  p.Scheme,
+		Batcher:                 p.Batcher,
+		ManagementClusterInfo:   p.ManagementClusterInfo,
+		MaxConcurrentReconciles: p.MaxConcurrentReconciles,
 	}, nil
 }
 
@@ -227,12 +224,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		recErr = err
 	}
 
-	// with the additional information and merge the updates.
-	if r.DetectInadmissibleWorkUnits {
-		isWorkloadStuck, condition := r.getStuckWorkloadCondition(ctx, &workload, xid, wid, eid)
-		if isWorkloadStuck {
-			update = r.updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx, update, wid, eid, r.getReasonForInadmissibleWorkload(ctx, condition))
-		}
+	isWorkloadStuck, condition := r.getStuckWorkloadCondition(ctx, &workload, xid, wid, eid)
+	if isWorkloadStuck {
+		update = r.updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx, update, wid, eid, r.getReasonForInadmissibleWorkload(ctx, condition))
 	}
 
 	if update != nil {

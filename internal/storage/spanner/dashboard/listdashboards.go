@@ -31,6 +31,59 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
+// hydrateChartIDs fills in the chart IDs of the given dashboards from their DashboardCharts rows
+// and returns them.
+//
+// The Dashboards row carries no chart references, so a listing that skips this step reports every
+// dashboard as empty. The whole page is read in one pass over the child table rather than one read
+// per dashboard, which keeps the cost of a listing independent of the page size.
+func hydrateChartIDs(ctx context.Context, txn *spanner.ReadOnlyTransaction, dashboards []*dpb.Dashboard) ([]*dpb.Dashboard, error) {
+	if len(dashboards) == 0 {
+		return dashboards, nil
+	}
+
+	byID := make(map[string]*dpb.Dashboard, len(dashboards))
+	keys := make([]spanner.KeySet, 0, len(dashboards))
+	for _, dash := range dashboards {
+		if dash == nil {
+			continue
+		}
+		dashID, err := validator.ValidateDashboardName(dash.GetName())
+		if err != nil {
+			return nil, fmt.Errorf("invalid dashboard name %q: %w", dash.GetName(), err)
+		}
+		byID[dashID] = dash
+		keys = append(keys, spanner.Key{dashID}.AsPrefix())
+	}
+	if len(keys) == 0 {
+		return dashboards, nil
+	}
+
+	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.KeySets(keys...), []string{"DashboardId", "ChartId"})
+	defer iter.Stop()
+
+	linked := make(map[string][]string, len(byID))
+	if err := iter.Do(func(row *spanner.Row) error {
+		var dashID, chartID string
+		if err := row.Columns(&dashID, &chartID); err != nil {
+			return fmt.Errorf("failed to decode dashboard chart link: %w", err)
+		}
+		linked[dashID] = append(linked[dashID], chartID)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	// Sort so that a listing serves chart IDs in the same canonical order GetDashboard does, rather
+	// than in whatever order the child table read happened to return them.
+	for dashID, chartIDs := range linked {
+		if dash, ok := byID[dashID]; ok {
+			dash.ChartIds = data.SortChartIDs(chartIDs)
+		}
+	}
+	return dashboards, nil
+}
+
 // ListDashboards returns a paginated list of Dashboard protos matching the given filter and ordering.
 func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
 	logging.Info(ctx, "List dashboards", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
@@ -63,12 +116,15 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 
 	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
 
-	// 3. Execute query on Spanner.
-	tx := r.client.Single()
+	// 3. Execute query on Spanner. A multi-use transaction is needed because the chart links live in
+	// a second table and have to be read at the same snapshot as the dashboards themselves.
+	txn := r.client.ReadOnlyTransaction()
 	if staleness > 0 {
-		tx = tx.WithTimestampBound(spanner.ExactStaleness(staleness))
+		txn = txn.WithTimestampBound(spanner.ExactStaleness(staleness))
 	}
-	iter := tx.Query(ctx, *stmt)
+	defer txn.Close()
+
+	iter := txn.Query(ctx, *stmt)
 	defer iter.Stop()
 
 	// 4. Convert rows into Dashboard protos.
@@ -89,6 +145,13 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 	dashboards, nextPageToken, err := ls.ApplyPagination(dashboards, pageSize, ExtractDashboardCursor)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// 6. Resolve the chart links, after pagination so that the trimmed overflow row is not read.
+	dashboards, err = hydrateChartIDs(ctx, txn, dashboards)
+	if err != nil {
+		logging.Error(ctx, "Failed to read dashboard chart links", "error", err)
+		return nil, "", fmt.Errorf("failed to read dashboard chart links: %w", err)
 	}
 
 	logging.Info(ctx, "Listed dashboards", "count", len(dashboards), "nextPageToken", nextPageToken)

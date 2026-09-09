@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"go/log"
 	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
@@ -79,14 +78,22 @@ var testExecutable = &essmsgpb.Executable{
 	},
 }
 
+type testAuthorizerWrapper struct {
+	*authz.Authorizer
+}
+
+func (w *testAuthorizerWrapper) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
+	return "test@example.com", "user_id", nil
+}
+
 func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInterface {
 	t.Helper()
 	idService := &cloudidentity.Service{}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, true, nil)
+	authorizer, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, nil)
 	if err != nil {
 		t.Fatalf("Failed to create mock authorizer: %v", err)
 	}
-	return auth
+	return &testAuthorizerWrapper{Authorizer: authorizer}
 }
 
 type testServerOpt func(*Params)
@@ -164,7 +171,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}...)
 	if err != nil {
-		log.FatalContextf(ctx, "Failed to create gRPC client for XID service: %v", err)
+		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 	p := Params{
@@ -214,7 +221,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 
 	healthServer.SetServingStatus("xmc.XidService", healthpb.HealthCheckResponse_SERVING)
 
-	log.InfoContextf(ctx, "gRPC server listening at %v", lis.Addr())
+	t.Logf("gRPC server listening at %v", lis.Addr())
 
 	go func() {
 		if err := s.Serve(lis); err != nil {

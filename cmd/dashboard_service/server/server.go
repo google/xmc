@@ -36,7 +36,7 @@ import (
 
 // DashboardRepository defines the persistence contract for dashboards and charts.
 type DashboardRepository interface {
-	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error
+	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
 	GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
 	ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
@@ -44,7 +44,7 @@ type DashboardRepository interface {
 	CreateChart(ctx context.Context, chart *dpb.Chart) error
 	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
 	ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
-	UpdateChart(ctx context.Context, chart *dpb.Chart) error
+	UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error)
 	DeleteChart(ctx context.Context, chartId string) error
 }
 

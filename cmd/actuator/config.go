@@ -37,14 +37,13 @@ type RedisConfig struct {
 
 // Config holds the configuration for the Actuator server.
 type Config struct {
-	Port                        string
-	RuntimeConfig               k8sclient.ActuatorRuntimeConfig
-	Audience                    string
-	XManagerServiceAccount      string
-	VerifyingKeyFile            string
-	MaxRecentKeys               int
-	StatusMessageHistoryEnabled bool
-	RedisConfig                 RedisConfig
+	Port                   string
+	RuntimeConfig          k8sclient.ActuatorRuntimeConfig
+	Audience               string
+	XManagerServiceAccount string
+	VerifyingKeyFile       string
+	MaxRecentKeys          int
+	RedisConfig            RedisConfig
 }
 
 var (
@@ -57,10 +56,10 @@ var (
 	defaultExecutionEnvironment string
 	verifyingKeyFile            string
 	maxRecentKeys               int
-	statusMessageHistoryEnabled bool
 	metricsEnabled              bool
 	allowPrivilegedContainers   bool
 	allowHostNetwork            bool
+	enableComponents            bool
 )
 
 // Redis flags.
@@ -81,6 +80,7 @@ func init() {
 	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
 	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
 	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
+	flag.BoolVar(&enableComponents, "enable_components", false, "Whether the components feature is enabled.")
 	registerConfigs()
 }
 
@@ -91,12 +91,12 @@ func registerConfigs() {
 	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
 	configutil.StringEnv(&audience, "audience", "")
-	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
 	configutil.StringEnv(&redisAddr, "redis_addr", "")
 	configutil.IntEnv(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
 	configutil.DurationEnv(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
 	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
 	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
+	configutil.BoolEnv(&enableComponents, "enable_components", false)
 }
 
 func validate() error {
@@ -135,12 +135,12 @@ func Load() Config {
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
+			EnableComponents:            enableComponents,
 		},
-		Audience:                    aud,
-		XManagerServiceAccount:      xmanagerServiceAccount,
-		VerifyingKeyFile:            verifyingKeyFile,
-		MaxRecentKeys:               maxRecentKeys,
-		StatusMessageHistoryEnabled: statusMessageHistoryEnabled,
+		Audience:               aud,
+		XManagerServiceAccount: xmanagerServiceAccount,
+		VerifyingKeyFile:       verifyingKeyFile,
+		MaxRecentKeys:          maxRecentKeys,
 		RedisConfig: RedisConfig{
 			RedisAddr:                    redisAddr,
 			RedisMaxRetries:              redisMaxRetries,

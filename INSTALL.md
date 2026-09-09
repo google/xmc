@@ -6,6 +6,7 @@ This guide details how to install a fresh deployment of XManager on Cloud (XMC) 
 2. **Cluster Toolkit Blueprint v2**: The recommended manual pathway for fresh installations using automated orchestration blueprints.
 3. **Terraform and Helm**: The direct, hands-on infrastructure deployment pathway.
 4. **Upgrading an Existing Installation**: Step-by-step instructions for upgrading existing deployments, running incremental Cloud Spanner schema migrations, building updated container images, and rolling out application upgrades.
+5. **Local KinD Development & Fast Reload**: Rapid inner-loop local development using `python3 tools/dev_env/dev_env.py up` and `dev_env.py reload [-w] [--helm]` (see [`deploy/local/README.md`](deploy/local/README.md)).
 
 > [!IMPORTANT]
 > **Working Directory**: All commands in this guide must be executed from the root of the `xmc` repository directory.

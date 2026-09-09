@@ -23,7 +23,6 @@ import (
 	"os"
 	"strconv"
 
-	"go/log"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/logging/logging"
@@ -31,14 +30,14 @@ import (
 
 // Config holds the configuration for the XidService server.
 type Config struct {
-	Port                  string
-	SpannerDatabaseName   string
-	QuotaProjectID        string
-	Audience              string
-	IAPIssuer             string
-	HTTPAudience          string
-	GRPCAudience          string
-	DisableAuthentication bool
+	Port                string
+	SpannerDatabaseName string
+	QuotaProjectID      string
+	Audience            string
+	IAPIssuer           string
+	HTTPAudience        string
+	GRPCAudience        string
+	JWKSURL             string
 }
 
 var cfg Config
@@ -52,7 +51,7 @@ func init() {
 // Load returns a Config struct populated with values from ConfigMaps/envs and parsed flags.
 func Load() Config {
 	if err := cfg.validate(); err != nil {
-		log.Fatalf("Invalid configuration: %v", err)
+		logging.Fatal(context.Background(), "Invalid configuration", "error", err)
 	}
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.QuotaProjectID)
 	slog.SetDefault(logger)
@@ -85,7 +84,7 @@ func (c *Config) registerFlags(fs *flag.FlagSet) {
 		fs = flag.CommandLine
 	}
 	fs.StringVar(&c.Audience, "xid_audience", "https://test-xmanager-gcp.corp.goog", "The audience of the IAP JWT.")
-	fs.BoolVar(&c.DisableAuthentication, "xid_disable_authentication", false, "Disables authentication for testing.")
+	fs.StringVar(&c.JWKSURL, "xid_jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 }
 
 // registerConfigs loads ConfigMap managed values using configutil.
@@ -93,17 +92,18 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.Port, "xid_grpc_port", "50051")
 	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&c.SpannerDatabaseName, "xid_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/xids-db")
+	configutil.StringEnv(&c.JWKSURL, "xid_jwks_url", "")
 }
 
 // validate checks if the Config is valid.
 func (c Config) validate() error {
 	portNum, err := strconv.Atoi(c.Port)
 	if err != nil {
-		log.Errorf("Invalid port %q: must be a number", c.Port)
+		logging.Error(context.Background(), "Invalid port: must be a number", "port", c.Port, "error", err)
 		return fmt.Errorf("invalid port %q: must be a number", c.Port)
 	}
 	if portNum < 1 || portNum > 65535 {
-		log.Errorf("Invalid port %d: must be between 1 and 65535", portNum)
+		logging.Error(context.Background(), "Invalid port: must be between 1 and 65535", "port", portNum)
 		return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
 	}
 

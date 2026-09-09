@@ -73,6 +73,10 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
   const ADD_BTN_SELECTOR = '.add-resource-btn';
   ```
 
+### Angular CDK Component Harness Standards
+- **100% Harness Encapsulation**: Test specs must interact with components strictly via Component Harnesses (`@angular/cdk/testing`). Avoid defining raw CSS selectors or directly querying component DOM elements (`getEl`, `querySelector`) inside test specs.
+- **DRY in Harnesses**: Harness methods querying sub-elements or table cells must extract shared traversal helpers (e.g. `getDataRows()`, `getUrlsCell()`) rather than repeating table/row/cell locator chains in each method.
+
 ## 8. Playwright Visual Screenshot Testing
 - **Full-Page Screenshot Tests**: Playwright visual screenshot tests MUST ONLY be created for full top-level page views and container routes (e.g. `cmd/ui/screenshot_tests/resource_dashboard/resource_dashboard.screenshot.spec.ts` for `/resources`, `cmd/ui/screenshot_tests/admin_panel/admin_panel.screenshot.spec.ts` for `/admin`). Do NOT create individual component-level screenshot tests for sub-components, child widgets, or isolated cards (such as queue cards, subnav tabs, or side panel table components).
 - **Shared Screenshot Test Harness**: Page visual screenshot tests MUST rely on the shared test utilities (`setupMockRoutes` and `setupScreenshotEnvironment` in `test_utils.ts`).

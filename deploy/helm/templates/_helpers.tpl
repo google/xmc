@@ -176,8 +176,10 @@ Common OAuth environment variables for XMC services.
 
 {{/*
 ClickHouse connection environment variables for XMC services backed by the metrics pipeline.
-Consumed by pkg/clickhouse.GetOptions. The password is sourced from the clickhouse-secret
-Secret rendered by templates/metrics/clickhouse-secret.yaml.
+Consumed by pkg/clickhouse.GetOptions. The password follows the same two paths as the JWT and
+OAuth client secrets above: with the CSI driver enabled it is read from the file Secret Manager
+mounts, and otherwise from the clickhouse-secret Secret rendered by
+templates/metrics/clickhouse-secret.yaml out of a Helm value.
 */}}
 {{- define "xmanager-cloud.clickhouseEnv" -}}
 {{- $clickhouse := (default (dict) .Values.metrics.clickhouse) -}}
@@ -189,11 +191,16 @@ Secret rendered by templates/metrics/clickhouse-secret.yaml.
   value: {{ $clickhouse.database | default "default" | quote }}
 - name: CLICKHOUSE_USER
   value: {{ $clickhouse.user | default "default" | quote }}
+{{- if .Values.secrets.csi.enabled }}
+- name: CLICKHOUSE_PASSWORD_FILE
+  value: "/etc/gcp-secrets/clickhouse-password"
+{{- else }}
 - name: CLICKHOUSE_PASSWORD
   valueFrom:
     secretKeyRef:
       name: clickhouse-secret
       key: clickhouse-password
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -209,7 +216,18 @@ Common GCP Secrets Volume definition.
       secretProviderClass: "gcp-secrets-provider"
 {{- else }}
 - name: gcp-secrets-volume
-  secret:
-    secretName: backend-oauth-secrets
+  projected:
+    sources:
+    - secret:
+        name: backend-oauth-secrets
+    {{- $auth := default (dict) .Values.auth }}
+    {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
+    {{- if $gac }}
+    - secret:
+        name: gcp-sa-key
+        items:
+        - key: key.json
+          path: key.json
+    {{- end }}
 {{- end }}
 {{- end -}}

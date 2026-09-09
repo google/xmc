@@ -59,13 +59,23 @@ class ConfigResolutionTest(unittest.TestCase):
             config.resolve_config_path("non-existent.yaml", repo_root=self.root)
 
     def test_resolve_config_path_defaults(self) -> None:
-        """Verifies default configuration locations are checked in order."""
+        """Verifies default configuration locations prioritize deploy/local over deploy/ctk_v2."""
+        local_cfg = self.root / "deploy" / "local" / "xmanager-cloud-local.yaml"
+        local_cfg.parent.mkdir(parents=True, exist_ok=True)
+        local_cfg.write_text("vars:\n  project_id: local-p\n", encoding="utf-8")
+
         ctk_cfg = self.root / "deploy" / "ctk_v2" / "xmanager-cloud-deployment.yaml"
         ctk_cfg.parent.mkdir(parents=True, exist_ok=True)
         ctk_cfg.write_text("vars:\n  project_id: ctk-p\n", encoding="utf-8")
 
+        # When both exist, deploy/local is chosen
         resolved = config.resolve_config_path(repo_root=self.root)
-        self.assertEqual(resolved, ctk_cfg.resolve())
+        self.assertEqual(resolved, local_cfg.resolve())
+
+        # When local is removed, fallback to ctk_v2
+        local_cfg.unlink()
+        resolved_fallback = config.resolve_config_path(repo_root=self.root)
+        self.assertEqual(resolved_fallback, ctk_cfg.resolve())
 
     def test_resolve_config_path_none_when_empty(self) -> None:
         """Verifies None is returned when no default configuration files exist."""
@@ -105,10 +115,12 @@ class ConfigResolutionTest(unittest.TestCase):
                 config=str(cfg_file),
                 project_id="cli-p",
                 environment="cli-env",
+                spanner_instance="cli-sp",
             )
             cfg = config.load_config(args, repo_root=self.root)
             self.assertEqual(cfg.project_id, "cli-p")
             self.assertEqual(cfg.environment, "cli-env")
+            self.assertEqual(cfg.spanner_instance, "cli-sp")
             self.assertEqual(cfg.config_path, cfg_file.resolve())
 
     def test_load_config_precedence_env(self) -> None:
@@ -134,7 +146,7 @@ class ConfigResolutionTest(unittest.TestCase):
         """Verifies YAML values are used when CLI and Env variables are unset."""
         cfg_file = self.root / "config.yaml"
         cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  environment: yaml-env\n",
+            "vars:\n  project_id: yaml-p\n  environment: yaml-env\n  cluster_name: custom-k8s\n",
             encoding="utf-8",
         )
 
@@ -142,6 +154,7 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg = config.load_config(args, repo_root=self.root)
         self.assertEqual(cfg.project_id, "yaml-p")
         self.assertEqual(cfg.environment, "yaml-env")
+        self.assertEqual(cfg.cluster_name, "custom-k8s")
 
     @patch.dict("os.environ", {}, clear=True)
     def test_load_config_defaults(self) -> None:
@@ -150,6 +163,13 @@ class ConfigResolutionTest(unittest.TestCase):
         cfg = config.load_config(args, repo_root=self.root)
         self.assertEqual(cfg.project_id, "my-proj")
         self.assertEqual(cfg.environment, "dev")
+        self.assertEqual(cfg.spanner_instance, "xmc-dev")
+        self.assertEqual(cfg.ess_database, "experiment-db-dev")
+        self.assertEqual(cfg.xid_database, "xids-db-dev")
+        self.assertEqual(cfg.cluster_name, "xmc-dev")
+        self.assertTrue(cfg.auto_migrate)
+        self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
+        self.assertEqual(cfg.gcp_service_account, "xmc-dev-sa@my-proj.iam.gserviceaccount.com")
         self.assertIsNone(cfg.config_path)
 
     @patch.dict("os.environ", {}, clear=True)
@@ -175,15 +195,237 @@ class ConfigResolutionTest(unittest.TestCase):
             config.load_config(args, repo_root=self.root)
         self.assertIn("Missing required configuration field: 'project_id'", str(cm.exception))
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_feature_flag_service_mappings(self) -> None:
+        """Verifies feature flags conditionally expand enabled services."""
+        args = argparse.Namespace(
+            project_id="my-proj",
+            enable_metrics=True,
+            enable_components=True,
+            rod_deployment_enabled=True,
+            enable_health_service=True,
+            enable_dashboard_service=True,
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertIn("ingestion_gateway", cfg.enabled_services)
+        self.assertIn("components", cfg.enabled_services)
+        self.assertIn("rod_data_provider", cfg.enabled_services)
+        self.assertIn("health_service", cfg.enabled_services)
+        self.assertIn("dashboard_service", cfg.enabled_services)
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_feature_flag_yaml_and_env_mappings(self) -> None:
+        """Verifies feature flags resolved from YAML and environment variables."""
+        cfg_file = self.root / "config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  health_service_deployment_enabled: true\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict("os.environ", {"ENABLE_COMPONENTS": "true"}, clear=True):
+            args = argparse.Namespace(config=str(cfg_file))
+            cfg = config.load_config(args, repo_root=self.root)
+            self.assertIn("ingestion_gateway", cfg.enabled_services)
+            self.assertIn("components", cfg.enabled_services)
+            self.assertIn("health_service", cfg.enabled_services)
+            self.assertNotIn("rod_data_provider", cfg.enabled_services)
+            self.assertNotIn("dashboard_service", cfg.enabled_services)
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_load_config_ingestion_gateway_disabled_overrides_enable_metrics(self) -> None:
+        """Verifies ingestion_gateway_deployment_enabled: false suppresses ingestion_gateway even if enable_metrics is true."""
+        cfg_file = self.root / "config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  ingestion_gateway_deployment_enabled: false\n",
+            encoding="utf-8",
+        )
+
+        args = argparse.Namespace(config=str(cfg_file))
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertNotIn("ingestion_gateway", cfg.enabled_services)
+
+    def test_remote_k8s_explicit_cli(self) -> None:
+        """Verifies explicitly passing remote_k8s_context via CLI is resolved."""
+        args = argparse.Namespace(
+            project_id="test-p",
+            remote_k8s_context="gke_proj_us-central1_cluster-1",
+            remote_k8s_namespace="custom-ns",
+            remote_k8s_service_account="custom-sa",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(cfg.remote_k8s_context, "gke_proj_us-central1_cluster-1")
+        self.assertEqual(cfg.remote_k8s_namespace, "custom-ns")
+        self.assertEqual(cfg.remote_k8s_service_account, "custom-sa")
+
+    def test_remote_k8s_auto_derive_from_flag(self) -> None:
+        """Verifies boolean remote_k8s flag auto-derives GKE context name."""
+        args = argparse.Namespace(
+            project_id="test-proj",
+            environment="dev",
+            remote_k8s_context="true",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_test-proj_us-central1_xmc-xmc-v2-dev-dev",
+        )
+        self.assertEqual(cfg.remote_k8s_namespace, "xmc")
+        self.assertEqual(cfg.remote_k8s_service_account, "actuator-service-account")
+
+    def test_remote_k8s_explicit_context_parameter(self) -> None:
+        """Verifies explicit remote_k8s_context parameter is preserved as-is."""
+        args = argparse.Namespace(
+            project_id="test-proj",
+            remote_k8s_context="gke_test-proj_us-west1_my-workload-cluster",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_test-proj_us-west1_my-workload-cluster",
+        )
+
+    @patch.dict(
+        "os.environ",
+        {
+            "PROJECT_ID": "env-p",
+            "REMOTE_K8S_CONTEXT": "gke_env-p_us-central1_env-cluster",
+        },
+    )
+    def test_remote_k8s_from_env(self) -> None:
+        """Verifies REMOTE_K8S_CONTEXT environment variable resolves remote_k8s_context."""
+        cfg = config.load_config(argparse.Namespace(), repo_root=self.root)
+        self.assertEqual(cfg.remote_k8s_context, "gke_env-p_us-central1_env-cluster")
+
+    def test_remote_k8s_from_yaml(self) -> None:
+        """Verifies remote_k8s boolean in YAML enables remote K8s and derives context."""
+        cfg_file = self.root / "remote_k8s_config.yaml"
+        cfg_file.write_text(
+            "vars:\n  project_id: yaml-p\n  remote_k8s: true\n  environment: dev\n",
+            encoding="utf-8",
+        )
+        args = argparse.Namespace(config=str(cfg_file))
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertEqual(
+            cfg.remote_k8s_context,
+            "gke_yaml-p_us-central1_xmc-xmc-v2-dev-dev",
+        )
+
+    def test_mldiagnostics_and_xprof_bucket_flags(self) -> None:
+        """Verifies managed mldiagnostics and xprof bucket are resolved from CLI and YAML."""
+        # CLI flags override
+        args = argparse.Namespace(
+            project_id="my-proj",
+            enable_managed_mldiagnostics=True,
+            managed_xprof_gcs_bucket="gs://my-bucket/",
+        )
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertTrue(cfg.enable_managed_mldiagnostics)
+        self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+        # Negative flag
+        args_neg = argparse.Namespace(
+            project_id="my-proj",
+            enable_managed_mldiagnostics=False,
+        )
+        cfg_neg = config.load_config(args_neg, repo_root=self.root)
+        self.assertFalse(cfg_neg.enable_managed_mldiagnostics)
+
+        # Negative flag overrides both env var and YAML
+        with patch.dict(
+            "os.environ",
+            {config.ENABLE_MANAGED_MLDIAGNOSTICS_ENV: "true"},
+            clear=True,
+        ):
+            override_file = self.root / "mldiag_override.yaml"
+            override_file.write_text(
+                "vars:\n  project_id: my-proj\n  enable_managed_mldiagnostics: true\n",
+                encoding="utf-8",
+            )
+            args_neg_override = argparse.Namespace(
+                config=str(override_file),
+                enable_managed_mldiagnostics=False,
+            )
+            cfg_neg_override = config.load_config(args_neg_override, repo_root=self.root)
+            self.assertFalse(cfg_neg_override.enable_managed_mldiagnostics)
+
+        # Environment variable fallback resolution
+        with patch.dict(
+            "os.environ",
+            {
+                config.ENABLE_MANAGED_MLDIAGNOSTICS_ENV: "true",
+                config.MANAGED_XPROF_GCS_BUCKET_ENV: "gs://env-bucket",
+            },
+            clear=True,
+        ):
+            args_env = argparse.Namespace(project_id="my-proj")
+            cfg_env = config.load_config(args_env, repo_root=self.root)
+            self.assertTrue(cfg_env.enable_managed_mldiagnostics)
+            self.assertEqual(cfg_env.managed_xprof_gcs_bucket, "gs://env-bucket")
+
+        # YAML fallback resolution
+        cfg_file = self.root / "mldiag_config.yaml"
+        cfg_file.write_text(
+            "vars:\n"
+            "  project_id: my-proj\n"
+            "  enable_managed_mldiagnostics: true\n"
+            "  managed_xprof_gcs_bucket: gs://yaml-bucket\n",
+            encoding="utf-8",
+        )
+        args_yaml = argparse.Namespace(config=str(cfg_file))
+        cfg_yaml = config.load_config(args_yaml, repo_root=self.root)
+        self.assertTrue(cfg_yaml.enable_managed_mldiagnostics)
+        self.assertEqual(cfg_yaml.managed_xprof_gcs_bucket, "gs://yaml-bucket")
+
+        # Verify invalid bucket URI raises ValueError
+        invalid_args = argparse.Namespace(
+            project_id="my-proj",
+            managed_xprof_gcs_bucket="invalid-bucket",
+        )
+        with self.assertRaises(ValueError):
+            config.load_config(invalid_args, repo_root=self.root)
+
 
 class LocalDevConfigDataClassTest(unittest.TestCase):
-    """Test cases for LocalDevConfig dataclass validation."""
+    """Test cases for LocalDevConfig dataclass validation and dynamic naming."""
 
-    def test_valid_config(self) -> None:
-        """Verifies instantiation with valid required fields."""
+    def test_dynamic_naming_rules(self) -> None:
+        """Verifies dynamic naming derives from environment string."""
         cfg = config.LocalDevConfig(project_id="test-proj", environment="staging")
-        self.assertEqual(cfg.project_id, "test-proj")
-        self.assertEqual(cfg.environment, "staging")
+        self.assertEqual(cfg.spanner_instance, "xmc-staging")
+        self.assertEqual(cfg.ess_database, "experiment-db-staging")
+        self.assertEqual(cfg.xid_database, "xids-db-staging")
+        self.assertEqual(cfg.cluster_name, "xmc-staging")
+        self.assertTrue(cfg.auto_migrate)
+
+    def test_enabled_services_empty_list_preserved(self) -> None:
+        """Verifies explicitly passing an empty list of services is preserved."""
+        cfg = config.LocalDevConfig(project_id="test-proj", enabled_services=[])
+        self.assertEqual(cfg.enabled_services, [])
+
+    def test_enabled_services_default_factory(self) -> None:
+        """Verifies default enabled_services returns a fresh copy of BASE_SERVICES."""
+        cfg = config.LocalDevConfig(project_id="test-proj")
+        self.assertEqual(cfg.enabled_services, list(config.BASE_SERVICES))
+        self.assertIsNot(cfg.enabled_services, config.BASE_SERVICES)
+
+    def test_managed_xprof_gcs_bucket_normalization(self) -> None:
+        """Verifies GCS bucket trailing slashes and whitespace are normalized."""
+        cfg = config.LocalDevConfig(
+            project_id="test-proj",
+            managed_xprof_gcs_bucket="  gs://my-bucket/  ",
+        )
+        self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
+
+    def test_invalid_managed_xprof_gcs_bucket_raises_value_error(self) -> None:
+        """Verifies invalid managed_xprof_gcs_bucket raises ValueError."""
+        invalid_buckets = ["invalid-bucket", "s3://my-bucket", "gs://", "gs:///", "gs:"]
+        for bucket in invalid_buckets:
+            with self.subTest(bucket=bucket):
+                with self.assertRaises(ValueError):
+                    config.LocalDevConfig(
+                        project_id="test-proj",
+                        managed_xprof_gcs_bucket=bucket,
+                    )
 
     def test_empty_project_id_raises_value_error(self) -> None:
         """Verifies whitespace or empty project_id raises ValueError."""
@@ -191,6 +433,48 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
             config.LocalDevConfig(project_id="")
         with self.assertRaises(ValueError):
             config.LocalDevConfig(project_id="   ")
+
+    def test_gcp_service_account_remote_k8s_defaulting(self) -> None:
+        """Verifies gcp_service_account defaults to workload SA in remote k8s or custom env."""
+        cfg_remote = config.LocalDevConfig(
+            project_id="test-p",
+            environment="vluk-test",
+            remote_k8s_context="gke_test-p_us-central1_test-cluster",
+        )
+        self.assertEqual(
+            cfg_remote.gcp_service_account,
+            "xmc-v2-vluk-test-xmc-wl-sa@test-p.iam.gserviceaccount.com",
+        )
+
+    def test_gcp_service_account_explicit_override(self) -> None:
+        """Verifies explicit gcp_service_account overrides dynamic default."""
+        cfg = config.LocalDevConfig(
+            project_id="test-p",
+            gcp_service_account="custom-sa@test-p.iam.gserviceaccount.com",
+        )
+        self.assertEqual(cfg.gcp_service_account, "custom-sa@test-p.iam.gserviceaccount.com")
+
+
+class ResolveFlagsTest(unittest.TestCase):
+    """Test cases for flag resolution helpers."""
+
+    def test_resolve_str_flag_precedence(self) -> None:
+        """Verifies string resolution precedence: CLI > Env > YAML > Default."""
+        self.assertEqual(config._resolve_str_flag("cli", "env", "yaml", "def"), "cli")
+        self.assertEqual(config._resolve_str_flag(None, "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag("", "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag("  ", "env", "yaml", "def"), "env")
+        self.assertEqual(config._resolve_str_flag(None, None, "yaml", "def"), "yaml")
+        self.assertEqual(config._resolve_str_flag(None, "", "yaml", "def"), "yaml")
+        self.assertEqual(config._resolve_str_flag(None, None, None, "def"), "def")
+        self.assertEqual(config._resolve_str_flag(None, None, "", "def"), "def")
+
+    def test_resolve_bool_flag_precedence(self) -> None:
+        """Verifies bool resolution precedence: CLI > Env > YAML > Default."""
+        self.assertTrue(config._resolve_bool_flag(True, False, False, False))
+        self.assertFalse(config._resolve_bool_flag(None, False, True, True))
+        self.assertTrue(config._resolve_bool_flag(None, None, True, False))
+        self.assertTrue(config._resolve_bool_flag(None, None, None, True))
 
 
 if __name__ == "__main__":

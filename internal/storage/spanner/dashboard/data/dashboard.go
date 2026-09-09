@@ -201,6 +201,29 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 	return append([]*spanner.Mutation{m}, chartMutations...), nil
 }
 
+// DashboardWithChartsToInsertMutations creates the Spanner mutations that persist a Dashboard, the
+// Charts created alongside it and the links between them.
+//
+// The charts share the dashboard's mutation set so that they are committed atomically:
+// DashboardCharts.ChartId is a foreign key onto Charts, which Spanner validates at commit time, so
+// links to charts written by the same transaction are only ever valid when both land together.
+func DashboardWithChartsToInsertMutations(dashboard *dpb.Dashboard, charts []*dpb.Chart) ([]*spanner.Mutation, error) {
+	var mutations []*spanner.Mutation
+	for _, chart := range charts {
+		chartMutations, err := ChartProtoToInsertMutations(chart)
+		if err != nil {
+			return nil, fmt.Errorf("invalid chart %q: %w", chart.GetName(), err)
+		}
+		mutations = append(mutations, chartMutations...)
+	}
+
+	dashboardMutations, err := DashboardProtoToInsertMutations(dashboard)
+	if err != nil {
+		return nil, err
+	}
+	return append(mutations, dashboardMutations...), nil
+}
+
 // DashboardProtoToUpdateMutations creates Spanner mutations to update a Dashboard and optionally its child DashboardCharts.
 func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateChartIDs bool) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
@@ -494,6 +517,15 @@ func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	}, []interface{}{
 		chartID, chart.GetTitle(), chart.GetDescription(), chart.GetWid(), layoutBytes, spanner.CommitTimestamp,
 	}), nil
+}
+
+// UnmarshalPlotSpec decodes a stored PlotSpec, naming the chart it belongs to when it cannot.
+func UnmarshalPlotSpec(chartID string, plotSpecBytes []byte) (*dpb.PlotSpec, error) {
+	var plotSpec dpb.PlotSpec
+	if err := proto.Unmarshal(plotSpecBytes, &plotSpec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal plot spec for chart %q: %w", chartID, err)
+	}
+	return &plotSpec, nil
 }
 
 // ChartPlotsToDeleteMutation creates a Spanner mutation to delete all plot specifications for a Chart.

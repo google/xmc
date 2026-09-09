@@ -1,0 +1,146 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Run Go & Backend Unit Tests'
+description: 'Resolves test scope and executes Go and backend Bazel unit tests'
+
+inputs:
+  test-timeout-seconds:
+    description: 'Test timeout in seconds'
+    required: false
+    default: '60'
+  spanner-check-timeout:
+    description: 'Timeout in seconds to wait for Spanner emulator readiness'
+    required: false
+    default: '15'
+  spanner-emulator-host:
+    description: 'Host and port for the Spanner emulator'
+    required: false
+    default: '127.0.0.1:9010'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Classify Backend Test Requirement'
+      id: 'classify'
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF: ${{ github.ref }}
+      shell: bash
+      run: |
+        BASE_REF="${PR_BASE_SHA:-origin/main}"
+        python3 tools/benchmark/resolve_test_scope.py \
+          --base "${BASE_REF}" \
+          --head "${GITHUB_SHA}" \
+          --event "${EVENT_NAME}" \
+          --ref "${GITHUB_REF}" \
+          --no-rdeps \
+          --github-output "${GITHUB_OUTPUT}"
+
+    - name: 'Set up Bazel'
+      if: steps.classify.outputs.run_backend == 'true'
+      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+    - name: 'Restore Bazel Repository Cache'
+      if: steps.classify.outputs.run_backend == 'true'
+      id: 'cache-bazel-repo-restore'
+      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      with:
+        path: ~/.cache/bazel-repo
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        restore-keys: |
+          bazel-repo-${{ runner.os }}-
+
+    - name: 'Resolve Backend Test Scope'
+      if: steps.classify.outputs.run_backend == 'true'
+      id: 'scope'
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF: ${{ github.ref }}
+      shell: bash
+      run: |
+        BASE_REF="${PR_BASE_SHA:-origin/main}"
+        python3 tools/benchmark/resolve_test_scope.py \
+          --base "${BASE_REF}" \
+          --head "${GITHUB_SHA}" \
+          --event "${EVENT_NAME}" \
+          --ref "${GITHUB_REF}" \
+          --github-output "${GITHUB_OUTPUT}"
+
+    - name: 'Verify Spanner Emulator Endpoint'
+      if: steps.scope.outputs.run_backend == 'true'
+      env:
+        SPANNER_HOST_INPUT: ${{ inputs.spanner-emulator-host }}
+        SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
+      shell: bash
+      run: |
+        echo "Verifying Spanner Emulator at ${SPANNER_HOST_INPUT}..."
+        HOST=$(echo "${SPANNER_HOST_INPUT}" | cut -d: -f1)
+        PORT=$(echo "${SPANNER_HOST_INPUT}" | cut -d: -f2)
+        
+        # Try connecting to the port
+        for i in $(seq 1 "${SPANNER_TIMEOUT_INPUT}"); do
+          if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
+            echo "Successfully connected to Spanner Emulator at ${SPANNER_HOST_INPUT}."
+            exit 0
+          fi
+          echo "Waiting for Spanner Emulator to start (attempt $i/${SPANNER_TIMEOUT_INPUT})..."
+          sleep 1
+        done
+        
+        echo "CRITICAL: Spanner Emulator at ${SPANNER_HOST_INPUT} did not start within ${SPANNER_TIMEOUT_INPUT} seconds."
+        exit 1
+
+    - name: 'Run Backend Unit Tests'
+      if: steps.scope.outputs.run_backend == 'true'
+      env:
+        TARGETS: ${{ steps.scope.outputs.bazel_targets }}
+        REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
+        TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
+        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
+      shell: bash
+      run: |
+        RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
+        echo "Executing Bazel tests for targets: ${RUN_TARGETS} (remote_upload: ${REMOTE_UPLOAD})"
+        bazel test \
+          --config=ci \
+          --remote_upload_local_results="${REMOTE_UPLOAD}" \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
+          --experimental_repository_cache_hardlinks \
+          --test_output=errors \
+          --experimental_ui_max_stdouterr_bytes=2097152 \
+          --build_tests_only \
+          --test_timeout="${TEST_TIMEOUT}",300,300,300 \
+          -- \
+          ${RUN_TARGETS}
+
+    - name: 'Save Bazel Repository Cache'
+      uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      # Only save repository cache on main branch pushes when external dependencies change.
+      if: github.ref == 'refs/heads/main' && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+      with:
+        path: ~/.cache/bazel-repo
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+
+    - name: 'Log Backend Test Skip Summary'
+      if: steps.classify.outputs.run_backend != 'true'
+      env:
+        SKIP_REASON: ${{ steps.classify.outputs.reason }}
+      shell: bash
+      run: |
+        echo "NOTICE: Backend Go unit tests skipped (${SKIP_REASON})."
