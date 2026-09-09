@@ -90,6 +90,9 @@ const (
 	// XmcEnvVarManagedXprofRunGroup is the environment variable containing the run group for managed profiling's machine learning run.
 	XmcEnvVarManagedXprofRunGroup = "XMC_MANAGED_XPROF_RUN_GROUP"
 
+	// MLRunCreationTimeFormat is the timestamp layout used for MLRun workload creation times.
+	MLRunCreationTimeFormat = time.RFC3339Nano
+
 	// JobSetJobIndexLabel is the label set by JobSet for the job index.
 	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
 

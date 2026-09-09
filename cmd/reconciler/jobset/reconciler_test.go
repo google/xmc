@@ -1803,11 +1803,48 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
 			}
 			var wantCreateTime string
-			if tc.jobSet != nil && !tc.jobSet.CreationTimestamp.IsZero() {
-				wantCreateTime = tc.jobSet.CreationTimestamp.UTC().Format(time.RFC3339Nano)
+			if tc.jobSet != nil {
+				wantCreateTime = formatCreationTime(tc.jobSet.CreationTimestamp)
 			}
 			if mock.lastOpts.WorkloadDetails.CreateTime != wantCreateTime {
 				t.Errorf("WorkloadDetails.CreateTime = %q, want %q", mock.lastOpts.WorkloadDetails.CreateTime, wantCreateTime)
+			}
+		})
+	}
+}
+
+func TestFormatCreationTime(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp metav1.Time
+		want      string
+	}{
+		{
+			name:      "zero uninitialized timestamp returns empty string",
+			timestamp: metav1.Time{},
+			want:      "",
+		},
+		{
+			name:      "standard UTC timestamp formatted to RFC3339Nano",
+			timestamp: metav1.NewTime(time.Date(2026, 9, 9, 10, 0, 0, 123456789, time.UTC)),
+			want:      "2026-09-09T10:00:00.123456789Z",
+		},
+		{
+			name:      "non-UTC timezone timestamp converted to UTC",
+			timestamp: metav1.NewTime(time.Date(2026, 9, 9, 6, 0, 0, 0, time.FixedZone("EDT", -4*3600))),
+			want:      "2026-09-09T10:00:00Z",
+		},
+		{
+			name:      "zero fractional seconds formatted without trailing dot",
+			timestamp: metav1.NewTime(time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)),
+			want:      "2026-09-09T10:00:00Z",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatCreationTime(tc.timestamp); got != tc.want {
+				t.Errorf("formatCreationTime(%v) = %q, want %q", tc.timestamp, got, tc.want)
 			}
 		})
 	}
