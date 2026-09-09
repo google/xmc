@@ -84,6 +84,7 @@ use_repo(
     "in_gopkg_yaml_v3",
     "io_k8s_api",
     "io_k8s_apimachinery",
+    "io_k8s_cli_runtime",
     "io_k8s_client_go",
     "io_k8s_sigs_controller_runtime",
     "io_k8s_sigs_jobset",
@@ -100,5 +101,6 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_text",
     "org_golang_x_time",
+    "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )

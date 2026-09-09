@@ -108,12 +108,23 @@ func initXidClient(ctx context.Context, cfg *config.Config) (xidgrpcpb.XidServic
 	return xidgrpcpb.NewXidServiceClient(conn), conn, nil
 }
 
-func initTaskQueueClient(ctx context.Context, cfg *config.Config) (*tq.Client, error) {
+func initTaskQueueClient(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (*tq.Client, error) {
 	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load signing key: %w", err)
 	}
-	return tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
+	var opts []tq.Option
+	if oauthCfg != nil && oauthCfg.IsNonProdAuth() && oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" {
+		opts = append(opts, tq.WithTokenProvider(tq.NewOidcTokenProvider(tq.OidcTokenProviderConfig{
+			TokenURL:     oauthCfg.TokenURL,
+			ClientID:     oauthCfg.ClientID,
+			ClientSecret: oauthCfg.ClientSecret,
+			Username:     oauthCfg.Username,
+			Password:     oauthCfg.Password,
+			Scope:        "openid email profile",
+		})))
+	}
+	return tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr, opts...)
 }
 
 func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.DashboardToolClient, *grpc.ClientConn, error) {
@@ -225,7 +236,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return nil
 	})
 
-	taskQueueClient, err := initTaskQueueClient(ctx, cfg)
+	taskQueueClient, err := initTaskQueueClient(ctx, cfg, oauthCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task queue client: %w", err)
 	}

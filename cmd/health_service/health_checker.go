@@ -23,6 +23,8 @@ import (
 
 	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/summary"
 
 	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
@@ -42,6 +44,7 @@ type HealthCheckerParams struct {
 	CloudRunService          *run.Service
 	EssExpectedSchemaVersion int64
 	XidExpectedSchemaVersion int64
+	ComponentsProvider       summary.CustomComponentsInfoProvider
 }
 
 type HealthChecker struct {
@@ -54,6 +57,7 @@ type HealthChecker struct {
 	cloudRunService          *run.Service
 	essExpectedSchemaVersion int64
 	xidExpectedSchemaVersion int64
+	componentsProvider       summary.CustomComponentsInfoProvider
 }
 
 func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
@@ -80,6 +84,7 @@ func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		cloudRunService:          params.CloudRunService,
 		essExpectedSchemaVersion: params.EssExpectedSchemaVersion,
 		xidExpectedSchemaVersion: params.XidExpectedSchemaVersion,
+		componentsProvider:       params.ComponentsProvider,
 	}, nil
 }
 
@@ -112,10 +117,18 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 		}(i, target)
 	}
 
-	// 2. Run Spanner checks in parallel
+	// 2. Run Spanner and custom component checks in parallel
 	var essComp, xidComp *spb.ComponentHealth
 	var essVersion, xidVersion string
-	wg.Add(2)
+	var customCompHealths []summary.ComponentHealth
+	var customCompErr error
+
+	spannerWgCount := 2
+	if c.componentsProvider != nil {
+		spannerWgCount = 3
+	}
+	wg.Add(spannerWgCount)
+
 	go func() {
 		defer wg.Done()
 		essComp, essVersion = c.CheckSpannerESS(ctx)
@@ -124,16 +137,74 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 		defer wg.Done()
 		xidComp, xidVersion = c.CheckSpannerXID(ctx)
 	}()
+	if c.componentsProvider != nil {
+		go func() {
+			defer wg.Done()
+			compCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			customCompHealths, customCompErr = c.componentsProvider.GetComponentsHealth(compCtx)
+		}()
+	}
 
 	wg.Wait()
 
 	// 3. Append Spanner results to the components list
 	components = append(components, essComp, xidComp)
 
+	// 4. Append custom components health if provider is configured
+	if c.componentsProvider != nil {
+		if customCompErr != nil {
+			logging.Warn(ctx, "Failed to retrieve custom components health", "error", customCompErr)
+		}
+		components = appendCustomComponentHealth(components, customCompErr, customCompHealths)
+	}
+
 	return RunChecksResult{
 		Components:         components,
 		EssDbSchemaVersion: essVersion,
 		XidDbSchemaVersion: xidVersion,
+	}
+}
+
+func appendCustomComponentHealth(components []*spb.ComponentHealth, err error, healths []summary.ComponentHealth) []*spb.ComponentHealth {
+	if err != nil {
+		return append(components, &spb.ComponentHealth{
+			Name:         "Custom Components Provider",
+			Type:         spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("failed to list custom components: %v", err),
+		})
+	}
+	for _, ch := range healths {
+		if ch.HealthState == summary.HealthStateDisabled {
+			continue
+		}
+		components = append(components, convertCustomComponentHealth(ch))
+	}
+	return components
+}
+
+func convertCustomComponentHealth(ch summary.ComponentHealth) *spb.ComponentHealth {
+	var hState spb.HealthState
+	var errMsg string
+
+	switch ch.HealthState {
+	case summary.HealthStateHealthy:
+		hState = spb.HealthState_HEALTH_STATE_HEALTHY
+		errMsg = ""
+	case summary.HealthStateDisabled:
+		hState = spb.HealthState_HEALTH_STATE_UNSPECIFIED
+		errMsg = ch.StatusMessage
+	default:
+		hState = spb.HealthState_HEALTH_STATE_UNHEALTHY
+		errMsg = ch.StatusMessage
+	}
+
+	return &spb.ComponentHealth{
+		Name:         ch.Name,
+		Type:         spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+		HealthState:  hState,
+		ErrorMessage: errMsg,
 	}
 }
 

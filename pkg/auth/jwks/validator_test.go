@@ -253,6 +253,28 @@ func TestJWKSValidator(t *testing.T) {
 			t.Fatalf("expected ErrAudienceMismatch, got %v", err)
 		}
 	})
+
+	t.Run("AllowedServiceAccountsMatchesMultipleIdentities", func(t *testing.T) {
+		valMultiSA := NewValidator(ValidatorConfig{
+			JWKSURL:                server.URL,
+			HTTPClient:             server.Client(),
+			AllowedAudiences:       []string{"https://actuator.api.example.com/actuate"},
+			AllowedServiceAccounts: []string{"admin@xmc.local", "backup-sa@project.iam.gserviceaccount.com"},
+		})
+		claims := validClaims()
+		claims.Email = "admin@xmc.local"
+		tokenStr := mintTestToken(t, privKey, jwk.Kid, claims)
+		if err := valMultiSA.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate"); err != nil {
+			t.Fatalf("expected no error for AllowedServiceAccounts match, got: %v", err)
+		}
+
+		claims.Email = "unauthorized@example.com"
+		unauthTok := mintTestToken(t, privKey, jwk.Kid, claims)
+		err := valMultiSA.Validate(ctx, unauthTok, "https://actuator.api.example.com/actuate")
+		if !errors.Is(err, ErrServiceAccountMismatch) {
+			t.Fatalf("expected ErrServiceAccountMismatch, got: %v", err)
+		}
+	})
 }
 
 func TestDecodeJWKToRSAPublicKeyErrors(t *testing.T) {

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,9 +36,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -55,12 +60,17 @@ type Config struct {
 	CMSAddress string
 	// Namespace is the target Kubernetes namespace to watch and reconcile Component resources.
 	Namespace string
+	// ReleaseName is the Helm release name for 1P component actuation.
+	ReleaseName string
 	// ProbeInterval is the duration interval between periodic reconciliation sweeps.
 	ProbeInterval time.Duration
 	// ProbeTimeout is the timeout duration for individual component probe and reconciliation passes.
 	ProbeTimeout time.Duration
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
+	// ChartPath is the optional filesystem path to the Helm chart to actuate.
+	// TODO: Support dynamic per-component chart path resolution rather than a single static path.
+	ChartPath string
 }
 
 // ComponentStatus defines the structured representation of .status in the Component CRD.
@@ -92,13 +102,8 @@ type ComponentCondition struct {
 // Returns an error if flag parsing fails or if intervals/timeouts are non-positive.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
-	if defaultCMS == "" {
-		defaultCMS = "localhost:50051"
-	}
 	defaultNS := os.Getenv("NAMESPACE")
-	if defaultNS == "" {
-		defaultNS = "xmc"
-	}
+	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
 	defaultProbeInterval := 5 * time.Second
 	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
 		d, err := time.ParseDuration(val)
@@ -116,16 +121,35 @@ func ParseConfig(args []string) (*Config, error) {
 		defaultProbeTimeout = d
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
+	defaultChartPath := os.Getenv("HELM_CHART_PATH")
 
 	fs := flag.NewFlagSet("xmc_bridge", flag.ContinueOnError)
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
+	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
+	// TODO: Replace static single-chart path resolution with dynamic per-component chart
+	// resolution. Currently, a single chart path is passed via HELM_CHART_PATH or --chart-path
+	// and reused across all 1P component releases. Under AI Components Design Doc
+	// Section 3.2.5 (Profile 1 and Alternative 3), per-component independent release actuation
+	// will dynamically resolve per-component chart paths (e.g.,
+	// baseChartPath + "/" + profile + "/components/" + componentName or remote OCI repository URLs)
+	// rather than reusing a single static umbrella chart.
+	chartPath := fs.String("chart-path", defaultChartPath, "Path to the Helm chart directory or tarball")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
+	}
+	if *cmsAddress == "" {
+		return nil, errors.New("cms-address must be specified")
+	}
+	if *namespace == "" {
+		return nil, errors.New("namespace must be specified")
+	}
+	if *releaseName == "" {
+		return nil, errors.New("release-name must be specified")
 	}
 	if *probeInterval <= 0 {
 		return nil, fmt.Errorf("probe-interval must be a positive duration, got %v", *probeInterval)
@@ -136,9 +160,11 @@ func ParseConfig(args []string) (*Config, error) {
 	return &Config{
 		CMSAddress:    *cmsAddress,
 		Namespace:     *namespace,
+		ReleaseName:   *releaseName,
 		ProbeInterval: *probeInterval,
 		ProbeTimeout:  *probeTimeout,
 		Kubeconfig:    *kubeconfig,
+		ChartPath:     *chartPath,
 	}, nil
 }
 
@@ -321,21 +347,43 @@ func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unst
 }
 
 // syncStatus serializes the ReconcileResult into the .status map of item and persists it
-// via the Kubernetes dynamic client UpdateStatus API. It uses a deep copy to avoid local
-// object mutation if the API server update fails.
+// via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
 	ns := item.GetNamespace()
 	if ns == "" {
 		ns = c.namespace
 	}
-	itemCopy := item.DeepCopy()
-	itemCopy.Object["status"] = BuildStatusMap(res)
-	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).UpdateStatus(ctx, itemCopy, metav1.UpdateOptions{})
+	statusPatch := map[string]any{
+		"apiVersion": componentGVR.Group + "/" + componentGVR.Version,
+		"kind":       "Component",
+		"metadata": map[string]any{
+			"name":      item.GetName(),
+			"namespace": ns,
+		},
+		"status": BuildStatusMap(res),
+	}
+	patchBytes, err := json.Marshal(statusPatch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal status SSA patch: %w", err)
+	}
+
+	force := true
+	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).Patch(
+		ctx,
+		item.GetName(),
+		types.ApplyPatchType,
+		patchBytes,
+		metav1.PatchOptions{
+			FieldManager: "xmc-bridge",
+			Force:        &force,
+		},
+		"status",
+	)
 	if err != nil {
 		return err
 	}
 	item.Object = updated.Object
-	logging.Debug(ctx, "Updated Component status in Kubernetes", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	logging.Debug(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 	return nil
 }
 
@@ -403,8 +451,25 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
-	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, bridge.DefaultHelmReleaseName)
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, helmMgr)
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(k8sCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes discovery client: %w", err)
+	}
+	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
+	detector := bridge.NewK8sStatusDetector(dynamicClient, mapper)
+	netProber := bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(cfg.ProbeTimeout))
+	bridgeProber := bridge.NewBridgeProber(detector, netProber, cfg.ProbeTimeout)
+
+	helmOpts := []bridge.HelmManagerOption{
+		bridge.WithKubeconfig(cfg.Kubeconfig),
+	}
+	if cfg.ChartPath != "" {
+		helmOpts = append(helmOpts, bridge.WithChartPath(cfg.ChartPath))
+	}
+	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
+	defer helmMgr.Close()
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), bridgeProber, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}

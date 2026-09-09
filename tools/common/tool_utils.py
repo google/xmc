@@ -418,6 +418,7 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         ("health_service", "//cmd/health_service:health_service_image_push"),
         ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
+        ("xmc_bridge", "//cmd/xmc_bridge:xmc_bridge_image_push"),
     ]
 
     if rod_deployment_enabled:

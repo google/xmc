@@ -372,6 +372,93 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
+	tests := []struct {
+		name       string
+		components []*spb.ComponentHealth
+		wantHealth spb.HealthState
+	}{
+		{
+			name: "all components healthy produces healthy platform state",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "clickhouse",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
+		{
+			name: "core service with unspecified state degrades health to unhealthy",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "Log Monitor",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+				},
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+		},
+		{
+			name: "custom component with unhealthy state degrades health to unhealthy",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				{
+					Name:        "custom-monitor",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+					HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				},
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+		},
+		{
+			name: "nil component in list is safely skipped",
+			components: []*spb.ComponentHealth{
+				{
+					Name:        "ESS",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				},
+				nil,
+			},
+			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Port: "8080", GRPCPort: "50051"}
+			checker := &mockHealthChecker{
+				result: RunChecksResult{
+					Components: tt.components,
+				},
+			}
+			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+			defer s.Close()
+
+			resp := s.calculateHealthStatus(context.Background())
+			if resp.HealthState != tt.wantHealth {
+				t.Errorf("calculateHealthStatus() state = %v, want %v", resp.HealthState, tt.wantHealth)
+			}
+		})
+	}
+}
+
 func TestGetUserInfo(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -22,18 +22,20 @@ import (
 
 // FakeHelmManager provides an in-memory double of HelmManager for unit tests.
 type FakeHelmManager struct {
-	mu               sync.Mutex
-	ActiveComponents map[string]bool
-	AppliedValues    map[string]map[string]any
-	EnsureErr        error
-	DeleteErr        error
+	mu                  sync.Mutex
+	ActiveComponents    map[string]bool
+	AppliedValues       map[string]map[string]any
+	ActuatedGenerations map[string]int64
+	EnsureErr           error
+	DeleteErr           error
 }
 
 // NewFakeHelmManager creates an initialized FakeHelmManager.
 func NewFakeHelmManager() *FakeHelmManager {
 	return &FakeHelmManager{
-		ActiveComponents: make(map[string]bool),
-		AppliedValues:    make(map[string]map[string]any),
+		ActiveComponents:    make(map[string]bool),
+		AppliedValues:       make(map[string]map[string]any),
+		ActuatedGenerations: make(map[string]int64),
 	}
 }
 
@@ -77,6 +79,9 @@ func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRe
 	if f.ActiveComponents != nil {
 		f.ActiveComponents[ref.String()] = false
 	}
+	if f.ActuatedGenerations != nil {
+		delete(f.ActuatedGenerations, ref.String())
+	}
 	if f.AppliedValues != nil {
 		f.disableAppliedValues(ref.Name, ref.String())
 	}
@@ -100,6 +105,19 @@ func (f *FakeHelmManager) disableAppliedValues(name, key string) {
 	dep["enabled"] = false
 }
 
+func (f *FakeHelmManager) detachComponentLocked(ref ComponentRef) error {
+	if f.DeleteErr != nil {
+		return f.DeleteErr
+	}
+	if f.ActiveComponents != nil {
+		delete(f.ActiveComponents, ref.String())
+	}
+	if f.ActuatedGenerations != nil {
+		delete(f.ActuatedGenerations, ref.String())
+	}
+	return nil
+}
+
 // Purge1PComponent permanently removes component values and tracking in memory.
 func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
 	if f == nil {
@@ -110,11 +128,8 @@ func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.DeleteErr != nil {
-		return f.DeleteErr
-	}
-	if f.ActiveComponents != nil {
-		delete(f.ActiveComponents, ref.String())
+	if err := f.detachComponentLocked(ref); err != nil {
+		return err
 	}
 	if f.AppliedValues != nil {
 		delete(f.AppliedValues, ref.String())
@@ -132,13 +147,7 @@ func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRe
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.DeleteErr != nil {
-		return f.DeleteErr
-	}
-	if f.ActiveComponents != nil {
-		delete(f.ActiveComponents, ref.String())
-	}
-	return nil
+	return f.detachComponentLocked(ref)
 }
 
 // IsComponentActive checks whether the component is recorded as active.
@@ -149,6 +158,33 @@ func (f *FakeHelmManager) IsComponentActive(ref ComponentRef) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ActiveComponents[ref.String()]
+}
+
+// IsComponentActuated checks whether the component was actuated at the given generation.
+func (f *FakeHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
+	if f == nil || ref.Name == "" {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ActuatedGenerations == nil {
+		return false
+	}
+	gen, ok := f.ActuatedGenerations[ref.String()]
+	return ok && gen == generation && f.ActiveComponents[ref.String()]
+}
+
+// RecordActuation records the generation at which the component was actuated.
+func (f *FakeHelmManager) RecordActuation(ref ComponentRef, generation int64) {
+	if f == nil || ref.Name == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ActuatedGenerations == nil {
+		f.ActuatedGenerations = make(map[string]int64)
+	}
+	f.ActuatedGenerations[ref.String()] = generation
 }
 
 // GetAppliedValues returns a thread-safe deep copy of the applied Helm values for a component.

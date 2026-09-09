@@ -60,6 +60,7 @@ type (
 	ValidatorConfig struct {
 		JWKSURL, ExpectedIssuer, ExpectedServiceAccount string
 		AllowedAudiences                                []string
+		AllowedServiceAccounts                          []string
 		HTTPClient                                      *http.Client
 		// CacheTTL specifies how long successfully fetched JWKS keys are cached (default: 1 hour).
 		CacheTTL time.Duration
@@ -321,8 +322,18 @@ func (v *Validator) validateIssuer(claims *Claims) error {
 }
 
 func (v *Validator) validateServiceAccount(claims *Claims) error {
-	if v.cfg.ExpectedServiceAccount != "" && claims.Email != v.cfg.ExpectedServiceAccount && claims.Subject != v.cfg.ExpectedServiceAccount {
-		return fmt.Errorf("%w: expected %q, got email=%q, sub=%q", ErrServiceAccountMismatch, v.cfg.ExpectedServiceAccount, claims.Email, claims.Subject)
+	var allowed []string
+	if v.cfg.ExpectedServiceAccount != "" {
+		allowed = append(allowed, v.cfg.ExpectedServiceAccount)
 	}
-	return nil
+	allowed = append(allowed, v.cfg.AllowedServiceAccounts...)
+	if len(allowed) == 0 {
+		return nil
+	}
+	for _, sa := range allowed {
+		if sa != "" && (claims.Email == sa || claims.Subject == sa) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: expected one of %v, got email=%q, sub=%q", ErrServiceAccountMismatch, allowed, claims.Email, claims.Subject)
 }

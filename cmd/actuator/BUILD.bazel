@@ -29,6 +29,7 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/task_queue_redis/redisclient",
+        "//pkg/auth/jwks",
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_client_go//kubernetes",
