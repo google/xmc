@@ -26,9 +26,6 @@ concurrency:
   # Do not cancel in-progress runs on main to preserve full commit test history
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
   unit-tests:
     name: 'Unit Tests'
