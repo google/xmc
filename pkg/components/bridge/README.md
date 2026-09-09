@@ -134,8 +134,9 @@ Parses discovered endpoints and connection secrets from third-party operator CRD
 
 To supplement Kubernetes CR condition checks with real data plane health verification, the bridge performs active network health probes:
 
+- **Bounded HTTP GET Probing (`ProbeHTTP`)**: Executes HTTP/HTTPS health checks with context timeouts, closing connections cleanly and draining response bodies up to a bounded 64KB limit. Supports custom clients via `WithHealthHTTPClient`.
 - **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
-- **Protocol Probing (`Probe`)**: Automatically normalizes `tcp://` prefixes and bare `host:port` target addresses to test TCP network connectivity.
+- **Protocol-Agnostic Probing (`Probe`)**: Automatically sniffs URL schemes (`http://`, `https://`, `tcp://`, or bare `host:port`) and dispatches to HTTP vs TCP probe implementations.
 - **`HealthProber` Interface & `FakeHealthProber`**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
 
 ---
@@ -167,7 +168,7 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
-- **Active Network Health Probing**: Verifies runtime data-plane health across raw TCP sockets.
+- **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
 - **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
 
