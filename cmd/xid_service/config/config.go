@@ -30,14 +30,14 @@ import (
 
 // Config holds the configuration for the XidService server.
 type Config struct {
-	Port                  string
-	SpannerDatabaseName   string
-	QuotaProjectID        string
-	Audience              string
-	IAPIssuer             string
-	HTTPAudience          string
-	GRPCAudience          string
-	DisableAuthentication bool
+	Port                string
+	SpannerDatabaseName string
+	QuotaProjectID      string
+	Audience            string
+	IAPIssuer           string
+	HTTPAudience        string
+	GRPCAudience        string
+	JWKSURL             string
 }
 
 var cfg Config
@@ -84,7 +84,7 @@ func (c *Config) registerFlags(fs *flag.FlagSet) {
 		fs = flag.CommandLine
 	}
 	fs.StringVar(&c.Audience, "xid_audience", "https://test-xmanager-gcp.corp.goog", "The audience of the IAP JWT.")
-	fs.BoolVar(&c.DisableAuthentication, "xid_disable_authentication", false, "Disables authentication for testing.")
+	fs.StringVar(&c.JWKSURL, "xid_jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 }
 
 // registerConfigs loads ConfigMap managed values using configutil.
@@ -92,6 +92,7 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.Port, "xid_grpc_port", "50051")
 	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&c.SpannerDatabaseName, "xid_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/xids-db")
+	configutil.StringEnv(&c.JWKSURL, "xid_jwks_url", "")
 }
 
 // validate checks if the Config is valid.

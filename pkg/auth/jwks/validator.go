@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/sync/singleflight"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -60,16 +61,23 @@ type (
 		JWKSURL, ExpectedIssuer, ExpectedServiceAccount string
 		AllowedAudiences                                []string
 		HTTPClient                                      *http.Client
-		CacheTTL                                        time.Duration
+		// CacheTTL specifies how long successfully fetched JWKS keys are cached (default: 1 hour).
+		CacheTTL time.Duration
+		// MinRefreshInterval specifies the minimum cooldown interval between outbound
+		// refresh attempts for unknown key IDs (kid) or following failed refreshes,
+		// mitigating cache stampedes and key flooding attacks (default: 1 minute).
+		MinRefreshInterval time.Duration
 	}
 
 	// Validator validates OIDC tokens against a standard JWKS endpoint.
 	Validator struct {
-		cfg        ValidatorConfig
-		httpClient *http.Client
-		keys       map[string]*rsa.PublicKey
-		lastFetch  time.Time
-		mu         sync.RWMutex
+		cfg         ValidatorConfig
+		httpClient  *http.Client
+		keys        map[string]*rsa.PublicKey
+		lastFetch   time.Time
+		lastAttempt time.Time
+		mu          sync.RWMutex
+		sfGroup     singleflight.Group
 	}
 )
 
@@ -80,6 +88,9 @@ func NewValidator(cfg ValidatorConfig) *Validator {
 	}
 	if cfg.CacheTTL == 0 {
 		cfg.CacheTTL = 1 * time.Hour
+	}
+	if cfg.MinRefreshInterval == 0 {
+		cfg.MinRefreshInterval = 1 * time.Minute
 	}
 	return &Validator{
 		cfg:        cfg,
@@ -148,33 +159,79 @@ func (v *Validator) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKey, e
 	return newKeys, nil
 }
 
+func (v *Validator) refreshKeysSingleflight(ctx context.Context) (map[string]*rsa.PublicKey, error) {
+	res, err, _ := v.sfGroup.Do("fetchKeys", func() (any, error) {
+		fetchTimeout := v.httpClient.Timeout
+		if fetchTimeout <= 0 {
+			fetchTimeout = 15 * time.Second
+		}
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
+		defer cancel()
+
+		newKeys, fetchErr := v.fetchKeys(fetchCtx)
+		v.mu.Lock()
+		v.lastAttempt = time.Now()
+		if fetchErr == nil {
+			v.keys = newKeys
+			v.lastFetch = time.Now()
+		}
+		v.mu.Unlock()
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		return newKeys, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	newKeys, ok := res.(map[string]*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("unexpected key map type from singleflight fetch")
+	}
+	return newKeys, nil
+}
+
 func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	v.mu.RLock()
 	key, exists := v.findKeyLocked(kid)
-	fresh := exists && !v.lastFetch.IsZero() && time.Since(v.lastFetch) < v.cfg.CacheTTL
+	lastFetch := v.lastFetch
+	lastAttempt := v.lastAttempt
 	v.mu.RUnlock()
-	if fresh {
+
+	minInterval := min(v.cfg.MinRefreshInterval, v.cfg.CacheTTL)
+	if exists && !lastFetch.IsZero() && time.Since(lastFetch) < v.cfg.CacheTTL {
 		return key, nil
 	}
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if key, exists := v.findKeyLocked(kid); exists && !v.lastFetch.IsZero() && time.Since(v.lastFetch) < v.cfg.CacheTTL {
-		return key, nil
+	if !lastAttempt.IsZero() && time.Since(lastAttempt) < minInterval {
+		if exists {
+			return key, nil
+		}
+		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 	}
 
-	newKeys, err := v.fetchKeys(ctx)
+	newKeys, err := v.refreshKeysSingleflight(ctx)
 	if err != nil {
-		if staleKey, staleExists := v.findKeyLocked(kid); staleExists {
+		v.mu.RLock()
+		staleKey, staleExists := v.findKeyLocked(kid)
+		v.mu.RUnlock()
+		if staleExists {
 			logging.Warn(ctx, "JWKS refresh failed, using cached key", "error", err)
 			return staleKey, nil
 		}
 		return nil, err
 	}
-	v.keys = newKeys
-	v.lastFetch = time.Now()
-	if key, ok := v.findKeyLocked(kid); ok {
-		return key, nil
+
+	if pubKey, ok := newKeys[kid]; ok {
+		return pubKey, nil
+	}
+	if kid == "" && len(newKeys) == 1 {
+		for _, k := range newKeys {
+			return k, nil
+		}
 	}
 	return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, kid)
 }

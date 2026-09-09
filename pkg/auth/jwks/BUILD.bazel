@@ -24,6 +24,7 @@ go_library(
     deps = [
         "//internal/logging",
         "@com_github_golang_jwt_jwt_v5//:jwt",
+        "@org_golang_x_sync//singleflight",
     ],
 )
 

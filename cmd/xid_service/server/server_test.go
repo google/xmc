@@ -18,9 +18,7 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
@@ -42,22 +40,13 @@ func withAuthorizer(a auth.AuthorizerInterface) testServerOpt {
 	}
 }
 
-type testAuthorizerWrapper struct {
-	*auth.Authorizer
-}
-
-func (w *testAuthorizerWrapper) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
-	return "test@example.com", "test_user_id", nil
-}
-
 func createTestAuthorizer(ctx context.Context, t *testing.T) auth.AuthorizerInterface {
 	t.Helper()
-	idService := &cloudidentity.Service{}
-	authorizer, err := auth.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, auth.DefaultIAPIssuer, nil)
-	if err != nil {
-		t.Fatalf("Failed to create mock authorizer: %v", err)
+	return &auth.MockAuth{
+		DefaultEmail:  "test@example.com",
+		DefaultUserID: "user_id",
+		CheckACLs:     true,
 	}
-	return &testAuthorizerWrapper{Authorizer: authorizer}
 }
 
 func newTestServer(t *testing.T, opts ...testServerOpt) *XIDServer {
