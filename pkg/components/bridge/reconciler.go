@@ -297,6 +297,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 		return nil
 	}
 	ref := resolveComponentRef(in)
+	// TODO: Hydrate active state and observed generation from existing CR status (.status.observedGeneration)
+	// and release storage on controller startup. This avoids redundant Helm metadata revision increments on
+	// cold start and resolves the post-restart deactivation edge case.
 	if !r.helmManager.IsComponentActive(ref) {
 		return nil
 	}

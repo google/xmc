@@ -419,6 +419,8 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 }
 
 // IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
+// TODO: Hydrate actuatedGenerations from existing CR status and cluster release storage on controller startup
+// to eliminate redundant cold-start release metadata increments.
 func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
