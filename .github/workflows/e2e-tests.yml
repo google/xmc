@@ -16,6 +16,7 @@ name: 'XMC Headless E2E Tests'
 
 on:
   merge_group:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:

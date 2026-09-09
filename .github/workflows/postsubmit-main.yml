@@ -28,131 +28,20 @@ concurrency:
 permissions: {}
 
 jobs:
-  run-backend-tests:
-    name: 'Backend & Go Unit Tests'
-    runs-on: 'arc-runner-set'
-    timeout-minutes: 30
+  unit-tests:
+    name: 'Unit Tests'
+    uses: ./.github/workflows/unit-tests.yml
+    secrets: inherit
 
-    permissions:
-      contents: read
-      id-token: write
-
-    services:
-      # zizmor: ignore[unpinned-images]
-      spanner-emulator:
-        image: gcr.io/cloud-spanner-emulator/emulator:1.5.56
-        ports:
-          - 9010:9010
-          - 9020:9020
-
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: 'Run Backend Unit Tests'
-        uses: './.github/actions/run-backend-tests'
-
-  run-ui-tests:
-    name: 'Angular UI Unit Tests'
-    runs-on: 'arc-runner-set'
-    timeout-minutes: 15
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: 'Run Angular UI Unit Tests'
-        uses: './.github/actions/run-ui-tests'
-
-  run-chart-tests:
-    name: 'Helm Chart Configuration Tests'
-    runs-on: 'arc-runner-set'
-    timeout-minutes: 10
-
-    permissions:
-      contents: read
-      pull-requests: read
-
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: 'Run Helm Chart Configuration Tests'
-        uses: './.github/actions/run-chart-tests'
-
-  run-e2e-tests:
+  e2e-tests:
     name: 'KinD & Playwright Headless E2E'
-    runs-on: 'arc-runner-set'
-    environment: e2e-test
-    timeout-minutes: 60
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: 'Validate CI Secrets Configuration'
-        env:
-          GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
-          GCP_E2E_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}
-          GCP_E2E_SERVICE_ACCOUNT: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
-          GCP_E2E_SPANNER_INSTANCE: ${{ secrets.GCP_E2E_SPANNER_INSTANCE }}
-        run: |
-          if [ -z "${GCP_E2E_PROJECT_ID}" ] || [ -z "${GCP_E2E_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_E2E_SERVICE_ACCOUNT}" ] || [ -z "${GCP_E2E_SPANNER_INSTANCE}" ]; then
-            echo "::error::Required GitHub Secrets are not configured."
-            exit 1
-          fi
-
-      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
-        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
-        with:
-          project_id: '${{ secrets.GCP_E2E_PROJECT_ID }}'
-          workload_identity_provider: '${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}'
-          service_account: '${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}'
-
-      - name: 'Configure Docker Auth for GCP Artifact Registry'
-        run: |
-          gcloud auth configure-docker us-docker.pkg.dev --quiet
-
-      - name: 'Set up Cloud SDK'
-        run: |
-          if ! command -v gcloud &>/dev/null; then
-            curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
-            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
-            sudo apt-get update && sudo apt-get install -y --no-install-recommends google-cloud-cli
-          fi
-          gcloud version | head -n 1
-
-      - name: 'Run End-to-End Tests'
-        env:
-          GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
-          GCP_E2E_SPANNER_INSTANCE: ${{ secrets.GCP_E2E_SPANNER_INSTANCE }}
-        run: |
-          ./test/e2e/run_local_e2e.sh \
-            --project-id "${GCP_E2E_PROJECT_ID}" \
-            --spanner-instance "${GCP_E2E_SPANNER_INSTANCE}"
+    uses: ./.github/workflows/e2e-tests.yml
+    secrets: inherit
 
   report-results:
     name: 'Aggregate Results & Report Failure'
     runs-on: 'ubuntu-latest'
-    needs: [run-backend-tests, run-ui-tests, run-chart-tests, run-e2e-tests]
+    needs: [unit-tests, e2e-tests]
     if: always() && !cancelled()
 
     permissions:

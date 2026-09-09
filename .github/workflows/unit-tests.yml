@@ -17,6 +17,7 @@ name: 'XMC Unit Tests'
 on:
   pull_request:
   merge_group:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:

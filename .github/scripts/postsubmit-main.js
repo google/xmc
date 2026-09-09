@@ -30,24 +30,14 @@ function buildJobResults(needsContext = {}) {
   const safeContext = needsContext || {};
   return [
     {
-      name: 'Backend & Go Unit Tests',
-      jobId: 'run-backend-tests',
-      result: safeContext['run-backend-tests']?.result || 'unknown',
-    },
-    {
-      name: 'Angular UI Unit Tests',
-      jobId: 'run-ui-tests',
-      result: safeContext['run-ui-tests']?.result || 'unknown',
-    },
-    {
-      name: 'Helm Chart Configuration Tests',
-      jobId: 'run-chart-tests',
-      result: safeContext['run-chart-tests']?.result || 'unknown',
+      name: 'Unit Tests (Backend, UI, Helm)',
+      jobId: 'unit-tests',
+      result: safeContext['unit-tests']?.result || 'unknown',
     },
     {
       name: 'KinD & Playwright Headless E2E',
-      jobId: 'run-e2e-tests',
-      result: safeContext['run-e2e-tests']?.result || 'unknown',
+      jobId: 'e2e-tests',
+      result: safeContext['e2e-tests']?.result || 'unknown',
     },
   ];
 }

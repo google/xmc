@@ -32,46 +32,34 @@ test('getDedupMarker constructs standard HTML comment with SHA', () => {
 
 test('buildJobResults maps needs context dictionary to structured test suite results', () => {
   const needsContext = {
-    'run-backend-tests': { result: 'success' },
-    'run-ui-tests': { result: 'failure' },
-    'run-chart-tests': { result: 'skipped' },
-    'run-e2e-tests': { result: 'timed_out' },
+    'unit-tests': { result: 'failure' },
+    'e2e-tests': { result: 'success' },
   };
 
   const results = buildJobResults(needsContext);
-  assert.strictEqual(results.length, 4);
+  assert.strictEqual(results.length, 2);
 
   assert.deepStrictEqual(results[0], {
-    name: 'Backend & Go Unit Tests',
-    jobId: 'run-backend-tests',
-    result: 'success',
-  });
-  assert.deepStrictEqual(results[1], {
-    name: 'Angular UI Unit Tests',
-    jobId: 'run-ui-tests',
+    name: 'Unit Tests (Backend, UI, Helm)',
+    jobId: 'unit-tests',
     result: 'failure',
   });
-  assert.deepStrictEqual(results[2], {
-    name: 'Helm Chart Configuration Tests',
-    jobId: 'run-chart-tests',
-    result: 'skipped',
-  });
-  assert.deepStrictEqual(results[3], {
+  assert.deepStrictEqual(results[1], {
     name: 'KinD & Playwright Headless E2E',
-    jobId: 'run-e2e-tests',
-    result: 'timed_out',
+    jobId: 'e2e-tests',
+    result: 'success',
   });
 });
 
 test('buildJobResults handles empty or missing keys gracefully with unknown result', () => {
   const results = buildJobResults({});
-  assert.strictEqual(results.length, 4);
+  assert.strictEqual(results.length, 2);
   for (const r of results) {
     assert.strictEqual(r.result, 'unknown');
   }
 
   const nullResults = buildJobResults(null);
-  assert.strictEqual(nullResults.length, 4);
+  assert.strictEqual(nullResults.length, 2);
 });
 
 test('getFailedJobs correctly filters failure, timed_out, and cancelled states', () => {
@@ -104,10 +92,8 @@ test('formatFailureCommentBody generates complete markdown table with icons and 
     repo: 'xmc',
     runId: '12345678',
     jobResults: [
-      { name: 'Backend & Go Unit Tests', result: 'success' },
-      { name: 'Angular UI Unit Tests', result: 'failure' },
-      { name: 'Helm Chart Configuration Tests', result: 'skipped' },
-      { name: 'KinD & Playwright Headless E2E', result: 'timed_out' },
+      { name: 'Unit Tests (Backend, UI, Helm)', result: 'failure' },
+      { name: 'KinD & Playwright Headless E2E', result: 'success' },
     ],
   });
 
@@ -115,10 +101,8 @@ test('formatFailureCommentBody generates complete markdown table with icons and 
   assert.match(body, /### 🚨 Post-Submit Test Regression on `main`/);
   assert.match(body, /Hello @octocat,/);
   assert.match(body, /\[`c094d15`\]\(https:\/\/github\.com\/google\/xmc\/commit\/c094d151fd62003048085bf3a7bdc311caef4305\)/);
-  assert.match(body, /\|\s*\*\*Backend & Go Unit Tests\*\*\s*\|\s*✅ `success`\s*\|/);
-  assert.match(body, /\|\s*\*\*Angular UI Unit Tests\*\*\s*\|\s*❌ `failure`\s*\|/);
-  assert.match(body, /\|\s*\*\*Helm Chart Configuration Tests\*\*\s*\|\s*⚪ `skipped`\s*\|/);
-  assert.match(body, /\|\s*\*\*KinD & Playwright Headless E2E\*\*\s*\|\s*❌ `timed_out`\s*\|/);
+  assert.match(body, /\|\s*\*\*Unit Tests \(Backend, UI, Helm\)\*\*\s*\|\s*❌ `failure`\s*\|/);
+  assert.match(body, /\|\s*\*\*KinD & Playwright Headless E2E\*\*\s*\|\s*✅ `success`\s*\|/);
   assert.match(body, /https:\/\/github\.com\/google\/xmc\/actions\/runs\/12345678/);
 });
 
@@ -147,10 +131,8 @@ test('run terminates early when all jobs succeed', async () => {
   };
 
   const needsContext = {
-    'run-backend-tests': { result: 'success' },
-    'run-ui-tests': { result: 'success' },
-    'run-chart-tests': { result: 'success' },
-    'run-e2e-tests': { result: 'success' },
+    'unit-tests': { result: 'success' },
+    'e2e-tests': { result: 'success' },
   };
 
   const res = await run({
@@ -188,7 +170,7 @@ test('run handles direct push when no PR is associated with commit', async () =>
   };
 
   const needsContext = {
-    'run-backend-tests': { result: 'failure' },
+    'unit-tests': { result: 'failure' },
   };
 
   const res = await run({
@@ -243,7 +225,7 @@ test('run skips posting comment if deduplication marker is already present on PR
     github: mockGithub,
     context: mockContext,
     core: mockCore,
-    needsContext: { 'run-ui-tests': { result: 'failure' } },
+    needsContext: { 'unit-tests': { result: 'failure' } },
   });
 
   assert.strictEqual(res.status, 'already_commented');
@@ -290,17 +272,15 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
     context: mockContext,
     core: mockCore,
     needsContext: {
-      'run-backend-tests': { result: 'failure' },
-      'run-ui-tests': { result: 'success' },
-      'run-chart-tests': { result: 'success' },
-      'run-e2e-tests': { result: 'cancelled' },
+      'unit-tests': { result: 'failure' },
+      'e2e-tests': { result: 'cancelled' },
     },
   });
 
   assert.strictEqual(res.status, 'comment_posted');
   assert.strictEqual(res.prNumber, 830);
   assert.deepStrictEqual(res.failedJobs, [
-    'Backend & Go Unit Tests',
+    'Unit Tests (Backend, UI, Helm)',
     'KinD & Playwright Headless E2E',
   ]);
 
@@ -310,7 +290,6 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
   assert.strictEqual(postedComment.repo, 'xmc');
   assert.match(postedComment.body, /Hello @test-author,/);
   assert.match(postedComment.body, /<!-- xmc-postsubmit-main-failure: 4444444444444444444444444444444444444444 -->/);
-  assert.match(postedComment.body, /Backend & Go Unit Tests.*❌ `failure`/);
+  assert.match(postedComment.body, /Unit Tests \(Backend, UI, Helm\).*❌ `failure`/);
   assert.match(postedComment.body, /KinD & Playwright Headless E2E.*❌ `cancelled`/);
-  assert.match(postedComment.body, /Angular UI Unit Tests.*✅ `success`/);
 });
