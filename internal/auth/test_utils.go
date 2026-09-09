@@ -119,9 +119,12 @@ func NewTestAuthorizer(t *testing.T, cacheTTL, cacheErrorTTL time.Duration, serv
 
 // MockAuth is a mock implementation of AuthorizerInterface for testing.
 type MockAuth struct {
-	AuthnErr error
-	IsAuthed bool
-	AuthzErr error
+	DefaultEmail  string
+	DefaultUserID string
+	AuthnErr      error
+	IsAuthed      bool
+	AuthzErr      error
+	CheckACLs     bool
 }
 
 // AuthenticateUserFromContext mocks user authentication.
@@ -129,15 +132,51 @@ func (m *MockAuth) AuthenticateUserFromContext(ctx context.Context) (string, str
 	if m.AuthnErr != nil {
 		return "", "", m.AuthnErr
 	}
-	return "test@example.com", "id", m.AuthnErr
+	email := m.DefaultEmail
+	if email == "" {
+		email = "test@example.com"
+	}
+	userID := m.DefaultUserID
+	if userID == "" {
+		userID = "user_id"
+	}
+	return email, userID, nil
 }
 
 // IsUserAuthorized mocks user authorization.
 func (m *MockAuth) IsUserAuthorized(ctx context.Context, user string, acls *xpb.XidAcls, role Role) (bool, error) {
-	return m.IsAuthed, m.AuthzErr
+	if m.AuthzErr != nil {
+		return false, m.AuthzErr
+	}
+	if m.IsAuthed {
+		return true, nil
+	}
+	if !m.CheckACLs || acls == nil {
+		return false, nil
+	}
+	for _, owner := range acls.GetOwners() {
+		if owner.GetUser() == user {
+			return true, nil
+		}
+	}
+	if role == Writer || role == Reader {
+		for _, writer := range acls.GetWriters() {
+			if writer.GetUser() == user {
+				return true, nil
+			}
+		}
+	}
+	if role == Reader {
+		for _, reader := range acls.GetReaders() {
+			if reader.GetUser() == user {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // IsUserAuthorizedForChart mocks user authorization for RLS.
 func (m *MockAuth) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error) {
-	return m.IsAuthed, m.AuthzErr
+	return m.IsUserAuthorized(ctx, user, acls, Reader)
 }

@@ -21,9 +21,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -347,11 +350,220 @@ func TestJWKSCachedFallbackOnRefreshError(t *testing.T) {
 	// Now fail backend requests.
 	failRequests = true
 
-	// Should fallback to cached key.
+	// Should fallback to cached key and apply cooldown.
 	if err := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate"); err != nil {
 		t.Fatalf("expected cached fallback to succeed, got %v", err)
 	}
 	if fetchCount != 2 {
 		t.Fatalf("expected 2 fetches, got %d", fetchCount)
+	}
+
+	// Immediate next request should hit cooldown without making another HTTP request.
+	if err := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate"); err != nil {
+		t.Fatalf("expected validation during cooldown to succeed, got %v", err)
+	}
+	if fetchCount != 2 {
+		t.Fatalf("expected still 2 fetches due to cooldown, got %d", fetchCount)
+	}
+}
+
+func TestJWKSMissingKeyCooldownAndSingleflight(t *testing.T) {
+	ctx := context.Background()
+	privKey, jwk := generateTestRSAKey(t)
+
+	var fetchCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&fetchCount, 1)
+		time.Sleep(30 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(JWKS{
+			Keys: []JWK{jwk},
+		})
+	}))
+	defer server.Close()
+
+	validator := NewValidator(ValidatorConfig{
+		JWKSURL:            server.URL,
+		AllowedAudiences:   []string{"https://actuator.api.example.com/actuate"},
+		HTTPClient:         server.Client(),
+		CacheTTL:           1 * time.Hour,
+		MinRefreshInterval: 500 * time.Millisecond,
+	})
+
+	testClaims := &Claims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"https://actuator.api.example.com/actuate"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+
+	// Concurrent requests with non-existent kid should collapse via singleflight into 1 fetch.
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			tokenStr := mintTestToken(t, privKey, fmt.Sprintf("unknown-kid-%d", idx), testClaims)
+			_ = validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+		}(i)
+	}
+	wg.Wait()
+
+	if count := atomic.LoadInt32(&fetchCount); count != 1 {
+		t.Fatalf("expected 1 fetch due to singleflight deduplication, got %d", count)
+	}
+
+	// Immediate next request for another unknown kid should fail fast due to MinRefreshInterval cooldown.
+	tokenStr := mintTestToken(t, privKey, "another-unknown-kid", testClaims)
+	err := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+	if err == nil || !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for unknown kid, got %v", err)
+	}
+	if count := atomic.LoadInt32(&fetchCount); count != 1 {
+		t.Fatalf("expected fetchCount to remain 1 due to missing key cooldown, got %d", count)
+	}
+}
+
+func TestJWKSSingleflightContextCancellation(t *testing.T) {
+	privKey, jwk := generateTestRSAKey(t)
+
+	var fetchCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&fetchCount, 1)
+		time.Sleep(50 * time.Millisecond) // Simulate slow network request
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(JWKS{
+			Keys: []JWK{jwk},
+		})
+	}))
+	defer server.Close()
+
+	validator := NewValidator(ValidatorConfig{
+		JWKSURL:          server.URL,
+		AllowedAudiences: []string{"https://actuator.api.example.com/actuate"},
+		HTTPClient:       server.Client(),
+		CacheTTL:         1 * time.Hour,
+	})
+
+	testClaims := &Claims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"https://actuator.api.example.com/actuate"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	tokenStr := mintTestToken(t, privKey, jwk.Kid, testClaims)
+
+	// Caller 1 starts fetch with a context that cancels after 10ms.
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel1()
+
+	// Caller 2 starts concurrently with a generous context.
+	ctx2 := context.Background()
+
+	var err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		_ = validator.Validate(ctx1, tokenStr, "https://actuator.api.example.com/actuate")
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(5 * time.Millisecond) // Ensure caller 1 starts first
+		err2 = validator.Validate(ctx2, tokenStr, "https://actuator.api.example.com/actuate")
+	}()
+
+	wg.Wait()
+
+	// Caller 2 must succeed despite Caller 1's context cancellation.
+	if err2 != nil {
+		t.Fatalf("expected caller 2 to succeed despite caller 1 cancellation, got %v", err2)
+	}
+	if count := atomic.LoadInt32(&fetchCount); count != 1 {
+		t.Fatalf("expected 1 fetch, got %d", count)
+	}
+}
+
+func TestJWKSCooldownOnFailedRefreshWithLargeCacheTTL(t *testing.T) {
+	ctx := context.Background()
+	privKey, _ := generateTestRSAKey(t)
+
+	var fetchCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&fetchCount, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	validator := NewValidator(ValidatorConfig{
+		JWKSURL:            server.URL,
+		AllowedAudiences:   []string{"https://actuator.api.example.com/actuate"},
+		HTTPClient:         server.Client(),
+		CacheTTL:           1 * time.Hour,
+		MinRefreshInterval: 200 * time.Millisecond,
+	})
+
+	testClaims := &Claims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"https://actuator.api.example.com/actuate"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	tokenStr := mintTestToken(t, privKey, "unknown-kid", testClaims)
+
+	// First attempt fails against backend.
+	err1 := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+	if err1 == nil {
+		t.Fatal("expected error on 500 server response")
+	}
+	if count := atomic.LoadInt32(&fetchCount); count != 1 {
+		t.Fatalf("expected 1 fetch, got %d", count)
+	}
+
+	// Immediate next attempt should fail fast via cooldown without querying the backend again.
+	err2 := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+	if err2 == nil || !errors.Is(err2, ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken on cooldown, got %v", err2)
+	}
+	if count := atomic.LoadInt32(&fetchCount); count != 1 {
+		t.Fatalf("expected fetchCount to remain 1 due to failure cooldown, got %d", count)
+	}
+}
+
+func TestJWKSPreflightContextCancellation(t *testing.T) {
+	privKey, jwk := generateTestRSAKey(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(JWKS{
+			Keys: []JWK{jwk},
+		})
+	}))
+	defer server.Close()
+
+	validator := NewValidator(ValidatorConfig{
+		JWKSURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Pre-canceled context
+
+	testClaims := &Claims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"https://actuator.api.example.com/actuate"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	tokenStr := mintTestToken(t, privKey, jwk.Kid, testClaims)
+
+	err := validator.Validate(ctx, tokenStr, "https://actuator.api.example.com/actuate")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
