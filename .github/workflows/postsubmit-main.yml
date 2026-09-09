@@ -26,7 +26,11 @@ concurrency:
   # Do not cancel in-progress runs on main to preserve full commit test history
   cancel-in-progress: false
 
-permissions: {}
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+  issues: write
 
 jobs:
   unit-tests:
