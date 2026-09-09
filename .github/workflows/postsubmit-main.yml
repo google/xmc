@@ -35,11 +35,11 @@ permissions:
 jobs:
   unit-tests:
     name: 'Unit Tests'
-    uses: google/xmc/.github/workflows/unit-tests.yml@ci/postsubmit-master-pipeline
+    uses: ./.github/workflows/unit-tests.yml
 
   e2e-tests:
     name: 'KinD & Playwright Headless E2E'
-    uses: google/xmc/.github/workflows/e2e-tests.yml@ci/postsubmit-master-pipeline
+    uses: ./.github/workflows/e2e-tests.yml
     secrets:
       GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
       GCP_E2E_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}
