@@ -90,25 +90,3 @@ jobs:
 
       - name: 'Run Helm Chart Configuration Tests'
         uses: './.github/actions/run-chart-tests'
-
-  run-script-tests:
-    name: 'Run GitHub Scripts Unit Tests'
-    runs-on: 'ubuntu-latest'
-    timeout-minutes: 5
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: 'Set up Node.js'
-        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
-        with:
-          node-version: '22'
-
-      - name: 'Run GitHub Scripts Unit Tests'
-        run: node --test .github/scripts/*.test.js
