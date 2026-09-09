@@ -88,6 +88,7 @@ type K8sHelmManager struct {
 	activeState         map[string]bool
 	actuatedGenerations map[string]int64
 	upgradeErrs         map[string]error
+	upgradeMu           sync.Mutex
 	upgradeSem          chan struct{}
 
 	stopMu      sync.RWMutex
