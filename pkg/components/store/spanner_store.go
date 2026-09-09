@@ -838,9 +838,13 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 		return nil, nil, err
 	}
 
-	snapRec := cloneRecord(rec)
-	snapRec.Generation = lockedGen
-	snapRec.Status = nil
+	snapRec := &ComponentRecord{
+		ComponentID: compID,
+		Name:        canonicalName,
+		Generation:  lockedGen,
+		CreateTime:  rec.CreateTime,
+		UpdateTime:  rec.UpdateTime,
+	}
 	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
 	}
