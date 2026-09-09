@@ -173,7 +173,6 @@ check_license() {
     -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
-    -ignore "**/dist/**"
     -ignore "**/venv/**"
     -ignore "**/ctk-out/**"
     -ignore "**.json"
@@ -255,6 +254,7 @@ check_mypy() {
     py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
   else
     py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' | grep -v 'tools/dev_env.py' || true)
+
   fi
 
   if [ -z "$py_files" ]; then

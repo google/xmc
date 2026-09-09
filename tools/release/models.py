@@ -151,3 +151,15 @@ class ReleaseMetadataResult(TypedDict, total=False):
     flag_transitions: list[FlagTransitionDict]
     gated_subsystems_status: list[GatedSubsystemStatus]
     raw_commits: list[CommitDict]
+
+
+class PublishReleaseResult(TypedDict):
+    """Structured output from publishing a GitHub release."""
+
+    status: str
+    tag: str
+    title: str
+    release_url: str
+    release_id: int | None
+    is_draft: bool
+    notes_file: str

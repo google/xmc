@@ -23,6 +23,7 @@ exports_files([
     "feature_flags.py",
     "git_ops.py",
     "models.py",
+    "publish_release.py",
     "semver_engine.py",
     "yaml_parser.py",
 ])
@@ -141,6 +142,41 @@ py_test(
         ":feature_flags_lib",
         ":git_ops_lib",
         ":models_lib",
+        ":semver_engine_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "publish_release_lib",
+    srcs = ["publish_release.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        ":models_lib",
+        ":semver_engine_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "publish_release",
+    srcs = ["publish_release.py"],
+    imports = ["../.."],
+    main = "publish_release.py",
+    deps = [
+        ":publish_release_lib",
+    ],
+)
+
+py_test(
+    name = "publish_release_test",
+    srcs = ["publish_release_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        ":models_lib",
+        ":publish_release_lib",
         ":semver_engine_lib",
         "//tools/common:tool_utils",
     ],

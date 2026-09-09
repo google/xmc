@@ -153,6 +153,26 @@ def get_git_commits(
     return commits
 
 
+def get_git_remote_url(repo_dir: Path | None = None, remote: str = "origin") -> str:
+    """Retrieves the remote URL for the local repository."""
+    cwd = str(repo_dir) if repo_dir else None
+    try:
+        cmd = ["git", "remote", "get-url", remote]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+        return res.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.strip() if e.stderr else str(e)
+        raise HandledError(
+            f"Failed to retrieve git remote URL for '{remote}': {err_msg}",
+            "Ensure you are in a valid git repository with the remote configured, or set GITHUB_OWNER and GITHUB_REPO env vars.",
+        ) from e
+    except FileNotFoundError as e:
+        raise HandledError(
+            f"git command not found: {e}",
+            "Ensure Git is installed and available in your system PATH.",
+        ) from e
+
+
 def parse_remote_url(remote_url: str) -> tuple[str, str]:
     """Parses owner and repo name from git remote url."""
     clean = str(remote_url).strip().rstrip("/")
