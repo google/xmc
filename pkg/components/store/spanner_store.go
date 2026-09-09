@@ -839,7 +839,8 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 	}
 	if snapRec.Status != nil {
 		snapRec.State = snapRec.Status.State
-		snapRec.ObservedGeneration = &snapRec.Status.ObservedGeneration
+		obsGen := snapRec.Status.ObservedGeneration
+		snapRec.ObservedGeneration = &obsGen
 	}
 	snapRec.Etag = generateEtag(snapRec)
 
@@ -912,8 +913,25 @@ func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, quer
 	}
 	if snapRec.Status != nil {
 		snapRec.State = snapRec.Status.State
-		snapRec.ObservedGeneration = &snapRec.Status.ObservedGeneration
+		obsGen := snapRec.Status.ObservedGeneration
+		snapRec.ObservedGeneration = &obsGen
 	}
+
+	depStmt := spanner.Statement{
+		SQL: selectDependenciesByComponentIDSQL,
+		Params: map[string]any{
+			"id": compID,
+		},
+	}
+	depIter := queryable.Query(ctx, depStmt)
+	defer depIter.Stop()
+
+	deps, err := fetchDependencies(depIter)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch dependencies for historical component %q: %w", canonicalName, err)
+	}
+	snapRec.Dependencies = deps
+
 	snapRec.Etag = generateEtag(snapRec)
 
 	var coords *componentspb.ResolvedComponentCoordinates

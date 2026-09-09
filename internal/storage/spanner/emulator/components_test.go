@@ -733,11 +733,26 @@ func TestHistoricalSnapshotResolution_SoftDeletedComponent(t *testing.T) {
 	const xid = int64(10010)
 	bitReversedXid := seedExperiment(ctx, t, client, xid, essmsgpb.ExperimentStatus_ACTIVE)
 
+	_, err := s.SetComponentIntent(ctx, "dep-target", &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent for dep-target failed: %v", err)
+	}
+	_, err = s.UpdateObservedGeneration(ctx, "dep-target", 1, &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ObservedGeneration: 1,
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration for dep-target failed: %v", err)
+	}
+
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0-historical",
 	}
-	_, err := s.SetComponentIntent(ctx, "hist-soft-del", spec, nil, 1)
+	_, err = s.SetComponentIntent(ctx, "hist-soft-del", spec, map[string]string{"xmc.dev/depends-on": "dep-target"}, 1)
 	if err != nil {
 		t.Fatalf("SetComponentIntent failed: %v", err)
 	}
@@ -784,6 +799,12 @@ func TestHistoricalSnapshotResolution_SoftDeletedComponent(t *testing.T) {
 	}
 	if histRec.Spec.GetVersion() != "v1.0.0-historical" {
 		t.Errorf("expected version v1.0.0-historical, got %q", histRec.Spec.GetVersion())
+	}
+	if len(histRec.Dependencies) != 1 || histRec.Dependencies[0] != "dep-target" {
+		t.Errorf("expected dependencies [dep-target], got %v", histRec.Dependencies)
+	}
+	if histRec.ObservedGeneration == nil || *histRec.ObservedGeneration != 1 {
+		t.Errorf("expected ObservedGeneration 1, got %v", histRec.ObservedGeneration)
 	}
 	if histCoords.GetServiceName() != "hist-svc" || histCoords.GetPort() != 8080 {
 		t.Errorf("expected coordinates hist-svc:8080, got %v", histCoords)
