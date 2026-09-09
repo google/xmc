@@ -21,10 +21,10 @@ customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
 ```
 This protects health check latency and prevents slow database read locks from impacting overall health check throughput.
 
-### 3. Graceful Degradation & Fail-Fast Initialization
+### 3. Graceful Degradation & Resilient Startup
 - **Explicit Flag Guard**: Custom component discovery is controlled by the `--enable_components` flag (environment variable: `enable_components`).
-- **Fail-Fast on Database Misconfiguration**: If `--enable_components` is explicitly set to `true`, failure to initialize the Cloud Spanner client or create the store provider triggers `logging.Fatal`, halting daemon startup to prevent a false sense of operational security.
-- **In-Memory Fallback for Tests & Local Dev**: When `EssSpannerDatabase` is empty (e.g., local development or hermetic unit tests), the provider falls back to a thread-safe `store.NewMemoryStore()`.
+- **Resilient Startup on Store Initialization**: If `--enable_components` is enabled but `EssSpannerDatabase` is not configured or the Cloud Spanner client cannot be initialized, the daemon logs a warning and disables custom component discovery (`logging.Warn`) without crashing the daemon. The health checker then reports custom components as disabled.
+- **Hermetic Dependency Injection**: Tests and mock environments explicitly provide their own store (e.g., `store.NewMemoryStore()`) via dependency injection into `NewStoreComponentsProvider(store)`. Production code does not contain hidden or implicit in-memory fallbacks, ensuring fail-fast observability.
 
 ---
 
@@ -36,6 +36,7 @@ The primary interface exposed by the package:
 ```go
 type CustomComponentsInfoProvider interface {
 	GetComponentsHealth(ctx context.Context) ([]ComponentHealth, error)
+	GetComponentsConfig(ctx context.Context) ([]ComponentConfig, error)
 }
 ```
 
@@ -45,6 +46,10 @@ type CustomComponentsInfoProvider interface {
   - `Type`: Component classification (`ComponentTypeCustom1PComponent`, `ComponentTypeCustom3PWrapper`, etc.).
   - `HealthState`: Derived health status (`HealthStateHealthy`, `HealthStateUnhealthy`, `HealthStateDisabled`, `HealthStateUnspecified`).
   - `StatusMessage`: Human-readable explanation of status or error condition.
+- **`ComponentConfig`**: Captures runtime configuration:
+  - `Name`: Component identifier.
+  - `Type`: Component classification.
+  - `ConfigParameters`: Deterministically sorted slice of `ConfigParameter` key-value pairs (`Key`, `Value`).
 
 ---
 
@@ -62,3 +67,21 @@ The provider evaluates component health deterministically using the component's 
 
 ### Platform Health Isolation Invariant
 In `cmd/health_service/server.go`, core platform services returning `HEALTH_STATE_UNSPECIFIED` (e.g., unconfigured Log Monitor or database client initialization failures) trigger an `UNHEALTHY` overall platform state. In contrast, custom components with `HEALTH_STATE_UNSPECIFIED` (representing disabled optional components) are explicitly ignored during overall platform health calculation.
+
+---
+
+## Configuration Parameter Extraction
+
+`GetComponentsConfig` extracts administrative configuration parameters for components, focusing cleanly on service configuration and access coordinates while avoiding reconciliation or internal lifecycle clutter:
+
+1. **Service Configuration Parameters (`spec.parameters`)**:
+   - Service-specific tuning parameters declared on `ComponentSpec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `bufferBytes`, `storageSize`) are surfaced directly as configuration keys.
+   - **Collision Disambiguation**: If a custom parameter key collides with reserved metadata keys (`version` or `endpoint`), the primary metadata attribute is preserved and the custom parameter is disambiguated with `param.<key>`.
+2. **Component Version**:
+   - `version`: Component release version tag (e.g. `v2.1.0`), extracted from `spec.version` when specified.
+3. **Resolved Runtime Endpoint**:
+   - `endpoint`: Formatted scheme, host, and port (e.g. `http://service.namespace:8080`), extracted from `status.coordinates`.
+   - **RFC 3986 Compliance**: IPv6 host literals without explicit ports are enclosed in square brackets (e.g. `http://[2001:db8::1]`).
+
+> [!NOTE]
+> Internal reconciliation bookkeeping (such as `generation`, `state`, `dependencies`, `lifecycle.*`, and `wrapper.*`) is deliberately omitted from `GetComponentsConfig` to keep the Admin Panel configuration view focused and clean. Operational status and component state are exposed via `GetComponentsHealth` instead.

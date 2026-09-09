@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -48,6 +49,14 @@ func TestStoreComponentsProvider_EmptyStore(t *testing.T) {
 	}
 	if len(healthList) != 0 {
 		t.Errorf("got %d health items, want 0", len(healthList))
+	}
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 0 {
+		t.Errorf("got %d config items, want 0", len(configList))
 	}
 }
 
@@ -202,6 +211,68 @@ func TestEnums_StringMethods(t *testing.T) {
 	}
 }
 
+func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
+	ctx := context.Background()
+	memStore := store.NewMemoryStore()
+	provider, err := NewStoreComponentsProvider(memStore)
+	if err != nil {
+		t.Fatalf("NewStoreComponentsProvider failed: %v", err)
+	}
+
+	_, _ = memStore.SetComponentIntent(ctx, "redpanda", &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v2.1.0",
+		Description: "Streaming engine",
+		WrapperRef: &componentspb.WrapperRef{
+			CrdKind:         "RedpandaCluster",
+			CrdGroup:        "redpanda.vectorized.io",
+			CrdVersion:      "v1alpha1",
+			TargetNamespace: "xmc-redpanda",
+			TargetName:      "rp-cluster",
+		},
+		Parameters: map[string]string{
+			"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+			"defaultTopic":    "xmc-metrics",
+		},
+	}, map[string]string{
+		"tier": "storage",
+	}, 2)
+
+	_, _ = memStore.UpdateObservedGeneration(ctx, "redpanda", 2, &componentspb.ComponentAccessStatus{
+		Ready: true,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ServiceName: "redpanda-service",
+			Port:        9092,
+			Scheme:      "http",
+			Host:        "redpanda.xmc-redpanda.svc.cluster.local",
+		},
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready")
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configList))
+	}
+
+	cfg := configList[0]
+	if cfg.Name != "redpanda" || cfg.Type != ComponentTypeCustom1PComponent {
+		t.Errorf("unexpected name/type: name=%s type=%v", cfg.Name, cfg.Type)
+	}
+
+	expectedParams := []ConfigParameter{
+		{Key: "brokerEndpoints", Value: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"},
+		{Key: "defaultTopic", Value: "xmc-metrics"},
+		{Key: "endpoint", Value: "http://redpanda.xmc-redpanda.svc.cluster.local:9092"},
+		{Key: "version", Value: "v2.1.0"},
+	}
+
+	if diff := cmp.Diff(expectedParams, cfg.ConfigParameters); diff != "" {
+		t.Errorf("ConfigParameters mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 	ctx := context.Background()
 	memStore := store.NewMemoryStore()
@@ -231,5 +302,121 @@ func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 	}
 	if healthList[0].HealthState != HealthStateUnhealthy || healthList[0].StatusMessage != "Component draining" {
 		t.Errorf("unexpected draining health: %+v", healthList[0])
+	}
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configList))
+	}
+
+	cfgMap := make(map[string]string)
+	for _, p := range configList[0].ConfigParameters {
+		cfgMap[p.Key] = p.Value
+	}
+
+	if cfgMap["version"] != "v1.5.0" {
+		t.Errorf("got version %q, want v1.5.0", cfgMap["version"])
+	}
+	if len(configList[0].ConfigParameters) != 1 {
+		t.Errorf("expected 1 config param, got %d", len(configList[0].ConfigParameters))
+	}
+}
+
+func TestFormatCoordinatesEndpoint_IPv6(t *testing.T) {
+	tests := []struct {
+		name     string
+		coord    *componentspb.ResolvedComponentCoordinates
+		expected string
+	}{
+		{
+			name: "IPv6 without port gets wrapped in brackets",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "2001:db8::1",
+			},
+			expected: "http://[2001:db8::1]",
+		},
+		{
+			name: "IPv6 with port uses JoinHostPort",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "https",
+				Host:   "2001:db8::1",
+				Port:   8443,
+			},
+			expected: "https://[2001:db8::1]:8443",
+		},
+		{
+			name: "IPv6 already wrapped without port is not double bracketed",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "[2001:db8::1]",
+			},
+			expected: "http://[2001:db8::1]",
+		},
+		{
+			name: "IPv4 without port remains unbracketed",
+			coord: &componentspb.ResolvedComponentCoordinates{
+				Scheme: "http",
+				Host:   "192.168.1.1",
+			},
+			expected: "http://192.168.1.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatCoordinatesEndpoint(tt.coord)
+			if got != tt.expected {
+				t.Errorf("formatCoordinatesEndpoint() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
+	record := &store.ComponentRecord{
+		Name:  "collision-comp",
+		State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Spec: &componentspb.ComponentSpec{
+			Version: "v1.0.0",
+			Parameters: map[string]string{
+				"version":  "v2-override",
+				"endpoint": "custom-endpoint",
+				"custom":   "value",
+			},
+		},
+		Status: &componentspb.ComponentAccessStatus{
+			Ready: true,
+			Coordinates: &componentspb.ResolvedComponentCoordinates{
+				ServiceName: "svc",
+				Port:        8080,
+				Scheme:      "http",
+				Host:        "svc.xmc.svc.cluster.local",
+			},
+		},
+	}
+
+	cfg := extractComponentConfig(record)
+	cfgMap := make(map[string]string)
+	for _, p := range cfg.ConfigParameters {
+		cfgMap[p.Key] = p.Value
+	}
+	if cfgMap["version"] != "v1.0.0" {
+		t.Errorf("expected version to remain v1.0.0, got %s", cfgMap["version"])
+	}
+	if cfgMap["param.version"] != "v2-override" {
+		t.Errorf("expected param.version to be v2-override, got %s", cfgMap["param.version"])
+	}
+	if cfgMap["endpoint"] != "http://svc.xmc.svc.cluster.local:8080" {
+		t.Errorf("expected endpoint to remain system endpoint, got %s", cfgMap["endpoint"])
+	}
+	if cfgMap["param.endpoint"] != "custom-endpoint" {
+		t.Errorf("expected param.endpoint to be custom-endpoint, got %s", cfgMap["param.endpoint"])
+	}
+	if cfgMap["custom"] != "value" {
+		t.Errorf("expected custom to be value, got %s", cfgMap["custom"])
 	}
 }
