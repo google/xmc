@@ -688,6 +688,18 @@ func ConstructMLRunID(project, location, clusterName string, xid, wid, eid int64
 	return hypercomputeclient.SanitizeIdentifier(rawID)
 }
 
+// formatCreationTime returns the timestamp formatted for MLRun workload creation times,
+// or an empty string if the timestamp is uninitialized.
+//
+// Extracted into a standalone helper so that creation time formatting and zero-value
+// handling are independently testable and isolated from the MLRun creation flow.
+func formatCreationTime(t metav1.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(constants.MLRunCreationTimeFormat)
+}
+
 // ensureMLRunCreated creates (or, on conflict, upserts) the single MLRun tracking
 // record for a ManagedXprof execution and returns its URL.
 //
@@ -704,6 +716,8 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)
 	}
 
+	createTime := formatCreationTime(jobSet.CreationTimestamp)
+
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
 	labels := buildMLRunLabels(xid, wid)
@@ -715,10 +729,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		Artifacts:    artifacts,
 		Orchestrator: "GKE",
 		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
-			Kind:      "JobSet",
-			Cluster:   clusterPath,
-			Namespace: jobSet.Namespace,
-			ID:        jobSet.Name,
+			Kind:       "JobSet",
+			Cluster:    clusterPath,
+			Namespace:  jobSet.Namespace,
+			ID:         jobSet.Name,
+			CreateTime: createTime,
 		},
 	}
 
