@@ -76,7 +76,7 @@ LIMIT 1`
 FROM ExperimentComponentSnapshots s
 JOIN Components c ON s.ComponentId = c.ComponentId
 WHERE c.Name = @name AND s.LockedGeneration = @gen
-ORDER BY c.ComponentId DESC
+ORDER BY c.CreateTime DESC, c.ComponentId DESC
 LIMIT 1`
 )
 
