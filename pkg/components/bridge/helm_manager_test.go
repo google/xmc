@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -487,11 +489,15 @@ type mockHelmActionRunner struct {
 	uninstallErr    error
 	lastUninstall   string
 	lastUninstallNS string
+	panicOnUpgrade  bool
 }
 
 func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.panicOnUpgrade {
+		panic("simulated runner panic")
+	}
 	m.upgradeCalls++
 	m.lastRelease = releaseName
 	m.lastNS = namespace
@@ -520,8 +526,10 @@ func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
 	runner := &mockHelmActionRunner{}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
 		WithActionRunner(runner),
+		WithSyncExecution(true),
 		WithChartPath("deploy/helm"),
 	)
+	defer mgr.Close()
 
 	ref := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
 	opts := HelmComponentOptions{
@@ -583,6 +591,7 @@ func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
 		WithKubeconfig("/tmp/nonexistent-kubeconfig"),
 		WithChartPath("deploy/helm"),
 	)
+	defer mgr.Close()
 	if mgr.chartPath != "deploy/helm" {
 		t.Errorf("expected chartPath deploy/helm, got %q", mgr.chartPath)
 	}
@@ -616,6 +625,7 @@ func TestK8sHelmManager_OptionsAndGuards(t *testing.T) {
 		WithRESTClientGetter(nil),
 		WithChartPath("deploy/helm/getter"),
 	)
+	defer mgrGetter.Close()
 	if mgrGetter.runner == nil {
 		t.Error("expected runner to be initialized by WithRESTClientGetter")
 	}
@@ -632,7 +642,9 @@ func TestK8sHelmManager_RetryFailedUpgrade_Ensure(t *testing.T) {
 	}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
 		WithActionRunner(runner),
+		WithSyncExecution(true),
 	)
+	defer mgr.Close()
 
 	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
 	opts := HelmComponentOptions{
@@ -663,7 +675,9 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 	runner := &mockHelmActionRunner{}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
 		WithActionRunner(runner),
+		WithSyncExecution(true),
 	)
+	defer mgr.Close()
 
 	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
 	opts := HelmComponentOptions{
@@ -695,7 +709,9 @@ func TestK8sHelmManager_ConfigMapDeclarativeSourceOfTruth(t *testing.T) {
 	runner := &mockHelmActionRunner{}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
 		WithActionRunner(runner),
+		WithSyncExecution(true),
 	)
+	defer mgr.Close()
 
 	refA := ComponentRef{Namespace: "xmc", Name: "rod-data-provider"}
 	optsA := HelmComponentOptions{Ref: refA, Enabled: true}
@@ -741,7 +757,11 @@ func TestK8sHelmManager_ActuationTracking(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
 
 	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
 	opts := HelmComponentOptions{Ref: ref, Enabled: true}
@@ -771,10 +791,388 @@ func TestK8sHelmManager_ActuationTracking(t *testing.T) {
 	}
 }
 
+func TestK8sHelmManager_AsyncUpgrade(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+	)
+	defer mgr.Close()
+
+	ref := ComponentRef{Namespace: "xmc", Name: "health-service"}
+	opts := HelmComponentOptions{
+		Ref:     ref,
+		Enabled: true,
+	}
+
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent async failed: %v", err)
+	}
+
+	// Wait up to 1 second for background worker execution
+	var calls int
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		runner.mu.Lock()
+		calls = runner.upgradeCalls
+		runner.mu.Unlock()
+		if calls > 0 {
+			break
+		}
+	}
+	if calls == 0 {
+		t.Error("expected background worker to execute upgrade")
+	}
+
+	if err := mgr.GetUpgradeError(ref); err != nil {
+		t.Errorf("expected nil upgrade error on success, got %v", err)
+	}
+}
+
+func TestK8sHelmManager_AsyncUpgrade_Failure(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{
+		upgradeErr: errors.New("async upgrade network error"),
+	}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+	)
+	defer mgr.Close()
+
+	ref := ComponentRef{Namespace: "xmc", Name: "health-service"}
+	opts := HelmComponentOptions{
+		Ref:     ref,
+		Enabled: true,
+	}
+
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("unexpected synchronous error on async Ensure1PComponent: %v", err)
+	}
+
+	// Wait up to 1 second for background worker failure to record
+	var recordedErr error
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		recordedErr = mgr.GetUpgradeError(ref)
+		if recordedErr != nil {
+			break
+		}
+	}
+	if recordedErr == nil || !errors.Is(recordedErr, runner.upgradeErr) {
+		t.Errorf("expected recorded async error %v, got %v", runner.upgradeErr, recordedErr)
+	}
+}
+
 func TestK8sHelmManager_Close(t *testing.T) {
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud")
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+	)
+
+	// Idempotent Close
 	if err := mgr.Close(); err != nil {
-		t.Fatalf("expected nil error on Close, got: %v", err)
+		t.Fatalf("first Close failed: %v", err)
+	}
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("second Close failed: %v", err)
+	}
+
+	// Triggering upgrade after close should return error
+	ref := ComponentRef{Namespace: "xmc", Name: "test-service"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+	err := mgr.Ensure1PComponent(context.Background(), ref, opts)
+	if err == nil || !strings.Contains(err.Error(), "helm manager is stopped") {
+		t.Errorf("expected stopped manager error, got %v", err)
+	}
+}
+
+func TestK8sHelmManager_CloseDrainsPendingUpgrades(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+		WithDebounceDuration(100*time.Millisecond),
+	)
+
+	ref := ComponentRef{Namespace: "xmc", Name: "drained-service"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	// Immediate Close should drain pending upgrades without context.Canceled error
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	if err := mgr.GetUpgradeError(ref); err != nil {
+		t.Errorf("expected no upgrade error after drainage, got %v", err)
+	}
+	if runner.upgradeCalls != 1 {
+		t.Errorf("expected 1 upgrade call after drainage, got %d", runner.upgradeCalls)
+	}
+}
+
+func TestK8sHelmManager_DebouncedBatchUpgrade(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		client := fake.NewClientset()
+		runner := &mockHelmActionRunner{}
+		mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+			WithActionRunner(runner),
+			WithSyncExecution(false),
+			WithDebounceDuration(30*time.Millisecond),
+		)
+		defer mgr.Close()
+
+		refA := ComponentRef{Namespace: "xmc", Name: "component-a"}
+		optsA1 := HelmComponentOptions{Ref: refA, Enabled: true, ImageTag: "v1"}
+		optsA2 := HelmComponentOptions{Ref: refA, Enabled: true, ImageTag: "v2"}
+
+		// Trigger rapid updates for component A within 30ms window
+		if err := mgr.Ensure1PComponent(ctx, refA, optsA1); err != nil {
+			t.Fatalf("Ensure1PComponent A1 failed: %v", err)
+		}
+		if err := mgr.Ensure1PComponent(ctx, refA, optsA2); err != nil {
+			t.Fatalf("Ensure1PComponent A2 failed: %v", err)
+		}
+
+		// Advance virtual time past the debounce duration
+		time.Sleep(100 * time.Millisecond)
+
+		runner.mu.Lock()
+		calls := runner.upgradeCalls
+		runner.mu.Unlock()
+
+		if calls != 1 {
+			t.Errorf("expected 1 debounced upgrade call for component-a, got %d", calls)
+		}
+		if err := mgr.GetUpgradeError(refA); err != nil {
+			t.Errorf("expected nil error for refA, got %v", err)
+		}
+	})
+}
+
+type panicHelmActionRunner struct {
+	mockHelmActionRunner
+}
+
+func (p *panicHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
+	panic("simulated upgrade panic")
+}
+
+func TestK8sHelmManager_ExecuteBatch_UpgradePanicUnlock(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &panicHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic from panicHelmActionRunner")
+		}
+		// Verify m.upgradeMu is unlocked by successfully acquiring it with TryLock
+		if !mgr.upgradeMu.TryLock() {
+			t.Error("expected upgradeMu to be unlocked after panic")
+		} else {
+			mgr.upgradeMu.Unlock()
+		}
+	}()
+
+	mgr.executeComponentUpgrade(upgradeRequest{
+		ref:       ComponentRef{Namespace: "xmc", Name: "panic-comp"},
+		namespace: "xmc",
+		values:    map[string]any{"key": "val"},
+	})
+}
+
+func TestK8sHelmManager_Close_SynchronizesWithTriggerUpgrade(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+		WithDebounceDuration(10*time.Millisecond),
+	)
+
+	var wg sync.WaitGroup
+	ctx := context.Background()
+
+	// Launch concurrent triggerUpgrade calls
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ref := ComponentRef{Namespace: "xmc", Name: "comp"}
+			_ = mgr.triggerUpgrade(ctx, ref, map[string]any{"val": "test"})
+		}()
+	}
+
+	// Close concurrently
+	_ = mgr.Close()
+	wg.Wait()
+
+	// Any subsequent triggerUpgrade must return stopped error
+	ref := ComponentRef{Namespace: "xmc", Name: "comp-after-close"}
+	err := mgr.triggerUpgrade(ctx, ref, map[string]any{"val": 999})
+	if err == nil {
+		t.Error("expected error from triggerUpgrade after Close, got nil")
+	}
+}
+
+func TestK8sHelmManager_TriggerUpgrade_ChannelSaturation_NoDeadlock(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+		WithDebounceDuration(5*time.Millisecond),
+	)
+	defer mgr.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Launch 150 concurrent triggerUpgrade calls exceeding channel buffer size (100)
+	var wg sync.WaitGroup
+	for i := 0; i < 150; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ref := ComponentRef{Namespace: "xmc", Name: "comp"}
+			_ = mgr.triggerUpgrade(ctx, ref, map[string]any{"val": "saturated"})
+		}()
+	}
+
+	doneCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
+		// Success, no deadlock occurred
+	case <-ctx.Done():
+		t.Fatal("deadlock detected: triggerUpgrade calls did not complete within timeout")
+	}
+}
+
+func TestK8sHelmManager_DrainRemainingUpgrades_ClosedChannel(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
+
+	// Explicitly close upgradeChan
+	close(mgr.upgradeChan)
+
+	// drainRemainingUpgrades must safely terminate and not loop indefinitely
+	doneCh := make(chan struct{})
+	go func() {
+		mgr.drainRemainingUpgrades()
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
+		// Success, terminated cleanly on closed channel
+	case <-time.After(1 * time.Second):
+		t.Fatal("drainRemainingUpgrades hung indefinitely on closed channel")
+	}
+}
+
+func TestK8sHelmManager_SyncExecution_StoppedManagerReturnsError(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	ref := ComponentRef{Namespace: "xmc", Name: "sync-service"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+	err := mgr.Ensure1PComponent(context.Background(), ref, opts)
+	if err == nil || !strings.Contains(err.Error(), "helm manager is stopped") {
+		t.Errorf("expected stopped manager error, got %v", err)
+	}
+}
+
+func TestK8sHelmManager_AsyncUpgrade_DoesNotClearErrorOnEnqueue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		client := fake.NewClientset()
+		runner := &mockHelmActionRunner{}
+		mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+			WithActionRunner(runner),
+			WithSyncExecution(false),
+			WithDebounceDuration(30*time.Millisecond),
+		)
+		defer mgr.Close()
+
+		ref := ComponentRef{Namespace: "xmc", Name: "test-comp"}
+		expectedErr := errors.New("previous upgrade failed")
+		mgr.setUpgradeErr(ref, expectedErr)
+
+		opts := HelmComponentOptions{Ref: ref, Enabled: true}
+		if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+			t.Fatalf("Ensure1PComponent failed: %v", err)
+		}
+
+		// Verify error is NOT cleared on enqueue
+		if gotErr := mgr.GetUpgradeError(ref); gotErr == nil || gotErr.Error() != expectedErr.Error() {
+			t.Fatalf("expected error to remain %v immediately after enqueue, got %v", expectedErr, gotErr)
+		}
+
+		// Advance virtual time so worker processes batch and succeeds
+		time.Sleep(100 * time.Millisecond)
+
+		// Error should now be cleared by the successful upgrade
+		if gotErr := mgr.GetUpgradeError(ref); gotErr != nil {
+			t.Errorf("expected error cleared after worker execution, got %v", gotErr)
+		}
+	})
+}
+
+func TestK8sHelmManager_WorkerRecoversPanic(t *testing.T) {
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{
+		panicOnUpgrade: true,
+	}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(false),
+		WithDebounceDuration(10*time.Millisecond),
+	)
+
+	ref := ComponentRef{Namespace: "xmc", Name: "panicking-service"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+	if err := mgr.Ensure1PComponent(context.Background(), ref, opts); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	// Close waits for worker to exit via wg.Wait(). If panic wasn't recovered, Close or test would crash.
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
 	}
 }
 
@@ -815,7 +1213,7 @@ func TestK8sHelmManager_TriggerUpgrade_ContextCancellation_DuringLockAcquisition
 	ctx := context.Background()
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
-	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner))
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
 
 	if err := mgr.acquireUpgradeLock(ctx); err != nil {
 		t.Fatalf("failed to acquire initial upgrade lock: %v", err)

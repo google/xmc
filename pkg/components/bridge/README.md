@@ -79,6 +79,9 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `SDKHelmActionRunner`: Uses `action.NewUpgrade` with `Upgrade.Install = true` and dynamic Kubernetes REST client configurations to apply values directly to the component release.
 - **Context-Aware Upgrade Lock**:
   - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.
+- **Asynchronous Upgrade Worker Queue & Per-Component Coalescing**:
+  - Serializes and debounces rapid successive component modifications through a buffered channel (`upgradeChan`) and worker goroutine (`syncUpgradeWorker`) within a configurable window (default 25ms).
+  - Coalesces requests per component (`req.ref.Name`), retaining the latest requested spec values and executing independent component release upgrades (`executeComponentUpgrade`), eliminating cross-tenant lock contention and API stampedes.
 
 ---
 
