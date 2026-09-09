@@ -429,7 +429,7 @@ class TestBuildAndPushImages(unittest.TestCase):
     @patch("tools.common.tool_utils.run_command")
     def test_build_and_push_images_default(self, mock_run):
         build_and_push_images(self.valid_config)
-        self.assertEqual(mock_run.call_count, 9)
+        self.assertEqual(mock_run.call_count, 10)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env={
@@ -438,12 +438,16 @@ class TestBuildAndPushImages(unittest.TestCase):
                 "BUILD_TAG": "latest",
             },
         )
+        mock_run.assert_any_call(
+            ["bazel", "run", "//cmd/xmc_bridge:xmc_bridge_image_push"],
+            env=ANY,
+        )
 
     @patch("tools.common.tool_utils.run_command")
     def test_build_and_push_images_rod_enabled(self, mock_run):
         config = replace(self.valid_config, rod_deployment_enabled=True)
         build_and_push_images(config)
-        self.assertEqual(mock_run.call_count, 10)
+        self.assertEqual(mock_run.call_count, 11)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,

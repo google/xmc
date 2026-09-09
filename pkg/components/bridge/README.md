@@ -130,16 +130,45 @@ Parses discovered endpoints and connection secrets from third-party operator CRD
 
 ---
 
+## Active Network Health Probing (`health_prober.go`)
+
+To supplement Kubernetes CR condition checks with real data plane health verification, the bridge performs active network health probes:
+
+- **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
+- **Protocol Probing (`Probe`)**: Automatically normalizes `tcp://` prefixes and bare `host:port` target addresses to test TCP network connectivity.
+- **`HealthProber` Interface & `FakeHealthProber`**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
+
+---
+
+## 3P Custom Wrapper Reconciliation & Access Publishing (`reconciler.go`)
+
+The reconciler unifies third-party CRD inspection and active health probing in `reconcile3PWrapper`:
+
+- **End-to-End Health Verification**: Combines CR status conditions from `StatusDetector` with runtime probe results from `HealthProber`.
+- **Condition Transitions**:
+  - `Ready = True`: Emitted only when the underlying CR status is ready and active health probes succeed.
+  - `Degraded = True`: Emitted when active probes fail or CR condition reports an error, with root-cause message propagation.
+- **Access Coordinate Publishing**: Parses endpoint locations and publishes standard connection environment variables to CMS `AccessStatus.EnvVars`:
+  - `ENDPOINT`: Full URL or base address.
+  - `HOST`: Target host name or ClusterIP.
+  - `PORT`: Service port.
+  - `SCHEME`: Access protocol scheme (`http`, `https`, `tcp`).
+  - `SECRET_NAME`: Credentials secret name reference.
+- **`BridgeProber`**: Aggregates `StatusDetector` and `HealthProber` into a unified prober implementation for controller initialization.
+
+---
+
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
-- **3P Dynamic Status Detection**: Inspects third-party CRDs via client-go dynamic client and RESTMapper without proprietary schema coupling.
 - **Dynamic 3P CRD Status Detection & Coordinate Resolution**: Query third-party operator CRDs dynamically using normalized JSONPath queries and publish structured connection coordinates into CMS.
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
+- **Active Network Health Probing**: Verifies runtime data-plane health across raw TCP sockets.
+- **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
 - **Resilient Failure Handling**: Non-destructive failure isolation ensuring transient CMS network errors do not tear down live workloads.
 
 
