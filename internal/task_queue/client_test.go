@@ -16,6 +16,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -352,6 +353,23 @@ func TestOidcTokenProvider(t *testing.T) {
 	}
 	if cachedToken != "mock-oidc-id-token" {
 		t.Errorf("OidcTokenProvider.GenerateToken() cached token = %q, want 'mock-oidc-id-token'", cachedToken)
+	}
+}
+
+func TestOidcTokenProvider_PreflightContextCancellation(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	p := NewOidcTokenProvider(OidcTokenProviderConfig{
+		TokenURL: "http://example.com/token",
+	})
+
+	_, err := p.GenerateToken(canceledCtx, "admin@xmc.local", "aud")
+	if err == nil {
+		t.Fatal("GenerateToken() with canceled context succeeded unexpectedly, want error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("GenerateToken() error = %v, want context.Canceled", err)
 	}
 }
 

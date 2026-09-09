@@ -51,8 +51,10 @@ const (
 	DefaultSignatureTTLSeconds = 3600
 )
 
-// TokenProvider defines the interface for generating authentication tokens (e.g. OIDC tokens).
+// TokenProvider defines the interface for generating authentication tokens (e.g. OIDC tokens)
+// attached to task queue dispatches.
 type TokenProvider interface {
+	// GenerateToken generates or retrieves an authentication token for the given service account and audience.
 	GenerateToken(ctx context.Context, invokerSA, audience string) (string, error)
 }
 
@@ -129,6 +131,10 @@ func NewOidcTokenProvider(cfg OidcTokenProviderConfig) *OidcTokenProvider {
 
 // GenerateToken fetches or returns a cached signed OIDC token.
 func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	p.mu.Lock()
 	if p.token != "" && time.Now().Add(1*time.Minute).Before(p.expiry) {
 		token := p.token
@@ -137,6 +143,20 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 	}
 	p.mu.Unlock()
 
+	token, ttl, err := p.fetchToken(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	p.mu.Lock()
+	p.token = token
+	p.expiry = time.Now().Add(ttl)
+	p.mu.Unlock()
+
+	return token, nil
+}
+
+func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Duration, error) {
 	data := url.Values{
 		"client_id":     {p.cfg.ClientID},
 		"client_secret": {p.cfg.ClientSecret},
@@ -150,9 +170,16 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 		data.Set("grant_type", "client_credentials")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
+	timeout := p.httpClient.Timeout
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
+		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if p.cfg.ClientID != "" && p.cfg.ClientSecret != "" {
@@ -161,17 +188,17 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute token request to %s: %w", p.cfg.TokenURL, err)
+		return "", 0, fmt.Errorf("failed to execute token request to %s: %w", p.cfg.TokenURL, err)
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read token response: %w", err)
+		return "", 0, fmt.Errorf("failed to read token response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return "", 0, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var tokenResp struct {
@@ -180,7 +207,7 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := json.Unmarshal(bodyBytes, &tokenResp); err != nil {
-		return "", fmt.Errorf("failed to parse token response: %w", err)
+		return "", 0, fmt.Errorf("failed to parse token response: %w", err)
 	}
 
 	token := tokenResp.IDToken
@@ -188,7 +215,7 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 		token = tokenResp.AccessToken
 	}
 	if token == "" {
-		return "", fmt.Errorf("token response did not contain id_token or access_token")
+		return "", 0, fmt.Errorf("token response did not contain id_token or access_token")
 	}
 
 	ttl := time.Duration(tokenResp.ExpiresIn) * time.Second
@@ -196,12 +223,7 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 		ttl = 1 * time.Hour
 	}
 
-	p.mu.Lock()
-	p.token = token
-	p.expiry = time.Now().Add(ttl)
-	p.mu.Unlock()
-
-	return token, nil
+	return token, ttl, nil
 }
 
 // Option configures a Client instance.

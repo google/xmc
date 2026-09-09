@@ -51,8 +51,11 @@ var (
 	}, []string{})
 )
 
-// TokenValidator defines the interface for validating authentication tokens.
+// TokenValidator defines the interface for validating authentication tokens (e.g. Google ID tokens or JWKS JWTs)
+// against an expected audience and verifying identity claims.
 type TokenValidator interface {
+	// Validate verifies the provided token string against the target audience.
+	// Returns an error if verification fails or required claims are missing.
 	Validate(ctx context.Context, token string, audience string) error
 }
 
@@ -231,7 +234,7 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 	}
 
 	if err := h.validateAuthTokenString(ctx, msg.OidcToken); err != nil {
-		return failTask(ctx, "failed to validate OIDC token", err, false)
+		return failTask(ctx, "failed to validate OIDC token", err, isRetryableError(err))
 	}
 
 	var payload actuatortaskpb.ActuatorPayload

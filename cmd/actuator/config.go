@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"go/flag"
@@ -25,7 +26,6 @@ import (
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/pkg/auth/jwks"
 )
 
 // RedisConfig holds the configuration for the Redis queue.
@@ -136,16 +136,15 @@ func Load() Config {
 	}
 
 	resolvedJWKSURL := jwksURL
-	if resolvedJWKSURL == "" {
-		resolvedJWKSURL = jwks.GoogleOAuth2CertsURL
-	}
-
 	resolvedIssuer := oidcIssuerURL
 	if resolvedIssuer == "" {
 		resolvedIssuer = os.Getenv("IAP_EXPECTED_ISSUER")
 	}
 	if resolvedIssuer == "" {
 		resolvedIssuer = os.Getenv("OIDC_ISSUER_URL")
+	}
+	if resolvedJWKSURL == "" && resolvedIssuer != "" {
+		resolvedJWKSURL = fmt.Sprintf("%s/keys", strings.TrimSuffix(resolvedIssuer, "/"))
 	}
 
 	return Config{
