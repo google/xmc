@@ -17,6 +17,15 @@ name: 'XMC Headless E2E Tests'
 on:
   merge_group:
   workflow_call:
+    secrets:
+      GCP_E2E_PROJECT_ID:
+        required: false
+      GCP_E2E_WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      GCP_E2E_SERVICE_ACCOUNT:
+        required: false
+      GCP_E2E_SPANNER_INSTANCE:
+        required: false
   workflow_dispatch:
 
 concurrency:
