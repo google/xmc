@@ -20,6 +20,7 @@ go_library(
     name = "bridge",
     srcs = [
         "coordinates.go",
+        "fake_health_prober.go",
         "fake_helm_manager.go",
         "fake_status_detector.go",
         "health_prober.go",

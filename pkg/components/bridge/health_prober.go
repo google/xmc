@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -149,54 +148,4 @@ func (p *NetworkHealthProber) ProbeTCP(ctx context.Context, address string, time
 	}
 	_ = conn.Close()
 	return &HealthProbeResult{Healthy: true, Latency: latency, Message: "TCP dial succeeded"}, nil
-}
-
-// FakeHealthProber is an in-memory test double for HealthProber.
-type FakeHealthProber struct {
-	mu       sync.Mutex
-	Results  map[string]*HealthProbeResult
-	ProbeErr error
-}
-
-var _ HealthProber = (*FakeHealthProber)(nil)
-
-// NewFakeHealthProber creates a new FakeHealthProber.
-func NewFakeHealthProber() *FakeHealthProber {
-	return &FakeHealthProber{
-		Results: make(map[string]*HealthProbeResult),
-	}
-}
-
-// SetResult records the probe result for a given target.
-func (f *FakeHealthProber) SetResult(target string, res *HealthProbeResult) {
-	if f == nil {
-		return
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.Results == nil {
-		f.Results = make(map[string]*HealthProbeResult)
-	}
-	f.Results[target] = res
-}
-
-// Probe returns the preconfigured probe result for target.
-func (f *FakeHealthProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
-	if f == nil {
-		return nil, errors.New("fake health prober is nil")
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.ProbeErr != nil {
-		return nil, f.ProbeErr
-	}
-	if res, ok := f.Results[target]; ok {
-		return res, nil
-	}
-	return &HealthProbeResult{Healthy: true, Message: "Probe succeeded"}, nil
-}
-
-// ProbeTCP delegates to Probe.
-func (f *FakeHealthProber) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
-	return f.Probe(ctx, address, timeout)
 }

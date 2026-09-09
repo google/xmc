@@ -17,6 +17,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -546,8 +547,8 @@ func extractStr(m map[string]any, k string) string {
 	return ""
 }
 
-// extractInt extracts an int64 integer key from map m. Handles standard Go integers (int64, int),
-// float64 (produced by encoding/json unmarshaling in unstructured maps), and numeric strings or Stringers.
+// extractInt extracts an int64 integer key from map m. Handles standard Go numeric types
+// (int64, int, int32, float64), json.Number, and string representations.
 func extractInt(m map[string]any, k string) int64 {
 	v, ok := m[k]
 	if !ok {
@@ -558,19 +559,17 @@ func extractInt(m map[string]any, k string) int64 {
 		return val
 	case int:
 		return int64(val)
+	case int32:
+		return int64(val)
 	case float64:
 		return int64(val)
+	case json.Number:
+		if i, err := val.Int64(); err == nil {
+			return i
+		}
 	case string:
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
 			return i
-		}
-	}
-	if s, ok := v.(interface{ String() string }); ok {
-		if i, err := strconv.ParseInt(s.String(), 10, 64); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(s.String(), 64); err == nil {
-			return int64(f)
 		}
 	}
 	return 0
