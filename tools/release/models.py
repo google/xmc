@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Data models for git commits and release metadata extraction."""
+"""Data models for release metadata, commits, and feature flag transitions."""
 
 from dataclasses import dataclass, field
 from typing import TypedDict
@@ -37,13 +37,39 @@ class CommitInfo:
     gated_flag: str | None = None
 
 
-class ReleaseMetadataSummary(TypedDict):
+@dataclass
+class FlagTransition:
+    """Represents a configuration flag value transition between two releases."""
+
+    flag_name: str
+    source_file: str
+    base_value: bool | None
+    target_value: bool | None
+    is_flip: bool = False
+    is_promotion_to_default: bool = False
+    description: str = ""
+
+
+@dataclass
+class FeatureFlagInfo:
+    """Represents discovered metadata for a feature flag."""
+
+    flag_name: str
+    display_name: str
+    tokens: set[str]
+    ctk_value: bool | None = None
+    helm_value: bool | None = None
+    is_active: bool = False
+
+
+class ReleaseMetadataSummary(TypedDict, total=False):
     """Summary of release extraction metadata."""
 
     base_ref: str
     target_ref: str
     commit_count: int
     pr_count: int
+    approved_flags: list[str]
 
 
 class CommitDict(TypedDict, total=False):
@@ -64,8 +90,32 @@ class CommitDict(TypedDict, total=False):
     gated_flag: str | None
 
 
-class ReleaseMetadataResult(TypedDict):
+class FlagTransitionDict(TypedDict):
+    """Serialized flag transition dictionary."""
+
+    flag_name: str
+    source_file: str
+    base_value: bool | None
+    target_value: bool | None
+    is_flip: bool
+    is_promotion_to_default: bool
+    description: str
+
+
+class GatedSubsystemStatus(TypedDict):
+    """Serialized gated subsystem status dictionary."""
+
+    subsystem: str
+    flag_name: str
+    status: str
+    ctk_value: bool | None
+    helm_value: bool | None
+
+
+class ReleaseMetadataResult(TypedDict, total=False):
     """Structured release metadata output."""
 
     metadata: ReleaseMetadataSummary
+    flag_transitions: list[FlagTransitionDict]
+    gated_subsystems_status: list[GatedSubsystemStatus]
     raw_commits: list[CommitDict]
