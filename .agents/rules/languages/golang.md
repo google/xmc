@@ -26,8 +26,8 @@ This document defines coding standards and conventions for Go development across
 - **Subtest Execution**: Execute subtests using `t.Run(tt.name, func(t *testing.T) { ... })` to ensure clear failure reporting and isolated execution.
 - **Declarative `want` Assertions over Chained Field Checks**: Avoid chained imperative field inequality checks (e.g., `if got.FieldA != "a" || got.FieldB != "b" { t.Errorf(...) }`) unless you have a very good reason (such as selectively checking non-deterministic timestamps, randomly generated IDs, or unexported fields). In all standard cases, declare an explicit `want` expectation struct or Protobuf object and compare using:
   - `cmp.Diff(tt.want, got)` for standard Go structs.
-  - `proto.Equal(got, want)` or `cmp.Diff(want, got, protocmp.Transform())` for Protobuf messages.
-  - `reflect.DeepEqual(got, want)` for primitive maps/slices where `cmp` is not imported.
+  - `proto.Equal(got, tt.want)` or `cmp.Diff(tt.want, got, protocmp.Transform())` for Protobuf messages.
+  - `cmp.Diff(tt.want, got)` for primitive maps/slices (prefer importing `cmp` over using `reflect.DeepEqual` to ensure actionable diffs and avoid nil-slice comparison pitfalls).
   This ensures test failures produce actionable, line-by-line diffs (`-want +got`) and verifies complete structural contracts rather than fragile subsets of fields.
 - **Baseline Fixtures & Targeted Mutations (`proto.Modify`)**: Follow baseline fixture policies in [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling). When constructing Protobuf test objects in Go unit tests, check for existing baseline fixtures (e.g., `baseReq`, `baseWorkUnit`) and modify them using `proto.Modify` rather than building raw, verbose struct literals. This keeps test suites DRY, readable, and consistent.
 - **Centralize Common Test Utilities**: Shared test and proto utilities must be centralized in global packages (e.g., `proto.Modify` in `//internal/compat/proto`) per [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling).
