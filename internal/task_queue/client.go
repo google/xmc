@@ -200,14 +200,7 @@ func (p *OidcTokenProvider) buildTokenRequest(ctx context.Context) (*http.Reques
 		data.Set("client_id", p.cfg.ClientID)
 	}
 
-	timeout := p.httpClient.Timeout
-	if timeout <= 0 {
-		timeout = 15 * time.Second
-	}
-	reqCtx, cancel := context.WithTimeout(ctx, timeout)
-	_ = cancel
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token request: %w", err)
 	}
@@ -250,7 +243,14 @@ func (p *OidcTokenProvider) parseTokenResponse(bodyReader io.Reader) (string, ti
 }
 
 func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Duration, error) {
-	req, err := p.buildTokenRequest(ctx)
+	timeout := p.httpClient.Timeout
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+
+	req, err := p.buildTokenRequest(fetchCtx)
 	if err != nil {
 		return "", 0, err
 	}

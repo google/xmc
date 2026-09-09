@@ -419,6 +419,61 @@ func TestOidcTokenProvider_SingleflightAndConcurrentRace(t *testing.T) {
 	}
 }
 
+func TestOidcTokenProvider_SingleflightContextCancellation(t *testing.T) {
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		time.Sleep(50 * time.Millisecond) // Simulate slow network request
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id_token":   "singleflight-decoupled-token",
+			"expires_in": 3600,
+		})
+	}))
+	defer server.Close()
+
+	p := NewOidcTokenProvider(OidcTokenProviderConfig{
+		TokenURL:   server.URL,
+		HTTPClient: server.Client(),
+	})
+
+	// Caller 1 starts fetch with a context that cancels after 10ms.
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel1()
+
+	// Caller 2 starts concurrently with a generous context.
+	ctx2 := context.Background()
+
+	var token2 string
+	var err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		_, _ = p.GenerateToken(ctx1, "sa", "aud")
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(5 * time.Millisecond) // Ensure caller 1 triggers singleflight first
+		token2, err2 = p.GenerateToken(ctx2, "sa", "aud")
+	}()
+
+	wg.Wait()
+
+	// Caller 2 must succeed despite Caller 1's context cancellation.
+	if err2 != nil {
+		t.Fatalf("expected caller 2 to succeed despite caller 1 cancellation, got %v", err2)
+	}
+	if token2 != "singleflight-decoupled-token" {
+		t.Errorf("expected token 'singleflight-decoupled-token', got %q", token2)
+	}
+	if count := requestCount.Load(); count != 1 {
+		t.Fatalf("expected 1 fetch, got %d", count)
+	}
+}
+
 func TestOidcTokenProvider_Failures(t *testing.T) {
 	t.Run("http 401 unauthorized", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
