@@ -515,8 +515,26 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		Description:    extractStr(specMap, "description"),
 		WrapperRef:     parseWrapperRef(specMap),
 		Manifests:      parseManifests(specMap),
+		Parameters:     parseParameters(specMap),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
+}
+
+// parseParameters converts an unstructured parameters map into a string map.
+func parseParameters(m map[string]any) map[string]string {
+	raw, ok := m["parameters"].(map[string]any)
+	if !ok || raw == nil {
+		return nil
+	}
+	res := make(map[string]string, len(raw))
+	for k, v := range raw {
+		if s, ok := v.(string); ok {
+			res[k] = s
+		} else if v != nil {
+			res[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	return res
 }
 
 // parseManifests converts an unstructured manifests slice into a slice of YAML string documents.

@@ -892,6 +892,10 @@ func TestParseHelpers(t *testing.T) {
 			"group": "g", "version": "v", "kind": "k", "name": "n", "namespace": "ns",
 		},
 		"manifests": []any{"yaml-1", 123, "yaml-2"},
+		"parameters": map[string]any{
+			"topicName": "xmc-metrics",
+			"port":      8080,
+		},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
 	wantSpec := &componentspb.ComponentSpec{
@@ -907,6 +911,10 @@ func TestParseHelpers(t *testing.T) {
 			TargetNamespace: "ns",
 		},
 		Manifests: []string{"yaml-1", "yaml-2"},
+		Parameters: map[string]string{
+			"topicName": "xmc-metrics",
+			"port":      "8080",
+		},
 	}
 	if dp || !en || !proto.Equal(spec, wantSpec) {
 		t.Errorf("ParseSpecFromUnstructured() = %+v (dp=%v, en=%v), want %+v (dp=false, en=true)", spec, dp, en, wantSpec)
