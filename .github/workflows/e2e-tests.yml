@@ -16,9 +16,6 @@ name: 'XMC Headless E2E Tests'
 
 on:
   merge_group:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:

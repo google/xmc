@@ -16,10 +16,6 @@ name: 'XMC Unit Tests'
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-      - feature/unit_tests_action
   merge_group:
   workflow_dispatch:
 
