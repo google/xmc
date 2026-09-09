@@ -28,9 +28,6 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
-  pull-requests: write
-  issues: write
 
 jobs:
   unit-tests:
