@@ -424,6 +424,8 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
+	prober := bridge.NewBridgeProber(bridge.NewUnimplementedStatusDetector())
+
 	helmOpts := []bridge.HelmManagerOption{
 		bridge.WithKubeconfig(cfg.Kubeconfig),
 	}
@@ -432,7 +434,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	}
 	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
 	defer helmMgr.Close()
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), nil, helmMgr)
+	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), prober, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}

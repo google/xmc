@@ -12,6 +12,7 @@ graph TD
     Bridge -->|"Reconcile Loop"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
     Reconciler <-->|"gRPC Intent & Status Sync"| CMS["Component Manager Service<br>(ESS)"]
     Reconciler <-->|"Helm Values Synthesis"| Helm["1P Helm Parameters & Values Synthesis"]
+    Reconciler <-->|"Dynamic CRD Status Detection"| Detector["3P Dynamic Status Detector<br>(status_detector.go)"]
 ```
 
 ---
@@ -26,7 +27,10 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 2. **Intent Synchronization**:
    - Propagate desired spec to CMS via `SetComponentIntent`, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`.
 3. **Enablement & Workload Actuation**:
-   - **Enabled (`spec.enabled: true`)**: Synthesizes 1P Helm variable overrides and delegates release updates to `HelmManager`. Transitions to `COMPONENT_STATE_ENABLED` upon success.
+   - **Enabled (`spec.enabled: true`)**:
+     - For 1P components, synthesizes Helm variable overrides and delegates release updates to `HelmManager`.
+     - For 3P wrapper components, queries `StatusDetector` to evaluate dynamic CR health and updates observed status.
+     - Transitions to `COMPONENT_STATE_ENABLED` upon success.
    - **Disabled (`spec.enabled: false`)**: Deactivates 1P Helm variable overrides and transitions CMS state to `COMPONENT_STATE_DISABLED`.
 
 ---
@@ -38,6 +42,22 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
+
+---
+
+## 3P Custom Wrapper Status Detection (`status_detector.go`, `fake_status_detector.go`)
+
+Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler defines an extensible status detection contract to evaluate their health without hardcoding proprietary schemas:
+
+- **`WrapperRef` Configuration**:
+  - `Group`, `Version`, `Kind`: The target CRD's API GroupVersionKind.
+  - `Name`, `Namespace`: The target custom resource's coordinates.
+  - `ExpectedReadyValue`: Expected value for standard ready conditions (defaults to `"True"`).
+- **`StatusDetector` Interface & Implementations**:
+  - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
+  - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation, setting `COMPONENT_STATE_PENDING_RECONCILIATION` and `Ready=False` without pretending success.
+  - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
+- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
 ---
 
@@ -104,6 +124,7 @@ Production-grade lifecycle controls and graceful deactivation policies for first
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
+- **3P Dynamic Status Detection**: Inspects third-party CRDs via client-go dynamic client and RESTMapper without proprietary schema coupling.
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
