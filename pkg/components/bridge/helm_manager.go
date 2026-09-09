@@ -72,7 +72,6 @@ type K8sHelmManager struct {
 
 	mu          sync.RWMutex
 	activeState map[string]bool
-	upgradeMu   sync.Mutex
 	upgradeSem  chan struct{}
 }
 
@@ -85,6 +84,7 @@ func WithActionRunner(runner HelmActionRunner) HelmManagerOption {
 }
 
 // WithChartPath sets the filesystem chart path for release upgrades.
+// TODO: Support dynamic per-component chart path resolution rather than a single static path.
 func WithChartPath(chartPath string) HelmManagerOption {
 	return func(m *K8sHelmManager) { m.chartPath = chartPath }
 }

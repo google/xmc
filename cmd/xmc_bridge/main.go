@@ -64,6 +64,7 @@ type Config struct {
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
 	// ChartPath is the optional filesystem path to the Helm chart to actuate.
+	// TODO: Support dynamic per-component chart path resolution rather than a single static path.
 	ChartPath string
 }
 
@@ -124,6 +125,13 @@ func ParseConfig(args []string) (*Config, error) {
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
+	// TODO: Replace static single-chart path resolution with dynamic per-component chart
+	// resolution. Currently, a single chart path is passed via HELM_CHART_PATH or --chart-path
+	// and reused across all 1P component releases. Under AI Components Design Doc
+	// Section 3.2.5 (Profile 1 and Alternative 3), per-component independent release actuation
+	// will dynamically resolve per-component chart paths (e.g.,
+	// baseChartPath + "/" + profile + "/components/" + componentName or remote OCI repository URLs)
+	// rather than reusing a single static umbrella chart.
 	chartPath := fs.String("chart-path", defaultChartPath, "Path to the Helm chart directory or tarball")
 
 	if err := fs.Parse(args); err != nil {

@@ -72,6 +72,7 @@ The component bridge controller is feature-flagged under `componentsDeployment` 
 componentsDeployment:
   enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
+  chartPath: ""                                   # Optional Helm chart directory or tarball path
   probeInterval: "5s"                             # Namespace reconciliation sweep interval
   probeTimeout: "2s"                              # Timeout per component reconciliation pass
 
