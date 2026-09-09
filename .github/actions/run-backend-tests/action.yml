@@ -32,7 +32,40 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: 'Classify Backend Test Requirement'
+      id: 'classify'
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF: ${{ github.ref }}
+      shell: bash
+      run: |
+        BASE_REF="${PR_BASE_SHA:-origin/main}"
+        python3 tools/benchmark/resolve_test_scope.py \
+          --base "${BASE_REF}" \
+          --head "${GITHUB_SHA}" \
+          --event "${EVENT_NAME}" \
+          --ref "${GITHUB_REF}" \
+          --no-rdeps \
+          --github-output "${GITHUB_OUTPUT}"
+
+    - name: 'Set up Bazel'
+      if: steps.classify.outputs.run_backend == 'true'
+      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+    - name: 'Restore Bazel Repository Cache'
+      if: steps.classify.outputs.run_backend == 'true'
+      id: 'cache-bazel-repo-restore'
+      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      with:
+        path: ~/.cache/bazel-repo
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        restore-keys: |
+          bazel-repo-${{ runner.os }}-
+
     - name: 'Resolve Backend Test Scope'
+      if: steps.classify.outputs.run_backend == 'true'
       id: 'scope'
       env:
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -48,20 +81,6 @@ runs:
           --event "${EVENT_NAME}" \
           --ref "${GITHUB_REF}" \
           --github-output "${GITHUB_OUTPUT}"
-
-    - name: 'Set up Bazel'
-      if: steps.scope.outputs.run_backend == 'true'
-      uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
-
-    - name: 'Restore Bazel Repository Cache'
-      if: steps.scope.outputs.run_backend == 'true'
-      id: 'cache-bazel-repo-restore'
-      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-      with:
-        path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
-        restore-keys: |
-          bazel-repo-${{ runner.os }}-
 
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'
@@ -113,15 +132,15 @@ runs:
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
       # Only save repository cache on main branch pushes when external dependencies change.
-      if: github.ref == 'refs/heads/main' && steps.scope.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+      if: github.ref == 'refs/heads/main' && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/bazel-repo
         key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
 
     - name: 'Log Backend Test Skip Summary'
-      if: steps.scope.outputs.run_backend != 'true'
+      if: steps.classify.outputs.run_backend != 'true'
       env:
-        SKIP_REASON: ${{ steps.scope.outputs.reason }}
+        SKIP_REASON: ${{ steps.classify.outputs.reason }}
       shell: bash
       run: |
         echo "NOTICE: Backend Go unit tests skipped (${SKIP_REASON})."

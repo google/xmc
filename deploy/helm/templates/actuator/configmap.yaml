@@ -25,6 +25,7 @@ data:
   redis_addr: {{ .Values.redisAddr | quote }}
   xmanager_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   audience: {{ printf "https://actuator.api.%s.%s/actuate" .Values.environment .Values.domainSuffix | quote }}
+  enable_components: {{ .Values.componentsDeployment.enabled | quote }}
   {{- if .Values.isDevEnvironment }}
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}
