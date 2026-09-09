@@ -779,8 +779,12 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		// If the active component is at a lower generation than requested (e.g. name was reused
 		// after soft-deleting an older incarnation that reached a higher generation), attempt
 		// resolving historically by name before returning NotFound.
-		if snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen); err == nil {
+		snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen)
+		if err == nil {
 			return snapRec, coords, nil
+		}
+		if status.Code(err) != codes.NotFound {
+			return nil, nil, err
 		}
 		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
 	}
