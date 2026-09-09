@@ -20,7 +20,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
 | Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | Cloud Run service | HTTP health endpoint | Terraform module |
-| XMC Linter | [`cmd/xmc-linter`](../../cmd/xmc-linter) | Developer workstation / CI | CLI | n/a |
+| Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
 Container images are pinned per service through the `*_custom_image` values in
 [`deploy/helm/values.yaml`](../../deploy/helm/values.yaml).
@@ -280,10 +280,10 @@ A controller daemon that watches `Component.xmc.dev/v1alpha1` custom resources a
 against CMS over gRPC. It is the seam between GitOps-managed cluster manifests and the
 Spanner-backed catalog: cluster intent flows in, observed generation flows back.
 
-### 5.3 XMC Linter
+### 5.3 Component Linter
 
-**Source:** [`cmd/xmc-linter`](../../cmd/xmc-linter) ·
-**Detail:** [component README](../../cmd/xmc-linter/README.md)
+**Source:** [`cmd/component-linter`](../../cmd/component-linter) ·
+**Detail:** [component README](../../cmd/component-linter/README.md)
 
 An offline CLI that statically validates component manifest directories against a rules
 configuration and emits a text or JSON report. It runs in pull request CI so malformed component

@@ -119,9 +119,35 @@ Two derived signals matter operationally:
   reconciler waits `startup_pod_error_check_time` (2m) after JobSet creation, then inspects the
   pods for image pull failures, scheduling errors, and similar bring-up problems.
 
-Both diagnostics are on in every deployment. `detectInadmissibleWorkUnits` and
-`startupPodErrorCheckEnabled` still exist as kill switches and both default to `true`, so read
-them as "how to turn this off", not as something an operator has to turn on.
+Both diagnostics run unconditionally. They were once behind `detectInadmissibleWorkUnits` and
+`startupPodErrorCheckEnabled`; both flags were removed in
+[#801](https://github.com/google/xmc/pull/801), so there is nothing to enable and nothing to turn
+off.
+
+### Which transitions produce a new JobSet
+
+Only two, and both are user-initiated:
+
+| Transition | JobSet | Execution |
+| :--- | :--- | :--- |
+| `[*] → INITIALIZING` (`CreateWorkUnit`) | created | first `WorkUnitExecution` |
+| `RESTARTING → STARTING` (`RestartWorkUnit`) | old one deleted, new one created | new `eid`, previous execution kept as `INACTIVE` |
+
+Every other transition is the *same* JobSet being observed, or being torn down for good:
+
+- `SCHEDULING → STARTING → RUNNING` is the one JobSet progressing through admission and bring-up.
+- `RUNNING → DESCHEDULING → SCHEDULING` is Kueue evicting and later re-admitting **the same**
+  `Workload` for the same JobSet. Preemption is not a restart: no new `eid` is allocated and no new
+  JobSet is created, which is why a descheduled work unit reappears in the queue rather than in the
+  execution history.
+- `STOPPING → STOPPED` deletes the JobSet without creating a replacement. The execution stays
+  `ACTIVE` in Spanner so that a later `RestartWorkUnit` has something to restart from.
+
+The asymmetry is deliberate: a new `eid` is the platform's record that *someone asked for the work
+to run again*. Scheduler churn does not qualify. The mechanics are visible in
+[`restartJobSet`](../../cmd/actuator/k8s_client/jobset.go), which deletes the JobSet for the old
+target and then creates one named after `workUnit.GetCurrentWorkUnitExecution()` — the execution ESS
+had already allocated before enqueuing the task.
 
 ### Experiment-level state
 
@@ -181,6 +207,27 @@ This is XMC's most important invariant, and it constrains the design above.
 > **Work that already completed successfully must never be re-executed without explicit user
 > input.**
 
+### Why it exists
+
+A JobSet-level restart is all-or-nothing: JobSet's failure policy tears down and recreates *every*
+replicated job in the set, not the one that failed. For a single-job workload that is merely
+wasteful. For the distributed training XMC exists to run, it is worse in three specific ways.
+
+- **Completed work is silently redone.** In a set of 64 jobs where 63 finished and one crashed, a
+  JobSet restart re-runs all 64. The 63 successful runs are repeated at full cost, and any of them
+  that wrote checkpoints, exported datasets, or published results does so a second time.
+- **The repeat is invisible.** XMC's history is `WorkUnitExecution` rows. A JobSet controller
+  restart happens entirely inside Kubernetes and produces no new `eid`, so `ListWorkUnitExecutions`
+  shows one attempt where three occurred. Cost attribution, debugging, and "did this run twice?"
+  all get the wrong answer.
+- **The restart is uncoordinated.** Distributed training ranks join a collective at startup.
+  In-place pod restarts bring a rank back without the coordinator's knowledge, and the ranks block
+  in a collective operation waiting for a peer that is no longer the peer they synchronised with —
+  a hang, not a crash, which is the expensive kind of failure on accelerator hardware.
+
+Restarting at the XMC level avoids all three: it is one deliberate act, it allocates a new `eid`,
+and it builds a fresh JobSet from scratch rather than resuming a partially-completed one.
+
 Concretely:
 
 | Rule | Rationale |
@@ -191,9 +238,12 @@ Concretely:
 | Container-level `restartPolicy: Always` on native sidecar init containers is permitted. | Same reason: it restarts a failed sidecar, not completed work. |
 | Pod `restartPolicy: Always` is **forbidden**. | In-place pod restarts without coordinator synchronisation cause multi-host deadlocks in distributed training. |
 
-The Actuator enforces the `MaxRestarts` rule programmatically — JobSet construction in
-[`cmd/actuator/k8s_client/jobset.go`](../../cmd/actuator/k8s_client/jobset.go) sets it to `0` and a
-validation step rejects any JobSet where it is not, with a `contract violation` error.
+The Actuator enforces this programmatically rather than by convention. JobSet construction in
+[`cmd/actuator/k8s_client/jobset.go`](../../cmd/actuator/k8s_client/jobset.go) sets `MaxRestarts` to
+`0`, and `validateNonRestartingJobSetContract` runs on every JobSet before it is submitted,
+rejecting a non-zero `MaxRestarts` or any pod `restartPolicy` other than `Never`/`OnFailure` with a
+`contract violation` error. A violation therefore fails the actuation task; it cannot reach the
+cluster.
 
 Per-job knobs users *can* set on a `KubernetesJob`
 ([`work_unit.proto`](../../api/protos/experiment/work_unit.proto)):

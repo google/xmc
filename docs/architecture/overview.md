@@ -87,7 +87,7 @@ graph TD
     UI --> GW
     CLI --> GW
     XDASH --> GW
-    SDK -->|"in-cluster only"| TP
+    SDK -->|"metrics push<br/>(in-cluster only)"| TP
 
     GW --> CP
     CP <--> EP
@@ -116,7 +116,10 @@ services is in [Gateway & Traffic Routing Design](../design/gateway.md) and summ
 
 The metrics path is the exception to "everything goes through the Gateway": the Ingestion Gateway
 is a `ClusterIP` service guarded by a `NetworkPolicy`, so only pods inside the cluster — that is,
-the training jobs XMC itself launched — can post metrics to it.
+the training jobs XMC itself launched — can post metrics to it. The restriction is on *metrics
+ingestion only*, which is all the xmc SDK does. Submitting and managing experiments is not
+cluster-bound — the CLI and the UI reach ESS from outside, through the Gateway, like any other
+client.
 
 ---
 
@@ -129,10 +132,10 @@ gates, dependencies — lives in [Component Reference](components.md) and is not
 ### 3.1 Control Plane — authoritative state and public APIs
 
 The **Experiment State Server (ESS)**, **XID Service**, **Health Service**, **Dashboard Service**,
-and **ROD Data Provider**. Between them they serve every public API surface and own all
-authoritative state: experiments, work units, executions, artifacts, and status messages; the
-allocation of experiment IDs and the authorization decisions attached to them; platform health;
-dashboard and chart definitions; and cluster capacity views.
+and **ROD Data Provider** (Resource Observability Dashboard). Between them they serve every public
+API surface and own all authoritative state: experiments, work units, executions, artifacts, and
+status messages; the allocation of experiment IDs and the authorization decisions attached to them;
+platform health; dashboard and chart definitions; and cluster capacity views.
 
 The control plane is stateless — all durable state lives in Cloud Spanner. ESS and XID scale
 horizontally behind HPAs, since XID is on the critical path of every ESS mutation.
@@ -171,7 +174,7 @@ ClickHouse consumes from the bus on its own. See
 The **Component Manager Service (CMS)**, hosted inside the ESS gRPC server, is the control plane
 for reusable platform components: registration, dependency DAG validation, snapshot resolution, and
 lifecycle intents. **XMC Bridge** reconciles `Component.xmc.dev/v1alpha1` custom resources against
-it, bridging GitOps manifests and the Spanner catalog. **XMC Linter** is a standalone CLI that
+it, bridging GitOps manifests and the Spanner catalog. **Component Linter** is a standalone CLI that
 statically validates component manifests in CI, before they reach a cluster.
 
 **Reference:** [Components Subsystem README](../../pkg/components/README.md),

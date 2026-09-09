@@ -202,7 +202,9 @@ aggregates.
 The two RPCs differ in read consistency. `ListStatusMessages` issues a strong Spanner read
 (staleness `0`), so a message written a moment ago is guaranteed to appear. `SearchStatusMessages`
 issues a stale read with a 15-second bound, trading immediacy for cheaper reads on the filtered,
-scan-heavy path. Retention of this history is gated by the `statusMessageHistoryEnabled` value.
+scan-heavy path. Every change to a work unit's status message is also written to a history table,
+unconditionally since [#801](https://github.com/google/xmc/pull/801) removed the
+`statusMessageHistoryEnabled` gate.
 
 Where the messages come from is covered in
 [Metrics & Observability §3](metrics_and_observability.md#3-log-monitoring-pipeline).

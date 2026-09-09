@@ -54,16 +54,17 @@ Concurrency is bounded per controller by `max_concurrent_reconciles` (default 10
 API pressure by `kube_api_qps` / `kube_api_burst` (100 / 200).
 
 > [!NOTE]
-> Two naming conventions appear in this document, and the difference is meaningful. `camelCase`
-> names are Helm values you set in `values.yaml` (`detectInadmissibleWorkUnits`,
-> `startupPodErrorCheckEnabled`, `statusMessageHistoryEnabled`). `snake_case` names are keys in
-> [`reconciler-config`](../../deploy/helm/templates/reconciler/configmap.yaml) or CLI flags, which
-> is what the binary reads — most are hardcoded in the ConfigMap template and have no Helm value to
-> override them.
+> Every reconciler tunable named in this document is a `snake_case` name — a flag on the binary
+> ([`cmd/reconciler/config.go`](../../cmd/reconciler/config.go)), fed either from
+> [`reconciler-config`](../../deploy/helm/templates/reconciler/configmap.yaml) or from the flag's
+> own default. Most of the ConfigMap's entries are hardcoded in the template with no Helm value to
+> override them; only the Spanner database name, the quota project, and the metrics port are
+> rendered from `values.yaml`.
 >
-> All three of those Helm values default to `true`. They are kill switches for behaviour that is on
-> everywhere, not features an operator opts into, so the sections below describe what the
-> Reconciler does rather than what it does "when enabled".
+> There are no feature gates left. `detectInadmissibleWorkUnits`, `startupPodErrorCheckEnabled`,
+> and `statusMessageHistoryEnabled` were `camelCase` Helm booleans that defaulted to `true`;
+> [#801](https://github.com/google/xmc/pull/801) removed all three, so the behaviour they guarded
+> is now simply what the Reconciler does.
 
 ---
 
@@ -145,7 +146,6 @@ failure, so the work unit would simply sit in `STARTING`.
 So the reconciler requeues young JobSets until they reach `startup_pod_error_check_time`
 (default 2 minutes), then lists their pods and inspects container statuses. Errors found there
 become user-facing status messages, turning silent hangs into readable diagnostics.
-`startupPodErrorCheckEnabled` turns the check off.
 
 ### Status conversion
 
@@ -171,7 +171,6 @@ type: QuotaReserved, status: False, reason: Inadmissible
 ```
 
 and converts the condition's message into a user-facing status message attached to the work unit.
-`detectInadmissibleWorkUnits` turns this off.
 
 Without this, an under-quota experiment is indistinguishable from a slow one: both show
 `SCHEDULING` and nothing else. With it, the user reads *why* — "insufficient quota for
