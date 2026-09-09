@@ -114,7 +114,7 @@ func initTaskQueueClient(ctx context.Context, cfg *config.Config, oauthCfg *oaut
 		return nil, fmt.Errorf("failed to load signing key: %w", err)
 	}
 	var opts []tq.Option
-	if oauthCfg != nil && oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" {
+	if oauthCfg != nil && oauthCfg.IsNonProdAuth() && oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" {
 		opts = append(opts, tq.WithTokenProvider(tq.NewOidcTokenProvider(tq.OidcTokenProviderConfig{
 			TokenURL:     oauthCfg.TokenURL,
 			ClientID:     oauthCfg.ClientID,

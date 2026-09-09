@@ -154,6 +154,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		tokenValidator = jwks.NewValidator(jwks.ValidatorConfig{
 			JWKSURL:                cfg.JWKSURL,
 			ExpectedIssuer:         cfg.OIDCIssuerURL,
+			AllowedAudiences:       []string{cfg.Audience},
 			ExpectedServiceAccount: cfg.XManagerServiceAccount,
 		})
 	}

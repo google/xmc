@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/iamcredentials/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -71,6 +72,13 @@ type GcpIAMTokenProvider struct{}
 
 // GenerateToken generates an OIDC ID token for the specified service account and audience.
 func (p *GcpIAMTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
+	if invokerSA == "" {
+		return "", fmt.Errorf("invoker service account cannot be empty")
+	}
+	if audience == "" {
+		return "", fmt.Errorf("audience cannot be empty")
+	}
+
 	creds, err := google.FindDefaultCredentials(ctx, iamcredentials.CloudPlatformScope)
 	if err != nil {
 		return "", fmt.Errorf("failed to find default credentials: %w", err)
@@ -109,7 +117,8 @@ type OidcTokenProviderConfig struct {
 type OidcTokenProvider struct {
 	cfg        OidcTokenProviderConfig
 	httpClient *http.Client
-	mu         sync.Mutex
+	mu         sync.RWMutex
+	sfGroup    singleflight.Group
 	token      string
 	expiry     time.Time
 }
@@ -135,32 +144,48 @@ func (p *OidcTokenProvider) GenerateToken(ctx context.Context, invokerSA, audien
 		return "", err
 	}
 
-	p.mu.Lock()
+	p.mu.RLock()
 	if p.token != "" && time.Now().Add(1*time.Minute).Before(p.expiry) {
 		token := p.token
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return token, nil
 	}
-	p.mu.Unlock()
+	p.mu.RUnlock()
 
-	token, ttl, err := p.fetchToken(ctx)
+	res, err, _ := p.sfGroup.Do("fetchToken", func() (any, error) {
+		p.mu.RLock()
+		if p.token != "" && time.Now().Add(1*time.Minute).Before(p.expiry) {
+			token := p.token
+			p.mu.RUnlock()
+			return token, nil
+		}
+		p.mu.RUnlock()
+
+		token, ttl, err := p.fetchToken(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		p.mu.Lock()
+		p.token = token
+		p.expiry = time.Now().Add(ttl)
+		p.mu.Unlock()
+
+		return token, nil
+	})
 	if err != nil {
 		return "", err
 	}
-
-	p.mu.Lock()
-	p.token = token
-	p.expiry = time.Now().Add(ttl)
-	p.mu.Unlock()
-
+	token, ok := res.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected token type from singleflight: %T", res)
+	}
 	return token, nil
 }
 
-func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Duration, error) {
+func (p *OidcTokenProvider) buildTokenRequest(ctx context.Context) (*http.Request, error) {
 	data := url.Values{
-		"client_id":     {p.cfg.ClientID},
-		"client_secret": {p.cfg.ClientSecret},
-		"scope":         {p.cfg.Scope},
+		"scope": {p.cfg.Scope},
 	}
 	if p.cfg.Password != "" && p.cfg.Username != "" {
 		data.Set("grant_type", "password")
@@ -170,35 +195,33 @@ func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Durati
 		data.Set("grant_type", "client_credentials")
 	}
 
+	useBasicAuth := p.cfg.ClientID != "" && p.cfg.ClientSecret != ""
+	if !useBasicAuth && p.cfg.ClientID != "" {
+		data.Set("client_id", p.cfg.ClientID)
+	}
+
 	timeout := p.httpClient.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	_ = cancel
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, p.cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to create token request: %w", err)
+		return nil, fmt.Errorf("failed to create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if p.cfg.ClientID != "" && p.cfg.ClientSecret != "" {
+	if useBasicAuth {
 		req.SetBasicAuth(p.cfg.ClientID, p.cfg.ClientSecret)
 	}
+	return req, nil
+}
 
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to execute token request to %s: %w", p.cfg.TokenURL, err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
+func (p *OidcTokenProvider) parseTokenResponse(bodyReader io.Reader) (string, time.Duration, error) {
+	bodyBytes, err := io.ReadAll(io.LimitReader(bodyReader, 1<<20))
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to read token response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", 0, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var tokenResp struct {
@@ -224,6 +247,26 @@ func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Durati
 	}
 
 	return token, ttl, nil
+}
+
+func (p *OidcTokenProvider) fetchToken(ctx context.Context) (string, time.Duration, error) {
+	req, err := p.buildTokenRequest(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to execute token request to %s: %w", p.cfg.TokenURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return "", 0, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return p.parseTokenResponse(resp.Body)
 }
 
 // Option configures a Client instance.

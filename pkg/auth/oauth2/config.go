@@ -83,8 +83,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	username, _ := getEnvOrFile("OIDC_USERNAME", getEnv("AUTH_USERNAME", "admin@xmc.local"))
-	password, _ := getEnvOrFile("OIDC_PASSWORD", getEnv("AUTH_PASSWORD", "password123"))
+	username, _ := getEnvOrFile("OIDC_USERNAME", getEnv("AUTH_USERNAME", ""))
+	password, _ := getEnvOrFile("OIDC_PASSWORD", getEnv("AUTH_PASSWORD", ""))
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
 	redirectURL := getEnv("REDIRECT_URL", "http://localhost:8080/api/callback")

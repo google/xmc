@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"golang/google_api/idtoken/idtoken"
@@ -59,6 +60,8 @@ type TokenValidator interface {
 	Validate(ctx context.Context, token string, audience string) error
 }
 
+var _ TokenValidator = (*GoogleIDTokenValidator)(nil)
+
 // GoogleIDTokenValidator validates Google ID tokens against an expected audience and service account email.
 type GoogleIDTokenValidator struct {
 	ExpectedServiceAccount string
@@ -67,6 +70,9 @@ type GoogleIDTokenValidator struct {
 
 // Validate validates the Google ID token.
 func (v *GoogleIDTokenValidator) Validate(ctx context.Context, token string, audience string) error {
+	if v == nil {
+		return fmt.Errorf("token validator is nil")
+	}
 	if token == "" {
 		return fmt.Errorf("auth token is empty")
 	}
@@ -82,6 +88,9 @@ func (v *GoogleIDTokenValidator) Validate(ctx context.Context, token string, aud
 	idPayload, err := validateFn(ctx, token, audience)
 	if err != nil {
 		return fmt.Errorf("failed to validate ID token: %w", err)
+	}
+	if idPayload == nil || idPayload.Claims == nil {
+		return fmt.Errorf("id token payload or claims is nil")
 	}
 
 	email, ok := idPayload.Claims["email"].(string)
@@ -249,6 +258,32 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 	return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
 }
 
+func isTransientHTTPStatus(code int) bool {
+	switch code {
+	case http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func isK8sRetryableError(err error) bool {
+	var statusErr *apierrors.StatusError
+	if errors.As(err, &statusErr) {
+		if statusErr == nil {
+			return false
+		}
+		err = statusErr
+	}
+	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) ||
+		apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsInternalError(err) || apierrors.IsConflict(err)
+}
+
 func isRetryableError(err error) bool {
 	if err == nil {
 		return false
@@ -264,16 +299,11 @@ func isRetryableError(err error) bool {
 	if errors.As(err, &tempErr) && tempErr.Temporary() {
 		return true
 	}
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		if statusErr == nil {
-			return false
-		}
-		err = statusErr
+	var httpStatusErr interface{ HTTPStatusCode() int }
+	if errors.As(err, &httpStatusErr) && isTransientHTTPStatus(httpStatusErr.HTTPStatusCode()) {
+		return true
 	}
-	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) ||
-		apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) || apierrors.IsConflict(err)
+	return isK8sRetryableError(err)
 }
 
 // validateAuthTokenString validates the auth token string using the configured TokenValidator.

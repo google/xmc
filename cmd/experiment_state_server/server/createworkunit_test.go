@@ -44,19 +44,14 @@ import (
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-type testStaticTokenProvider struct {
-	token string
-}
-
-func (s *testStaticTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
-	return s.token, nil
-}
-
 func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	fakeRedis := redisclient.NewFakeClient()
 	keyFunc := securitytest.MustCreateTestSigner(t)
-	realTaskQueueClient, err := tq.New(ctx, "test-project", "test-sa", "http://actuator.example.com", "test-audience", keyFunc, tq.DefaultSignatureTTLSeconds, "", tq.WithTokenProvider(&testStaticTokenProvider{token: "mock-oidc-token"}), tq.WithRedisPublisher(fakeRedis))
+	tokenProvider := tq.TokenProviderFunc(func(_ context.Context, _, _ string) (string, error) {
+		return "mock-oidc-token", nil
+	})
+	realTaskQueueClient, err := tq.New(ctx, "test-project", "test-sa", "http://actuator.example.com", "test-audience", keyFunc, tq.DefaultSignatureTTLSeconds, "", tq.WithTokenProvider(tokenProvider), tq.WithRedisPublisher(fakeRedis))
 	if err != nil {
 		t.Fatalf("Failed to create task queue client: %v", err)
 	}

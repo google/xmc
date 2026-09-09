@@ -355,6 +355,7 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 		tokenValidator         TokenValidator
 		xmanagerServiceAccount string
 		wantErrMsg             string
+		wantShouldBeRetried    bool
 	}{
 		{
 			name:                   "no_oidc_token",
@@ -362,6 +363,7 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 			tokenValidator:         nil,
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "auth token is empty",
+			wantShouldBeRetried:    false,
 		},
 		{
 			name:      "token_validation_error",
@@ -374,6 +376,7 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 			},
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "failed to validate ID token",
+			wantShouldBeRetried:    false,
 		},
 		{
 			name:      "service_account_mismatch",
@@ -388,6 +391,17 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 			},
 			xmanagerServiceAccount: testServiceAccount,
 			wantErrMsg:             "service account mismatch",
+			wantShouldBeRetried:    false,
+		},
+		{
+			name:      "token_validation_deadline_exceeded",
+			oidcToken: "fake-token",
+			tokenValidator: &mockTokenValidator{
+				err: context.DeadlineExceeded,
+			},
+			xmanagerServiceAccount: testServiceAccount,
+			wantErrMsg:             "context deadline exceeded",
+			wantShouldBeRetried:    true,
 		},
 	}
 
@@ -423,6 +437,9 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 
 			if result.WasRunSuccessful {
 				t.Errorf("HandleWorkUnitRedisTask returned success=true, want false")
+			}
+			if result.ShouldBeRetried != tc.wantShouldBeRetried {
+				t.Errorf("HandleWorkUnitRedisTask ShouldBeRetried = %v, want %v", result.ShouldBeRetried, tc.wantShouldBeRetried)
 			}
 			if result.Error == nil {
 				t.Fatal("HandleWorkUnitRedisTask returned nil error, want non-nil")

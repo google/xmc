@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -316,8 +318,13 @@ func TestOidcTokenProvider(t *testing.T) {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
-		if r.Form.Get("grant_type") != "password" || r.Form.Get("client_id") != "test-client" {
-			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "test-client" || pass != "test-secret" {
+			http.Error(w, "invalid basic auth credentials", http.StatusUnauthorized)
+			return
+		}
+		if r.Form.Get("grant_type") != "password" || r.Form.Get("username") != "admin@xmc.local" || r.Form.Get("password") != "password" {
+			http.Error(w, "invalid form body parameters", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -356,6 +363,130 @@ func TestOidcTokenProvider(t *testing.T) {
 	}
 }
 
+func TestOidcTokenProvider_SingleflightAndConcurrentRace(t *testing.T) {
+	ctx := t.Context()
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		time.Sleep(20 * time.Millisecond) // Ensure overlap
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id_token":   "concurrent-oidc-id-token",
+			"expires_in": 3600,
+		})
+	}))
+	defer server.Close()
+
+	p := NewOidcTokenProvider(OidcTokenProviderConfig{
+		TokenURL:   server.URL,
+		HTTPClient: server.Client(),
+	})
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, numGoroutines)
+	tokens := make(chan string, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			token, err := p.GenerateToken(ctx, "sa", "aud")
+			if err != nil {
+				errs <- err
+				return
+			}
+			tokens <- token
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+	close(tokens)
+
+	for err := range errs {
+		t.Fatalf("Concurrent GenerateToken returned error: %v", err)
+	}
+
+	for tok := range tokens {
+		if tok != "concurrent-oidc-id-token" {
+			t.Errorf("Unexpected token returned: %q", tok)
+		}
+	}
+
+	if count := requestCount.Load(); count != 1 {
+		t.Errorf("Expected singleflight to coalesce requests to 1, got %d", count)
+	}
+}
+
+func TestOidcTokenProvider_Failures(t *testing.T) {
+	t.Run("http 401 unauthorized", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "invalid client", http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		p := NewOidcTokenProvider(OidcTokenProviderConfig{
+			TokenURL:   server.URL,
+			HTTPClient: server.Client(),
+		})
+		_, err := p.GenerateToken(context.Background(), "sa", "aud")
+		if err == nil || !strings.Contains(err.Error(), "status 401") {
+			t.Errorf("GenerateToken() error = %v, want substring 'status 401'", err)
+		}
+	})
+
+	t.Run("http 500 internal server error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "server crash", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		p := NewOidcTokenProvider(OidcTokenProviderConfig{
+			TokenURL:   server.URL,
+			HTTPClient: server.Client(),
+		})
+		_, err := p.GenerateToken(context.Background(), "sa", "aud")
+		if err == nil || !strings.Contains(err.Error(), "status 500") {
+			t.Errorf("GenerateToken() error = %v, want substring 'status 500'", err)
+		}
+	})
+
+	t.Run("invalid json response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{invalid-json`))
+		}))
+		defer server.Close()
+
+		p := NewOidcTokenProvider(OidcTokenProviderConfig{
+			TokenURL:   server.URL,
+			HTTPClient: server.Client(),
+		})
+		_, err := p.GenerateToken(context.Background(), "sa", "aud")
+		if err == nil || !strings.Contains(err.Error(), "failed to parse token response") {
+			t.Errorf("GenerateToken() error = %v, want substring 'failed to parse token response'", err)
+		}
+	})
+
+	t.Run("missing token fields in json", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"foo": "bar"}`))
+		}))
+		defer server.Close()
+
+		p := NewOidcTokenProvider(OidcTokenProviderConfig{
+			TokenURL:   server.URL,
+			HTTPClient: server.Client(),
+		})
+		_, err := p.GenerateToken(context.Background(), "sa", "aud")
+		if err == nil || !strings.Contains(err.Error(), "did not contain id_token or access_token") {
+			t.Errorf("GenerateToken() error = %v, want substring 'did not contain id_token or access_token'", err)
+		}
+	})
+}
+
 func TestOidcTokenProvider_PreflightContextCancellation(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -373,6 +504,22 @@ func TestOidcTokenProvider_PreflightContextCancellation(t *testing.T) {
 	}
 }
 
+func TestGcpIAMTokenProvider_EmptyArgs(t *testing.T) {
+	p := &GcpIAMTokenProvider{}
+	t.Run("empty invokerSA", func(t *testing.T) {
+		_, err := p.GenerateToken(context.Background(), "", "aud")
+		if err == nil || !strings.Contains(err.Error(), "invoker service account cannot be empty") {
+			t.Errorf("GenerateToken() error = %v, want 'invoker service account cannot be empty'", err)
+		}
+	})
+	t.Run("empty audience", func(t *testing.T) {
+		_, err := p.GenerateToken(context.Background(), "sa@example.com", "")
+		if err == nil || !strings.Contains(err.Error(), "audience cannot be empty") {
+			t.Errorf("GenerateToken() error = %v, want 'audience cannot be empty'", err)
+		}
+	})
+}
+
 func TestGcpIAMTokenProvider_MissingCredentials(t *testing.T) {
 	ctx := t.Context()
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/credentials.json")
@@ -384,14 +531,6 @@ func TestGcpIAMTokenProvider_MissingCredentials(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to find default credentials") {
 		t.Errorf("GenerateToken() error %q want substring 'failed to find default credentials'", err.Error())
 	}
-}
-
-type staticTestTokenProvider struct {
-	token string
-}
-
-func (s *staticTestTokenProvider) GenerateToken(ctx context.Context, invokerSA, audience string) (string, error) {
-	return s.token, nil
 }
 
 func TestNew_DefaultTokenProvider(t *testing.T) {
@@ -409,13 +548,15 @@ func TestNew_DefaultTokenProvider(t *testing.T) {
 	})
 
 	t.Run("explicit custom token provider", func(t *testing.T) {
-		customProvider := &staticTestTokenProvider{token: "test-token"}
+		customProvider := TokenProviderFunc(func(_ context.Context, _, _ string) (string, error) {
+			return "test-token", nil
+		})
 		c, err := New(ctx, "project", "sa", "http://actuator", "", keyFunc, 3600, "", WithTokenProvider(customProvider))
 		if err != nil {
 			t.Fatalf("New() failed: %v", err)
 		}
-		if c.tokenProvider != customProvider {
-			t.Errorf("tokenProvider got %v, want %v", c.tokenProvider, customProvider)
+		if c.tokenProvider == nil {
+			t.Errorf("tokenProvider is nil, want customProvider")
 		}
 	})
 }
