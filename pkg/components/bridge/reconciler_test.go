@@ -893,8 +893,13 @@ func TestParseHelpers(t *testing.T) {
 		},
 		"manifests": []any{"yaml-1", 123, "yaml-2"},
 		"parameters": map[string]any{
-			"topicName": "xmc-metrics",
-			"port":      8080,
+			"topicName":   "xmc-metrics",
+			"port":        8080,
+			"bufferBytes": float64(1048576),
+			"rate":        float64(3.14),
+			"enabled":     true,
+			"replica":     int64(3),
+			"ignored":     nil,
 		},
 	}
 	spec, dp, en = ParseSpecFromUnstructured(raw)
@@ -912,8 +917,12 @@ func TestParseHelpers(t *testing.T) {
 		},
 		Manifests: []string{"yaml-1", "yaml-2"},
 		Parameters: map[string]string{
-			"topicName": "xmc-metrics",
-			"port":      "8080",
+			"topicName":   "xmc-metrics",
+			"port":        "8080",
+			"bufferBytes": "1048576",
+			"rate":        "3.14",
+			"enabled":     "true",
+			"replica":     "3",
 		},
 	}
 	if dp || !en || !proto.Equal(spec, wantSpec) {
@@ -962,6 +971,78 @@ func TestParseHelpers(t *testing.T) {
 	})
 	if len(conds) != 2 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" || conds[1].ObservedGeneration != 0 {
 		t.Errorf("unexpected conditions: %+v", conds)
+	}
+}
+
+func TestParseParameters(t *testing.T) {
+	tests := []struct {
+		name string
+		in   map[string]any
+		want map[string]string
+	}{
+		{
+			name: "nil input map",
+			in:   nil,
+			want: nil,
+		},
+		{
+			name: "missing parameters key",
+			in:   map[string]any{"other": "value"},
+			want: nil,
+		},
+		{
+			name: "empty parameters map",
+			in:   map[string]any{"parameters": map[string]any{}},
+			want: nil,
+		},
+		{
+			name: "only nil values in parameters",
+			in:   map[string]any{"parameters": map[string]any{"key": nil}},
+			want: nil,
+		},
+		{
+			name: "mixed types with large float64 integers",
+			in: map[string]any{
+				"parameters": map[string]any{
+					"str":       "hello",
+					"largeInt":  float64(1048576),
+					"zeroFloat": float64(0),
+					"decimal":   float64(12.34),
+					"intVal":    int(42),
+					"int64Val":  int64(9999),
+					"boolTrue":  true,
+					"boolFalse": false,
+					"skipped":   nil,
+				},
+			},
+			want: map[string]string{
+				"str":       "hello",
+				"largeInt":  "1048576",
+				"zeroFloat": "0",
+				"decimal":   "12.34",
+				"intVal":    "42",
+				"int64Val":  "9999",
+				"boolTrue":  "true",
+				"boolFalse": "false",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseParameters(tc.in)
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseParameters() len = %d, want %d (got: %+v, want: %+v)", len(got), len(tc.want), got, tc.want)
+			}
+			for k, wantV := range tc.want {
+				if gotV, ok := got[k]; !ok || gotV != wantV {
+					t.Errorf("parseParameters()[%q] = %q, want %q", k, gotV, wantV)
+				}
+			}
+		})
 	}
 }
 

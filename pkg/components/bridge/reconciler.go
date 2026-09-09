@@ -523,16 +523,34 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 // parseParameters converts an unstructured parameters map into a string map.
 func parseParameters(m map[string]any) map[string]string {
 	raw, ok := m["parameters"].(map[string]any)
-	if !ok || raw == nil {
+	if !ok || len(raw) == 0 {
 		return nil
 	}
 	res := make(map[string]string, len(raw))
 	for k, v := range raw {
-		if s, ok := v.(string); ok {
-			res[k] = s
-		} else if v != nil {
+		switch val := v.(type) {
+		case string:
+			res[k] = val
+		case float64:
+			if val == float64(int64(val)) {
+				res[k] = strconv.FormatInt(int64(val), 10)
+			} else {
+				res[k] = strconv.FormatFloat(val, 'f', -1, 64)
+			}
+		case int:
+			res[k] = strconv.Itoa(val)
+		case int64:
+			res[k] = strconv.FormatInt(val, 10)
+		case bool:
+			res[k] = strconv.FormatBool(val)
+		case nil:
+			// skip
+		default:
 			res[k] = fmt.Sprintf("%v", v)
 		}
+	}
+	if len(res) == 0 {
+		return nil
 	}
 	return res
 }
