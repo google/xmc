@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -921,8 +922,15 @@ func TestParseHelpers(t *testing.T) {
 	}
 	specCamel, _, _ := ParseSpecFromUnstructured(rawCamel)
 	wr := specCamel.GetWrapperRef()
-	if wr == nil || wr.GetCrdGroup() != "clickhouse.altinity.com" || wr.GetCrdVersion() != "v1" || wr.GetCrdKind() != "ClickHouseInstallation" || wr.GetTargetName() != "chi-cluster" || wr.GetTargetNamespace() != "clickhouse-ns" {
-		t.Errorf("unexpected parsed camelCase wrapperRef: %+v", wr)
+	wantWrapperRef := &componentspb.WrapperRef{
+		CrdGroup:        "clickhouse.altinity.com",
+		CrdVersion:      "v1",
+		CrdKind:         "ClickHouseInstallation",
+		TargetName:      "chi-cluster",
+		TargetNamespace: "clickhouse-ns",
+	}
+	if !proto.Equal(wr, wantWrapperRef) {
+		t.Errorf("ParseSpecFromUnstructured() wrapperRef = %+v, want %+v", wr, wantWrapperRef)
 	}
 
 	rawDelete := map[string]any{
@@ -1311,8 +1319,20 @@ func TestParseWrapperRef(t *testing.T) {
 		},
 	}
 	ref := ParseWrapperRef(spec, "fallback-ns")
-	if ref.Group != "ray.io" || ref.Name != "my-ray" || ref.Namespace != "fallback-ns" || ref.EndpointJSONPath != "status.url" {
-		t.Errorf("unexpected parsed wrapper ref: %+v", ref)
+	wantRef := WrapperRef{
+		Group:                    "ray.io",
+		Version:                  "v1",
+		Kind:                     "RayCluster",
+		Name:                     "my-ray",
+		Namespace:                "fallback-ns",
+		ObservedGenerationPath:   "status.obsGen",
+		ReadyConditionPath:       "status.conditions[0].status",
+		ExpectedReadyValue:       "True",
+		EndpointJSONPath:         "status.url",
+		ConnectionSecretJSONPath: "status.secret",
+	}
+	if ref != wantRef {
+		t.Errorf("ParseWrapperRef() = %+v, want %+v", ref, wantRef)
 	}
 
 	specCamel := map[string]any{
@@ -1330,9 +1350,20 @@ func TestParseWrapperRef(t *testing.T) {
 		},
 	}
 	refCamel := ParseWrapperRef(specCamel, "default-ns")
-	if refCamel.Group != "clickhouse.altinity.com" || refCamel.Version != "v1" || refCamel.Kind != "ClickHouseInstallation" ||
-		refCamel.Name != "chi-cluster" || refCamel.Namespace != "clickhouse-ns" || refCamel.ReadyConditionPath != "status.ready" {
-		t.Errorf("unexpected parsed camelCase wrapper ref: %+v", refCamel)
+	wantCamel := WrapperRef{
+		Group:                    "clickhouse.altinity.com",
+		Version:                  "v1",
+		Kind:                     "ClickHouseInstallation",
+		Name:                     "chi-cluster",
+		Namespace:                "clickhouse-ns",
+		ObservedGenerationPath:   "status.observedGeneration",
+		ReadyConditionPath:       "status.ready",
+		ExpectedReadyValue:       "Ready",
+		EndpointJSONPath:         "status.endpoint",
+		ConnectionSecretJSONPath: "status.secretName",
+	}
+	if refCamel != wantCamel {
+		t.Errorf("ParseWrapperRef(camelCase) = %+v, want %+v", refCamel, wantCamel)
 	}
 }
 
@@ -1370,10 +1401,17 @@ func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
 		if res.ObservedGeneration != 5 {
 			t.Errorf("expected ObservedGeneration 5 (Component gen), got %d", res.ObservedGeneration)
 		}
-		if res.Access == nil || res.Access.EnvVars["ENDPOINT"] != "http://ray-head.xmc.svc.cluster.local:8265" ||
-			res.Access.EnvVars["SECRET_NAME"] != "ray-secret" || res.Access.EnvVars["PORT"] != "8265" ||
-			res.Access.EnvVars["SCHEME"] != "http" || res.Access.EnvVars["HOST"] != "ray-head.xmc.svc.cluster.local" {
-			t.Errorf("unexpected access env vars: %+v", res.Access)
+		wantAccess := &AccessStatus{
+			EnvVars: map[string]string{
+				"ENDPOINT":    "http://ray-head.xmc.svc.cluster.local:8265",
+				"HOST":        "ray-head.xmc.svc.cluster.local",
+				"PORT":        "8265",
+				"SCHEME":      "http",
+				"SECRET_NAME": "ray-secret",
+			},
+		}
+		if !reflect.DeepEqual(res.Access, wantAccess) {
+			t.Errorf("ReconcileComponent() access = %+v, want %+v", res.Access, wantAccess)
 		}
 		for _, c := range res.Conditions {
 			if c.ObservedGeneration != 5 {
@@ -1587,10 +1625,17 @@ func TestPopulateAccessEnvVars(t *testing.T) {
 			ConnectionSecret: "db-secret",
 		}
 		populateAccessEnvVars(res, status)
-		if res.Access.EnvVars["ENDPOINT"] != "http://service.prod:8080" ||
-			res.Access.EnvVars["SECRET_NAME"] != "db-secret" ||
-			res.Access.EnvVars["PORT"] != "8080" {
-			t.Errorf("unexpected access env vars: %+v", res.Access.EnvVars)
+		wantAccess := &AccessStatus{
+			EnvVars: map[string]string{
+				"ENDPOINT":    "http://service.prod:8080",
+				"HOST":        "service.prod",
+				"PORT":        "8080",
+				"SCHEME":      "http",
+				"SECRET_NAME": "db-secret",
+			},
+		}
+		if !reflect.DeepEqual(res.Access, wantAccess) {
+			t.Errorf("populateAccessEnvVars() access = %+v, want %+v", res.Access, wantAccess)
 		}
 	})
 }
