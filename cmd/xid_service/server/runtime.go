@@ -26,6 +26,7 @@ import (
 	"golang/google_api/option/option"
 	authz "xmanager_cloud/auth/auth"
 	commonhealth "xmanager_cloud/common/health"
+	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/xid_service/config"
@@ -84,18 +85,17 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
-	auth, err := authz.NewAuthorizer(
-		ctx,
-		idService,
-		10*time.Minute,
-		1*time.Minute,
-		[]string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID},
-		cfg.IAPIssuer,
-		cfg.DisableAuthentication,
-		[]byte(oauthCfg.JWTSecret),
-	)
+	audiences := []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, audiences, cfg.IAPIssuer, []byte(oauthCfg.JWTSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
+	}
+	if cfg.JWKSURL != "" {
+		auth.SetJWKSValidator(jwks.NewValidator(jwks.ValidatorConfig{
+			JWKSURL:          cfg.JWKSURL,
+			AllowedAudiences: audiences,
+			ExpectedIssuer:   cfg.IAPIssuer,
+		}))
 	}
 	return auth, nil
 }

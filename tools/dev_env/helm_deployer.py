@@ -134,13 +134,20 @@ class HelmDeployer:
 
     def _build_values_dict(self, cfg: LocalDevConfig) -> dict[str, Any]:
         """Constructs the dictionary of Helm values for local deployment."""
+        cluster_name, cluster_location = cfg.cluster_name, "local"
+        if cfg.remote_k8s_context and cfg.remote_k8s_context.startswith("gke_"):
+            parts = cfg.remote_k8s_context.split("_", 3)
+            if len(parts) == 4:
+                cluster_location, cluster_name = parts[2], parts[3]
+
         values: dict[str, Any] = {
             "projectId": cfg.project_id,
             "environment": cfg.environment,
-            "clusterName": cfg.cluster_name,
+            "clusterName": cluster_name,
+            "clusterLocation": cluster_location,
             "isDevEnvironment": True,
             "googleApplicationCredentials": "/etc/gcp-secrets/key.json",
-            "gcpServiceAccount": f"xmc-dev-sa@{cfg.project_id}.iam.gserviceaccount.com",
+            "gcpServiceAccount": cfg.gcp_service_account,
             "experimentStateServer": {
                 "spannerDatabaseName": (
                     f"projects/{cfg.project_id}/instances/{cfg.spanner_instance}/"
@@ -160,6 +167,9 @@ class HelmDeployer:
             img_key = service_to_image_key(s)
             values[dep_key] = {"enabled": True}
             values[img_key] = f"{s.lower()}_image:latest"
+
+        if cfg.remote_k8s_context:
+            values["remoteK8s"] = {"enabled": True, "secretName": "remote-k8s-config"}
 
         return values
 

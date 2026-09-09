@@ -149,4 +149,16 @@ const (
 
 	// ResourceTypeTPU represents the standard TPU resource identifier.
 	ResourceTypeTPU = "tpu"
+
+	// ComponentSnapshotsAnnotation is the annotation specifying locked component snapshots.
+	ComponentSnapshotsAnnotation = "xmc.dev/component-snapshots"
+	// ComponentDriftWarningAnnotation is the annotation applied to JobSets when component drift is detected.
+	ComponentDriftWarningAnnotation = "xmc.dev/component-drift-warning"
+
+	// Component custom resource metadata and defaults.
+	ComponentCRDGroup          = "xmc.dev"
+	ComponentCRDVersion        = "v1alpha1"
+	ComponentCRDKind           = "Component"
+	ComponentCRDResource       = "components"
+	DefaultComponentsNamespace = "xmc"
 )

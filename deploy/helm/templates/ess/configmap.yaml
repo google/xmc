@@ -30,6 +30,7 @@ data:
   ess_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   ess_signature_ttl_seconds: {{ .Values.taskSignatureTtlSeconds | quote }}
   ess_allowed_origins: {{ .Values.auth.allowedOrigins | quote }}
+  ess_jwks_url: {{ if and .Values.auth .Values.auth.jwksUrl }}{{ .Values.auth.jwksUrl | quote }}{{ else if and .Values.auth .Values.auth.issuerUrl }}{{ printf "%s/keys" (.Values.auth.issuerUrl | trimSuffix "/") | quote }}{{ else }}""{{ end }}
   redis_addr: {{ .Values.redisAddr | quote }}
   enable_components: {{ .Values.componentsDeployment.enabled | quote }}
 {{- end }}

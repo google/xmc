@@ -68,6 +68,7 @@ metrics:
     # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
 
+
 ingestionGatewayDeployment:
   enabled: false
   hpa:
@@ -155,6 +156,8 @@ auth:
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
   adminIamRole: "roles/owner"
   # Optional OAuth & authentication overrides for non-GCP, KinD, or local dev environments:
+  # jwksUrl: ""      # Explicit JWKS URL for OIDC token verification (e.g. "https://auth.example.com/.well-known/jwks.json")
+  # issuerUrl: ""    # OIDC issuer URL (e.g. "https://auth.example.com"); automatically derives jwksUrl if jwksUrl is not set
   # redirectUrl: ""  # Defaults to "https://{{ apiHostname }}/api/callback"
   # frontendUrl: ""  # Defaults to "https://{{ uiHostname }}"
   # authUrl: ""      # Defaults to Google OAuth2 auth URL ("https://accounts.google.com/o/oauth2/v2/auth")

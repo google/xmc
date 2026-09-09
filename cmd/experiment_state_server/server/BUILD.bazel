@@ -72,6 +72,7 @@ compat_go_library(
         "//internal/task_queue:client",
         "//internal/toollibs/execution_environments",
         "//internal/validator",
+        "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_apimachinery//pkg/api/resource",

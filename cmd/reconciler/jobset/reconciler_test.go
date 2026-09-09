@@ -1922,8 +1922,8 @@ func TestMLRunOwnedByXManager(t *testing.T) {
 		want  bool
 	}{
 		{name: "no labels", mlRun: map[string]any{}, want: false},
-		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created-by": "someone"}}, want: false},
-		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}, want: true},
+		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created_by": "someone"}}, want: false},
+		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1946,7 +1946,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	}{
 		{
 			name:            "already exists and owned is idempotent success",
-			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}},
+			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}},
 			wantURLContains: "console.cloud.google.com",
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
@@ -1954,7 +1954,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		{
 			name: "already exists and foreign is updated",
 			client: &mockMLRunCreator{
-				getRes:    map[string]any{"labels": map[string]any{"created-by": "someone-else"}},
+				getRes:    map[string]any{"labels": map[string]any{"created_by": "someone-else"}},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
 			wantURLContains: "https://mlrun/updated",
@@ -2152,22 +2152,6 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 	}
 }
 
-// TestBuildMLRunLabels verifies the reconciler stamps the ownership labels on
-// every MLRun it owns. The list_existing_sessions_only marker is intentionally
-// NOT among them: it is applied via a follow-up UpdateMLRun (create-then-update),
-// so it is asserted separately in TestBuildMLRunSessionScanLabels.
-func TestBuildMLRunLabels(t *testing.T) {
-	got := buildMLRunLabels(12, 3)
-	want := map[string]string{
-		"experiment-id": "12",
-		"workunit-id":   "3",
-		"created-by":    createdByXManagerLabelValue,
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // TestBuildMLRunSessionScanLabels verifies the session-scan label set adds
 // list_existing_sessions_only=true on top of the ownership labels. This marker is
 // applied to the run via UpdateMLRun so the Diagon profiler-session backend
@@ -2176,9 +2160,9 @@ func TestBuildMLRunLabels(t *testing.T) {
 func TestBuildMLRunSessionScanLabels(t *testing.T) {
 	got := buildMLRunSessionScanLabels(12, 3)
 	want := map[string]string{
-		"experiment-id":               "12",
-		"workunit-id":                 "3",
-		"created-by":                  createdByXManagerLabelValue,
+		"experiment_id":               "12",
+		"workunit_id":                 "3",
+		"created_by":                  createdByXManagerLabelValue,
 		listExistingSessionsOnlyLabel: "true",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -2277,5 +2261,19 @@ func TestMLRunURL(t *testing.T) {
 				t.Errorf("r.mlRunURL(%v, %q) = %q, want %q", tc.res, tc.mlRunID, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
+// using snake_case keys (created_by, experiment_id, workunit_id).
+func TestBuildMLRunLabels(t *testing.T) {
+	got := buildMLRunLabels(12, 3)
+	want := map[string]string{
+		"experiment_id": "12",
+		"workunit_id":   "3",
+		"created_by":    createdByXManagerLabelValue,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
 	}
 }

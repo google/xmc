@@ -680,6 +680,9 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		return nil, err
 	}
 	ensureCoordinatorIndicesValid(jobSet)
+	if err := c.evaluateComponentSnapshots(ctx, workUnit, namespace, jobSet); err != nil {
+		return nil, err
+	}
 	if err := validateNonRestartingJobSetContract(jobSet); err != nil {
 		return nil, err
 	}

@@ -30,6 +30,7 @@ exports_files([
     "image_builder.py",
     "kind_manager.py",
     "local_runner.py",
+    "remote_k8s_manager.py",
     "service_resolver.py",
     "spanner_manager.py",
     "upgrade_dev_env.py",
@@ -193,6 +194,7 @@ py_library(
     imports = ["../.."],
     deps = [
         ":config_lib",
+        ":remote_k8s_manager_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -204,6 +206,25 @@ py_test(
     deps = [
         ":config_lib",
         ":kind_manager_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "remote_k8s_manager_lib",
+    srcs = ["remote_k8s_manager.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "remote_k8s_manager_test",
+    srcs = ["remote_k8s_manager_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":remote_k8s_manager_lib",
         "//tools/common:tool_utils",
     ],
 )

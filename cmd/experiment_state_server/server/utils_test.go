@@ -78,14 +78,22 @@ var testExecutable = &essmsgpb.Executable{
 	},
 }
 
+type testAuthorizerWrapper struct {
+	*authz.Authorizer
+}
+
+func (w *testAuthorizerWrapper) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
+	return "test@example.com", "user_id", nil
+}
+
 func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInterface {
 	t.Helper()
 	idService := &cloudidentity.Service{}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, true, nil)
+	authorizer, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, nil)
 	if err != nil {
 		t.Fatalf("Failed to create mock authorizer: %v", err)
 	}
-	return auth
+	return &testAuthorizerWrapper{Authorizer: authorizer}
 }
 
 type testServerOpt func(*Params)

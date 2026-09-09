@@ -42,6 +42,9 @@ BASE_SERVICES: list[str] = [
     "ui",
 ]
 
+ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
+MANAGED_XPROF_GCS_BUCKET_ENV: str = "MANAGED_XPROF_GCS_BUCKET"
+
 
 @dataclass
 class LocalDevConfig:
@@ -54,8 +57,14 @@ class LocalDevConfig:
     xid_database: str = ""
     cluster_name: str = ""
     auto_migrate: bool = True
+    enable_managed_mldiagnostics: bool = False
+    managed_xprof_gcs_bucket: str = ""
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
+    remote_k8s_context: str = ""
+    remote_k8s_namespace: str = "xmc"
+    remote_k8s_service_account: str = "actuator-service-account"
+    gcp_service_account: str = ""
 
     def __post_init__(self) -> None:
         """Applies dynamic defaults and validates required configuration fields."""
@@ -65,6 +74,14 @@ class LocalDevConfig:
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
             )
+        if self.managed_xprof_gcs_bucket:
+            cleaned = self.managed_xprof_gcs_bucket.strip().rstrip("/")
+            if not cleaned.startswith("gs://") or cleaned == "gs:":
+                raise ValueError(
+                    f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
+                    "The bucket URI must start with 'gs://' and specify a bucket name."
+                )
+            self.managed_xprof_gcs_bucket = cleaned
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
@@ -73,17 +90,42 @@ class LocalDevConfig:
             self.xid_database = f"xids-db-{self.environment}"
         if not self.cluster_name:
             self.cluster_name = f"xmc-{self.environment}"
+        self.remote_k8s_context = self.remote_k8s_context.strip() if self.remote_k8s_context else ""
+        self.remote_k8s_namespace = self.remote_k8s_namespace or "xmc"
+        self.remote_k8s_service_account = (
+            self.remote_k8s_service_account or "actuator-service-account"
+        )
+        if not self.gcp_service_account:
+            sa = (
+                f"xmc-v2-{self.environment}-xmc-wl-sa"
+                if (self.remote_k8s_context or self.environment not in ("dev", "local"))
+                else "xmc-dev-sa"
+            )
+            self.gcp_service_account = f"{sa}@{self.project_id}.iam.gserviceaccount.com"
 
 
-def _parse_bool(val: Any) -> bool:
-    """Parses a boolean value from bool, numeric, or string representations."""
+_TRUTHY_STRINGS = frozenset({"true", "1", "yes", "y", "t", "on"})
+_FALSY_STRINGS = frozenset({"false", "0", "no", "n", "f", "off"})
+
+
+def _parse_bool(val: Any) -> bool | None:
+    """Parses a boolean value; returns True/False if recognized, else None."""
     if isinstance(val, bool):
         return val
     if isinstance(val, (int, float)):
         return bool(val)
     if isinstance(val, str):
-        return val.strip().lower() in ("true", "1", "yes", "y", "t", "on")
-    return False
+        s = val.strip().lower()
+        if s in _TRUTHY_STRINGS:
+            return True
+        if s in _FALSY_STRINGS:
+            return False
+    return None
+
+
+def _is_bool_flag(val: Any) -> bool:
+    """Checks whether a value represents a boolean flag (truthy or falsy)."""
+    return _parse_bool(val) is not None
 
 
 def _resolve_bool_flag(
@@ -93,12 +135,10 @@ def _resolve_bool_flag(
     default: bool = False,
 ) -> bool:
     """Resolves a boolean flag applying precedence: CLI > Env > YAML > Default."""
-    if cli_val is not None:
-        return _parse_bool(cli_val)
-    if env_val is not None:
-        return _parse_bool(env_val)
-    if yaml_val is not None:
-        return _parse_bool(yaml_val)
+    for val in (cli_val, env_val, yaml_val):
+        parsed = _parse_bool(val)
+        if parsed is not None:
+            return parsed
     return default
 
 
@@ -122,6 +162,28 @@ def _resolve_str_flag(
         if cleaned is not None:
             return cleaned
     return default
+
+
+def _resolve_field(
+    args: argparse.Namespace | None,
+    yaml_vars: dict[str, Any],
+    cli_attr: str,
+    env_var: str,
+    yaml_key: str | tuple[str, ...],
+    default: str = "",
+) -> str:
+    """Resolves a string configuration value applying CLI > Env > YAML > Default."""
+    cli_val = getattr(args, cli_attr, None) if args else None
+    env_val = os.environ.get(env_var)
+    yaml_val = None
+    if isinstance(yaml_key, tuple):
+        for k in yaml_key:
+            yaml_val = yaml_vars.get(k)
+            if yaml_val is not None:
+                break
+    else:
+        yaml_val = yaml_vars.get(yaml_key)
+    return _resolve_str_flag(cli_val, env_val, yaml_val, default=default)
 
 
 def resolve_config_path(
@@ -272,32 +334,20 @@ def load_config(
         default="dev",
     )
 
-    spanner_instance = _resolve_str_flag(
-        getattr(args, "spanner_instance", None) if args else None,
-        os.environ.get("SPANNER_INSTANCE"),
-        yaml_vars.get("spanner_instance"),
-        default="",
+    spanner_instance = _resolve_field(
+        args, yaml_vars, "spanner_instance", "SPANNER_INSTANCE", "spanner_instance", default=""
     )
 
-    ess_database = _resolve_str_flag(
-        getattr(args, "ess_database", None) if args else None,
-        os.environ.get("ESS_DATABASE"),
-        yaml_vars.get("ess_database"),
-        default="",
+    ess_database = _resolve_field(
+        args, yaml_vars, "ess_database", "ESS_DATABASE", "ess_database", default=""
     )
 
-    xid_database = _resolve_str_flag(
-        getattr(args, "xid_database", None) if args else None,
-        os.environ.get("XID_DATABASE"),
-        yaml_vars.get("xid_database"),
-        default="",
+    xid_database = _resolve_field(
+        args, yaml_vars, "xid_database", "XID_DATABASE", "xid_database", default=""
     )
 
-    cluster_name = _resolve_str_flag(
-        getattr(args, "cluster_name", None) if args else None,
-        os.environ.get("CLUSTER_NAME"),
-        yaml_vars.get("cluster_name"),
-        default="",
+    cluster_name = _resolve_field(
+        args, yaml_vars, "cluster_name", "CLUSTER_NAME", "cluster_name", default=""
     )
 
     auto_migrate = _resolve_bool_flag(
@@ -307,7 +357,75 @@ def load_config(
         default=True,
     )
 
+    enable_managed_mldiagnostics = _resolve_bool_flag(
+        getattr(args, "enable_managed_mldiagnostics", None) if args else None,
+        os.environ.get(ENABLE_MANAGED_MLDIAGNOSTICS_ENV),
+        yaml_vars.get("enable_managed_mldiagnostics"),
+        default=False,
+    )
+
+    managed_xprof_gcs_bucket = _resolve_str_flag(
+        getattr(args, "managed_xprof_gcs_bucket", None) if args else None,
+        os.environ.get(MANAGED_XPROF_GCS_BUCKET_ENV),
+        yaml_vars.get("managed_xprof_gcs_bucket"),
+        default="",
+    )
+
     enabled_services = _resolve_enabled_services(args, yaml_vars)
+
+    remote_raw = getattr(args, "remote_k8s_context", None) if args else None
+    remote_env = os.environ.get("REMOTE_K8S_CONTEXT")
+    remote_yaml = yaml_vars.get("remote_k8s_context")
+
+    is_bool = _is_bool_flag(remote_raw)
+    remote_k8s_context = _resolve_str_flag(
+        None if is_bool else remote_raw,
+        None if _is_bool_flag(remote_env) else remote_env,
+        None if _is_bool_flag(remote_yaml) else remote_yaml,
+        default="",
+    )
+    enable_remote_k8s = _resolve_bool_flag(
+        remote_raw if is_bool else (True if remote_k8s_context else None),
+        os.environ.get("REMOTE_K8S"),
+        yaml_vars.get("remote_k8s"),
+        default=bool(remote_k8s_context),
+    )
+    if enable_remote_k8s and not remote_k8s_context:
+        reg = (
+            getattr(args, "region", None)
+            or os.environ.get("REGION")
+            or yaml_vars.get("region")
+            or "us-central1"
+        )
+        dep = yaml_vars.get("deployment_name") or f"xmc-v2-{environment}"
+        remote_k8s_context = f"gke_{project_id}_{reg}_xmc-{dep}-{environment}"
+    elif not enable_remote_k8s:
+        remote_k8s_context = ""
+
+    remote_k8s_namespace = _resolve_field(
+        args,
+        yaml_vars,
+        "remote_k8s_namespace",
+        "REMOTE_K8S_NAMESPACE",
+        ("remote_k8s_namespace", "namespace"),
+        default="xmc",
+    )
+    remote_k8s_service_account = _resolve_field(
+        args,
+        yaml_vars,
+        "remote_k8s_service_account",
+        "REMOTE_K8S_SERVICE_ACCOUNT",
+        "remote_k8s_service_account",
+        default="actuator-service-account",
+    )
+    gcp_service_account = _resolve_field(
+        args,
+        yaml_vars,
+        "gcp_service_account",
+        "GCP_SERVICE_ACCOUNT",
+        ("gcp_service_account", "gcpServiceAccount"),
+        default="",
+    )
 
     cfg = LocalDevConfig(
         project_id=project_id,
@@ -317,8 +435,14 @@ def load_config(
         xid_database=xid_database,
         cluster_name=cluster_name,
         auto_migrate=auto_migrate,
+        enable_managed_mldiagnostics=enable_managed_mldiagnostics,
+        managed_xprof_gcs_bucket=managed_xprof_gcs_bucket,
         enabled_services=enabled_services,
         config_path=resolved_path,
+        remote_k8s_context=remote_k8s_context,
+        remote_k8s_namespace=remote_k8s_namespace,
+        remote_k8s_service_account=remote_k8s_service_account,
+        gcp_service_account=gcp_service_account,
     )
     _LOGGER.debug(
         "Resolved LocalDevConfig: project_id=%s, environment=%s, spanner_instance=%s, cluster_name=%s, config_path=%s",

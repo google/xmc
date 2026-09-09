@@ -24,7 +24,7 @@ func TestNewAuthorizer(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Valid parameters", func(t *testing.T) {
-		auth, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1", "aud2"}, "https://issuer.com", false, nil)
+		auth, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1", "aud2"}, "https://issuer.com", nil)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -34,14 +34,14 @@ func TestNewAuthorizer(t *testing.T) {
 	})
 
 	t.Run("Empty IAP issuer", func(t *testing.T) {
-		_, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1"}, "", false, nil)
+		_, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1"}, "", nil)
 		if err == nil {
 			t.Error("Expected error for empty IAP issuer, got nil")
 		}
 	})
 
 	t.Run("Empty IAP audience", func(t *testing.T) {
-		_, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1", ""}, "https://issuer.com", false, nil)
+		_, err := NewAuthorizer(ctx, nil, 10*time.Minute, 1*time.Minute, []string{"aud1", ""}, "https://issuer.com", nil)
 		if err == nil {
 			t.Error("Expected error for empty IAP audience, got nil")
 		}

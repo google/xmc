@@ -60,6 +60,10 @@ python3 tools/dev_env/dev_env.py up --no-build-images
 - `--no-build-images`: Skip OCI image compilation and side-loading.
 - `--no-deploy-helm`: Skip Helm chart deployment.
 - `--no-auto-migrate`: Skip automatic Cloud Spanner schema migration execution.
+- `--remote-k8s-context`: Explicit kubectl context for the remote GKE cluster (e.g. `gke_<PROJECT>_<REGION>_<CLUSTER>`).
+- `--remote-k8s`: Shorthand for `--remote-k8s-context` (or enables hybrid mode auto-detecting the cluster context from the deployment config).
+- `--remote-k8s-namespace`: Namespace on the remote cluster hosting the ServiceAccount and JobSets (default: `xmc`).
+- `--remote-k8s-service-account`: ServiceAccount used to mint the remote access token (default: `actuator-service-account`).
 
 ---
 
@@ -510,6 +514,169 @@ To keep local startup near-instantaneous (~35s) and memory overhead minimal, Kin
 2. **Dual-KinD Multi-Cluster MultiKueue (`--multi-cluster`)**:
    - Bootstraps two KinD clusters on the same Docker bridge network (`xmc-mgmt` and `xmc-worker`).
    - Because MultiKueue only requires control-plane API server connectivity (`kube-apiserver` client traffic over the internal Docker network `https://xmc-worker-control-plane:6443`) and does *not* require pod overlay routing, cross-cluster workload dispatching and status synchronization can be validated 100% locally without cloud infrastructure.
+
+### 3. Hybrid Execution Model: KinD Control Plane + Remote GKE Data Plane (`--remote-k8s`)
+
+For verifying real JobSet execution, Kueue quota admission, multi-slice TPU topologies, or running agentic regression testing without deploying the full control plane into GKE, XMC supports a **hybrid execution topology**:
+
+```
++-------------------------------------------------------------+
+|               Local Host / Docker (KinD)                    |
+|                                                             |
+|  [ Web UI / Gateway ]  <--->  [ Dex OIDC ]                 |
+|           |                                                 |
+|  [ ESS / XID Services ] <------------------------+          |
+|           |                                      |          |
+|  [ Actuator & Reconciler ]                       |          |
+|           | (Static Kubeconfig via /etc/remote-k8s)         |
++-----------|--------------------------------------|----------+
+            | (HTTPS)                              | (RPC)
+            v                                      v
++------------------------------------+  +---------------------+
+|        Remote GKE Data Plane       |  |  GCP Cloud Spanner  |
+|                                    |  +---------------------+
+|  • Kueue Controller Manager        |  | • experiment-db     |
+|  • JobSet Controller Manager       |  | • xids-db           |
+|  • Real Nodes / TPUs / Worker Pods |  +---------------------+
++------------------------------------+
+```
+
+#### 3.1 Why Use Hybrid Mode?
+
+| Topology | Control Plane | Data Plane (JobSets/Pods) | Best For |
+| :--- | :--- | :--- | :--- |
+| **Pure KinD (`dev_env up`)** | Local KinD | Local KinD (Dummy CRDs or mock CPU pods) | Instant inner-loop API testing, UI iteration, fast unit/E2E verification without cloud resources. |
+| **Hybrid Mode (`--remote-k8s`)** | Local KinD | Remote GKE Cluster (Real Nodes/TPUs/Kueue) | Fast inner-loop dev while testing actual JobSet creation, Kueue admission, TPU multi-slice execution, and real pod scheduling. |
+| **Full GKE Deployment** | Remote GKE | Remote GKE | Production staging, formal release qualification, multi-user environments. |
+
+#### 3.2 Prerequisites & Obtaining Remote Cluster Credentials
+1. **Google Cloud SDK**: Active GCP authentication with Application Default Credentials (ADC) for Cloud Spanner access:
+   ```bash
+   gcloud auth login
+   gcloud auth application-default login
+   ```
+2. **Obtaining GKE Credentials & Understanding Context Names**:
+   Fetch credentials for your remote cluster using `gcloud`:
+   ```bash
+   gcloud container clusters get-credentials <CLUSTER_NAME> \
+     --region <REGION> \
+     --project <PROJECT_ID>
+   ```
+   Running `gcloud container clusters get-credentials` creates an entry in your local `~/.kube/config` following GKE's standard naming convention:
+   ```text
+   gke_<PROJECT_ID>_<REGION>_<CLUSTER_NAME>
+   ```
+   You can view your currently active context at any time with:
+   ```bash
+   kubectl config current-context
+   ```
+   Or list all available contexts on your machine:
+   ```bash
+   kubectl config get-contexts
+   ```
+3. **Remote Cluster Setup**: The remote GKE cluster must have the target namespace (`xmc`) and a ServiceAccount with RBAC permissions to manage JobSets and Kueue workloads (by default, `actuator-service-account` provisioned by Cluster Toolkit v2).
+
+#### 3.3 Step-by-Step Quickstart Walkthrough
+
+##### Step 1: Launch Hybrid Development Environment
+Start the local KinD control plane and bind it to your remote GKE data plane using one of the following methods:
+
+```bash
+# Method A (Recommended): Explicitly pass your remote cluster's kubectl context
+python3 tools/dev_env/dev_env.py up --remote-k8s-context gke_my-project_us-central1_my-cluster
+
+# Or use your currently active kubectl context
+python3 tools/dev_env/dev_env.py up --remote-k8s-context $(kubectl config current-context)
+
+# Method B: Auto-detect from deployment config if using xmanager-cloud-deployment.yaml
+python3 tools/dev_env/dev_env.py up --remote-k8s
+```
+
+What `dev_env up --remote-k8s` executes automatically:
+- Extracts the remote API server URL and CA certificate from your host kubeconfig.
+- Mints a 24-hour bearer token for `actuator-service-account` on the remote GKE cluster via the Kubernetes TokenRequest API.
+- Mounts a static kubeconfig into the local KinD cluster inside the `remote-k8s-config` Secret.
+- Deploys the local XMC Helm chart with `k8s.remote.enabled=true`, configuring local Actuator and Reconciler to manage remote JobSets.
+
+##### Step 2: Verify Cluster Status
+Check that all local microservices are running and connected:
+```bash
+python3 tools/dev_env/dev_env.py status
+```
+
+##### Step 3: Launch an Experiment
+Submit an experiment to the local Experiment State Server:
+```bash
+# Via REST API
+curl -X POST http://localhost:8080/v1/experiments \
+  -H "Content-Type: application/json" \
+  -d '{"experiment_id": "hybrid-test", "display_name": "Hybrid Test"}'
+```
+Or launch via the Python SDK / test script.
+
+##### Step 4: Verify Remote JobSet Scheduling
+Observe the workload progressing on the **remote GKE cluster**:
+```bash
+# Check JobSets created by the local actuator on the remote cluster
+kubectl --context <REMOTE_CONTEXT> -n xmc get jobsets
+
+# Check Kueue workload admission
+kubectl --context <REMOTE_CONTEXT> -n xmc get workloads
+
+# Check physical pods running on remote nodes/TPUs
+kubectl --context <REMOTE_CONTEXT> -n xmc get pods -l jobset.sigs.k8s.io/jobset-name
+```
+
+Simultaneously, inspect local controller logs in KinD:
+```bash
+python3 tools/dev_env/dev_env.py logs actuator
+python3 tools/dev_env/dev_env.py logs reconciler
+```
+
+##### Step 5: Fast Inner-Loop Microservice Reload
+When modifying Actuator, Reconciler, or ESS source code, use fast reload to update local containers in ~5-10 seconds without touching the remote GKE cluster:
+```bash
+python3 tools/dev_env/dev_env.py reload
+```
+
+##### Step 6: Teardown
+Tear down the local KinD cluster when finished:
+```bash
+python3 tools/dev_env/dev_env.py down
+```
+
+#### 3.4 Configuration Reference
+
+| Option | CLI Flag | Environment Variable | Configuration YAML | Default |
+| :--- | :--- | :--- | :--- | :--- |
+| **Enable Hybrid Mode** | `--remote-k8s` | `REMOTE_K8S=true` | `remote_k8s: true` | `false` |
+| **Remote K8s Context** | `--remote-k8s-context <ctx>` | `REMOTE_K8S_CONTEXT` | `remote_k8s_context` | `gke_<proj>_<reg>_<cluster>` or active context |
+| **Remote Namespace** | `--remote-k8s-namespace <ns>` | `REMOTE_K8S_NAMESPACE` | `remote_k8s_namespace` | `xmc` |
+| **ServiceAccount** | `--remote-k8s-service-account <sa>` | `REMOTE_K8S_SERVICE_ACCOUNT` | `remote_k8s_service_account` | `actuator-service-account` |
+
+Example `dev_env.yaml`:
+```yaml
+remote_k8s: true
+remote_k8s_context: "gke_my-project_us-central1_my-cluster"
+remote_k8s_namespace: "xmc"
+remote_k8s_service_account: "actuator-service-account"
+```
+
+#### 3.5 Security Model & Zero Cloud-SDK Invariant
+- **Zero Cloud SDK in Containers**: Actuator and Reconciler container images contain no Google Cloud SDK, `gcloud` CLI, or Google IAM credential libraries. The hybrid configuration uses standard Kubernetes TokenRequest bearer tokens mounted via standard `/etc/remote-k8s/kubeconfig`.
+- **RBAC Scoping**: The minted token carries only the permissions granted to `actuator-service-account` on the remote cluster (limited to managing JobSets and reading pod statuses in the `xmc` namespace).
+- **Spanner Security**: Local containers connect to Cloud Spanner through standard host ADC volume mounts (`~/.config/gcloud/application_default_credentials.json`), ensuring identity and auditing consistency with GCP IAM.
+
+#### 3.6 Troubleshooting
+
+- **Error: "Token output was empty" or "Failed to mint token"**:
+  - Ensure your host `gcloud` session has not expired: run `gcloud auth login` and refresh credentials.
+  - Verify that `kubectl create token actuator-service-account -n xmc` succeeds on the remote context directly.
+- **Error: "Failed to query remote cluster configuration"**:
+  - Verify that the context name passed to `--remote-k8s-context` matches an entry in `kubectl config get-contexts`.
+- **JobSet Created but Not Scheduling**:
+  - Check remote Kueue cluster queues: `kubectl --context <REMOTE_CONTEXT> get clusterqueues`.
+  - Ensure the requested compute resources (CPUs, GPUs, TPUs) have matching ResourceFlavors on the remote GKE cluster.
 
 ---
 

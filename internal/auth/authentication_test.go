@@ -16,11 +16,14 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang/grpc/metadata/metadata"
 	"google.golang.org/api/idtoken"
+	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -141,7 +144,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "success with x-goog-user-email",
+			name:     "ignores x-goog-user-email and uses verified payload email",
 			metadata: metadata.Pairs("x-goog-iap-jwt-assertion", "jwt", "x-goog-user-email", "user@example.com"),
 			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
 				if audience == "test_audience" {
@@ -153,23 +156,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 				}
 				return nil, errors.New("validation failed for audience " + audience)
 			},
-			wantEmail:  "user@example.com",
-			wantUserID: "userID",
-		},
-		{
-			name:     "empty x-goog-user-email fallbacks to payload email",
-			metadata: metadata.Pairs("x-goog-iap-jwt-assertion", "jwt", "x-goog-user-email", ""),
-			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
-				if audience == "test_audience" {
-					return &idtoken.Payload{
-						Issuer:  "https://cloud.google.com/iap",
-						Subject: "userID",
-						Claims:  map[string]any{"email": "payload@example.com"},
-					}, nil
-				}
-				return nil, errors.New("validation failed for audience " + audience)
-			},
-			wantEmail:  "payload@example.com",
+			wantEmail:  "different@example.com",
 			wantUserID: "userID",
 		},
 		{
@@ -237,4 +224,191 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockTokenValidator struct {
+	validateFn func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error)
+}
+
+func (m *mockTokenValidator) ValidateClaimsAnyAudience(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+	if m.validateFn != nil {
+		return m.validateFn(ctx, tokenStr, audiences)
+	}
+	return nil, errors.New("unimplemented")
+}
+
+func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("JWKSValidationSuccessWithEmailClaim", func(t *testing.T) {
+		a := &Authorizer{iapAudiences: []string{"test_audience"}}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return &jwks.Claims{
+					Email: "jwks-user@example.com",
+					RegisteredClaims: jwt.RegisteredClaims{
+						Subject: "sub-12345",
+					},
+				}, nil
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "valid-jwks-jwt"))
+		email, userID, err := a.AuthenticateUserFromContext(reqCtx)
+		if err != nil {
+			t.Fatalf("AuthenticateUserFromContext failed: %v", err)
+		}
+		if email != "jwks-user@example.com" {
+			t.Errorf("got email %q, want %q", email, "jwks-user@example.com")
+		}
+		if userID != "sub-12345" {
+			t.Errorf("got userID %q, want %q", userID, "sub-12345")
+		}
+	})
+
+	t.Run("JWKSValidationSuccessWithSubjectEmailFallback", func(t *testing.T) {
+		a := &Authorizer{iapAudiences: []string{"test_audience"}}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return &jwks.Claims{
+					Email: "",
+					RegisteredClaims: jwt.RegisteredClaims{
+						Subject: "service-account@iam.gserviceaccount.com",
+					},
+				}, nil
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "valid-jwks-jwt"))
+		email, userID, err := a.AuthenticateUserFromContext(reqCtx)
+		if err != nil {
+			t.Fatalf("AuthenticateUserFromContext failed: %v", err)
+		}
+		if email != "service-account@iam.gserviceaccount.com" {
+			t.Errorf("got email %q, want %q", email, "service-account@iam.gserviceaccount.com")
+		}
+		if userID != "service-account@iam.gserviceaccount.com" {
+			t.Errorf("got userID %q, want %q", userID, "service-account@iam.gserviceaccount.com")
+		}
+	})
+
+	t.Run("JWKSValidationInvalidSignatureFallbackToIAP", func(t *testing.T) {
+		a := &Authorizer{
+			iapAudiences: []string{"test_audience"},
+			iapIssuer:    "https://cloud.google.com/iap",
+		}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return nil, jwks.ErrInvalidToken
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		oldValidate := validate
+		defer func() { validate = oldValidate }()
+		validate = func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+			if audience == "test_audience" {
+				return &idtoken.Payload{
+					Issuer:  "https://cloud.google.com/iap",
+					Subject: "iap-user-id",
+					Claims:  map[string]any{"email": "iap-fallback@example.com"},
+				}, nil
+			}
+			return nil, errors.New("mismatch")
+		}
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "iap-jwt"))
+		email, userID, err := a.AuthenticateUserFromContext(reqCtx)
+		if err != nil {
+			t.Fatalf("AuthenticateUserFromContext failed: %v", err)
+		}
+		if email != "iap-fallback@example.com" {
+			t.Errorf("got email %q, want %q", email, "iap-fallback@example.com")
+		}
+		if userID != "iap-user-id" {
+			t.Errorf("got userID %q, want %q", userID, "iap-user-id")
+		}
+	})
+
+	t.Run("JWKSValidationExpiredTokenFallbackFailsIfIAPAlsoFails", func(t *testing.T) {
+		a := &Authorizer{
+			iapAudiences: []string{"test_audience"},
+			iapIssuer:    "https://cloud.google.com/iap",
+		}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return nil, fmt.Errorf("%w: token is expired", jwks.ErrInvalidToken)
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		oldValidate := validate
+		defer func() { validate = oldValidate }()
+		validate = func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+			return nil, errors.New("idtoken validation failed")
+		}
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "expired-jwt"))
+		_, _, err := a.AuthenticateUserFromContext(reqCtx)
+		if err == nil {
+			t.Errorf("AuthenticateUserFromContext succeeded, want error")
+		}
+	})
+
+	t.Run("JWKSValidationAudienceMismatchFallback", func(t *testing.T) {
+		a := &Authorizer{
+			iapAudiences: []string{"test_audience"},
+			iapIssuer:    "https://cloud.google.com/iap",
+		}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return nil, jwks.ErrAudienceMismatch
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		oldValidate := validate
+		defer func() { validate = oldValidate }()
+		validate = func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+			return nil, errors.New("idtoken validation failed")
+		}
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "mismatched-aud-jwt"))
+		_, _, err := a.AuthenticateUserFromContext(reqCtx)
+		if err == nil {
+			t.Errorf("AuthenticateUserFromContext succeeded, want error")
+		}
+	})
+
+	t.Run("JWKSValidationNonEmailSubjectRejection", func(t *testing.T) {
+		a := &Authorizer{
+			iapAudiences: []string{"test_audience"},
+			iapIssuer:    "https://cloud.google.com/iap",
+		}
+		mockVal := &mockTokenValidator{
+			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+				return &jwks.Claims{
+					Email: "",
+					RegisteredClaims: jwt.RegisteredClaims{
+						Subject: "1029384756", // Numeric ID, not a valid email
+					},
+				}, nil
+			},
+		}
+		a.SetJWKSValidator(mockVal)
+
+		oldValidate := validate
+		defer func() { validate = oldValidate }()
+		validate = func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+			return nil, errors.New("idtoken validation failed")
+		}
+
+		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "numeric-sub-jwt"))
+		_, _, err := a.AuthenticateUserFromContext(reqCtx)
+		if err == nil {
+			t.Errorf("AuthenticateUserFromContext succeeded, want error for numeric non-email subject")
+		}
+	})
 }

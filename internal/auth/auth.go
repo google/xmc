@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"google.golang.org/api/cloudidentity/v1beta1"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/jwks"
 
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -65,6 +65,11 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
+// TokenValidator defines an interface for validating tokens against a JWKS endpoint or other token validator.
+type TokenValidator interface {
+	ValidateClaimsAnyAudience(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error)
+}
+
 // Authorizer now includes a thread-safe cache for group memberships.
 type Authorizer struct {
 	IDService     *cloudidentity.Service
@@ -73,35 +78,43 @@ type Authorizer struct {
 	cacheTTL      time.Duration
 	cacheErrorTTL time.Duration
 	iapAudiences  []string
-	// disableAuthentication disables authentication for testing.
-	disableAuthentication bool
-	iapIssuer             string
-	jwtSecret             []byte
+	iapIssuer     string
+	jwtSecret     []byte
+	jwksValidator TokenValidator
+}
+
+// SetJWKSValidator configures a JWKS token validator for OIDC token verification.
+func (a *Authorizer) SetJWKSValidator(v TokenValidator) {
+	a.jwksValidator = v
 }
 
 // NewAuthorizer creates a new Authorizer with an initialized group cache.
 // cacheTTL (e.g., 10 * time.Minute) defines how long to cache results.
-func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheTTL time.Duration, cacheErrorTTL time.Duration, iapAudiences []string, iapIssuer string, disableAuthentication bool, jwtSecret []byte) (*Authorizer, error) {
+func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheTTL time.Duration, cacheErrorTTL time.Duration, iapAudiences []string, iapIssuer string, args ...any) (*Authorizer, error) {
 	for _, aud := range iapAudiences {
 		if aud == "" {
 			return nil, fmt.Errorf("IAP audience cannot be an empty string")
 		}
 	}
-	if disableAuthentication {
-		logging.Warn(ctx, "Authentication is disabled")
-	}
 
 	if iapIssuer == "" {
 		return nil, fmt.Errorf("IAP issuer cannot be an empty string")
 	}
+
+	var jwtSecret []byte
+	if len(args) == 1 {
+		jwtSecret, _ = args[0].([]byte)
+	} else if len(args) >= 2 {
+		jwtSecret, _ = args[1].([]byte)
+	}
+
 	return &Authorizer{
-		IDService:             idService,
-		groupCache:            make(map[string]cacheEntry),
-		cacheTTL:              cacheTTL,
-		cacheErrorTTL:         cacheErrorTTL,
-		iapAudiences:          iapAudiences,
-		disableAuthentication: disableAuthentication,
-		iapIssuer:             iapIssuer,
-		jwtSecret:             jwtSecret,
+		IDService:     idService,
+		groupCache:    make(map[string]cacheEntry),
+		cacheTTL:      cacheTTL,
+		cacheErrorTTL: cacheErrorTTL,
+		iapAudiences:  iapAudiences,
+		iapIssuer:     iapIssuer,
+		jwtSecret:     jwtSecret,
 	}, nil
 }

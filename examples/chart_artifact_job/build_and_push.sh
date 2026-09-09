@@ -1,11 +1,11 @@
-#!/bin/bash
-# Copyright 2025 Google LLC
+#!/usr/bin/env bash
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,15 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+set -euo pipefail
 
-PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 if [ -z "${PROJECT_ID}" ]; then
-  echo "Error: No active gcloud project found. Please set one using 'gcloud config set project <PROJECT_ID>'." >&2
+  echo "❌ Error: No active gcloud project found. Set PROJECT_ID or run 'gcloud config set project <PROJECT_ID>'." >&2
   exit 1
 fi
-IMAGE_PATH="us-docker.pkg.dev/${PROJECT_ID}/xmc/chart-artifact-job:latest"
 
-echo "Building and pushing image: ${IMAGE_PATH}"
-docker build -t "${IMAGE_PATH}" .
+IMAGE_PATH="${IMAGE_PATH:-us-docker.pkg.dev/${PROJECT_ID}/xmc/chart-artifact-job:latest}"
+
+# The build context is the repository root: the Dockerfile copies the XMC SDK sources.
+echo "--> Building container image: ${IMAGE_PATH}..."
+cd "${REPO_ROOT}"
+docker build -f "${SCRIPT_DIR}/Dockerfile" -t "${IMAGE_PATH}" .
+
+echo "--> Pushing container image to Artifact Registry..."
 docker push "${IMAGE_PATH}"
+
+echo ""
+echo "=== ✅ Container successfully built and pushed! ==="
+echo "IMAGE_PATH=${IMAGE_PATH}"
