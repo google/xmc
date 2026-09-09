@@ -57,18 +57,8 @@ type server struct {
 }
 
 func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard) *server {
-	if cfg == nil {
-		panic("newServer: cfg cannot be nil")
-	}
-	if checker == nil {
-		panic("newServer: checker cannot be nil")
-	}
-	if guard == nil {
-		panic("newServer: guard cannot be nil")
-	}
-
 	var limiter *rate.Limiter
-	if cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
+	if cfg != nil && cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
 		limiter = rate.NewLimiter(rate.Limit(float64(cfg.ForceRefreshMaxRequests)/cfg.ForceRefreshWindow.Seconds()), cfg.ForceRefreshMaxRequests)
 	}
 	return &server{
@@ -143,9 +133,6 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 			continue
 		}
 		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
-			if c.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT && c.HealthState == spb.HealthState_HEALTH_STATE_UNSPECIFIED {
-				continue
-			}
 			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
 			logging.Warn(ctx, "Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
 		}

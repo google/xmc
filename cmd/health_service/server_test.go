@@ -372,25 +372,6 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestNewServer_NilValidation(t *testing.T) {
-	cfg := &Config{}
-	checker := &mockHealthChecker{}
-	guard := &mockAdminRoleGuard{hasRole: true}
-
-	assertPanics := func(name string, f func()) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("%s: expected panic, got nil", name)
-			}
-		}()
-		f()
-	}
-
-	assertPanics("nil cfg", func() { newServer(nil, checker, guard) })
-	assertPanics("nil checker", func() { newServer(cfg, nil, guard) })
-	assertPanics("nil guard", func() { newServer(cfg, checker, nil) })
-}
-
 func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -398,7 +379,7 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 		wantHealth spb.HealthState
 	}{
 		{
-			name: "disabled custom component with unspecified state does not degrade health",
+			name: "all components healthy produces healthy platform state",
 			components: []*spb.ComponentHealth{
 				{
 					Name:        "ESS",
@@ -406,9 +387,9 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 				},
 				{
-					Name:        "redis-disabled",
+					Name:        "clickhouse",
 					Type:        spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
-					HealthState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 				},
 			},
 			wantHealth: spb.HealthState_HEALTH_STATE_HEALTHY,

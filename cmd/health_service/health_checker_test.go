@@ -744,8 +744,8 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 		}
 	}
 
-	if len(customComps) != 3 {
-		t.Fatalf("expected 3 custom components, got %d", len(customComps))
+	if len(customComps) != 2 {
+		t.Fatalf("expected 2 custom components (disabled filtered out), got %d", len(customComps))
 	}
 
 	ch, ok := customComps["clickhouse"]
@@ -756,11 +756,6 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 	gw, ok := customComps["gateway"]
 	if !ok || gw.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || gw.ErrorMessage != "Pending GKE reconciliation" {
 		t.Errorf("unexpected gateway health: %+v", gw)
-	}
-
-	rd, ok := customComps["redis-custom"]
-	if !ok || rd.HealthState != spb.HealthState_HEALTH_STATE_UNSPECIFIED || rd.ErrorMessage != "Component disabled" {
-		t.Errorf("unexpected redis-custom health: %+v", rd)
 	}
 }
 
@@ -803,11 +798,18 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 	}
 	defer checker.Close()
 
-	// Should not crash, and should return core components normally
+	// Should not crash, and should report Custom Components Provider as UNHEALTHY
 	res := checker.RunChecks(context.Background())
+	var customComps []*spb.ComponentHealth
 	for _, comp := range res.Components {
 		if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
-			t.Errorf("expected zero custom components on error, got: %+v", comp)
+			customComps = append(customComps, comp)
 		}
+	}
+	if len(customComps) != 1 {
+		t.Fatalf("expected 1 custom component error placeholder, got %d", len(customComps))
+	}
+	if customComps[0].Name != "Custom Components Provider" || customComps[0].HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("unexpected component health: %+v", customComps[0])
 	}
 }

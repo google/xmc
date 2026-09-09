@@ -120,8 +120,8 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	// 2. Run Spanner and custom component checks in parallel
 	var essComp, xidComp *spb.ComponentHealth
 	var essVersion, xidVersion string
-	var customHealths []summary.ComponentHealth
-	var customErr error
+	var customCompHealths []summary.ComponentHealth
+	var customCompErr error
 
 	spannerWgCount := 2
 	if c.componentsProvider != nil {
@@ -142,7 +142,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 			defer wg.Done()
 			compCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
-			customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
+			customCompHealths, customCompErr = c.componentsProvider.GetComponentsHealth(compCtx)
 		}()
 	}
 
@@ -153,13 +153,10 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 
 	// 4. Append custom components health if provider is configured
 	if c.componentsProvider != nil {
-		if customErr != nil {
-			logging.Warn(ctx, "Failed to retrieve custom components health", "error", customErr)
-		} else {
-			for _, ch := range customHealths {
-				components = append(components, convertCustomComponentHealth(ch))
-			}
+		if customCompErr != nil {
+			logging.Warn(ctx, "Failed to retrieve custom components health", "error", customCompErr)
 		}
+		components = appendCustomComponentHealth(components, customCompErr, customCompHealths)
 	}
 
 	return RunChecksResult{
@@ -167,6 +164,24 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 		EssDbSchemaVersion: essVersion,
 		XidDbSchemaVersion: xidVersion,
 	}
+}
+
+func appendCustomComponentHealth(components []*spb.ComponentHealth, err error, healths []summary.ComponentHealth) []*spb.ComponentHealth {
+	if err != nil {
+		return append(components, &spb.ComponentHealth{
+			Name:         "Custom Components Provider",
+			Type:         spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("failed to list custom components: %v", err),
+		})
+	}
+	for _, ch := range healths {
+		if ch.HealthState == summary.HealthStateDisabled {
+			continue
+		}
+		components = append(components, convertCustomComponentHealth(ch))
+	}
+	return components
 }
 
 func convertCustomComponentHealth(ch summary.ComponentHealth) *spb.ComponentHealth {

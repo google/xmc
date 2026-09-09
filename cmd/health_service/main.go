@@ -165,17 +165,14 @@ func initCustomComponentsProvider(ctx context.Context, cfg *Config) (summary.Cus
 	}
 
 	if cfg.EssSpannerDatabase == "" {
-		logging.Warn(ctx, "EssSpannerDatabase not set; using in-memory MemoryStore fallback for custom components")
-		storeProvider, err := summary.NewStoreComponentsProvider(store.NewMemoryStore())
-		if err != nil {
-			logging.Fatal(ctx, "Failed to create custom components info provider", "error", err)
-		}
-		return storeProvider, nil
+		logging.Warn(ctx, "EssSpannerDatabase not set; custom components health checks disabled")
+		return nil, nil
 	}
 
 	compSpannerClient, err := spanner.NewClient(ctx, cfg.EssSpannerDatabase)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to create Spanner client for components store", "error", err)
+		logging.Warn(ctx, "Failed to create Spanner client for components store; custom components checks disabled", "error", err)
+		return nil, nil
 	}
 
 	compStore := store.NewSpannerStore(compSpannerClient)
@@ -184,7 +181,8 @@ func initCustomComponentsProvider(ctx context.Context, cfg *Config) (summary.Cus
 	storeProvider, err := summary.NewStoreComponentsProvider(compStore)
 	if err != nil {
 		compSpannerClient.Close()
-		logging.Fatal(ctx, "Failed to create custom components info provider", "error", err)
+		logging.Warn(ctx, "Failed to create custom components info provider; custom components checks disabled", "error", err)
+		return nil, nil
 	}
 	return storeProvider, compSpannerClient
 }
