@@ -60,7 +60,8 @@ type ControlPlaneClient struct {
 // NewControlPlaneClient creates a new ControlPlaneClient.
 //
 // environment must be one of "autopush", "staging", or "prod".
-// location defaults to "us-central1" when empty.
+// location is currently hardcoded to "us-central1" because the MLRun control plane
+// backend only supports that region.
 func NewControlPlaneClient(ctx context.Context, projectID, environment, location string) (*ControlPlaneClient, error) {
 	cfg, err := resolveEndpoint(projectID, environment, location)
 	if err != nil {
@@ -90,6 +91,14 @@ type endpointConfig struct {
 	mlRunsPath string
 }
 
+// resolveLocation returns the effective MLRun location. The Hypercompute
+// Cluster MLRun backend currently only supports "us-central1", so caller-provided
+// locations (e.g. cluster location) must be overridden until multi-region
+// support is available upstream.
+func resolveLocation(_ string) string {
+	return defaultLocation
+}
+
 // resolveEndpoint validates the environment and derives the base URL, ML runs
 // path, and effective location. It is separated from NewControlPlaneClient so
 // that URL construction and validation can be unit-tested without acquiring
@@ -103,17 +112,15 @@ func resolveEndpoint(projectID, environment, location string) (endpointConfig, e
 		return endpointConfig{}, fmt.Errorf("invalid environment %q; must be one of %q, %q, or %q", environment, "autopush", "staging", "prod")
 	}
 
-	if location == "" {
-		location = defaultLocation
-	}
+	effectiveLocation := resolveLocation(location)
 
 	baseURL := "https://hypercomputecluster.googleapis.com/v1alpha"
 	if environment != "prod" {
 		baseURL = fmt.Sprintf("https://%s-hypercomputecluster.sandbox.googleapis.com/v1alpha", environment)
 	}
 
-	mlRunsPath := fmt.Sprintf("%s/projects/%s/locations/%s/machineLearningRuns", baseURL, projectID, location)
-	return endpointConfig{location: location, baseURL: baseURL, mlRunsPath: mlRunsPath}, nil
+	mlRunsPath := fmt.Sprintf("%s/projects/%s/locations/%s/machineLearningRuns", baseURL, projectID, effectiveLocation)
+	return endpointConfig{location: effectiveLocation, baseURL: baseURL, mlRunsPath: mlRunsPath}, nil
 }
 
 func (c *ControlPlaneClient) authHeader(ctx context.Context) (string, error) {

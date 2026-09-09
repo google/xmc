@@ -202,9 +202,51 @@ func newTestClient(server *httptest.Server) *ControlPlaneClient {
 	}
 }
 
+func TestResolveLocation(t *testing.T) {
+	tests := []struct {
+		name     string
+		location string
+		wantLoc  string
+	}{
+		{
+			name:     "empty location defaults to us-central1",
+			location: "",
+			wantLoc:  "us-central1",
+		},
+		{
+			name:     "matching us-central1 returns us-central1",
+			location: "us-central1",
+			wantLoc:  "us-central1",
+		},
+		{
+			name:     "non-default regional location is overridden to us-central1",
+			location: "europe-west4",
+			wantLoc:  "us-central1",
+		},
+		{
+			name:     "us-south1 is overridden to us-central1",
+			location: "us-south1",
+			wantLoc:  "us-central1",
+		},
+		{
+			name:     "malformed location is overridden to us-central1",
+			location: "!@#$%",
+			wantLoc:  "us-central1",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveLocation(tc.location); got != tc.wantLoc {
+				t.Errorf("resolveLocation(%q) = %q, want %q", tc.location, got, tc.wantLoc)
+			}
+		})
+	}
+}
+
 func TestResolveEndpoint(t *testing.T) {
 	tests := []struct {
 		name        string
+		projectID   string
 		environment string
 		location    string
 		wantBaseURL string
@@ -213,7 +255,8 @@ func TestResolveEndpoint(t *testing.T) {
 		wantErr     string
 	}{
 		{
-			name:        "prod defaults location",
+			name:        "prod defaults location to us-central1",
+			projectID:   "p",
 			environment: "prod",
 			location:    "",
 			wantBaseURL: "https://hypercomputecluster.googleapis.com/v1alpha",
@@ -221,30 +264,66 @@ func TestResolveEndpoint(t *testing.T) {
 			wantLoc:     "us-central1",
 		},
 		{
-			name:        "staging honors explicit location",
+			name:        "staging overrides explicit location to us-central1",
+			projectID:   "p",
 			environment: "staging",
 			location:    "europe-west4",
 			wantBaseURL: "https://staging-hypercomputecluster.sandbox.googleapis.com/v1alpha",
-			wantPath:    "https://staging-hypercomputecluster.sandbox.googleapis.com/v1alpha/projects/p/locations/europe-west4/machineLearningRuns",
-			wantLoc:     "europe-west4",
+			wantPath:    "https://staging-hypercomputecluster.sandbox.googleapis.com/v1alpha/projects/p/locations/us-central1/machineLearningRuns",
+			wantLoc:     "us-central1",
 		},
 		{
-			name:        "autopush defaults location",
+			name:        "autopush overrides non-default location to us-central1",
+			projectID:   "p",
 			environment: "autopush",
-			location:    "",
+			location:    "us-south1",
 			wantBaseURL: "https://autopush-hypercomputecluster.sandbox.googleapis.com/v1alpha",
 			wantPath:    "https://autopush-hypercomputecluster.sandbox.googleapis.com/v1alpha/projects/p/locations/us-central1/machineLearningRuns",
 			wantLoc:     "us-central1",
 		},
 		{
+			name:        "explicit us-central1 location preserved",
+			projectID:   "p",
+			environment: "prod",
+			location:    "us-central1",
+			wantBaseURL: "https://hypercomputecluster.googleapis.com/v1alpha",
+			wantPath:    "https://hypercomputecluster.googleapis.com/v1alpha/projects/p/locations/us-central1/machineLearningRuns",
+			wantLoc:     "us-central1",
+		},
+		{
+			name:        "malformed location overridden to us-central1",
+			projectID:   "p",
+			environment: "prod",
+			location:    "!@#$",
+			wantBaseURL: "https://hypercomputecluster.googleapis.com/v1alpha",
+			wantPath:    "https://hypercomputecluster.googleapis.com/v1alpha/projects/p/locations/us-central1/machineLearningRuns",
+			wantLoc:     "us-central1",
+		},
+		{
+			name:        "empty projectID errors",
+			projectID:   "",
+			environment: "prod",
+			location:    "us-central1",
+			wantErr:     "projectID cannot be empty",
+		},
+		{
 			name:        "invalid environment errors",
+			projectID:   "p",
 			environment: "bogus",
+			location:    "us-central1",
 			wantErr:     "invalid environment",
+		},
+		{
+			name:        "combined empty projectID and invalid environment errors on projectID",
+			projectID:   "",
+			environment: "bogus",
+			location:    "us-south1",
+			wantErr:     "projectID cannot be empty",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := resolveEndpoint("p", tc.environment, tc.location)
+			cfg, err := resolveEndpoint(tc.projectID, tc.environment, tc.location)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("resolveEndpoint() error = %v, want containing %q", err, tc.wantErr)
