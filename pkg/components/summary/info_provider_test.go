@@ -264,18 +264,8 @@ func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
 	expectedParams := []ConfigParameter{
 		{Key: "brokerEndpoints", Value: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"},
 		{Key: "defaultTopic", Value: "xmc-metrics"},
-		{Key: "description", Value: "Streaming engine"},
 		{Key: "endpoint", Value: "http://redpanda.xmc-redpanda.svc.cluster.local:9092"},
-		{Key: "generation", Value: "2"},
-		{Key: "label.tier", Value: "storage"},
-		{Key: "state", Value: "COMPONENT_STATE_ENABLED"},
-		{Key: "type", Value: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"},
 		{Key: "version", Value: "v2.1.0"},
-		{Key: "wrapper.crd_group", Value: "redpanda.vectorized.io"},
-		{Key: "wrapper.crd_kind", Value: "RedpandaCluster"},
-		{Key: "wrapper.crd_version", Value: "v1alpha1"},
-		{Key: "wrapper.target_name", Value: "rp-cluster"},
-		{Key: "wrapper.target_namespace", Value: "xmc-redpanda"},
 	}
 
 	if diff := cmp.Diff(expectedParams, cfg.ConfigParameters); diff != "" {
@@ -327,14 +317,11 @@ func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 		cfgMap[p.Key] = p.Value
 	}
 
-	if cfgMap["lifecycle.grace_period"] != "30s" {
-		t.Errorf("got grace_period %q, want %q", cfgMap["lifecycle.grace_period"], "30s")
+	if cfgMap["version"] != "v1.5.0" {
+		t.Errorf("got version %q, want v1.5.0", cfgMap["version"])
 	}
-	if cfgMap["lifecycle.draining_timeout"] != "2m0s" {
-		t.Errorf("got draining_timeout %q, want %q", cfgMap["lifecycle.draining_timeout"], "2m0s")
-	}
-	if cfgMap["state"] != "COMPONENT_STATE_DISABLING" {
-		t.Errorf("got state %q, want COMPONENT_STATE_DISABLING", cfgMap["state"])
+	if len(configList[0].ConfigParameters) != 1 {
+		t.Errorf("expected 1 config param, got %d", len(configList[0].ConfigParameters))
 	}
 }
 
@@ -389,42 +376,16 @@ func TestFormatCoordinatesEndpoint_IPv6(t *testing.T) {
 	}
 }
 
-func TestExtractComponentConfig_SortedDependencies(t *testing.T) {
-	record := &store.ComponentRecord{
-		Name:         "multi-dep-comp",
-		State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Generation:   1,
-		Dependencies: []string{"zebra", "alpha", "charlie", "beta"},
-	}
-
-	cfg := extractComponentConfig(record)
-	var depsVal string
-	for _, p := range cfg.ConfigParameters {
-		if p.Key == "dependencies" {
-			depsVal = p.Value
-			break
-		}
-	}
-
-	want := "alpha, beta, charlie, zebra"
-	if depsVal != want {
-		t.Errorf("dependencies = %q, want %q", depsVal, want)
-	}
-}
-
 func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
 	record := &store.ComponentRecord{
-		Name:         "collision-comp",
-		State:        componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Generation:   1,
-		Dependencies: []string{"dep1"},
+		Name:  "collision-comp",
+		State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		Spec: &componentspb.ComponentSpec{
 			Version: "v1.0.0",
 			Parameters: map[string]string{
-				"version":      "v2-override",
-				"endpoint":     "custom-endpoint",
-				"dependencies": "custom-deps",
-				"custom":       "value",
+				"version":  "v2-override",
+				"endpoint": "custom-endpoint",
+				"custom":   "value",
 			},
 		},
 		Status: &componentspb.ComponentAccessStatus{
@@ -454,12 +415,6 @@ func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
 	}
 	if cfgMap["param.endpoint"] != "custom-endpoint" {
 		t.Errorf("expected param.endpoint to be custom-endpoint, got %s", cfgMap["param.endpoint"])
-	}
-	if cfgMap["dependencies"] != "dep1" {
-		t.Errorf("expected dependencies to be dep1, got %s", cfgMap["dependencies"])
-	}
-	if cfgMap["param.dependencies"] != "custom-deps" {
-		t.Errorf("expected param.dependencies to be custom-deps, got %s", cfgMap["param.dependencies"])
 	}
 	if cfgMap["custom"] != "value" {
 		t.Errorf("expected custom to be value, got %s", cfgMap["custom"])

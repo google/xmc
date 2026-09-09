@@ -207,22 +207,11 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 	cType := mapComponentType(c.Spec)
 	paramsMap := make(map[string]string)
 
-	paramsMap["state"] = c.State.String()
-	paramsMap["generation"] = strconv.FormatInt(c.Generation, 10)
+	if c.Spec != nil && c.Spec.GetVersion() != "" {
+		paramsMap["version"] = c.Spec.GetVersion()
+	}
 
-	populateSpecParameters(paramsMap, c.Spec)
 	populateStatusParameters(paramsMap, c.Status)
-
-	if len(c.Dependencies) > 0 {
-		deps := make([]string, len(c.Dependencies))
-		copy(deps, c.Dependencies)
-		sort.Strings(deps)
-		paramsMap["dependencies"] = strings.Join(deps, ", ")
-	}
-
-	for k, v := range c.Labels {
-		paramsMap[fmt.Sprintf("label.%s", k)] = v
-	}
 
 	if c.Spec != nil {
 		populateCustomParameters(paramsMap, c.Spec.GetParameters())
@@ -249,27 +238,6 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 	}
 }
 
-func populateSpecParameters(paramsMap map[string]string, spec *componentspb.ComponentSpec) {
-	if spec == nil {
-		return
-	}
-	if spec.GetVersion() != "" {
-		paramsMap["version"] = spec.GetVersion()
-	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_UNSPECIFIED {
-		paramsMap["type"] = spec.GetType().String()
-	}
-	if spec.GetDescription() != "" {
-		paramsMap["description"] = spec.GetDescription()
-	}
-	if wrapper := spec.GetWrapperRef(); wrapper != nil {
-		populateWrapperParameters(paramsMap, wrapper)
-	}
-	if lc := spec.GetLifecycleControl(); lc != nil {
-		populateLifecycleParameters(paramsMap, lc)
-	}
-}
-
 func populateCustomParameters(paramsMap map[string]string, customParams map[string]string) {
 	for k, v := range customParams {
 		if _, exists := paramsMap[k]; exists {
@@ -277,33 +245,6 @@ func populateCustomParameters(paramsMap map[string]string, customParams map[stri
 		} else {
 			paramsMap[k] = v
 		}
-	}
-}
-
-func populateWrapperParameters(paramsMap map[string]string, wrapper *componentspb.WrapperRef) {
-	if wrapper.GetCrdKind() != "" {
-		paramsMap["wrapper.crd_kind"] = wrapper.GetCrdKind()
-	}
-	if wrapper.GetCrdGroup() != "" {
-		paramsMap["wrapper.crd_group"] = wrapper.GetCrdGroup()
-	}
-	if wrapper.GetCrdVersion() != "" {
-		paramsMap["wrapper.crd_version"] = wrapper.GetCrdVersion()
-	}
-	if wrapper.GetTargetNamespace() != "" {
-		paramsMap["wrapper.target_namespace"] = wrapper.GetTargetNamespace()
-	}
-	if wrapper.GetTargetName() != "" {
-		paramsMap["wrapper.target_name"] = wrapper.GetTargetName()
-	}
-}
-
-func populateLifecycleParameters(paramsMap map[string]string, lc *componentspb.LifecycleControl) {
-	if lc.GetGracePeriod() != nil {
-		paramsMap["lifecycle.grace_period"] = lc.GetGracePeriod().AsDuration().String()
-	}
-	if lc.GetDrainingTimeout() != nil {
-		paramsMap["lifecycle.draining_timeout"] = lc.GetDrainingTimeout().AsDuration().String()
 	}
 }
 

@@ -72,25 +72,16 @@ In `cmd/health_service/server.go`, core platform services returning `HEALTH_STAT
 
 ## Configuration Parameter Extraction
 
-`GetComponentsConfig` flattens complex component specifications and observed statuses into predictable, user-facing key-value pairs:
+`GetComponentsConfig` extracts administrative configuration parameters for components, focusing cleanly on service configuration and access coordinates while avoiding reconciliation or internal lifecycle clutter:
 
-1. **Spec Metadata**:
-   - `version`: Component release tag (e.g. `v2.1.0`).
-   - `type`: Protobuf component enum name.
-   - `description`: Human-readable summary.
-2. **Component Parameters (`spec.parameters`)**:
-   - Service-specific tuning parameters declared on `ComponentSpec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `bufferBytes`) are surfaced directly as configuration keys.
-   - **Collision Disambiguation**: If a user parameter key collides with a reserved system metadata attribute (such as `version`, `type`, `endpoint`, `state`, or `dependencies`), the system attribute is preserved and the custom parameter is safely disambiguated with the `param.<key>` prefix.
-3. **Kubernetes Wrapper References**:
-   - `wrapper.crd_kind`, `wrapper.crd_group`, `wrapper.crd_version`
-   - `wrapper.target_namespace`, `wrapper.target_name`
-4. **Lifecycle Controls**:
-   - `lifecycle.grace_period` (e.g. `30s`)
-   - `lifecycle.draining_timeout` (e.g. `2m0s`)
-5. **Resolved Endpoints**:
-   - `endpoint`: Formatted scheme, host, and port (e.g. `http://service.namespace:8080`).
+1. **Service Configuration Parameters (`spec.parameters`)**:
+   - Service-specific tuning parameters declared on `ComponentSpec.parameters` (e.g. `topicName`, `brokerEndpoints`, `port`, `bufferBytes`, `storageSize`) are surfaced directly as configuration keys.
+   - **Collision Disambiguation**: If a custom parameter key collides with reserved metadata keys (`version` or `endpoint`), the primary metadata attribute is preserved and the custom parameter is disambiguated with `param.<key>`.
+2. **Component Version**:
+   - `version`: Component release version tag (e.g. `v2.1.0`), extracted from `spec.version` when specified.
+3. **Resolved Runtime Endpoint**:
+   - `endpoint`: Formatted scheme, host, and port (e.g. `http://service.namespace:8080`), extracted from `status.coordinates`.
    - **RFC 3986 Compliance**: IPv6 host literals without explicit ports are enclosed in square brackets (e.g. `http://[2001:db8::1]`).
-6. **Deterministic Dependencies**:
-   - `dependencies`: Component dependencies are copied and lexicographically sorted via `sort.Strings` before joining (`strings.Join(deps, ", ")`), guaranteeing deterministic output across calls and avoiding UI/test flakiness.
-7. **User Labels**:
-   - `label.<key>`: Any metadata labels attached to the component.
+
+> [!NOTE]
+> Internal reconciliation bookkeeping (such as `generation`, `state`, `dependencies`, `lifecycle.*`, and `wrapper.*`) is deliberately omitted from `GetComponentsConfig` to keep the Admin Panel configuration view focused and clean. Operational status and component state are exposed via `GetComponentsHealth` instead.
