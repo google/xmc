@@ -35,9 +35,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -424,7 +427,14 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
-	prober := bridge.NewBridgeProber(bridge.NewUnimplementedStatusDetector())
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(k8sCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes discovery client: %w", err)
+	}
+	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
+	detector := bridge.NewK8sStatusDetector(dynamicClient, mapper)
+	prober := bridge.NewBridgeProber(detector)
 
 	helmOpts := []bridge.HelmManagerOption{
 		bridge.WithKubeconfig(cfg.Kubeconfig),

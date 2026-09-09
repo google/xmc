@@ -1135,3 +1135,43 @@ func TestParseWrapperRef(t *testing.T) {
 		t.Errorf("unexpected parsed ref: %+v", ref)
 	}
 }
+
+func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
+	ctx := context.Background()
+	rec := &Reconciler{
+		cmsClient: &mockCMS{},
+		prober:    &mockProber{},
+	}
+	in := ReconcileComponentInput{
+		Name:      "my-3p-comp",
+		Namespace: "tenant-a",
+		Enabled:   true,
+		Spec: &componentspb.ComponentSpec{
+			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+			WrapperRef: &componentspb.WrapperRef{
+				CrdGroup:        "clickhouse.altinity.com",
+				CrdVersion:      "v1",
+				CrdKind:         "ClickHouseInstallation",
+				TargetName:      "chi-cluster",
+				TargetNamespace: "kube-system",
+			},
+		},
+	}
+	res, err := rec.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("expected PENDING_RECONCILIATION, got %v", res.State)
+	}
+	var readyCond *Condition
+	for i := range res.Conditions {
+		if res.Conditions[i].Type == ConditionTypeReady {
+			readyCond = &res.Conditions[i]
+			break
+		}
+	}
+	if readyCond == nil || readyCond.Status != ConditionStatusFalse || readyCond.Reason != "CrossNamespaceForbidden" {
+		t.Errorf("expected Ready condition False with reason CrossNamespaceForbidden, got %+v", readyCond)
+	}
+}

@@ -55,8 +55,10 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
   - `ExpectedReadyValue`: Expected value for standard ready conditions (defaults to `"True"`).
 - **`StatusDetector` Interface & Implementations**:
   - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
-  - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation, setting `COMPONENT_STATE_PENDING_RECONCILIATION` and `Ready=False` without pretending success.
+  - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation.
   - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
+  - `K8sStatusDetector`: Production implementation using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), and normalized JSONPath evaluation.
+- **Dynamic JSONPath Engine (`EvaluateJSONPath`)**: Evaluates arbitrary JSONPath queries against unstructured objects with automatic syntax normalization (`{.field}`, `field`, `$[0]`) and sibling condition failure message discovery.
 - **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
 ---
