@@ -231,6 +231,23 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name: "active 3P with coordinate injection",
+			cms:  &mockCMS{},
+			prober: &mockProber{resStatus: &ResourceStatus{
+				Found:            true,
+				Ready:            true,
+				Endpoint:         "http://chi-prod.analytics.svc.cluster.local:8123",
+				ConnectionSecret: "clickhouse-credentials",
+				Message:          "Operational",
+			}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
+		},
+		{
 			name:   "active 3P with status detector not ready",
 			cms:    &mockCMS{},
 			prober: &mockProber{resStatus: &ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
@@ -528,6 +545,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if (tt.name == "deletion 1P Helm delete failure" || tt.name == "deletion CMS failure") && len(res.Conditions) == 0 {
 				t.Errorf("expected conditions to be populated on deletion failure, got empty conditions")
 			}
+			if tt.name == "active 3P with coordinate injection" {
+				assertCoordinateEnvVars(t, res.Access)
+			}
 			if tt.name == "deletion blocked by protection" {
 				assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusFalse)
 				assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusFalse)
@@ -535,6 +555,25 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			}
 			verify3PStatusDetectorAssertions(t, tt.name, tt.cms, tt.in.Generation, res, err)
 		})
+	}
+}
+
+func assertCoordinateEnvVars(t *testing.T, access *AccessStatus) {
+	t.Helper()
+	if access == nil || access.EnvVars["ENDPOINT"] != "http://chi-prod.analytics.svc.cluster.local:8123" {
+		t.Fatalf("expected access.EnvVars[ENDPOINT] populated, got %+v", access)
+	}
+	if access.EnvVars["HOST"] != "chi-prod.analytics.svc.cluster.local" {
+		t.Errorf("expected HOST populated, got %v", access.EnvVars["HOST"])
+	}
+	if access.EnvVars["PORT"] != "8123" {
+		t.Errorf("expected PORT populated, got %v", access.EnvVars["PORT"])
+	}
+	if access.EnvVars["SCHEME"] != "http" {
+		t.Errorf("expected SCHEME populated, got %v", access.EnvVars["SCHEME"])
+	}
+	if access.EnvVars["SECRET_NAME"] != "clickhouse-credentials" {
+		t.Errorf("expected SECRET_NAME populated, got %v", access.EnvVars["SECRET_NAME"])
 	}
 }
 

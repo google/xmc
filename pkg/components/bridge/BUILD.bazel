@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "bridge",
     srcs = [
+        "coordinates.go",
         "fake_helm_manager.go",
         "fake_status_detector.go",
         "helm_builder.go",
@@ -58,6 +59,7 @@ go_library(
 go_test(
     name = "bridge_test",
     srcs = [
+        "coordinates_test.go",
         "fake_helm_manager_test.go",
         "fake_status_detector_test.go",
         "helm_builder_test.go",

@@ -682,7 +682,7 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 		msg = resStatus.Message
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
-	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+	populateAccessEnvVars(res, resStatus)
 
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, "ComponentHealthy", msg)
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentHealthy", msg)
@@ -691,6 +691,35 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	return res, nil
+}
+
+func populateAccessEnvVars(res *ReconcileResult, resStatus *ResourceStatus) {
+	if res.Access == nil {
+		res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+	}
+	if res.Access.EnvVars == nil {
+		res.Access.EnvVars = make(map[string]string)
+	}
+	if resStatus == nil {
+		return
+	}
+
+	coords := ParseCoordinates(resStatus.Endpoint, resStatus.ConnectionSecret)
+	if coords.RawEndpoint != "" {
+		res.Access.EnvVars["ENDPOINT"] = coords.RawEndpoint
+	}
+	if coords.Host != "" {
+		res.Access.EnvVars["HOST"] = coords.Host
+	}
+	if coords.Port != "" {
+		res.Access.EnvVars["PORT"] = coords.Port
+	}
+	if coords.Scheme != "" {
+		res.Access.EnvVars["SCHEME"] = coords.Scheme
+	}
+	if coords.SecretName != "" {
+		res.Access.EnvVars["SECRET_NAME"] = coords.SecretName
+	}
 }
 
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
