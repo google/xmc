@@ -79,19 +79,24 @@ func TestParseConfig(t *testing.T) {
 		wantHelpErr bool
 	}{
 		{
-			name:    "default values",
-			args:    []string{},
+			name:    "valid flags",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-interval=10s", "--probe-timeout=5s"},
 			wantErr: false,
 		},
 		{
-			name:    "custom values",
-			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--probe-interval=10s", "--probe-timeout=5s"},
-			wantErr: false,
+			name:    "missing cms-address",
+			args:    []string{"--namespace=prod", "--release-name=xmanager-cloud"},
+			wantErr: true,
 		},
 		{
-			name:    "environment variable fallback",
-			args:    []string{},
-			wantErr: false,
+			name:    "missing namespace",
+			args:    []string{"--cms-address=cms:50051", "--release-name=xmanager-cloud"},
+			wantErr: true,
+		},
+		{
+			name:    "missing release-name",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod"},
+			wantErr: true,
 		},
 		{
 			name:        "help flag returns ErrHelp",
@@ -101,12 +106,12 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:    "invalid probe interval",
-			args:    []string{"--probe-interval=0s"},
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-interval=0s"},
 			wantErr: true,
 		},
 		{
 			name:    "invalid probe timeout",
-			args:    []string{"--probe-timeout=-1s"},
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-timeout=-1s"},
 			wantErr: true,
 		},
 	}
@@ -286,6 +291,7 @@ func TestBuildStatusMap(t *testing.T) {
 func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("CMS_ADDRESS", "custom-cms:50051")
 	t.Setenv("NAMESPACE", "custom-ns")
+	t.Setenv("HELM_RELEASE_NAME", "custom-release")
 	t.Setenv("PROBE_INTERVAL", "15s")
 	t.Setenv("PROBE_TIMEOUT", "8s")
 	t.Setenv("KUBECONFIG", "/custom/kubeconfig")
@@ -300,6 +306,9 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	if cfg.Namespace != "custom-ns" {
 		t.Errorf("cfg.Namespace = %q, want custom-ns", cfg.Namespace)
 	}
+	if cfg.ReleaseName != "custom-release" {
+		t.Errorf("cfg.ReleaseName = %q, want custom-release", cfg.ReleaseName)
+	}
 	if cfg.ProbeInterval != 15*time.Second {
 		t.Errorf("cfg.ProbeInterval = %v, want 15s", cfg.ProbeInterval)
 	}
@@ -312,6 +321,10 @@ func TestParseConfig_EnvVars(t *testing.T) {
 }
 
 func TestParseConfig_InvalidEnvDuration(t *testing.T) {
+	t.Setenv("CMS_ADDRESS", "cms:50051")
+	t.Setenv("NAMESPACE", "xmc")
+	t.Setenv("HELM_RELEASE_NAME", "xmanager-cloud")
+
 	t.Run("invalid PROBE_INTERVAL", func(t *testing.T) {
 		t.Setenv("PROBE_INTERVAL", "invalid-duration")
 		_, err := ParseConfig([]string{})

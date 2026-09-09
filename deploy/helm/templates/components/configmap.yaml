@@ -24,6 +24,8 @@ metadata:
 data:
   CMS_ADDRESS: {{ .Values.componentsDeployment.cmsAddress | default "grpc-service:50051" | quote }}
   NAMESPACE: {{ .Release.Namespace | quote }}
+  HELM_RELEASE_NAME: {{ .Release.Name | quote }}
+  HELM_CHART_PATH: {{ .Values.componentsDeployment.chartPath | default "" | quote }}
   PROBE_INTERVAL: {{ .Values.componentsDeployment.probeInterval | default "5s" | quote }}
   PROBE_TIMEOUT: {{ .Values.componentsDeployment.probeTimeout | default "2s" | quote }}
 {{- end }}

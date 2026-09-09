@@ -38,6 +38,8 @@ xmc_bridge_custom_image: ""
 componentsDeployment:
   enabled: false
   cmsAddress: "grpc-service:50051"
+  # Default empty chartPath; dedicated per-component charts will be introduced in follow-up PRs.
+  chartPath: ""
   probeInterval: "5s"
   probeTimeout: "2s"
   rbac:
@@ -77,7 +79,7 @@ ingestionGatewayDeployment:
   redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
   topicName: "xmc-metrics"
   minPartitions: 128
-  minReplicas: 3
+  minReplicas: 1
   sasl:
     enabled: false
     mechanism: "SCRAM-SHA-256"
