@@ -17,6 +17,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +33,21 @@ import (
 	"golang/grpc/metadata/metadata"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
+
+const (
+	// maxProvisionedMetrics bounds how many of a ChartArtifact's metric_names become plots.
+	// The list is client-supplied and the data engine runs one query per plot, so an
+	// unbounded list turns a single GetChartData into a proportionally expensive fan-out.
+	maxProvisionedMetrics = 20
+
+	// plotLayoutColumns lays the derived plots out two to a row, which keeps the summary
+	// boxes side by side rather than stacked down a single column.
+	plotLayoutColumns = 2
+)
+
+// nonPlotIDChars matches every run of characters that cannot appear in a plot ID. Metric
+// names are path-like ("chart_demo/loss"), so they need slugifying before use as an ID.
+var nonPlotIDChars = regexp.MustCompile(`[^a-z0-9]+`)
 
 // authForwardKeys are the credential headers the Dashboard Service reads off a call, in the
 // order it looks for them. See jwtFromMetadata in internal/auth.
@@ -99,6 +116,70 @@ type dashboardObserver struct {
 	wg      *sync.WaitGroup
 }
 
+// uniquePlotID slugifies a metric name into a plot ID, disambiguating names that slugify to
+// the same string ("train/loss" and "train_loss") with a counter suffix. used records every ID
+// handed out so far and is mutated.
+//
+// The counter has to skip IDs already taken rather than simply count occurrences of a slug: a
+// metric whose own name ends in a number can otherwise collide with a generated suffix, so
+// ["foo", "foo_2", "foo"] would hand out foo_2 twice. Duplicate plot IDs are not cosmetic --
+// the UI keys plot data by ID, so both plots would draw the same series.
+func uniquePlotID(metric string, used map[string]bool) string {
+	slug := strings.Trim(nonPlotIDChars.ReplaceAllString(strings.ToLower(metric), "_"), "_")
+	if slug == "" {
+		slug = "metric"
+	}
+	id := slug
+	for n := 2; used[id]; n++ {
+		id = fmt.Sprintf("%s_%d", slug, n)
+	}
+	used[id] = true
+	return id
+}
+
+// plotSpecsForMetrics derives a plot specification from a ChartArtifact's metric names: a
+// summary box holding the latest value plus a step-indexed curve, per metric. A chart with
+// no plots is not an empty chart to the data engine, it is a chart with nothing to query,
+// so it renders blank however much data the work unit logged.
+func plotSpecsForMetrics(ctx context.Context, metricNames []string) []*dashboard_apipb.PlotSpec {
+	// Size to what the loop below will actually keep, not to the client-supplied list: the
+	// break at 2*maxProvisionedMetrics means a list of a million names would otherwise
+	// reserve two million pointers to hold forty.
+	capacity := min(len(metricNames), maxProvisionedMetrics)
+	plots := make([]*dashboard_apipb.PlotSpec, 0, 2*capacity)
+	used := make(map[string]bool, capacity)
+	for i, metric := range metricNames {
+		metric = strings.TrimSpace(metric)
+		if metric == "" {
+			continue
+		}
+		if len(plots) >= 2*maxProvisionedMetrics {
+			// The chart renders without them and nothing else says so, so the truncation is
+			// otherwise invisible to whoever asks why a metric they logged has no plot.
+			logging.Warn(ctx, "ChartArtifact names more metrics than can be provisioned; dropping the rest",
+				"provisioned", maxProvisionedMetrics, "dropped", len(metricNames)-i)
+			break
+		}
+		id := uniquePlotID(metric, used)
+		plots = append(plots,
+			&dashboard_apipb.PlotSpec{
+				PlotId: id + "_latest",
+				Title:  fmt.Sprintf("%s (latest)", metric),
+				Type:   dashboard_apipb.PlotType_SUMMARY_BOX,
+				Data:   &dashboard_apipb.DataSpec{Metrics: []string{metric}},
+			},
+			&dashboard_apipb.PlotSpec{
+				PlotId:  id + "_curve",
+				Title:   fmt.Sprintf("%s vs steps", metric),
+				Type:    dashboard_apipb.PlotType_SCATTER,
+				Data:    &dashboard_apipb.DataSpec{Metrics: []string{metric}},
+				Mapping: &dashboard_apipb.MappingSpec{X: "step"},
+			},
+		)
+	}
+	return plots
+}
+
 // NewDashboardObserver creates an ArtifactObserver that provisions charts on Dashboard.
 func NewDashboardObserver(client *toollibs.DashboardToolClient, s storage.Storage, wg *sync.WaitGroup) ArtifactObserver {
 	return &dashboardObserver{
@@ -142,12 +223,17 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		}
 
 		// Call Dashboard service.
-		_, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
+		created, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
 			Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 			Chart: &dashboard_apipb.Chart{
 				Title: title,
 				Xid:   xid,
 				Wid:   wid,
+				Plots: plotSpecsForMetrics(ctxBg, cArtifact.GetMetricNames()),
+				PlotLayout: &dashboard_apipb.LayoutSpec{
+					Type:    dashboard_apipb.LayoutSpec_GRID,
+					Columns: plotLayoutColumns,
+				},
 			},
 		})
 
@@ -158,6 +244,10 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		} else {
 			logging.Info(ctxBg, "Background Chart provisioning succeeded")
 			cArtifact.Status = essmsgpb.ChartArtifact_SUCCESS
+			// Record the chart the service assigned. It is the only link from the artifact to
+			// its plots: without the server-assigned resource name a reader holds a list of
+			// metric names and no way to find the chart that draws them.
+			cArtifact.Chart = created
 		}
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
