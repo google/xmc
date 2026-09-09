@@ -28,10 +28,15 @@ concurrency:
 jobs:
   unit-tests:
     name: 'Unit Tests'
+    permissions:
+      contents: read
     uses: ./.github/workflows/unit-tests.yml
 
   e2e-tests:
     name: 'KinD & Playwright Headless E2E'
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/e2e-tests.yml
     secrets:
       GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
