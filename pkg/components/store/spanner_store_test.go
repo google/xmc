@@ -816,6 +816,339 @@ func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 	}
 }
 
+func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
+	ctx := context.Background()
+	s, essClient := setupTestStore(ctx, t)
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	rec, err := s.SetComponentIntent(ctx, "soft-del-comp", spec, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	access := &componentspb.ComponentAccessStatus{
+		State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ClusterName: "gke-cluster",
+			Namespace:   "default",
+			ServiceName: "soft-del-service",
+			Port:        8080,
+		},
+	}
+	_, err = s.UpdateObservedGeneration(ctx, "soft-del-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// Insert historical snapshot in ExperimentComponentSnapshots for gen 1
+	histCompProto := &componentspb.Component{
+		Name: "components/soft-del-comp",
+		Spec: spec,
+	}
+	histConfigBytes, _ := proto.Marshal(histCompProto)
+	histAccessBytes, _ := proto.Marshal(access)
+
+	testExp := &essmsgpb.Experiment{
+		Name:      "experiments/20001",
+		Title:     "Test Experiment Soft Del",
+		Creator:   "test-user",
+		Priority:  100,
+		Urls:      []*essmsgpb.Url{},
+		Tags:      []string{},
+		Notes:     "test-notes",
+		Resources: []*essmsgpb.ResourceSet{},
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+		},
+		CreateTime: timestamppb.Now(),
+		UpdateTime: timestamppb.Now(),
+	}
+	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
+	if err != nil {
+		t.Fatalf("failed to create experiment mutation: %v", err)
+	}
+	bitReversedXid := data.ReverseBits(20001)
+
+	_, err = essClient.Apply(ctx, []*spanner.Mutation{
+		expMut,
+		spanner.Insert("ExperimentComponentSnapshots",
+			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+			[]any{bitReversedXid, rec.ComponentID, int64(1), histConfigBytes, histAccessBytes}),
+	})
+	if err != nil {
+		t.Fatalf("failed to insert ExperimentComponentSnapshots: %v", err)
+	}
+
+	// Soft-delete the component via ExecuteDeletion
+	if err := s.ExecuteDeletion(ctx, "soft-del-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion failed: %v", err)
+	}
+
+	// Active record is now soft-deleted (GetComponent returns NotFound)
+	if _, err := s.GetComponent(ctx, "soft-del-comp"); status.Code(err) != codes.NotFound {
+		t.Fatalf("expected NotFound for soft-deleted component, got %v", err)
+	}
+
+	// 1. Resolve gen 0 fails with NotFound because active component is deleted
+	if _, _, err := s.ResolveComponentSnapshot(ctx, "soft-del-comp", 0); status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound resolving gen 0 on soft-deleted component, got %v", err)
+	}
+
+	// 2. Resolve historical gen 1 succeeds via resolveHistoricalSnapshotByName
+	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "soft-del-comp", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot for historical gen 1 on soft-deleted component failed: %v", err)
+	}
+	if histRec.Generation != 1 {
+		t.Errorf("expected generation 1, got %d", histRec.Generation)
+	}
+	if histRec.ComponentID != rec.ComponentID {
+		t.Errorf("expected ComponentID %d, got %d", rec.ComponentID, histRec.ComponentID)
+	}
+	if histCoords.GetServiceName() != "soft-del-service" || histCoords.GetPort() != 8080 {
+		t.Errorf("expected coordinates soft-del-service:8080, got %v", histCoords)
+	}
+
+	// 3. Resolve historical generation that does not exist returns NotFound
+	if _, _, err := s.ResolveComponentSnapshot(ctx, "soft-del-comp", 99); status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound for non-existent generation 99, got %v", err)
+	}
+}
+
+func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testing.T) {
+	ctx := context.Background()
+	s, essClient := setupTestStore(ctx, t)
+
+	specV1 := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	rec1, err := s.SetComponentIntent(ctx, "reincarnated-comp", specV1, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent reincarnation 1 failed: %v", err)
+	}
+	_, err = s.SetComponentIntent(ctx, "reincarnated-comp", specV1, nil, 2)
+	if err != nil {
+		t.Fatalf("SetComponentIntent gen 2 failed: %v", err)
+	}
+	_, err = s.SetComponentIntent(ctx, "reincarnated-comp", specV1, nil, 3)
+	if err != nil {
+		t.Fatalf("SetComponentIntent gen 3 failed: %v", err)
+	}
+
+	accessV3 := &componentspb.ComponentAccessStatus{
+		State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ClusterName: "gke-cluster",
+			Namespace:   "default",
+			ServiceName: "reincarnated-v3",
+			Port:        3000,
+		},
+	}
+	_, err = s.UpdateObservedGeneration(ctx, "reincarnated-comp", 3, accessV3, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration gen 3 failed: %v", err)
+	}
+
+	// Snapshot for gen 3 under reincarnation 1
+	compProto3 := &componentspb.Component{
+		Name: "components/reincarnated-comp",
+		Spec: specV1,
+	}
+	configBytes3, _ := proto.Marshal(compProto3)
+	accessBytes3, _ := proto.Marshal(accessV3)
+
+	testExp := &essmsgpb.Experiment{
+		Name:      "experiments/20002",
+		Title:     "Test Reincarnation",
+		Creator:   "test-user",
+		Priority:  100,
+		Urls:      []*essmsgpb.Url{},
+		Tags:      []string{},
+		Notes:     "test-notes",
+		Resources: []*essmsgpb.ResourceSet{},
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+		},
+		CreateTime: timestamppb.Now(),
+		UpdateTime: timestamppb.Now(),
+	}
+	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
+	if err != nil {
+		t.Fatalf("failed to create experiment mutation: %v", err)
+	}
+	bitReversedXid := data.ReverseBits(20002)
+
+	_, err = essClient.Apply(ctx, []*spanner.Mutation{
+		expMut,
+		spanner.Insert("ExperimentComponentSnapshots",
+			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+			[]any{bitReversedXid, rec1.ComponentID, int64(3), configBytes3, accessBytes3}),
+	})
+	if err != nil {
+		t.Fatalf("failed to insert snapshot for rec1 gen 3: %v", err)
+	}
+
+	// Soft-delete reincarnation 1 via ExecuteDeletion
+	if err := s.ExecuteDeletion(ctx, "reincarnated-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion failed: %v", err)
+	}
+
+	// Re-create component under the same name with Generation 1
+	specV2 := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v2.0.0",
+	}
+	rec2, err := s.SetComponentIntent(ctx, "reincarnated-comp", specV2, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent reincarnation 2 failed: %v", err)
+	}
+	if rec2.ComponentID == rec1.ComponentID {
+		t.Fatalf("expected new ComponentID for reincarnated component, got same %d", rec2.ComponentID)
+	}
+
+	// Active component has rec2.Generation == 1.
+	// Resolving targetGen 3 (which is > rec2.Generation) falls back to resolveHistoricalSnapshotByName and finds rec1's gen 3 snapshot.
+	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "reincarnated-comp", 3)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot for gen 3 (> active gen 1) failed: %v", err)
+	}
+	if histRec.ComponentID != rec1.ComponentID {
+		t.Errorf("expected historical ComponentID %d, got %d", rec1.ComponentID, histRec.ComponentID)
+	}
+	if histRec.Generation != 3 {
+		t.Errorf("expected generation 3, got %d", histRec.Generation)
+	}
+	if histCoords.GetServiceName() != "reincarnated-v3" || histCoords.GetPort() != 3000 {
+		t.Errorf("expected coordinates reincarnated-v3:3000, got %v", histCoords)
+	}
+}
+
+func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIsolation(t *testing.T) {
+	ctx := context.Background()
+	s, essClient := setupTestStore(ctx, t)
+
+	// Active component has state ENABLED, observed generation 2, active labels
+	activeSpec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v2.0.0",
+	}
+	activeLabels := map[string]string{"env": "production", "active": "true"}
+	rec, err := s.SetComponentIntent(ctx, "isolated-comp", activeSpec, activeLabels, 2)
+	if err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+
+	activeAccess := &componentspb.ComponentAccessStatus{
+		State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ClusterName: "gke-cluster",
+			Namespace:   "default",
+			ServiceName: "active-service",
+			Port:        8000,
+		},
+	}
+	_, err = s.UpdateObservedGeneration(ctx, "isolated-comp", 2, activeAccess, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// Historical snapshot for gen 1 with different spec, dependencies (via directives/labels), and historical labels
+	histSpec := &componentspb.ComponentSpec{
+		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:     "v1.0.0",
+		Description: "Historical worker component\n@depends-on: dep-service-a, dep-service-b",
+	}
+	histLabels := map[string]string{
+		"env":                  "staging",
+		"xmc.dev/dependencies": "dep-service-c",
+	}
+	histCompProto := &componentspb.Component{
+		Name:   "components/isolated-comp",
+		Spec:   histSpec,
+		Labels: histLabels,
+	}
+	histConfigBytes, _ := proto.Marshal(histCompProto)
+	histAccessProto := &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+		ObservedGeneration: 1,
+		Coordinates: &componentspb.ResolvedComponentCoordinates{
+			ClusterName: "gke-cluster",
+			Namespace:   "staging",
+			ServiceName: "hist-service",
+			Port:        7000,
+		},
+	}
+	histAccessBytes, _ := proto.Marshal(histAccessProto)
+
+	testExp := &essmsgpb.Experiment{
+		Name:      "experiments/20003",
+		Title:     "Test Isolation",
+		Creator:   "test-user",
+		Priority:  100,
+		Urls:      []*essmsgpb.Url{},
+		Tags:      []string{},
+		Notes:     "test-notes",
+		Resources: []*essmsgpb.ResourceSet{},
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+		},
+		CreateTime: timestamppb.Now(),
+		UpdateTime: timestamppb.Now(),
+	}
+	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
+	if err != nil {
+		t.Fatalf("failed to create experiment mutation: %v", err)
+	}
+	bitReversedXid := data.ReverseBits(20003)
+
+	_, err = essClient.Apply(ctx, []*spanner.Mutation{
+		expMut,
+		spanner.Insert("ExperimentComponentSnapshots",
+			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+			[]any{bitReversedXid, rec.ComponentID, int64(1), histConfigBytes, histAccessBytes}),
+	})
+	if err != nil {
+		t.Fatalf("failed to insert snapshot: %v", err)
+	}
+
+	// Resolve gen 1 (via resolveHistoricalSnapshot)
+	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "isolated-comp", 1)
+	if err != nil {
+		t.Fatalf("ResolveComponentSnapshot gen 1 failed: %v", err)
+	}
+
+	// 1. Verify active state did not leak
+	if histRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("expected State DISABLED in historical snapshot, got %v", histRec.State)
+	}
+	if histRec.ObservedGeneration == nil || *histRec.ObservedGeneration != 1 {
+		t.Errorf("expected ObservedGeneration 1 in historical snapshot, got %v", histRec.ObservedGeneration)
+	}
+
+	// 2. Verify historical labels, not active labels
+	if diff := cmp.Diff(histLabels, histRec.Labels); diff != "" {
+		t.Errorf("historical labels mismatch (-want +got):\n%s", diff)
+	}
+
+	// 3. Verify historical dependencies extracted via ExtractDependencies
+	wantDeps := []string{"dep-service-a", "dep-service-b", "dep-service-c"}
+	if diff := cmp.Diff(wantDeps, histRec.Dependencies); diff != "" {
+		t.Errorf("historical dependencies mismatch (-want +got):\n%s", diff)
+	}
+
+	// 4. Verify coordinates
+	if histCoords.GetServiceName() != "hist-service" || histCoords.GetPort() != 7000 {
+		t.Errorf("expected coordinates hist-service:7000, got %v", histCoords)
+	}
+}
+
 func TestSpannerStore_ValidateComponentRequirement(t *testing.T) {
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)
