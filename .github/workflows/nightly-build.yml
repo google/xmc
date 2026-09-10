@@ -53,8 +53,7 @@ jobs:
           if [ -n "${CUSTOM_ENV}" ]; then
             ENV_NAME="${CUSTOM_ENV}"
           else
-            TIMESTAMP=$(date -u +'%Y%m%d-%H%M%S')
-            ENV_NAME="xmc-nightly-${TIMESTAMP}"
+            ENV_NAME="xmc-nightly"
           fi
           echo "environment_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
           echo "Selected Nightly Environment Name: ${ENV_NAME}"
