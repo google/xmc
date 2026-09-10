@@ -62,6 +62,9 @@ jobs:
   deploy-nightly:
     name: 'Trigger GKE Deployment'
     needs: prepare-environment
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
