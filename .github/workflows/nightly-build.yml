@@ -66,7 +66,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: google/xmc/.github/workflows/deploy-gke.yml@feat/nightly-build-workflows
+    uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
       deployment_name: 'xmc-v2'
