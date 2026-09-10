@@ -172,7 +172,7 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
-          ref: 'main'
+          ref: 'feat/nightly-build-workflows'
 
       - name: 'Authenticate to Google Cloud via WIF'
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13

@@ -41,6 +41,7 @@ jobs:
   prepare-environment:
     name: 'Generate Nightly Context'
     runs-on: 'arc-runner-set'
+    environment: xmc-nightly
     permissions:
       contents: read
     outputs:
@@ -66,7 +67,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: xmc-nightly
     uses: ./.github/workflows/deploy-gke.yml
     with:
       project_id: ${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID }}
