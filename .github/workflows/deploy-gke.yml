@@ -17,10 +17,6 @@ name: 'Deploy XMC to GKE'
 on:
   workflow_call:
     inputs:
-      project_id:
-        description: 'Google Cloud Project ID'
-        type: string
-        required: true
       region:
         description: 'GCP Region'
         type: string
@@ -35,28 +31,6 @@ on:
         type: string
         required: false
         default: 'xmc-v2'
-      domain_name:
-        description: 'Base DNS Domain name'
-        type: string
-        required: true
-      dns_project_id:
-        description: 'GCP Project ID hosting Cloud DNS'
-        type: string
-        required: true
-      dns_zone_name:
-        description: 'Cloud DNS Managed Zone name'
-        type: string
-        required: true
-      allowed_emails:
-        description: 'Allowed user emails (comma-separated)'
-        type: string
-        required: false
-        default: ''
-      certs_email:
-        description: 'Notification email for ACME / GTS certificates'
-        type: string
-        required: false
-        default: ''
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD) deployment'
         type: boolean
@@ -68,6 +42,24 @@ on:
         required: false
         default: false
     secrets:
+      project_id:
+        description: 'Google Cloud Project ID'
+        required: true
+      domain_name:
+        description: 'Base DNS Domain name'
+        required: true
+      dns_project_id:
+        description: 'GCP Project ID hosting Cloud DNS'
+        required: true
+      dns_zone_name:
+        description: 'Cloud DNS Managed Zone name'
+        required: true
+      allowed_emails:
+        description: 'Allowed user emails (comma-separated)'
+        required: false
+      certs_email:
+        description: 'Notification email for ACME / GTS certificates'
+        required: false
       workload_identity_provider:
         description: 'Workload Identity Provider resource string'
         required: true
@@ -157,14 +149,14 @@ jobs:
     timeout-minutes: 90
 
     env:
-      PROJECT_ID: '${{ inputs.project_id }}'
+      PROJECT_ID: '${{ secrets.project_id || inputs.project_id }}'
       REGION: '${{ inputs.region }}'
       ENVIRONMENT: '${{ inputs.environment }}'
       DEPLOYMENT_NAME: '${{ inputs.deployment_name }}'
-      DOMAIN_NAME: '${{ inputs.domain_name }}'
-      DNS_PROJECT_ID: '${{ inputs.dns_project_id }}'
-      DNS_ZONE_NAME: '${{ inputs.dns_zone_name }}'
-      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ inputs.project_id }}/xmc'
+      DOMAIN_NAME: '${{ secrets.domain_name || inputs.domain_name }}'
+      DNS_PROJECT_ID: '${{ secrets.dns_project_id || inputs.dns_project_id }}'
+      DNS_ZONE_NAME: '${{ secrets.dns_zone_name || inputs.dns_zone_name }}'
+      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ secrets.project_id || inputs.project_id }}/xmc'
       IMAGE_TAG: 'latest'
 
     steps:
@@ -229,8 +221,8 @@ jobs:
           IAP_CLIENT_ID: '${{ secrets.iap_client_id }}'
           IAP_CLIENT_SECRET: '${{ secrets.iap_client_secret }}'
           JWT_SECRET: '${{ secrets.jwt_secret }}'
-          ALLOWED_EMAILS: '${{ inputs.allowed_emails }}'
-          CERTS_EMAIL: '${{ inputs.certs_email }}'
+          ALLOWED_EMAILS: '${{ secrets.allowed_emails || inputs.allowed_emails }}'
+          CERTS_EMAIL: '${{ secrets.certs_email || inputs.certs_email }}'
           GTS_KEY_ID: '${{ secrets.gts_key_id }}'
           GTS_HMAC_KEY: '${{ secrets.gts_hmac_key }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'

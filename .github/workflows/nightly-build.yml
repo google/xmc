@@ -69,18 +69,18 @@ jobs:
       id-token: write
     uses: google/xmc/.github/workflows/deploy-gke.yml@feat/nightly-build-workflows
     with:
-      project_id: ${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID }}
-      region: ${{ secrets.GCP_REGION || secrets.GCP_NIGHTLY_REGION || 'us-central1' }}
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
       deployment_name: 'xmc-v2'
+      region: 'us-central1'
+      rod_deployment_enabled: true
+      skip_verification: false
+    secrets:
+      project_id: ${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID }}
       domain_name: ${{ secrets.GCP_DOMAIN_NAME || secrets.GCP_NIGHTLY_DOMAIN_NAME }}
       dns_project_id: ${{ secrets.GCP_DNS_PROJECT_ID || secrets.GCP_NIGHTLY_DNS_PROJECT_ID }}
       dns_zone_name: ${{ secrets.GCP_DNS_ZONE_NAME || secrets.GCP_NIGHTLY_DNS_ZONE_NAME }}
       allowed_emails: ${{ secrets.GCP_ALLOWED_EMAILS || secrets.GCP_NIGHTLY_ALLOWED_EMAILS }}
       certs_email: ${{ secrets.GCP_CERTS_EMAIL || secrets.GCP_NIGHTLY_CERTS_EMAIL }}
-      rod_deployment_enabled: true
-      skip_verification: false
-    secrets:
       workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || secrets.GCP_NIGHTLY_WIF_PROVIDER }}
       service_account: ${{ secrets.GCP_SERVICE_ACCOUNT || secrets.GCP_NIGHTLY_SA }}
       iap_client_id: ${{ secrets.GCP_IAP_CLIENT_ID || secrets.GCP_NIGHTLY_IAP_CLIENT_ID }}
