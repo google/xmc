@@ -68,33 +68,6 @@ on:
         required: false
       GCP_GTS_HMAC_KEY:
         required: false
-      # Legacy / alias naming support
-      GCP_NIGHTLY_PROJECT_ID:
-        required: false
-      GCP_NIGHTLY_DOMAIN_NAME:
-        required: false
-      GCP_NIGHTLY_DNS_PROJECT_ID:
-        required: false
-      GCP_NIGHTLY_DNS_ZONE_NAME:
-        required: false
-      GCP_NIGHTLY_ALLOWED_EMAILS:
-        required: false
-      GCP_NIGHTLY_CERTS_EMAIL:
-        required: false
-      GCP_NIGHTLY_WIF_PROVIDER:
-        required: false
-      GCP_NIGHTLY_SA:
-        required: false
-      GCP_NIGHTLY_IAP_CLIENT_ID:
-        required: false
-      GCP_NIGHTLY_IAP_CLIENT_SECRET:
-        required: false
-      GCP_NIGHTLY_JWT_SECRET:
-        required: false
-      GCP_NIGHTLY_GTS_KEY_ID:
-        required: false
-      GCP_NIGHTLY_GTS_HMAC_KEY:
-        required: false
 
   workflow_dispatch:
     inputs:
@@ -164,14 +137,14 @@ jobs:
     timeout-minutes: 90
 
     env:
-      PROJECT_ID: '${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID || inputs.project_id }}'
+      PROJECT_ID: '${{ secrets.GCP_PROJECT_ID || inputs.project_id }}'
       REGION: '${{ inputs.region }}'
       ENVIRONMENT: '${{ inputs.environment }}'
       DEPLOYMENT_NAME: '${{ inputs.deployment_name }}'
-      DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME || secrets.GCP_NIGHTLY_DOMAIN_NAME || inputs.domain_name }}'
-      DNS_PROJECT_ID: '${{ secrets.GCP_DNS_PROJECT_ID || secrets.GCP_NIGHTLY_DNS_PROJECT_ID || inputs.dns_project_id }}'
-      DNS_ZONE_NAME: '${{ secrets.GCP_DNS_ZONE_NAME || secrets.GCP_NIGHTLY_DNS_ZONE_NAME || inputs.dns_zone_name }}'
-      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID || inputs.project_id }}/xmc'
+      DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME || inputs.domain_name }}'
+      DNS_PROJECT_ID: '${{ secrets.GCP_DNS_PROJECT_ID || inputs.dns_project_id }}'
+      DNS_ZONE_NAME: '${{ secrets.GCP_DNS_ZONE_NAME || inputs.dns_zone_name }}'
+      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID || inputs.project_id }}/xmc'
       IMAGE_TAG: 'latest'
 
     steps:
@@ -184,8 +157,8 @@ jobs:
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
         with:
           project_id: '${{ env.PROJECT_ID }}'
-          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || secrets.GCP_NIGHTLY_WIF_PROVIDER }}'
-          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT || secrets.GCP_NIGHTLY_SA }}'
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
       - name: 'Set up Cloud SDK & Docker Auth'
         run: |
@@ -260,13 +233,13 @@ jobs:
 
       - name: 'Generate Deployment Configuration'
         env:
-          IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID || secrets.GCP_NIGHTLY_IAP_CLIENT_ID }}'
-          IAP_CLIENT_SECRET: '${{ secrets.GCP_IAP_CLIENT_SECRET || secrets.GCP_NIGHTLY_IAP_CLIENT_SECRET }}'
-          JWT_SECRET: '${{ secrets.GCP_JWT_SECRET || secrets.GCP_NIGHTLY_JWT_SECRET }}'
-          ALLOWED_EMAILS: '${{ secrets.GCP_ALLOWED_EMAILS || secrets.GCP_NIGHTLY_ALLOWED_EMAILS || inputs.allowed_emails }}'
-          CERTS_EMAIL: '${{ secrets.GCP_CERTS_EMAIL || secrets.GCP_NIGHTLY_CERTS_EMAIL || inputs.certs_email }}'
-          GTS_KEY_ID: '${{ secrets.GCP_GTS_KEY_ID || secrets.GCP_NIGHTLY_GTS_KEY_ID }}'
-          GTS_HMAC_KEY: '${{ secrets.GCP_GTS_HMAC_KEY || secrets.GCP_NIGHTLY_GTS_HMAC_KEY }}'
+          IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
+          IAP_CLIENT_SECRET: '${{ secrets.GCP_IAP_CLIENT_SECRET }}'
+          JWT_SECRET: '${{ secrets.GCP_JWT_SECRET }}'
+          ALLOWED_EMAILS: '${{ secrets.GCP_ALLOWED_EMAILS || inputs.allowed_emails }}'
+          CERTS_EMAIL: '${{ secrets.GCP_CERTS_EMAIL || inputs.certs_email }}'
+          GTS_KEY_ID: '${{ secrets.GCP_GTS_KEY_ID }}'
+          GTS_HMAC_KEY: '${{ secrets.GCP_GTS_HMAC_KEY }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
