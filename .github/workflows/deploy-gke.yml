@@ -276,7 +276,7 @@ jobs:
             iap_client_secret: "${IAP_CLIENT_SECRET}"
             jwt_secret: "${JWT_SECRET}"
             allowed_emails: "${ALLOWED_EMAILS}"
-            ess_allowed_origins: "https://${ENVIRONMENT}.${DOMAIN_NAME}\\,https://ui.${ENVIRONMENT}.${DOMAIN_NAME}\\,https://api.${ENVIRONMENT}.${DOMAIN_NAME}"
+            ess_allowed_origins: "https://${ENVIRONMENT}.${DOMAIN_NAME},https://ui.${ENVIRONMENT}.${DOMAIN_NAME},https://api.${ENVIRONMENT}.${DOMAIN_NAME}"
             authorized_iam_role: "roles/viewer"
 
             certs_email: "${CERTS_EMAIL}"
