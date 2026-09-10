@@ -212,7 +212,7 @@ def _check_dns_access(dns_project: str, dns_zone: str) -> None:
                 dns_zone,
                 f"--project={dns_project}",
             ],
-            capture_output=True,
+            capture_output=False,
         )
     except subprocess.CalledProcessError:
         error_exit(
