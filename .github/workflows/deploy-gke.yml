@@ -151,6 +151,9 @@ jobs:
   deploy-to-gke:
     name: 'Deploy XMC to GKE'
     runs-on: 'arc-runner-set'
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 90
 
     env:
@@ -203,7 +206,7 @@ jobs:
       - name: 'Install Kubectl, Helm, and Tools'
         run: |
           mkdir -p "${HOME}/.local/bin"
-          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
           export PATH="${HOME}/.local/bin:${PATH}"
 
           if ! command -v kubectl &>/dev/null; then
@@ -295,6 +298,6 @@ jobs:
         if: failure()
         uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
         with:
-          name: 'deploy-gke-diagnostics-${{ env.ENVIRONMENT }}'
+          name: 'deploy-gke-diagnostics'
           path: diagnostics/
           retention-days: 7

@@ -26,6 +26,10 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+  id-token: write
+
 concurrency:
   group: xmc-nightly-orchestration
   cancel-in-progress: false
@@ -34,24 +38,31 @@ jobs:
   prepare-environment:
     name: 'Generate Nightly Context'
     runs-on: 'arc-runner-set'
+    permissions:
+      contents: read
     outputs:
       environment_name: ${{ steps.gen-env.outputs.environment_name }}
     steps:
       - name: 'Compute Environment Name'
         id: gen-env
+        env:
+          CUSTOM_ENV: ${{ inputs.custom_environment }}
         run: |
-          if [ -n "${{ inputs.custom_environment }}" ]; then
-            ENV_NAME="${{ inputs.custom_environment }}"
+          if [ -n "${CUSTOM_ENV}" ]; then
+            ENV_NAME="${CUSTOM_ENV}"
           else
             TIMESTAMP=$(date -u +'%Y%m%d-%H%M%S')
             ENV_NAME="xmc-nightly-${TIMESTAMP}"
           fi
-          echo "environment_name=${ENV_NAME}" >> $GITHUB_OUTPUT
+          echo "environment_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
           echo "Selected Nightly Environment Name: ${ENV_NAME}"
 
   deploy-nightly:
     name: 'Trigger GKE Deployment'
     needs: prepare-environment
+    permissions:
+      contents: read
+      id-token: write
     environment: xmc-nightly
     uses: ./.github/workflows/deploy-gke.yml
     with:
