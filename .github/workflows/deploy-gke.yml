@@ -189,6 +189,7 @@ jobs:
 
       - name: 'Set up Cloud SDK & Docker Auth'
         run: |
+          gcloud config set project "${PROJECT_ID}"
           gcloud auth configure-docker us-docker.pkg.dev --quiet
 
       - name: 'Set up Go'

@@ -63,10 +63,6 @@ jobs:
   deploy-nightly:
     name: 'Trigger GKE Deployment'
     needs: prepare-environment
-    permissions:
-      contents: read
-      id-token: write
-    # zizmor: ignore[secrets-inherit]
     uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
@@ -74,4 +70,31 @@ jobs:
       region: 'us-central1'
       rod_deployment_enabled: true
       skip_verification: false
-    secrets: inherit
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
+      GCP_DNS_PROJECT_ID: ${{ secrets.GCP_DNS_PROJECT_ID }}
+      GCP_DNS_ZONE_NAME: ${{ secrets.GCP_DNS_ZONE_NAME }}
+      GCP_ALLOWED_EMAILS: ${{ secrets.GCP_ALLOWED_EMAILS }}
+      GCP_CERTS_EMAIL: ${{ secrets.GCP_CERTS_EMAIL }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
+      GCP_IAP_CLIENT_SECRET: ${{ secrets.GCP_IAP_CLIENT_SECRET }}
+      GCP_JWT_SECRET: ${{ secrets.GCP_JWT_SECRET }}
+      GCP_GTS_KEY_ID: ${{ secrets.GCP_GTS_KEY_ID }}
+      GCP_GTS_HMAC_KEY: ${{ secrets.GCP_GTS_HMAC_KEY }}
+      # Legacy / alias naming support
+      GCP_NIGHTLY_PROJECT_ID: ${{ secrets.GCP_NIGHTLY_PROJECT_ID }}
+      GCP_NIGHTLY_DOMAIN_NAME: ${{ secrets.GCP_NIGHTLY_DOMAIN_NAME }}
+      GCP_NIGHTLY_DNS_PROJECT_ID: ${{ secrets.GCP_NIGHTLY_DNS_PROJECT_ID }}
+      GCP_NIGHTLY_DNS_ZONE_NAME: ${{ secrets.GCP_NIGHTLY_DNS_ZONE_NAME }}
+      GCP_NIGHTLY_ALLOWED_EMAILS: ${{ secrets.GCP_NIGHTLY_ALLOWED_EMAILS }}
+      GCP_NIGHTLY_CERTS_EMAIL: ${{ secrets.GCP_NIGHTLY_CERTS_EMAIL }}
+      GCP_NIGHTLY_WIF_PROVIDER: ${{ secrets.GCP_NIGHTLY_WIF_PROVIDER }}
+      GCP_NIGHTLY_SA: ${{ secrets.GCP_NIGHTLY_SA }}
+      GCP_NIGHTLY_IAP_CLIENT_ID: ${{ secrets.GCP_NIGHTLY_IAP_CLIENT_ID }}
+      GCP_NIGHTLY_IAP_CLIENT_SECRET: ${{ secrets.GCP_NIGHTLY_IAP_CLIENT_SECRET }}
+      GCP_NIGHTLY_JWT_SECRET: ${{ secrets.GCP_NIGHTLY_JWT_SECRET }}
+      GCP_NIGHTLY_GTS_KEY_ID: ${{ secrets.GCP_NIGHTLY_GTS_KEY_ID }}
+      GCP_NIGHTLY_GTS_HMAC_KEY: ${{ secrets.GCP_NIGHTLY_GTS_HMAC_KEY }}
