@@ -66,6 +66,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # zizmor: ignore[secrets-inherit]
     uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
@@ -73,3 +74,4 @@ jobs:
       region: 'us-central1'
       rod_deployment_enabled: true
       skip_verification: false
+    secrets: inherit
