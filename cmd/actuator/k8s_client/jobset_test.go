@@ -2977,7 +2977,7 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 			wantInjected:  true,
 		},
 		{
-			name:          "no bucket or object is a no-op",
+			name:          "empty object is a no-op",
 			numContainers: 2,
 			wantInjected:  false,
 		},
