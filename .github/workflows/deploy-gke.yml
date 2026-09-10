@@ -1,0 +1,306 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Deploy XMC to GKE'
+
+on:
+  workflow_call:
+    inputs:
+      project_id:
+        description: 'Google Cloud Project ID'
+        type: string
+        required: true
+      region:
+        description: 'GCP Region'
+        type: string
+        required: false
+        default: 'us-central1'
+      environment:
+        description: 'XMC Environment name (e.g., xmc-nightly-20260910-010000)'
+        type: string
+        required: true
+      deployment_name:
+        description: 'Cluster Toolkit deployment name'
+        type: string
+        required: false
+        default: 'xmc-v2'
+      domain_name:
+        description: 'Base DNS Domain name'
+        type: string
+        required: false
+        default: 'dev.xmanageriso.dev'
+      dns_project_id:
+        description: 'GCP Project ID hosting Cloud DNS'
+        type: string
+        required: true
+      dns_zone_name:
+        description: 'Cloud DNS Managed Zone name'
+        type: string
+        required: true
+      allowed_emails:
+        description: 'Allowed user emails (comma-separated)'
+        type: string
+        required: false
+        default: 'janzak@google.com'
+      certs_email:
+        description: 'Notification email for ACME / GTS certificates'
+        type: string
+        required: false
+        default: 'janzak@google.com'
+      rod_deployment_enabled:
+        description: 'Enable Resource Observability Dashboard (ROD) deployment'
+        type: boolean
+        required: false
+        default: true
+      skip_verification:
+        description: 'Skip post-deployment verification checks'
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      workload_identity_provider:
+        description: 'Workload Identity Provider resource string'
+        required: true
+      service_account:
+        description: 'Deployment Service Account email'
+        required: true
+      iap_client_id:
+        description: 'OAuth 2.0 Web Client ID for IAP'
+        required: true
+      iap_client_secret:
+        description: 'OAuth 2.0 Client Secret for IAP'
+        required: true
+      jwt_secret:
+        description: 'JWT signing secret for ESS'
+        required: true
+      gts_key_id:
+        description: 'Google Trust Services Key ID'
+        required: true
+      gts_hmac_key:
+        description: 'Google Trust Services HMAC Key'
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: 'Google Cloud Project ID'
+        type: string
+        required: true
+        default: 'xmc-test-project-2'
+      region:
+        description: 'GCP Region'
+        type: string
+        required: false
+        default: 'us-central1'
+      environment:
+        description: 'XMC Environment name'
+        type: string
+        required: true
+        default: 'xmc-nightly'
+      deployment_name:
+        description: 'Cluster Toolkit deployment name'
+        type: string
+        required: false
+        default: 'xmc-v2'
+      domain_name:
+        description: 'Base DNS Domain name'
+        type: string
+        required: false
+        default: 'dev.xmanageriso.dev'
+      dns_project_id:
+        description: 'GCP Project ID hosting Cloud DNS'
+        type: string
+        required: true
+        default: 'xmc-test-project-2'
+      dns_zone_name:
+        description: 'Cloud DNS Managed Zone name'
+        type: string
+        required: true
+        default: 'xmc-zone'
+      allowed_emails:
+        description: 'Allowed user emails (comma-separated)'
+        type: string
+        required: false
+        default: 'janzak@google.com'
+      certs_email:
+        description: 'Notification email for ACME / GTS certificates'
+        type: string
+        required: false
+        default: 'janzak@google.com'
+      rod_deployment_enabled:
+        description: 'Enable Resource Observability Dashboard (ROD)'
+        type: boolean
+        required: false
+        default: true
+      skip_verification:
+        description: 'Skip post-deployment verification'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy-to-gke:
+    name: 'Deploy XMC to GKE'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 90
+
+    env:
+      PROJECT_ID: '${{ inputs.project_id }}'
+      REGION: '${{ inputs.region }}'
+      ENVIRONMENT: '${{ inputs.environment }}'
+      DEPLOYMENT_NAME: '${{ inputs.deployment_name }}'
+      DOMAIN_NAME: '${{ inputs.domain_name }}'
+      DNS_PROJECT_ID: '${{ inputs.dns_project_id }}'
+      DNS_ZONE_NAME: '${{ inputs.dns_zone_name }}'
+      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ inputs.project_id }}/xmc'
+      IMAGE_TAG: 'latest'
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+          ref: 'main'
+
+      - name: 'Authenticate to Google Cloud via WIF'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ secrets.workload_identity_provider }}'
+          service_account: '${{ secrets.service_account }}'
+
+      - name: 'Set up Cloud SDK & Docker Auth'
+        run: |
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Configure Bazel Cache Settings'
+        run: |
+          mkdir -p ~/.cache/bazel-repo
+          cat << 'EOF_BAZEL' >> ~/.bazelrc
+          common --config=ci
+          common --remote_upload_local_results=true
+          common --repository_cache=${HOME}/.cache/bazel-repo
+          common --experimental_repository_cache_hardlinks
+          EOF_BAZEL
+
+      - name: 'Set up Python 3.13'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install Kubectl, Helm, and Tools'
+        run: |
+          mkdir -p "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          export PATH="${HOME}/.local/bin:${PATH}"
+
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
+            chmod +x "${HOME}/.local/bin/kubectl"
+          fi
+
+          if ! command -v helm &>/dev/null; then
+            curl -fsSL "https://get.helm.sh/helm-v3.20.1-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+            mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
+            chmod +x "${HOME}/.local/bin/helm"
+          fi
+
+          kubectl version --client
+          helm version --short
+
+      - name: 'Generate Deployment Configuration'
+        env:
+          IAP_CLIENT_ID: '${{ secrets.iap_client_id }}'
+          IAP_CLIENT_SECRET: '${{ secrets.iap_client_secret }}'
+          JWT_SECRET: '${{ secrets.jwt_secret }}'
+          ALLOWED_EMAILS: '${{ inputs.allowed_emails }}'
+          CERTS_EMAIL: '${{ inputs.certs_email }}'
+          GTS_KEY_ID: '${{ secrets.gts_key_id }}'
+          GTS_HMAC_KEY: '${{ secrets.gts_hmac_key }}'
+          ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
+        run: |
+          cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
+          vars:
+            deployment_name: "${DEPLOYMENT_NAME}"
+            project_id: "${PROJECT_ID}"
+            region: "${REGION}"
+            redis_region: "${REGION}"
+            domain_name: "${DOMAIN_NAME}"
+            environment: "${ENVIRONMENT}"
+            xmc_acr_target: "${XMC_ACR_TARGET}"
+            image_registry: "${XMC_ACR_TARGET}"
+            image_tag: "${IMAGE_TAG}"
+
+            iap_client_id: "${IAP_CLIENT_ID}"
+            iap_client_secret: "${IAP_CLIENT_SECRET}"
+            jwt_secret: "${JWT_SECRET}"
+            allowed_emails: "${ALLOWED_EMAILS}"
+            ess_allowed_origins: "https://${ENVIRONMENT}.${DOMAIN_NAME}\\,https://ui.${ENVIRONMENT}.${DOMAIN_NAME}\\,https://api.${ENVIRONMENT}.${DOMAIN_NAME}"
+            authorized_iam_role: "roles/viewer"
+
+            certs_email: "${CERTS_EMAIL}"
+            gts_key_id: "${GTS_KEY_ID}"
+            gts_hmac_key: "${GTS_HMAC_KEY}"
+
+            xid_image: "${XMC_ACR_TARGET}/xid-service-${ENVIRONMENT}:${IMAGE_TAG}"
+            actuator_image: "${XMC_ACR_TARGET}/actuator-${ENVIRONMENT}:${IMAGE_TAG}"
+            ess_image: "${XMC_ACR_TARGET}/experiment-state-server-${ENVIRONMENT}:${IMAGE_TAG}"
+            ui_image: "${XMC_ACR_TARGET}/ui-${ENVIRONMENT}:${IMAGE_TAG}"
+            reconciler_image: "${XMC_ACR_TARGET}/reconciler-${ENVIRONMENT}:${IMAGE_TAG}"
+            log_monitor_image: "${XMC_ACR_TARGET}/log-monitor-${ENVIRONMENT}:${IMAGE_TAG}"
+            health_service_image: "${XMC_ACR_TARGET}/health-service-${ENVIRONMENT}:${IMAGE_TAG}"
+            rod_image: "${XMC_ACR_TARGET}/rod-data-provider-${ENVIRONMENT}:${IMAGE_TAG}"
+            rod_deployment_enabled: ${ROD_ENABLED}
+          EOF_YAML
+
+      - name: 'Execute GKE Deployment Pipeline'
+        run: |
+          python3 tools/dev_env/dev_env.py gke-deploy \
+            --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+            --dns-project "${DNS_PROJECT_ID}" \
+            --dns-zone "${DNS_ZONE_NAME}"
+
+      - name: 'Run Environment Health Verification'
+        if: ${{ inputs.skip_verification != true }}
+        run: |
+          ENVIRONMENT="${ENVIRONMENT}" \
+          REGION="${REGION}" \
+          PROJECT_ID="${PROJECT_ID}" \
+          python3 ./deploy/ctk_v2/verify_xmc.py
+
+      - name: 'Collect Diagnostics on Failure'
+        if: failure()
+        run: |
+          mkdir -p diagnostics
+          gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" || true
+          kubectl get pods -n xmc -o wide > diagnostics/pods.txt || true
+          kubectl describe pods -n xmc > diagnostics/describe-pods.txt || true
+          kubectl get gateway,httproute -n xmc -o yaml > diagnostics/gateway.txt || true
+          kubectl logs -n xmc -l app.kubernetes.io/part-of=xmc --all-containers=true --tail=200 > diagnostics/logs.txt || true
+
+      - name: 'Upload Failure Diagnostics'
+        if: failure()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'deploy-gke-diagnostics-${{ env.ENVIRONMENT }}'
+          path: diagnostics/
+          retention-days: 7
