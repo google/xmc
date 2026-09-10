@@ -44,6 +44,8 @@ on:
     secrets:
       GCP_PROJECT_ID:
         required: false
+      GCP_REGION:
+        required: false
       GCP_DOMAIN_NAME:
         required: false
       GCP_DNS_PROJECT_ID:
@@ -138,7 +140,7 @@ jobs:
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID || inputs.project_id }}'
-      REGION: '${{ inputs.region }}'
+      REGION: '${{ secrets.GCP_REGION || inputs.region }}'
       ENVIRONMENT: '${{ inputs.environment }}'
       DEPLOYMENT_NAME: '${{ inputs.deployment_name }}'
       DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME || inputs.domain_name }}'

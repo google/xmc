@@ -70,6 +70,7 @@ jobs:
       skip_verification: false
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
       GCP_DNS_PROJECT_ID: ${{ secrets.GCP_DNS_PROJECT_ID }}
       GCP_DNS_ZONE_NAME: ${{ secrets.GCP_DNS_ZONE_NAME }}
