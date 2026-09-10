@@ -702,10 +702,14 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
             break
         time.sleep(10)
 
-    if cert_state != "ACTIVE":
-        raise RuntimeError("Managed Certificate failed to activate within 900s.")
-
-    log_success("Managed Certificate is ACTIVE.")
+    if cert_state == "ACTIVE":
+        log_success("Managed Certificate is ACTIVE.")
+    elif cert_state in ("PROVISIONING", "PENDING"):
+        log_info(
+            f"Managed Certificate is currently in '{cert_state}' state (issuance in progress with GTS)."
+        )
+    else:
+        raise RuntimeError(f"Managed Certificate state is unexpected: {cert_state}")
 
 
 def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
