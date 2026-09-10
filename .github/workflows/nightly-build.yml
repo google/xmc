@@ -41,7 +41,6 @@ jobs:
   prepare-environment:
     name: 'Generate Nightly Context'
     runs-on: 'arc-runner-set'
-    environment: xmc-nightly
     permissions:
       contents: read
     outputs:
@@ -74,17 +73,4 @@ jobs:
       region: 'us-central1'
       rod_deployment_enabled: true
       skip_verification: false
-    secrets:
-      project_id: ${{ secrets.GCP_PROJECT_ID || secrets.GCP_NIGHTLY_PROJECT_ID }}
-      domain_name: ${{ secrets.GCP_DOMAIN_NAME || secrets.GCP_NIGHTLY_DOMAIN_NAME }}
-      dns_project_id: ${{ secrets.GCP_DNS_PROJECT_ID || secrets.GCP_NIGHTLY_DNS_PROJECT_ID }}
-      dns_zone_name: ${{ secrets.GCP_DNS_ZONE_NAME || secrets.GCP_NIGHTLY_DNS_ZONE_NAME }}
-      allowed_emails: ${{ secrets.GCP_ALLOWED_EMAILS || secrets.GCP_NIGHTLY_ALLOWED_EMAILS }}
-      certs_email: ${{ secrets.GCP_CERTS_EMAIL || secrets.GCP_NIGHTLY_CERTS_EMAIL }}
-      workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || secrets.GCP_NIGHTLY_WIF_PROVIDER }}
-      service_account: ${{ secrets.GCP_SERVICE_ACCOUNT || secrets.GCP_NIGHTLY_SA }}
-      iap_client_id: ${{ secrets.GCP_IAP_CLIENT_ID || secrets.GCP_NIGHTLY_IAP_CLIENT_ID }}
-      iap_client_secret: ${{ secrets.GCP_IAP_CLIENT_SECRET || secrets.GCP_NIGHTLY_IAP_CLIENT_SECRET }}
-      jwt_secret: ${{ secrets.GCP_JWT_SECRET || secrets.GCP_NIGHTLY_JWT_SECRET }}
-      gts_key_id: ${{ secrets.GCP_GTS_KEY_ID || secrets.GCP_NIGHTLY_GTS_KEY_ID }}
-      gts_hmac_key: ${{ secrets.GCP_GTS_HMAC_KEY || secrets.GCP_NIGHTLY_GTS_HMAC_KEY }}
+    secrets: inherit
