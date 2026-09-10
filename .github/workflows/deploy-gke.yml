@@ -31,6 +31,11 @@ on:
         type: string
         required: false
         default: 'xmc-v2'
+      health_service_deployment_enabled:
+        description: 'Enable Health Service deployment'
+        type: boolean
+        required: false
+        default: true
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD) deployment'
         type: boolean
@@ -113,6 +118,11 @@ on:
         type: string
         required: false
         default: ''
+      health_service_deployment_enabled:
+        description: 'Enable Health Service deployment'
+        type: boolean
+        required: false
+        default: true
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD)'
         type: boolean
@@ -139,14 +149,14 @@ jobs:
     timeout-minutes: 90
 
     env:
-      PROJECT_ID: '${{ secrets.GCP_PROJECT_ID || inputs.project_id }}'
-      REGION: '${{ secrets.GCP_REGION || inputs.region }}'
+      PROJECT_ID: '${{ inputs.project_id || secrets.GCP_PROJECT_ID }}'
+      REGION: '${{ inputs.region || secrets.GCP_REGION }}'
       ENVIRONMENT: '${{ inputs.environment }}'
       DEPLOYMENT_NAME: '${{ inputs.deployment_name }}'
-      DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME || inputs.domain_name }}'
-      DNS_PROJECT_ID: '${{ secrets.GCP_DNS_PROJECT_ID || inputs.dns_project_id }}'
-      DNS_ZONE_NAME: '${{ secrets.GCP_DNS_ZONE_NAME || inputs.dns_zone_name }}'
-      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID || inputs.project_id }}/xmc'
+      DOMAIN_NAME: '${{ inputs.domain_name || secrets.GCP_DOMAIN_NAME }}'
+      DNS_PROJECT_ID: '${{ inputs.dns_project_id || secrets.GCP_DNS_PROJECT_ID }}'
+      DNS_ZONE_NAME: '${{ inputs.dns_zone_name || secrets.GCP_DNS_ZONE_NAME }}'
+      XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ inputs.project_id || secrets.GCP_PROJECT_ID }}/xmc'
       IMAGE_TAG: 'latest'
 
     steps:
@@ -238,10 +248,11 @@ jobs:
           IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
           IAP_CLIENT_SECRET: '${{ secrets.GCP_IAP_CLIENT_SECRET }}'
           JWT_SECRET: '${{ secrets.GCP_JWT_SECRET }}'
-          ALLOWED_EMAILS: '${{ secrets.GCP_ALLOWED_EMAILS || inputs.allowed_emails }}'
-          CERTS_EMAIL: '${{ secrets.GCP_CERTS_EMAIL || inputs.certs_email }}'
+          ALLOWED_EMAILS: '${{ inputs.allowed_emails || secrets.GCP_ALLOWED_EMAILS }}'
+          CERTS_EMAIL: '${{ inputs.certs_email || secrets.GCP_CERTS_EMAIL }}'
           GTS_KEY_ID: '${{ secrets.GCP_GTS_KEY_ID }}'
           GTS_HMAC_KEY: '${{ secrets.GCP_GTS_HMAC_KEY }}'
+          HEALTH_SERVICE_ENABLED: '${{ inputs.health_service_deployment_enabled }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
@@ -272,14 +283,7 @@ jobs:
             gts_key_id: "${GTS_KEY_ID}"
             gts_hmac_key: "${GTS_HMAC_KEY}"
 
-            xid_image: "${XMC_ACR_TARGET}/xid-service-${ENVIRONMENT}:${IMAGE_TAG}"
-            actuator_image: "${XMC_ACR_TARGET}/actuator-${ENVIRONMENT}:${IMAGE_TAG}"
-            ess_image: "${XMC_ACR_TARGET}/experiment-state-server-${ENVIRONMENT}:${IMAGE_TAG}"
-            ui_image: "${XMC_ACR_TARGET}/ui-${ENVIRONMENT}:${IMAGE_TAG}"
-            reconciler_image: "${XMC_ACR_TARGET}/reconciler-${ENVIRONMENT}:${IMAGE_TAG}"
-            log_monitor_image: "${XMC_ACR_TARGET}/log-monitor-${ENVIRONMENT}:${IMAGE_TAG}"
-            health_service_image: "${XMC_ACR_TARGET}/health-service-${ENVIRONMENT}:${IMAGE_TAG}"
-            rod_image: "${XMC_ACR_TARGET}/rod-data-provider-${ENVIRONMENT}:${IMAGE_TAG}"
+            health_service_deployment_enabled: ${HEALTH_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
           EOF_YAML
 

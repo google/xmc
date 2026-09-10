@@ -66,6 +66,7 @@ jobs:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
       deployment_name: 'xmc-nightly'
       region: 'us-central1'
+      health_service_deployment_enabled: true
       rod_deployment_enabled: true
       skip_verification: false
     secrets:
