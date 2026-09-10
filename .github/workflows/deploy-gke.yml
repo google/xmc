@@ -192,6 +192,25 @@ jobs:
         run: |
           gcloud auth configure-docker us-docker.pkg.dev --quiet
 
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34' # v5.3.0
+        with:
+          go-version: '1.26.0'
+          cache: false
+
+      - name: 'Set up Terraform'
+        uses: 'hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd' # v3.1.2
+        with:
+          terraform_version: '1.8.5'
+
+      - name: 'Build Cluster Toolkit (gcluster)'
+        run: |
+          if [ ! -f "cluster-toolkit/gcluster" ]; then
+            git clone --depth 1 https://github.com/GoogleCloudPlatform/hpc-toolkit.git cluster-toolkit
+            (cd cluster-toolkit && make)
+          fi
+          ./cluster-toolkit/gcluster version || ./cluster-toolkit/gcluster --version
+
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
@@ -210,7 +229,7 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: 'Install Kubectl, Helm, and Tools'
+      - name: 'Install Kubectl & Helm'
         run: |
           mkdir -p "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
