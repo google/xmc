@@ -15,9 +15,6 @@
 name: 'XMC Nightly Orchestrator'
 
 on:
-  push:
-    branches:
-      - 'feat/nightly-build-workflows'
   schedule:
     # Trigger nightly build at 1:00 AM UTC every day
     - cron: '0 1 * * *'
