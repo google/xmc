@@ -304,6 +304,7 @@ deployment_groups:
     settings:
       deployment_name: xmc-$(vars.deployment_name)-$(vars.environment)
       region: $(vars.region)
+      system_node_pool_machine_type: n2-standard-4
       enable_persistent_disk_csi: true
       enable_private_endpoint: false
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
