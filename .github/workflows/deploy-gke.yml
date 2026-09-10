@@ -215,8 +215,8 @@ jobs:
 
       - name: 'Configure Bazel Cache Settings'
         run: |
-          mkdir -p ~/.cache/bazel-repo
-          cat << 'EOF_BAZEL' >> ~/.bazelrc
+          mkdir -p "${HOME}/.cache/bazel-repo"
+          cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
           common --remote_upload_local_results=true
           common --repository_cache=${HOME}/.cache/bazel-repo
