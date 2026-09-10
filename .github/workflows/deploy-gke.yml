@@ -27,7 +27,7 @@ on:
         required: false
         default: 'us-central1'
       environment:
-        description: 'XMC Environment name (e.g., xmc-nightly-20260910-010000)'
+        description: 'XMC Environment name'
         type: string
         required: true
       deployment_name:
@@ -38,8 +38,7 @@ on:
       domain_name:
         description: 'Base DNS Domain name'
         type: string
-        required: false
-        default: 'dev.xmanageriso.dev'
+        required: true
       dns_project_id:
         description: 'GCP Project ID hosting Cloud DNS'
         type: string
@@ -52,12 +51,12 @@ on:
         description: 'Allowed user emails (comma-separated)'
         type: string
         required: false
-        default: 'janzak@google.com'
+        default: ''
       certs_email:
         description: 'Notification email for ACME / GTS certificates'
         type: string
         required: false
-        default: 'janzak@google.com'
+        default: ''
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD) deployment'
         type: boolean
@@ -97,7 +96,6 @@ on:
         description: 'Google Cloud Project ID'
         type: string
         required: true
-        default: 'xmc-test-project-2'
       region:
         description: 'GCP Region'
         type: string
@@ -107,7 +105,6 @@ on:
         description: 'XMC Environment name'
         type: string
         required: true
-        default: 'xmc-nightly'
       deployment_name:
         description: 'Cluster Toolkit deployment name'
         type: string
@@ -116,28 +113,25 @@ on:
       domain_name:
         description: 'Base DNS Domain name'
         type: string
-        required: false
-        default: 'dev.xmanageriso.dev'
+        required: true
       dns_project_id:
         description: 'GCP Project ID hosting Cloud DNS'
         type: string
         required: true
-        default: 'xmc-test-project-2'
       dns_zone_name:
         description: 'Cloud DNS Managed Zone name'
         type: string
         required: true
-        default: 'xmc-zone'
       allowed_emails:
         description: 'Allowed user emails (comma-separated)'
         type: string
         required: false
-        default: 'janzak@google.com'
+        default: ''
       certs_email:
         description: 'Notification email for ACME / GTS certificates'
         type: string
         required: false
-        default: 'janzak@google.com'
+        default: ''
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD)'
         type: boolean

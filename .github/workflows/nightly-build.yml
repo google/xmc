@@ -55,15 +55,15 @@ jobs:
     needs: prepare-environment
     uses: ./.github/workflows/deploy-gke.yml
     with:
-      project_id: ${{ vars.GCP_PROJECT_ID || 'xmc-test-project-2' }}
+      project_id: ${{ vars.GCP_PROJECT_ID }}
       region: ${{ vars.GCP_REGION || 'us-central1' }}
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
       deployment_name: 'xmc-v2'
-      domain_name: ${{ vars.GCP_DOMAIN_NAME || 'dev.xmanageriso.dev' }}
-      dns_project_id: ${{ vars.GCP_DNS_PROJECT_ID || 'xmc-test-project-2' }}
-      dns_zone_name: ${{ vars.GCP_DNS_ZONE_NAME || 'xmc-zone' }}
-      allowed_emails: ${{ vars.GCP_ALLOWED_EMAILS || 'janzak@google.com' }}
-      certs_email: ${{ vars.GCP_CERTS_EMAIL || 'janzak@google.com' }}
+      domain_name: ${{ vars.GCP_DOMAIN_NAME }}
+      dns_project_id: ${{ vars.GCP_DNS_PROJECT_ID }}
+      dns_zone_name: ${{ vars.GCP_DNS_ZONE_NAME }}
+      allowed_emails: ${{ vars.GCP_ALLOWED_EMAILS }}
+      certs_email: ${{ vars.GCP_CERTS_EMAIL }}
       rod_deployment_enabled: true
       skip_verification: false
     secrets:
