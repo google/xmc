@@ -20,8 +20,9 @@ if [ -z "${PROJECT_ID}" ]; then
   echo "Error: No active gcloud project found. Please set one using 'gcloud config set project <PROJECT_ID>'." >&2
   exit 1
 fi
-IMAGE_PATH="us-docker.pkg.dev/${PROJECT_ID}/xmc/programmatic-xprof-job:latest"
 
-echo "Building and pushing image: ${IMAGE_PATH}"
-docker build -t "${IMAGE_PATH}" .
-docker push "${IMAGE_PATH}"
+IMAGE_NAME="${IMAGE_NAME:-us-docker.pkg.dev/${PROJECT_ID}/xmc/managed-xprof-programmatic-job-cpu:latest}"
+
+echo "Building and pushing CPU image: ${IMAGE_NAME}"
+docker build -t "${IMAGE_NAME}" -f Dockerfile .
+docker push "${IMAGE_NAME}"
