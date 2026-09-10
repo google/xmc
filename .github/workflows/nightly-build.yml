@@ -73,4 +73,3 @@ jobs:
       region: 'us-central1'
       rod_deployment_enabled: true
       skip_verification: false
-    secrets: inherit
