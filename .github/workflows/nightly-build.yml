@@ -1,0 +1,86 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'XMC Nightly build'
+
+on:
+  schedule:
+    # Trigger nightly build at 1:00 AM UTC every day
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      custom_environment:
+        description: 'Custom environment name override (leave empty for auto-generated timestamped name)'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xmc-nightly-orchestration
+  cancel-in-progress: false
+
+jobs:
+  prepare-environment:
+    name: 'Generate Nightly Context'
+    runs-on: 'arc-runner-set'
+    permissions:
+      contents: read
+    outputs:
+      environment_name: ${{ steps.gen-env.outputs.environment_name }}
+    steps:
+      - name: 'Compute Environment Name'
+        id: gen-env
+        env:
+          CUSTOM_ENV: ${{ inputs.custom_environment }}
+        run: |
+          if [ -n "${CUSTOM_ENV}" ]; then
+            ENV_NAME="${CUSTOM_ENV}"
+          else
+            ENV_NAME="xmc-nightly"
+          fi
+          echo "environment_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Selected Nightly Environment Name: ${ENV_NAME}"
+
+  deploy-nightly:
+    name: 'Trigger GKE Deployment'
+    needs: prepare-environment
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-gke.yml
+    with:
+      environment: ${{ needs.prepare-environment.outputs.environment_name }}
+      deployment_name: 'xmc-nightly'
+      region: 'us-central1'
+      health_service_deployment_enabled: true
+      rod_deployment_enabled: true
+      skip_verification: false
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
+      GCP_DNS_PROJECT_ID: ${{ secrets.GCP_DNS_PROJECT_ID }}
+      GCP_DNS_ZONE_NAME: ${{ secrets.GCP_DNS_ZONE_NAME }}
+      GCP_ALLOWED_EMAILS: ${{ secrets.GCP_ALLOWED_EMAILS }}
+      GCP_CERTS_EMAIL: ${{ secrets.GCP_CERTS_EMAIL }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
+      GCP_IAP_CLIENT_SECRET: ${{ secrets.GCP_IAP_CLIENT_SECRET }}
+      GCP_JWT_SECRET: ${{ secrets.GCP_JWT_SECRET }}
+      GCP_GTS_KEY_ID: ${{ secrets.GCP_GTS_KEY_ID }}
+      GCP_GTS_HMAC_KEY: ${{ secrets.GCP_GTS_HMAC_KEY }}
