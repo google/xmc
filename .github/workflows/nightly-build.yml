@@ -68,7 +68,7 @@ jobs:
     uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: ${{ needs.prepare-environment.outputs.environment_name }}
-      deployment_name: 'xmc-v2'
+      deployment_name: 'xmc-nightly'
       region: 'us-central1'
       rod_deployment_enabled: true
       skip_verification: false

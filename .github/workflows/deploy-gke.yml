@@ -263,6 +263,11 @@ jobs:
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
+          terraform_backend_defaults:
+            type: gcs
+            configuration:
+              bucket: "corp-iac-terraform-states-${PROJECT_ID}"
+
           vars:
             deployment_name: "${DEPLOYMENT_NAME}"
             project_id: "${PROJECT_ID}"
