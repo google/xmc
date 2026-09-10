@@ -24,7 +24,8 @@ resource "null_resource" "apply_schema" {
   }
 
   provisioner "local-exec" {
-    command = <<EOF
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<EOF
       set -e
       echo "Locating workspace root..."
       curr_dir="$PWD"
