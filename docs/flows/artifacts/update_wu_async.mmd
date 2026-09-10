@@ -1,8 +1,0 @@
-sequenceDiagram
-    participant Redis
-    participant Actuator
-    participant Kubernetes as Kubernetes (K8s)
-
-    Redis-->>Actuator: 1. Trigger Update Task
-    Actuator->>Kubernetes: 2. Update JobSet priority
-    Kubernetes-->>Actuator: 3. Success

@@ -2,6 +2,10 @@
 
 This document describes how to build, test, and lint the codebase, configure continuous integration, and set up your local development environment.
 
+New to the codebase? Read the [Architecture Overview](architecture/overview.md) first, then
+[Use Cases §3](architecture/use_cases.md#3-new-contributor) for where to find the code and which
+invariants are enforced.
+
 ---
 
 ## Tools & Scripts Virtual Environment

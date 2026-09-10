@@ -2,6 +2,12 @@
 
 This document describes the deployment architecture of the XManager Cloud (XMC) application, highlighting the GKE (Google Kubernetes Engine) stack, supporting Google Cloud Platform (GCP) services, user authentication, and traffic routing mechanisms for both web-based and CLI clients.
 
+> [!NOTE]
+> This page focuses on the edge: routing, authentication, and the GCP services behind them. For the
+> full component inventory and how the services interact, see the
+> [Architecture Overview](../architecture/overview.md) and the
+> [Component Reference](../architecture/components.md).
+
 ---
 
 ## Architecture Overview
