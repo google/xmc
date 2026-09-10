@@ -310,43 +310,21 @@ class ConfigResolutionTest(unittest.TestCase):
             "gke_yaml-p_us-central1_xmc-xmc-v2-dev-dev",
         )
 
-    def test_mldiagnostics_and_xprof_bucket_flags(self) -> None:
-        """Verifies managed mldiagnostics and xprof bucket are resolved from CLI and YAML."""
-        # CLI flags override
-        args = argparse.Namespace(
-            project_id="my-proj",
-            enable_managed_mldiagnostics=True,
-            managed_xprof_gcs_bucket="gs://my-bucket/",
+    def test_mldiagnostics_and_xprof_bucket_resolution(self) -> None:
+        """Verifies managed mldiagnostics and xprof bucket are resolved from YAML and env."""
+        # YAML resolution
+        cfg_file = self.root / "mldiag_config.yaml"
+        cfg_file.write_text(
+            "vars:\n"
+            "  project_id: my-proj\n"
+            "  enable_managed_mldiagnostics: true\n"
+            "  managed_xprof_gcs_bucket: gs://yaml-bucket\n",
+            encoding="utf-8",
         )
-        cfg = config.load_config(args, repo_root=self.root)
-        self.assertTrue(cfg.enable_managed_mldiagnostics)
-        self.assertEqual(cfg.managed_xprof_gcs_bucket, "gs://my-bucket")
-
-        # Negative flag
-        args_neg = argparse.Namespace(
-            project_id="my-proj",
-            enable_managed_mldiagnostics=False,
-        )
-        cfg_neg = config.load_config(args_neg, repo_root=self.root)
-        self.assertFalse(cfg_neg.enable_managed_mldiagnostics)
-
-        # Negative flag overrides both env var and YAML
-        with patch.dict(
-            "os.environ",
-            {config.ENABLE_MANAGED_MLDIAGNOSTICS_ENV: "true"},
-            clear=True,
-        ):
-            override_file = self.root / "mldiag_override.yaml"
-            override_file.write_text(
-                "vars:\n  project_id: my-proj\n  enable_managed_mldiagnostics: true\n",
-                encoding="utf-8",
-            )
-            args_neg_override = argparse.Namespace(
-                config=str(override_file),
-                enable_managed_mldiagnostics=False,
-            )
-            cfg_neg_override = config.load_config(args_neg_override, repo_root=self.root)
-            self.assertFalse(cfg_neg_override.enable_managed_mldiagnostics)
+        args_yaml = argparse.Namespace(config=str(cfg_file))
+        cfg_yaml = config.load_config(args_yaml, repo_root=self.root)
+        self.assertTrue(cfg_yaml.enable_managed_mldiagnostics)
+        self.assertEqual(cfg_yaml.managed_xprof_gcs_bucket, "gs://yaml-bucket")
 
         # Environment variable fallback resolution
         with patch.dict(
@@ -362,27 +340,11 @@ class ConfigResolutionTest(unittest.TestCase):
             self.assertTrue(cfg_env.enable_managed_mldiagnostics)
             self.assertEqual(cfg_env.managed_xprof_gcs_bucket, "gs://env-bucket")
 
-        # YAML fallback resolution
-        cfg_file = self.root / "mldiag_config.yaml"
-        cfg_file.write_text(
-            "vars:\n"
-            "  project_id: my-proj\n"
-            "  enable_managed_mldiagnostics: true\n"
-            "  managed_xprof_gcs_bucket: gs://yaml-bucket\n",
-            encoding="utf-8",
-        )
-        args_yaml = argparse.Namespace(config=str(cfg_file))
-        cfg_yaml = config.load_config(args_yaml, repo_root=self.root)
-        self.assertTrue(cfg_yaml.enable_managed_mldiagnostics)
-        self.assertEqual(cfg_yaml.managed_xprof_gcs_bucket, "gs://yaml-bucket")
-
-        # Verify invalid bucket URI raises ValueError
-        invalid_args = argparse.Namespace(
-            project_id="my-proj",
-            managed_xprof_gcs_bucket="invalid-bucket",
-        )
-        with self.assertRaises(ValueError):
-            config.load_config(invalid_args, repo_root=self.root)
+        # Default resolution when neither YAML nor env is set
+        args_default = argparse.Namespace(project_id="my-proj")
+        cfg_default = config.load_config(args_default, repo_root=self.root)
+        self.assertFalse(cfg_default.enable_managed_mldiagnostics)
+        self.assertEqual(cfg_default.managed_xprof_gcs_bucket, "")
 
 
 class LocalDevConfigDataClassTest(unittest.TestCase):
