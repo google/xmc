@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -813,12 +814,33 @@ func mlRunOwnedByXManager(mlRun map[string]any) bool {
 	return mlRunHasLabel(mlRun, "created_by", createdByXManagerLabelValue)
 }
 
-// mlRunURL returns the URL to surface for an MLRun: the API-provided url when
-// present, otherwise the deterministic Cloud Console diagnostics URL for the id.
+// ensureProfilesTab guarantees that an MLRun URL targets the profiles view in
+// Google Cloud Console / Diagon. The control plane API returns the base URL of the
+// run (defaulting to the overview tab), so we explicitly stamp the tab query
+// parameter so users clicking the profile action button land on the profiles view.
+// Pre-existing tab parameters are replaced, other query parameters are preserved,
+// and malformed URLs fall back to the original string.
+func ensureProfilesTab(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := parsed.Query()
+	q.Set("tab", "profiles")
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
+}
+
+// mlRunURL returns the URL to surface for an MLRun: the API-provided url (with the
+// profiles tab preselected) when present, otherwise the deterministic Cloud
+// Console diagnostics URL for the id.
 func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
 	if res != nil {
 		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
-			return urlVal
+			return ensureProfilesTab(urlVal)
 		}
 	}
 	return constructDiagnosticsConsoleURL(r.Location, mlRunID, r.Project)
