@@ -28,7 +28,7 @@ import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_servi
 import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
-import { WorkUnitsTable, ensureProfilesTab } from './work_units_table';
+import { ensureProfilesTab, WorkUnitsTable } from './work_units_table';
 
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
