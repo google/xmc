@@ -23,6 +23,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  pull-requests: read
 
 jobs:
   run-backend-tests:
