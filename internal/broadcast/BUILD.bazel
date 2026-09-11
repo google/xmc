@@ -1,0 +1,22 @@
+# Copyright 2026 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//:__subpackages__"])
+
+go_library(
+    name = "broadcast",
+    srcs = [
+        "broadcast.go",
+        "events.go",
+        "fake.go",
+    ],
+    importpath = "xmanager_cloud/internal/broadcast",
+)
+
+go_test(
+    name = "broadcast_test",
+    srcs = [
+        "fake_test.go",
+    ],
+    embed = [":broadcast"],
+)
