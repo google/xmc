@@ -69,14 +69,12 @@ flags.DEFINE_string(
 )
 
 # Skip git push snapshot during test launch so SSH passphrase is not prompted
-# TODO(google/xmc#746): Remove snapshot_code monkey patch once
-# ExampleRunner / hermetic snapshot harness from #746 is adopted.
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 
-# TODO(google-deepmind/xmanager#79): Remove this monkey patch once
-# google-deepmind/xmanager#79 is merged and the xmanager client natively
-# accepts XMC_AUTH_TOKEN and XMC_USER_EMAIL.
+# TODO(https://github.com/google-deepmind/xmanager/pull/79): Remove this monkey
+# patch once https://github.com/google-deepmind/xmanager/pull/79 is merged and
+# the xmanager client natively accepts XMC_AUTH_TOKEN and XMC_USER_EMAIL.
 def _patch_grpc_auth_if_needed() -> None:
     """Patches ESS stub creation to fall back to gcloud identity token in CI/WIF environments."""
     orig_create_stub = ess_api._create_experiment_state_server_stub
