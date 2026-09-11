@@ -256,12 +256,8 @@ describe('WorkUnitsTable Component', () => {
 
     it('should append tab=profiles when url has no query parameters', () => {
       expect(
-        ensureProfilesTab(
-          'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1',
-        ),
-      ).toBe(
-        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?tab=profiles',
-      );
+        ensureProfilesTab('https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1'),
+      ).toBe('https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?tab=profiles');
     });
 
     it('should append tab=profiles to url with existing query parameters', () => {

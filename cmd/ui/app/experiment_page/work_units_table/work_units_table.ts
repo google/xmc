@@ -68,7 +68,7 @@ export function ensureProfilesTab(url?: string): string | undefined {
   }
   try {
     const parsed = new URL(url);
-    parsed.searchParams.set("tab", "profiles");
+    parsed.searchParams.set('tab', 'profiles');
     return parsed.toString();
   } catch {
     return url;
