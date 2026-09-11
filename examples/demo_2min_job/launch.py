@@ -83,8 +83,13 @@ def _patch_grpc_auth_if_needed() -> None:
             iap_client_id = os.environ.get("IAP_CLIENT_ID", "").strip()
             if not iap_client_id:
                 raise
-            token_cmd = ["gcloud", "auth", "print-identity-token", f"--audiences={iap_client_id}"]
-            token = subprocess.check_output(token_cmd, text=True).strip()
+            token_cmd = ["gcloud", "auth", "print-identity-token"]
+            client_sa = os.environ.get("XMC_CLIENT_SA", "").strip()
+            if client_sa:
+                token_cmd.extend(["--impersonate-service-account", client_sa])
+            token_cmd.append(f"--audiences={iap_client_id}")
+            raw_output = subprocess.check_output(token_cmd, text=True).strip()
+            token = raw_output.splitlines()[-1].strip()
             user_email = ess_api.get_current_user_email()
             channel_creds = grpc.ssl_channel_credentials()
             call_creds = grpc.access_token_call_credentials(token)
