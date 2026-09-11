@@ -33,10 +33,11 @@ dotenv.load_dotenv()
 DEFAULT_XMANAGER_UI_URL = "https://dev.xmanageriso.dev"
 
 
-def ensure_xmanager_ui_url() -> str:
+def ensure_xmanager_ui_url() -> None:
     """Ensures XMANAGER_UI_URL is configured so experiment logs do not print alpha env."""
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
-        return ui_url.rstrip("/")
+        os.environ["XMANAGER_UI_URL"] = ui_url.rstrip("/")
+        return
     domain = (
         os.environ.get("XMC_DOMAIN", "").strip()
         or os.environ.get("DOMAIN_NAME", "").strip()
@@ -46,7 +47,6 @@ def ensure_xmanager_ui_url() -> str:
     if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"
     os.environ["XMANAGER_UI_URL"] = domain
-    return domain
 
 
 ensure_xmanager_ui_url()
