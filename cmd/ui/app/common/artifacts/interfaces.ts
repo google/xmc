@@ -18,6 +18,7 @@ import {
   TextArtifact,
   UrlArtifact,
 } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import type { Chart } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
 export enum PayloadType {
   MANAGED_XPROF = 'managedXprof',
@@ -55,7 +56,7 @@ export interface UrlTypedArtifact extends BaseTypedArtifact {
 export interface ChartArtifactPayload {
   title?: string;
   metricNames?: string[];
-  chart?: Record<string, unknown>;
+  chart?: Chart;
   status?: 'STATUS_UNSPECIFIED' | 'PROVISIONING' | 'SUCCESS' | 'FAILED';
   errorMessage?: string;
 }
