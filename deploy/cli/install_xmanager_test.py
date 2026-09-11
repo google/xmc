@@ -59,7 +59,6 @@ class TestInstallXmanager(unittest.TestCase):
             )
             self.assertEqual(args.xmanager_branch, "xm-cloud")
             self.assertEqual(args.venv, "./venv")
-            self.assertEqual(args.default_ui_url, "https://dev.xmanageriso.dev")
 
     def test_parse_args_custom(self) -> None:
         """Test parse_args with custom CLI arguments."""
@@ -70,14 +69,11 @@ class TestInstallXmanager(unittest.TestCase):
             "custom-branch",
             "--venv",
             "/custom/venv",
-            "--default-ui-url",
-            "https://custom.xmanageriso.dev",
         ]
         args = install_xmanager.parse_args(cli_args)
         self.assertEqual(args.protos_loc, "/custom/protos")
         self.assertEqual(args.xmanager_branch, "custom-branch")
         self.assertEqual(args.venv, "/custom/venv")
-        self.assertEqual(args.default_ui_url, "https://custom.xmanageriso.dev")
 
     def test_check_prerequisites_success(self) -> None:
         """Test check_prerequisites when all binaries are found."""
@@ -213,72 +209,6 @@ class TestInstallXmanager(unittest.TestCase):
         mock_compile.assert_called_once()
         mock_install.assert_called_once()
         mock_verify.assert_called_once()
-
-    def test_patch_default_ui_url_replaces_alpha_url(self) -> None:
-        """Test patch_default_ui_url replaces default alpha URL with default domain."""
-        with tempfile.TemporaryDirectory() as tmp_dir_str:
-            tmp_dir = Path(tmp_dir_str)
-            exp_dir = tmp_dir / "xmanager" / "xm_cloud"
-            exp_dir.mkdir(parents=True, exist_ok=True)
-            exp_file = exp_dir / "experiment.py"
-            exp_file.write_text(
-                "_DEFAULT_XMANAGER_UI_URL = 'https://ui.alpha.example.com'\n",
-                encoding="utf-8",
-            )
-            install_xmanager.patch_default_ui_url(tmp_dir)
-            updated = exp_file.read_text(encoding="utf-8")
-            self.assertEqual(
-                updated,
-                "_DEFAULT_XMANAGER_UI_URL = 'https://dev.xmanageriso.dev'\n",
-            )
-
-    def test_patch_default_ui_url_custom_url(self) -> None:
-        """Test patch_default_ui_url replaces default alpha URL with custom URL."""
-        with tempfile.TemporaryDirectory() as tmp_dir_str:
-            tmp_dir = Path(tmp_dir_str)
-            exp_dir = tmp_dir / "xmanager" / "xm_cloud"
-            exp_dir.mkdir(parents=True, exist_ok=True)
-            exp_file = exp_dir / "experiment.py"
-            exp_file.write_text(
-                '_DEFAULT_XMANAGER_UI_URL = "https://ui.alpha.example.com"\n',
-                encoding="utf-8",
-            )
-            install_xmanager.patch_default_ui_url(
-                tmp_dir, default_ui_url="https://prod.xmanageriso.dev"
-            )
-            updated = exp_file.read_text(encoding="utf-8")
-            self.assertEqual(
-                updated,
-                "_DEFAULT_XMANAGER_UI_URL = 'https://prod.xmanageriso.dev'\n",
-            )
-
-    def test_patch_default_ui_url_special_chars(self) -> None:
-        """Test patch_default_ui_url handles characters like backslashes safely."""
-        with tempfile.TemporaryDirectory() as tmp_dir_str:
-            tmp_dir = Path(tmp_dir_str)
-            exp_dir = tmp_dir / "xmanager" / "xm_cloud"
-            exp_dir.mkdir(parents=True, exist_ok=True)
-            exp_file = exp_dir / "experiment.py"
-            exp_file.write_text(
-                "_DEFAULT_XMANAGER_UI_URL = 'https://ui.alpha.example.com'\n",
-                encoding="utf-8",
-            )
-            install_xmanager.patch_default_ui_url(
-                tmp_dir, default_ui_url=r"https://example.com/test\g<0>"
-            )
-            updated = exp_file.read_text(encoding="utf-8")
-            self.assertEqual(
-                updated,
-                r"_DEFAULT_XMANAGER_UI_URL = 'https://example.com/test\g<0>'" + "\n",
-            )
-
-    def test_patch_default_ui_url_missing_file(self) -> None:
-        """Test patch_default_ui_url handles missing experiment.py gracefully."""
-        with tempfile.TemporaryDirectory() as tmp_dir_str:
-            tmp_dir = Path(tmp_dir_str)
-            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
-                install_xmanager.patch_default_ui_url(tmp_dir)
-                self.assertIn("not found; skipping", stderr.getvalue())
 
 
 if __name__ == "__main__":
