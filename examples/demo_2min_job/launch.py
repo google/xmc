@@ -40,6 +40,9 @@ from xmanager_cloud.experiment_state_server.proto import (
 )
 from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
+logging.getLogger("dotenv.main").setLevel(logging.ERROR)
+dotenv.load_dotenv()
+
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
     "queue",
@@ -97,9 +100,6 @@ def main(argv: Sequence[str]) -> None:
     """Launches demonstration experiment with multiple WorkUnits for live testing."""
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
-
-    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
-    dotenv.load_dotenv()
 
     os.environ["USER"] = FLAGS.author
     os.environ["LOGNAME"] = FLAGS.author
