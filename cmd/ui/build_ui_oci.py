@@ -132,6 +132,20 @@ def copy_flat(src_dir: str, dest_dir: str):
                 raise
 
 
+def normalize_permissions(directory: str) -> None:
+    """Normalizes file and directory permissions in the build context.
+
+    Workstation developer umasks (e.g. 0027) strip 'others' permissions, which
+    breaks unprivileged non-root execution (UID 1000) inside Kubernetes containers.
+    """
+    for root, dirs, files in os.walk(directory):
+        for d in dirs:
+            os.chmod(os.path.join(root, d), 0o755)
+        for f in files:
+            path = os.path.join(root, f)
+            os.chmod(path, 0o755 if f.endswith(".sh") else 0o644)
+
+
 def main():
     """Main entrypoint for building UI container image.
 
@@ -186,9 +200,7 @@ def main():
                 f.write("""FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY dist/browser /usr/share/nginx/html
-RUN chmod -R o+rX /usr/share/nginx/html
 COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
-RUN chmod +x /docker-entrypoint.d/generate_config.sh
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
 """)
@@ -208,12 +220,13 @@ RUN npx ng build --configuration production
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/browser /usr/share/nginx/html
-RUN chmod -R o+rX /usr/share/nginx/html
 COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
-RUN chmod +x /docker-entrypoint.d/generate_config.sh
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
 """)
+
+        # Ensure permissions in build context allow non-root container execution (UID 1000).
+        normalize_permissions(temp_build_dir)
 
         tag = "ui-image:latest"
         print("Building Docker OCI frontend image...")

@@ -14,8 +14,7 @@
 import 'jasmine';
 
 import { cleanState, get, setupModule } from '../testing/test';
-import { FeatureFlagService } from './feature_flag_service';
-import { FeatureFlags } from './service_types';
+import { FeatureFlags, FeatureFlagService } from './feature_flag_service';
 
 /**
  * Sets up the test. If featureFlags is not provided, it will be set to
@@ -33,120 +32,48 @@ function setup(featureFlags?: FeatureFlags) {
   }, beforeEach);
 }
 
+const ALL_FLAGS: Array<{
+  key: keyof FeatureFlags;
+  getter: (service: FeatureFlagService) => boolean;
+}> = [
+  { key: 'adminPanelEnabled', getter: (s) => s.isAdminPanelEnabled },
+  { key: 'resourceDashboardEnabled', getter: (s) => s.isResourceDashboardEnabled },
+  { key: 'isNonProdAuth', getter: (s) => s.isNonProdAuth },
+  { key: 'performanceDashboardEnabled', getter: (s) => s.isPerformanceDashboardEnabled },
+  { key: 'pauseSchedulingEnabled', getter: (s) => s.isPauseSchedulingEnabled },
+];
+
 describe('FeatureFlagService', () => {
   describe('when XMC_FEATURE_FLAGS is undefined', () => {
     const state = setup();
 
-    it('isAdminPanelEnabled should be false', () => {
-      expect(state.service.isAdminPanelEnabled).toBeFalse();
-    });
-
-    it('isResourceDashboardEnabled should be false', () => {
-      expect(state.service.isResourceDashboardEnabled).toBeFalse();
-    });
-
-    it('isNonProdAuth should be false', () => {
-      expect(state.service.isNonProdAuth).toBeFalse();
-    });
-
-    it('isPerformanceDashboardEnabled should be false', () => {
-      expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
-    });
-
-    it('isPauseSchedulingEnabled should be false', () => {
-      expect(state.service.isPauseSchedulingEnabled).toBeFalse();
-    });
+    for (const { key, getter } of ALL_FLAGS) {
+      it(`${key} should be false`, () => {
+        expect(getter(state.service)).toBeFalse();
+        expect(state.service.isFeatureEnabled(key)).toBeFalse();
+      });
+    }
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
-    describe('when adminPanelEnabled is true', () => {
-      const state = setup({ adminPanelEnabled: true });
+    for (const { key, getter } of ALL_FLAGS) {
+      describe(`when ${key} is true`, () => {
+        const state = setup({ [key]: true });
 
-      it('isAdminPanelEnabled should be true if adminPanelEnabled is true', () => {
-        expect(state.service.isAdminPanelEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('adminPanelEnabled')).toBeTrue();
+        it(`${key} should be true`, () => {
+          expect(getter(state.service)).toBeTrue();
+          expect(state.service.isFeatureEnabled(key)).toBeTrue();
+        });
       });
-    });
 
-    describe('when adminPanelEnabled is false', () => {
-      const state = setup({ adminPanelEnabled: false });
+      describe(`when ${key} is false`, () => {
+        const state = setup({ [key]: false });
 
-      it('isAdminPanelEnabled should be false if adminPanelEnabled is false', () => {
-        expect(state.service.isAdminPanelEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('adminPanelEnabled')).toBeFalse();
+        it(`${key} should be false`, () => {
+          expect(getter(state.service)).toBeFalse();
+          expect(state.service.isFeatureEnabled(key)).toBeFalse();
+        });
       });
-    });
-
-    describe('when resourceDashboardEnabled is true', () => {
-      const state = setup({ resourceDashboardEnabled: true });
-
-      it('isResourceDashboardEnabled should be true if resourceDashboardEnabled is true', () => {
-        expect(state.service.isResourceDashboardEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeTrue();
-      });
-    });
-
-    describe('when resourceDashboardEnabled is false', () => {
-      const state = setup({ resourceDashboardEnabled: false });
-
-      it('isResourceDashboardEnabled should be false if resourceDashboardEnabled is false', () => {
-        expect(state.service.isResourceDashboardEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeFalse();
-      });
-    });
-
-    describe('when isNonProdAuth is true', () => {
-      const state = setup({ isNonProdAuth: true });
-
-      it('isNonProdAuth should be true if isNonProdAuth is true', () => {
-        expect(state.service.isNonProdAuth).toBeTrue();
-        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeTrue();
-      });
-    });
-
-    describe('when isNonProdAuth is false', () => {
-      const state = setup({ isNonProdAuth: false });
-
-      it('isNonProdAuth should be false if isNonProdAuth is false', () => {
-        expect(state.service.isNonProdAuth).toBeFalse();
-        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeFalse();
-      });
-    });
-
-    describe('when performanceDashboardEnabled is true', () => {
-      const state = setup({ performanceDashboardEnabled: true });
-
-      it('isPerformanceDashboardEnabled should be true if performanceDashboardEnabled is true', () => {
-        expect(state.service.isPerformanceDashboardEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeTrue();
-      });
-    });
-
-    describe('when performanceDashboardEnabled is false', () => {
-      const state = setup({ performanceDashboardEnabled: false });
-
-      it('isPerformanceDashboardEnabled should be false if performanceDashboardEnabled is false', () => {
-        expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeFalse();
-      });
-    });
-
-    describe('when pauseSchedulingEnabled is true', () => {
-      const state = setup({ pauseSchedulingEnabled: true });
-
-      it('isPauseSchedulingEnabled should be true if pauseSchedulingEnabled is true', () => {
-        expect(state.service.isPauseSchedulingEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('pauseSchedulingEnabled')).toBeTrue();
-      });
-    });
-
-    describe('when pauseSchedulingEnabled is false', () => {
-      const state = setup({ pauseSchedulingEnabled: false });
-
-      it('isPauseSchedulingEnabled should be false if pauseSchedulingEnabled is false', () => {
-        expect(state.service.isPauseSchedulingEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('pauseSchedulingEnabled')).toBeFalse();
-      });
-    });
+    }
   });
 });

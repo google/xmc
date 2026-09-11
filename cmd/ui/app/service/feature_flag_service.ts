@@ -13,7 +13,23 @@
 // limitations under the License.
 import { Injectable } from '@angular/core';
 
-import { FeatureFlags } from './service_types';
+/**
+ * Feature flags for the XManager UI.
+ */
+export interface FeatureFlags {
+  adminPanelEnabled?: boolean;
+  resourceDashboardEnabled?: boolean;
+  isNonProdAuth?: boolean;
+  performanceDashboardEnabled?: boolean;
+  pauseSchedulingEnabled?: boolean;
+}
+
+declare global {
+  interface Window {
+    // Global variable containing the feature flags set by the server.
+    XMC_FEATURE_FLAGS?: FeatureFlags;
+  }
+}
 
 /**
  * Service for checking whether a feature flag is enabled.

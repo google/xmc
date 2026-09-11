@@ -66,8 +66,6 @@ spec:
           value: {{ include "xmanager-cloud.uiApiUrl" . | quote }}
         - name: XMC_REFRESH_INTERVAL_MS
           value: {{ .Values.ui.refreshIntervalMs | quote }}
-        - name: XMC_DEFAULT_TO_CURSOR_PAGINATION
-          value: {{ .Values.ui.enableCursorPagination | quote }}
         - name: XMC_ADMIN_PANEL_ENABLED
           value: {{ .Values.healthServiceDeployment.enabled | quote }}
         - name: XMC_RESOURCE_DASHBOARD_ENABLED

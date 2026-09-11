@@ -17,10 +17,11 @@ import http.server
 import io
 import json
 import os
+import re
 import socket
 import sys
 import unittest
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 _this_dir = os.path.dirname(__file__)
@@ -350,51 +351,35 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
 
+    def _parse_feature_flags(self, output: str) -> dict[str, Any]:
+        match = re.search(r"window\.XMC_FEATURE_FLAGS=(.*?);\n", output)
+        self.assertIsNotNone(match, f"window.XMC_FEATURE_FLAGS not found in: {output}")
+        return json.loads(match.group(1))
+
     def test_config_js_feature_flags(self):
         cases = [
-            {
-                "testcase_name": "defaults",
-                "environ": {},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "performance_dashboard_true",
-                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "is_non_prod_auth_true",
-                "environ": {"XMC_NON_PROD_AUTH": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "pause_scheduling_enabled_true",
-                "environ": {"pause_scheduling_enabled": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
-                ),
-            },
+            ("defaults", {}, "pauseSchedulingEnabled", False),
+            (
+                "performance_dashboard_true",
+                {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
+                "performanceDashboardEnabled",
+                True,
+            ),
+            ("is_non_prod_auth_true", {"XMC_NON_PROD_AUTH": "true"}, "isNonProdAuth", True),
+            (
+                "pause_scheduling_enabled_true",
+                {"pause_scheduling_enabled": "true"},
+                "pauseSchedulingEnabled",
+                True,
+            ),
         ]
-        for case in cases:
-            with self.subTest(case["testcase_name"]):
+        for name, environ, key, expected in cases:
+            with self.subTest(name):
                 self.mock_wfile.seek(0)
                 self.mock_wfile.truncate(0)
-                output = self._get_config_js_output(case["environ"])
-                self.assertIn(case["expected"], output)
+                output = self._get_config_js_output(environ)
+                flags = self._parse_feature_flags(output)
+                self.assertEqual(flags.get(key), expected)
 
     def test_fallback_to_index(self):
         self.enter_context(

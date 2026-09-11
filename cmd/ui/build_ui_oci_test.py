@@ -17,6 +17,7 @@
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -352,6 +353,31 @@ import { PALETTE } from "third_party/xmanager_cloud/ui/custom_colors";
                 with self.assertRaises(SystemExit) as cm:
                     build_ui_oci.main()
                 self.assertEqual(cm.exception.code, 1)
+
+    def test_normalize_permissions_fixes_restrictive_umask(self):
+        """Verifies normalize_permissions sets 0o755 on dirs/scripts and 0o644 on files."""
+        test_dir = os.path.join(self.test_dir, "perm_test")
+        sub_dir = os.path.join(test_dir, "subdir")
+        os.makedirs(sub_dir, exist_ok=True)
+
+        script_path = os.path.join(test_dir, "entrypoint.sh")
+        file_path = os.path.join(sub_dir, "default.conf")
+
+        with open(script_path, "w") as f:
+            f.write("#!/bin/sh")
+        with open(file_path, "w") as f:
+            f.write("server {}")
+
+        # Simulate restrictive umask 0027: 0750 for dirs/scripts, 0640 for files
+        os.chmod(sub_dir, 0o750)
+        os.chmod(script_path, 0o750)
+        os.chmod(file_path, 0o640)
+
+        build_ui_oci.normalize_permissions(test_dir)
+
+        self.assertEqual(stat.S_IMODE(os.stat(sub_dir).st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(os.stat(script_path).st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(os.stat(file_path).st_mode), 0o644)
 
 
 if __name__ == "__main__":

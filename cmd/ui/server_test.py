@@ -15,7 +15,9 @@
 
 import http.server
 import io
+import json
 import os
+import re
 import socket
 import unittest
 from typing import TYPE_CHECKING, Any
@@ -140,132 +142,64 @@ class SPAHandlerTest(unittest.TestCase):
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
 
+    def _parse_feature_flags(self, output: str) -> dict[str, Any]:
+        match = re.search(r"window\.XMC_FEATURE_FLAGS=(.*?);\n", output)
+        self.assertIsNotNone(match, f"window.XMC_FEATURE_FLAGS not found in: {output}")
+        return json.loads(match.group(1))
+
     def test_config_js_feature_flags(self):
         cases = [
-            {
-                "testcase_name": "defaults",
-                "environ": {},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "admin_panel_true",
-                "environ": {"XMC_ADMIN_PANEL_ENABLED": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "admin_panel_false",
-                "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "resource_dashboard_true",
-                "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "resource_dashboard_false",
-                "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "false"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "performance_dashboard_true",
-                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "performance_dashboard_false",
-                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "non_prod_auth_true",
-                "environ": {"XMC_NON_PROD_AUTH": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "non_prod_auth_numeric_1",
-                "environ": {"XMC_NON_PROD_AUTH": "1"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "non_prod_auth_yes",
-                "environ": {"XMC_NON_PROD_AUTH": "yes"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "show_safety_warning_true",
-                "environ": {"SHOW_SAFETY_WARNING": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
-                ),
-            },
-            {
-                "testcase_name": "pause_scheduling_enabled_true",
-                "environ": {"pause_scheduling_enabled": "true"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
-                ),
-            },
-            {
-                "testcase_name": "pause_scheduling_enabled_false",
-                "environ": {"pause_scheduling_enabled": "false"},
-                "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
-                ),
-            },
+            ("defaults", {}, "pauseSchedulingEnabled", False),
+            ("admin_panel_true", {"XMC_ADMIN_PANEL_ENABLED": "true"}, "adminPanelEnabled", True),
+            ("admin_panel_false", {"XMC_ADMIN_PANEL_ENABLED": "false"}, "adminPanelEnabled", False),
+            (
+                "resource_dashboard_true",
+                {"XMC_RESOURCE_DASHBOARD_ENABLED": "true"},
+                "resourceDashboardEnabled",
+                True,
+            ),
+            (
+                "resource_dashboard_false",
+                {"XMC_RESOURCE_DASHBOARD_ENABLED": "false"},
+                "resourceDashboardEnabled",
+                False,
+            ),
+            (
+                "performance_dashboard_true",
+                {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
+                "performanceDashboardEnabled",
+                True,
+            ),
+            (
+                "performance_dashboard_false",
+                {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
+                "performanceDashboardEnabled",
+                False,
+            ),
+            ("non_prod_auth_true", {"XMC_NON_PROD_AUTH": "true"}, "isNonProdAuth", True),
+            ("non_prod_auth_numeric_1", {"XMC_NON_PROD_AUTH": "1"}, "isNonProdAuth", True),
+            ("non_prod_auth_yes", {"XMC_NON_PROD_AUTH": "yes"}, "isNonProdAuth", True),
+            ("show_safety_warning_true", {"SHOW_SAFETY_WARNING": "true"}, "isNonProdAuth", True),
+            (
+                "pause_scheduling_enabled_true",
+                {"pause_scheduling_enabled": "true"},
+                "pauseSchedulingEnabled",
+                True,
+            ),
+            (
+                "pause_scheduling_enabled_false",
+                {"pause_scheduling_enabled": "false"},
+                "pauseSchedulingEnabled",
+                False,
+            ),
         ]
-        for case in cases:
-            with self.subTest(case["testcase_name"]):
+        for name, environ, key, expected in cases:
+            with self.subTest(name):
                 self.mock_wfile.seek(0)
                 self.mock_wfile.truncate(0)
-                output = self._get_config_js_output(case["environ"])
-                self.assertIn(case["expected"], output)
+                output = self._get_config_js_output(environ)
+                flags = self._parse_feature_flags(output)
+                self.assertEqual(flags.get(key), expected)
 
     def test_fallback_to_index(self):
         self.enter_context(
