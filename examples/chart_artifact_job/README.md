@@ -99,7 +99,7 @@ the `xmcv2` environment. A `.env` file in the repo root takes precedence over it
 | :----------------------- | :-------------------------------------------------------------- | :------------------------------------------------------------ |
 | `PROJECT_ID`             | GCP project ID hosting Artifact Registry and the GKE cluster.    | Required unless `IMAGE_PATH` is set                            |
 | `IMAGE_PATH`             | Worker image to run.                                             | `us-docker.pkg.dev/<PROJECT_ID>/xmc/chart-artifact-job:latest` |
-| `XMANAGER_ENDPOINT`      | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.xmanageriso.dev`). | Loaded from `.env`                                             |
+| `XMANAGER_ENDPOINT`      | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.domain.dev`). | Loaded from `.env`                                             |
 | `XMANAGER_UI_URL`        | Base URL of the XMC UI, used for the printed deep links.         | Derived from `XMC_DOMAIN`                                      |
 | `XMC_DASHBOARD_ENDPOINT` | Optional override for the Dashboard REST/gRPC endpoint.          | Derived from `XMANAGER_ENDPOINT`/`XMANAGER_UI_URL` (`https://<domain>/v1/dashboards`) |
 | `CREATE_DASHBOARD`       | Whether to automatically register the dashboard and its chart.   | `true`                                                         |
@@ -144,7 +144,7 @@ Example output:
 ==================================================
 Worker Image       : us-docker.pkg.dev/my-project/xmc/chart-artifact-job:latest
 Queue Name         : cpu-queue
-Dashboard Endpoint : https://xmcv2.dev.xmanageriso.dev/v1/dashboards
+Dashboard Endpoint : https://xmcv2.dev.domain.dev/v1/dashboards
 Sampler Seed       : 484217
 ==================================================
 
@@ -152,7 +152,7 @@ Sampler Seed       : 484217
 [2/4] Created WorkUnit successfully: experiments/234911125/workUnits/1 (WID: 1)
 
 [3/4] Creating Dashboard and Chart for the generated metrics...
---> Publishing Dashboard 'Chart Artifact Experiment 234911125' to HTTP REST https://xmcv2.dev.xmanageriso.dev/v1/dashboards...
+--> Publishing Dashboard 'Chart Artifact Experiment 234911125' to HTTP REST https://xmcv2.dev.domain.dev/v1/dashboards...
 --> Created Dashboard successfully: dashboards/chart_artifact_x234911125_w1 (HTTP 200)
 --> Server-assigned chart IDs: ['b6f1c0a2-3d5e-4f18-9c47-2a0e8d3b7f91']
 
@@ -162,8 +162,8 @@ Sampler Seed       : 484217
 
 ==================================================
   🎉 Experiment and WorkUnit Launch Completed!
-  Work Unit : https://xmcv2.dev.xmanageriso.dev/experiments/234911125/workUnits/1
-  Dashboard : https://xmcv2.dev.xmanageriso.dev/dashboards/chart_artifact_x234911125_w1
+  Work Unit : https://xmcv2.dev.domain.dev/experiments/234911125/workUnits/1
+  Dashboard : https://xmcv2.dev.domain.dev/dashboards/chart_artifact_x234911125_w1
 ==================================================
 ```
 

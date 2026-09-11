@@ -63,8 +63,8 @@ The example includes a pre-configured [`worker.env`](worker.env) file containing
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `PROJECT_ID` | GCP project ID hosting Artifact Registry and GKE cluster. | `xmc-test-project-6` |
-| `XMANAGER_ENDPOINT` | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.xmanageriso.dev`). | Loaded from `.env` |
-| `XMANAGER_UI_URL` | Base URL of XMC UI and REST gateway (`https://xmcv2.dev.xmanageriso.dev`). | Loaded from `.env` |
+| `XMANAGER_ENDPOINT` | XMC endpoint URI (e.g. `dns:///grpc.xmcv2.dev.domain.dev`). | Loaded from `.env` |
+| `XMANAGER_UI_URL` | Base URL of XMC UI and REST gateway (`https://xmcv2.dev.domain.dev`). | Loaded from `.env` |
 | `XMC_DASHBOARD_ENDPOINT` | Optional override for Dashboard REST/gRPC endpoint. | Derived from `XMANAGER_ENDPOINT`/`XMANAGER_UI_URL` (`https://<domain>/v1/dashboards`) |
 | `CREATE_DASHBOARD` | Whether to automatically register dashboard and charts. | `true` |
 
