@@ -114,6 +114,8 @@ const (
 	RedisGroup = "actuator-group"
 	// RedisDLQ is the name of the Redis dead-letter stream.
 	RedisDLQ = "xmc-dlq-stream"
+	// RedisPauseStream is the name of the Redis stream used for broadcasting pause scheduling updates.
+	RedisPauseStream = "xmc-pause-stream"
 	// ActuatorWorkerID is the prefix for the ID of the actuator worker.
 	ActuatorWorkerID = "actuator-worker"
 	// ActuatorCleanupWorkerID is the prefix for the ID of the Actuator cleanup worker.

@@ -2425,7 +2425,7 @@ func TestMLRunURL(t *testing.T) {
 			name:    "res with api url returns api url directly",
 			res:     map[string]any{"url": "https://console.cloud.google.com/aiml/run?project=p"},
 			mlRunID: "run-4",
-			want:    "https://console.cloud.google.com/aiml/run?project=p",
+			want:    "https://console.cloud.google.com/aiml/run?project=p&tab=profiles",
 		},
 	}
 	for _, tc := range tests {
@@ -2433,6 +2433,63 @@ func TestMLRunURL(t *testing.T) {
 			got := r.mlRunURL(tc.res, tc.mlRunID)
 			if got != tc.want {
 				t.Errorf("r.mlRunURL(%v, %q) = %q, want %q", tc.res, tc.mlRunID, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEnsureProfilesTab(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "empty url returns empty string",
+			raw:  "",
+			want: "",
+		},
+		{
+			name: "url without query params appends tab=profiles",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?tab=profiles",
+		},
+		{
+			name: "url with project param appends tab=profiles",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
+		},
+		{
+			name: "url with multiple query params preserves params and appends tab=profiles",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?authuser=1&project=test-project",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?authuser=1&project=test-project&tab=profiles",
+		},
+		{
+			name: "url already containing tab=profiles is idempotent",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
+		},
+		{
+			name: "url with different tab replaces tab with profiles",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=overview",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
+		},
+		{
+			name: "url with fragment preserves fragment",
+			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=p#summary",
+			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=p&tab=profiles#summary",
+		},
+		{
+			name: "malformed url returns raw input unchanged",
+			raw:  "http://invalid domain with spaces",
+			want: "http://invalid domain with spaces",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ensureProfilesTab(tc.raw)
+			if got != tc.want {
+				t.Errorf("ensureProfilesTab(%q) = %q, want %q", tc.raw, got, tc.want)
 			}
 		})
 	}

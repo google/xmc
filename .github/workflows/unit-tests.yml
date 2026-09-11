@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   run-backend-tests:
@@ -32,7 +33,6 @@ jobs:
 
     permissions:
       contents: read
-      id-token: write
 
     # Use a service container for the Spanner Emulator
     services:

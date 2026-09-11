@@ -1,0 +1,65 @@
+<!--
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="chart-artifact-container">
+  <div class="chart-artifact-header">
+    <div class="chart-artifact-heading">
+      <h3 class="chart-artifact-title">{{ title() }}</h3>
+      @if (metricNames().length) {
+        <div class="metric-names">
+          @for (metric of metricNames(); track metric) {
+            <span class="metric-chip">{{ metric }}</span>
+          }
+        </div>
+      }
+    </div>
+    <button
+      mat-icon-button
+      type="button"
+      aria-label="Refresh chart data"
+      [disabled]="isLoading()"
+      (click)="fetchChartData()"
+    >
+      <mat-icon class="refresh-icon">refresh</mat-icon>
+    </button>
+  </div>
+
+  @if (notice(); as noticeText) {
+    <div class="notice-container">
+      <mat-icon class="notice-icon">info_outline</mat-icon>
+      <span>{{ noticeText }}</span>
+    </div>
+  } @else if (isLoading()) {
+    <div class="loading-container">
+      <mat-spinner diameter="32" />
+    </div>
+  } @else if (error(); as errorText) {
+    <xmc-error-banner [message]="errorText" (retry)="fetchChartData()" />
+  } @else {
+    @if (summaryPlots().length) {
+      <div class="summary-boxes-row">
+        @for (plot of summaryPlots(); track plot.plotId || $index) {
+          <xmc-plot-card [plotSpec]="plot" [plotData]="plot.plotId | plotData: plotDataMap()" />
+        }
+      </div>
+    }
+
+    <div class="curve-plots-container">
+      @for (plot of curvePlots(); track plot.plotId || $index) {
+        <xmc-plot-card [plotSpec]="plot" [plotData]="plot.plotId | plotData: plotDataMap()" />
+      }
+    </div>
+  }
+</div>

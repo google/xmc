@@ -137,7 +137,7 @@ export function hasPayloadContent(typedArtifact: TypedArtifact): boolean {
 }
 
 /** Sorts artifacts by priority, then creation time. */
-function sortArtifactsByPriority(typedArtifacts: TypedArtifact[]): TypedArtifact[] {
+export function sortArtifactsByPriority<T extends TypedArtifact>(typedArtifacts: T[]): T[] {
   return [...typedArtifacts].sort((a, b) => {
     const priorityA = a.artifact.priority ?? Number.MAX_SAFE_INTEGER;
     const priorityB = b.artifact.priority ?? Number.MAX_SAFE_INTEGER;
