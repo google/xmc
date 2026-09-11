@@ -16,26 +16,27 @@ name: 'Run Demo Workload (XMC Nightly)'
 
 on:
   workflow_dispatch:
-    inputs:
-      queue:
-        description: 'Target Queue name for workload (e.g. cpu-queue, gpu-queue)'
-        type: string
+  workflow_call:
+    secrets:
+      GCP_PROJECT_ID:
         required: false
-        default: 'cpu-queue'
-      num_work_units:
-        description: 'Number of WorkUnits to launch'
-        type: number
+      GCP_REGION:
         required: false
-        default: 3
-      duration_seconds:
-        description: 'Duration in seconds for each WorkUnit'
-        type: number
+      GCP_DOMAIN_NAME:
         required: false
-        default: 60
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      GCP_SERVICE_ACCOUNT:
+        required: false
+      GCP_IAP_CLIENT_ID:
+        required: false
+    outputs:
+      experiment_xid:
+        description: 'Created Experiment XID'
+        value: ${{ jobs.run-demo-workload.outputs.experiment_xid }}
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   run-demo-workload:
@@ -43,6 +44,8 @@ jobs:
     runs-on: 'arc-runner-set'
     environment: xmc-nightly
     timeout-minutes: 30
+    outputs:
+      experiment_xid: ${{ steps.launch-demo-workload.outputs.xid }}
 
     permissions:
       contents: read
@@ -50,19 +53,16 @@ jobs:
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
-      GCP_PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
       REGION: '${{ secrets.GCP_REGION }}'
-      GCP_REGION: '${{ secrets.GCP_REGION }}'
       DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME }}'
-      GCP_DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME }}'
       XMC_DOMAIN: 'xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       XMANAGER_ENDPOINT: 'grpc.xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}:443'
       XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
-      CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
-
-
+      QUEUE_NAME: 'cpu-queue'
+      NUM_WORK_UNITS: 3
+      DURATION_SECONDS: 60
 
     steps:
       - name: 'Checkout Repository'
@@ -94,18 +94,38 @@ jobs:
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
 
       - name: 'Launch Demo Workload'
+        id: launch-demo-workload
         env:
-          QUEUE_NAME: '${{ inputs.queue || ''cpu-queue'' }}'
-          NUM_WU: '${{ inputs.num_work_units || 3 }}'
-          DURATION: '${{ inputs.duration_seconds || 60 }}'
           ACTOR: '${{ github.actor }}'
           XMC_USER_EMAIL: '${{ github.actor }}@google.com'
         run: |
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" examples/simple_job/launch.py \
+          set -euo pipefail
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
+            else
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)
+            fi
+            export XMC_AUTH_TOKEN
+          fi
+          export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" examples/simple_job/launch.py \
             --queue="${QUEUE_NAME}" \
-            --num_work_units="${NUM_WU}" \
-            --duration="${DURATION}" \
+            --num_work_units="${NUM_WORK_UNITS}" \
+            --duration="${DURATION_SECONDS}" \
             --gpus=0 \
-            --author="${ACTOR}@google.com"
+            --author="${ACTOR}@google.com" | tee /dev/stderr)
 
+          # Extract XID from output
+          XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)
+          if [ -z "${XID}" ]; then
+            XID=$(echo "${OUTPUT}" | grep -oP 'experiments/\K\d+' | head -n 1 || true)
+          fi
 
+          if [ -z "${XID}" ]; then
+            echo "::error::Failed to parse experiment XID from workload launch output."
+            exit 1
+          fi
+
+          echo "xid=${XID}" >> "$GITHUB_OUTPUT"
