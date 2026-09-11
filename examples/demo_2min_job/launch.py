@@ -37,7 +37,7 @@ from xmanager.xm_cloud import snapshot_code
 from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
 from xmanager_cloud.experiment_state_server.proto import (
     api_pb2 as ess_api_pb2,
-    experiment_state_service_pb2_grpc as ess_service_grpc,
+    api_pb2_grpc as ess_service_grpc,
     priority_pb2,
     resources_pb2,
     work_unit_pb2,
