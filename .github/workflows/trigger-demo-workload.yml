@@ -92,7 +92,7 @@ jobs:
 
       - name: 'Mint XMC Identity Token'
         run: |
-          TOKEN="$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)"
+          TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
           echo "::add-mask::${TOKEN}"
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
 
