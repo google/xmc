@@ -26,14 +26,18 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 from collections.abc import Sequence
 
 import dotenv
+import grpc
 from absl import app, flags
 from xmanager import xm_cloud
 from xmanager.xm_cloud import snapshot_code
+from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
 from xmanager_cloud.experiment_state_server.proto import (
     api_pb2 as ess_api_pb2,
+    experiment_state_service_pb2_grpc as ess_service_grpc,
     priority_pb2,
     resources_pb2,
     work_unit_pb2,
@@ -42,6 +46,7 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
+
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -65,6 +70,37 @@ flags.DEFINE_string(
 
 # Skip git push snapshot during test launch so SSH passphrase is not prompted
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+
+
+def _patch_grpc_auth_if_needed() -> None:
+    """Patches ESS stub creation to fall back to gcloud identity token in CI/WIF environments."""
+    orig_create_stub = ess_api._create_experiment_state_server_stub
+
+    def _stub_wrapper(endpoint: str):
+        try:
+            return orig_create_stub(endpoint)
+        except Exception:
+            iap_client_id = os.environ.get("IAP_CLIENT_ID", "").strip()
+            if not iap_client_id:
+                raise
+            token_cmd = ["gcloud", "auth", "print-identity-token", f"--audiences={iap_client_id}"]
+            token = subprocess.check_output(token_cmd, text=True).strip()
+            user_email = ess_api.get_current_user_email()
+            channel_creds = grpc.ssl_channel_credentials()
+            call_creds = grpc.access_token_call_credentials(token)
+            composite_creds = grpc.composite_channel_credentials(channel_creds, call_creds)
+            channel = grpc.secure_channel(endpoint, composite_creds)
+            audit_interceptor = ess_api.AuditMetadataInterceptor(user_email)
+            intercepted_channel = grpc.intercept_channel(channel, audit_interceptor)
+            grpc.channel_ready_future(intercepted_channel).result(
+                ess_api._CHANNEL_READY_TIMEOUT_SEC
+            )
+            return (
+                ess_service_grpc.ExperimentStateServiceStub(intercepted_channel),
+                intercepted_channel,
+            )
+
+    ess_api._create_experiment_state_server_stub = _stub_wrapper
 
 
 def parse_priority(priority_str: str) -> priority_pb2.Priority.ValueType:
@@ -100,6 +136,8 @@ def main(argv: Sequence[str]) -> None:
     """Launches demonstration experiment with multiple WorkUnits for live testing."""
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
+
+    _patch_grpc_auth_if_needed()
 
     os.environ["USER"] = FLAGS.author
     os.environ["LOGNAME"] = FLAGS.author
