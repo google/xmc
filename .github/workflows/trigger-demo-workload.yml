@@ -32,10 +32,6 @@ on:
         type: number
         required: false
         default: 60
-  push:
-    branches:
-      - 'feat/nightly-demo-workload'
-
 
 permissions:
   contents: read
