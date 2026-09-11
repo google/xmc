@@ -90,11 +90,13 @@ jobs:
           QUEUE_NAME: '${{ inputs.queue || ''cpu-queue'' }}'
           NUM_WU: '${{ inputs.num_work_units || 3 }}'
           DURATION: '${{ inputs.duration_seconds || 60 }}'
+          ACTOR: '${{ github.actor }}'
         run: |
           "${GITHUB_WORKSPACE}/.venv/bin/python3" examples/demo_2min_job/launch.py \
             --queue="${QUEUE_NAME}" \
             --num_work_units="${NUM_WU}" \
             --duration="${DURATION}" \
             --gpus=0 \
-            --author="${{ github.actor }}@google.com"
+            --author="${ACTOR}@google.com"
+
 
