@@ -2073,6 +2073,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	tests := []struct {
 		name            string
 		client          *mockMLRunCreator
+		labels          map[string]string
 		wantURLContains string
 		wantGetCalls    int
 		wantUpdateCalls int
@@ -2100,6 +2101,24 @@ func TestUpsertExistingMLRun(t *testing.T) {
 					},
 				},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			wantURLContains: "https://mlrun/updated",
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
+		},
+		{
+			name: "already exists, owned and both missing experiment_id triggers update",
+			client: &mockMLRunCreator{
+				getRes: map[string]any{
+					"labels": map[string]any{
+						"created_by":                  createdByXManagerLabelValue,
+						listExistingSessionsOnlyLabel: "true",
+					},
+				},
+				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			labels: map[string]string{
+				"created_by": createdByXManagerLabelValue,
 			},
 			wantURLContains: "https://mlrun/updated",
 			wantGetCalls:    1,
@@ -2141,7 +2160,11 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
-			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			inputLabels := tc.labels
+			if inputLabels == nil {
+				inputLabels = buildMLRunLabels(1, 2)
+			}
+			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", inputLabels, map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
 				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
 			}

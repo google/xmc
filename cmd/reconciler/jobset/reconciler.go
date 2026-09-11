@@ -863,6 +863,7 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	}
 	if mlRunOwnedByXManager(existing) &&
 		mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") &&
+		labels["experiment_id"] != "" &&
 		mlRunHasLabel(existing, "experiment_id", labels["experiment_id"]) {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
 		return r.mlRunURL(existing, existingID)
