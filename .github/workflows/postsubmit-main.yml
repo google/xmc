@@ -33,7 +33,6 @@ jobs:
     name: 'Unit Tests'
     permissions:
       contents: read
-      id-token: write
       pull-requests: read
     uses: ./.github/workflows/unit-tests.yml
 
