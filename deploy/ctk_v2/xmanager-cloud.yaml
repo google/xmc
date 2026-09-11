@@ -76,6 +76,7 @@ vars:
   health_status_cache_ttl: 15s
   health_status_force_refresh_max_requests: 5
   health_status_force_refresh_window: 5s
+  pause_scheduling_enabled: false
 
 deployment_groups:
 - group: apis
@@ -436,6 +437,9 @@ deployment_groups:
         value: $(vars.ingestion_gateway_image)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
+        type: auto
+      - name: featureFlags.pause_scheduling_enabled
+        value: $(vars.pause_scheduling_enabled)
         type: auto
       - name: redisAddr
         value: "$(redis.redis_host):$(redis.redis_port)"

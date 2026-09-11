@@ -10,6 +10,7 @@ compat_go_library(
     deps = [
         "//internal/auth",
         "//internal/configutil",
+        "//internal/featureflags",
         "//internal/logging",
         "//internal/task_queue:client",
     ],

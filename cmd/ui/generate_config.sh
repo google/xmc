@@ -37,6 +37,7 @@ NON_PROD_AUTH="false"
 if [ "$(get_bool_env "$XMC_NON_PROD_AUTH" false)" = "true" ] || [ "$(get_bool_env "$SHOW_SAFETY_WARNING" false)" = "true" ]; then
   NON_PROD_AUTH="true"
 fi
+PAUSE_SCHEDULING=$(get_bool_env "$pause_scheduling_enabled" false)
 
 cat <<EOF > "${CONFIG_FILE}"
 window.XMC_API_URL = "${API_URL}";
@@ -45,7 +46,8 @@ window.XMC_FEATURE_FLAGS = {
   "adminPanelEnabled": ${ADMIN_PANEL},
   "resourceDashboardEnabled": ${RESOURCE_DASHBOARD},
   "performanceDashboardEnabled": ${PERFORMANCE_DASHBOARD},
-  "isNonProdAuth": ${NON_PROD_AUTH}
+  "isNonProdAuth": ${NON_PROD_AUTH},
+  "pauseSchedulingEnabled": ${PAUSE_SCHEDULING}
 };
 EOF
 

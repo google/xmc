@@ -24,6 +24,7 @@ import (
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue/client"
 )
@@ -53,6 +54,7 @@ type Config struct {
 	DashboardServiceAddr        string
 	EnableComponents            bool
 	JWKSURL                     string
+	FeatureFlags                featureflags.Flags
 }
 
 var cfg Config
@@ -86,6 +88,7 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "")
 	configutil.BoolEnv(&c.EnableComponents, "enable_components", false)
 	configutil.StringEnv(&c.JWKSURL, "ess_jwks_url", "")
+	c.FeatureFlags = featureflags.Load()
 }
 
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.

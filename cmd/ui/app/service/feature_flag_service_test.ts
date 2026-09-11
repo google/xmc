@@ -52,6 +52,10 @@ describe('FeatureFlagService', () => {
     it('isPerformanceDashboardEnabled should be false', () => {
       expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
     });
+
+    it('isPauseSchedulingEnabled should be false', () => {
+      expect(state.service.isPauseSchedulingEnabled).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -124,6 +128,24 @@ describe('FeatureFlagService', () => {
       it('isPerformanceDashboardEnabled should be false if performanceDashboardEnabled is false', () => {
         expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
         expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeFalse();
+      });
+    });
+
+    describe('when pauseSchedulingEnabled is true', () => {
+      const state = setup({ pauseSchedulingEnabled: true });
+
+      it('isPauseSchedulingEnabled should be true if pauseSchedulingEnabled is true', () => {
+        expect(state.service.isPauseSchedulingEnabled).toBeTrue();
+        expect(state.service.isFeatureEnabled('pauseSchedulingEnabled')).toBeTrue();
+      });
+    });
+
+    describe('when pauseSchedulingEnabled is false', () => {
+      const state = setup({ pauseSchedulingEnabled: false });
+
+      it('isPauseSchedulingEnabled should be false if pauseSchedulingEnabled is false', () => {
+        expect(state.service.isPauseSchedulingEnabled).toBeFalse();
+        expect(state.service.isFeatureEnabled('pauseSchedulingEnabled')).toBeFalse();
       });
     });
   });

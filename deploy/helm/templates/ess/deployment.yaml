@@ -86,6 +86,8 @@ spec:
         envFrom:
         - configMapRef:
             name: ess-config
+        - configMapRef:
+            name: feature-flags-config
         env:
         - name: IAP_EXPECTED_HTTP_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}

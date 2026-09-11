@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/featureflags"
 )
 
 // Config holds the configuration for the health service.
@@ -45,6 +46,7 @@ type Config struct {
 	ForceRefreshMaxRequests int
 	ForceRefreshWindow      time.Duration
 	EnableComponents        bool
+	FeatureFlags            featureflags.Flags
 }
 
 var buildVersion string
@@ -75,6 +77,7 @@ func init() {
 	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
 	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
 	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
+	cfg.FeatureFlags = featureflags.Load()
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {
