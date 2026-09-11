@@ -64,6 +64,8 @@ jobs:
       XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
+      XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
 
 
     steps:
