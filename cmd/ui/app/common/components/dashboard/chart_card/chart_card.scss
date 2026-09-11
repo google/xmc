@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// No max-width: it contradicted the flex-grow below, so a dashboard of one or two charts
+// left most of its width empty. Crowding is bounded by min-width and the grid container's
+// overflow-x instead.
 :host {
   display: block;
   min-width: 320px;
-  max-width: 420px;
   flex: 1 1 340px;
 }
 
