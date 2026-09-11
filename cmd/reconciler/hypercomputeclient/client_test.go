@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -441,13 +442,11 @@ func TestUpdateMLRun(t *testing.T) {
 				t.Errorf("patch body still contains output-only field %q", f)
 			}
 		}
-		// orchestrator/workloadDetails are mutable but must not be echoed back when the
-		// caller is not explicitly updating the orchestrator: the PATCH stays scoped to
-		// the fields being changed and leaves the existing values untouched.
-		for _, f := range []string{"orchestrator", "workloadDetails"} {
-			if _, ok := patchBody[f]; ok {
-				t.Errorf("patch body still contains immutable field %q", f)
-			}
+		if patchBody["orchestrator"] != "GKE" {
+			t.Errorf("orchestrator = %v, want %q", patchBody["orchestrator"], "GKE")
+		}
+		if _, ok := patchBody["workloadDetails"]; !ok {
+			t.Errorf("workloadDetails missing, want preserved from GET")
 		}
 		if got["displayName"] != "new" {
 			t.Errorf("response displayName = %v, want %q", got["displayName"], "new")
@@ -482,6 +481,54 @@ func TestUpdateMLRun(t *testing.T) {
 		}
 		if _, ok := patchBody["workloadDetails"]; !ok {
 			t.Errorf("workloadDetails missing, want present on explicit orchestrator update")
+		}
+	})
+
+	t.Run("labels-only update merges labels and preserves orchestrator", func(t *testing.T) {
+		var patchMask string
+		var patchBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]any{
+					"orchestrator":    "GKE",
+					"workloadDetails": map[string]any{"gke": map[string]any{"id": "js-1"}},
+					"labels":          map[string]any{"experiment_id": "100", "created_by": "xmanager"},
+				})
+			case http.MethodPatch:
+				patchMask = r.URL.Query().Get("update_mask")
+				json.NewDecoder(r.Body).Decode(&patchBody)
+				json.NewEncoder(w).Encode(map[string]any{"done": true, "response": map[string]any{}})
+			default:
+				http.Error(w, "unexpected method", http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		_, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			Labels: map[string]string{"list_existing_sessions_only": "true"},
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchMask != "*" {
+			t.Errorf("update_mask = %q, want %q", patchMask, "*")
+		}
+		if patchBody["orchestrator"] != "GKE" {
+			t.Errorf("orchestrator = %v, want %q (must not be cleared)", patchBody["orchestrator"], "GKE")
+		}
+		labels, ok := patchBody["labels"].(map[string]any)
+		if !ok {
+			t.Fatalf("labels missing from patch body")
+		}
+		wantLabels := map[string]any{
+			"experiment_id":               "100",
+			"created_by":                  "xmanager",
+			"list_existing_sessions_only": "true",
+		}
+		if !reflect.DeepEqual(labels, wantLabels) {
+			t.Errorf("labels = %v, want %v", labels, wantLabels)
 		}
 	})
 }
@@ -531,5 +578,103 @@ func TestResolveEndpointEmptyProjectID(t *testing.T) {
 	// An empty projectID must be rejected up front to avoid malformed URLs.
 	if _, err := resolveEndpoint("", "prod", "us-central1"); err == nil {
 		t.Fatal("resolveEndpoint() error = nil, want error for empty projectID")
+	}
+}
+
+func TestMergeStringMap(t *testing.T) {
+	tests := []struct {
+		name        string
+		payload     map[string]any
+		field       string
+		updates     map[string]string
+		wantChanged bool
+		wantMap     map[string]any
+	}{
+		{
+			name:        "nil updates returns false",
+			payload:     map[string]any{"labels": map[string]any{"k1": "v1"}},
+			field:       "labels",
+			updates:     nil,
+			wantChanged: false,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "empty updates returns false",
+			payload:     map[string]any{"labels": map[string]any{"k1": "v1"}},
+			field:       "labels",
+			updates:     map[string]string{},
+			wantChanged: false,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "missing field creates map and populates",
+			payload:     map[string]any{},
+			field:       "labels",
+			updates:     map[string]string{"k1": "v1"},
+			wantChanged: true,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "nil field creates map and populates",
+			payload:     map[string]any{"labels": nil},
+			field:       "labels",
+			updates:     map[string]string{"k1": "v1"},
+			wantChanged: true,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "malformed non-map field re-initializes map",
+			payload:     map[string]any{"labels": "not-a-map"},
+			field:       "labels",
+			updates:     map[string]string{"k1": "v1"},
+			wantChanged: true,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "existing identical key-values returns unchanged",
+			payload:     map[string]any{"labels": map[string]any{"k1": "v1"}},
+			field:       "labels",
+			updates:     map[string]string{"k1": "v1"},
+			wantChanged: false,
+			wantMap:     map[string]any{"k1": "v1"},
+		},
+		{
+			name:        "existing key value updated returns true",
+			payload:     map[string]any{"labels": map[string]any{"k1": "old"}},
+			field:       "labels",
+			updates:     map[string]string{"k1": "new"},
+			wantChanged: true,
+			wantMap:     map[string]any{"k1": "new"},
+		},
+		{
+			name: "merges new keys into existing keys",
+			payload: map[string]any{
+				"labels": map[string]any{"k1": "v1", "k2": "v2"},
+			},
+			field: "labels",
+			updates: map[string]string{
+				"k2": "updated",
+				"k3": "v3",
+			},
+			wantChanged: true,
+			wantMap: map[string]any{
+				"k1": "v1",
+				"k2": "updated",
+				"k3": "v3",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotChanged := mergeStringMap(tc.payload, tc.field, tc.updates)
+			if gotChanged != tc.wantChanged {
+				t.Errorf("mergeStringMap() changed = %v, want %v", gotChanged, tc.wantChanged)
+			}
+			gotMap, _ := tc.payload[tc.field].(map[string]any)
+			if !reflect.DeepEqual(gotMap, tc.wantMap) {
+				t.Errorf("merged map = %v, want %v", gotMap, tc.wantMap)
+			}
+		})
 	}
 }

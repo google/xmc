@@ -414,6 +414,28 @@ type UpdateMLRunOptions struct {
 	WorkloadDetails *GKEWorkloadDetails
 }
 
+// mergeStringMap merges updates into a nested string map in payload under field.
+// It initializes the nested map if absent or of an unexpected type, and reports
+// whether any values were added or modified.
+func mergeStringMap(payload map[string]any, field string, updates map[string]string) bool {
+	if len(updates) == 0 {
+		return false
+	}
+	nested, ok := payload[field].(map[string]any)
+	if !ok || nested == nil {
+		nested = make(map[string]any, len(updates))
+		payload[field] = nested
+	}
+	var changed bool
+	for k, v := range updates {
+		if nested[k] != v {
+			nested[k] = v
+			changed = true
+		}
+	}
+	return changed
+}
+
 func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) bool {
 	if opts == nil {
 		return false
@@ -431,12 +453,10 @@ func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) b
 		payload["runSet"] = opts.RunGroup
 		needUpdate = true
 	}
-	if len(opts.Labels) > 0 {
-		payload["labels"] = opts.Labels
+	if mergeStringMap(payload, "labels", opts.Labels) {
 		needUpdate = true
 	}
-	if len(opts.Artifacts) > 0 {
-		payload["artifacts"] = opts.Artifacts
+	if mergeStringMap(payload, "artifacts", opts.Artifacts) {
 		needUpdate = true
 	}
 	if opts.Orchestrator != "" {
@@ -449,8 +469,9 @@ func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) b
 	return needUpdate
 }
 
-// UpdateMLRun updates an existing ML run. It fetches the current state, applies
-// the requested changes, and PATCHes the resource with update_mask=*.
+// UpdateMLRun updates an existing ML run via a read-modify-write against the full
+// resource: it fetches the current state, applies the requested changes, and
+// re-sends the whole resource with update_mask=* (the only mask the API accepts).
 func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts *UpdateMLRunOptions) (map[string]any, error) {
 	payload, err := c.GetMLRun(ctx, name)
 	if err != nil {
@@ -472,16 +493,8 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 	for _, field := range []string{"createTime", "updateTime", "endTime"} {
 		delete(payload, field)
 	}
-	// orchestrator and workloadDetails are mutable, but they are seeded from the GET
-	// above and update_mask=* only touches the fields present in the payload. When
-	// this call is not explicitly updating the orchestrator, drop them so the PATCH
-	// stays scoped to the fields we intend to change and leaves the existing values
-	// untouched.
-	if opts == nil || opts.Orchestrator == "" {
-		delete(payload, "orchestrator")
-		delete(payload, "workloadDetails")
-	}
 
+	// The current backend only accepts update_mask=*|workload_details, so it uses * here. TODO: update to per field masks once backend supports it.
 	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
 	params := url.Values{"update_mask": {"*"}}
 
