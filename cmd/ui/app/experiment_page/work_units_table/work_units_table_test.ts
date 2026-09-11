@@ -28,7 +28,7 @@ import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_servi
 import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
-import { WorkUnitsTable } from './work_units_table';
+import { WorkUnitsTable, ensureProfilesTab } from './work_units_table';
 
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
@@ -224,7 +224,7 @@ describe('WorkUnitsTable Component', () => {
 
       const link = await harness.getRunProfileLink(0);
       expect(link).toEqual({
-        href: 'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test',
+        href: 'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/test-run?project=xmc-test&tab=profiles',
         target: '_blank',
         rel: 'noreferrer',
       });
@@ -246,6 +246,56 @@ describe('WorkUnitsTable Component', () => {
 
       const links = getEls('a.tag');
       expect(links.length).toBe(0);
+    });
+  });
+  describe('ensureProfilesTab', () => {
+    it('should return undefined when url is undefined or empty', () => {
+      expect(ensureProfilesTab(undefined)).toBeUndefined();
+      expect(ensureProfilesTab('')).toBeUndefined();
+    });
+
+    it('should append tab=profiles when url has no query parameters', () => {
+      expect(
+        ensureProfilesTab(
+          'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1',
+        ),
+      ).toBe(
+        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?tab=profiles',
+      );
+    });
+
+    it('should append tab=profiles to url with existing query parameters', () => {
+      expect(
+        ensureProfilesTab(
+          'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test',
+        ),
+      ).toBe(
+        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test&tab=profiles',
+      );
+    });
+
+    it('should keep tab=profiles when already present', () => {
+      expect(
+        ensureProfilesTab(
+          'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test&tab=profiles',
+        ),
+      ).toBe(
+        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test&tab=profiles',
+      );
+    });
+
+    it('should overwrite existing different tab parameter with profiles', () => {
+      expect(
+        ensureProfilesTab(
+          'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test&tab=overview',
+        ),
+      ).toBe(
+        'https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=xmc-test&tab=profiles',
+      );
+    });
+
+    it('should return original url for malformed urls', () => {
+      expect(ensureProfilesTab('not-a-valid-url')).toBe('not-a-valid-url');
     });
   });
 });
