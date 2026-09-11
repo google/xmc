@@ -87,22 +87,37 @@ func TestFakeClientMultipleSubscribers(t *testing.T) {
 func TestFakeClientSubscribeCancelAndNilHandler(t *testing.T) {
 	fake := NewFakeClient("cancel-stream")
 
-	// Nil handler should return immediately
-	fake.Subscribe(context.Background(), "$", nil)
+	// Nil handler should return immediately without error
+	if err := fake.Subscribe(context.Background(), "$", nil); err != nil {
+		t.Errorf("Subscribe() with nil handler returned unexpected error: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
+	errCh := make(chan error, 1)
 	go func() {
-		fake.Subscribe(ctx, "$", func(msg string) {})
-		close(done)
+		errCh <- fake.Subscribe(ctx, "$", func(msg string) {})
 	}()
 
 	cancel()
 	select {
-	case <-done:
-		// Succeeded
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("Subscribe() error = %v, want nil on graceful shutdown", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("Subscribe() did not exit on context cancel")
+	}
+}
+
+func TestFakeClientSubscribeDeadlineExceeded(t *testing.T) {
+	fake := NewFakeClient("timeout-stream")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := fake.Subscribe(ctx, "$", func(msg string) {})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Subscribe() error = %v, want context.DeadlineExceeded", err)
 	}
 }
 

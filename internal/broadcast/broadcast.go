@@ -25,5 +25,8 @@ type Publisher interface {
 
 // Consumer defines the contract for subscribing to broadcast notifications.
 type Consumer interface {
-	Subscribe(ctx context.Context, startID string, handler func(msg string))
+	// Subscribe blocks listening for broadcast notifications starting from startID.
+	// It returns nil when the context is canceled (graceful shutdown), or a
+	// non-nil error if an unexpected connection or operational failure occurs.
+	Subscribe(ctx context.Context, startID string, handler func(msg string)) error
 }

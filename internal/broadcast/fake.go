@@ -16,6 +16,7 @@ package broadcast
 
 import (
 	"context"
+	"errors"
 	"sync"
 )
 
@@ -62,9 +63,9 @@ func (f *FakeClient) Publish(ctx context.Context, message string) error {
 }
 
 // Subscribe listens for in-memory broadcast messages and invokes handler for each message.
-func (f *FakeClient) Subscribe(ctx context.Context, startID string, handler func(msg string)) {
+func (f *FakeClient) Subscribe(ctx context.Context, startID string, handler func(msg string)) error {
 	if handler == nil {
-		return
+		return nil
 	}
 	ch := f.addSubscriber()
 	defer f.removeSubscriber(ch)
@@ -72,7 +73,10 @@ func (f *FakeClient) Subscribe(ctx context.Context, startID string, handler func
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return ctx.Err()
 		case msg := <-ch:
 			handler(msg)
 		}
