@@ -26,6 +26,7 @@ import venv
 from pathlib import Path
 
 MIN_GIT_VERSION = (2, 25)
+DEFAULT_XMANAGER_UI_URL = "https://dev.xmanageriso.dev"
 
 
 def error_exit(msg: str) -> None:
@@ -147,6 +148,10 @@ def parse_args(
     default_branch = os.environ.get("XMANAGER_BRANCH", "xm-cloud")
     default_venv = os.environ.get("VENV_DIR", "./venv")
 
+    default_ui_url = os.environ.get("DEFAULT_XMANAGER_UI_URL") or os.environ.get(
+        "XMANAGER_UI_URL", DEFAULT_XMANAGER_UI_URL
+    )
+
     parser = argparse.ArgumentParser(
         description="Install XManager and setup xmanager_cloud dependencies."
     )
@@ -167,6 +172,11 @@ def parse_args(
         "--venv",
         default=default_venv,
         help="Virtual environment target directory (default: ./venv)",
+    )
+    parser.add_argument(
+        "--default-ui-url",
+        default=default_ui_url,
+        help=f"Default XManager UI URL to patch into xm_cloud (default: {default_ui_url})",
     )
     return parser.parse_args(args)
 
@@ -368,6 +378,36 @@ def rewrite_proto_imports(proto_dir: Path) -> None:
             proto_file.write_text(updated, encoding="utf-8")
 
 
+def patch_default_ui_url(
+    xmanager_dir: Path,
+    default_ui_url: str = DEFAULT_XMANAGER_UI_URL,
+) -> None:
+    """Patch the default XManager UI URL in xm_cloud to prevent printing alpha env.
+
+    Args:
+        xmanager_dir: Root directory of cloned XManager repository.
+        default_ui_url: Base URL to replace the default alpha URL with.
+    """
+    experiment_file = xmanager_dir / "xmanager" / "xm_cloud" / "experiment.py"
+    if not experiment_file.is_file():
+        sys.stderr.write(f"Warning: {experiment_file} not found; skipping default UI URL patch.\n")
+        return
+
+    content = experiment_file.read_text(encoding="utf-8")
+    updated = re.sub(
+        r"_DEFAULT_XMANAGER_UI_URL\s*=\s*['\"][^'\"]+['\"]",
+        f"_DEFAULT_XMANAGER_UI_URL = '{default_ui_url}'",
+        content,
+    )
+    if updated != content:
+        experiment_file.write_text(updated, encoding="utf-8")
+        sys.stdout.write(f"Patched default XManager UI URL to: {default_ui_url}\n")
+    else:
+        sys.stderr.write(
+            "Warning: _DEFAULT_XMANAGER_UI_URL pattern not found in experiment.py; patch not applied.\n"
+        )
+
+
 def compile_protos(
     venv_python: Path,
     xmanager_dir: Path,
@@ -495,7 +535,11 @@ def main(raw_args: list[str] | None = None) -> None:
         rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "experiment_state_server" / "proto")
         rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "dashboard_service" / "proto")
 
+        sys.stdout.write("Patching default XManager UI URL...\n")
+        patch_default_ui_url(xmanager_dir, args.default_ui_url)
+
         compile_protos(venv_python, xmanager_dir, googleapis_dir)
+
         install_xmanager_package(venv_python, xmanager_dir)
         verify_imports(venv_python)
 

@@ -30,6 +30,31 @@ from xmanager import xm, xm_cloud
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
+DEFAULT_XMANAGER_UI_URL = "https://dev.xmanageriso.dev"
+
+
+def ensure_xmanager_ui_url() -> str:
+    """Ensures XMANAGER_UI_URL is configured so experiment logs do not print alpha env."""
+    if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
+        return ui_url.rstrip("/")
+    domain = (
+        (
+            os.environ.get("XMC_DOMAIN")
+            or os.environ.get("DOMAIN_NAME")
+            or os.environ.get("XMC_BASE_DOMAIN")
+            or DEFAULT_XMANAGER_UI_URL
+        )
+        .strip()
+        .rstrip("/")
+    )
+    if not domain.startswith(("http://", "https://")):
+        domain = f"https://{domain}"
+    os.environ["XMANAGER_UI_URL"] = domain
+    return domain
+
+
+ensure_xmanager_ui_url()
+
 PROJECT_ID = os.environ.get("PROJECT_ID")
 if not PROJECT_ID:
     raise ValueError(
@@ -104,4 +129,5 @@ if __name__ == "__main__":
     print(f"IAP_CLIENT_ID: {os.environ.get('IAP_CLIENT_ID')}")
     print(f"PROJECT_ID: {os.environ.get('PROJECT_ID')}")
     print(f"CONTAINER_REGISTRY: {CONTAINER_REGISTRY}")
+    print(f"XMANAGER_UI_URL: {os.environ.get('XMANAGER_UI_URL')}")
     app.run(main)

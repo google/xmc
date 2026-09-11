@@ -138,6 +138,15 @@ def main(argv: Sequence[str]) -> None:
         f" using image: {image_path}"
     )
 
+    ui_base_url = os.environ.get("XMANAGER_UI_URL", "").strip() or (
+        f"https://{os.environ['XMC_DOMAIN']}"
+        if os.environ.get("XMC_DOMAIN")
+        else "https://dev.xmanageriso.dev"
+    )
+    if not ui_base_url.startswith(("http://", "https://")):
+        ui_base_url = f"https://{ui_base_url}"
+    os.environ["XMANAGER_UI_URL"] = ui_base_url
+
     with xm_cloud.create_experiment(
         experiment_title="ManagedXprof WorkUnit Artifact Example",
         acls=xid_messages_pb2.XidAcls(
@@ -185,7 +194,7 @@ def main(argv: Sequence[str]) -> None:
             )
             print(f"Attached work-unit-level ManagedXprof artifact: {created_artifact.name}")
 
-        print(f"Experiment Dashboard URL: https://{os.environ.get('XMC_DOMAIN')}/experiments/{xid}")
+        print(f"Experiment Dashboard URL: {ui_base_url}/experiments/{xid}")
 
 
 if __name__ == "__main__":
