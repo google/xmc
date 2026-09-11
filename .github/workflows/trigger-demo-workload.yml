@@ -15,8 +15,6 @@
 name: 'Run Demo Workload (XMC Nightly)'
 
 on:
-  push:
-    branches: ['feat/nightly-demo-workload']
   workflow_dispatch:
     inputs:
       queue:
