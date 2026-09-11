@@ -186,9 +186,10 @@ def _resolve_ui_base_url() -> str:
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
         return ui_url.rstrip("/")
     domain = _require_env("XMC_DOMAIN").strip().rstrip("/")
-    if domain.startswith(("http://", "https://")):
-        return domain
-    return f"https://{domain}"
+    if not domain.startswith(("http://", "https://")):
+        domain = f"https://{domain}"
+    os.environ["XMANAGER_UI_URL"] = domain
+    return domain
 
 
 def _resolve_image_path() -> str:

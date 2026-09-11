@@ -79,22 +79,19 @@ def parse_priority(priority_str: str) -> priority_pb2.Priority.ValueType:
 
 
 def _resolve_ui_base_url() -> str:
-    """Resolves the XMC UI origin URL from environment variables."""
+    """Resolves the XMC UI origin URL from environment variables and sets XMANAGER_UI_URL."""
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
         return ui_url.rstrip("/")
     domain = (
-        (
-            os.environ.get("XMC_DOMAIN")
-            or os.environ.get("DOMAIN_NAME")
-            or os.environ.get("GCP_DOMAIN_NAME")
-            or "localhost:8080"
-        )
-        .strip()
-        .rstrip("/")
-    )
-    if domain.startswith(("http://", "https://")):
-        return domain
-    return f"https://{domain}"
+        os.environ.get("XMC_DOMAIN", "").strip()
+        or os.environ.get("DOMAIN_NAME", "").strip()
+        or os.environ.get("GCP_DOMAIN_NAME", "").strip()
+        or "dev.xmanageriso.dev"
+    ).rstrip("/")
+    if not domain.startswith(("http://", "https://")):
+        domain = f"https://{domain}"
+    os.environ["XMANAGER_UI_URL"] = domain
+    return domain
 
 
 def main(argv: Sequence[str]) -> None:
