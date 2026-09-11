@@ -14,12 +14,18 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { catchError, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
-import { ChartTypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import {
+  ChartArtifactPayload,
+  ChartTypedArtifact,
+} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { PlotDataPipe } from 'xmanager_cloud/ui/app/common/components/dashboard/chart_card/chart_card';
 import { PlotCardComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card';
+import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
 import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
@@ -32,6 +38,32 @@ import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_servic
  */
 export function isSummaryBoxPlot(plot: PlotSpec): boolean {
   return plot.type === PlotType.SUMMARY_BOX || (plot.type as unknown) === 1;
+}
+
+/** A ChartArtifact provisioning status, as its proto JSON name. */
+type ChartStatus = NonNullable<ChartArtifactPayload['status']>;
+
+/** ChartArtifact.Status JSON names, indexed by the enum tag they are declared with. */
+const CHART_STATUS_BY_TAG: readonly ChartStatus[] = [
+  'STATUS_UNSPECIFIED',
+  'PROVISIONING',
+  'SUCCESS',
+  'FAILED',
+];
+
+/**
+ * Normalises a ChartArtifact status to its proto JSON name.
+ *
+ * Like `PlotSpec.type` above, the status arrives either as the JSON name or as the enum's
+ * integer tag depending on the serializer. Comparing only against the names would let a
+ * numerically encoded FAILED fall through as though the chart were fine, hiding the very
+ * error message that status carries.
+ */
+export function chartStatusName(status: unknown): ChartStatus | undefined {
+  if (typeof status === 'number') {
+    return CHART_STATUS_BY_TAG[status];
+  }
+  return typeof status === 'string' ? (status as ChartStatus) : undefined;
 }
 
 /**
@@ -48,14 +80,23 @@ export function isSummaryBoxPlot(plot: PlotSpec): boolean {
   templateUrl: './chart_artifact_view.ng.html',
   styleUrl: './chart_artifact_view.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatProgressSpinnerModule, PlotCardComponent, PlotDataPipe],
+  imports: [
+    ErrorBannerComponent,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+    PlotCardComponent,
+    PlotDataPipe,
+  ],
 })
 export class ChartArtifactView {
   readonly artifact = input.required<ChartTypedArtifact>();
 
   private readonly dashboardService = inject(DashboardService);
+  private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   protected readonly isLoading = signal<boolean>(false);
+  protected readonly error = signal<string | null>(null);
 
   private readonly payload = computed(() => this.artifact().payload);
 
@@ -72,12 +113,45 @@ export class ChartArtifactView {
     this.plots().filter((plot) => !isSummaryBoxPlot(plot)),
   );
 
+  /**
+   * Why there is nothing to draw, or null when the chart is renderable.
+   *
+   * A ChartArtifact is provisioned asynchronously, so it spends its first moments naming
+   * metrics it cannot yet plot. Saying which of those states it is in beats a blank panel.
+   */
+  protected readonly notice = computed<string | null>(() => {
+    const payload = this.payload();
+    const status = chartStatusName(payload.status);
+    if (status === 'FAILED') {
+      return payload.errorMessage || 'The server could not provision a chart for this artifact.';
+    }
+    if (!this.chartName()) {
+      return status === 'SUCCESS'
+        ? 'This artifact has no provisioned chart to draw.'
+        : 'The chart for this artifact is still being provisioned. Reload in a moment.';
+    }
+    if (!this.plots().length) {
+      return 'The provisioned chart declares no plots, so there is nothing to draw.';
+    }
+    return null;
+  });
+
+  /**
+   * The chart to fetch series for, or '' when there is nothing worth asking about.
+   *
+   * A chart declaring no plots has nowhere to put a response, so fetching one spends a
+   * GetChartData round trip -- and a data engine query per plot on the other end -- to
+   * populate a map the template never reads.
+   */
+  private readonly fetchTarget = computed(() => (this.plots().length ? this.chartName() : ''));
+
   protected readonly chartData = toSignal(
-    toObservable(this.chartName).pipe(
+    combineLatest([toObservable(this.fetchTarget), this.refreshTrigger$]).pipe(
       tap(() => {
         this.isLoading.set(true);
+        this.error.set(null);
       }),
-      switchMap((name) => {
+      switchMap(([name]) => {
         // An unprovisioned artifact has no chart to ask the Dashboard Service about; calling
         // GetChartData with an empty name would only turn the wait into an error message.
         if (!name) {
@@ -86,9 +160,8 @@ export class ChartArtifactView {
         }
         return this.dashboardService.getChartData({ name }).pipe(
           tap(() => this.isLoading.set(false)),
-          catchError(() => {
-            // The spinner has to come down even when the fetch does not arrive, or a failed
-            // request leaves the panel spinning with nothing on the way to replace it.
+          catchError((err: { message?: string }) => {
+            this.error.set(err?.message || 'Failed to load chart metrics');
             this.isLoading.set(false);
             return of(undefined);
           }),
@@ -106,4 +179,8 @@ export class ChartArtifactView {
     }
     return map;
   });
+
+  fetchChartData(): void {
+    this.refreshTrigger$.next();
+  }
 }

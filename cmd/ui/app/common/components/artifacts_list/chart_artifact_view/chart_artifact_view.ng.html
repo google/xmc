@@ -25,12 +25,28 @@ limitations under the License.
         </div>
       }
     </div>
+    <button
+      mat-icon-button
+      type="button"
+      aria-label="Refresh chart data"
+      [disabled]="isLoading()"
+      (click)="fetchChartData()"
+    >
+      <mat-icon class="refresh-icon">refresh</mat-icon>
+    </button>
   </div>
 
-  @if (isLoading()) {
+  @if (notice(); as noticeText) {
+    <div class="notice-container">
+      <mat-icon class="notice-icon">info_outline</mat-icon>
+      <span>{{ noticeText }}</span>
+    </div>
+  } @else if (isLoading()) {
     <div class="loading-container">
       <mat-spinner diameter="32" />
     </div>
+  } @else if (error(); as errorText) {
+    <xmc-error-banner [message]="errorText" (retry)="fetchChartData()" />
   } @else {
     @if (summaryPlots().length) {
       <div class="summary-boxes-row">

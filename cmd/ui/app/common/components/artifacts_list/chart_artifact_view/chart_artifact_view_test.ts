@@ -18,7 +18,7 @@ import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import {
   ChartArtifactPayload,
@@ -28,7 +28,7 @@ import {
 import { ChartData, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
-import { ChartArtifactView, isSummaryBoxPlot } from './chart_artifact_view';
+import { ChartArtifactView, chartStatusName, isSummaryBoxPlot } from './chart_artifact_view';
 import { ChartArtifactViewHarness } from './chart_artifact_view_harness';
 
 const CHART_NAME = 'experiments/9001/workUnits/1/charts/b6f1c0a2';
@@ -141,8 +141,90 @@ describe('ChartArtifactView', () => {
   it('draws the plot specs carried by the artifact', async () => {
     await setUp();
 
+    expect(await harness.getNotice()).toBeNull();
     expect(await harness.getSummaryBoxCount()).toBe(1);
     expect(await harness.getPlotCardCount()).toBe(2);
+  });
+
+  it('explains that provisioning is unfinished instead of querying an unnamed chart', async () => {
+    await setUp();
+    host.artifact.set(
+      chartArtifact({
+        title: 'Training progress',
+        metricNames: ['chart_demo/loss'],
+        status: 'PROVISIONING',
+      }),
+    );
+    dashboardServiceSpy.getChartData.calls.reset();
+    fixture.detectChanges();
+
+    expect(await harness.getNotice()).toContain('still being provisioned');
+    expect(await harness.getPlotCardCount()).toBe(0);
+    expect(dashboardServiceSpy.getChartData).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the server error message when provisioning failed', async () => {
+    await setUp();
+    host.artifact.set(
+      chartArtifact({
+        title: 'Training progress',
+        status: 'FAILED',
+        errorMessage: 'dashboard service unavailable',
+      }),
+    );
+    fixture.detectChanges();
+
+    expect(await harness.getNotice()).toContain('dashboard service unavailable');
+  });
+
+  // A serializer that did not apply the proto JSON mapping sends ChartArtifact.Status as its
+  // enum tag. Matching only the names let a numeric FAILED slip past the notice and render as
+  // a healthy chart, swallowing the error message the payload was carrying.
+  it('surfaces the server error message when the status arrived as an enum tag', async () => {
+    await setUp();
+    host.artifact.set(
+      chartArtifact({
+        title: 'Training progress',
+        status: 3 as unknown as ChartArtifactPayload['status'],
+        errorMessage: 'dashboard service unavailable',
+      }),
+    );
+    fixture.detectChanges();
+
+    expect(await harness.getNotice()).toContain('dashboard service unavailable');
+  });
+
+  it('says so when the provisioned chart declares no plots', async () => {
+    await setUp();
+    host.artifact.set(
+      chartArtifact({
+        title: 'Training progress',
+        status: 'SUCCESS',
+        chart: { name: CHART_NAME, xid: 9001, wid: 1, plots: [] },
+      }),
+    );
+    fixture.detectChanges();
+
+    expect(await harness.getNotice()).toContain('no plots');
+  });
+
+  // A different chart name from the one setUp fetched, so that leaving the plots out is the
+  // only thing standing between this artifact and a request.
+  it('does not query a chart that declares no plots', async () => {
+    await setUp();
+    host.artifact.set(
+      chartArtifact({
+        title: 'Training progress',
+        status: 'SUCCESS',
+        chart: { name: 'experiments/9001/workUnits/1/charts/empty', xid: 9001, wid: 1, plots: [] },
+      }),
+    );
+    dashboardServiceSpy.getChartData.calls.reset();
+    fixture.detectChanges();
+
+    // Nothing would display the response, so the round trip -- and a data engine query per
+    // plot behind it -- would be spent filling a map the template never reads.
+    expect(dashboardServiceSpy.getChartData).not.toHaveBeenCalled();
   });
 
   it('falls back to a generic title when the artifact has none', async () => {
@@ -151,6 +233,51 @@ describe('ChartArtifactView', () => {
     fixture.detectChanges();
 
     expect(await harness.getTitle()).toBe('Chart artifact');
+  });
+
+  // The thrown message is deliberately not the component's fallback string: an assertion
+  // against the fallback would pass whether or not the error is ever read. The banner is only
+  // reached once loading has finished, so finding it also covers the loading flag clearing.
+  it('reports a failed data fetch in an error banner', async () => {
+    dashboardServiceSpy.getChartData.and.returnValue(
+      throwError(() => new Error('chart data service is unavailable')),
+    );
+    await setUp();
+
+    const banner = await harness.getErrorBanner();
+    expect(banner).not.toBeNull();
+    expect(await banner!.getMessage()).toBe('chart data service is unavailable');
+  });
+
+  it('falls back to a generic message when the failure carries none', async () => {
+    dashboardServiceSpy.getChartData.and.returnValue(throwError(() => new Error()));
+    await setUp();
+
+    const banner = await harness.getErrorBanner();
+    expect(await banner!.getMessage()).toBe('Failed to load chart metrics');
+  });
+
+  it('re-fetches and clears the banner when the retry is taken', async () => {
+    dashboardServiceSpy.getChartData.and.returnValue(throwError(() => new Error('unavailable')));
+    await setUp();
+    const banner = await harness.getErrorBanner();
+
+    dashboardServiceSpy.getChartData.and.returnValue(of(MOCK_CHART_DATA));
+    await banner!.clickRetry();
+
+    expect(dashboardServiceSpy.getChartData).toHaveBeenCalledTimes(2);
+    expect(await harness.getErrorBanner()).toBeNull();
+  });
+
+  it('normalises a status given as an enum tag to its proto JSON name', () => {
+    expect(chartStatusName('FAILED')).toBe('FAILED');
+    expect(chartStatusName(0)).toBe('STATUS_UNSPECIFIED');
+    expect(chartStatusName(1)).toBe('PROVISIONING');
+    expect(chartStatusName(2)).toBe('SUCCESS');
+    expect(chartStatusName(3)).toBe('FAILED');
+    expect(chartStatusName(undefined)).toBeUndefined();
+    // A tag this build has no name for is better left unmatched than mapped to a wrong status.
+    expect(chartStatusName(99)).toBeUndefined();
   });
 
   it('recognises summary boxes by proto JSON name and by enum tag', () => {

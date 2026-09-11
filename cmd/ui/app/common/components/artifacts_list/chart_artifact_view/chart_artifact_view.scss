@@ -77,6 +77,27 @@
   color: var(--mat-sys-on-surface-variant, #5f6368);
 }
 
+.refresh-icon {
+  font-size: 20px;
+  color: var(--mat-sys-on-surface-variant, #5f6368);
+}
+
+.notice-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--mat-sys-on-surface-variant, #5f6368);
+
+  .notice-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+}
+
 .loading-container {
   display: flex;
   justify-content: center;
