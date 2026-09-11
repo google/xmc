@@ -16,7 +16,7 @@
 """Launch script for demonstration workload in XMC with multiple WorkUnits.
 
 Demonstrates submitting an experiment and multiple WorkUnits targeted at a specific ClusterQueue
-to showcase real-time Resource Observability Dashboard (ROD) metrics and workload lifecycle.
+to showcase workload lifecycle.
 
 Usage:
     python3 launch.py --queue=cpu-cluster-queue --num_work_units=3 --duration=60 --gpus=0
@@ -176,7 +176,7 @@ def main(argv: Sequence[str]) -> None:
     print("-----------------------------------------------------------------")
 
     with xm_cloud.create_experiment(
-        experiment_title=f"ROD Demo Workload ({num_work_units} units, {duration_sec}s execution)",
+        experiment_title=f"Demo Workload ({num_work_units} units, {duration_sec}s execution)",
         acls=xid_messages_pb2.XidAcls(
             owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
         ),
@@ -222,10 +222,10 @@ def main(argv: Sequence[str]) -> None:
                 work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
                 priority=priority_enum,
                 notes=(
-                    f"ROD Demo workload {i}/{num_work_units} ({wu_worker_name}) "
+                    f"Demo workload {i}/{num_work_units} ({wu_worker_name}) "
                     f"targeted at {queue_name}"
                 ),
-                tags=["rod-demo", f"{duration_sec}s-workload", queue_name, wu_worker_name],
+                tags=[f"{duration_sec}s-workload", queue_name, wu_worker_name],
                 executable=work_unit_pb2.Executable(
                     scheduling_constraints=work_unit_pb2.SchedulingConstraints(
                         queue_name=queue_name
@@ -263,8 +263,7 @@ def main(argv: Sequence[str]) -> None:
         print("\n✅ All WorkUnits created successfully!")
         print(f"   Experiment XID: {xid}")
         print(f"   WorkUnit IDs  : {', '.join(created_work_units)}")
-        print("\n📊 Monitor in Resource Observability Dashboard (ROD):")
-        print(f"   {ui_base_url}/resources?queue={queue_name}")
+        print("\n📊 Monitor in XMC Web UI:")
         print(f"   {ui_base_url}/experiments/{xid}")
         print("=================================================================\n")
 
