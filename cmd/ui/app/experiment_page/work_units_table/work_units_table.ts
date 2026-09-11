@@ -58,29 +58,6 @@ enum WorkUnitColumn {
   URLS = 'Urls',
 }
 
-/**
- * Ensures that an ML Diagnostics / Diagon run URL includes the `tab=profiles`
- * query parameter, navigating users directly to the Profile tab.
- */
-export function ensureProfilesTab(url?: string): string | undefined {
-  if (!url) {
-    return undefined;
-  }
-  try {
-    const isRelative =
-      !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('//');
-    const parsed = isRelative ? new URL(url, 'http://dummy.com') : new URL(url);
-    parsed.searchParams.set('tab', 'profiles');
-    if (isRelative) {
-      const relativePath = parsed.pathname + parsed.search + parsed.hash;
-      return url.startsWith('/') ? relativePath : relativePath.replace(/^\//, '');
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
 /** Maximum number of URLs to display in the table. */
 const MAX_URLS_DISPLAYED = 5;
 
@@ -162,7 +139,7 @@ export class WorkUnitsTable implements OnInit {
         processedUrls: processUrls(workUnit.urls ?? [], workUnit).slice(0, MAX_URLS_DISPLAYED),
         statusMessages: messages,
         isStatusMessageVisible,
-        runProfileUrl: ensureProfilesTab(workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl),
+        runProfileUrl: workUnit.currentWorkUnitExecution?.metadata?.mlrunUrl || undefined,
       };
     });
   });
