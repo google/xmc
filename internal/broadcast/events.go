@@ -28,17 +28,13 @@ const (
 type SchedulingPaused struct {
 	Event     string    `json:"event"`
 	Timestamp time.Time `json:"timestamp"`
-	UpdatedBy string    `json:"updated_by,omitempty"`
-	Reason    string    `json:"reason,omitempty"`
 }
 
 // NewSchedulingPaused creates a new SchedulingPaused event with UTC timestamp.
-func NewSchedulingPaused(updatedBy, reason string) SchedulingPaused {
+func NewSchedulingPaused() SchedulingPaused {
 	return SchedulingPaused{
 		Event:     EventSchedulingPaused,
 		Timestamp: time.Now().UTC(),
-		UpdatedBy: updatedBy,
-		Reason:    reason,
 	}
 }
 
@@ -47,15 +43,13 @@ type SchedulingResumed struct {
 	Event           string    `json:"event"`
 	ResumptionRunID string    `json:"resumption_run_id,omitempty"`
 	Timestamp       time.Time `json:"timestamp"`
-	UpdatedBy       string    `json:"updated_by,omitempty"`
 }
 
 // NewSchedulingResumed creates a new SchedulingResumed event with UTC timestamp.
-func NewSchedulingResumed(resumptionRunID, updatedBy string) SchedulingResumed {
+func NewSchedulingResumed(resumptionRunID string) SchedulingResumed {
 	return SchedulingResumed{
 		Event:           EventSchedulingResumed,
 		ResumptionRunID: resumptionRunID,
 		Timestamp:       time.Now().UTC(),
-		UpdatedBy:       updatedBy,
 	}
 }
