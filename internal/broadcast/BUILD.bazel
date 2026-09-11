@@ -8,22 +8,15 @@ go_library(
     srcs = [
         "broadcast.go",
         "events.go",
+        "fake.go",
     ],
     importpath = "xmanager_cloud/internal/broadcast",
-    deps = [
-        "//internal/logging",
-        "@com_github_redis_go_redis_v9//:go-redis",
-    ],
 )
 
 go_test(
     name = "broadcast_test",
     srcs = [
-        "broadcast_test.go",
-        "events_test.go",
+        "fake_test.go",
     ],
     embed = [":broadcast"],
-    deps = [
-        "@com_github_google_go_cmp//cmp",
-    ],
 )
