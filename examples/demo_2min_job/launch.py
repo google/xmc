@@ -83,7 +83,7 @@ def _patch_grpc_auth_if_needed() -> None:
             iap_client_id = os.environ.get("IAP_CLIENT_ID", "").strip()
             if not iap_client_id:
                 raise
-            token_cmd = ["gcloud", "auth", "print-identity-token"]
+            token_cmd = ["gcloud", "auth", "print-identity-token", "--include-email"]
             client_sa = os.environ.get("XMC_CLIENT_SA", "").strip()
             if client_sa:
                 token_cmd.extend(["--impersonate-service-account", client_sa])
