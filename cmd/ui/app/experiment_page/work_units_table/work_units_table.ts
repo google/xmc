@@ -67,8 +67,14 @@ export function ensureProfilesTab(url?: string): string | undefined {
     return undefined;
   }
   try {
-    const parsed = new URL(url);
+    const isRelative =
+      !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('//');
+    const parsed = isRelative ? new URL(url, 'http://dummy.com') : new URL(url);
     parsed.searchParams.set('tab', 'profiles');
+    if (isRelative) {
+      const relativePath = parsed.pathname + parsed.search + parsed.hash;
+      return url.startsWith('/') ? relativePath : relativePath.replace(/^\//, '');
+    }
     return parsed.toString();
   } catch {
     return url;
