@@ -475,6 +475,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compile")
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
+    @patch("tools.dev_env.deploy_dev_env.step_network")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
@@ -489,6 +490,7 @@ image_tag: latest
         mock_gw_api,
         mock_compute,
         mock_primary,
+        mock_network,
         mock_apis,
         mock_images,
         mock_compile,
@@ -515,6 +517,7 @@ image_tag: latest
         mock_compile.assert_called_once()
         mock_images.assert_called_once()
         mock_apis.assert_called_once()
+        mock_network.assert_called_once()
         mock_primary.assert_called_once()
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
@@ -528,6 +531,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compile")
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
+    @patch("tools.dev_env.deploy_dev_env.step_network")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
@@ -542,6 +546,7 @@ image_tag: latest
         mock_gw_api,
         mock_compute,
         mock_primary,
+        mock_network,
         mock_apis,
         mock_images,
         mock_compile,
@@ -551,7 +556,7 @@ image_tag: latest
     ):
         mock_load_config.return_value = self.valid_config
 
-        # Start from 'primary' (should skip check, compile, images, apis)
+        # Start from 'primary' (should skip check, compile, images, apis, network)
         deploy_dev_env.main(
             [
                 "--config",
@@ -570,6 +575,7 @@ image_tag: latest
         mock_compile.assert_not_called()
         mock_images.assert_not_called()
         mock_apis.assert_not_called()
+        mock_network.assert_not_called()
 
         mock_primary.assert_called_once()
         mock_compute.assert_called_once()
@@ -584,6 +590,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compile")
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
+    @patch("tools.dev_env.deploy_dev_env.step_network")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
@@ -598,6 +605,7 @@ image_tag: latest
         mock_gw_api,
         mock_compute,
         mock_primary,
+        mock_network,
         mock_apis,
         mock_images,
         mock_compile,
@@ -626,6 +634,7 @@ image_tag: latest
         mock_compile.assert_not_called()
         mock_images.assert_not_called()
         mock_apis.assert_not_called()
+        mock_network.assert_not_called()
         mock_primary.assert_not_called()
 
         mock_compute.assert_called_once()
@@ -701,14 +710,14 @@ image_tag: latest
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")
-    def test_step_primary(self, mock_apply_dns, mock_run):
+    def test_step_network(self, mock_apply_dns, mock_run):
         deploy_res = MagicMock()
         ip_res = MagicMock()
         ip_res.stdout = "10.0.0.1\n"
 
         mock_run.side_effect = [deploy_res, ip_res]
 
-        deploy_dev_env.step_primary(self.valid_config, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_network(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_has_calls(
             [
@@ -718,7 +727,7 @@ image_tag: latest
                         "deploy",
                         "ctk-out/xmc-dev",
                         "--only",
-                        "primary",
+                        "network",
                         "--auto-approve",
                     ]
                 ),
@@ -739,6 +748,21 @@ image_tag: latest
         )
         mock_apply_dns.assert_called_once_with(
             "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
+        )
+
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_primary(self, mock_run):
+        deploy_dev_env.step_primary(self.valid_config, self.dns_project, self.dns_zone)
+
+        mock_run.assert_called_once_with(
+            [
+                "./cluster-toolkit/gcluster",
+                "deploy",
+                "ctk-out/xmc-dev",
+                "--only",
+                "primary",
+                "--auto-approve",
+            ]
         )
 
     @patch("tools.dev_env.deploy_dev_env.run_command")

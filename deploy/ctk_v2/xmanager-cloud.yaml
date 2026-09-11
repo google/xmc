@@ -94,7 +94,7 @@ deployment_groups:
         "certificatemanager.googleapis.com"
       ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
 
-- group: primary
+- group: network
   modules:
   - id: network
     source: modules/network/vpc
@@ -166,8 +166,11 @@ deployment_groups:
       - iam.securityReviewer
       - serviceusage.serviceUsageConsumer
 
+- group: primary
+  modules:
   - id: db_spanner
     source: modules/database/spanner
+    use: [workload_service_account, health_service_gcp_sa, log_monitor_service_account]
     settings:
       instance_name: xmc-$(vars.environment)
       edition: ENTERPRISE
