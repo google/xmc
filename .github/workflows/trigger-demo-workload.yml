@@ -15,6 +15,8 @@
 name: 'Run Demo Workload (XMC Nightly)'
 
 on:
+  push:
+    branches: ['feat/nightly-demo-workload']
   workflow_dispatch:
     inputs:
       queue:
@@ -94,7 +96,7 @@ jobs:
           DURATION: '${{ inputs.duration_seconds || 60 }}'
           ACTOR: '${{ github.actor }}'
         run: |
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" examples/demo_2min_job/launch.py \
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" .github/examples/demo_2min_job/launch.py \
             --queue="${QUEUE_NAME}" \
             --num_work_units="${NUM_WU}" \
             --duration="${DURATION}" \
