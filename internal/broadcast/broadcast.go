@@ -18,11 +18,6 @@ import (
 	"context"
 )
 
-// Config holds the Redis connection configuration for the broadcast service.
-type Config struct {
-	Addr string
-}
-
 // Publisher defines the contract for broadcasting state update notifications.
 type Publisher interface {
 	Publish(ctx context.Context, message string) error
