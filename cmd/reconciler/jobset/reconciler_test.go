@@ -1886,6 +1886,9 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
 			}
+			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
+				t.Errorf("WorkloadDetails.Labels mismatch (-want +got):\n%s", diff)
+			}
 			var wantCreateTime string
 			if tc.jobSet != nil {
 				wantCreateTime = formatCreationTime(tc.jobSet.CreationTimestamp)
@@ -1900,7 +1903,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				if mock.lastUpdateID != tc.wantID {
 					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
 				}
-				wantUpdateLabels := map[string]string{listExistingSessionsOnlyLabel: "true"}
+				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels(10, 20))
 				if diff := cmp.Diff(wantUpdateLabels, mock.lastUpdateOpts.Labels); diff != "" {
 					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
 				}
@@ -2075,11 +2078,12 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		wantUpdateCalls int
 	}{
 		{
-			name: "already exists, owned and has scan label is idempotent success",
+			name: "already exists, owned and has scan label and experiment_id is idempotent success",
 			client: &mockMLRunCreator{getRes: map[string]any{
 				"labels": map[string]any{
 					"created_by":                  createdByXManagerLabelValue,
 					listExistingSessionsOnlyLabel: "true",
+					"experiment_id":               "1",
 				},
 			}},
 			wantURLContains: "console.cloud.google.com",
@@ -2087,10 +2091,28 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			wantUpdateCalls: 0,
 		},
 		{
+			name: "already exists, owned and has scan label but missing experiment_id triggers update",
+			client: &mockMLRunCreator{
+				getRes: map[string]any{
+					"labels": map[string]any{
+						"created_by":                  createdByXManagerLabelValue,
+						listExistingSessionsOnlyLabel: "true",
+					},
+				},
+				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			wantURLContains: "https://mlrun/updated",
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
+		},
+		{
 			name: "already exists, owned but missing scan label triggers update",
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
-					"labels": map[string]any{"created_by": createdByXManagerLabelValue},
+					"labels": map[string]any{
+						"created_by":    createdByXManagerLabelValue,
+						"experiment_id": "1",
+					},
 				},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
@@ -2404,5 +2426,64 @@ func TestBuildMLRunLabels(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBuildMLRunUpdateLabels verifies that updating an MLRun combines existing metadata
+// labels with the list_existing_sessions_only scan trigger.
+func TestBuildMLRunUpdateLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseLabels map[string]string
+		want       map[string]string
+	}{
+		{
+			name:       "nil baseLabels initializes map with scan label",
+			baseLabels: nil,
+			want: map[string]string{
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name:       "empty baseLabels returns map with scan label",
+			baseLabels: map[string]string{},
+			want: map[string]string{
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name: "standard baseLabels preserves all keys and appends scan label",
+			baseLabels: map[string]string{
+				"experiment_id": "100",
+				"workunit_id":   "200",
+				"created_by":    createdByXManagerLabelValue,
+			},
+			want: map[string]string{
+				"experiment_id":               "100",
+				"workunit_id":                 "200",
+				"created_by":                  createdByXManagerLabelValue,
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name: "baseLabels with existing scan label enforces true value",
+			baseLabels: map[string]string{
+				"experiment_id":               "100",
+				listExistingSessionsOnlyLabel: "false",
+			},
+			want: map[string]string{
+				"experiment_id":               "100",
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildMLRunUpdateLabels(tc.baseLabels)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildMLRunUpdateLabels(%v) mismatch (-want +got):\n%s", tc.baseLabels, diff)
+			}
+		})
 	}
 }

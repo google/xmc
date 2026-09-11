@@ -684,6 +684,21 @@ func buildMLRunLabels(xid, wid int64) map[string]string {
 	}
 }
 
+// buildMLRunUpdateLabels constructs the complete label map for MLRun update calls,
+// combining the base labels (experiment_id, workunit_id, created_by) with the
+// list_existing_sessions_only scan trigger.
+//
+// Extracted so that post-creation updates and conflict upserts apply an identical,
+// consistent set of labels without duplicating map-copying logic.
+func buildMLRunUpdateLabels(baseLabels map[string]string) map[string]string {
+	updateLabels := make(map[string]string, len(baseLabels)+1)
+	for k, v := range baseLabels {
+		updateLabels[k] = v
+	}
+	updateLabels[listExistingSessionsOnlyLabel] = "true"
+	return updateLabels
+}
+
 // ConstructMLRunID deterministically constructs and sanitizes a unique MLRun identifier for an execution.
 //
 // Extracted into its own pure function so that ID formatting and sanitization are independently testable and
@@ -738,6 +753,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 			Cluster:    clusterPath,
 			Namespace:  jobSet.Namespace,
 			ID:         jobSet.Name,
+			Labels:     labels,
 			CreateTime: createTime,
 		},
 	}
@@ -757,8 +773,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Create-then-update: stamp list_existing_sessions_only post-creation to preserve
 	// the ACTIVE phase (creating with it forces COMPLETED, which blocks on-demand profiling).
+	// Pass the complete label set so experiment_id and ownership are preserved even if
+	// the control plane's GET response omits labels or replaces the map.
+	updateLabels := buildMLRunUpdateLabels(labels)
 	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-		Labels: map[string]string{listExistingSessionsOnlyLabel: "true"},
+		Labels: updateLabels,
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to stamp list_existing_sessions_only on MLRun", "mlRunID", mlRunID, "error", err)
@@ -842,17 +861,15 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
 		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
 	}
-	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
+	if mlRunOwnedByXManager(existing) &&
+		mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") &&
+		mlRunHasLabel(existing, "experiment_id", labels["experiment_id"]) {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
 		return r.mlRunURL(existing, existingID)
 	}
 
 	logging.Info(ctx, "Updating existing MLRun with ManagedXprof fields", "mlRunID", existingID)
-	updateLabels := make(map[string]string, len(labels)+1)
-	for k, v := range labels {
-		updateLabels[k] = v
-	}
-	updateLabels[listExistingSessionsOnlyLabel] = "true"
+	updateLabels := buildMLRunUpdateLabels(labels)
 
 	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
 		DisplayName: displayName,
