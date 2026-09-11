@@ -1,11 +1,5 @@
 # Simple Job Workload Launch Script
 
-> [!WARNING]
-> ### ⚠️ TEMPORARY CI/CD WORKAROUNDS ACTIVE
-> This example script currently contains interim compatibility patches (`_patch_grpc_auth_if_needed`) to support automated gRPC authentication under GitHub Actions Workload Identity Federation (WIF).
->
-> **These workarounds are temporary and will be removed** once upstream [google-deepmind/xmanager#79](https://github.com/google-deepmind/xmanager/pull/79) is merged and the official XManager client SDK natively accepts `XMC_AUTH_TOKEN` and `XMC_USER_EMAIL`.
-
 This directory contains a standalone launch script (`launch.py`) for creating a multi-WorkUnit experiment in XMC. It is designed to demonstrate multi-WorkUnit workload submission, queue scheduling, and execution lifecycle.
 
 ## Prerequisites

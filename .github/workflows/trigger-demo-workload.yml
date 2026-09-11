@@ -87,12 +87,19 @@ jobs:
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
 
+      - name: 'Mint XMC Identity Token'
+        run: |
+          TOKEN="$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)"
+          echo "::add-mask::${TOKEN}"
+          echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+
       - name: 'Launch Demo Workload'
         env:
           QUEUE_NAME: '${{ inputs.queue || ''cpu-queue'' }}'
           NUM_WU: '${{ inputs.num_work_units || 3 }}'
           DURATION: '${{ inputs.duration_seconds || 60 }}'
           ACTOR: '${{ github.actor }}'
+          XMC_USER_EMAIL: '${{ github.actor }}@google.com'
         run: |
           "${GITHUB_WORKSPACE}/.venv/bin/python3" examples/simple_job/launch.py \
             --queue="${QUEUE_NAME}" \
