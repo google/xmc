@@ -1883,10 +1883,10 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
-			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
+			if diff := cmp.Diff(buildMLRunLabels("", 10, 20), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
+			if diff := cmp.Diff(buildMLRunLabels("", 10, 20), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
 				t.Errorf("WorkloadDetails.Labels mismatch (-want +got):\n%s", diff)
 			}
 			var wantCreateTime string
@@ -1903,7 +1903,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				if mock.lastUpdateID != tc.wantID {
 					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
 				}
-				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels(10, 20))
+				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels("", 10, 20))
 				if diff := cmp.Diff(wantUpdateLabels, mock.lastUpdateOpts.Labels); diff != "" {
 					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
 				}
@@ -2079,12 +2079,12 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		wantUpdateCalls int
 	}{
 		{
-			name: "already exists, owned and has scan label and experiment_id is idempotent success",
+			name: "already exists, owned and has scan label and experiment_url is idempotent success",
 			client: &mockMLRunCreator{getRes: map[string]any{
 				"labels": map[string]any{
 					"created_by":                  createdByXManagerLabelValue,
 					listExistingSessionsOnlyLabel: "true",
-					"experiment_id":               "1",
+					"experiment_url":              "/experiments/1",
 				},
 			}},
 			wantURLContains: "console.cloud.google.com",
@@ -2092,7 +2092,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			wantUpdateCalls: 0,
 		},
 		{
-			name: "already exists, owned and has scan label but missing experiment_id triggers update",
+			name: "already exists, owned and has scan label but missing experiment_url triggers update",
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
 					"labels": map[string]any{
@@ -2107,7 +2107,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			wantUpdateCalls: 1,
 		},
 		{
-			name: "already exists, owned and both missing experiment_id triggers update",
+			name: "already exists, owned and both missing experiment_url triggers update",
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
 					"labels": map[string]any{
@@ -2129,8 +2129,8 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
 					"labels": map[string]any{
-						"created_by":    createdByXManagerLabelValue,
-						"experiment_id": "1",
+						"created_by":     createdByXManagerLabelValue,
+						"experiment_url": "/experiments/1",
 					},
 				},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
@@ -2162,7 +2162,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
 			inputLabels := tc.labels
 			if inputLabels == nil {
-				inputLabels = buildMLRunLabels(1, 2)
+				inputLabels = buildMLRunLabels("", 1, 2)
 			}
 			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", inputLabels, map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
@@ -2439,16 +2439,26 @@ func TestMLRunURL(t *testing.T) {
 }
 
 // TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
-// using snake_case keys (created_by, experiment_id, workunit_id).
+// using snake_case keys (created_by, experiment_url, workunit_id).
 func TestBuildMLRunLabels(t *testing.T) {
-	got := buildMLRunLabels(12, 3)
-	want := map[string]string{
-		"experiment_id": "12",
-		"workunit_id":   "3",
-		"created_by":    createdByXManagerLabelValue,
+	gotWithBase := buildMLRunLabels("https://example.com", 12, 3)
+	wantWithBase := map[string]string{
+		"experiment_url": "https://example.com/experiments/12",
+		"workunit_id":    "3",
+		"created_by":     createdByXManagerLabelValue,
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(wantWithBase, gotWithBase); diff != "" {
+		t.Errorf("buildMLRunLabels(https://example.com, 12, 3) mismatch (-want +got):\n%s", diff)
+	}
+
+	gotFallback := buildMLRunLabels("", 12, 3)
+	wantFallback := map[string]string{
+		"experiment_url": "/experiments/12",
+		"workunit_id":    "3",
+		"created_by":     createdByXManagerLabelValue,
+	}
+	if diff := cmp.Diff(wantFallback, gotFallback); diff != "" {
+		t.Errorf("buildMLRunLabels(\"\", 12, 3) mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -2477,12 +2487,12 @@ func TestBuildMLRunUpdateLabels(t *testing.T) {
 		{
 			name: "standard baseLabels preserves all keys and appends scan label",
 			baseLabels: map[string]string{
-				"experiment_id": "100",
-				"workunit_id":   "200",
-				"created_by":    createdByXManagerLabelValue,
+				"experiment_url": "https://example.com/experiments/100",
+				"workunit_id":    "200",
+				"created_by":     createdByXManagerLabelValue,
 			},
 			want: map[string]string{
-				"experiment_id":               "100",
+				"experiment_url":              "https://example.com/experiments/100",
 				"workunit_id":                 "200",
 				"created_by":                  createdByXManagerLabelValue,
 				listExistingSessionsOnlyLabel: "true",
@@ -2491,11 +2501,11 @@ func TestBuildMLRunUpdateLabels(t *testing.T) {
 		{
 			name: "baseLabels with existing scan label enforces true value",
 			baseLabels: map[string]string{
-				"experiment_id":               "100",
+				"experiment_url":              "https://example.com/experiments/100",
 				listExistingSessionsOnlyLabel: "false",
 			},
 			want: map[string]string{
-				"experiment_id":               "100",
+				"experiment_url":              "https://example.com/experiments/100",
 				listExistingSessionsOnlyLabel: "true",
 			},
 		},
@@ -2506,6 +2516,145 @@ func TestBuildMLRunUpdateLabels(t *testing.T) {
 			got := buildMLRunUpdateLabels(tc.baseLabels)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("buildMLRunUpdateLabels(%v) mismatch (-want +got):\n%s", tc.baseLabels, diff)
+			}
+		})
+	}
+}
+
+// TestConstructExperimentURL exercises the input cases defined in step 3 (empty baseURL,
+// whitespace, missing scheme, trailing slashes, zero/negative xid).
+func TestConstructExperimentURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		xid     int64
+		want    string
+	}{
+		{
+			name:    "empty baseURL with valid xid returns relative fallback path",
+			baseURL: "",
+			xid:     100,
+			want:    "/experiments/100",
+		},
+		{
+			name:    "whitespace baseURL with valid xid returns relative fallback path",
+			baseURL: "   ",
+			xid:     100,
+			want:    "/experiments/100",
+		},
+		{
+			name:    "valid baseURL with https scheme and valid xid returns absolute url",
+			baseURL: "https://xmc.example.com",
+			xid:     100,
+			want:    "https://xmc.example.com/experiments/100",
+		},
+		{
+			name:    "valid baseURL with http scheme preserves scheme",
+			baseURL: "http://xmc.example.com",
+			xid:     100,
+			want:    "http://xmc.example.com/experiments/100",
+		},
+		{
+			name:    "baseURL without scheme defaults to https",
+			baseURL: "xmc.example.com",
+			xid:     100,
+			want:    "https://xmc.example.com/experiments/100",
+		},
+		{
+			name:    "baseURL with trailing slash trims slash cleanly",
+			baseURL: "https://xmc.example.com/",
+			xid:     100,
+			want:    "https://xmc.example.com/experiments/100",
+		},
+		{
+			name:    "baseURL with subpath and trailing slash preserves subpath",
+			baseURL: "https://xmc.example.com/ui/",
+			xid:     100,
+			want:    "https://xmc.example.com/ui/experiments/100",
+		},
+		{
+			name:    "combined whitespace and missing scheme with trailing slash",
+			baseURL: "  xmc.example.com/ui/  ",
+			xid:     100,
+			want:    "https://xmc.example.com/ui/experiments/100",
+		},
+		{
+			name:    "zero xid returns empty string",
+			baseURL: "https://xmc.example.com",
+			xid:     0,
+			want:    "",
+		},
+		{
+			name:    "negative xid returns empty string",
+			baseURL: "https://xmc.example.com",
+			xid:     -1,
+			want:    "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := constructExperimentURL(tc.baseURL, tc.xid)
+			if got != tc.want {
+				t.Errorf("constructExperimentURL(%q, %d) = %q, want %q", tc.baseURL, tc.xid, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveUIBaseURL exercises configuration precedence across parameter,
+// XMC_UI_URL, and XMC_DOMAIN environment variables.
+func TestResolveUIBaseURL(t *testing.T) {
+	tests := []struct {
+		name          string
+		configuredURL string
+		envUIURL      string
+		envDomain     string
+		want          string
+	}{
+		{
+			name:          "configured URL takes highest precedence",
+			configuredURL: "https://configured.example.com",
+			envUIURL:      "https://env-ui.example.com",
+			envDomain:     "env-domain.example.com",
+			want:          "https://configured.example.com",
+		},
+		{
+			name:          "configured URL with whitespace is trimmed and takes precedence",
+			configuredURL: "  https://configured.example.com  ",
+			envUIURL:      "https://env-ui.example.com",
+			want:          "https://configured.example.com",
+		},
+		{
+			name:          "fallback to XMC_UI_URL when configured is empty",
+			configuredURL: "",
+			envUIURL:      "https://env-ui.example.com",
+			envDomain:     "env-domain.example.com",
+			want:          "https://env-ui.example.com",
+		},
+		{
+			name:          "fallback to XMC_DOMAIN when configured and XMC_UI_URL are empty",
+			configuredURL: "",
+			envUIURL:      "",
+			envDomain:     "env-domain.example.com",
+			want:          "env-domain.example.com",
+		},
+		{
+			name:          "all empty returns empty string",
+			configuredURL: "",
+			envUIURL:      "",
+			envDomain:     "",
+			want:          "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XMC_UI_URL", tc.envUIURL)
+			t.Setenv("XMC_DOMAIN", tc.envDomain)
+			got := resolveUIBaseURL(tc.configuredURL)
+			if got != tc.want {
+				t.Errorf("resolveUIBaseURL(%q) = %q, want %q", tc.configuredURL, got, tc.want)
 			}
 		})
 	}

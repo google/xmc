@@ -96,6 +96,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
 		Storage:                  p.storage,
 		MLRunClient:              p.mlRunClient,
+		UIBaseURL:                p.cfg.UIBaseURL,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create jobset reconciler: %w", err)

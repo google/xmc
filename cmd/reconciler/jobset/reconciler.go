@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -95,6 +96,7 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	UIBaseURL                string
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -109,6 +111,7 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	UIBaseURL                string
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -133,6 +136,7 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
+		UIBaseURL:                resolveUIBaseURL(p.UIBaseURL),
 	}, nil
 }
 
@@ -673,19 +677,58 @@ const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 // resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
 
+// resolveUIBaseURL returns the configured base UI URL, falling back to standard
+// environment variables (XMC_UI_URL, XMC_DOMAIN) when empty.
+//
+// Extracted so environment variable fallback logic is isolated and independently testable.
+func resolveUIBaseURL(configuredURL string) string {
+	if trimmed := strings.TrimSpace(configuredURL); trimmed != "" {
+		return trimmed
+	}
+	if envURL := strings.TrimSpace(os.Getenv("XMC_UI_URL")); envURL != "" {
+		return envURL
+	}
+	if domain := strings.TrimSpace(os.Getenv("XMC_DOMAIN")); domain != "" {
+		return domain
+	}
+	return ""
+}
+
+// constructExperimentURL builds the canonical deep-link URL for an experiment given
+// an optional base UI URL and experiment ID.
+//
+// Extracted into a standalone pure function so that URL normalization, scheme resolution,
+// and zero-value handling are independently testable without initializing reconciler dependencies.
+func constructExperimentURL(baseURL string, xid int64) string {
+	if xid <= 0 {
+		return ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return fmt.Sprintf("/experiments/%d", xid)
+	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "https://" + base
+	}
+	return fmt.Sprintf("%s/experiments/%d", base, xid)
+}
+
 // buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
 // Extracted so create and upsert apply an identical label set (including the
-// created_by marker that lets us detect ownership on a create conflict).
-func buildMLRunLabels(xid, wid int64) map[string]string {
-	return map[string]string{
-		"experiment_id": fmt.Sprintf("%d", xid),
-		"workunit_id":   fmt.Sprintf("%d", wid),
-		"created_by":    createdByXManagerLabelValue,
+// experiment_url and created_by marker that lets us detect ownership on a create conflict).
+func buildMLRunLabels(baseURL string, xid, wid int64) map[string]string {
+	labels := map[string]string{
+		"workunit_id": fmt.Sprintf("%d", wid),
+		"created_by":  createdByXManagerLabelValue,
 	}
+	if expURL := constructExperimentURL(baseURL, xid); expURL != "" {
+		labels["experiment_url"] = expURL
+	}
+	return labels
 }
 
 // buildMLRunUpdateLabels constructs the complete label map for MLRun update calls,
-// combining the base labels (experiment_id, workunit_id, created_by) with the
+// combining the base labels (experiment_url, workunit_id, created_by) with the
 // list_existing_sessions_only scan trigger.
 //
 // Extracted so that post-creation updates and conflict upserts apply an identical,
@@ -740,7 +783,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
-	labels := buildMLRunLabels(xid, wid)
+	labels := buildMLRunLabels(r.UIBaseURL, xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,
@@ -773,7 +816,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Create-then-update: stamp list_existing_sessions_only post-creation to preserve
 	// the ACTIVE phase (creating with it forces COMPLETED, which blocks on-demand profiling).
-	// Pass the complete label set so experiment_id and ownership are preserved even if
+	// Pass the complete label set so experiment_url and ownership are preserved even if
 	// the control plane's GET response omits labels or replaces the map.
 	updateLabels := buildMLRunUpdateLabels(labels)
 	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
@@ -863,8 +906,8 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	}
 	if mlRunOwnedByXManager(existing) &&
 		mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") &&
-		labels["experiment_id"] != "" &&
-		mlRunHasLabel(existing, "experiment_id", labels["experiment_id"]) {
+		labels["experiment_url"] != "" &&
+		mlRunHasLabel(existing, "experiment_url", labels["experiment_url"]) {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
 		return r.mlRunURL(existing, existingID)
 	}
