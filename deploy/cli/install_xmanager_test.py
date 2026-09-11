@@ -252,6 +252,26 @@ class TestInstallXmanager(unittest.TestCase):
                 "_DEFAULT_XMANAGER_UI_URL = 'https://prod.xmanageriso.dev'\n",
             )
 
+    def test_patch_default_ui_url_special_chars(self) -> None:
+        """Test patch_default_ui_url handles characters like backslashes safely."""
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            exp_dir = tmp_dir / "xmanager" / "xm_cloud"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            exp_file = exp_dir / "experiment.py"
+            exp_file.write_text(
+                "_DEFAULT_XMANAGER_UI_URL = 'https://ui.alpha.example.com'\n",
+                encoding="utf-8",
+            )
+            install_xmanager.patch_default_ui_url(
+                tmp_dir, default_ui_url=r"https://example.com/test\g<0>"
+            )
+            updated = exp_file.read_text(encoding="utf-8")
+            self.assertEqual(
+                updated,
+                r"_DEFAULT_XMANAGER_UI_URL = 'https://example.com/test\g<0>'" + "\n",
+            )
+
     def test_patch_default_ui_url_missing_file(self) -> None:
         """Test patch_default_ui_url handles missing experiment.py gracefully."""
         with tempfile.TemporaryDirectory() as tmp_dir_str:

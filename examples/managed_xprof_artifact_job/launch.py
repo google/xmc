@@ -138,13 +138,13 @@ def main(argv: Sequence[str]) -> None:
         f" using image: {image_path}"
     )
 
-    ui_base_url = os.environ.get("XMANAGER_UI_URL", "").strip() or (
-        f"https://{os.environ['XMC_DOMAIN']}"
-        if os.environ.get("XMC_DOMAIN")
-        else "https://dev.xmanageriso.dev"
-    )
+    domain = (os.environ.get("XMC_DOMAIN", "").strip() or "dev.xmanageriso.dev").rstrip("/")
+    if not domain.startswith(("http://", "https://")):
+        domain = f"https://{domain}"
+    ui_base_url = os.environ.get("XMANAGER_UI_URL", "").strip() or domain
     if not ui_base_url.startswith(("http://", "https://")):
         ui_base_url = f"https://{ui_base_url}"
+    ui_base_url = ui_base_url.rstrip("/")
     os.environ["XMANAGER_UI_URL"] = ui_base_url
 
     with xm_cloud.create_experiment(

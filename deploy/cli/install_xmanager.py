@@ -396,7 +396,7 @@ def patch_default_ui_url(
     content = experiment_file.read_text(encoding="utf-8")
     updated = re.sub(
         r"_DEFAULT_XMANAGER_UI_URL\s*=\s*['\"][^'\"]+['\"]",
-        f"_DEFAULT_XMANAGER_UI_URL = '{default_ui_url}'",
+        lambda _: f"_DEFAULT_XMANAGER_UI_URL = '{default_ui_url}'",
         content,
     )
     if updated != content:

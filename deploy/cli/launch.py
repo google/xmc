@@ -38,15 +38,11 @@ def ensure_xmanager_ui_url() -> str:
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
         return ui_url.rstrip("/")
     domain = (
-        (
-            os.environ.get("XMC_DOMAIN")
-            or os.environ.get("DOMAIN_NAME")
-            or os.environ.get("XMC_BASE_DOMAIN")
-            or DEFAULT_XMANAGER_UI_URL
-        )
-        .strip()
-        .rstrip("/")
-    )
+        os.environ.get("XMC_DOMAIN", "").strip()
+        or os.environ.get("DOMAIN_NAME", "").strip()
+        or os.environ.get("XMC_BASE_DOMAIN", "").strip()
+        or DEFAULT_XMANAGER_UI_URL
+    ).rstrip("/")
     if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"
     os.environ["XMANAGER_UI_URL"] = domain
