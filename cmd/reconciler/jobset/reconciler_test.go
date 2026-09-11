@@ -1700,6 +1700,68 @@ func TestConstructMLRunID(t *testing.T) {
 	}
 }
 
+func TestMLRunHasLabel(t *testing.T) {
+	tests := []struct {
+		name     string
+		mlRun    map[string]any
+		key      string
+		value    string
+		wantBool bool
+	}{
+		{
+			name:     "nil mlRun",
+			mlRun:    nil,
+			key:      "k",
+			value:    "v",
+			wantBool: false,
+		},
+		{
+			name:     "missing labels entry",
+			mlRun:    map[string]any{},
+			key:      "k",
+			value:    "v",
+			wantBool: false,
+		},
+		{
+			name:     "non-map labels entry",
+			mlRun:    map[string]any{"labels": "not-a-map"},
+			key:      "k",
+			value:    "v",
+			wantBool: false,
+		},
+		{
+			name:     "missing key in labels",
+			mlRun:    map[string]any{"labels": map[string]any{"other": "v"}},
+			key:      "k",
+			value:    "v",
+			wantBool: false,
+		},
+		{
+			name:     "mismatched value in labels",
+			mlRun:    map[string]any{"labels": map[string]any{"k": "wrong"}},
+			key:      "k",
+			value:    "v",
+			wantBool: false,
+		},
+		{
+			name:     "matching key and value",
+			mlRun:    map[string]any{"labels": map[string]any{"k": "v"}},
+			key:      "k",
+			value:    "v",
+			wantBool: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mlRunHasLabel(tc.mlRun, tc.key, tc.value)
+			if got != tc.wantBool {
+				t.Errorf("mlRunHasLabel(%v, %q, %q) = %v, want %v", tc.mlRun, tc.key, tc.value, got, tc.wantBool)
+			}
+		})
+	}
+}
+
 func TestEnsureMLRunCreated(t *testing.T) {
 	now := time.UnixMilli(1680000000000)
 	jobSet := &v1alpha2.JobSet{
@@ -1711,52 +1773,71 @@ func TestEnsureMLRunCreated(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		client     MLRunCreator
-		jobSet     *v1alpha2.JobSet
-		wantCalls  int
-		wantID     string
-		wantGroup  string
-		wantBucket string
+		name            string
+		client          MLRunCreator
+		jobSet          *v1alpha2.JobSet
+		wantCalls       int
+		wantID          string
+		wantGroup       string
+		wantBucket      string
+		wantUpdateCalls int
+		wantEmptyURL    bool
 	}{
 		{
-			name:      "nil client",
-			client:    nil,
-			jobSet:    jobSet,
-			wantCalls: 0,
+			name:            "nil client",
+			client:          nil,
+			jobSet:          jobSet,
+			wantCalls:       0,
+			wantUpdateCalls: 0,
 		},
 		{
-			name:      "nil jobSet",
-			client:    &mockMLRunCreator{},
-			jobSet:    nil,
-			wantCalls: 0,
+			name:            "nil jobSet",
+			client:          &mockMLRunCreator{},
+			jobSet:          nil,
+			wantCalls:       0,
+			wantUpdateCalls: 0,
 		},
 		{
-			name:       "successful creation with correct options",
-			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
-			jobSet:     jobSet,
-			wantCalls:  1,
-			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
-			wantGroup:  "group-abc",
-			wantBucket: "gs://bucket/folder",
+			name:            "successful creation with correct options",
+			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:          jobSet,
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 1,
 		},
 		{
-			name:       "creation error handled without panic",
-			client:     &mockMLRunCreator{retErr: errors.New("api error")},
-			jobSet:     jobSet,
-			wantCalls:  1,
-			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
-			wantGroup:  "group-abc",
-			wantBucket: "gs://bucket/folder",
+			name:            "creation error handled without panic",
+			client:          &mockMLRunCreator{retErr: errors.New("api error")},
+			jobSet:          jobSet,
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 0,
+			wantEmptyURL:    true,
 		},
 		{
-			name:       "successful creation with zero creation timestamp leaves CreateTime empty",
-			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
-			jobSet:     &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "test-jobset", Namespace: "test-ns"}},
-			wantCalls:  1,
-			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-62135596800000",
-			wantGroup:  "group-abc",
-			wantBucket: "gs://bucket/folder",
+			name:            "successful creation with zero creation timestamp leaves CreateTime empty",
+			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:          &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "test-jobset", Namespace: "test-ns"}},
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-62135596800000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 1,
+		},
+		{
+			name:            "update failure returns empty url",
+			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}, updateErr: errors.New("update failed")},
+			jobSet:          jobSet,
+			wantCalls:       1,
+			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:       "group-abc",
+			wantBucket:      "gs://bucket/folder",
+			wantUpdateCalls: 1,
+			wantEmptyURL:    true,
 		},
 	}
 
@@ -1769,7 +1850,10 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				ClusterName: "cluster-a",
 				MLRunClient: tc.client,
 			}
-			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			gotURL := r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			if tc.wantEmptyURL && gotURL != "" {
+				t.Errorf("ensureMLRunCreated() = %q, want empty", gotURL)
+			}
 
 			if !ok {
 				if tc.wantCalls > 0 {
@@ -1808,6 +1892,18 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			}
 			if mock.lastOpts.WorkloadDetails.CreateTime != wantCreateTime {
 				t.Errorf("WorkloadDetails.CreateTime = %q, want %q", mock.lastOpts.WorkloadDetails.CreateTime, wantCreateTime)
+			}
+			if mock.updateCalls != tc.wantUpdateCalls {
+				t.Errorf("updateCalls = %d, want %d", mock.updateCalls, tc.wantUpdateCalls)
+			}
+			if tc.wantUpdateCalls > 0 {
+				if mock.lastUpdateID != tc.wantID {
+					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
+				}
+				wantUpdateLabels := map[string]string{listExistingSessionsOnlyLabel: "true"}
+				if diff := cmp.Diff(wantUpdateLabels, mock.lastUpdateOpts.Labels); diff != "" {
+					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
@@ -1979,11 +2075,28 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		wantUpdateCalls int
 	}{
 		{
-			name:            "already exists and owned is idempotent success",
-			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}},
+			name: "already exists, owned and has scan label is idempotent success",
+			client: &mockMLRunCreator{getRes: map[string]any{
+				"labels": map[string]any{
+					"created_by":                  createdByXManagerLabelValue,
+					listExistingSessionsOnlyLabel: "true",
+				},
+			}},
 			wantURLContains: "console.cloud.google.com",
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
+		},
+		{
+			name: "already exists, owned but missing scan label triggers update",
+			client: &mockMLRunCreator{
+				getRes: map[string]any{
+					"labels": map[string]any{"created_by": createdByXManagerLabelValue},
+				},
+				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			wantURLContains: "https://mlrun/updated",
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
 		},
 		{
 			name: "already exists and foreign is updated",

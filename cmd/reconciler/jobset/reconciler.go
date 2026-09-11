@@ -664,6 +664,11 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 // our own (idempotent success); a run without it is adopted (updated) with our fields.
 const createdByXManagerLabelValue = "xmanager"
 
+// listExistingSessionsOnlyLabel tells Diagon to scan the run's GCS folder for profiles.
+// It is applied via UpdateMLRun post-creation because setting it at create time forces
+// the run directly to COMPLETED stage, preventing on-demand profiling.
+const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
+
 // mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
 // resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
@@ -738,7 +743,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	}
 
 	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)
-	res, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts)
+	_, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts)
 	if err != nil {
 		// At most one MLRun may exist per jobset, so a conflict means one already
 		// exists (possibly created by another producer); adopt or refresh it instead
@@ -747,6 +752,16 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
 		}
 		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
+		return ""
+	}
+
+	// Create-then-update: stamp list_existing_sessions_only post-creation to preserve
+	// the ACTIVE phase (creating with it forces COMPLETED, which blocks on-demand profiling).
+	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
+		Labels: map[string]string{listExistingSessionsOnlyLabel: "true"},
+	})
+	if err != nil {
+		logging.Error(ctx, "Failed to stamp list_existing_sessions_only on MLRun", "mlRunID", mlRunID, "error", err)
 		return ""
 	}
 	return r.mlRunURL(res, mlRunID)
@@ -781,16 +796,21 @@ func parseExistingMLRunID(errText string) string {
 	return m[1]
 }
 
-// mlRunOwnedByXManager reports whether an MLRun resource carries our
-// created_by=xmanager label. A GET response decodes labels as map[string]any, so we
-// type-assert defensively.
-func mlRunOwnedByXManager(mlRun map[string]any) bool {
+// mlRunHasLabel reports whether an MLRun resource carries the specified key-value label pair.
+// Because a GET response decodes labels as map[string]any, it type-asserts defensively.
+func mlRunHasLabel(mlRun map[string]any, key, value string) bool {
 	labels, ok := mlRun["labels"].(map[string]any)
 	if !ok {
 		return false
 	}
-	owner, _ := labels["created_by"].(string)
-	return owner == createdByXManagerLabelValue
+	v, _ := labels[key].(string)
+	return v == value
+}
+
+// mlRunOwnedByXManager reports whether an MLRun resource carries our
+// created_by=xmanager label.
+func mlRunOwnedByXManager(mlRun map[string]any) bool {
+	return mlRunHasLabel(mlRun, "created_by", createdByXManagerLabelValue)
 }
 
 // mlRunURL returns the URL to surface for an MLRun: the API-provided url when
@@ -822,21 +842,22 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
 		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
 	}
-	if mlRunOwnedByXManager(existing) {
+	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return r.mlRunURL(existing, existingID)
 	}
 
-	logging.Info(ctx, "MLRun exists but is not owned by XManager; updating with ManagedXprof fields", "mlRunID", existingID)
-	// UpdateMLRun re-sends the run fetched via GET, so the orchestrator and
-	// workloadDetails set at creation are preserved as-is. They are mutable, but we
-	// intentionally do not set them here: this upsert only updates the ManagedXprof
-	// fields, and UpdateMLRun drops orchestrator/workloadDetails from the patch so
-	// they are left untouched.
+	logging.Info(ctx, "Updating existing MLRun with ManagedXprof fields", "mlRunID", existingID)
+	updateLabels := make(map[string]string, len(labels)+1)
+	for k, v := range labels {
+		updateLabels[k] = v
+	}
+	updateLabels[listExistingSessionsOnlyLabel] = "true"
+
 	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
 		DisplayName: displayName,
 		RunGroup:    runGroup,
-		Labels:      labels,
+		Labels:      updateLabels,
 		Artifacts:   artifacts,
 	})
 	if err != nil {
