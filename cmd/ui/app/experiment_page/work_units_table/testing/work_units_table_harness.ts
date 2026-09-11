@@ -114,7 +114,7 @@ export class WorkUnitsTableHarness extends ComponentHarness {
   async getRunProfileTooltip(rowIndex: number): Promise<MatTooltipHarness | null> {
     const cell = await this.getUrlsCell(rowIndex);
     return cell
-      ? cell.getHarnessOrNull(MatTooltipHarness.with({ selector: '[matTooltip="Run Profile"]' }))
+      ? cell.getHarnessOrNull(MatTooltipHarness.with({ selector: '[matTooltip="Profile"]' }))
       : null;
   }
 

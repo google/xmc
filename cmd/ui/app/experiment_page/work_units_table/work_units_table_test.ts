@@ -220,7 +220,7 @@ describe('WorkUnitsTable Component', () => {
       const tooltip = await harness.getRunProfileTooltip(0);
       expect(tooltip).not.toBeNull();
       await tooltip!.show();
-      expect(await tooltip!.getTooltipText()).toBe('Run Profile');
+      expect(await tooltip!.getTooltipText()).toBe('Profile');
 
       const link = await harness.getRunProfileLink(0);
       expect(link).toEqual({
