@@ -87,7 +87,7 @@ jobs:
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
 
-      - name: 'Launch 3-WorkUnit Demo Workload'
+      - name: 'Launch Demo Workload'
         env:
           QUEUE_NAME: '${{ inputs.queue || ''cpu-queue'' }}'
           NUM_WU: '${{ inputs.num_work_units || 3 }}'
