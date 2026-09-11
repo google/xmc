@@ -291,9 +291,7 @@ describe('WorkUnitsTable Component', () => {
     });
 
     it('should return original url for malformed urls', () => {
-      expect(ensureProfilesTab('http://invalid domain with spaces')).toBe(
-        'http://invalid domain with spaces',
-      );
+      expect(ensureProfilesTab('http://:')).toBe('http://:');
     });
 
     it('should append tab=profiles to relative urls', () => {
