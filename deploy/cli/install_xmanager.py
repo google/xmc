@@ -256,6 +256,25 @@ def clone_repositories(
     )
 
 
+def apply_patches(xmanager_dir: Path, patches_dir: Path) -> None:
+    """Apply vendored patches to the cloned XManager tree before building.
+
+    Args:
+        xmanager_dir: Root of the cloned XManager repository.
+        patches_dir: Directory containing ``*.patch`` files.
+    """
+    if not patches_dir.is_dir():
+        return
+    patches = sorted(patches_dir.glob("*.patch"))
+    for patch in patches:
+        sys.stdout.write(f"Applying patch: {patch.name}\n")
+        subprocess.run(
+            ["git", "apply", "-p1", "--whitespace=nowarn", str(patch)],
+            cwd=xmanager_dir,
+            check=True,
+        )
+
+
 def _fetch_remote_protos(protos_loc: str, xmc_protos_dir: Path) -> None:
     """Fetch protos from remote GitHub URL using sparse checkout.
 
@@ -481,6 +500,7 @@ def main(raw_args: list[str] | None = None) -> None:
         xmc_protos_dir = temp_dir / "xmc_protos"
 
         clone_repositories(args.xmanager_branch, xmanager_dir, googleapis_dir)
+        apply_patches(xmanager_dir, Path(__file__).resolve().parent / "patches")
         retrieve_protos(args.protos_loc, xmc_protos_dir)
 
         sys.stdout.write("Copying protos into xmanager_cloud...\n")
