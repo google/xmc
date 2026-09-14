@@ -1,0 +1,141 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Nightly test suite'
+
+on:
+  schedule:
+    # Trigger nightly test suite at 2:00 AM UTC every day (1 hour after 1:00 AM nightly deployment)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # 1. Trigger the trigger-demo-workload GitHub Action workflow
+  trigger-demo-workload:
+    name: '1. Trigger Demo Workload Action'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/trigger-demo-workload.yml
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
+
+  # 2. Validate Experiment and WorkUnits via SDK assertions
+  validate-workload-results:
+    name: '2. Validate Experiment & WorkUnits via SDK'
+    needs: [trigger-demo-workload]
+    runs-on: 'arc-runner-set'
+    environment: xmc-nightly
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
+      REGION: '${{ secrets.GCP_REGION }}'
+      DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME }}'
+      XMC_DOMAIN: 'xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
+      XMANAGER_ENDPOINT: 'grpc.xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}:443'
+      XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
+      IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
+      XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
+        with:
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: 'Set up Python 3.13'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install XManager CLI and Dependencies'
+        run: |
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+
+      - name: 'Run Workload Assertions via XMC SDK'
+        id: verify-workload
+        env:
+          ACTOR: '${{ github.actor }}'
+          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
+        run: |
+          set -euo pipefail
+          echo "================================================================="
+          echo " Starting Workload Verification for Experiment XID: ${XID}"
+          echo "================================================================="
+
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
+            else
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)
+            fi
+            export XMC_AUTH_TOKEN
+          fi
+          export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/demo_workload_verify.py \
+            --xid="${XID}"
+
+          echo "================================================================="
+          echo " Workload Verification Completed Successfully!"
+          echo "================================================================="
+
+      - name: 'Publish Nightly Test Findings Summary'
+        if: always()
+        env:
+          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
+          TRIGGER_OUTCOME: '${{ needs.trigger-demo-workload.result }}'
+          VERIFY_OUTCOME: '${{ steps.verify-workload.outcome }}'
+        run: |
+          {
+            echo "## 🌙 Nightly Test Suite Execution Summary"
+            echo ""
+            if [ "${VERIFY_OUTCOME}" = "success" ]; then
+              echo "### ✅ Outcome: PASSED"
+            else
+              echo "### ❌ Outcome: FAILED"
+            fi
+            echo ""
+            echo "| Metric / Step | Status / Value |"
+            echo "| --- | --- |"
+            echo "| **Experiment XID** | \`${XID:-N/A}\` |"
+            echo "| **Trigger Action Run** | \`${TRIGGER_OUTCOME}\` |"
+            echo "| **Verification Assertions** | \`${VERIFY_OUTCOME}\` |"
+            if [ -n "${XID:-}" ]; then
+              echo "| **Web UI URL** | https://xmc-nightly.${DOMAIN_NAME}/experiments/${XID} |"
+            fi
+            echo ""
+            echo "> Automated Nightly E2E Test Suite against \`xmc-nightly\` deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
