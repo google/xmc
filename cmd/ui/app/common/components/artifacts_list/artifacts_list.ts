@@ -39,7 +39,7 @@ import { ArtifactsColumn } from './artifacts_column/artifacts_column';
 import { ChartArtifactView } from './chart_artifact_view/chart_artifact_view';
 
 /** Artifact filter options. */
-enum ArtifactFilter {
+export enum ArtifactFilter {
   EXPERIMENT = 'Experiment',
   WORK_UNIT = 'Work Unit',
 }
@@ -78,7 +78,10 @@ export class ArtifactsList implements OnInit {
   protected nextPageToken$!: Observable<string | undefined>;
   protected showTruncationMessage$!: Observable<boolean>;
 
-  protected artifactFilter = new BehaviorSubject<ArtifactFilter[]>([ArtifactFilter.EXPERIMENT]);
+  protected artifactFilter = new BehaviorSubject<ArtifactFilter[]>([
+    ArtifactFilter.EXPERIMENT,
+    ArtifactFilter.WORK_UNIT,
+  ]);
   protected readonly ArtifactFilter = ArtifactFilter;
   protected showFilterToggle = false;
   protected isWorkUnitPage = false;
