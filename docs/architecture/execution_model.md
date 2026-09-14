@@ -317,7 +317,6 @@ Managed profiling coordinates between the Actuator, training workloads, ESS arti
 
 - **`XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`**: The primary researcher-facing profiling variable. The Actuator constructs an isolated GCS folder path (`<bucket>/xmc-<xid>-<wid>-<timestamp>`) and injects it into all containers and init containers of the JobSet. Workloads write their JAX or TensorFlow XPlane profile traces directly into this path.
 - **`XMC_MANAGED_XPROF_DISPLAY_NAME`** and **`XMC_MANAGED_XPROF_RUN_GROUP`**: Internal metadata variables consumed by the Reconciler when registering the MLRun with the Diagon backend. Workloads do not need to read these. While they can be injected to override display labels, standard practice is to specify them (or rely on defaults) on the `ManagedXprof` WorkUnit artifact.
-- **`XMC_MANAGED_XPROF_GCS_BUCKET`**: In earlier versions of XMC, this cluster-wide bucket was injected directly. It was removed from container injection to enforce per-work-unit isolation and eliminate cross-workload trace collisions.
 - **`MANAGED_XPROF_GCS_PATH`**: Sourced from the `managed-xprof-gcs-config` ConfigMap on the cluster via Helm; this is an internal configuration variable for the Actuator daemon itself, not injected into workload containers.
 
 ### System key precedence
