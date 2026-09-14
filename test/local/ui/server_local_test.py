@@ -381,7 +381,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
             },
             {
                 "testcase_name": "pause_scheduling_enabled_true",
-                "environ": {"pause_scheduling_enabled": "true"},
+                "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "true"},
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
                     ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'

@@ -44,7 +44,7 @@ def generate_runtime_config(
         "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
         "isNonProdAuth": get_bool_env("XMC_NON_PROD_AUTH", False)
         or get_bool_env("SHOW_SAFETY_WARNING", False),
-        "pauseSchedulingEnabled": get_bool_env("pause_scheduling_enabled", False),
+        "pauseSchedulingEnabled": get_bool_env("XMC_PAUSE_SCHEDULING_ENABLED", False),
     }
 
     return (

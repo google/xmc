@@ -20,4 +20,4 @@ metadata:
     app.kubernetes.io/name: feature-flags
     {{- include "xmanager-cloud.labels" . | nindent 4 }}
 data:
-  pause_scheduling_enabled: {{ .Values.featureFlags.pause_scheduling_enabled | default false | quote }}
+  XMC_PAUSE_SCHEDULING_ENABLED: {{ .Values.featureFlags.pause_scheduling_enabled | default false | quote }}

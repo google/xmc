@@ -21,7 +21,7 @@ import (
 
 const (
 	// PauseSchedulingFlagName is the configuration key name for the pause scheduling feature flag.
-	PauseSchedulingFlagName = "pause_scheduling_enabled"
+	PauseSchedulingFlagName = "XMC_PAUSE_SCHEDULING_ENABLED"
 )
 
 // Flags represents the global feature flags across XMC services.

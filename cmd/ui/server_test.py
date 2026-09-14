@@ -243,7 +243,7 @@ class SPAHandlerTest(unittest.TestCase):
             },
             {
                 "testcase_name": "pause_scheduling_enabled_true",
-                "environ": {"pause_scheduling_enabled": "true"},
+                "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "true"},
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
                     ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
@@ -252,7 +252,7 @@ class SPAHandlerTest(unittest.TestCase):
             },
             {
                 "testcase_name": "pause_scheduling_enabled_false",
-                "environ": {"pause_scheduling_enabled": "false"},
+                "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "false"},
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
                     ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
