@@ -117,7 +117,7 @@ export class WorkUnitsTableHarness extends ComponentHarness {
       ? cell.getHarnessOrNull(
           MatTooltipHarness.with({
             selector:
-              '[matTooltip="Access all profiles collected by work unit in ml diagnostics as well as capture on-demand profile"]',
+              '[matTooltip="Access all profiles collected by the work unit in ML Diagnostics as well as capture on-demand profiles"]',
           }),
         )
       : null;
