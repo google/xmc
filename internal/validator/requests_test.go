@@ -403,6 +403,106 @@ func TestFillArtifactNullValues(t *testing.T) {
 	})
 }
 
+func TestDefaultManagedXprofMetadata(t *testing.T) {
+	tests := []struct {
+		name         string
+		mx           *essmsgpb.ManagedXprofArtifact
+		expTitle     string
+		wid          int64
+		wantDisplay  string
+		wantRunGroup string
+	}{
+		{
+			name:        "nil_artifact_safely_ignored",
+			mx:          nil,
+			expTitle:    "my-exp",
+			wid:         1,
+			wantDisplay: "",
+		},
+		{
+			name: "both_empty_work_unit_parent",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "",
+				RunGroup:    "",
+			},
+			expTitle:     "my-exp",
+			wid:          1,
+			wantDisplay:  "my-exp_1",
+			wantRunGroup: "my-exp",
+		},
+		{
+			name: "both_whitespace_work_unit_parent",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "   ",
+				RunGroup:    " ",
+			},
+			expTitle:     "  my-exp  ",
+			wid:          42,
+			wantDisplay:  "my-exp_42",
+			wantRunGroup: "my-exp",
+		},
+		{
+			name: "both_empty_experiment_parent",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "",
+				RunGroup:    "",
+			},
+			expTitle:     "my-exp",
+			wid:          0,
+			wantDisplay:  "my-exp",
+			wantRunGroup: "my-exp",
+		},
+		{
+			name: "explicit_display_name_empty_run_group",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "custom-display",
+				RunGroup:    "",
+			},
+			expTitle:     "my-exp",
+			wid:          2,
+			wantDisplay:  "custom-display",
+			wantRunGroup: "my-exp",
+		},
+		{
+			name: "empty_display_name_explicit_run_group",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "",
+				RunGroup:    "custom-group",
+			},
+			expTitle:     "my-exp",
+			wid:          3,
+			wantDisplay:  "my-exp_3",
+			wantRunGroup: "custom-group",
+		},
+		{
+			name: "both_explicitly_set",
+			mx: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "custom-display",
+				RunGroup:    "custom-group",
+			},
+			expTitle:     "my-exp",
+			wid:          5,
+			wantDisplay:  "custom-display",
+			wantRunGroup: "custom-group",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			DefaultManagedXprofMetadata(tc.mx, tc.expTitle, tc.wid)
+			if tc.mx == nil {
+				return
+			}
+			if tc.mx.GetDisplayName() != tc.wantDisplay {
+				t.Errorf("DisplayName = %q, want %q", tc.mx.GetDisplayName(), tc.wantDisplay)
+			}
+			if tc.mx.GetRunGroup() != tc.wantRunGroup {
+				t.Errorf("RunGroup = %q, want %q", tc.mx.GetRunGroup(), tc.wantRunGroup)
+			}
+		})
+	}
+}
+
 func TestFillXidEntryNullValues(t *testing.T) {
 	xid := &xidmessagespb.XidEntry{}
 	got := FillXidEntryNullValues(xid)
@@ -1636,7 +1736,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "payload_managed_xprof_missing_display_name",
+			name: "payload_managed_xprof_missing_display_name_is_valid",
 			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
 					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
@@ -1644,10 +1744,10 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: nil,
 		},
 		{
-			name: "payload_managed_xprof_missing_run_group",
+			name: "payload_managed_xprof_missing_run_group_is_valid",
 			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
 					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
@@ -1655,7 +1755,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: nil,
 		},
 		{
 			name: "payload_code_source_missing_title",

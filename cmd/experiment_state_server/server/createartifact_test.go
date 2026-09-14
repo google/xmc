@@ -449,3 +449,105 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
+	ctx := context.Background()
+	server, _ := createExperimentStateServer(ctx, t)
+	exp := mustCreateExperiment(ctx, t, server, nil)
+	mustCreateWorkUnit(ctx, t, server, exp.GetName(), 1, nil)
+
+	tests := []struct {
+		name         string
+		parent       string
+		initialArt   *msgpb.Artifact
+		wantDisplay  string
+		wantRunGroup string
+	}{
+		{
+			name:   "empty_fields_on_work_unit_defaults_to_title_and_wid",
+			parent: fmt.Sprintf("%s/workUnits/1", exp.GetName()),
+			initialArt: &msgpb.Artifact{
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{
+							DisplayName: "",
+							RunGroup:    "",
+						},
+					},
+				},
+			},
+			wantDisplay:  fmt.Sprintf("%s_1", exp.GetTitle()),
+			wantRunGroup: exp.GetTitle(),
+		},
+		{
+			name:   "explicit_display_name_defaults_run_group",
+			parent: fmt.Sprintf("%s/workUnits/1", exp.GetName()),
+			initialArt: &msgpb.Artifact{
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{
+							DisplayName: "custom-display",
+							RunGroup:    "",
+						},
+					},
+				},
+			},
+			wantDisplay:  "custom-display",
+			wantRunGroup: exp.GetTitle(),
+		},
+		{
+			name:   "explicit_run_group_defaults_display_name",
+			parent: fmt.Sprintf("%s/workUnits/1", exp.GetName()),
+			initialArt: &msgpb.Artifact{
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{
+							DisplayName: "",
+							RunGroup:    "custom-group",
+						},
+					},
+				},
+			},
+			wantDisplay:  fmt.Sprintf("%s_1", exp.GetTitle()),
+			wantRunGroup: "custom-group",
+		},
+		{
+			name:   "empty_fields_on_experiment_defaults_both_to_title",
+			parent: exp.GetName(),
+			initialArt: &msgpb.Artifact{
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{
+							DisplayName: "",
+							RunGroup:    "",
+						},
+					},
+				},
+			},
+			wantDisplay:  exp.GetTitle(),
+			wantRunGroup: exp.GetTitle(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := server.CreateArtifact(ctx, &apipb.CreateArtifactRequest{
+				Parent:   tc.parent,
+				Artifact: tc.initialArt,
+			})
+			if err != nil {
+				t.Fatalf("CreateArtifact() failed unexpectedly: %v", err)
+			}
+			mx := got.GetPayload().GetManagedXprof()
+			if mx == nil {
+				t.Fatalf("Expected ManagedXprof payload, got nil")
+			}
+			if mx.GetDisplayName() != tc.wantDisplay {
+				t.Errorf("DisplayName = %q, want %q", mx.GetDisplayName(), tc.wantDisplay)
+			}
+			if mx.GetRunGroup() != tc.wantRunGroup {
+				t.Errorf("RunGroup = %q, want %q", mx.GetRunGroup(), tc.wantRunGroup)
+			}
+		})
+	}
+}

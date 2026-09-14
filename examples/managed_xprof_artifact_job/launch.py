@@ -45,14 +45,16 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 _DISPLAY_NAME = flags.DEFINE_string(
     "display_name",
-    "smoke-diagon-display-name",
-    "Display name for the ManagedXprof artifact (shown in the XProf UI).",
+    "",
+    "UI display name, default to experimentname_workunitid",
 )
 _RUN_GROUP = flags.DEFINE_string(
     "run_group",
-    "smoke-diagon-run-group",
-    "Run group (tag) for the ManagedXprof profiling session.",
+    "",
+    "Run group (tag) for the ManagedXprof profiling session, default to experimentname.",
 )
+
+
 _NUM_WORK_UNITS = flags.DEFINE_integer(
     "num_work_units",
     2,
