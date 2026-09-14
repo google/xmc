@@ -19,6 +19,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from test.e2e.lib.config import (
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_ADMIN_USER,
+    DEFAULT_BASE_URL,
+    DEFAULT_DEX_URL,
+)
 from test.e2e.lib.dex_authenticator import DexAuthenticator
 
 
@@ -27,23 +33,25 @@ class TestDexAuthenticator(unittest.TestCase):
 
     def setUp(self):
         self.auth = DexAuthenticator(
-            base_url="http://localhost:8080",
-            dex_url="http://localhost:5556",
+            base_url=DEFAULT_BASE_URL,
+            dex_url=DEFAULT_DEX_URL,
         )
 
     def test_authenticate_invokes_full_flow(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             mock_page = MagicMock()
-            mock_page.url = "http://localhost:5556/dex/auth"
+            mock_page.url = f"{DEFAULT_DEX_URL}/dex/auth"
 
             self.auth.authenticate(
                 page=mock_page,
-                email="admin@xmc.local",
-                password="password123",
+                email=DEFAULT_ADMIN_USER,
+                password=DEFAULT_ADMIN_PASSWORD,
                 screenshots_dir=Path(tmp_dir),
             )
 
-            mock_page.goto.assert_called_once_with("http://localhost:8080")
+            mock_page.goto.assert_called_once_with(
+                DEFAULT_BASE_URL, wait_until="domcontentloaded", timeout=30_000
+            )
             self.assertGreaterEqual(mock_page.locator.call_count, 3)
 
 

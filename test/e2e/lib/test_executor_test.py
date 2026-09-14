@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.config import E2E_VENV_DEPENDENCIES, E2EConfig
 from test.e2e.lib.test_executor import PlaywrightTestExecutor
 
 
@@ -50,7 +50,6 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
     def test_setup_venv_creates_venv_and_installs_when_fallback_needed(self, mock_run, mock_exists):
         # Simulate browser path missing so fallback venv path is exercised
         mock_exists.side_effect = lambda p: False
-
         py_bin = self.executor.setup_venv()
         expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
         self.assertEqual(py_bin, expected_py)
@@ -62,8 +61,15 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
                 "install",
                 "--upgrade",
                 "pip",
-                "playwright",
-                "requests",
+                *E2E_VENV_DEPENDENCIES,
+            ]
+        )
+        # Check playwright install chromium call
+        mock_run.assert_any_call(
+            [
+                os.path.join(self.executor.venv_dir, "bin", "playwright"),
+                "install",
+                "chromium",
             ]
         )
 
@@ -175,9 +181,10 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
             expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
             self.assertEqual(py_bin, expected_py)
 
+    @patch("test.e2e.lib.test_executor.fetch_dex_oidc_token", return_value="mock.token")
     @patch.object(PlaywrightTestExecutor, "setup_venv", return_value="/mock/venv/bin/python")
     @patch("test.e2e.lib.test_executor.run_cmd")
-    def test_execute_runs_test_script(self, mock_run, mock_venv):
+    def test_execute_runs_test_script(self, mock_run, mock_venv, mock_token):
         self.executor.execute()
 
         test_script = os.path.join("/workspace", "test", "e2e", "test_e2e_flow.py")
@@ -185,10 +192,12 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         args, kwargs = mock_run.call_args
         self.assertEqual(args[0], ["/mock/venv/bin/python", test_script])
         self.assertEqual(kwargs["env"]["XMC_SCREENSHOTS_DIR"], "/screenshots")
+        self.assertEqual(kwargs["env"]["XMC_AUTH_TOKEN"], "mock.token")
 
+    @patch("test.e2e.lib.test_executor.fetch_dex_oidc_token", return_value="mock.token")
     @patch.object(PlaywrightTestExecutor, "setup_venv", return_value="/mock/venv/bin/python")
     @patch("test.e2e.lib.test_executor.run_cmd")
-    def test_execute_with_custom_test_script(self, mock_run, mock_venv):
+    def test_execute_with_custom_test_script(self, mock_run, mock_venv, mock_token):
         custom_script = "/custom/path/to/test.py"
         self.executor.execute(test_script=custom_script)
 
@@ -196,6 +205,7 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         args, kwargs = mock_run.call_args
         self.assertEqual(args[0], ["/mock/venv/bin/python", custom_script])
         self.assertEqual(kwargs["cwd"], "/workspace")
+        self.assertEqual(kwargs["env"]["XMC_AUTH_TOKEN"], "mock.token")
 
 
 if __name__ == "__main__":

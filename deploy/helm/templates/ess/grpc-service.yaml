@@ -21,7 +21,7 @@ metadata:
     cloud.google.com/app-protocols: '{"grpc-port":"HTTP2"}'
     cloud.google.com/neg: '{"ingress": true}'
 spec:
-  type: ClusterIP
+  type: {{ if .Values.isDevEnvironment }}NodePort{{ else }}ClusterIP{{ end }}
   selector:
     app: experiment-state-server
   ports:
@@ -30,3 +30,6 @@ spec:
     targetPort: 50051
     protocol: TCP
     appProtocol: kubernetes.io/h2c
+    {{- if .Values.isDevEnvironment }}
+    nodePort: 30051
+    {{- end }}

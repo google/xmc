@@ -21,6 +21,7 @@ py_library(
         "__init__.py",
         "command.py",
         "config.py",
+        "dev_token.py",
         "dex_authenticator.py",
         "helm_deployer.py",
         "image_builder.py",
@@ -42,6 +43,12 @@ py_test(
 py_test(
     name = "config_test",
     srcs = ["config_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "dev_token_test",
+    srcs = ["dev_token_test.py"],
     deps = [":orchestration_lib"],
 )
 

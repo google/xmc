@@ -97,7 +97,7 @@ environment: "dev"
 domainSuffix: "e2e.xmc.local"
 isDevEnvironment: true
 imageTag: latest
-gcpServiceAccount: "xmc-dev-sa@{self.cfg.project_id}.iam.gserviceaccount.com"
+gcpServiceAccount: "admin@xmc.local"
 taskSignatureTtlSeconds: 300
 redisAddr: "redis-service.xmc.svc.cluster.local:6379"
 
@@ -137,6 +137,8 @@ auth:
   apiUrl: "http://dex.dex.svc.cluster.local:5556/dex/userinfo"
   secureCookie: false
   issuerUrl: "http://dex.dex.svc.cluster.local:5556/dex"
+  username: "admin@xmc.local"
+  password: "password123"
 
 secrets:
   csi:
@@ -241,7 +243,6 @@ ui:
                 ]
             )
             for deploy in [
-                "gateway-proxy",
                 "xid-service-deployment",
                 "experiment-state-server-deployment",
                 "ui-deployment",
@@ -259,6 +260,33 @@ ui:
                         "--timeout=180s",
                     ]
                 )
+            # Restart gateway-proxy now that all backend services and UI are fully ready
+            run_cmd(
+                [
+                    "kubectl",
+                    "--context",
+                    context,
+                    "rollout",
+                    "restart",
+                    "deployment/gateway-proxy",
+                    "-n",
+                    "xmc",
+                ],
+                check=False,
+            )
+            run_cmd(
+                [
+                    "kubectl",
+                    "--context",
+                    context,
+                    "rollout",
+                    "status",
+                    "deployment/gateway-proxy",
+                    "-n",
+                    "xmc",
+                    "--timeout=180s",
+                ]
+            )
         except Exception:
             self._capture_diagnostics()
             raise
@@ -285,20 +313,5 @@ ui:
                 "-f",
                 self.values_file,
             ]
-        )
-
-        # Restart gateway-proxy so Nginx resolves freshly deployed service DNS upstreams
-        run_cmd(
-            [
-                "kubectl",
-                "--context",
-                context,
-                "rollout",
-                "restart",
-                "deployment/gateway-proxy",
-                "-n",
-                "xmc",
-            ],
-            check=False,
         )
         self._wait_for_rollouts()

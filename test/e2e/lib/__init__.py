@@ -15,7 +15,12 @@
 """Modular orchestration library for XMC Headless KinD E2E Testing."""
 
 from test.e2e.lib.command import run_cmd
-from test.e2e.lib.config import E2EConfig, parse_args
+from test.e2e.lib.config import (
+    E2E_VENV_DEPENDENCIES,
+    E2EConfig,
+    parse_args,
+    resolve_kind_binary,
+)
 from test.e2e.lib.helm_deployer import HelmDeployer
 from test.e2e.lib.image_builder import ImageBuilder
 from test.e2e.lib.kind import KindClusterManager
@@ -24,6 +29,7 @@ from test.e2e.lib.spanner import SpannerManager
 from test.e2e.lib.test_executor import PlaywrightTestExecutor, TestExecutor
 
 __all__ = [
+    "E2E_VENV_DEPENDENCIES",
     "E2EConfig",
     "E2EOrchestrator",
     "HelmDeployer",
@@ -33,5 +39,6 @@ __all__ = [
     "SpannerManager",
     "TestExecutor",
     "parse_args",
+    "resolve_kind_binary",
     "run_cmd",
 ]
