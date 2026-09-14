@@ -86,7 +86,7 @@ func (f *Fake) Create(ctx context.Context, task *PausedTask) error {
 	return nil
 }
 
-// List returns all paused tasks from memory in insertion order.
+// List returns all paused tasks from memory in insertion order (test helper).
 func (f *Fake) List(ctx context.Context) ([]*PausedTask, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

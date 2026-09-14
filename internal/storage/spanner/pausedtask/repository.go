@@ -33,9 +33,6 @@ type Repository interface {
 	// Create persists a new paused task.
 	Create(ctx context.Context, task *PausedTask) error
 
-	// List returns all PausedTasks
-	List(ctx context.Context) ([]*PausedTask, error)
-
 	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.
 	// A limit <= 0 returns all pending tasks.
 	ListPending(ctx context.Context, limit int) ([]*PausedTask, error)
