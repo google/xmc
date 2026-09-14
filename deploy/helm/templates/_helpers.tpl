@@ -119,6 +119,35 @@ Get the UI API URL.
 {{- end -}}
 
 {{/*
+Get the canonical UI origin (scheme + host) used to build experiment deep-links.
+
+Derived rather than separately configured so operators never have to set it by
+hand: it reuses the same xmcUrl/gateway.uiHostname precedence as every other
+hostname helper, then falls back to the environment.domainSuffix pattern.
+
+Yields an empty string when only unsubstituted YOUR_* placeholders are present,
+so consumers omit the link instead of emitting a bogus URL.
+*/}}
+{{- define "xmanager-cloud.uiBaseUrl" -}}
+{{- $host := include "xmanager-cloud.uiHostname" . -}}
+{{- if or (not $host) (hasPrefix "YOUR_" $host) -}}
+{{- if and .Values.environment .Values.domainSuffix (not (hasPrefix "YOUR_" .Values.domainSuffix)) -}}
+{{- $host = printf "%s.%s" .Values.environment .Values.domainSuffix -}}
+{{- else -}}
+{{- $host = "" -}}
+{{- end -}}
+{{- end -}}
+{{- $host = trimSuffix "/" $host -}}
+{{- if not $host -}}
+{{- "" -}}
+{{- else if or (hasPrefix "http://" $host) (hasPrefix "https://" $host) -}}
+{{- $host -}}
+{{- else -}}
+{{- printf "https://%s" $host -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common OAuth environment variables for XMC services.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
