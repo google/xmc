@@ -15,6 +15,7 @@
 import 'jasmine';
 
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 
 import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
@@ -76,6 +77,7 @@ describe('ArtifactsList Component', () => {
       imports: [ArtifactsList],
       providers: [
         provideNoopAnimations(),
+        provideRouter([]),
         { provide: ArtifactService, useValue: artifactServiceSpy },
       ],
     });
