@@ -47,6 +47,8 @@ except ImportError:
     flags = None
     FLAGS = None
 
+# Support multiple execution contexts: Bazel sandboxes (tools.nightly_tests),
+# package imports (.xmc_entities_validator), and direct standalone script execution.
 try:
     from tools.nightly_tests import xmc_entities_validator
 except ImportError:
