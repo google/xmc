@@ -89,28 +89,6 @@ def extract_worker_name(work_unit: Any) -> str:
     return "unknown"
 
 
-def _call_stub(stub: Any, method_name: str, req: Any) -> Any:
-    """Invokes a gRPC method on the stub, supporting both PascalCase and snake_case."""
-    snake_name = "".join(["_" + c.lower() if c.isupper() else c for c in method_name]).lstrip("_")
-
-    # If stub is a mock with specific mock children configured (e.g. in unit tests):
-    if hasattr(stub, "_mock_children"):
-        if snake_name in stub._mock_children:
-            return getattr(stub, snake_name)(req)
-        if method_name in stub._mock_children:
-            return getattr(stub, method_name)(req)
-
-    # For real gRPC stubs or standard objects, prefer PascalCase then snake_case:
-    if hasattr(stub, method_name):
-        return getattr(stub, method_name)(req)
-    if hasattr(stub, snake_name):
-        return getattr(stub, snake_name)(req)
-
-    raise AttributeError(
-        f"Stub {type(stub).__name__} has neither method '{method_name}' nor '{snake_name}'"
-    )
-
-
 def validate_experiment(
     stub: Any,
     xid: str,
@@ -129,7 +107,7 @@ def validate_experiment(
     """
     exp_name = f"experiments/{xid}"
     req = _make_req("GetExperimentRequest", name=exp_name)
-    experiment = _call_stub(stub, "GetExperiment", req)
+    experiment = stub.GetExperiment(req)
     if not experiment or not getattr(experiment, "name", ""):
         raise AssertionError(f"Experiment {exp_name} could not be retrieved from ESS.")
 
@@ -158,7 +136,7 @@ def validate_work_units(
     """
     parent_name = f"experiments/{xid}"
     req = _make_req("ListWorkUnitsRequest", parent=parent_name)
-    response = _call_stub(stub, "ListWorkUnits", req)
+    response = stub.ListWorkUnits(req)
     work_units = list(getattr(response, "work_units", []))
 
     if expected_count is not None and len(work_units) != expected_count:

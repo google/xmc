@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from typing import Any
 from unittest import mock
 
 from tools.nightly_tests import xmc_entities_validator
@@ -44,7 +43,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
     def test_validate_experiment_success(self) -> None:
         stub = mock.MagicMock()
-        stub.get_experiment.return_value = SimpleNamespace(
+        stub.GetExperiment.return_value = SimpleNamespace(
             name="experiments/42",
             title="Demo Workload (3 units, 60s execution)",
             creator="test@google.com",
@@ -70,7 +69,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     def test_validate_work_units_success_multi_unit(self) -> None:
         stub = mock.MagicMock()
         work_units = [self._create_mock_work_unit("16", i) for i in range(1, 4)]
-        stub.list_work_units.return_value = SimpleNamespace(work_units=work_units)
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=work_units)
 
         results = xmc_entities_validator.validate_work_units(
             stub=stub,
@@ -87,7 +86,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     def test_validate_work_units_missing_workers(self) -> None:
         stub = mock.MagicMock()
         wu = self._create_mock_work_unit("16", 1, "demo-worker-1")
-        stub.list_work_units.return_value = SimpleNamespace(work_units=[wu])
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
 
         with self.assertRaises(AssertionError) as ctx:
             xmc_entities_validator.validate_work_units(
@@ -97,29 +96,6 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 expected_worker_names=["expected-other-worker"],
             )
         self.assertIn("Expected worker names", str(ctx.exception))
-
-    def test_call_stub(self) -> None:
-        class PascalStub:
-            def GetExperiment(self, req: Any) -> str:
-                return "pascal_result"
-
-        class SnakeStub:
-            def get_experiment(self, req: Any) -> str:
-                return "snake_result"
-
-        class EmptyStub:
-            pass
-
-        self.assertEqual(
-            xmc_entities_validator._call_stub(PascalStub(), "GetExperiment", {}),
-            "pascal_result",
-        )
-        self.assertEqual(
-            xmc_entities_validator._call_stub(SnakeStub(), "GetExperiment", {}),
-            "snake_result",
-        )
-        with self.assertRaises(AttributeError):
-            xmc_entities_validator._call_stub(EmptyStub(), "GetExperiment", {})
 
     def test_create_authenticated_stub_success(self) -> None:
         mock_ess_api = mock.MagicMock()
