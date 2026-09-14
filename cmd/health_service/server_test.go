@@ -762,14 +762,14 @@ func TestPauseScheduling(t *testing.T) {
 			wantErrCode: codes.FailedPrecondition,
 		},
 		{
-			name: "failed precondition when unauthorized and feature flag disabled",
+			name: "forbidden when unauthorized and feature flag disabled",
 			cfg: &Config{
 				FeatureFlags: featureflags.Flags{
 					PauseSchedulingEnabled: false,
 				},
 			},
 			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
-			wantErrCode: codes.FailedPrecondition,
+			wantErrCode: codes.PermissionDenied,
 		},
 	}
 
@@ -848,14 +848,14 @@ func TestResumeScheduling(t *testing.T) {
 			wantErrCode: codes.FailedPrecondition,
 		},
 		{
-			name: "failed precondition when unauthorized and feature flag disabled",
+			name: "forbidden when unauthorized and feature flag disabled",
 			cfg: &Config{
 				FeatureFlags: featureflags.Flags{
 					PauseSchedulingEnabled: false,
 				},
 			},
 			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
-			wantErrCode: codes.FailedPrecondition,
+			wantErrCode: codes.PermissionDenied,
 		},
 	}
 

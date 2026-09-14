@@ -253,22 +253,22 @@ func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (
 
 // PauseScheduling handles administrative requests to pause actuator scheduling.
 func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRequest) (*spb.PauseSchedulingResponse, error) {
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
-		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
-	}
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
+	}
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
 	}
 	return &spb.PauseSchedulingResponse{}, nil
 }
 
 // ResumeScheduling handles administrative requests to resume actuator scheduling.
 func (s *server) ResumeScheduling(ctx context.Context, req *spb.ResumeSchedulingRequest) (*spb.ResumeSchedulingResponse, error) {
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
-		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
-	}
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
+	}
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
 	}
 	return &spb.ResumeSchedulingResponse{}, nil
 }
