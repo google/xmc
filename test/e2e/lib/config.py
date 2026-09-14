@@ -45,6 +45,11 @@ DEFAULT_DEX_URL = os.environ.get("XMC_DEX_URL", "http://localhost:5556")
 DEFAULT_DEX_CLIENT_ID = "xmc-client"
 DEFAULT_DEX_CLIENT_SECRET = "xmc-client-secret"
 
+# TODO: Decouple virtualenv provisioning from test execution and make dependencies
+# parametrizable (e.g., via E2EConfig, requirements files, or a dedicated
+# EnvironmentProvisioner) instead of hardcoding a static global list here. Different
+# E2E test tiers (e.g., Tier 1 UI vs Tier 2 example workloads) may require distinct
+# dependency sets.
 E2E_VENV_DEPENDENCIES: list[str] = [
     "playwright",
     "requests",
