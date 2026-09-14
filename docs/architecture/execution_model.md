@@ -308,8 +308,8 @@ Variables used by XMC services, reconcilers, and infrastructure:
 | `XMC_NAMESPACE` | Actuator | The Kubernetes namespace where the JobSet runs. |
 | `XMC_QUEUE_NAME` | Actuator | The Kueue local queue assigned to the workload. |
 | `XMC_METRICS_ENABLED` | Actuator | Set to `"true"` when cluster-wide Cloud Monitoring metrics collection is enabled. |
-| `XMC_MANAGED_XPROF_DISPLAY_NAME` | User / Reconciler | Optional override for the session display name in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the experiment title). |
-| `XMC_MANAGED_XPROF_RUN_GROUP` | User / Reconciler | Optional override for the session run group tag in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the work unit ID). |
+| `XMC_MANAGED_XPROF_DISPLAY_NAME` | User (Optional) | Optional override for the session display name in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the experiment title). |
+| `XMC_MANAGED_XPROF_RUN_GROUP` | User (Optional) | Optional override for the session run group tag in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the work unit ID). |
 
 #### Managed profiling variables (`XMC_MANAGED_XPROF_*`)
 
