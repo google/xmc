@@ -220,7 +220,9 @@ describe('WorkUnitsTable Component', () => {
       const tooltip = await harness.getRunProfileTooltip(0);
       expect(tooltip).not.toBeNull();
       await tooltip!.show();
-      expect(await tooltip!.getTooltipText()).toBe('Profile');
+      expect(await tooltip!.getTooltipText()).toBe(
+        'Access all profiles collected by work unit in ml diagnostics as well as capture on-demand profile',
+      );
 
       const link = await harness.getRunProfileLink(0);
       expect(link).toEqual({
