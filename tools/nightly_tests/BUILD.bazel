@@ -1,0 +1,52 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "demo_workload_verify.py",
+    "xmc_entities_validator.py",
+])
+
+py_library(
+    name = "xmc_entities_validator_lib",
+    srcs = [
+        "xmc_entities_validator.py",
+    ],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "demo_workload_verify",
+    srcs = ["demo_workload_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":xmc_entities_validator_lib",
+        # Note: absl is dynamically resolved at runtime in the execution environment.
+        # When running in sandboxed hermetic toolchains, include project absl dependency here.
+    ],
+)
+
+py_test(
+    name = "xmc_entities_validator_test",
+    srcs = ["xmc_entities_validator_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":xmc_entities_validator_lib",
+    ],
+)

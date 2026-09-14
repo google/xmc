@@ -1656,43 +1656,208 @@ func TestGetManagedXprofEnvs(t *testing.T) {
 	}
 }
 
-func TestConstructMLRunID(t *testing.T) {
-	creationTime := time.UnixMilli(1680000000000)
+func TestNormalizeClusterName(t *testing.T) {
 	tests := []struct {
-		name        string
-		project     string
-		location    string
-		clusterName string
-		xid         int64
-		wid         int64
-		eid         int64
-		want        string
+		name    string
+		cluster string
+		want    string
 	}{
 		{
-			name:        "normal lowercase fields",
-			project:     "proj-a",
-			location:    "us-central1",
-			clusterName: "cluster-1",
-			xid:         123,
-			wid:         456,
-			eid:         789,
-			want:        "xmc-proj-a-us-central1-cluster-1-123-456-789-1680000000000",
+			name:    "bare cluster name",
+			cluster: "cluster-1",
+			want:    "cluster-1",
 		},
 		{
-			name:        "uppercase and special characters requiring sanitization",
-			project:     "My_Project!",
-			location:    "US-Central1",
-			clusterName: "Cluster#2",
-			xid:         1,
-			wid:         2,
-			eid:         3,
-			want:        "xmc-my-project-us-central1-cluster-2-1-2-3-1680000000000",
+			name:    "full GCP resource path",
+			cluster: "projects/my-proj/locations/us-central1/clusters/cluster-1",
+			want:    "cluster-1",
+		},
+		{
+			name:    "cluster path with trailing slash",
+			cluster: "projects/my-proj/locations/us-central1/clusters/cluster-1/",
+			want:    "cluster-1",
+		},
+		{
+			name:    "empty cluster",
+			cluster: "",
+			want:    "",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ConstructMLRunID(tc.project, tc.location, tc.clusterName, tc.xid, tc.wid, tc.eid, creationTime)
+			if got := normalizeClusterName(tc.cluster); got != tc.want {
+				t.Errorf("normalizeClusterName(%q) = %q, want %q", tc.cluster, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatMLRunIdentifierTimestamp(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp time.Time
+		want      string
+	}{
+		{
+			name:      "zero timestamp returns empty string",
+			timestamp: time.Time{},
+			want:      "",
+		},
+		{
+			name:      "standard UTC timestamp",
+			timestamp: time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC),
+			want:      "20230328-104000",
+		},
+		{
+			name:      "non-UTC timezone converted to UTC",
+			timestamp: time.Date(2023, 3, 28, 6, 40, 0, 0, time.FixedZone("EDT", -4*3600)),
+			want:      "20230328-104000",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatMLRunIdentifierTimestamp(tc.timestamp); got != tc.want {
+				t.Errorf("formatMLRunIdentifierTimestamp(%v) = %q, want %q", tc.timestamp, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConstructMLRunRawIdentifier(t *testing.T) {
+	creationTime := time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		cluster      string
+		namespace    string
+		kind         string
+		jobSetName   string
+		creationTime time.Time
+		want         string
+	}{
+		{
+			name:         "standard inputs",
+			cluster:      "cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: creationTime,
+			want:         "cluster-1_test-ns_JobSet_my-jobset_20230328-104000",
+		},
+
+		{
+			name:         "cluster resource path normalized to name",
+			cluster:      "projects/my-project/locations/us-central1/clusters/cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: creationTime,
+			want:         "cluster-1_test-ns_JobSet_my-jobset_20230328-104000",
+		},
+		{
+			name:         "zero creation timestamp omits timestamp segment",
+			cluster:      "cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: time.Time{},
+			want:         "cluster-1_test-ns_JobSet_my-jobset",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConstructMLRunRawIdentifier(tc.cluster, tc.namespace, tc.kind, tc.jobSetName, tc.creationTime)
+			if got != tc.want {
+				t.Errorf("ConstructMLRunRawIdentifier() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConstructMLRunID(t *testing.T) {
+	utcTime := time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC)
+	edtTime := time.Date(2023, 3, 28, 6, 40, 0, 0, time.FixedZone("EDT", -4*3600))
+
+	tests := []struct {
+		name         string
+		cluster      string
+		namespace    string
+		kind         string
+		jobSetName   string
+		creationTime time.Time
+		want         string
+	}{
+		{
+			name:         "standard inputs with UTC timestamp",
+			cluster:      "cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: utcTime,
+			want:         "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1",
+		},
+		{
+			name:         "cluster resource path produces identical hash",
+			cluster:      "projects/my-project/locations/us-central1/clusters/cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: utcTime,
+			want:         "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1",
+		},
+		{
+			name:         "cluster resource path with trailing slash",
+			cluster:      "projects/my-project/locations/us-central1/clusters/cluster-1/",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: utcTime,
+			want:         "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1",
+		},
+		{
+			name:         "non-UTC timezone converted to UTC yields same hash",
+			cluster:      "cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: edtTime,
+			want:         "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1",
+		},
+		{
+			name:         "zero creation timestamp produces deterministic hash",
+			cluster:      "cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: time.Time{},
+			want:         "683e79a8574a045090201ce462b54b127e4cee94a9835f0d23c08d5ce89bc2ca",
+		},
+
+		{
+			name:         "combined conditions: resource path, custom kind, non-UTC timestamp",
+			cluster:      "projects/p/locations/l/clusters/cluster-1",
+			namespace:    "test-ns",
+			kind:         "JobSet",
+			jobSetName:   "my-jobset",
+			creationTime: edtTime,
+			want:         "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1",
+		},
+		{
+			name:         "timestamp_1",
+			cluster:      "/projects/p/locations/l/clusters/test-cluster",
+			namespace:    "test-namespace",
+			kind:         "test-kind",
+			jobSetName:   "test-id",
+			creationTime: time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC),
+			want:         "666cf6b4e2cbfd70c5db5b51e1e7d6873c56fe290188e5fe98ff42df8fb8e0e8",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConstructMLRunID(tc.cluster, tc.namespace, tc.kind, tc.jobSetName, tc.creationTime)
 			if got != tc.want {
 				t.Errorf("ConstructMLRunID() = %q, want %q", got, tc.want)
 			}
@@ -1802,7 +1967,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
 			jobSet:          jobSet,
 			wantCalls:       1,
-			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantID:          "c0a5802815479054d7e6d629cf3339211c6f9520580f93a52b8d0e143495b033",
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,
@@ -1812,7 +1977,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			client:          &mockMLRunCreator{retErr: errors.New("api error")},
 			jobSet:          jobSet,
 			wantCalls:       1,
-			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantID:          "c0a5802815479054d7e6d629cf3339211c6f9520580f93a52b8d0e143495b033",
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 0,
@@ -1823,7 +1988,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
 			jobSet:          &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "test-jobset", Namespace: "test-ns"}},
 			wantCalls:       1,
-			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-62135596800000",
+			wantID:          "99b83bba7686db7f4ed15aebf53cf4ec5b2acc80f44c55c39168f355e2c930ac",
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,
@@ -1833,7 +1998,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			client:          &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}, updateErr: errors.New("update failed")},
 			jobSet:          jobSet,
 			wantCalls:       1,
-			wantID:          "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantID:          "c0a5802815479054d7e6d629cf3339211c6f9520580f93a52b8d0e143495b033",
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,

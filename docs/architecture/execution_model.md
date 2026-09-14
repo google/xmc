@@ -282,19 +282,42 @@ Spanner. Definitions live in
 
 ### Injected environment variables
 
-Containers receive their own coordinates without any SDK configuration:
+Containers receive their execution coordinates and configuration without requiring manual SDK boilerplate. These variables split into researcher-facing runtime coordinates and internal platform metadata:
 
-`XMC_MANAGED_BY`, `XMC_AUTHOR`, `XMC_NAMESPACE`, `XMC_QUEUE_NAME`, `XMC_EXPERIMENT_ID`,
-`XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID`, `XMC_JOB_INDEX`, `XMC_JOB_NAME`, `XMC_METRICS_ENABLED`,
-and — when managed profiling is configured — `XMC_MANAGED_XPROF_GCS_BUCKET`,
-`XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`, `XMC_MANAGED_XPROF_DISPLAY_NAME`,
-`XMC_MANAGED_XPROF_RUN_GROUP`.
+#### Researcher-facing variables
 
-The `xmc` Python SDK reads `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID`, `XMC_JOB_NAME`, and
-`XMC_JOB_INDEX` straight from this set to tag its metrics. Note that it expects the experiment ID
-as `XMC_XID` rather than the injected `XMC_EXPERIMENT_ID`, so that one must be set explicitly on the
-work unit — see
-[Metrics & Observability §1.1](../flows/metrics_and_observability.md#11-emission--the-sdk).
+Variables intended for direct consumption by training scripts, profilers, or user code inside the container:
+
+| Variable | Injected By | Purpose & Usage |
+| :--- | :--- | :--- |
+| `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` | Actuator | **Managed profiling output directory**: Dedicated per-work-unit GCS folder (e.g. `gs://<bucket>/xmc-<xid>-<wid>-<timestamp>`). When managed profiling is configured on the cluster, workloads write profile traces directly here (e.g. `jax.profiler.start_trace(os.environ["XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER"])`). |
+| `XMC_WORK_UNIT_ID` | Actuator | Work unit ID (`wid`). Tagged on emitted metrics and logs. |
+| `XMC_EXECUTION_ID` | Actuator | Execution attempt index (`eid`). Tagged on emitted metrics. |
+| `XMC_JOB_NAME` | Actuator | Replicated job name (e.g. `worker`). Used for replica/role identification. |
+| `XMC_JOB_INDEX` | Actuator | Replicated job index (0-based task rank within the job). Used as a distributed rank fallback. |
+| `XMC_EXPERIMENT_ID` | Actuator | Parent experiment ID (`xid`). *(Note: the `xmc` Python SDK expects `XMC_XID` rather than `XMC_EXPERIMENT_ID`, so `XMC_XID` must be set explicitly on the work unit when using the SDK; see [Metrics & Observability §1.1](../flows/metrics_and_observability.md#11-emission--the-sdk).)* |
+
+#### Internal and platform variables
+
+Variables used by XMC services, reconcilers, and infrastructure:
+
+| Variable | Injected By | Purpose & Usage |
+| :--- | :--- | :--- |
+| `XMC_MANAGED_BY` | Actuator | Set to `"true"` on all XMC workloads. Marks the container as managed by XMC for log sinks and node tools. |
+| `XMC_AUTHOR` | Actuator | The user identity who launched the experiment, for attribution and audit logging. |
+| `XMC_NAMESPACE` | Actuator | The Kubernetes namespace where the JobSet runs. |
+| `XMC_QUEUE_NAME` | Actuator | The Kueue local queue assigned to the workload. |
+| `XMC_METRICS_ENABLED` | Actuator | Set to `"true"` when cluster-wide Cloud Monitoring metrics collection is enabled. |
+| `XMC_MANAGED_XPROF_DISPLAY_NAME` | User (Optional) | Optional override for the session display name in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the experiment title). |
+| `XMC_MANAGED_XPROF_RUN_GROUP` | User (Optional) | Optional override for the session run group tag in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the work unit ID). |
+
+#### Managed profiling variables (`XMC_MANAGED_XPROF_*`)
+
+Managed profiling coordinates between the Actuator, training workloads, ESS artifacts, and the Reconciler:
+
+- **`XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`**: The primary researcher-facing profiling variable. The Actuator constructs an isolated GCS folder path (`<bucket>/xmc-<xid>-<wid>-<timestamp>`) and injects it into all containers and init containers of the JobSet. Workloads write their JAX or TensorFlow XPlane profile traces directly into this path.
+- **`XMC_MANAGED_XPROF_DISPLAY_NAME`** and **`XMC_MANAGED_XPROF_RUN_GROUP`**: Internal metadata variables consumed by the Reconciler when registering the MLRun with the Diagon backend. Workloads do not need to read these. While they can be injected to override display labels, standard practice is to specify them (or rely on defaults) on the `ManagedXprof` WorkUnit artifact.
+- **`MANAGED_XPROF_GCS_PATH`**: Sourced from the `managed-xprof-gcs-config` ConfigMap on the cluster via Helm; this is an internal configuration variable for the Actuator daemon itself, not injected into workload containers.
 
 ### System key precedence
 

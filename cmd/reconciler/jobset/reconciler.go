@@ -16,6 +16,8 @@ package jobset
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -758,13 +760,52 @@ func buildMLRunUpdateLabels(baseLabels map[string]string) map[string]string {
 	return updateLabels
 }
 
-// ConstructMLRunID deterministically constructs and sanitizes a unique MLRun identifier for an execution.
+// normalizeClusterName extracts the short cluster name from either a bare name or a full GCP resource path.
 //
-// Extracted into its own pure function so that ID formatting and sanitization are independently testable and
+// Extracted to isolate resource path parsing from identifier formatting and ensure parity with the
+// Python ML Diagnostics SDK's cluster name extraction.
+func normalizeClusterName(cluster string) string {
+	cluster = strings.TrimRight(cluster, "/")
+	if idx := strings.LastIndex(cluster, "/"); idx != -1 {
+		return cluster[idx+1:]
+	}
+	return cluster
+}
+
+// formatMLRunIdentifierTimestamp returns the creation timestamp formatted for the raw MLRun identifier,
+// or an empty string if uninitialized.
+//
+// Extracted so timestamp timezone normalization and zero-value handling can be tested independently
+// from hash computation.
+func formatMLRunIdentifierTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(constants.MLRunIdentifierTimeFormat)
+}
+
+// ConstructMLRunRawIdentifier assembles the deterministic raw identifier string for a GKE workload
+// following the format: clustername_namespace_kind_workloadid_YYYYMMDD-HHmmss.
+//
+// Extracted to allow verifying the unhashed raw string against the GKE ML Diagnostics SDK specification.
+// If the creation timestamp is uninitialized (zero), the timestamp segment is omitted to avoid a dangling separator.
+func ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
+	clusterName := normalizeClusterName(cluster)
+	timestamp := formatMLRunIdentifierTimestamp(creationTime)
+	if timestamp == "" {
+		return fmt.Sprintf("%s_%s_%s_%s", clusterName, namespace, kind, jobSetName)
+	}
+	return fmt.Sprintf("%s_%s_%s_%s_%s", clusterName, namespace, kind, jobSetName, timestamp)
+}
+
+// ConstructMLRunID deterministically constructs the SHA-256 hex digest of the raw workload identifier.
+//
+// Extracted into its own pure function so that ID construction is independently testable and
 // guaranteed idempotent when reconciliations are retried.
-func ConstructMLRunID(project, location, clusterName string, xid, wid, eid int64, creationTime time.Time) string {
-	rawID := fmt.Sprintf("xmc-%s-%s-%s-%d-%d-%d-%d", project, location, clusterName, xid, wid, eid, creationTime.UnixMilli())
-	return hypercomputeclient.SanitizeIdentifier(rawID)
+func ConstructMLRunID(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
+	rawID := ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName, creationTime)
+	hash := sha256.Sum256([]byte(rawID))
+	return hex.EncodeToString(hash[:])
 }
 
 // formatCreationTime returns the timestamp formatted for MLRun workload creation times,
@@ -789,7 +830,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		return ""
 	}
 
-	mlRunID := ConstructMLRunID(r.Project, r.Location, r.ClusterName, xid, wid, eid, jobSet.CreationTimestamp.Time)
+	if jobSet.CreationTimestamp.IsZero() {
+		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
+	}
+
+	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
 	clusterPath := r.ClusterName
 	if !strings.HasPrefix(clusterPath, "projects/") && r.Project != "" && r.Location != "" {
 		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)

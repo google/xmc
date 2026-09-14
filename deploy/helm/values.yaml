@@ -35,6 +35,9 @@ rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
 xmc_bridge_custom_image: ""
 
+featureFlags:
+  pause_scheduling_enabled: false
+
 componentsDeployment:
   enabled: false
   cmsAddress: "grpc-service:50051"
@@ -69,7 +72,6 @@ metrics:
     # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
     # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
-
 
 ingestionGatewayDeployment:
   enabled: false
@@ -108,6 +110,10 @@ healthService:
   cacheTTL: "15s"
   forceRefreshMaxRequests: 5
   forceRefreshWindow: "5s"
+  # schedulingResumeBatchSize: Number of paused tasks replayed per batch from Spanner during resume.
+  schedulingResumeBatchSize: 100
+  # schedulingResumeMaxBacklog: Maximum unprocessed tasks in xmc-tasks-stream before resumption worker pauses replay.
+  schedulingResumeMaxBacklog: 500
 
 dashboardServiceDeployment:
   enabled: false
@@ -207,8 +213,6 @@ ui:
   image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
-
-
 
 # Pass configuration to Kueue sub-chart
 kueue:

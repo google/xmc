@@ -58,4 +58,11 @@ export class FeatureFlagService {
   get isPerformanceDashboardEnabled(): boolean {
     return this.isFeatureEnabled('performanceDashboardEnabled');
   }
+
+  /**
+   * Returns whether pause scheduling is enabled.
+   */
+  get isPauseSchedulingEnabled(): boolean {
+    return this.isFeatureEnabled('pauseSchedulingEnabled');
+  }
 }

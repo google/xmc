@@ -90,6 +90,9 @@ const (
 	// MLRunCreationTimeFormat is the timestamp layout used for MLRun workload creation times.
 	MLRunCreationTimeFormat = time.RFC3339Nano
 
+	// MLRunIdentifierTimeFormat is the timestamp layout used in the raw MLRun workload identifier before hashing.
+	MLRunIdentifierTimeFormat = "20060102-150405"
+
 	// JobSetJobIndexLabel is the label set by JobSet for the job index.
 	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
 
