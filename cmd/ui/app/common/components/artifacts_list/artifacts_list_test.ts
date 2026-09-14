@@ -91,11 +91,11 @@ describe('ArtifactsList Component', () => {
     expect((comp as any).showFilterToggle).toBeTrue();
     expect((comp as any).isWorkUnitPage).toBeFalse();
 
-    const inputItems = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
     // Both experiment-level and work-unit level input artifacts should be present
     expect(inputItems.length).toBe(2);
 
-    const outputItems = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
     // Both experiment-level and work-unit level output artifacts should be present
     expect(outputItems.length).toBe(2);
   });
@@ -104,11 +104,11 @@ describe('ArtifactsList Component', () => {
     const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
     (comp as any).onFilterChange([ArtifactFilter.EXPERIMENT]);
 
-    const inputItems = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
     expect(inputItems.length).toBe(1);
     expect((inputItems[0] as any).artifact.artifact.name).toBe('artifacts/1');
 
-    const outputItems = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
     expect(outputItems.length).toBe(1);
     expect((outputItems[0] as any).artifact.artifact.name).toBe('artifacts/3');
   });
@@ -117,11 +117,11 @@ describe('ArtifactsList Component', () => {
     const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
     (comp as any).onFilterChange([ArtifactFilter.WORK_UNIT]);
 
-    const inputItems = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
     expect(inputItems.length).toBe(1);
     expect((inputItems[0] as any).artifact.artifact.name).toBe('artifacts/2');
 
-    const outputItems = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
     expect(outputItems.length).toBe(1);
     expect((outputItems[0] as any).artifact.artifact.name).toBe('artifacts/4');
   });
@@ -130,10 +130,10 @@ describe('ArtifactsList Component', () => {
     const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
     (comp as any).onFilterChange([]);
 
-    const inputItems = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
     expect(inputItems.length).toBe(0);
 
-    const outputItems = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
     expect(outputItems.length).toBe(0);
   });
 
@@ -142,7 +142,7 @@ describe('ArtifactsList Component', () => {
     expect((comp as any).showFilterToggle).toBeFalse();
     expect((comp as any).isWorkUnitPage).toBeTrue();
 
-    const inputItems = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
     expect(inputItems.length).toBe(2);
   });
 });
