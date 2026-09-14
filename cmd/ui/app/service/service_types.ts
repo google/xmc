@@ -19,6 +19,7 @@ export interface FeatureFlags {
   resourceDashboardEnabled?: boolean;
   isNonProdAuth?: boolean;
   performanceDashboardEnabled?: boolean;
+  pauseSchedulingEnabled?: boolean;
 }
 
 declare global {

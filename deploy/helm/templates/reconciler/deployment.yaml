@@ -55,6 +55,8 @@ spec:
         envFrom:
         - configMapRef:
             name: reconciler-config
+        - configMapRef:
+            name: feature-flags-config
         {{- $auth := default (dict) .Values.auth }}
         {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- $remoteK8s := default (dict) .Values.remoteK8s }}

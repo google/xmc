@@ -105,6 +105,8 @@ spec:
         envFrom:
         - configMapRef:
             name: health-config
+        - configMapRef:
+            name: feature-flags-config
         readinessProbe:
           httpGet:
             path: /readyz

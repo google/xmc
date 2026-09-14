@@ -23,6 +23,7 @@ import (
 
 	"go/flag"
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
@@ -48,6 +49,7 @@ type Config struct {
 	VerifyingKeyFile       string
 	MaxRecentKeys          int
 	RedisConfig            RedisConfig
+	FeatureFlags           featureflags.Flags
 }
 
 var (
@@ -66,6 +68,7 @@ var (
 	allowPrivilegedContainers   bool
 	allowHostNetwork            bool
 	enableComponents            bool
+	featureFlags                featureflags.Flags
 )
 
 // Redis flags.
@@ -107,6 +110,7 @@ func registerConfigs() {
 	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
 	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
 	configutil.BoolEnv(&enableComponents, "enable_components", false)
+	featureFlags = featureflags.Load()
 }
 
 func validate() error {
@@ -172,5 +176,6 @@ func Load() Config {
 			RedisAbandonedMessageTimeout: redisAbandonedMessageTimeout,
 			RedisReadBatchSize:           redisReadBatchSize,
 		},
+		FeatureFlags: featureFlags,
 	}
 }

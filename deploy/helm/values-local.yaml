@@ -30,6 +30,9 @@ actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
 
+featureFlags:
+  pause_scheduling_enabled: false
+
 xidService:
   hpa:
     minReplicas: 1

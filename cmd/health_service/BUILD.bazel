@@ -35,6 +35,7 @@ compat_go_library(
         "//internal/common/health",
         "//internal/compat/google",
         "//internal/configutil",
+        "//internal/featureflags",
         "//internal/logging",
         "//internal/security/tlsutil",
         "//internal/storage/spanner/migrations/version",
