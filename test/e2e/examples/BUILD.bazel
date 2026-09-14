@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
@@ -28,11 +29,14 @@ py_library(
     name = "examples_e2e_pkg",
     srcs = [
         "__init__.py",
+        "test_demo_workload.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":example_runner",
         "//test/e2e/lib:orchestration_lib",
+        "//tools/nightly_tests:common",
+        "//tools/nightly_tests:xmc_entities_validator_lib",
     ],
 )
 
@@ -42,5 +46,19 @@ py_test(
     deps = [
         ":example_runner",
         "//test/e2e/lib:orchestration_lib",
+    ],
+)
+
+py_binary(
+    name = "test_demo_workload",
+    srcs = ["test_demo_workload.py"],
+    main = "test_demo_workload.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":example_runner",
+        ":examples_e2e_pkg",
+        "//test/e2e:e2e_pkg",
+        "//tools/nightly_tests:common",
+        "//tools/nightly_tests:xmc_entities_validator_lib",
     ],
 )
