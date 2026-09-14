@@ -61,9 +61,7 @@ except ImportError:
 def main(argv: Sequence[str]) -> None:
     """Main verification routine."""
     if len(argv) > 1:
-        if app is not None:
-            raise app.UsageError("Too many command-line arguments.")
-        raise ValueError("Too many command-line arguments.")
+        raise app.UsageError("Too many command-line arguments.")
 
     if FLAGS is None:
         raise RuntimeError("absl is required to parse command-line flags.")
