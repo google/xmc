@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"task/go/status"
 
@@ -39,7 +40,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	}
 
 	// 2. Validate the parent experiment or work unit format and enrich logging context.
-	parentXID, _, err := validator.ValidateArtifactParent(req.GetParent())
+	parentXID, parentWID, err := validator.ValidateArtifactParent(req.GetParent())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
 		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), status.ErrInvalidArgument, err)
@@ -65,7 +66,12 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	// 4.1. Fill in any null values in the request payload.
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
-	// 4.2. Validate ChartArtifact payload.
+	// 4.2. Populate default metadata for ManagedXprof artifacts if unset.
+	if err := h.fillManagedXprofDefaults(ctx, artifact, parentXID, parentWID); err != nil {
+		return nil, err
+	}
+
+	// 4.3. Validate ChartArtifact payload.
 	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
 		return nil, err
 	}
@@ -144,5 +150,25 @@ func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, arti
 		}
 		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
 	}
+	return nil
+}
+
+// fillManagedXprofDefaults populates fallback DisplayName and RunGroup values
+// for ManagedXprof artifacts when either field is empty. It retrieves the parent
+// experiment title from storage to synthesize consistent, identifiable names.
+func (h *ArtifactHandler) fillManagedXprofDefaults(ctx context.Context, artifact *msgpb.Artifact, xid, wid int64) error {
+	mx := artifact.GetPayload().GetManagedXprof()
+	if mx == nil {
+		return nil
+	}
+	if strings.TrimSpace(mx.GetDisplayName()) != "" && strings.TrimSpace(mx.GetRunGroup()) != "" {
+		return nil
+	}
+	exp, err := h.storage.FetchExperiment(ctx, xid)
+	if err != nil {
+		logging.Error(ctx, "Failed to fetch experiment for default ManagedXprof metadata", "xid", xid, "error", err)
+		return fmt.Errorf("failed to fetch experiment %d to populate ManagedXprof defaults: %w", xid, err)
+	}
+	validator.DefaultManagedXprofMetadata(mx, exp.GetTitle(), wid)
 	return nil
 }

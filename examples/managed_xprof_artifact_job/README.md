@@ -38,11 +38,11 @@ python launch.py
 
 Optional flags:
 
+- `--display_name`: UI display name for the ManagedXprof artifact (shown in the XProf UI). If empty, XMC defaults it to `<experiment_title>_<work_unit_id>`.
+- `--run_group`: Run group (tag) for the ManagedXprof profiling session. If empty, XMC defaults it to `<experiment_title>`.
 - `--num_work_units`: Number of work units to launch (default `2`), each with its
   own ManagedXprof artifact.
-- `--display_name`: Display name for the ManagedXprof artifact (XProf UI title).
-- `--run_group`: Run group (tag) for the profiling session.
-- `--sleep_seconds`: How long the workload runs so the JobSet stays alive.
+- `--sleep_seconds`: How long the workload runs so the JobSet stays alive (default `300`).
 
 The script will:
 1. Create an experiment.

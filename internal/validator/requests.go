@@ -237,6 +237,27 @@ func FillArtifactNullValues(art *essmsgpb.Artifact) *essmsgpb.Artifact {
 	return art
 }
 
+// DefaultManagedXprofMetadata populates fallback values for DisplayName and RunGroup
+// when they are empty or contain only whitespace. DisplayName defaults to
+// "<expTitle>_<wid>" (or "<expTitle>" if not attached to a work unit), and RunGroup
+// defaults to "<expTitle>".
+func DefaultManagedXprofMetadata(mx *essmsgpb.ManagedXprofArtifact, expTitle string, wid int64) {
+	if mx == nil {
+		return
+	}
+	cleanedExp := strings.TrimSpace(expTitle)
+	if strings.TrimSpace(mx.GetDisplayName()) == "" {
+		if wid > 0 {
+			mx.DisplayName = fmt.Sprintf("%s_%d", cleanedExp, wid)
+		} else {
+			mx.DisplayName = cleanedExp
+		}
+	}
+	if strings.TrimSpace(mx.GetRunGroup()) == "" {
+		mx.RunGroup = cleanedExp
+	}
+}
+
 // FillXidEntryNullValues fills in any null values in the XidEntry proto with default values.
 // This is necessary for fields that are optional in the proto definition, but are actually
 // required in the database schema.
@@ -502,12 +523,9 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 	}
 	switch p := payload.Type.(type) {
 	case *essmsgpb.ArtifactPayload_ManagedXprof:
-		if p.ManagedXprof.GetDisplayName() == "" {
-			return fmt.Errorf("artifact.payload.managed_xprof.display_name must be set: %w", status.ErrInvalidArgument)
-		}
-		if p.ManagedXprof.GetRunGroup() == "" {
-			return fmt.Errorf("artifact.payload.managed_xprof.run_group must be set: %w", status.ErrInvalidArgument)
-		}
+		// DisplayName and RunGroup are optional on creation; when left empty, ESS
+		// populates them with default values derived from the parent experiment title
+		// and work unit ID.
 	case *essmsgpb.ArtifactPayload_CodeSource:
 		if p.CodeSource.GetTitle() == "" {
 			return fmt.Errorf("artifact.payload.code_source.title must be set: %w", status.ErrInvalidArgument)
