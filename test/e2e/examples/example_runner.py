@@ -88,12 +88,9 @@ def port_forward_grpc_service(
     """
     env_endpoint = os.getenv("XMANAGER_ENDPOINT")
     if env_endpoint:
-        host, _, port_str = env_endpoint.partition(":")
-        port = int(port_str) if port_str else remote_port
-        if is_port_open(host or "127.0.0.1", port):
-            logger.info("Using existing reachable gRPC endpoint: %s", env_endpoint)
-            yield env_endpoint
-            return
+        logger.info("Using configured gRPC endpoint: %s", env_endpoint)
+        yield env_endpoint
+        return
 
     if is_port_open("127.0.0.1", remote_port):
         logger.info("Using existing open host gRPC port: 127.0.0.1:%d", remote_port)
@@ -177,21 +174,32 @@ def execute_example_launch(
             "XMANAGER_ENDPOINT": active_grpc_endpoint,
             "XMANAGER_INSECURE_GRPC": "true",
             "XMC_USER_EMAIL": user_email,
-            "XMC_AUTH_TOKEN": fetch_dex_oidc_token(email=user_email),
+            "XMC_AUTH_TOKEN": os.getenv("XMC_AUTH_TOKEN") or fetch_dex_oidc_token(email=user_email),
             "XMC_DOMAIN": os.getenv("XMC_DOMAIN", "localhost:8080"),
             "IAP_CLIENT_ID": os.getenv("IAP_CLIENT_ID", "test-client-id"),
             **(env_overrides or {}),
         }
 
         cmd = [sys.executable, str(script_path), *(args or [])]
-        proc = subprocess.run(
-            cmd,
-            env=proc_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                env=proc_env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            captured_out = (e.stdout or "") + (e.stderr or "")
+            logger.error(
+                "Example launch timed out after %s seconds. Captured output:\n%s",
+                timeout_sec,
+                captured_out,
+            )
+            raise RuntimeError(
+                f"Example launch timed out after {timeout_sec}s:\n{captured_out}"
+            ) from e
 
     output_str = proc.stdout + proc.stderr
     logger.info("Captured launch output:\n%s", output_str)
