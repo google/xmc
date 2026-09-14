@@ -73,7 +73,7 @@ func (f *Fake) Set(ctx context.Context, state *PauseSchedulingState) error {
 	defer f.mu.Unlock()
 
 	stored := clonePauseSchedulingState(state)
-	stored.UpdatedAt = time.Now()
+	stored.UpdatedAt = time.Now().UTC()
 	f.state = stored
 	return nil
 }

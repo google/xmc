@@ -33,10 +33,10 @@ const (
 
 // PauseSchedulingState represents the global scheduling pause state and resumption metadata.
 type PauseSchedulingState struct {
-	SchedulingPaused   bool
-	UpdatedAt          time.Time
-	ResumptionRunID    string
-	ResumptionWorkerID string
+	SchedulingPaused   bool      `spanner:"SchedulingPaused"`
+	UpdatedAt          time.Time `spanner:"UpdatedAt"`
+	ResumptionRunID    string    `spanner:"ResumptionRunId"`
+	ResumptionWorkerID string    `spanner:"ResumptionWorkerId"`
 }
 
 // DefaultPauseSchedulingState returns a new PauseSchedulingState with default uninitialized values.
