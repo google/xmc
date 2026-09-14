@@ -33,11 +33,13 @@ try:
 except ImportError:
     dotenv = None
 
+# Graceful fallback: xmanager_cloud is an external wheel installed at runtime
+# via install_xmanager.py. Allowing ImportError enables Bazel unit tests to run
+# hermetically using mocks without requiring external wheel installation.
 try:
     from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
     from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2
 except ImportError:
-    # Graceful fallback for environments/Bazel sandboxes without xmanager_cloud wheel
     ess_api = None
     ess_api_pb2 = None
 
