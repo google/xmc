@@ -96,7 +96,8 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	UIBaseURL                string
+	XManagerEnvName          string
+	XManagerDomainName       string
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -111,7 +112,8 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	UIBaseURL                string
+	XManagerEnvName          string
+	XManagerDomainName       string
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -136,7 +138,8 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
-		UIBaseURL:                p.UIBaseURL,
+		XManagerEnvName:          p.XManagerEnvName,
+		XManagerDomainName:       p.XManagerDomainName,
 	}, nil
 }
 
@@ -677,45 +680,71 @@ const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 // resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
 
-// constructExperimentURL builds the canonical deep-link URL for an experiment given
-// an optional base UI URL and experiment ID.
+// mlRunLabelValueRE matches the value syntax the ML Diagnostics control plane
+// accepts for resource labels: lowercase letters, digits, dashes and underscores.
 //
-// Extracted into a standalone pure function so that URL normalization, scheme resolution,
-// and zero-value handling are independently testable without initializing reconciler dependencies.
-func constructExperimentURL(baseURL string, xid int64) string {
-	if xid <= 0 {
+// The control plane validates labels character by character and rejects the whole
+// CreateMLRun call with INVALID_ARGUMENT on the first offending rune, so a single
+// bad value costs the entire MLRun record - not just the label. Deployment
+// identifiers therefore pass through this gate before they are stamped.
+//
+// Uppercase is deliberately rejected rather than folded: it is the signature of an
+// unsubstituted chart placeholder such as YOUR_DOMAIN_SUFFIX, which must not be
+// published as though it were a real deployment identifier.
+var mlRunLabelValueRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// encodeDomainLabelValue rewrites a DNS name so it survives label validation.
+//
+// Dots are rejected by the control plane but are load-bearing in a domain, while
+// underscores are accepted and cannot legally appear in a hostname. Swapping one for
+// the other is therefore lossless and unambiguous: a consumer recovers the original
+// domain by replacing underscores with dots.
+func encodeDomainLabelValue(domain string) string {
+	return strings.ReplaceAll(strings.TrimSpace(domain), ".", "_")
+}
+
+// labelSafeValue returns v when it is acceptable as an MLRun label value, and ""
+// otherwise.
+//
+// Extracted as a pure function because the chart forwards raw values: an
+// unsubstituted placeholder such as YOUR_DOMAIN_SUFFIX, or an operator typo, must
+// degrade to a missing label rather than break MLRun creation for the work unit.
+func labelSafeValue(v string) string {
+	v = strings.TrimSpace(v)
+	if !mlRunLabelValueRE.MatchString(v) {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		return fmt.Sprintf("/experiments/%d", xid)
-	}
-	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-		base = "https://" + base
-	}
-	return fmt.Sprintf("%s/experiments/%d", base, xid)
+	return v
 }
 
 // buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
 // Extracted so create and upsert apply an identical label set (including the
 // created_by marker that lets us detect ownership on a create conflict).
 //
-// experiment_url is additive and only stamped when a deep-link can actually be
-// built, so consumers never see an empty-valued key.
-func buildMLRunLabels(baseURL string, xid, wid int64) map[string]string {
+// xmanager_env_name and xmanager_domain_name identify the owning XManager
+// deployment so consumers can resolve an experiment back to its UI themselves.
+// They are additive and only stamped when label-safe, so consumers never see an
+// empty-valued key and a misconfigured deployment never fails the create.
+//
+// The domain is dot-encoded (see encodeDomainLabelValue) because the control plane
+// rejects dots outright.
+func buildMLRunLabels(xid, wid int64, envName, domainName string) map[string]string {
 	labels := map[string]string{
 		"experiment_id": fmt.Sprintf("%d", xid),
 		"workunit_id":   fmt.Sprintf("%d", wid),
 		"created_by":    createdByXManagerLabelValue,
 	}
-	if expURL := constructExperimentURL(baseURL, xid); expURL != "" {
-		labels["experiment_url"] = expURL
+	if v := labelSafeValue(envName); v != "" {
+		labels["xmanager_env_name"] = v
+	}
+	if v := labelSafeValue(encodeDomainLabelValue(domainName)); v != "" {
+		labels["xmanager_domain_name"] = v
 	}
 	return labels
 }
 
 // buildMLRunUpdateLabels constructs the complete label map for MLRun update calls,
-// combining the base labels (experiment_url, workunit_id, created_by) with the
+// combining the base labels (experiment_id, workunit_id, created_by) with the
 // list_existing_sessions_only scan trigger.
 //
 // Extracted so that post-creation updates and conflict upserts apply an identical,
@@ -770,7 +799,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
-	labels := buildMLRunLabels(r.UIBaseURL, xid, wid)
+	labels := buildMLRunLabels(xid, wid, r.XManagerEnvName, r.XManagerDomainName)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,
@@ -803,8 +832,8 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Create-then-update: stamp list_existing_sessions_only post-creation to preserve
 	// the ACTIVE phase (creating with it forces COMPLETED, which blocks on-demand profiling).
-	// Pass the complete label set so experiment_url and ownership are preserved even if
-	// the control plane's GET response omits labels or replaces the map.
+	// Pass the complete label set so the deployment identifiers and ownership marker
+	// are preserved even if the control plane's GET response omits labels or replaces the map.
 	updateLabels := buildMLRunUpdateLabels(labels)
 	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
 		Labels: updateLabels,

@@ -107,14 +107,14 @@ py_test(
 )
 
 py_test(
-    name = "reconciler_ui_base_url_config_test",
-    srcs = ["reconciler_ui_base_url_config_test.py"],
+    name = "reconciler_xmanager_identity_config_test",
+    srcs = ["reconciler_xmanager_identity_config_test.py"],
     data = ["//deploy/helm:chart"],
     imports = [
         ".",
         "../..",
     ],
-    main = "reconciler_ui_base_url_config_test.py",
+    main = "reconciler_xmanager_identity_config_test.py",
     tags = [
         "local",
         "manual",

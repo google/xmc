@@ -34,7 +34,8 @@ type Config struct {
 	KubeAPIBurst                     int
 	MldiagnosticsEnvironment         string
 	MetricsPort                      int
-	UIBaseURL                        string
+	XManagerEnvName                  string
+	XManagerDomainName               string
 }
 
 // Flags and ConfigMap configurations.
@@ -53,7 +54,8 @@ var (
 	kubeAPIBurst                     int
 	mldiagnosticsEnvironment         string
 	metricsPort                      int
-	uiBaseURL                        string
+	xmanagerEnvName                  string
+	xmanagerDomainName               string
 )
 
 // init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
@@ -65,7 +67,8 @@ func init() {
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
 	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
 	flag.IntVar(&metricsPort, "metrics_port", 8082, "The port on which the reconciler serves Prometheus metrics.")
-	flag.StringVar(&uiBaseURL, "ui_base_url", "", "The base URL of the XMC Web UI used to construct canonical experiment deep-links.")
+	flag.StringVar(&xmanagerEnvName, "xmanager_env_name", "", "The XManager environment name stamped on MLRun records so consumers can identify the owning deployment.")
+	flag.StringVar(&xmanagerDomainName, "xmanager_domain_name", "", "The XManager domain name stamped on MLRun records so consumers can resolve the owning deployment.")
 	registerConfigs()
 }
 
@@ -80,7 +83,8 @@ func registerConfigs() {
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
-	configutil.StringEnv(&uiBaseURL, "ui_base_url", "")
+	configutil.StringEnv(&xmanagerEnvName, "xmanager_env_name", "")
+	configutil.StringEnv(&xmanagerDomainName, "xmanager_domain_name", "")
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.
@@ -102,6 +106,7 @@ func Load() Config {
 		KubeAPIBurst:                     kubeAPIBurst,
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 		MetricsPort:                      metricsPort,
-		UIBaseURL:                        uiBaseURL,
+		XManagerEnvName:                  xmanagerEnvName,
+		XManagerDomainName:               xmanagerDomainName,
 	}
 }
