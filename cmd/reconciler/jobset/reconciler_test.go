@@ -2079,7 +2079,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		wantUpdateCalls int
 	}{
 		{
-			name: "already exists, owned and has scan label and experiment_url is idempotent success",
+			name: "already exists, owned and has scan label is idempotent success",
 			client: &mockMLRunCreator{getRes: map[string]any{
 				"labels": map[string]any{
 					"created_by":                  createdByXManagerLabelValue,
@@ -2090,39 +2090,6 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			wantURLContains: "console.cloud.google.com",
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
-		},
-		{
-			name: "already exists, owned and has scan label but missing experiment_url triggers update",
-			client: &mockMLRunCreator{
-				getRes: map[string]any{
-					"labels": map[string]any{
-						"created_by":                  createdByXManagerLabelValue,
-						listExistingSessionsOnlyLabel: "true",
-					},
-				},
-				updateRes: map[string]any{"url": "https://mlrun/updated"},
-			},
-			wantURLContains: "https://mlrun/updated",
-			wantGetCalls:    1,
-			wantUpdateCalls: 1,
-		},
-		{
-			name: "already exists, owned and both missing experiment_url triggers update",
-			client: &mockMLRunCreator{
-				getRes: map[string]any{
-					"labels": map[string]any{
-						"created_by":                  createdByXManagerLabelValue,
-						listExistingSessionsOnlyLabel: "true",
-					},
-				},
-				updateRes: map[string]any{"url": "https://mlrun/updated"},
-			},
-			labels: map[string]string{
-				"created_by": createdByXManagerLabelValue,
-			},
-			wantURLContains: "https://mlrun/updated",
-			wantGetCalls:    1,
-			wantUpdateCalls: 1,
 		},
 		{
 			name: "already exists, owned but missing scan label triggers update",
@@ -2496,10 +2463,11 @@ func TestEnsureProfilesTab(t *testing.T) {
 }
 
 // TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
-// using snake_case keys (created_by, experiment_url, workunit_id).
+// using snake_case keys (created_by, experiment_id, experiment_url, workunit_id).
 func TestBuildMLRunLabels(t *testing.T) {
 	gotWithBase := buildMLRunLabels("https://example.com", 12, 3)
 	wantWithBase := map[string]string{
+		"experiment_id":  "12",
 		"experiment_url": "https://example.com/experiments/12",
 		"workunit_id":    "3",
 		"created_by":     createdByXManagerLabelValue,
@@ -2510,6 +2478,7 @@ func TestBuildMLRunLabels(t *testing.T) {
 
 	gotFallback := buildMLRunLabels("", 12, 3)
 	wantFallback := map[string]string{
+		"experiment_id":  "12",
 		"experiment_url": "/experiments/12",
 		"workunit_id":    "3",
 		"created_by":     createdByXManagerLabelValue,
@@ -2654,64 +2623,6 @@ func TestConstructExperimentURL(t *testing.T) {
 			got := constructExperimentURL(tc.baseURL, tc.xid)
 			if got != tc.want {
 				t.Errorf("constructExperimentURL(%q, %d) = %q, want %q", tc.baseURL, tc.xid, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestResolveUIBaseURL exercises configuration precedence across parameter,
-// XMC_UI_URL, and XMC_DOMAIN environment variables.
-func TestResolveUIBaseURL(t *testing.T) {
-	tests := []struct {
-		name          string
-		configuredURL string
-		envUIURL      string
-		envDomain     string
-		want          string
-	}{
-		{
-			name:          "configured URL takes highest precedence",
-			configuredURL: "https://configured.example.com",
-			envUIURL:      "https://env-ui.example.com",
-			envDomain:     "env-domain.example.com",
-			want:          "https://configured.example.com",
-		},
-		{
-			name:          "configured URL with whitespace is trimmed and takes precedence",
-			configuredURL: "  https://configured.example.com  ",
-			envUIURL:      "https://env-ui.example.com",
-			want:          "https://configured.example.com",
-		},
-		{
-			name:          "fallback to XMC_UI_URL when configured is empty",
-			configuredURL: "",
-			envUIURL:      "https://env-ui.example.com",
-			envDomain:     "env-domain.example.com",
-			want:          "https://env-ui.example.com",
-		},
-		{
-			name:          "fallback to XMC_DOMAIN when configured and XMC_UI_URL are empty",
-			configuredURL: "",
-			envUIURL:      "",
-			envDomain:     "env-domain.example.com",
-			want:          "env-domain.example.com",
-		},
-		{
-			name:          "all empty returns empty string",
-			configuredURL: "",
-			envUIURL:      "",
-			envDomain:     "",
-			want:          "",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("XMC_UI_URL", tc.envUIURL)
-			t.Setenv("XMC_DOMAIN", tc.envDomain)
-			got := resolveUIBaseURL(tc.configuredURL)
-			if got != tc.want {
-				t.Errorf("resolveUIBaseURL(%q) = %q, want %q", tc.configuredURL, got, tc.want)
 			}
 		})
 	}
