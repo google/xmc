@@ -76,6 +76,8 @@ vars:
   health_status_cache_ttl: 15s
   health_status_force_refresh_max_requests: 5
   health_status_force_refresh_window: 5s
+  health_scheduling_resume_batch_size: 100
+  health_scheduling_resume_max_backlog: 500
   pause_scheduling_enabled: false
 
 deployment_groups:
@@ -428,6 +430,12 @@ deployment_groups:
         type: auto
       - name: healthService.forceRefreshWindow
         value: $(vars.health_status_force_refresh_window)
+      - name: healthService.schedulingResumeBatchSize
+        value: $(vars.health_scheduling_resume_batch_size)
+        type: auto
+      - name: healthService.schedulingResumeMaxBacklog
+        value: $(vars.health_scheduling_resume_max_backlog)
+        type: auto
       - name: dashboard_service_custom_image
         value: $(vars.dashboard_service_image)
       - name: dashboardService.gcpServiceAccount

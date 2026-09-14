@@ -25,28 +25,30 @@ import (
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port                    string
-	GRPCPort                string
-	ProjectID               string
-	TLSCertFile             string
-	TLSKeyFile              string
-	EssURL                  string
-	XidAddr                 string
-	ActuatorURL             string
-	ReconcilerURL           string
-	LogMonitorResourceName  string
-	ConfigDir               string
-	EssSpannerDatabase      string
-	XidSpannerDatabase      string
-	RedisAddr               string
-	AppVersion              string
-	BuildVersion            string
-	ObservabilityURL        string
-	CacheTTL                time.Duration
-	ForceRefreshMaxRequests int
-	ForceRefreshWindow      time.Duration
-	EnableComponents        bool
-	FeatureFlags            featureflags.Flags
+	Port                       string
+	GRPCPort                   string
+	ProjectID                  string
+	TLSCertFile                string
+	TLSKeyFile                 string
+	EssURL                     string
+	XidAddr                    string
+	ActuatorURL                string
+	ReconcilerURL              string
+	LogMonitorResourceName     string
+	ConfigDir                  string
+	EssSpannerDatabase         string
+	XidSpannerDatabase         string
+	RedisAddr                  string
+	AppVersion                 string
+	BuildVersion               string
+	ObservabilityURL           string
+	CacheTTL                   time.Duration
+	ForceRefreshMaxRequests    int
+	ForceRefreshWindow         time.Duration
+	EnableComponents           bool
+	FeatureFlags               featureflags.Flags
+	SchedulingResumeBatchSize  int
+	SchedulingResumeMaxBacklog int
 }
 
 var buildVersion string
@@ -78,6 +80,14 @@ func init() {
 	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
 	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 	cfg.FeatureFlags = featureflags.Load()
+	configutil.IntEnv(&cfg.SchedulingResumeBatchSize, "health_scheduling_resume_batch_size", 100)
+	configutil.IntEnv(&cfg.SchedulingResumeMaxBacklog, "health_scheduling_resume_max_backlog", 500)
+	if cfg.SchedulingResumeBatchSize <= 0 {
+		cfg.SchedulingResumeBatchSize = 100
+	}
+	if cfg.SchedulingResumeMaxBacklog <= 0 {
+		cfg.SchedulingResumeMaxBacklog = 500
+	}
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {

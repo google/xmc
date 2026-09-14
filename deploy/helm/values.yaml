@@ -110,6 +110,10 @@ healthService:
   cacheTTL: "15s"
   forceRefreshMaxRequests: 5
   forceRefreshWindow: "5s"
+  # schedulingResumeBatchSize: Number of paused tasks replayed per batch from Spanner during resume.
+  schedulingResumeBatchSize: 100
+  # schedulingResumeMaxBacklog: Maximum unprocessed tasks in xmc-tasks-stream before resumption worker pauses replay.
+  schedulingResumeMaxBacklog: 500
 
 dashboardServiceDeployment:
   enabled: false
