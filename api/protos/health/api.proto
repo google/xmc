@@ -49,10 +49,6 @@ service HealthService {
     option (google.api.http) = {
       post: "/v1/health/scheduling:pause"
       body: "*"
-      additional_bindings {
-        post: "/health/scheduling:pause"
-        body: "*"
-      }
     };
   }
 
@@ -61,10 +57,6 @@ service HealthService {
     option (google.api.http) = {
       post: "/v1/health/scheduling:resume"
       body: "*"
-      additional_bindings {
-        post: "/health/scheduling:resume"
-        body: "*"
-      }
     };
   }
 }
