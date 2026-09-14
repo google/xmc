@@ -162,7 +162,7 @@ def extract_work_unit_state(
         if (
             hasattr(work_unit, "current_work_unit_execution")
             and work_unit.current_work_unit_execution.HasField("status")
-            and work_unit.current_work_unit_execution.status.state
+            and getattr(work_unit.current_work_unit_execution.status, "state", None) is not None
         ):
             return int(work_unit.current_work_unit_execution.status.state)
     except Exception:
@@ -171,7 +171,11 @@ def extract_work_unit_state(
     try:
         req = _make_req("GetCurrentWorkUnitExecutionRequest", name=work_unit.name)
         cur_exec = stub.GetCurrentWorkUnitExecution(req)
-        if cur_exec and hasattr(cur_exec, "status") and cur_exec.status.state:
+        if (
+            cur_exec
+            and hasattr(cur_exec, "status")
+            and getattr(cur_exec.status, "state", None) is not None
+        ):
             return int(cur_exec.status.state)
     except Exception:
         pass
@@ -349,30 +353,21 @@ def validate_work_units(
                 f"WorkUnit count exceeded: expected {expected_count}, found {len(work_units)}."
             )
 
-        try:
-            wu_results, all_completed = _evaluate_work_units(
-                stub=stub,
-                work_units=work_units,
-                expected_count=expected_count,
-                expected_queue=expected_queue,
-                expected_worker_names=resolved_worker_names,
-            )
+        wu_results, all_completed = _evaluate_work_units(
+            stub=stub,
+            work_units=work_units,
+            expected_count=expected_count,
+            expected_queue=expected_queue,
+            expected_worker_names=resolved_worker_names,
+        )
 
-            current_states = {r["worker_name"]: r["state"] for r in wu_results}
-            if current_states != last_reported_states:
-                print(f"[{int(elapsed)}s] WorkUnit States: {current_states}")
-                last_reported_states = current_states
+        current_states = {r["worker_name"]: r["state"] for r in wu_results}
+        if current_states != last_reported_states:
+            print(f"[{int(elapsed)}s] WorkUnit States: {current_states}")
+            last_reported_states = current_states
 
-            if not wait_for_completion or all_completed:
-                return wu_results
-
-        except TerminalFailureError:
-            raise
-        except AssertionError:
-            if elapsed >= timeout_sec:
-                raise
-            time.sleep(poll_interval_sec)
-            continue
+        if not wait_for_completion or all_completed:
+            return wu_results
 
         if elapsed >= timeout_sec:
             raise TimeoutError(

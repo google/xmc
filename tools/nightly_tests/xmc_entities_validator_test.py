@@ -86,6 +86,21 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
         self.assertEqual(state, xmc_entities_validator.STATE_COMPLETED)
         stub.GetCurrentWorkUnitExecution.assert_not_called()
 
+        # Unspecified state (0) should not trigger fallback query
+        status_unspecified = SimpleNamespace(state=xmc_entities_validator.STATE_UNSPECIFIED)
+        execution_unspecified = SimpleNamespace(
+            status=status_unspecified,
+            HasField=lambda field: field == "status",
+        )
+        wu_unspecified = SimpleNamespace(
+            name="experiments/10/workUnits/3",
+            current_work_unit_execution=execution_unspecified,
+            HasField=lambda field: field == "current_work_unit_execution",
+        )
+        state_unspec = xmc_entities_validator.extract_work_unit_state(stub, wu_unspecified)
+        self.assertEqual(state_unspec, xmc_entities_validator.STATE_UNSPECIFIED)
+        stub.GetCurrentWorkUnitExecution.assert_not_called()
+
         # Fallback to stub query
         wu_no_exec = SimpleNamespace(
             name="experiments/10/workUnits/2",
@@ -278,10 +293,11 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 xid="16",
                 expected_count=1,
                 expected_queue="cpu-queue",
-                timeout_sec=0,
+                timeout_sec=300,
                 wait_for_completion=False,
             )
         self.assertIn("targeted queue 'gpu-queue', expected 'cpu-queue'", str(ctx.exception))
+        self.assertEqual(stub.ListWorkUnits.call_count, 1)
 
     def test_terminal_failure_error_hierarchy(self) -> None:
         self.assertTrue(issubclass(xmc_entities_validator.TerminalFailureError, AssertionError))
