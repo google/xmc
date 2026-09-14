@@ -158,27 +158,31 @@ def extract_work_unit_state(
     work_unit: Any,
 ) -> int:
     """Retrieves current WorkUnitState enum integer for a WorkUnit."""
-    try:
-        if (
-            hasattr(work_unit, "current_work_unit_execution")
-            and work_unit.current_work_unit_execution.HasField("status")
-            and getattr(work_unit.current_work_unit_execution.status, "state", None) is not None
-        ):
-            return int(work_unit.current_work_unit_execution.status.state)
-    except Exception:
-        pass
+    if (
+        hasattr(work_unit, "current_work_unit_execution")
+        and work_unit.current_work_unit_execution.HasField("status")
+        and getattr(work_unit.current_work_unit_execution.status, "state", None) is not None
+    ):
+        return int(work_unit.current_work_unit_execution.status.state)
 
-    try:
-        req = _make_req("GetCurrentWorkUnitExecutionRequest", name=work_unit.name)
-        cur_exec = stub.GetCurrentWorkUnitExecution(req)
-        if (
-            cur_exec
-            and hasattr(cur_exec, "status")
-            and getattr(cur_exec.status, "state", None) is not None
-        ):
-            return int(cur_exec.status.state)
-    except Exception:
-        pass
+    wu_name = getattr(work_unit, "name", "unknown")
+    if stub is not None and wu_name != "unknown":
+        try:
+            req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu_name)
+            cur_exec = stub.GetCurrentWorkUnitExecution(req)
+            if (
+                cur_exec
+                and hasattr(cur_exec, "status")
+                and getattr(cur_exec.status, "state", None) is not None
+            ):
+                return int(cur_exec.status.state)
+        except Exception as e:
+            logging.warning(
+                "Failed to retrieve current WorkUnitExecution for %s: %s",
+                wu_name,
+                e,
+                exc_info=True,
+            )
 
     return STATE_UNSPECIFIED
 

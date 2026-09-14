@@ -113,6 +113,22 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
         state2 = xmc_entities_validator.extract_work_unit_state(stub, wu_no_exec)
         self.assertEqual(state2, xmc_entities_validator.STATE_RUNNING)
 
+    def test_extract_work_unit_state_rpc_failure_logs_warning(self) -> None:
+        stub = mock.MagicMock()
+        stub.GetCurrentWorkUnitExecution.side_effect = RuntimeError("gRPC connection reset")
+        wu = SimpleNamespace(name="experiments/10/workUnits/3")
+
+        with self.assertLogs(level="WARNING") as log_cm:
+            state = xmc_entities_validator.extract_work_unit_state(stub, wu)
+            self.assertEqual(state, xmc_entities_validator.STATE_UNSPECIFIED)
+            self.assertTrue(
+                any(
+                    "Failed to retrieve current WorkUnitExecution for experiments/10/workUnits/3"
+                    in msg
+                    for msg in log_cm.output
+                )
+            )
+
     def test_validate_experiment_success(self) -> None:
         stub = mock.MagicMock()
         stub.GetExperiment.return_value = SimpleNamespace(
