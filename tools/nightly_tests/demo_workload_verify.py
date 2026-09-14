@@ -16,7 +16,8 @@
 """Validation script for nightly demonstration workload in XMC.
 
 Concrete test case asserting that the demo workload experiment and its associated
-WorkUnits were correctly created with expected worker names.
+WorkUnits were correctly created, scheduled to the expected queue, and executed
+to completion.
 
 Usage:
     python3 tools/nightly_tests/demo_workload_verify.py --xid=16
@@ -30,11 +31,14 @@ from collections.abc import Sequence
 
 # Domain assertion constants for the nightly demo workload test case
 EXPECTED_WORK_UNITS: int = 3
+EXPECTED_QUEUE: str = "cpu-queue"
+EXPECTED_TITLE_PATTERN: str = "Demo Workload"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = (
     "demo-worker-1",
     "demo-worker-2",
     "demo-worker-3",
 )
+TIMEOUT_SEC: int = 300
 
 try:
     from absl import app, flags
@@ -67,13 +71,17 @@ def main(argv: Sequence[str]) -> None:
         raise RuntimeError("absl is required to parse command-line flags.")
 
     xid = FLAGS.xid.strip()
+    ui_base_url = xmc_entities_validator.resolve_ui_base_url()
 
     print("=================================================================")
     print("       XMC Nightly Workload Verification & Assertions            ")
     print("=================================================================")
     print(f"Experiment XID          : {xid}")
+    print(f"Expected Title Pattern  : '{EXPECTED_TITLE_PATTERN}'")
     print(f"Expected WorkUnits Count: {EXPECTED_WORK_UNITS}")
+    print(f"Expected Target Queue   : {EXPECTED_QUEUE}")
     print(f"Expected Worker Names   : {list(EXPECTED_WORKER_NAMES)}")
+    print(f"Timeout                 : {TIMEOUT_SEC}s")
     print("-----------------------------------------------------------------")
 
     endpoint = os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
@@ -83,39 +91,49 @@ def main(argv: Sequence[str]) -> None:
     try:
         stub, channel = xmc_entities_validator.create_authenticated_stub(endpoint)
 
-        # 1. Assert Experiment Existence
+        # 1. Assert Experiment Existence & Title
         print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
         experiment = xmc_entities_validator.validate_experiment(
             stub=stub,
             xid=xid,
+            expected_title_pattern=EXPECTED_TITLE_PATTERN,
         )
         print(f"  [✓] Experiment Name   : {experiment.name}")
-        print(f"  [✓] Experiment Title  : {getattr(experiment, 'title', 'N/A')}")
+        print(f"  [✓] Experiment Title  : {experiment.title}")
         print(f"  [✓] Experiment Creator: {getattr(experiment, 'creator', 'N/A')}")
 
-        # 2. Assert WorkUnits & Worker Names
-        print(f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnits with worker names...")
+        # 2. Assert WorkUnits & States
+        print(
+            f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnits targeted at '{EXPECTED_QUEUE}'..."
+        )
         wu_results = xmc_entities_validator.validate_work_units(
             stub=stub,
             xid=xid,
             expected_count=EXPECTED_WORK_UNITS,
+            expected_queue=EXPECTED_QUEUE,
             expected_worker_names=EXPECTED_WORKER_NAMES,
+            timeout_sec=TIMEOUT_SEC,
         )
 
         for wu_info in wu_results:
-            print(f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}'")
+            print(
+                f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}', "
+                f"Queue='{wu_info['queue']}', State='{wu_info['state']}'"
+            )
 
         # 3. Print Final Report
         print("\n[3/3] Validation Summary:")
         print("=================================================================")
         print("🎉 ALL NIGHTLY WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!")
         print("=================================================================")
-        print(f"  • Experiment: {experiment.name}")
+        print(f"  • Experiment: {experiment.name} (Title: '{experiment.title}')")
         print(f"  • Total Verified WorkUnits: {len(wu_results)} / {EXPECTED_WORK_UNITS}")
+        print(f"  • Target Queue            : {EXPECTED_QUEUE}")
         print(f"  • Expected Worker Names   : {', '.join(EXPECTED_WORKER_NAMES)}")
+        print(f"  • Web UI Link             : {ui_base_url}/experiments/{xid}")
         print("=================================================================\n")
 
-    except AssertionError as e:
+    except (AssertionError, TimeoutError) as e:
         print(f"\n❌ ASSERTION FAILED: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
