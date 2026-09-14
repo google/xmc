@@ -86,6 +86,7 @@ jobs:
         run: |
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r examples/simple_job/requirements.txt
 
       - name: 'Mint XMC Identity Token'
         run: |
