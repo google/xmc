@@ -152,7 +152,7 @@ async function run({
   const xid = process.env.XID || '';
 
   const params = {
-    serverUrl: context.serverUrl || 'https://github.com',
+    serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
     owner,
     repo,
     runId: context.runId,
