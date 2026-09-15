@@ -162,7 +162,6 @@ jobs:
         env:
           NEEDS_CONTEXT: ${{ toJson(needs) }}
           XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
-          DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME }}'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

@@ -66,7 +66,6 @@ function formatFailureIssueBody({
   ref,
   eventName,
   xid,
-  domainName,
   triggerOutcome = 'unknown',
   verifyOutcome = 'unknown',
   activeOwners = [],
@@ -87,11 +86,6 @@ function formatFailureIssueBody({
   body += `| **Experiment XID** | \`${xid || 'N/A'}\` |\n`;
   body += `| **Trigger Action** | \`${triggerOutcome}\` |\n`;
   body += `| **Verification Assertions** | \`${verifyOutcome}\` |\n`;
-
-  if (xid && domainName) {
-    body += `| **Web UI URL** | https://xmc-nightly.${domainName}/experiments/${xid} |\n`;
-  }
-
   body += `\n`;
   if (mentions) {
     body += `cc ${mentions} — please investigate the nightly failure when possible.\n`;
@@ -156,7 +150,6 @@ async function run({
   const triggerOutcome = needsContext['trigger-demo-workload']?.result || 'unknown';
   const verifyOutcome = needsContext['validate-workload-results']?.result || 'unknown';
   const xid = process.env.XID || '';
-  const domainName = process.env.DOMAIN_NAME || '';
 
   const params = {
     serverUrl: context.serverUrl || 'https://github.com',
@@ -167,7 +160,6 @@ async function run({
     ref: context.ref,
     eventName: context.eventName,
     xid,
-    domainName,
     triggerOutcome,
     verifyOutcome,
     activeOwners,

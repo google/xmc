@@ -87,7 +87,6 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
       ref: 'refs/heads/main',
       eventName: 'schedule',
       xid: '12006',
-      domainName: 'example.com',
       triggerOutcome: 'success',
       verifyOutcome: 'failure',
       activeOwners: ['userA', 'userB'],
@@ -97,8 +96,8 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
     assert.ok(body.includes('https://github.com/google/xmc/commit/abcdef1234567890'));
     assert.ok(body.includes('`abcdef1`'));
     assert.ok(body.includes('`12006`'));
-    assert.ok(body.includes('https://xmc-nightly.example.com/experiments/12006'));
     assert.ok(body.includes('cc @userA @userB'));
+    assert.ok(!body.includes('Web UI URL'));
   });
 
   test('handles missing optional fields safely', () => {
@@ -142,7 +141,6 @@ describe('run orchestrator', () => {
       'validate-workload-results': { result: 'failure' },
     });
     process.env.XID = '999';
-    process.env.DOMAIN_NAME = 'test.com';
 
     let createdIssue = null;
     const mockGithub = {
