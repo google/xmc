@@ -154,7 +154,7 @@ jobs:
             name: 'xDash Dashboard Builder'
             example_path: 'examples/xdash_dashboard'
             entrypoint: 'create_dashboard.py'
-            args: ''
+            args: '--endpoint="${XMC_DASHBOARD_ENDPOINT}"'
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'

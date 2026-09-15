@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from collections.abc import Sequence
 
@@ -45,12 +44,10 @@ EXPERIMENT_RUNS = [
     (VCC_TUNED_V2_XID, "tuned_v2", "VCC Tuned Run (lr=0.005)"),
 ]
 
-# Default CLI configurations and environment variable names.
+# Default CLI configurations.
 DEFAULT_ENDPOINT = "localhost:8080"
 DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
 DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
-ENV_XMC_DASHBOARD_ENDPOINT = "XMC_DASHBOARD_ENDPOINT"
-ENV_DASHBOARD_ENDPOINT = "DASHBOARD_ENDPOINT"
 
 
 def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
@@ -147,18 +144,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Create an example XMC Dashboard using the xdash SDK."
     )
-    endpoint_default = (
-        os.environ.get(ENV_XMC_DASHBOARD_ENDPOINT)
-        or os.environ.get(ENV_DASHBOARD_ENDPOINT)
-        or DEFAULT_ENDPOINT
-    )
     parser.add_argument(
         "--endpoint",
-        default=endpoint_default,
-        help=(
-            f"Dashboard Service gRPC endpoint (default: {DEFAULT_ENDPOINT} or"
-            f" ${ENV_XMC_DASHBOARD_ENDPOINT})"
-        ),
+        default=DEFAULT_ENDPOINT,
+        help=f"Dashboard Service gRPC endpoint (default: {DEFAULT_ENDPOINT})",
     )
     parser.add_argument(
         "--dashboard-id",
