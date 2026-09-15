@@ -178,9 +178,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 title=args.title,
             )
     except XDashError as err:
-        sys.stderr.write(f"⚠️  xdash notice: {err}\n")
-        print(f"dashboards/{args.dashboard_id}")
-        return 0
+        sys.stderr.write(f"❌ xdash error: {err}\n")
+        return 1
 
     return 0
 
