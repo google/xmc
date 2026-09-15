@@ -26,15 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-# Support multiple execution contexts: Bazel sandbox, relative, and standalone
-try:
-    from tools.nightly_tests import common, xmc_entities_validator
-except ImportError:
-    try:
-        from . import common, xmc_entities_validator  # type: ignore
-    except ImportError:
-        import common
-        import xmc_entities_validator  # type: ignore
+from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 

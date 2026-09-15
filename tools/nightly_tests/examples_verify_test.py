@@ -22,40 +22,23 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-try:
-    from tools.nightly_tests import (
-        chart_artifact_job_verify,
-        clickhouse_metrics_job_verify,
-        common,
-        demo_workload_verify,
-        init_container_job_verify,
-        managed_xprof_artifact_job_verify,
-        metrics_dashboard_job_verify,
-        metrics_job_verify,
-        multipod_job_verify,
-        pathways_job_verify,
-        per_job_node_selector_verify,
-        sidecar_verify,
-        simple_job_verify,
-        xdash_dashboard_verify,
-        xmc_entities_validator,
-    )
-except ImportError:
-    import chart_artifact_job_verify
-    import clickhouse_metrics_job_verify
-    import common
-    import demo_workload_verify
-    import init_container_job_verify
-    import managed_xprof_artifact_job_verify
-    import metrics_dashboard_job_verify
-    import metrics_job_verify
-    import multipod_job_verify
-    import pathways_job_verify
-    import per_job_node_selector_verify
-    import sidecar_verify
-    import simple_job_verify
-    import xdash_dashboard_verify
-    import xmc_entities_validator
+from tools.nightly_tests import (
+    chart_artifact_job_verify,
+    clickhouse_metrics_job_verify,
+    common,
+    demo_workload_verify,
+    init_container_job_verify,
+    managed_xprof_artifact_job_verify,
+    metrics_dashboard_job_verify,
+    metrics_job_verify,
+    multipod_job_verify,
+    pathways_job_verify,
+    per_job_node_selector_verify,
+    sidecar_verify,
+    simple_job_verify,
+    xdash_dashboard_verify,
+    xmc_entities_validator,
+)
 
 
 class CommonUtilitiesTest(unittest.TestCase):
@@ -87,7 +70,7 @@ class CommonUtilitiesTest(unittest.TestCase):
 
     def test_validate_argv(self) -> None:
         common.validate_argv(["script_name"])
-        with self.assertRaises((ValueError, common.app.UsageError if common.app else ValueError)):
+        with self.assertRaises(common.app.UsageError):
             common.validate_argv(["script_name", "extra_arg"])
 
     def test_resolve_endpoint(self) -> None:
