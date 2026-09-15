@@ -41,6 +41,8 @@ py_library(
     imports = ["../.."],
     deps = [
         ":xmc_entities_validator_lib",
+        "@absl_py//absl:app",
+        "@absl_py//absl/flags",
     ],
 )
 

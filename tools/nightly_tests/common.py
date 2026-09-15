@@ -27,33 +27,18 @@ import sys
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
-# Support multiple execution contexts: Bazel sandbox, relative, and standalone
-try:
-    from tools.nightly_tests import xmc_entities_validator
-except ImportError:
-    try:
-        from . import xmc_entities_validator  # type: ignore
-    except ImportError:
-        import xmc_entities_validator  # type: ignore
+from absl import app, flags
 
-try:
-    from absl import app, flags
+from tools.nightly_tests import xmc_entities_validator
 
-    FLAGS = flags.FLAGS
+FLAGS = flags.FLAGS
 
-    # Register standard flags if not already registered
-    if "xid" not in flags.FLAGS:
-        flags.DEFINE_string(
-            "xid",
-            None,
-            "Experiment XID to validate (required for experiment tests)",
-        )
-    if "endpoint" not in flags.FLAGS:
-        flags.DEFINE_string("endpoint", None, "ESS gRPC endpoint (host:port)")
-except ImportError:
-    app = None
-    flags = None
-    FLAGS = None
+flags.DEFINE_string(
+    "xid",
+    None,
+    "Experiment XID to validate (required for experiment tests)",
+)
+flags.DEFINE_string("endpoint", None, "ESS gRPC endpoint (host:port)")
 
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
@@ -67,9 +52,7 @@ def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
 def validate_argv(argv: Sequence[str]) -> None:
     """Validates command-line arguments to ensure no extra positional arguments exist."""
     if len(argv) > 1:
-        if app is not None and hasattr(app, "UsageError"):
-            raise app.UsageError("Too many command-line arguments.")
-        raise ValueError("Too many command-line arguments.")
+        raise app.UsageError("Too many command-line arguments.")
 
 
 def parse_xid(raw_xid: str | None, required: bool = True) -> str:
@@ -149,8 +132,4 @@ def print_success_summary(
 
 def run_main(main_fn: Any) -> None:
     """Standard CLI entrypoint wrapper executing absl.app.run."""
-    if app is not None:
-        app.run(main_fn)
-    else:
-        print("absl is required to run as standalone CLI script.", file=sys.stderr)
-        sys.exit(1)
+    app.run(main_fn)

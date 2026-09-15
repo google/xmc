@@ -47,11 +47,11 @@ class CommonTest(unittest.TestCase):
         common.validate_argv(["script.py"])
         common.validate_argv([])
 
-        # Extra positional arguments should raise error
-        with self.assertRaises((Exception, ValueError)):
+        # Extra positional arguments should raise app.UsageError
+        with self.assertRaises(common.app.UsageError):
             common.validate_argv(["script.py", "extra_arg"])
 
-        with self.assertRaises((Exception, ValueError)):
+        with self.assertRaises(common.app.UsageError):
             common.validate_argv(["script.py", "arg1", "arg2"])
 
     def test_parse_xid(self) -> None:
@@ -200,17 +200,9 @@ class CommonTest(unittest.TestCase):
 
     def test_run_main(self) -> None:
         mock_fn = mock.MagicMock()
-        with mock.patch.object(common, "app", mock.MagicMock()) as mock_app:
+        with mock.patch.object(common.app, "run") as mock_run:
             common.run_main(mock_fn)
-            mock_app.run.assert_called_once_with(mock_fn)
-
-    def test_run_main_no_absl(self) -> None:
-        mock_fn = mock.MagicMock()
-        with mock.patch.object(common, "app", None):
-            with mock.patch("sys.stderr", new_callable=io.StringIO):
-                with self.assertRaises(SystemExit) as ctx:
-                    common.run_main(mock_fn)
-                self.assertEqual(ctx.exception.code, 1)
+            mock_run.assert_called_once_with(mock_fn)
 
 
 if __name__ == "__main__":
