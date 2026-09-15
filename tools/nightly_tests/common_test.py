@@ -64,6 +64,10 @@ class CommonTest(unittest.TestCase):
         self.assertEqual(common.parse_xid("experiments/42"), "42")
         self.assertEqual(common.parse_xid("experiments/test-exp-99"), "test-exp-99")
 
+        # Dashboard format dashboard:<id> and dashboards/<id>
+        self.assertEqual(common.parse_xid("dashboard:my-dashboard-1"), "my-dashboard-1")
+        self.assertEqual(common.parse_xid("dashboards/my-dashboard-2"), "my-dashboard-2")
+
         # Empty / None when required=True raises ValueError
         with self.assertRaises(ValueError) as ctx:
             common.parse_xid(None, required=True)
@@ -97,6 +101,63 @@ class CommonTest(unittest.TestCase):
         # Default fallback when no env var is set
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(common.resolve_endpoint(None), "localhost:8080")
+
+    def test_resolve_dashboard_endpoint(self) -> None:
+        # Provided endpoint takes highest precedence
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("https://custom-dash.example.com"),
+            "https://custom-dash.example.com",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("http://custom-dash.example.com"),
+            "http://custom-dash.example.com",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("localhost:8080"),
+            "http://localhost:8080",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("127.0.0.1:9090"),
+            "http://127.0.0.1:9090",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("dashboard.example.com"),
+            "https://dashboard.example.com",
+        )
+
+        # Fallback to XMC_DASHBOARD_ENDPOINT / DASHBOARD_ENDPOINT
+        with mock.patch.dict(
+            "os.environ", {"XMC_DASHBOARD_ENDPOINT": "https://xmc-dash.local"}, clear=True
+        ):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://xmc-dash.local")
+        with mock.patch.dict(
+            "os.environ", {"DASHBOARD_ENDPOINT": "https://dash.local"}, clear=True
+        ):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://dash.local")
+
+        # Fallback to XMANAGER_UI_URL
+        with mock.patch.dict(
+            "os.environ", {"XMANAGER_UI_URL": "https://ui.example.com"}, clear=True
+        ):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://ui.example.com")
+
+        # Fallback to XMC_DOMAIN / GCP_DOMAIN_NAME
+        with mock.patch.dict("os.environ", {"XMC_DOMAIN": "xmc.google.com"}, clear=True):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://xmc.google.com")
+        with mock.patch.dict("os.environ", {"GCP_DOMAIN_NAME": "http://gcp.local"}, clear=True):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "http://gcp.local")
+
+        # Fallback to parsing XMANAGER_ENDPOINT
+        with mock.patch.dict(
+            "os.environ", {"XMANAGER_ENDPOINT": "grpc.api.example.com:443"}, clear=True
+        ):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://example.com")
+        with mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "localhost:8080"}, clear=True):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "http://localhost:8080")
+        with mock.patch.dict(
+            "os.environ", {"XMANAGER_ENDPOINT": "dns:///grpc.internal.com:8443"}, clear=True
+        ):
+            self.assertEqual(common.resolve_dashboard_endpoint(), "https://internal.com")
 
     def test_resolve_ui_base_url(self) -> None:
         with mock.patch(
