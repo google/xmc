@@ -339,6 +339,11 @@ jobs:
       launched_xids: ${{ steps.aggregate.outputs.launched_xids }}
 
     steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
       - name: 'Download Result Artifacts'
         uses: 'actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806' # v4.1.9
         with:
@@ -348,56 +353,4 @@ jobs:
 
       - name: 'Aggregate Results and Output Summary'
         id: aggregate
-        run: |
-          python3 -c '
-          import glob
-          import json
-          import os
-
-          results = []
-          xid_map = {}
-          all_passed = True
-
-          for f in sorted(glob.glob("results/*.json")):
-              try:
-                  with open(f, "r", encoding="utf-8") as fp:
-                      data = json.load(fp)
-                      results.append(data)
-                      if data.get("xid") and data["xid"] != "skipped":
-                          xid_map[data["id"]] = data["xid"]
-                      if data.get("status") == "FAILED":
-                          all_passed = False
-              except Exception as e:
-                  print(f"Error reading {f}: {e}")
-
-          summary_md = []
-          summary_md.append("## 🌟 All Example Workloads Execution Summary\n")
-          if all_passed:
-              summary_md.append("### ✅ Overall Status: ALL PASSED\n")
-          else:
-              summary_md.append("### ⚠️ Overall Status: SOME WORKLOADS FAILED\n")
-
-          summary_md.append("| Example ID | Name | Status | Experiment / Identifier |")
-          summary_md.append("| --- | --- | --- | --- |")
-
-          for r in results:
-              r_id = r.get("id", "")
-              r_name = r.get("name", "")
-              r_status = r.get("status", "")
-              r_xid = r.get("xid", "")
-              status_badge = "✅ PASSED" if r_status == "PASSED" else ("⏭️ SKIPPED" if r_status == "SKIPPED" else "❌ FAILED")
-              summary_md.append(f"| `{r_id}` | {r_name} | {status_badge} | `{r_xid}` |")
-
-          summary_text = "\n".join(summary_md) + "\n"
-          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-          if step_summary:
-              with open(step_summary, "a", encoding="utf-8") as sf:
-                  sf.write(summary_text)
-
-          xids_json = json.dumps(xid_map)
-          print(f"Aggregated launched_xids: {xids_json}")
-          gh_out_path = os.environ.get("GITHUB_OUTPUT")
-          if gh_out_path:
-              with open(gh_out_path, "a", encoding="utf-8") as gh_out:
-                  gh_out.write(f"launched_xids={xids_json}\n")
-          '
+        run: node .github/scripts/aggregate-example-results.js
