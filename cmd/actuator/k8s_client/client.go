@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
@@ -189,6 +191,40 @@ func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortas
 	return nil
 }
 
+func (c *Client) verifyDuplicateJobSet(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	target := payload.GetTarget()
+	_, _, targetEid, err := validator.ValidateWorkUnitExecutionName(target)
+	if err != nil {
+		return fmt.Errorf("failed to extract execution ID from target %q: %w", target, err)
+	}
+
+	namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, payload.GetWorkUnit(), target)
+	if err != nil {
+		return fmt.Errorf("failed to get namespace for target %q: %w", target, err)
+	}
+
+	jobSet, err := c.getJobSetByTargetAndNamespace(ctx, target, namespace)
+	if err != nil {
+		return fmt.Errorf("failed to query existing JobSet for target %q in namespace %q: %w", target, namespace, err)
+	}
+	if jobSet == nil {
+		return fmt.Errorf("conflict creating JobSet: existing resource for target %q was deleted concurrently", target)
+	}
+	if jobSet.GetDeletionTimestamp() != nil {
+		return fmt.Errorf("conflict creating JobSet: existing resource for target %q is terminating", target)
+	}
+	if jobSet.GetLabels()[constants.ManagedByLabel] != constants.XmcLabelValue {
+		return fmt.Errorf("naming conflict: JobSet for target %q is not managed by XMC", target)
+	}
+
+	eidStr := strconv.FormatInt(targetEid, 10)
+	if jobSet.GetLabels()[constants.ExecutionIDLabel] != eidStr && jobSet.GetAnnotations()[constants.ExecutionIDLabel] != eidStr {
+		return fmt.Errorf("naming conflict: JobSet for target %q execution ID does not match", target)
+	}
+
+	return nil
+}
+
 // CreateWorkUnit creates a new WorkUnit in Kubernetes.
 func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
 	return c.executeWorkUnitAction(ctx, payload, "create", func(ctx context.Context) error {
@@ -197,7 +233,16 @@ func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
 			ExperimentPriority: act.GetExperimentPriority(),
 		}
-		return c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+
+		err := c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+		if err != nil && apierrors.IsAlreadyExists(err) {
+			if vErr := c.verifyDuplicateJobSet(ctx, payload); vErr != nil {
+				return vErr
+			}
+			logging.Info(ctx, "JobSet already exists for target and matches execution ID, treating as duplicate success", "target", payload.GetTarget())
+			return nil
+		}
+		return err
 	})
 }
 

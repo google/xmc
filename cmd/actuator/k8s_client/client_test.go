@@ -18,13 +18,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"golang/cmp/cmp"
+	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
+	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"golang/protobuf/v2/proto/proto"
@@ -33,6 +37,7 @@ import (
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
+	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	spanner_lib "xmanager_cloud/storage/spanner/spanner"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -227,6 +232,132 @@ func TestCreateWorkUnit_JobSetCreationFails(t *testing.T) {
 	wantErrMsg := "failed to create JobSet for target \"experiments/123/workUnits/456/executions/1\": failed to create JobSet \"xmc-operation-123-456\" in Kubernetes: simulated creation failure"
 	if err.Error() != wantErrMsg {
 		t.Errorf("CreateWorkUnit(%v) returned error %q, want %q", createPayload, err.Error(), wantErrMsg)
+	}
+}
+
+func TestCreateWorkUnit_AlreadyExists(t *testing.T) {
+	tests := []struct {
+		name        string
+		setup       func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient)
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name: "duplicate success with matching execution ID in labels",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				if err := client.CreateWorkUnit(ctx, createPayload); err != nil {
+					t.Fatalf("First CreateWorkUnit failed: %v", err)
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "duplicate success with matching execution ID in annotations",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				createTestJobSet(ctx, t, client, testNamespace, testTarget, map[string]string{
+					constants.ManagedByLabel: constants.XmcLabelValue,
+				})
+				jobSet, err := client.getJobSetByTargetAndNamespace(ctx, testTarget, testNamespace)
+				if err != nil {
+					t.Fatalf("getJobSetByTargetAndNamespace failed: %v", err)
+				}
+				jobSetLabels := jobSet.GetLabels()
+				delete(jobSetLabels, constants.ExecutionIDLabel)
+				jobSet.SetLabels(jobSetLabels)
+				jobSet.SetAnnotations(map[string]string{
+					constants.ExecutionIDLabel: strconv.FormatInt(testExecutionID, 10),
+				})
+				if _, err := dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Update(ctx, jobSet, v1.UpdateOptions{}); err != nil {
+					t.Fatalf("Update failed: %v", err)
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "naming conflict when not managed by XMC",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				createTestJobSet(ctx, t, client, testNamespace, testTarget, map[string]string{
+					constants.ManagedByLabel:   "external-controller",
+					constants.ExecutionIDLabel: strconv.FormatInt(testExecutionID, 10),
+				})
+			},
+			wantErr:     true,
+			errContains: []string{"naming conflict", "not managed by XMC"},
+		},
+		{
+			name: "naming conflict when execution ID mismatches",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				createTestJobSet(ctx, t, client, testNamespace, testTarget, map[string]string{
+					constants.ManagedByLabel:   constants.XmcLabelValue,
+					constants.ExecutionIDLabel: "999",
+				})
+			},
+			wantErr:     true,
+			errContains: []string{"naming conflict", "execution ID does not match"},
+		},
+		{
+			name: "conflict when existing resource was deleted concurrently",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				dynamicClient.PrependReactor("create", "jobsets", func(action clientgotesting.Action) (handled bool, ret runtime.Object, err error) {
+					return true, nil, apierrors.NewAlreadyExists(schema.GroupResource{Group: "jobset.x-k8s.io", Resource: "jobsets"}, testJobSetName)
+				})
+			},
+			wantErr:     true,
+			errContains: []string{"conflict creating JobSet", "deleted concurrently"},
+		},
+		{
+			name: "conflict when existing resource is terminating",
+			setup: func(t *testing.T, ctx context.Context, client *Client, dynamicClient *dynamicfake.FakeDynamicClient) {
+				createTestJobSet(ctx, t, client, testNamespace, testTarget, map[string]string{
+					constants.ManagedByLabel:   constants.XmcLabelValue,
+					constants.ExecutionIDLabel: strconv.FormatInt(testExecutionID, 10),
+				})
+				now := v1.Now()
+				jobSet, err := client.getJobSetByTargetAndNamespace(ctx, testTarget, testNamespace)
+				if err != nil {
+					t.Fatalf("getJobSetByTargetAndNamespace failed: %v", err)
+				}
+				jobSet.SetDeletionTimestamp(&now)
+				if _, err := dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Update(ctx, jobSet, v1.UpdateOptions{}); err != nil {
+					t.Fatalf("Update failed: %v", err)
+				}
+			},
+			wantErr:     true,
+			errContains: []string{"conflict creating JobSet", "is terminating"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			if tt.setup != nil {
+				tt.setup(t, ctx, client, dynamicClient)
+			}
+
+			err := client.CreateWorkUnit(ctx, createPayload)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("CreateWorkUnit() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			for _, substr := range tt.errContains {
+				if !strings.Contains(err.Error(), substr) {
+					t.Errorf("CreateWorkUnit() error = %q, want it to contain %q", err.Error(), substr)
+				}
+			}
+
+			if !tt.wantErr {
+				// Subsequent duplicate call also succeeds safely (idempotency)
+				if err := client.CreateWorkUnit(ctx, createPayload); err != nil {
+					t.Fatalf("Subsequent CreateWorkUnit (duplicate) returned unexpected error: %v", err)
+				}
+				jobsets, err := dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).List(ctx, v1.ListOptions{})
+				if err != nil {
+					t.Fatalf("Listing jobsets failed: %v", err)
+				}
+				if len(jobsets.Items) != 1 {
+					t.Errorf("Expected exactly 1 jobset, got %d", len(jobsets.Items))
+				}
+			}
+		})
 	}
 }
 
