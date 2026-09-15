@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import urllib.parse
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
@@ -150,22 +151,28 @@ def resolve_dashboard_endpoint(provided_endpoint: str | None = None) -> str:
         return d
 
     xmanager_endpoint = os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
-    for prefix in ("dns:///", "dns://", "grpc://", "https://", "http://"):
-        if xmanager_endpoint.startswith(prefix):
-            xmanager_endpoint = xmanager_endpoint[len(prefix) :]
-    host = xmanager_endpoint.split(":")[0]
+    endpoint = xmanager_endpoint
+    if "://" not in endpoint:
+        endpoint = f"http://{endpoint}"
+    else:
+        for prefix in ("dns:///", "dns://", "grpc://"):
+            if endpoint.startswith(prefix):
+                endpoint = f"http://{endpoint[len(prefix) :]}"
+                break
+
+    parsed = urllib.parse.urlparse(endpoint)
+    host = parsed.hostname or ""
+    port = parsed.port
+
     if host.startswith("grpc.api."):
         host = host[len("grpc.api.") :]
     elif host.startswith("grpc."):
         host = host[len("grpc.") :]
 
     scheme = "http" if host in {"localhost", "127.0.0.1", "::1"} else "https"
-    port_part = (
-        f":{xmanager_endpoint.split(':')[1]}"
-        if ":" in xmanager_endpoint and host in {"localhost", "127.0.0.1"}
-        else ""
-    )
-    return f"{scheme}://{host}{port_part}"
+    port_part = f":{port}" if port and host in {"localhost", "127.0.0.1", "::1"} else ""
+    host_part = f"[{host}]" if ":" in host else host
+    return f"{scheme}://{host_part}{port_part}"
 
 
 def resolve_ui_base_url() -> str:

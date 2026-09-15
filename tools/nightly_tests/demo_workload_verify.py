@@ -39,6 +39,9 @@ except ImportError:
 
 FLAGS = common.FLAGS
 
+if common.flags is not None:
+    common.flags.mark_flag_as_required("xid")
+
 # Domain assertion constants for the nightly demo workload test case
 EXPECTED_WORK_UNITS: int = 3
 EXPECTED_QUEUE: str = "cpu-queue"
@@ -55,7 +58,7 @@ def main(argv: Sequence[str]) -> None:
     """Main verification routine."""
     common.validate_argv(argv)
 
-    xid = common.parse_xid(getattr(FLAGS, "xid", None))
+    xid = common.parse_xid(common.get_flag(FLAGS, "xid"))
     ui_base_url = common.resolve_ui_base_url()
 
     common.print_banner(
@@ -72,7 +75,7 @@ def main(argv: Sequence[str]) -> None:
 
     with (
         common.handle_verification_errors(),
-        common.ess_channel_context(getattr(FLAGS, "endpoint", None)) as (stub, _),
+        common.ess_channel_context(common.get_flag(FLAGS, "endpoint")) as (stub, _),
     ):
         # 1. Assert Experiment Existence & Title
         print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
