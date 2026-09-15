@@ -140,7 +140,7 @@ jobs:
             name: 'xDash Dashboard Builder'
             example_path: 'examples/xdash_dashboard'
             entrypoint: 'create_dashboard.py'
-            args: ''
+            args: '--endpoint="${XMC_DASHBOARD_ENDPOINT}"'
             verify_script: 'tools/nightly_tests/xdash_dashboard_verify.py'
             verify_args: ''
 
