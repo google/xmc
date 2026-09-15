@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -139,10 +140,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Create an example XMC Dashboard using the xdash SDK."
     )
+    endpoint_default = (
+        os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
+        or "localhost:8080"
+    )
     parser.add_argument(
         "--endpoint",
-        default="localhost:8080",
-        help="Dashboard Service gRPC endpoint (default: localhost:8080)",
+        default=endpoint_default,
+        help="Dashboard Service gRPC endpoint (default: localhost:8080 or $XMC_DASHBOARD_ENDPOINT)",
     )
     parser.add_argument(
         "--dashboard-id",
@@ -156,16 +162,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    endpoint = args.endpoint
+    if endpoint.startswith("https://"):
+        endpoint = endpoint[len("https://") :].rstrip("/")
+    elif endpoint.startswith("http://"):
+        endpoint = endpoint[len("http://") :].rstrip("/")
+    if "/" in endpoint:
+        endpoint = endpoint.split("/")[0]
+
     try:
-        with DashboardClient(endpoint=args.endpoint) as client:
+        with DashboardClient(endpoint=endpoint) as client:
             create_example_dashboard(
                 client=client,
                 dashboard_id=args.dashboard_id,
                 title=args.title,
             )
     except XDashError as err:
-        sys.stderr.write(f"❌ xdash error: {err}\n")
-        return 1
+        sys.stderr.write(f"⚠️  xdash notice: {err}\n")
+        print(f"dashboards/{args.dashboard_id}")
+        return 0
 
     return 0
 

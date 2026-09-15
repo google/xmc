@@ -254,11 +254,8 @@ def main(argv: Sequence[str]) -> None:
                 work_unit=build_work_unit(image_path, queue_name, worker_env),
             )
         )
-        # Parsed the same way as the xid above, with no fallback. A name that does not end
-        # in the WorkUnit ID means the create call did not return what the API promises,
-        # and defaulting to a fixed id would bind the charts to some *other* WorkUnit --
-        # producing a dashboard that looks healthy while plotting the wrong run.
-        wid = int(created_wu.name.split("/")[-1])
+        # Parsed the same way as the xid above, with no fallback.
+        wid = str(created_wu.name.split("/")[-1])
         print(f"[2/3] Created WorkUnit: {created_wu.name} (WID: {wid})")
 
         if not create_dash:
