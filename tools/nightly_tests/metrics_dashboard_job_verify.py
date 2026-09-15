@@ -20,21 +20,15 @@ were correctly created, scheduled to the expected queue, configured with metrics
 JobSet specifications, executed to completion, and optionally verifies the created Dashboard.
 
 Usage:
-    python3 tools/nightly_tests/metrics_dashboard_job_verify.py --xid=23
+    python3 -m tools.nightly_tests.metrics_dashboard_job_verify --xid=23
 """
 
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
-_REPO_ROOT = str(Path(__file__).resolve().parents[2])
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from tools.nightly_tests import common, xmc_entities_validator  # noqa: E402
+from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 

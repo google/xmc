@@ -301,10 +301,10 @@ jobs:
           echo " Verify Script    : ${VERIFY_SCRIPT}"
           echo "================================================================="
 
-          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+          MODULE_NAME=$(echo "${VERIFY_SCRIPT}" | sed 's/\.py$//' | tr '/' '.')
           EVAL_VERIFY_ARGS=$(eval echo "${RAW_VERIFY_ARGS}")
 
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" "${GITHUB_WORKSPACE}/${VERIFY_SCRIPT}" \
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m "${MODULE_NAME}" \
             --xid="${XID}" \
             --endpoint="${XMANAGER_ENDPOINT}" \
             ${EVAL_VERIFY_ARGS}

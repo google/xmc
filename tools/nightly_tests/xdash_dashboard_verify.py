@@ -19,20 +19,14 @@ Asserts that the xdash comparative metrics dashboard and its constituent charts
 were correctly created and are resolvable via the Dashboard Service REST/gRPC API.
 
 Usage:
-    python3 tools/nightly_tests/xdash_dashboard_verify.py --dashboard_id=example_vcc_comparison
+    python3 -m tools.nightly_tests.xdash_dashboard_verify --dashboard_id=example_vcc_comparison
 """
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
-_REPO_ROOT = str(Path(__file__).resolve().parents[2])
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from tools.nightly_tests import common, xmc_entities_validator  # noqa: E402
+from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 

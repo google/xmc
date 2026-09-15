@@ -21,20 +21,14 @@ and UrlArtifact payloads (asserting metric names accuracy, learning_rate, loss),
 and executed to completion.
 
 Usage:
-    python3 tools/nightly_tests/chart_artifact_job_verify.py --xid=21
+    python3 -m tools.nightly_tests.chart_artifact_job_verify --xid=21
 """
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
-_REPO_ROOT = str(Path(__file__).resolve().parents[2])
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from tools.nightly_tests import common, xmc_entities_validator  # noqa: E402
+from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 
