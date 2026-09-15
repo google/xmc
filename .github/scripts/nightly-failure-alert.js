@@ -41,20 +41,29 @@ function filterActiveOwners(owners = [], absences = []) {
 }
 
 /**
+ * Reads and resolves active owners from OWNERS and ABSENCE.md files.
+ * @param {string} ownersPath
+ * @param {string} absencePath
+ * @param {any} core
+ * @returns {string[]} Active owner usernames.
+ */
+function resolveActiveOwners(ownersPath, absencePath, core) {
+  if (!fs.existsSync(ownersPath) && core) {
+    core.warning(`Owners file not found at '${ownersPath}'.`);
+  }
+  const ownersContent = fs.existsSync(ownersPath) ? fs.readFileSync(ownersPath, 'utf8') : '';
+  const absenceContent = fs.existsSync(absencePath) ? fs.readFileSync(absencePath, 'utf8') : '';
+
+  const activeOwners = filterActiveOwners(parseUsernames(ownersContent), parseUsernames(absenceContent));
+  if (core) {
+    core.info(`Active OWNERS to notify (${activeOwners.length}): ${activeOwners.join(', ') || 'none'}`);
+  }
+  return activeOwners;
+}
+
+/**
  * Formats the issue body markdown for nightly test suite failure alerts.
  * @param {Object} params
- * @param {string} params.serverUrl
- * @param {string} params.owner
- * @param {string} params.repo
- * @param {string|number} params.runId
- * @param {string} params.sha
- * @param {string} params.ref
- * @param {string} params.eventName
- * @param {string} [params.xid]
- * @param {string} [params.domainName]
- * @param {string} [params.triggerOutcome]
- * @param {string} [params.verifyOutcome]
- * @param {string[]} [params.activeOwners]
  * @returns {string} Formatted markdown body.
  */
 function formatFailureIssueBody({
@@ -93,14 +102,13 @@ function formatFailureIssueBody({
   body += `| **Trigger Event** | \`${eventName || 'schedule'}\` |\n`;
   body += `| **Experiment XID** | \`${xid || 'N/A'}\` |\n`;
   body += `| **Trigger Action** | \`${triggerOutcome}\` |\n`;
-  body += `| **Verification Assertions** | \`${verifyOutcome}\` |\n`;
-  body += `\n`;
+  body += `| **Verification Assertions** | \`${verifyOutcome}\` |\n\n`;
+
   if (mentions) {
     body += `cc ${mentions} — please investigate the nightly failure when possible.\n`;
   } else {
     body += `> **Notice:** No active owners found to notify.\n`;
   }
-
   return body;
 }
 
@@ -110,12 +118,118 @@ function formatFailureIssueBody({
  * @returns {string} Formatted markdown comment.
  */
 function formatRecurringCommentBody(params) {
-  const failureBody = formatFailureIssueBody(params);
-  return `### 🚨 Recurring Nightly Test Failure Detected\n\n${failureBody}`;
+  return `### 🚨 Recurring Nightly Test Failure Detected\n\n${formatFailureIssueBody(params)}`;
 }
 
 /**
- * Main orchestrator: Reads OWNERS/ABSENCE.md, checks for open alert issues, and creates/updates an issue.
+ * Looks up the merged Pull Request associated with a commit SHA.
+ * @param {any} github
+ * @param {string} owner
+ * @param {string} repo
+ * @param {string} sha
+ * @param {any} core
+ * @returns {Promise<{ number: number, title: string, url: string } | null>}
+ */
+async function lookupAssociatedPullRequest(github, owner, repo, sha, core) {
+  if (!sha || !github?.rest?.repos?.listPullRequestsAssociatedWithCommit) {
+    return null;
+  }
+  try {
+    const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+      owner,
+      repo,
+      commit_sha: sha,
+    });
+    if (prs && prs.length > 0) {
+      if (core) core.info(`Found associated PR #${prs[0].number}: "${prs[0].title}"`);
+      return { number: prs[0].number, title: prs[0].title, url: prs[0].html_url };
+    }
+  } catch (err) {
+    if (core) core.warning(`Failed to look up associated PR for commit ${sha}: ${err.message}`);
+  }
+  return null;
+}
+
+/**
+ * Finds an existing open issue with the specified label (excluding PRs).
+ * @param {any} github
+ * @param {string} owner
+ * @param {string} repo
+ * @param {string} labelName
+ * @param {any} core
+ * @returns {Promise<any | null>}
+ */
+async function findExistingNightlyFailureIssue(github, owner, repo, labelName, core) {
+  try {
+    const { data: issues } = await github.rest.issues.listForRepo({
+      owner,
+      repo,
+      state: 'open',
+      labels: labelName,
+      per_page: 10,
+    });
+    return (issues || []).find(issue => !issue.pull_request) || null;
+  } catch (err) {
+    if (core) core.warning(`Failed to query open issues with label '${labelName}': ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Creates a new failure issue or posts a recurring comment on an existing issue.
+ * @param {any} github
+ * @param {string} owner
+ * @param {string} repo
+ * @param {any | null} existingIssue
+ * @param {Object} params
+ * @param {string} labelName
+ * @param {any} core
+ * @returns {Promise<{ status: string, issueNumber: number }>}
+ */
+async function postOrUpdateAlertIssue(github, owner, repo, existingIssue, params, labelName, core) {
+  if (existingIssue) {
+    if (core) core.info(`Found open nightly failure issue #${existingIssue.number}. Adding comment.`);
+    await github.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: existingIssue.number,
+      body: formatRecurringCommentBody(params),
+    });
+    if (core) core.info(`Successfully added failure comment to issue #${existingIssue.number}`);
+    return { status: 'comment_created', issueNumber: existingIssue.number };
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const title = `🚨 Nightly Test Suite Failure (${today})`;
+  if (core) core.info(`Creating new nightly failure issue: "${title}"`);
+
+  const { data: newIssue } = await github.rest.issues.create({
+    owner,
+    repo,
+    title,
+    body: formatFailureIssueBody(params),
+    labels: [labelName, 'bug'],
+  });
+  if (core) core.info(`Successfully created issue #${newIssue.number}`);
+  return { status: 'issue_created', issueNumber: newIssue.number };
+}
+
+/**
+ * Parses JSON needs context safely from environment.
+ * @param {any} core
+ * @returns {Object}
+ */
+function parseNeedsContext(core) {
+  try {
+    return JSON.parse(process.env.NEEDS_CONTEXT || '{}');
+  } catch (err) {
+    if (core) core.warning(`Failed to parse NEEDS_CONTEXT: ${err.message}`);
+    return {};
+  }
+}
+
+/**
+ * Main orchestrator: Coordinates parsing OWNERS, resolving PR context, and posting/updating alert issue.
  * @param {Object} params
  * @param {any} params.github - Octokit client.
  * @param {any} params.context - Workflow execution context.
@@ -130,57 +244,12 @@ async function run({
   ownersPath = 'OWNERS',
   absencePath = 'ABSENCE.md',
 }) {
-  const owner = context.repo.owner;
-  const repo = context.repo.repo;
+  const { owner, repo } = context.repo;
+  const activeOwners = resolveActiveOwners(ownersPath, absencePath, core);
+  const needsContext = parseNeedsContext(core);
+  const associatedPr = await lookupAssociatedPullRequest(github, owner, repo, context.sha, core);
 
-  // 1. Read and parse OWNERS
-  if (!fs.existsSync(ownersPath)) {
-    core.warning(`Owners file not found at '${ownersPath}'.`);
-  }
-  const ownersContent = fs.existsSync(ownersPath) ? fs.readFileSync(ownersPath, 'utf8') : '';
-  const owners = parseUsernames(ownersContent);
-
-  // 2. Read and parse ABSENCE.md
-  const absenceContent = fs.existsSync(absencePath) ? fs.readFileSync(absencePath, 'utf8') : '';
-  const absences = parseUsernames(absenceContent);
-
-  const activeOwners = filterActiveOwners(owners, absences);
-  core.info(`Active OWNERS to notify (${activeOwners.length}): ${activeOwners.join(', ') || 'none'}`);
-
-  // 3. Extract workflow context & step outcomes
-  let needsContext = {};
-  try {
-    needsContext = JSON.parse(process.env.NEEDS_CONTEXT || '{}');
-  } catch (err) {
-    core.warning(`Failed to parse NEEDS_CONTEXT: ${err.message}`);
-  }
-
-  const triggerOutcome = needsContext?.['trigger-demo-workload']?.result || 'unknown';
-  const verifyOutcome = needsContext?.['validate-workload-results']?.result || 'unknown';
-  const xid = process.env.XID || '';
-  // 4. Look up associated merged Pull Request if available
-  let associatedPr = null;
-  if (context.sha) {
-    try {
-      const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-        owner,
-        repo,
-        commit_sha: context.sha,
-      });
-      if (prs && prs.length > 0) {
-        associatedPr = {
-          number: prs[0].number,
-          title: prs[0].title,
-          url: prs[0].html_url,
-        };
-        core.info(`Found associated PR #${prs[0].number}: "${prs[0].title}"`);
-      }
-    } catch (err) {
-      core.warning(`Failed to look up associated PR for commit ${context.sha}: ${err.message}`);
-    }
-  }
-
-  const params = {
+  const alertParams = {
     serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
     owner,
     repo,
@@ -188,65 +257,27 @@ async function run({
     sha: context.sha,
     ref: context.ref,
     eventName: context.eventName,
-    xid,
+    xid: process.env.XID || '',
     associatedPr,
-    triggerOutcome,
-    verifyOutcome,
+    triggerOutcome: needsContext?.['trigger-demo-workload']?.result || 'unknown',
+    verifyOutcome: needsContext?.['validate-workload-results']?.result || 'unknown',
     activeOwners,
   };
 
-  // 5. Query for existing open issue with label 'nightly-failure' (excluding PRs)
   const LABEL_NAME = 'nightly-failure';
-  let existingIssue = null;
-  try {
-    const { data: issues } = await github.rest.issues.listForRepo({
-      owner,
-      repo,
-      state: 'open',
-      labels: LABEL_NAME,
-      per_page: 10,
-    });
-    if (issues && issues.length > 0) {
-      existingIssue = issues.find(issue => !issue.pull_request) || null;
-    }
-  } catch (err) {
-    core.warning(`Failed to query open issues with label '${LABEL_NAME}': ${err.message}`);
-  }
-
-  // 5. Create new issue or comment on existing open issue
-  if (existingIssue) {
-    core.info(`Found open nightly failure issue #${existingIssue.number}. Adding comment.`);
-    const commentBody = formatRecurringCommentBody(params);
-    await github.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: existingIssue.number,
-      body: commentBody,
-    });
-    core.info(`Successfully added failure comment to issue #${existingIssue.number}`);
-    return { status: 'comment_created', issueNumber: existingIssue.number };
-  } else {
-    const today = new Date().toISOString().split('T')[0];
-    const title = `🚨 Nightly Test Suite Failure (${today})`;
-    const body = formatFailureIssueBody(params);
-
-    core.info(`Creating new nightly failure issue: "${title}"`);
-    const { data: newIssue } = await github.rest.issues.create({
-      owner,
-      repo,
-      title,
-      body,
-      labels: [LABEL_NAME, 'bug'],
-    });
-    core.info(`Successfully created issue #${newIssue.number}`);
-    return { status: 'issue_created', issueNumber: newIssue.number };
-  }
+  const existingIssue = await findExistingNightlyFailureIssue(github, owner, repo, LABEL_NAME, core);
+  return postOrUpdateAlertIssue(github, owner, repo, existingIssue, alertParams, LABEL_NAME, core);
 }
 
 module.exports = {
   parseUsernames,
   filterActiveOwners,
+  resolveActiveOwners,
   formatFailureIssueBody,
   formatRecurringCommentBody,
+  lookupAssociatedPullRequest,
+  findExistingNightlyFailureIssue,
+  postOrUpdateAlertIssue,
+  parseNeedsContext,
   run,
 };
