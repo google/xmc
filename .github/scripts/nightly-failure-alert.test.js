@@ -142,6 +142,9 @@ describe('run orchestrator', () => {
     fs.writeFileSync(ownersFile, 'Alice\nBob\nCharlie\n');
     fs.writeFileSync(absenceFile, 'Bob\n');
 
+    const origNeedsContext = process.env.NEEDS_CONTEXT;
+    const origXid = process.env.XID;
+
     process.env.NEEDS_CONTEXT = JSON.stringify({
       'trigger-demo-workload': { result: 'success' },
       'validate-workload-results': { result: 'failure' },
@@ -181,22 +184,28 @@ describe('run orchestrator', () => {
       setFailed: () => {},
     };
 
-    const result = await run({
-      github: mockGithub,
-      context: mockContext,
-      core: mockCore,
-      ownersPath: ownersFile,
-      absencePath: absenceFile,
-    });
+    try {
+      const result = await run({
+        github: mockGithub,
+        context: mockContext,
+        core: mockCore,
+        ownersPath: ownersFile,
+        absencePath: absenceFile,
+      });
 
-    assert.equal(result.status, 'issue_created');
-    assert.equal(result.issueNumber, 42);
-    assert.ok(createdIssue.title.includes('Nightly Test Suite Failure'));
-    assert.ok(createdIssue.body.includes('@Alice @Charlie'));
-    assert.ok(!createdIssue.body.includes('@Bob'));
-    assert.deepEqual(createdIssue.labels, ['nightly-failure', 'bug']);
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+      assert.equal(result.status, 'issue_created');
+      assert.equal(result.issueNumber, 42);
+      assert.ok(createdIssue.title.includes('Nightly Test Suite Failure'));
+      assert.ok(createdIssue.body.includes('@Alice @Charlie'));
+      assert.ok(!createdIssue.body.includes('@Bob'));
+      assert.deepEqual(createdIssue.labels, ['nightly-failure', 'bug']);
+    } finally {
+      if (origNeedsContext === undefined) delete process.env.NEEDS_CONTEXT;
+      else process.env.NEEDS_CONTEXT = origNeedsContext;
+      if (origXid === undefined) delete process.env.XID;
+      else process.env.XID = origXid;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('adds comment to existing open issue when one already exists', async () => {
@@ -237,20 +246,81 @@ describe('run orchestrator', () => {
       setFailed: () => {},
     };
 
-    const result = await run({
-      github: mockGithub,
-      context: mockContext,
-      core: mockCore,
-      ownersPath: ownersFile,
-      absencePath: absenceFile,
-    });
+    try {
+      const result = await run({
+        github: mockGithub,
+        context: mockContext,
+        core: mockCore,
+        ownersPath: ownersFile,
+        absencePath: absenceFile,
+      });
 
-    assert.equal(result.status, 'comment_created');
-    assert.equal(result.issueNumber, 101);
-    assert.equal(createdComment.issue_number, 101);
-    assert.ok(createdComment.body.includes('Recurring Nightly Test Failure'));
-    assert.ok(createdComment.body.includes('cc @Alice'));
+      assert.equal(result.status, 'comment_created');
+      assert.equal(result.issueNumber, 101);
+      assert.equal(createdComment.issue_number, 101);
+      assert.ok(createdComment.body.includes('Recurring Nightly Test Failure'));
+      assert.ok(createdComment.body.includes('cc @Alice'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 
-    fs.rmSync(tempDir, { recursive: true, force: true });
+  test('ignores pull requests with nightly-failure label and creates a new issue', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-alert-test-'));
+    const ownersFile = path.join(tempDir, 'OWNERS');
+    const absenceFile = path.join(tempDir, 'ABSENCE.md');
+
+    fs.writeFileSync(ownersFile, 'Alice\n');
+
+    let createdIssue = null;
+    const mockGithub = {
+      rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => ({ data: [] }),
+        },
+        issues: {
+          listForRepo: async () => ({
+            data: [
+              { number: 50, title: 'Some PR with label', pull_request: { url: 'https://...' } },
+            ],
+          }),
+          create: async (payload) => {
+            createdIssue = payload;
+            return { data: { number: 43 } };
+          },
+          createComment: async () => assert.fail('Should not comment on pull request'),
+        },
+      },
+    };
+
+    const mockContext = {
+      repo: { owner: 'google', repo: 'xmc' },
+      runId: 999,
+      sha: '55667788',
+      ref: 'refs/heads/main',
+      eventName: 'schedule',
+    };
+
+    const mockCore = {
+      info: () => {},
+      warning: () => {},
+      setFailed: () => {},
+    };
+
+    try {
+      const result = await run({
+        github: mockGithub,
+        context: mockContext,
+        core: mockCore,
+        ownersPath: ownersFile,
+        absencePath: absenceFile,
+      });
+
+      assert.equal(result.status, 'issue_created');
+      assert.equal(result.issueNumber, 43);
+      assert.ok(createdIssue);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

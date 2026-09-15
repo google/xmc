@@ -155,8 +155,8 @@ async function run({
     core.warning(`Failed to parse NEEDS_CONTEXT: ${err.message}`);
   }
 
-  const triggerOutcome = needsContext['trigger-demo-workload']?.result || 'unknown';
-  const verifyOutcome = needsContext['validate-workload-results']?.result || 'unknown';
+  const triggerOutcome = needsContext?.['trigger-demo-workload']?.result || 'unknown';
+  const verifyOutcome = needsContext?.['validate-workload-results']?.result || 'unknown';
   const xid = process.env.XID || '';
   // 4. Look up associated merged Pull Request if available
   let associatedPr = null;
@@ -195,7 +195,7 @@ async function run({
     activeOwners,
   };
 
-  // 4. Query for existing open issue with label 'nightly-failure'
+  // 5. Query for existing open issue with label 'nightly-failure' (excluding PRs)
   const LABEL_NAME = 'nightly-failure';
   let existingIssue = null;
   try {
@@ -207,7 +207,7 @@ async function run({
       per_page: 10,
     });
     if (issues && issues.length > 0) {
-      existingIssue = issues[0];
+      existingIssue = issues.find(issue => !issue.pull_request) || null;
     }
   } catch (err) {
     core.warning(`Failed to query open issues with label '${LABEL_NAME}': ${err.message}`);
