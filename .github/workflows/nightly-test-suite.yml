@@ -145,7 +145,7 @@ jobs:
     name: '3. Report Failure & Alert OWNERS'
     runs-on: 'ubuntu-latest'
     needs: [trigger-demo-workload, validate-workload-results]
-    if: always() && (needs.trigger-demo-workload.result == 'failure' || needs.validate-workload-results.result == 'failure')
+    if: always() && (needs.trigger-demo-workload.result == 'failure' || needs.trigger-demo-workload.result == 'cancelled' || needs.validate-workload-results.result == 'failure' || needs.validate-workload-results.result == 'cancelled')
 
     permissions:
       contents: read

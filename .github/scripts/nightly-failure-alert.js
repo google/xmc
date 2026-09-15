@@ -62,6 +62,26 @@ function resolveActiveOwners(ownersPath, absencePath, core) {
 }
 
 /**
+ * Sanitizes a PR title for safe inclusion in markdown links and tables.
+ * Strips newlines, escapes table pipes, brackets, asterisks, and underscores.
+ * @param {string} title - Raw PR title.
+ * @returns {string} Sanitized PR title.
+ */
+function sanitizeMarkdownTitle(title) {
+  if (!title || typeof title !== 'string') {
+    return '';
+  }
+  return title
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\|/g, '\\|')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .trim();
+}
+
+/**
  * Formats the issue body markdown for nightly test suite failure alerts.
  * @param {Object} params
  * @returns {string} Formatted markdown body.
@@ -94,7 +114,8 @@ function formatFailureIssueBody({
 
   if (associatedPr && associatedPr.number) {
     const prUrl = associatedPr.url || `${serverUrl}/${owner}/${repo}/pull/${associatedPr.number}`;
-    const prTitle = associatedPr.title ? `: *${associatedPr.title}*` : '';
+    const cleanTitle = sanitizeMarkdownTitle(associatedPr.title);
+    const prTitle = cleanTitle ? `: *${cleanTitle}*` : '';
     body += `| **Associated PR** | [PR #${associatedPr.number}${prTitle}](${prUrl}) |\n`;
   }
 
@@ -273,6 +294,7 @@ module.exports = {
   parseUsernames,
   filterActiveOwners,
   resolveActiveOwners,
+  sanitizeMarkdownTitle,
   formatFailureIssueBody,
   formatRecurringCommentBody,
   lookupAssociatedPullRequest,

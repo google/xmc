@@ -22,6 +22,7 @@ const {
   parseUsernames,
   filterActiveOwners,
   resolveActiveOwners,
+  sanitizeMarkdownTitle,
   formatFailureIssueBody,
   formatRecurringCommentBody,
   lookupAssociatedPullRequest,
@@ -112,6 +113,27 @@ describe('resolveActiveOwners', () => {
   });
 });
 
+describe('sanitizeMarkdownTitle', () => {
+  test('escapes pipe, bracket, asterisk, and underscore characters', () => {
+    const raw = 'fix(core): handle [special] | *value* and _sub_';
+    const clean = sanitizeMarkdownTitle(raw);
+    assert.equal(clean, 'fix(core): handle \\[special\\] \\| \\*value\\* and \\_sub\\_');
+  });
+
+  test('replaces newlines and carriage returns with spaces and trims', () => {
+    const raw = 'feat(ui):\nmultiple\r\nlines  \n';
+    const clean = sanitizeMarkdownTitle(raw);
+    assert.equal(clean, 'feat(ui): multiple lines');
+  });
+
+  test('handles null, undefined, or non-string inputs safely', () => {
+    assert.equal(sanitizeMarkdownTitle(''), '');
+    assert.equal(sanitizeMarkdownTitle(null), '');
+    assert.equal(sanitizeMarkdownTitle(undefined), '');
+    assert.equal(sanitizeMarkdownTitle(123), '');
+  });
+});
+
 describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
   test('formats markdown body with all metadata, links, and mentions', () => {
     const body = formatFailureIssueBody({
@@ -140,6 +162,30 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
     assert.ok(body.includes('`12006`'));
     assert.ok(body.includes('cc @userA @userB'));
     assert.ok(!body.includes('Web UI URL'));
+  });
+
+  test('sanitizes PR title containing markdown formatting characters in issue body', () => {
+    const body = formatFailureIssueBody({
+      serverUrl: 'https://github.com',
+      owner: 'google',
+      repo: 'xmc',
+      runId: 12345678,
+      sha: 'abcdef1234567890',
+      ref: 'refs/heads/main',
+      eventName: 'schedule',
+      associatedPr: {
+        number: 999,
+        title: 'fix(ci): [alert] | table break *test* _bar_\nnewline',
+        url: 'https://github.com/google/xmc/pull/999',
+      },
+      triggerOutcome: 'cancelled',
+      verifyOutcome: 'cancelled',
+      activeOwners: ['userA'],
+    });
+
+    assert.ok(body.includes('[PR #999: *fix(ci): \\[alert\\] \\| table break \\*test\\* \\_bar\\_ newline*](https://github.com/google/xmc/pull/999)'));
+    assert.ok(body.includes('| **Trigger Action** | `cancelled` |'));
+    assert.ok(body.includes('| **Verification Assertions** | `cancelled` |'));
   });
 
   test('handles missing optional fields safely', () => {
