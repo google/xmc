@@ -104,6 +104,7 @@ jobs:
             export XMC_AUTH_TOKEN
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
 
           "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/demo_workload_verify.py \
             --xid="${XID}"

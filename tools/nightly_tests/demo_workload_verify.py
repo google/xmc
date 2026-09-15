@@ -25,9 +25,15 @@ Usage:
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
+from pathlib import Path
 
-from tools.nightly_tests import common, xmc_entities_validator
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools.nightly_tests import common, xmc_entities_validator  # noqa: E402
 
 FLAGS = common.FLAGS
 
