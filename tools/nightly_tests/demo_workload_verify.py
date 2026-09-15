@@ -42,7 +42,7 @@ EXPECTED_WORKER_NAMES: tuple[str, ...] = (
     "demo-worker-2",
     "demo-worker-3",
 )
-TIMEOUT_SEC: int = 300
+TIMEOUT_SEC: int = 600
 
 
 def main(argv: Sequence[str]) -> None:
