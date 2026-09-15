@@ -25,9 +25,19 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import Sequence
+
+# Support multiple execution contexts: Bazel sandbox, relative, and standalone
+try:
+    from tools.nightly_tests import common, xmc_entities_validator
+except ImportError:
+    try:
+        from . import common, xmc_entities_validator  # type: ignore
+    except ImportError:
+        import common
+        import xmc_entities_validator  # type: ignore
+
+FLAGS = common.FLAGS
 
 # Domain assertion constants for the nightly demo workload test case
 EXPECTED_WORK_UNITS: int = 3
@@ -40,57 +50,30 @@ EXPECTED_WORKER_NAMES: tuple[str, ...] = (
 )
 TIMEOUT_SEC: int = 300
 
-try:
-    from absl import app, flags
-
-    FLAGS = flags.FLAGS
-    flags.DEFINE_string("xid", None, "Experiment XID to validate (required)")
-    flags.mark_flag_as_required("xid")
-except ImportError:
-    app = None
-    flags = None
-    FLAGS = None
-
-# Support multiple execution contexts: Bazel sandboxes (tools.nightly_tests),
-# package imports (.xmc_entities_validator), and direct standalone script execution.
-try:
-    from tools.nightly_tests import xmc_entities_validator
-except ImportError:
-    try:
-        from . import xmc_entities_validator  # type: ignore
-    except ImportError:
-        import xmc_entities_validator  # type: ignore
-
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine."""
-    if len(argv) > 1:
-        raise app.UsageError("Too many command-line arguments.")
+    common.validate_argv(argv)
 
-    if FLAGS is None:
-        raise RuntimeError("absl is required to parse command-line flags.")
+    xid = common.parse_xid(getattr(FLAGS, "xid", None))
+    ui_base_url = common.resolve_ui_base_url()
 
-    xid = FLAGS.xid.strip()
-    ui_base_url = xmc_entities_validator.resolve_ui_base_url()
+    common.print_banner(
+        "XMC Nightly Workload Verification & Assertions",
+        [
+            ("Experiment XID", xid),
+            ("Expected Title Pattern", f"'{EXPECTED_TITLE_PATTERN}'"),
+            ("Expected WorkUnits Count", EXPECTED_WORK_UNITS),
+            ("Expected Target Queue", EXPECTED_QUEUE),
+            ("Expected Worker Names", list(EXPECTED_WORKER_NAMES)),
+            ("Timeout", f"{TIMEOUT_SEC}s"),
+        ],
+    )
 
-    print("=================================================================")
-    print("       XMC Nightly Workload Verification & Assertions            ")
-    print("=================================================================")
-    print(f"Experiment XID          : {xid}")
-    print(f"Expected Title Pattern  : '{EXPECTED_TITLE_PATTERN}'")
-    print(f"Expected WorkUnits Count: {EXPECTED_WORK_UNITS}")
-    print(f"Expected Target Queue   : {EXPECTED_QUEUE}")
-    print(f"Expected Worker Names   : {list(EXPECTED_WORKER_NAMES)}")
-    print(f"Timeout                 : {TIMEOUT_SEC}s")
-    print("-----------------------------------------------------------------")
-
-    endpoint = os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
-    print(f"Connecting to Experiment State Server at: {endpoint} ...")
-    channel = None
-
-    try:
-        stub, channel = xmc_entities_validator.create_authenticated_stub(endpoint)
-
+    with (
+        common.handle_verification_errors(),
+        common.ess_channel_context(getattr(FLAGS, "endpoint", None)) as (stub, _),
+    ):
         # 1. Assert Experiment Existence & Title
         print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
         experiment = xmc_entities_validator.validate_experiment(
@@ -123,30 +106,17 @@ def main(argv: Sequence[str]) -> None:
 
         # 3. Print Final Report
         print("\n[3/3] Validation Summary:")
-        print("=================================================================")
-        print("🎉 ALL NIGHTLY WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!")
-        print("=================================================================")
-        print(f"  • Experiment: {experiment.name} (Title: '{experiment.title}')")
-        print(f"  • Total Verified WorkUnits: {len(wu_results)} / {EXPECTED_WORK_UNITS}")
-        print(f"  • Target Queue            : {EXPECTED_QUEUE}")
-        print(f"  • Expected Worker Names   : {', '.join(EXPECTED_WORKER_NAMES)}")
-        print(f"  • Web UI Link             : {ui_base_url}/experiments/{xid}")
-        print("=================================================================\n")
-
-    except (AssertionError, TimeoutError) as e:
-        print(f"\n❌ ASSERTION FAILED: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n💥 UNEXPECTED ERROR during verification: {e}", file=sys.stderr)
-        sys.exit(2)
-    finally:
-        if channel is not None and hasattr(channel, "close"):
-            channel.close()
+        common.print_success_summary(
+            "ALL NIGHTLY WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!",
+            [
+                ("Experiment", f"{experiment.name} (Title: '{experiment.title}')"),
+                ("Total Verified WorkUnits", f"{len(wu_results)} / {EXPECTED_WORK_UNITS}"),
+                ("Target Queue", EXPECTED_QUEUE),
+                ("Expected Worker Names", ", ".join(EXPECTED_WORKER_NAMES)),
+                ("Web UI Link", f"{ui_base_url}/experiments/{xid}"),
+            ],
+        )
 
 
 if __name__ == "__main__":
-    if app is not None:
-        app.run(main)
-    else:
-        print("absl is required to run as standalone CLI script.", file=sys.stderr)
-        sys.exit(1)
+    common.run_main(main)
