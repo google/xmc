@@ -21,8 +21,13 @@ const os = require('os');
 const {
   parseUsernames,
   filterActiveOwners,
+  resolveActiveOwners,
   formatFailureIssueBody,
   formatRecurringCommentBody,
+  lookupAssociatedPullRequest,
+  findExistingNightlyFailureIssue,
+  postOrUpdateAlertIssue,
+  parseNeedsContext,
   run,
 } = require('./nightly-failure-alert');
 
@@ -73,6 +78,37 @@ describe('filterActiveOwners', () => {
 
   test('returns empty array when owners is empty', () => {
     assert.deepEqual(filterActiveOwners([], ['user1']), []);
+  });
+});
+
+describe('resolveActiveOwners', () => {
+  test('reads files from disk and filters active owners', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-resolve-owners-'));
+    const ownersFile = path.join(tempDir, 'OWNERS');
+    const absenceFile = path.join(tempDir, 'ABSENCE.md');
+
+    try {
+      fs.writeFileSync(ownersFile, 'User1\nUser2\nUser3\n');
+      fs.writeFileSync(absenceFile, 'User2\n');
+
+      const active = resolveActiveOwners(ownersFile, absenceFile, { info: () => {}, warning: () => {} });
+      assert.deepEqual(active, ['User1', 'User3']);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('handles missing owners and absence files gracefully', () => {
+    let warningLogged = false;
+    const mockCore = {
+      info: () => {},
+      warning: (msg) => {
+        if (msg.includes('not found')) warningLogged = true;
+      },
+    };
+    const active = resolveActiveOwners('/nonexistent/OWNERS', '/nonexistent/ABSENCE.md', mockCore);
+    assert.deepEqual(active, []);
+    assert.ok(warningLogged);
   });
 });
 
@@ -130,6 +166,184 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
 
     assert.ok(comment.startsWith('### 🚨 Recurring Nightly Test Failure Detected'));
     assert.ok(comment.includes('cc @user1'));
+  });
+});
+
+describe('lookupAssociatedPullRequest', () => {
+  test('resolves and returns associated PR metadata when found', async () => {
+    const mockGithub = {
+      rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => ({
+            data: [{ number: 876, title: 'feat: add feature', html_url: 'https://github.com/google/xmc/pull/876' }],
+          }),
+        },
+      },
+    };
+
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', { info: () => {}, warning: () => {} });
+    assert.deepEqual(pr, {
+      number: 876,
+      title: 'feat: add feature',
+      url: 'https://github.com/google/xmc/pull/876',
+    });
+  });
+
+  test('returns null when no PRs are associated with commit', async () => {
+    const mockGithub = {
+      rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', null);
+    assert.equal(pr, null);
+  });
+
+  test('returns null gracefully on API error without throwing', async () => {
+    const mockGithub = {
+      rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => {
+            throw new Error('API Rate limit exceeded');
+          },
+        },
+      },
+    };
+
+    let warningLogged = false;
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', {
+      info: () => {},
+      warning: () => { warningLogged = true; },
+    });
+    assert.equal(pr, null);
+    assert.ok(warningLogged);
+  });
+});
+
+describe('findExistingNightlyFailureIssue', () => {
+  test('returns the open issue and ignores pull requests', async () => {
+    const mockGithub = {
+      rest: {
+        issues: {
+          listForRepo: async () => ({
+            data: [
+              { number: 10, title: 'PR 10', pull_request: {} },
+              { number: 20, title: 'Issue 20' },
+            ],
+          }),
+        },
+      },
+    };
+
+    const issue = await findExistingNightlyFailureIssue(mockGithub, 'google', 'xmc', 'nightly-failure', null);
+    assert.ok(issue);
+    assert.equal(issue.number, 20);
+  });
+
+  test('returns null when no issues exist or API fails', async () => {
+    const mockGithub = {
+      rest: {
+        issues: {
+          listForRepo: async () => {
+            throw new Error('Network failure');
+          },
+        },
+      },
+    };
+
+    const issue = await findExistingNightlyFailureIssue(mockGithub, 'google', 'xmc', 'nightly-failure', {
+      warning: () => {},
+    });
+    assert.equal(issue, null);
+  });
+});
+
+describe('postOrUpdateAlertIssue', () => {
+  test('creates a comment when existingIssue is provided', async () => {
+    let commentPayload = null;
+    const mockGithub = {
+      rest: {
+        issues: {
+          createComment: async (payload) => {
+            commentPayload = payload;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const result = await postOrUpdateAlertIssue(
+      mockGithub,
+      'google',
+      'xmc',
+      { number: 55 },
+      { owner: 'google', repo: 'xmc', runId: 1, sha: '123' },
+      'nightly-failure',
+      { info: () => {} }
+    );
+
+    assert.equal(result.status, 'comment_created');
+    assert.equal(result.issueNumber, 55);
+    assert.equal(commentPayload.issue_number, 55);
+  });
+
+  test('creates a new issue when existingIssue is null', async () => {
+    let createPayload = null;
+    const mockGithub = {
+      rest: {
+        issues: {
+          create: async (payload) => {
+            createPayload = payload;
+            return { data: { number: 77 } };
+          },
+        },
+      },
+    };
+
+    const result = await postOrUpdateAlertIssue(
+      mockGithub,
+      'google',
+      'xmc',
+      null,
+      { owner: 'google', repo: 'xmc', runId: 1, sha: '123' },
+      'nightly-failure',
+      { info: () => {} }
+    );
+
+    assert.equal(result.status, 'issue_created');
+    assert.equal(result.issueNumber, 77);
+    assert.deepEqual(createPayload.labels, ['nightly-failure', 'bug']);
+  });
+});
+
+describe('parseNeedsContext', () => {
+  test('parses valid JSON string from environment', () => {
+    const orig = process.env.NEEDS_CONTEXT;
+    try {
+      process.env.NEEDS_CONTEXT = JSON.stringify({ jobA: { result: 'success' } });
+      const parsed = parseNeedsContext(null);
+      assert.deepEqual(parsed, { jobA: { result: 'success' } });
+    } finally {
+      if (orig === undefined) delete process.env.NEEDS_CONTEXT;
+      else process.env.NEEDS_CONTEXT = orig;
+    }
+  });
+
+  test('returns empty object when JSON is invalid', () => {
+    const orig = process.env.NEEDS_CONTEXT;
+    try {
+      process.env.NEEDS_CONTEXT = 'invalid json {';
+      let warningLogged = false;
+      const parsed = parseNeedsContext({ warning: () => { warningLogged = true; } });
+      assert.deepEqual(parsed, {});
+      assert.ok(warningLogged);
+    } finally {
+      if (orig === undefined) delete process.env.NEEDS_CONTEXT;
+      else process.env.NEEDS_CONTEXT = orig;
+    }
   });
 });
 
