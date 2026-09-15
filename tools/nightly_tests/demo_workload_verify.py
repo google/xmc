@@ -20,20 +20,14 @@ WorkUnits were correctly created, scheduled to the expected queue, and executed
 to completion.
 
 Usage:
-    python3 tools/nightly_tests/demo_workload_verify.py --xid=16
+    python3 -m tools.nightly_tests.demo_workload_verify --xid=16
 """
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
-_REPO_ROOT = str(Path(__file__).resolve().parents[2])
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from tools.nightly_tests import common, xmc_entities_validator  # noqa: E402
+from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 
