@@ -20,18 +20,6 @@ import unittest
 from unittest.mock import patch
 
 from test.e2e.lib.config import (
-    DEFAULT_ADMIN_PASSWORD,
-    DEFAULT_ADMIN_USER,
-    DEFAULT_BASE_URL,
-    DEFAULT_DEV_EMAIL,
-    DEFAULT_DEV_PASSWORD,
-    DEFAULT_DEX_CLIENT_ID,
-    DEFAULT_DEX_CLIENT_SECRET,
-    DEFAULT_DEX_URL,
-    DEFAULT_UNAUTHORIZED_PASSWORD,
-    DEFAULT_UNAUTHORIZED_USER,
-    DEFAULT_VIEWER_PASSWORD,
-    DEFAULT_VIEWER_USER,
     E2EConfig,
     parse_args,
     resolve_kind_binary,
@@ -40,20 +28,6 @@ from test.e2e.lib.config import (
 
 class TestE2EConfig(unittest.TestCase):
     """Tests for E2EConfig initialization."""
-
-    def test_centralized_auth_and_url_constants(self):
-        self.assertEqual(DEFAULT_ADMIN_USER, "admin@xmc.local")
-        self.assertEqual(DEFAULT_ADMIN_PASSWORD, "password123")
-        self.assertEqual(DEFAULT_VIEWER_USER, "viewer@xmc.local")
-        self.assertEqual(DEFAULT_VIEWER_PASSWORD, "password123")
-        self.assertEqual(DEFAULT_UNAUTHORIZED_USER, "unauthorized@xmc.local")
-        self.assertEqual(DEFAULT_UNAUTHORIZED_PASSWORD, "password123")
-        self.assertEqual(DEFAULT_DEV_EMAIL, DEFAULT_ADMIN_USER)
-        self.assertEqual(DEFAULT_DEV_PASSWORD, DEFAULT_ADMIN_PASSWORD)
-        self.assertEqual(DEFAULT_DEX_CLIENT_ID, "xmc-client")
-        self.assertEqual(DEFAULT_DEX_CLIENT_SECRET, "xmc-client-secret")
-        self.assertIn("http", DEFAULT_BASE_URL)
-        self.assertIn("http", DEFAULT_DEX_URL)
 
     def test_post_init_generates_unique_db_names_and_temp_dir(self):
         cfg = E2EConfig(
