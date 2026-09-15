@@ -59,10 +59,10 @@ user4
 
 describe('filterActiveOwners', () => {
   test('excludes owners present in absences (case-insensitive)', () => {
-    const owners = ['AntonTyb', 'andrzejfudro', 'janzak-dev', 'pachopepe', 'VLukiantsev'];
-    const absences = ['pachopepe', 'vlukiantsev'];
+    const owners = ['UserAlpha', 'UserBeta', 'UserGamma', 'UserDelta', 'UserEpsilon'];
+    const absences = ['userdelta', 'userepsilon'];
     const active = filterActiveOwners(owners, absences);
-    assert.deepEqual(active, ['AntonTyb', 'andrzejfudro', 'janzak-dev']);
+    assert.deepEqual(active, ['UserAlpha', 'UserBeta', 'UserGamma']);
   });
 
   test('returns all owners if absences is empty', () => {
