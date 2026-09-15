@@ -45,6 +45,13 @@ EXPERIMENT_RUNS = [
     (VCC_TUNED_V2_XID, "tuned_v2", "VCC Tuned Run (lr=0.005)"),
 ]
 
+# Default CLI configurations and environment variable names.
+DEFAULT_ENDPOINT = "localhost:8080"
+DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
+DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
+ENV_XMC_DASHBOARD_ENDPOINT = "XMC_DASHBOARD_ENDPOINT"
+ENV_DASHBOARD_ENDPOINT = "DASHBOARD_ENDPOINT"
+
 
 def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
     """Builds a customized 4-plot chart for an experiment work unit.
@@ -141,23 +148,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Create an example XMC Dashboard using the xdash SDK."
     )
     endpoint_default = (
-        os.environ.get("XMC_DASHBOARD_ENDPOINT")
-        or os.environ.get("DASHBOARD_ENDPOINT")
-        or "localhost:8080"
+        os.environ.get(ENV_XMC_DASHBOARD_ENDPOINT)
+        or os.environ.get(ENV_DASHBOARD_ENDPOINT)
+        or DEFAULT_ENDPOINT
     )
     parser.add_argument(
         "--endpoint",
         default=endpoint_default,
-        help="Dashboard Service gRPC endpoint (default: localhost:8080 or $XMC_DASHBOARD_ENDPOINT)",
+        help=(
+            f"Dashboard Service gRPC endpoint (default: {DEFAULT_ENDPOINT} or"
+            f" ${ENV_XMC_DASHBOARD_ENDPOINT})"
+        ),
     )
     parser.add_argument(
         "--dashboard-id",
-        default="example_vcc_comparison",
+        default=DEFAULT_DASHBOARD_ID,
         help="Resource ID slug for the dashboard",
     )
     parser.add_argument(
         "--title",
-        default="VCC Baseline vs Tuned Hyperparameters",
+        default=DEFAULT_DASHBOARD_TITLE,
         help="Display title for the created dashboard",
     )
     args = parser.parse_args(argv)
