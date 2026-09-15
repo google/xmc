@@ -106,7 +106,7 @@ jobs:
           export XMC_USER_EMAIL="${ACTOR}@google.com"
           export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
 
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/demo_workload_verify.py \
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.demo_workload_verify \
             --xid="${XID}"
 
           echo "================================================================="
