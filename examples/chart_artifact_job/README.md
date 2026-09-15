@@ -70,7 +70,7 @@ flowchart TD
   generated `metrics_pb2` module and neither the repository nor the SDK wheel ships it.
 - **`build_and_push.sh`**: Helper script to build and push the worker image to Google
   Cloud Artifact Registry.
-- **`requirements.txt`**: Client-side/host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
+- **`requirements.txt`**: Python dependencies list.
 
 ---
 
@@ -85,12 +85,10 @@ flowchart TD
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to
    your project's Artifact Registry.
 4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
-5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py` and register dashboards/charts via `xdash`:
+5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py`:
    ```bash
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` contains client-side/host dependencies for running `launch.py` and interacting with the XMC control plane and Dashboard Service. In-cluster container workload dependencies (for `worker.py` and the `xmc` metrics SDK) are packaged into the container image via `Dockerfile` and `build_and_push.sh`.
 
 ---
 

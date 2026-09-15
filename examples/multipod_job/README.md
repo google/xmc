@@ -23,18 +23,16 @@ This directory contains a complete validation example for running multi-pod and 
      - Replicas discover and resolve peer pod FQDNs immediately (`<jobset>-<replicated-job>-<job-idx>-<pod-idx>.<subdomain>`).
 
 5. **[requirements.txt](./requirements.txt)**:
-   - Client-side host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
+   - Python dependencies list.
 
 ---
 
 ## Prerequisites & Dependencies
 
-1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py` against the XMC control plane:
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
    ```bash
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` specifies client-side dependencies for running `launch.py` on your workstation. Workload container dependencies (`counter.py`) are packaged and isolated within the Docker container image built via `Dockerfile`.
 
 2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
 

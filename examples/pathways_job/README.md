@@ -16,12 +16,10 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 
 ## Prerequisites & Dependencies
 
-1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py` against XMC (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`):
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
    ```bash
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` contains client-side launch dependencies needed to submit the Pathways JobSet to XMC. Container workload dependencies (Pathways head, proxy, and JAX TPU workers) run inside their respective cluster container images.
 
 2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file, and that your Python environment (`./deploy/cli/venv`) is active.
 

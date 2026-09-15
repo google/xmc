@@ -11,7 +11,7 @@ This example demonstrates how to use the **`xdash`** Python SDK to programmatica
   - Connect to the XMC Dashboard Service via `DashboardClient`.
   - Inspect evaluated chart metrics data from the DataEngine.
 - **`install_venv.sh`**: Shell script that compiles the required Python protobuf modules via Bazel, creates a local Python virtual environment (`.venv`), installs runtime dependencies (`grpcio`, `protobuf`), and installs `xdash` in editable mode.
-- **`requirements.txt`**: Client-side host Python dependencies required to execute `create_dashboard.py` against the Dashboard Service (`absl-py`, `clickhouse-connect`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`, `urllib3`).
+- **`requirements.txt`**: Python dependencies list.
 
 ## 1. Installation & Dependencies
 
@@ -30,9 +30,6 @@ If managing an existing virtual environment:
 ```bash
 pip install -r requirements.txt
 ```
-
-> [!NOTE]
-> `requirements.txt` contains host/client Python dependencies needed to execute `create_dashboard.py` and communicate with the XMC Dashboard Service and DataEngine.
 
 ## 2. Running the Example
 

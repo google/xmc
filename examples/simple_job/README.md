@@ -4,14 +4,11 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
 
 ## Prerequisites
 
-1. **Activate Virtual Environment & Install Dependencies**:
-   Activate the XMC virtual environment and install the client-side host Python dependencies (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`) needed to execute `launch.py`:
+1. Activate the XMC virtual environment and install dependencies:
    ```bash
    source deploy/cli/venv/bin/activate
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` defines client-side/host Python dependencies needed to run the launch script (`launch.py`) against the XMC Experiment State Server. Containerized workloads submitted to Kueue execute inside their respective container images.
 
 2. **Environment Variables**:
    Verify environment variables in your active shell or `.env`:

@@ -19,16 +19,14 @@ When an XMC Work Unit is created with these requirements:
 - **`worker.py`**: The workload script executed by the `worker` pods on the GPU node pool.
 - **`Dockerfile`**: Minimal multi-role container image definition containing both `coordinator.py` and `worker.py`.
 - **`build_and_push.sh`**: Utility script to build and publish the container image to Google Cloud Artifact Registry using Cloud Build.
-- **`requirements.txt`**: Client-side host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
+- **`requirements.txt`**: Python dependencies list.
 
 ## Prerequisites
 
-1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py` against XMC:
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
    ```bash
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` specifies client-side dependencies for running `launch.py` on your workstation. Container workload dependencies (`coordinator.py` and `worker.py`) are packaged into the Docker container image built via `Dockerfile`.
 
 2. **GKE Node Pools**: Your GKE cluster must have the required node pools (`cpups` and `gpu-pool`, or modify `launch.py` to match your cluster's existing node pool names).
 3. **Environment Variables**: Ensure `PROJECT_ID`, `XMC_DOMAIN`, and optionally `QUEUE_NAME` are exported in your environment or defined in a `.env` file.

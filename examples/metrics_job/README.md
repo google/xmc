@@ -26,18 +26,16 @@ This directory contains a complete validation example for logging training metri
    - XManager CLI launch script that creates an Experiment with a 4-job WorkUnit (`metrics-manual`, `metrics-keras`, `metrics-keras-cb`, `metrics-lightning`).
 
 8. **[requirements.txt](./requirements.txt)**:
-   - Client-side host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
+   - Python dependencies list.
 
 ---
 
 ## Prerequisites & Dependencies
 
-1. **Client-Side Dependencies**: Install host Python dependencies required to execute `launch.py` against the XMC control plane:
+1. **Client-Side Dependencies**: Install host Python dependencies required to execute `launch.py`:
    ```bash
    pip install -r requirements.txt
    ```
-   > [!NOTE]
-   > `requirements.txt` contains lightweight client-side dependencies needed for running `launch.py` on your workstation. Heavy machine learning frameworks (PyTorch, PyTorch Lightning, Keras 3, and the `xmc` metrics SDK) are packaged and executed inside the container image built via `Dockerfile`.
 
 2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
 
