@@ -21,6 +21,22 @@ This directory contains a complete validation example for running **Init Contain
 5. **[launch.py](./launch.py)**:
    - XManager CLI launch script that creates a WorkUnit specifying an init container (`init_containers`) that runs before the primary container (`spec`).
 
+6. **[requirements.txt](./requirements.txt)**:
+   - Client-side host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
+
+---
+
+## Prerequisites & Dependencies
+
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py` against the XMC control plane:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   > [!NOTE]
+   > `requirements.txt` specifies client-side dependencies for running `launch.py` on your workstation. Workload container dependencies (`init_step.py` and `worker.py`) are packaged and isolated within the Docker container image built via `Dockerfile`.
+
+2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
+
 ---
 
 ## Usage
@@ -31,9 +47,10 @@ This directory contains a complete validation example for running **Init Contain
 ```
 
 ### 2. Launch the Init Container Experiment
-Ensure you have installed the XManager CLI and activate your virtual environment:
+Ensure you have installed the XManager CLI, activate your virtual environment, and install dependencies:
 ```bash
 source ../../deploy/cli/venv/bin/activate
+pip install -r requirements.txt
 python3 launch.py
 ```
 

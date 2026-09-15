@@ -41,7 +41,7 @@ flowchart TD
 - **`worker.py`**: WorkUnit container script generating synthetic DataEngine metrics and inserting them into ClickHouse.
 - **`Dockerfile`**: Container image definition for the ClickHouse worker.
 - **`build_and_push.sh`**: Helper script to build and push the worker image to Google Cloud Artifact Registry.
-- **`requirements.txt`**: Python dependencies list.
+- **`requirements.txt`**: Client-side/host Python dependencies required to execute `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`).
 
 ---
 
@@ -51,6 +51,12 @@ flowchart TD
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
 4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
+5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py` and register dashboards and charts via `xdash`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   > [!NOTE]
+   > `requirements.txt` defines client-side dependencies for running the launch script on your workstation. In-cluster container workload dependencies for `worker.py` are packaged into the worker container image.
 
 ---
 

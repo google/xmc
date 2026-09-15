@@ -47,7 +47,7 @@ Steps 3 and 4 are independent: the dashboard is registered while the WorkUnit is
 | [`metric_names.py`](./metric_names.py) | The metric names, declared once and imported by **both** `worker.py` and `launch.py`. |
 | [`Dockerfile`](./Dockerfile) | Packages `sdks/python/xmc`, `worker.py` and `metric_names.py` into a Python 3.11 image. |
 | [`build_and_push.sh`](./build_and_push.sh) | Builds that image and pushes it to Artifact Registry. |
-| [`requirements.txt`](./requirements.txt) | Launch-side Python dependencies. |
+| [`requirements.txt`](./requirements.txt) | Client-side/host Python dependencies for `launch.py` (`absl-py`, `google-auth`, `grpcio`, `protobuf`, `python-dotenv`, `requests`). |
 
 ### Why `metric_names.py` is shared
 
@@ -63,7 +63,13 @@ Metrics emitted: `train/loss`, `train/accuracy`, `eval/loss`, `eval/accuracy`, `
 2. **The metrics pipeline enabled** — Ingestion Gateway plus its backing Redpanda/Pub-Sub and ClickHouse.
 3. **`gcloud` and Docker** — authenticated against the project's Artifact Registry.
 4. **Bazel and Python 3.11+** — to generate the dashboard proto bindings.
-5. **A route to the Dashboard Service** — `launch.py` speaks gRPC to `XMC_DASHBOARD_ENDPOINT`,
+5. **Client-Side Dependencies (`requirements.txt`)**: Install host Python dependencies required by `launch.py` to create the Experiment, WorkUnit, and register Charts and Dashboards via `xdash`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   > [!NOTE]
+   > `requirements.txt` specifies client-side/host launch dependencies. The container workload (`worker.py` and the `xmc` metrics SDK) runs inside the container image built via `Dockerfile`.
+6. **A route to the Dashboard Service** — `launch.py` speaks gRPC to `XMC_DASHBOARD_ENDPOINT`,
    which defaults to `localhost:50051`. Running from a workstation against a remote cluster,
    forward the port first:
 
