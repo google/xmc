@@ -26,12 +26,15 @@ import (
 	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/pkg/components/summary"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 type mockHealthChecker struct {
@@ -707,4 +710,176 @@ func TestGetHealthStatus_Singleflight(t *testing.T) {
 		// Verify only 1 backend call was made (others collapsed via singleflight)
 		tf.assertCallCount(1)
 	})
+}
+
+func TestPauseScheduling(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         *Config
+		guard       AdminRoleGuard
+		wantErrCode codes.Code
+		wantResp    *spb.PauseSchedulingResponse
+	}{
+		{
+			name: "success when authorized and feature flag enabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{hasRole: true},
+			wantErrCode: codes.OK,
+			wantResp:    &spb.PauseSchedulingResponse{},
+		},
+		{
+			name: "forbidden when caller lacks admin role even if flag enabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
+			wantErrCode: codes.PermissionDenied,
+		},
+		{
+			name: "internal error when guard encounters unexpected error",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.Internal, "internal auth error")},
+			wantErrCode: codes.Internal,
+		},
+		{
+			name: "failed precondition when authorized but feature flag disabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: false,
+				},
+			},
+			guard:       &mockAdminRoleGuard{hasRole: true},
+			wantErrCode: codes.FailedPrecondition,
+		},
+		{
+			name: "forbidden when unauthorized and feature flag disabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: false,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
+			wantErrCode: codes.PermissionDenied,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil)
+			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})
+
+			if tt.wantErrCode != codes.OK {
+				if err == nil {
+					t.Fatalf("PauseScheduling() expected error with code %v, got nil", tt.wantErrCode)
+				}
+				if gotCode := status.Code(err); gotCode != tt.wantErrCode {
+					t.Errorf("PauseScheduling() got error code %v, want %v, err: %v", gotCode, tt.wantErrCode, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("PauseScheduling() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantResp, resp, protocmp.Transform()); diff != "" {
+				t.Errorf("PauseScheduling() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestResumeScheduling(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         *Config
+		guard       AdminRoleGuard
+		wantErrCode codes.Code
+		wantResp    *spb.ResumeSchedulingResponse
+	}{
+		{
+			name: "success when authorized and feature flag enabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{hasRole: true},
+			wantErrCode: codes.OK,
+			wantResp:    &spb.ResumeSchedulingResponse{},
+		},
+		{
+			name: "forbidden when caller lacks admin role even if flag enabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
+			wantErrCode: codes.PermissionDenied,
+		},
+		{
+			name: "internal error when guard encounters unexpected error",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.Internal, "internal auth error")},
+			wantErrCode: codes.Internal,
+		},
+		{
+			name: "failed precondition when authorized but feature flag disabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: false,
+				},
+			},
+			guard:       &mockAdminRoleGuard{hasRole: true},
+			wantErrCode: codes.FailedPrecondition,
+		},
+		{
+			name: "forbidden when unauthorized and feature flag disabled",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: false,
+				},
+			},
+			guard:       &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")},
+			wantErrCode: codes.PermissionDenied,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil)
+			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})
+
+			if tt.wantErrCode != codes.OK {
+				if err == nil {
+					t.Fatalf("ResumeScheduling() expected error with code %v, got nil", tt.wantErrCode)
+				}
+				if gotCode := status.Code(err); gotCode != tt.wantErrCode {
+					t.Errorf("ResumeScheduling() got error code %v, want %v, err: %v", gotCode, tt.wantErrCode, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ResumeScheduling() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantResp, resp, protocmp.Transform()); diff != "" {
+				t.Errorf("ResumeScheduling() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

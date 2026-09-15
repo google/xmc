@@ -43,6 +43,22 @@ service HealthService {
       get: "/v1/health/userinfo"
     };
   }
+
+  // Pauses Actuator scheduling operations.
+  rpc PauseScheduling(PauseSchedulingRequest) returns (PauseSchedulingResponse) {
+    option (google.api.http) = {
+      post: "/v1/health/scheduling:pause"
+      body: "*"
+    };
+  }
+
+  // Resumes Actuator scheduling operations.
+  rpc ResumeScheduling(ResumeSchedulingRequest) returns (ResumeSchedulingResponse) {
+    option (google.api.http) = {
+      post: "/v1/health/scheduling:resume"
+      body: "*"
+    };
+  }
 }
 
 message GetHealthStatusRequest {
@@ -112,3 +128,12 @@ message UserInfoResponse {
   string user_email = 1;
   repeated Privilege privileges = 2;
 }
+
+message PauseSchedulingRequest {}
+
+message PauseSchedulingResponse {}
+
+message ResumeSchedulingRequest {}
+
+message ResumeSchedulingResponse {}
+
