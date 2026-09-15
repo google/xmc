@@ -87,6 +87,11 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
       ref: 'refs/heads/main',
       eventName: 'schedule',
       xid: '12006',
+      associatedPr: {
+        number: 876,
+        title: 'feat: example PR',
+        url: 'https://github.com/google/xmc/pull/876',
+      },
       triggerOutcome: 'success',
       verifyOutcome: 'failure',
       activeOwners: ['userA', 'userB'],
@@ -95,6 +100,7 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
     assert.ok(body.includes('https://github.com/google/xmc/actions/runs/12345678'));
     assert.ok(body.includes('https://github.com/google/xmc/commit/abcdef1234567890'));
     assert.ok(body.includes('`abcdef1`'));
+    assert.ok(body.includes('[PR #876: *feat: example PR*](https://github.com/google/xmc/pull/876)'));
     assert.ok(body.includes('`12006`'));
     assert.ok(body.includes('cc @userA @userB'));
     assert.ok(!body.includes('Web UI URL'));
@@ -145,6 +151,11 @@ describe('run orchestrator', () => {
     let createdIssue = null;
     const mockGithub = {
       rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => ({
+            data: [{ number: 123, title: 'Sample PR', html_url: 'https://github.com/google/xmc/pull/123' }],
+          }),
+        },
         issues: {
           listForRepo: async () => ({ data: [] }),
           create: async (payload) => {
@@ -198,6 +209,9 @@ describe('run orchestrator', () => {
     let createdComment = null;
     const mockGithub = {
       rest: {
+        repos: {
+          listPullRequestsAssociatedWithCommit: async () => ({ data: [] }),
+        },
         issues: {
           listForRepo: async () => ({ data: [{ number: 101, title: 'Open failure issue' }] }),
           create: async () => assert.fail('Should not create new issue when open issue exists'),

@@ -66,6 +66,7 @@ function formatFailureIssueBody({
   ref,
   eventName,
   xid,
+  associatedPr,
   triggerOutcome = 'unknown',
   verifyOutcome = 'unknown',
   activeOwners = [],
@@ -81,6 +82,13 @@ function formatFailureIssueBody({
   body += `| :--- | :--- |\n`;
   body += `| **Workflow Run** | [View Run Details](${runUrl}) |\n`;
   body += `| **Commit** | [\`${shortSha}\`](${commitUrl}) |\n`;
+
+  if (associatedPr && associatedPr.number) {
+    const prUrl = associatedPr.url || `${serverUrl}/${owner}/${repo}/pull/${associatedPr.number}`;
+    const prTitle = associatedPr.title ? `: *${associatedPr.title}*` : '';
+    body += `| **Associated PR** | [PR #${associatedPr.number}${prTitle}](${prUrl}) |\n`;
+  }
+
   body += `| **Branch / Ref** | \`${ref || 'refs/heads/main'}\` |\n`;
   body += `| **Trigger Event** | \`${eventName || 'schedule'}\` |\n`;
   body += `| **Experiment XID** | \`${xid || 'N/A'}\` |\n`;
@@ -150,6 +158,27 @@ async function run({
   const triggerOutcome = needsContext['trigger-demo-workload']?.result || 'unknown';
   const verifyOutcome = needsContext['validate-workload-results']?.result || 'unknown';
   const xid = process.env.XID || '';
+  // 4. Look up associated merged Pull Request if available
+  let associatedPr = null;
+  if (context.sha) {
+    try {
+      const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+        owner,
+        repo,
+        commit_sha: context.sha,
+      });
+      if (prs && prs.length > 0) {
+        associatedPr = {
+          number: prs[0].number,
+          title: prs[0].title,
+          url: prs[0].html_url,
+        };
+        core.info(`Found associated PR #${prs[0].number}: "${prs[0].title}"`);
+      }
+    } catch (err) {
+      core.warning(`Failed to look up associated PR for commit ${context.sha}: ${err.message}`);
+    }
+  }
 
   const params = {
     serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
@@ -160,6 +189,7 @@ async function run({
     ref: context.ref,
     eventName: context.eventName,
     xid,
+    associatedPr,
     triggerOutcome,
     verifyOutcome,
     activeOwners,
