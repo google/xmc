@@ -16,7 +16,10 @@
 
 from __future__ import annotations
 
+import io
+import json
 import unittest
+import urllib.error
 from types import SimpleNamespace
 from unittest import mock
 
@@ -352,7 +355,6 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 wait_for_completion=True,
             )
         self.assertIn("failed execution", str(ctx.exception))
-        # Verify it failed fast without retrying in a loop
         self.assertEqual(stub.ListWorkUnits.call_count, 1)
 
     def test_validate_work_units_transient_error_retry(self) -> None:
@@ -500,6 +502,610 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 xmc_entities_validator.create_authenticated_stub("endpoint:443")
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
+
+    # =========================================================================
+    # Phase 1: validate_jobsets Tests
+    # =========================================================================
+
+    def _create_mock_jobset_wu(self, jobs: list[SimpleNamespace]) -> SimpleNamespace:
+        jobset = SimpleNamespace(jobs=jobs)
+        executable = SimpleNamespace(
+            jobset=jobset,
+            HasField=lambda f: f == "jobset",
+        )
+        return SimpleNamespace(
+            name="experiments/10/workUnits/1",
+            executable=executable,
+        )
+
+    def test_validate_jobsets_success_single_job_with_init_and_sidecars(self) -> None:
+        init_c = SimpleNamespace(name="init-setup", docker_image="gcr.io/init:v1")
+        sidecar_c = SimpleNamespace(name="sidecar-service", docker_image="gcr.io/sidecar:v1")
+        primary_c = SimpleNamespace(name="primary-worker", docker_image="gcr.io/worker:v1")
+        job = SimpleNamespace(
+            name="sidecar-worker",
+            replicas=1,
+            init_containers=[init_c],
+            sidecars=[sidecar_c],
+            spec=primary_c,
+        )
+        wu = self._create_mock_jobset_wu([job])
+
+        expected_jobs = [
+            {
+                "name": "sidecar-worker",
+                "replicas": 1,
+                "init_containers": ["init-setup"],
+                "sidecars": [{"name": "sidecar-service", "docker_image": "gcr.io/sidecar:v1"}],
+                "spec": "primary-worker",
+            }
+        ]
+        results = xmc_entities_validator.validate_jobsets(wu, expected_jobs)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["name"], "sidecar-worker")
+        self.assertEqual(results[0]["replicas"], 1)
+        self.assertEqual(results[0]["init_containers"][0]["name"], "init-setup")
+        self.assertEqual(results[0]["sidecars"][0]["name"], "sidecar-service")
+        self.assertEqual(results[0]["primary_container"], "primary-worker")
+
+    def test_validate_jobsets_success_multipod_job(self) -> None:
+        job1 = SimpleNamespace(
+            name="counter-workers",
+            replicas=2,
+            init_containers=[],
+            sidecars=[SimpleNamespace(name="sidecar-counter", docker_image="gcr.io/img:latest")],
+            spec=SimpleNamespace(name="primary-counter", docker_image="gcr.io/img:latest"),
+        )
+        job2 = SimpleNamespace(
+            name="secondary-counter",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="secondary-counter", docker_image="gcr.io/img:latest"),
+        )
+        wu = self._create_mock_jobset_wu([job1, job2])
+
+        expected_jobs = [
+            {
+                "name": "counter-workers",
+                "replicas": 2,
+                "sidecars": ["sidecar-counter"],
+                "primary_container": {
+                    "name": "primary-counter",
+                    "docker_image": "gcr.io/img:latest",
+                },
+            },
+            {
+                "name": "secondary-counter",
+                "replicas": 1,
+                "spec": "secondary-counter",
+            },
+        ]
+        results = xmc_entities_validator.validate_jobsets(wu, expected_jobs)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["name"], "counter-workers")
+        self.assertEqual(results[1]["name"], "secondary-counter")
+
+    def test_validate_jobsets_integer_counts(self) -> None:
+        init_c1 = SimpleNamespace(name="init-1", docker_image="")
+        init_c2 = SimpleNamespace(name="init-2", docker_image="")
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[init_c1, init_c2],
+            sidecars=[],
+            spec=SimpleNamespace(name="main"),
+        )
+        wu = self._create_mock_jobset_wu([job])
+
+        expected_jobs = [
+            {
+                "name": "worker",
+                "init_containers": 2,
+                "sidecars": 0,
+            }
+        ]
+        results = xmc_entities_validator.validate_jobsets(wu, expected_jobs)
+        self.assertEqual(len(results), 1)
+
+    def test_validate_jobsets_missing_executable(self) -> None:
+        wu = SimpleNamespace(name="experiments/10/workUnits/1")
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "worker"}])
+        self.assertIn("missing executable field", str(ctx.exception))
+
+    def test_validate_jobsets_not_a_jobset(self) -> None:
+        executable = SimpleNamespace(
+            HasField=lambda f: False,
+        )
+        wu = SimpleNamespace(name="experiments/10/workUnits/1", executable=executable)
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "worker"}])
+        self.assertIn("does not contain a JobSet executable", str(ctx.exception))
+
+    def test_validate_jobsets_count_mismatch(self) -> None:
+        job = SimpleNamespace(name="worker", replicas=1, init_containers=[], sidecars=[])
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "w1"}, {"name": "w2"}])
+        self.assertIn("JobSet job count mismatch: expected 2, found 1", str(ctx.exception))
+
+    def test_validate_jobsets_job_name_missing_in_spec(self) -> None:
+        job = SimpleNamespace(name="worker", replicas=1, init_containers=[], sidecars=[])
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"replicas": 1}])
+        self.assertIn("must specify a 'name'", str(ctx.exception))
+
+    def test_validate_jobsets_positional_fallback(self) -> None:
+        job = SimpleNamespace(name="actual-worker", replicas=1, init_containers=[], sidecars=[])
+        wu = self._create_mock_jobset_wu([job])
+        results = xmc_entities_validator.validate_jobsets(wu, [{"name": "fallback-worker"}])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["name"], "actual-worker")
+
+    def test_validate_jobsets_replicas_mismatch(self) -> None:
+        job = SimpleNamespace(name="worker", replicas=1, init_containers=[], sidecars=[])
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "worker", "replicas": 4}])
+        self.assertIn("replica count mismatch: expected 4, found 1", str(ctx.exception))
+
+    def test_validate_jobsets_init_container_count_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[SimpleNamespace(name="init-1", docker_image="")],
+            sidecars=[],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "worker", "init_containers": 3}])
+        self.assertIn("init container count mismatch", str(ctx.exception))
+
+    def test_validate_jobsets_init_container_name_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[SimpleNamespace(name="init-actual", docker_image="")],
+            sidecars=[],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu, [{"name": "worker", "init_containers": ["init-expected"]}]
+            )
+        self.assertIn(
+            "init container name mismatch: expected 'init-expected', found 'init-actual'",
+            str(ctx.exception),
+        )
+
+    def test_validate_jobsets_init_container_property_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[SimpleNamespace(name="init-1", docker_image="gcr.io/v1")],
+            sidecars=[],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu,
+                [
+                    {
+                        "name": "worker",
+                        "init_containers": [{"name": "init-1", "docker_image": "gcr.io/v2"}],
+                    }
+                ],
+            )
+        self.assertIn("init container property 'docker_image' mismatch", str(ctx.exception))
+
+    def test_validate_jobsets_sidecar_count_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[SimpleNamespace(name="sidecar-1", docker_image="")],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu, [{"name": "worker", "sidecars": ["s1", "s2"]}]
+            )
+        self.assertIn("sidecar container count mismatch", str(ctx.exception))
+
+    def test_validate_jobsets_sidecar_name_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[SimpleNamespace(name="sidecar-actual", docker_image="")],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu, [{"name": "worker", "sidecars": ["sidecar-expected"]}]
+            )
+        self.assertIn(
+            "sidecar container name mismatch: expected 'sidecar-expected', found 'sidecar-actual'",
+            str(ctx.exception),
+        )
+
+    def test_validate_jobsets_sidecar_property_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[SimpleNamespace(name="sidecar-1", docker_image="gcr.io/v1")],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu,
+                [
+                    {
+                        "name": "worker",
+                        "sidecars": [{"name": "sidecar-1", "docker_image": "gcr.io/v2"}],
+                    }
+                ],
+            )
+        self.assertIn("sidecar container property 'docker_image' mismatch", str(ctx.exception))
+
+    def test_validate_jobsets_primary_spec_missing(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(wu, [{"name": "worker", "spec": "main"}])
+        self.assertIn("missing primary container spec", str(ctx.exception))
+
+    def test_validate_jobsets_primary_spec_name_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="actual-main"),
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu, [{"name": "worker", "spec": "expected-main"}]
+            )
+        self.assertIn("primary container name mismatch", str(ctx.exception))
+
+    def test_validate_jobsets_primary_spec_property_mismatch(self) -> None:
+        job = SimpleNamespace(
+            name="worker",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="main", docker_image="gcr.io/v1"),
+        )
+        wu = self._create_mock_jobset_wu([job])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_jobsets(
+                wu, [{"name": "worker", "spec": {"name": "main", "docker_image": "gcr.io/v2"}}]
+            )
+        self.assertIn("primary container property 'docker_image' mismatch", str(ctx.exception))
+
+    # =========================================================================
+    # Phase 2: validate_artifacts Tests
+    # =========================================================================
+
+    def test_normalize_artifact_type(self) -> None:
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("ChartArtifact"), "chart")
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("UrlArtifact"), "url")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
+        )
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("chart"), "chart")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ArtifactPayload.chart"), "chart"
+        )
+
+    def test_validate_artifacts_success_with_chart_and_url(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Loss and Accuracy Plots",
+            metric_names=["val/loss", "train/accuracy"],
+            status=2,  # SUCCESS
+            error_message="",
+        )
+        url_obj = SimpleNamespace(
+            url="https://dashboard.example.com/view",
+            display_name="External Monitoring",
+        )
+        art_chart = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        art_url = SimpleNamespace(
+            name="artifacts/2",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art_chart, art_url])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["ChartArtifact", "UrlArtifact"],
+            expected_metric_names=["val/loss", "train/accuracy"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["type"], "chart")
+        self.assertEqual(results[0]["metric_names"], ["val/loss", "train/accuracy"])
+        self.assertEqual(results[1]["type"], "url")
+        self.assertEqual(results[1]["url"], "https://dashboard.example.com/view")
+
+    def test_validate_artifacts_experiment_level(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://experiment.example.com", display_name="Summary")
+        art = SimpleNamespace(
+            name="artifacts/100",
+            parent="experiments/42",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="42",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["parent"], "experiments/42")
+
+    def test_validate_artifacts_terminal_failure_on_chart_failed_status(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Failed Chart",
+            metric_names=["loss"],
+            status=3,  # FAILED
+            error_message="ClickHouse connection timed out",
+        )
+        art = SimpleNamespace(
+            name="artifacts/5",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(xmc_entities_validator.TerminalFailureError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                timeout_sec=5,
+            )
+        self.assertIn("failed provisioning: ClickHouse connection timed out", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_types_fails(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                expected_artifact_types=["chart"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected artifact types ['chart'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_metrics_fails(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Chart",
+            metric_names=["train/loss"],
+            status=2,
+            error_message="",
+        )
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_metric_names=["val/accuracy"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected metric names ['val/accuracy'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_transient_error_retry(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.side_effect = [
+            RuntimeError("gRPC transient error"),
+            SimpleNamespace(artifacts=[art]),
+        ]
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+            poll_interval_sec=0,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+
+    # =========================================================================
+    # Phase 2: validate_dashboard Tests
+    # =========================================================================
+
+    def test_validate_dashboard_success_with_charts(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/example_vcc",
+            "title": "VCC Comparative Dashboard",
+            "chart_ids": ["chart_1", "chart_2"],
+        }
+        mock_chart_1 = {"name": "charts/chart_1", "title": "Loss vs Steps"}
+        mock_chart_2 = {"name": "charts/chart_2", "title": "Accuracy vs Steps"}
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            url = req.full_url
+            if "/v1/dashboards/example_vcc" in url:
+                resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            if "/v1/charts/chart_1" in url:
+                resp = io.BytesIO(json.dumps(mock_chart_1).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            if "/v1/charts/chart_2" in url:
+                resp = io.BytesIO(json.dumps(mock_chart_2).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)  # type: ignore
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=[
+                    {
+                        "dashboard_id": "example_vcc",
+                        "expected_title": "VCC Comparative",
+                        "expected_chart_ids": ["chart_1", "chart_2"],
+                    }
+                ],
+                timeout_sec=5,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "example_vcc")
+            self.assertEqual(results[0]["title"], "VCC Comparative Dashboard")
+            self.assertEqual(len(results[0]["charts"]), 2)
+
+    def test_validate_dashboard_string_identifier(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/simple_dash",
+            "title": "Simple Dashboard",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="http://dashboard-service:8080",
+                expected_dashboards=["simple_dash"],
+                timeout_sec=5,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "simple_dash")
+
+    def test_validate_dashboard_title_mismatch_fails(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Production Overview",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {"dashboard_id": "dash_1", "expected_title": "Experimental"}
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn(
+                "title mismatch: expected 'Experimental', found 'Production Overview'",
+                str(ctx.exception),
+            )
+
+    def test_validate_dashboard_missing_expected_chart_ids(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Dashboard",
+            "chart_ids": ["chart_a"],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {
+                            "dashboard_id": "dash_1",
+                            "expected_chart_ids": ["chart_a", "chart_b"],
+                        }
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("missing expected chart IDs: ['chart_b']", str(ctx.exception))
+
+    def test_validate_dashboard_non_200_status(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_dashboard_network_error_timeout(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.URLError("Connection refused")
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
 
 
 if __name__ == "__main__":

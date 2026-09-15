@@ -68,8 +68,14 @@ vars:
   # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
   deletion_protection: false
 
-  # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
+  # Enable Metrics Pipeline (Ingestion Gateway & Ingestion Services)
   enable_metrics: false
+
+  # Enable Dashboard Service microservice for custom chart and dashboard visualizations
+  dashboard_service_deployment_enabled: false
+
+  # Enable Resource Optimization & Diagnostics (ROD) Data Provider
+  rod_deployment_enabled: false
 
   # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
   # Requires GKE cluster version 1.35.0-gke.3065000 or later.

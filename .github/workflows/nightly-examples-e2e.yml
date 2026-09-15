@@ -1,0 +1,439 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Nightly Examples E2E Test Suite'
+
+on:
+  schedule:
+    # Trigger nightly examples e2e test suite at 4:00 AM UTC every day (after 1:00 AM deploy & 2:00 AM test suite)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target deployment environment (default: xmc-nightly)'
+        required: false
+        default: 'xmc-nightly'
+        type: string
+      queue_name:
+        description: 'Target Kueue ClusterQueue name (default: cpu-queue)'
+        required: false
+        default: 'cpu-queue'
+        type: string
+      timeout_minutes:
+        description: 'Timeout in minutes per example workload (default: 30)'
+        required: false
+        default: 30
+        type: number
+      examples_filter:
+        description: 'Comma-separated example IDs to run (leave empty to run all 12)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run-and-verify-example:
+    name: 'Run & Verify: ${{ matrix.name }}'
+    runs-on: 'arc-runner-set'
+    environment: xmc-nightly
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: 'simple_job'
+            name: 'Simple Multi-Unit Job'
+            example_path: 'examples/simple_job'
+            entrypoint: 'launch.py'
+            args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=60 --gpus=0'
+            verify_script: 'tools/nightly_tests/simple_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME} --expected_work_units=3'
+          - id: 'init_container_job'
+            name: 'Init Container Job'
+            example_path: 'examples/init_container_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/init_container_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'sidecar'
+            name: 'Sidecar Container Job'
+            example_path: 'examples/sidecar'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/sidecar_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'multipod_job'
+            name: 'Multi-Pod & Multi-Container Job'
+            example_path: 'examples/multipod_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/multipod_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'metrics_job'
+            name: 'Metrics Autologging Job'
+            example_path: 'examples/metrics_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/metrics_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'managed_xprof_artifact_job'
+            name: 'Managed XProf Artifact Job'
+            example_path: 'examples/managed_xprof_artifact_job'
+            entrypoint: 'launch.py'
+            args: '--queue_name=${QUEUE_NAME}'
+            verify_script: 'tools/nightly_tests/managed_xprof_artifact_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'chart_artifact_job'
+            name: 'Chart Artifact Job'
+            example_path: 'examples/chart_artifact_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/chart_artifact_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'clickhouse_metrics_job'
+            name: 'ClickHouse Metrics Job'
+            example_path: 'examples/clickhouse_metrics_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/clickhouse_metrics_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'metrics_dashboard_job'
+            name: 'Metrics Dashboard Job'
+            example_path: 'examples/metrics_dashboard_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/metrics_dashboard_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'per_job_node_selector'
+            name: 'Per-Job Node Selector Job'
+            example_path: 'examples/per_job_node_selector'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/per_job_node_selector_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'pathways_job'
+            name: 'Pathways JobSet Job'
+            example_path: 'examples/pathways_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/pathways_job_verify.py'
+            verify_args: '--expected_queue=${QUEUE_NAME}'
+          - id: 'xdash_dashboard'
+            name: 'xDash Dashboard Builder'
+            example_path: 'examples/xdash_dashboard'
+            entrypoint: 'create_dashboard.py'
+            args: ''
+            verify_script: 'tools/nightly_tests/xdash_dashboard_verify.py'
+            verify_args: ''
+
+    env:
+      PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
+      REGION: '${{ secrets.GCP_REGION }}'
+      DOMAIN_NAME: '${{ secrets.GCP_DOMAIN_NAME }}'
+      XMC_DOMAIN: 'xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
+      XMANAGER_ENDPOINT: 'grpc.xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}:443'
+      XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
+      XMC_DASHBOARD_ENDPOINT: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}/v1/dashboards'
+      IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
+      XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+      QUEUE_NAME: ${{ inputs.queue_name || 'cpu-queue' }}
+      EXAMPLES_FILTER: ${{ inputs.examples_filter || '' }}
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Check Filter'
+        id: filter-check
+        env:
+          EXAMPLE_ID: '${{ matrix.id }}'
+          FILTER: ${{ inputs.examples_filter || '' }}
+        run: |
+          if [ -n "${FILTER}" ]; then
+            if echo ",${FILTER}," | grep -qi ",${EXAMPLE_ID},"; then
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Skipping ${EXAMPLE_ID} (not in filter: ${FILTER})"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
+        if: steps.filter-check.outputs.should_run == 'true'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
+        with:
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: 'Set up Python 3.13'
+        if: steps.filter-check.outputs.should_run == 'true'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install XManager CLI and Dependencies'
+        if: steps.filter-check.outputs.should_run == 'true'
+        env:
+          EXAMPLE_PATH: '${{ matrix.example_path }}'
+        run: |
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
+          if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
+            "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
+          fi
+
+      - name: 'Mint XMC Identity Token'
+        if: steps.filter-check.outputs.should_run == 'true'
+        run: |
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
+            else
+              TOKEN="$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)"
+            fi
+            echo "::add-mask::${TOKEN}"
+            echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: 'Launch Example Workload'
+        id: launch-example
+        if: steps.filter-check.outputs.should_run == 'true'
+        env:
+          ACTOR: '${{ github.actor }}'
+          EXAMPLE_NAME: '${{ matrix.name }}'
+          EXAMPLE_ID: '${{ matrix.id }}'
+          EXAMPLE_PATH: '${{ matrix.example_path }}'
+          ENTRYPOINT: '${{ matrix.entrypoint }}'
+          RAW_ARGS: '${{ matrix.args }}'
+        run: |
+          set -euo pipefail
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
+            else
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)
+            fi
+            export XMC_AUTH_TOKEN
+          fi
+          export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          echo "================================================================="
+          echo " Launching Example: ${EXAMPLE_NAME} (${EXAMPLE_ID})"
+          echo " Target Queue    : ${QUEUE_NAME}"
+          echo " Endpoint        : ${XMANAGER_ENDPOINT}"
+          echo "================================================================="
+
+          cd "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}"
+          export PYTHONPATH="${GITHUB_WORKSPACE}/${EXAMPLE_PATH}:${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+
+          EVAL_ARGS=$(eval echo "${RAW_ARGS}")
+
+          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" ${EVAL_ARGS} | tee /dev/stderr)
+
+          # Extract XID or Dashboard ID from output
+          XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)
+          if [ -z "${XID}" ]; then
+            XID=$(echo "${OUTPUT}" | grep -oP 'experiments/\K\d+' | head -n 1 || true)
+          fi
+          if [ -z "${XID}" ] && echo "${OUTPUT}" | grep -q 'dashboards/'; then
+            DASH_ID=$(echo "${OUTPUT}" | grep -oP 'dashboards/\K[a-zA-Z0-9_-]+' | head -n 1 || echo "example_vcc_comparison")
+            XID="dashboard:${DASH_ID}"
+          fi
+
+          if [ -z "${XID}" ]; then
+            echo "::error::Failed to parse experiment XID or dashboard identifier from launch output."
+            exit 1
+          fi
+
+          echo "Extracted Identifier: ${XID}"
+          echo "xid=${XID}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Run Workload Verification Assertions'
+        id: verify-example
+        if: steps.filter-check.outputs.should_run == 'true' && steps.launch-example.outcome == 'success'
+        env:
+          ACTOR: '${{ github.actor }}'
+          EXAMPLE_NAME: '${{ matrix.name }}'
+          EXAMPLE_ID: '${{ matrix.id }}'
+          VERIFY_SCRIPT: '${{ matrix.verify_script }}'
+          RAW_VERIFY_ARGS: '${{ matrix.verify_args }}'
+          XID: '${{ steps.launch-example.outputs.xid }}'
+        run: |
+          set -euo pipefail
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
+            else
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)
+            fi
+            export XMC_AUTH_TOKEN
+          fi
+          export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          echo "================================================================="
+          echo " Verifying Example: ${EXAMPLE_NAME} (${EXAMPLE_ID})"
+          echo " Identifier       : ${XID}"
+          echo " Verify Script    : ${VERIFY_SCRIPT}"
+          echo "================================================================="
+
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+          EVAL_VERIFY_ARGS=$(eval echo "${RAW_VERIFY_ARGS}")
+
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" "${GITHUB_WORKSPACE}/${VERIFY_SCRIPT}" \
+            --xid="${XID}" \
+            --endpoint="${XMANAGER_ENDPOINT}" \
+            ${EVAL_VERIFY_ARGS}
+
+          echo "================================================================="
+          echo " Verification Passed for: ${EXAMPLE_NAME}"
+          echo "================================================================="
+
+      - name: 'Publish Step Summary & Save Result'
+        if: always()
+        env:
+          EXAMPLE_NAME: '${{ matrix.name }}'
+          EXAMPLE_ID: '${{ matrix.id }}'
+          LAUNCH_XID: '${{ steps.launch-example.outputs.xid }}'
+          SHOULD_RUN: '${{ steps.filter-check.outputs.should_run }}'
+          LAUNCH_OUTCOME: '${{ steps.launch-example.outcome }}'
+          VERIFY_OUTCOME: '${{ steps.verify-example.outcome }}'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/results"
+          STATUS="FAILED"
+          XID="${LAUNCH_XID}"
+          if [ "${SHOULD_RUN}" != "true" ]; then
+            STATUS="SKIPPED"
+            XID="skipped"
+          elif [ "${LAUNCH_OUTCOME}" = "success" ] && [ "${VERIFY_OUTCOME}" = "success" ]; then
+            STATUS="PASSED"
+          elif [ "${LAUNCH_OUTCOME}" = "success" ]; then
+            STATUS="VERIFY_FAILED"
+          fi
+          echo "{\"id\": \"${EXAMPLE_ID}\", \"name\": \"${EXAMPLE_NAME}\", \"status\": \"${STATUS}\", \"launch_status\": \"${LAUNCH_OUTCOME}\", \"verify_status\": \"${VERIFY_OUTCOME}\", \"xid\": \"${XID}\"}" > "${GITHUB_WORKSPACE}/results/${EXAMPLE_ID}.json"
+
+          {
+            echo "### 🚀 Example: ${EXAMPLE_NAME} (\`${EXAMPLE_ID}\`)"
+            echo ""
+            echo "| Step / Property | Value / Status |"
+            echo "| --- | --- |"
+            echo "| **Overall Status** | \`${STATUS}\` |"
+            echo "| **Launch Step** | \`${LAUNCH_OUTCOME}\` |"
+            echo "| **Verify Step** | \`${VERIFY_OUTCOME}\` |"
+            echo "| **Experiment / Dashboard ID** | \`${XID:-N/A}\` |"
+            if [ -n "${XID:-}" ] && [ "${XID}" != "skipped" ] && [ "${XID}" != "N/A" ]; then
+              if [[ "${XID}" =~ ^dashboard: ]]; then
+                DASH_SLUG="${XID#dashboard:}"
+                echo "| **Web UI Link** | https://xmc-nightly.${DOMAIN_NAME}/dashboards/${DASH_SLUG} |"
+              else
+                echo "| **Web UI Link** | https://xmc-nightly.${DOMAIN_NAME}/experiments/${XID} |"
+              fi
+            fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'Upload Matrix Result Artifact'
+        if: always()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: result-${{ matrix.id }}
+          path: results/${{ matrix.id }}.json
+          retention-days: 1
+
+  aggregate-results:
+    name: 'Aggregate Examples Results'
+    needs: [run-and-verify-example]
+    if: always()
+    runs-on: 'arc-runner-set'
+    permissions:
+      contents: read
+
+    steps:
+      - name: 'Download Result Artifacts'
+        uses: 'actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806' # v4.1.9
+        with:
+          path: results
+          pattern: result-*
+          merge-multiple: true
+
+      - name: 'Aggregate Results and Output Summary'
+        id: aggregate
+        run: |
+          python3 -c '
+          import glob
+          import json
+          import os
+          import sys
+
+          results = []
+          xid_map = {}
+          all_passed = True
+
+          for f in sorted(glob.glob("results/*.json")):
+              try:
+                  with open(f, "r", encoding="utf-8") as fp:
+                      data = json.load(fp)
+                      results.append(data)
+                      if data.get("xid") and data["xid"] != "skipped":
+                          xid_map[data["id"]] = data["xid"]
+                      if data.get("status") in ("FAILED", "VERIFY_FAILED"):
+                          all_passed = False
+              except Exception as e:
+                  print(f"Error reading {f}: {e}")
+                  all_passed = False
+
+          summary_md = []
+          summary_md.append("## 🌟 Nightly Examples E2E Test Suite Summary\n")
+          if all_passed:
+              summary_md.append("### ✅ Overall Status: ALL PASSED\n")
+          else:
+              summary_md.append("### ⚠️ Overall Status: SOME WORKLOADS FAILED\n")
+
+          summary_md.append("| Example ID | Name | Overall Status | Launch | Verify | Experiment / Identifier |")
+          summary_md.append("| --- | --- | --- | --- | --- | --- |")
+
+          for r in results:
+              r_id = r.get("id", "")
+              r_name = r.get("name", "")
+              r_status = r.get("status", "")
+              r_launch = r.get("launch_status", "")
+              r_verify = r.get("verify_status", "")
+              r_xid = r.get("xid", "")
+              status_badge = "✅ PASSED" if r_status == "PASSED" else ("⏭️ SKIPPED" if r_status == "SKIPPED" else "❌ FAILED")
+              summary_md.append(f"| `{r_id}` | {r_name} | {status_badge} | `{r_launch}` | `{r_verify}` | `{r_xid}` |")
+
+          summary_text = "\n".join(summary_md) + "\n"
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a", encoding="utf-8") as sf:
+                  sf.write(summary_text)
+
+          print(summary_text)
+          if not all_passed:
+              print("::error::One or more example workloads failed launch or verification.")
+              sys.exit(1)
+          '
