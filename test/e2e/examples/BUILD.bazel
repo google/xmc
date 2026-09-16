@@ -36,6 +36,7 @@ py_library(
         ":example_runner",
         "//test/e2e/lib:orchestration_lib",
         "//tools/nightly_tests:common",
+        "//tools/nightly_tests:demo_workload_verify_lib",
         "//tools/nightly_tests:xmc_entities_validator_lib",
     ],
 )
@@ -49,6 +50,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_demo_workload_test",
+    srcs = ["test_demo_workload_test.py"],
+    deps = [
+        ":example_runner",
+        ":examples_e2e_pkg",
+        "//tools/nightly_tests:demo_workload_verify_lib",
+    ],
+)
+
 py_binary(
     name = "test_demo_workload",
     srcs = ["test_demo_workload.py"],
@@ -59,6 +70,7 @@ py_binary(
         ":examples_e2e_pkg",
         "//test/e2e:e2e_pkg",
         "//tools/nightly_tests:common",
+        "//tools/nightly_tests:demo_workload_verify_lib",
         "//tools/nightly_tests:xmc_entities_validator_lib",
     ],
 )

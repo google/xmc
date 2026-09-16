@@ -25,9 +25,10 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from playwright.sync_api import Page, expect, sync_playwright
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 from test.e2e.examples.example_runner import (
     ExampleLaunchResult,
@@ -45,7 +46,7 @@ from test.e2e.lib.ui_diagnostics import (
     save_screenshot,
     setup_logging,
 )
-from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests import demo_workload_verify
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +55,6 @@ BASE_URL = DEFAULT_BASE_URL
 DEX_URL = DEFAULT_DEX_URL
 ADMIN_USER = DEFAULT_ADMIN_USER
 ADMIN_PASSWORD = DEFAULT_ADMIN_PASSWORD
-
-EXPECTED_WORK_UNITS = 3
-EXPECTED_QUEUE = "cpu-queue"
-EXPECTED_TITLE_PATTERN = "Demo Workload"
-EXPECTED_WORKER_NAMES = (
-    "demo-worker-1",
-    "demo-worker-2",
-    "demo-worker-3",
-)
 
 
 def _launch_demo_workload(
@@ -79,8 +71,8 @@ def _launch_demo_workload(
         launch_script="examples/simple_job/launch.py",
         user_email=ADMIN_USER,
         args=[
-            f"--queue={EXPECTED_QUEUE}",
-            f"--num_work_units={EXPECTED_WORK_UNITS}",
+            f"--queue={demo_workload_verify.EXPECTED_QUEUE}",
+            f"--num_work_units={demo_workload_verify.EXPECTED_WORK_UNITS}",
             "--duration=30",
             "--gpus=0",
             f"--author={ADMIN_USER}",
@@ -92,40 +84,15 @@ def _launch_demo_workload(
     return launch_result
 
 
-def _verify_demo_workload_backend(xid: str) -> tuple[Any, list[dict[str, Any]]]:
-    """Verifies experiment metadata and WorkUnits using shared xmc_entities_validator."""
-    logger.info("=== [Level 2] Verifying Experiment & WorkUnits via ESS gRPC API ===")
-    stub, channel = xmc_entities_validator.create_authenticated_stub("127.0.0.1:50051")
-    try:
-        experiment = xmc_entities_validator.validate_experiment(
-            stub=stub,
-            xid=xid,
-            expected_title_pattern=EXPECTED_TITLE_PATTERN,
-        )
-        logger.info(
-            "  [✓] Verified Experiment: %s (Title: '%s')", experiment.name, experiment.title
-        )
-
-        wu_results = xmc_entities_validator.validate_work_units(
-            stub=stub,
-            xid=xid,
-            expected_count=EXPECTED_WORK_UNITS,
-            expected_queue=EXPECTED_QUEUE,
-            expected_worker_names=EXPECTED_WORKER_NAMES,
-            timeout_sec=300,
-        )
-        for wu in wu_results:
-            logger.info(
-                "  [✓] Verified WorkUnit #%s: Worker='%s', Queue='%s', State='%s'",
-                wu["id"],
-                wu["worker_name"],
-                wu["queue"],
-                wu["state"],
-            )
-        return experiment, wu_results
-    finally:
-        if channel is not None and hasattr(channel, "close"):
-            channel.close()
+def _verify_demo_workload_backend(xid: str, endpoint: str = "127.0.0.1:50051") -> None:
+    """Verifies experiment metadata and WorkUnits using shared demo_workload_verify."""
+    logger.info("=== [Level 2] Verifying Experiment & WorkUnits via demo_workload_verify ===")
+    demo_workload_verify.FLAGS(
+        ["demo_workload_verify", f"--xid={xid}", f"--endpoint={endpoint}"],
+        known_only=True,
+    )
+    demo_workload_verify.main(["demo_workload_verify"])
+    logger.info("✓ Completed demo workload backend entity validation via demo_workload_verify.")
 
 
 def _verify_demo_workload_ui(
@@ -136,15 +103,15 @@ def _verify_demo_workload_ui(
     """Verifies experiment navigation, workunit list, and status rendering in Web UI."""
     logger.info("=== [Level 3] Navigating to Experiment View in Web UI ===")
     page.goto(f"{BASE_URL}/experiments/{xid}", wait_until="domcontentloaded")
-    page.get_by_text(EXPECTED_TITLE_PATTERN).first.wait_for(
+    page.get_by_text(demo_workload_verify.EXPECTED_TITLE_PATTERN).first.wait_for(
         state="visible", timeout=DEFAULT_TIMEOUT_MS
     )
     save_screenshot(page, screenshots_dir, "01_demo_workload_experiment_view")
 
     logger.info("=== [Level 4] Verifying WorkUnits Rendering in Web UI ===")
-    for worker_name in EXPECTED_WORKER_NAMES:
+    for worker_name in demo_workload_verify.EXPECTED_WORKER_NAMES:
         worker_loc = page.get_by_text(worker_name).first
-        expect(worker_loc).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
+        worker_loc.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
         logger.info("✓ Verified worker '%s' is visible in UI.", worker_name)
 
     save_screenshot(page, screenshots_dir, "02_demo_workload_workunits_view")
@@ -168,7 +135,7 @@ def test_demo_workload_lifecycle(
     """
     launch_result = _launch_demo_workload(page, auth, screenshots_dir)
 
-    experiment, wu_results = _verify_demo_workload_backend(launch_result.xid)
+    _verify_demo_workload_backend(launch_result.xid)
 
     _verify_demo_workload_ui(
         page=page,
@@ -178,13 +145,14 @@ def test_demo_workload_lifecycle(
 
     return {
         "xid": launch_result.xid,
-        "experiment_name": experiment.name,
-        "work_units_verified": len(wu_results),
+        "status": "PASSED",
     }
 
 
 def main() -> None:
     """Executes the Demo Workload Tier 2 E2E test."""
+    from playwright.sync_api import sync_playwright
+
     screenshots_dir = get_screenshots_dir()
     trace_handler = setup_logging(screenshots_dir)
     auth = DexAuthenticator(base_url=BASE_URL, dex_url=DEX_URL)

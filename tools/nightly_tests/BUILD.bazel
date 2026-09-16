@@ -46,12 +46,23 @@ py_library(
     ],
 )
 
+py_library(
+    name = "demo_workload_verify_lib",
+    srcs = ["demo_workload_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
 py_binary(
     name = "demo_workload_verify",
     srcs = ["demo_workload_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",
+        ":demo_workload_verify_lib",
         ":xmc_entities_validator_lib",
     ],
 )
