@@ -22,7 +22,6 @@ exports_files([
     "common.py",
     "common_test.py",
     "demo_workload_verify.py",
-    "demo_workload_verify_test.py",
     "xmc_entities_validator.py",
     "xmc_entities_validator_test.py",
 ])
@@ -76,17 +75,6 @@ py_test(
     imports = ["../.."],
     deps = [
         ":common",
-        ":xmc_entities_validator_lib",
-    ],
-)
-
-py_test(
-    name = "demo_workload_verify_test",
-    srcs = ["demo_workload_verify_test.py"],
-    imports = ["../.."],
-    deps = [
-        ":common",
-        ":demo_workload_verify_lib",
         ":xmc_entities_validator_lib",
     ],
 )
