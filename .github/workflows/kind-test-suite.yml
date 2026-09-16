@@ -15,6 +15,7 @@
 name: 'KinD test suite'
 
 on:
+  pull_request:
   merge_group:
   workflow_call:
     secrets:
