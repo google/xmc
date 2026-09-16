@@ -88,11 +88,13 @@ func StartConsumer(ctx context.Context, cfg ConsumerConfig, worker Worker) (*Con
 		drainTimeout: defaultDrainTimeout,
 	}
 
-	c.wg.Add(2)
+	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		client.StartWorker(consumerCtx, workerID)
 	}()
+
+	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		client.RunCleanup(consumerCtx, cleanupWorkerID)

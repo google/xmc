@@ -275,8 +275,6 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}
 		cleanups = append(cleanups, consumer.Close)
-	} else {
-		logging.Info(ctx, "Pause scheduling is disabled; skipping resumption consumer initialization")
 	}
 
 	return &ProdServer{
