@@ -174,4 +174,34 @@ func TestHandler_HandleTask(t *testing.T) {
 			t.Errorf("Error = %v, want %v", res.Error, workerErr)
 		}
 	})
+
+	t.Run("nil handler returns non-retryable error", func(t *testing.T) {
+		t.Parallel()
+		var h *Handler
+		res := h.HandleTask(ctx, "worker-1", `{"resumption_run_id":"run-1"}`)
+		if res.WasRunSuccessful {
+			t.Errorf("WasRunSuccessful = true, want false")
+		}
+		if res.ShouldBeRetried {
+			t.Errorf("ShouldBeRetried = true, want false")
+		}
+		if res.Error == nil {
+			t.Errorf("Error = nil, want error")
+		}
+	})
+
+	t.Run("nil worker returns non-retryable error", func(t *testing.T) {
+		t.Parallel()
+		h := &Handler{worker: nil}
+		res := h.HandleTask(ctx, "worker-1", `{"resumption_run_id":"run-1"}`)
+		if res.WasRunSuccessful {
+			t.Errorf("WasRunSuccessful = true, want false")
+		}
+		if res.ShouldBeRetried {
+			t.Errorf("ShouldBeRetried = true, want false")
+		}
+		if res.Error == nil {
+			t.Errorf("Error = nil, want error")
+		}
+	})
 }

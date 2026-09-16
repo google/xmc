@@ -38,6 +38,14 @@ func NewHandler(worker Worker) (*Handler, error) {
 
 // HandleTask parses the trigger payload and dispatches it to the resumption worker.
 func (h *Handler) HandleTask(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	if h == nil || h.worker == nil {
+		return redisclient.TaskResult{
+			WasRunSuccessful: false,
+			ShouldBeRetried:  false,
+			Error:            fmt.Errorf("resumption handler or worker is nil"),
+		}
+	}
+
 	req, err := ParseTriggerPayload(data)
 	if err != nil {
 		logging.Error(ctx, "Failed to parse resumption trigger payload", "error", err, "data", data)

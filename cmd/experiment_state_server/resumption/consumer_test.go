@@ -107,6 +107,7 @@ func TestConsumer_DrainTimeout(t *testing.T) {
 
 	// Simulate an in-flight worker that does not complete
 	consumer.wg.Add(1)
+	defer consumer.wg.Done()
 	consumer.drainTimeout = 15 * time.Millisecond
 
 	start := time.Now()
