@@ -35,6 +35,7 @@ import (
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/store"
@@ -237,7 +238,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
 	})
-	srv := newServer(cfg, checker, guard, customProvider)
+	pauseScheduler := initPauseScheduler(ctx, cfg)
+	srv := newServer(cfg, checker, guard, customProvider, pauseScheduler)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 
@@ -250,6 +252,11 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		redisClient:       publisher,
 		compSpannerClient: compSpannerClient,
 	}
+}
+
+func initPauseScheduler(ctx context.Context, cfg *Config) PauseScheduler {
+	logging.Warn(ctx, "Using in-memory fake for pause scheduling state repository")
+	return NewPauseScheduler(pausestate.NewFake())
 }
 
 func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
