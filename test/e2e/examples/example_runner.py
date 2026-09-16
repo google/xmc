@@ -100,6 +100,9 @@ def port_forward_grpc_service(
     yield f"127.0.0.1:{remote_port}"
 
 
+# TODO: This regex-based stdout matching is brittle and prone to breakage from log format changes.
+# It would be better to standardize the output returned by example launch scripts explicitly (e.g.
+# via structured JSON stdout, a typed return object, or writing an execution metadata file).
 def parse_launch_output(output_str: str) -> ExampleLaunchResult:
     """Parses standard XMC launch stdout to extract XID, WID, and Artifact name."""
     art_match = re.search(
