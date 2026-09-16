@@ -1,0 +1,179 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'XMC Demo Workload E2E Tests (KinD)'
+
+on:
+  merge_group:
+  workflow_call:
+    secrets:
+      GCP_E2E_PROJECT_ID:
+        required: false
+      GCP_E2E_WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      GCP_E2E_SERVICE_ACCOUNT:
+        required: false
+      GCP_E2E_SPANNER_INSTANCE:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-e2e-demo-workload:
+    name: 'KinD & Playwright Demo Workload E2E'
+    runs-on: 'arc-runner-set'
+    environment: e2e-test
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Validate CI Secrets Configuration'
+        env:
+          GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
+          GCP_E2E_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_E2E_SERVICE_ACCOUNT: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
+          GCP_E2E_SPANNER_INSTANCE: ${{ secrets.GCP_E2E_SPANNER_INSTANCE }}
+        run: |
+          if [ -z "${GCP_E2E_PROJECT_ID}" ] || [ -z "${GCP_E2E_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_E2E_SERVICE_ACCOUNT}" ] || [ -z "${GCP_E2E_SPANNER_INSTANCE}" ]; then
+            echo "::error::Required GitHub Secrets (GCP_E2E_PROJECT_ID, GCP_E2E_WORKLOAD_IDENTITY_PROVIDER, GCP_E2E_SERVICE_ACCOUNT, GCP_E2E_SPANNER_INSTANCE) are not configured."
+            exit 1
+          fi
+
+      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
+        with:
+          project_id: '${{ secrets.GCP_E2E_PROJECT_ID }}'
+          workload_identity_provider: '${{ secrets.GCP_E2E_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}'
+
+      - name: 'Configure Docker Auth for GCP Artifact Registry'
+        run: |
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+
+      - name: 'Set up Cloud SDK'
+        run: |
+          if ! command -v gcloud &>/dev/null; then
+            curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends google-cloud-cli
+          fi
+          gcloud version | head -n 1
+
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Configure Bazel Cache Settings'
+        env:
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          mkdir -p ~/.cache/bazel-repo
+          cat << EOF_BAZEL >> ~/.bazelrc
+          common --config=ci
+          common --remote_upload_local_results=${REMOTE_UPLOAD}
+          common --repository_cache=${HOME}/.cache/bazel-repo
+          common --experimental_repository_cache_hardlinks
+          EOF_BAZEL
+
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install Kubectl, KinD, and Helm'
+        run: |
+          mkdir -p "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          export PATH="${HOME}/.local/bin:${PATH}"
+
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
+            chmod +x "${HOME}/.local/bin/kubectl"
+          fi
+
+          if ! command -v kind &>/dev/null; then
+            curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
+            chmod +x "${HOME}/.local/bin/kind"
+          fi
+
+          if ! command -v helm &>/dev/null; then
+            HELM_VERSION="v3.20.1"
+            curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+            mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
+            rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+          fi
+
+          kubectl version --client
+          kind --version
+          helm version --short
+
+      - name: 'Run Demo Workload E2E Test Suite'
+        id: run-e2e-workload
+        env:
+          GCP_PROJECT_ID: '${{ secrets.GCP_E2E_PROJECT_ID }}'
+          SPANNER_INSTANCE: '${{ secrets.GCP_E2E_SPANNER_INSTANCE }}'
+          XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+          XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
+        run: |
+          mkdir -p "${XMC_SCREENSHOTS_DIR}"
+          python3 test/e2e/runner.py --test-script test/e2e/examples/test_demo_workload.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}" 2>&1 | tee "${GITHUB_WORKSPACE}/e2e-output.log"
+
+      - name: 'Publish E2E Demo Workload Findings Summary'
+        if: always()
+        env:
+          TEST_OUTCOME: '${{ steps.run-e2e-workload.outcome }}'
+          XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+          LOG_FILE: '${{ github.workspace }}/e2e-output.log'
+        run: |
+          XID=$(grep -oP 'Successfully launched demo workload with XID:\s*\K\d+' "${LOG_FILE}" 2>/dev/null || grep -oP 'Experiment XID:\s*\K\d+' "${LOG_FILE}" 2>/dev/null || echo "N/A")
+          SCREENSHOT_COUNT=$(find "${XMC_SCREENSHOTS_DIR}" -type f -name "*.png" 2>/dev/null | wc -l || echo "0")
+          {
+            echo "## 🚀 E2E Demo Workload (KinD) Execution Summary"
+            echo ""
+            if [ "${TEST_OUTCOME}" = "success" ]; then
+              echo "### ✅ Outcome: PASSED"
+            else
+              echo "### ❌ Outcome: FAILED"
+            fi
+            echo ""
+            echo "| Metric / Step | Status / Value |"
+            echo "| --- | --- |"
+            echo "| **Target Environment** | \`KinD (Local Cluster)\` |"
+            echo "| **Test Script** | \`test/e2e/examples/test_demo_workload.py\` |"
+            echo "| **Experiment XID** | \`${XID}\` |"
+            echo "| **Execution Outcome** | \`${TEST_OUTCOME}\` |"
+            echo "| **Captured Screenshots** | \`${SCREENSHOT_COUNT} files\` |"
+            echo ""
+            echo "> Headless KinD E2E integration test for demo workload lifecycle (launch -> backend validation -> Angular UI)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'Upload E2E Screenshots & Diagnostic Logs'
+        if: always()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'e2e-demo-workload-artifacts'
+          path: '${{ github.workspace }}/e2e-screenshots/'
+          if-no-files-found: ignore
+          retention-days: 14
