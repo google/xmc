@@ -171,9 +171,6 @@ def execute_example_launch(
     with port_forward_grpc_service() as active_grpc_endpoint:
         proc_env = {
             **os.environ,
-            "PROJECT_ID": "xmc-test-project",
-            "IMAGE_PATH": "test-image",
-            "QUEUE_NAME": "cpu-queue",
             "XMANAGER_ENDPOINT": active_grpc_endpoint,
             "XMANAGER_INSECURE_GRPC": "true",
             "XMC_USER_EMAIL": user_email,
