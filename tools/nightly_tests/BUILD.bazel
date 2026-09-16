@@ -23,7 +23,6 @@ exports_files([
     "common_test.py",
     "demo_workload_verify.py",
     "xmc_entities_validator.py",
-    "xmc_entities_validator_test.py",
 ])
 
 py_library(
@@ -47,25 +46,14 @@ py_library(
     ],
 )
 
-py_library(
-    name = "demo_workload_verify_lib",
-    srcs = ["demo_workload_verify.py"],
-    imports = ["../.."],
-    deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
-        "@absl_py//absl/flags",
-    ],
-)
-
 py_binary(
     name = "demo_workload_verify",
     srcs = ["demo_workload_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",
-        ":demo_workload_verify_lib",
         ":xmc_entities_validator_lib",
+        "@absl_py//absl/flags",
     ],
 )
 
