@@ -27,6 +27,7 @@ import (
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	authz "xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/resumption"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	commonhealth "xmanager_cloud/common/health"
 	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
@@ -264,6 +265,16 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
+	}
+
+	if cfg.FeatureFlags.PauseSchedulingEnabled {
+		consumer, err := resumption.StartConsumer(ctx, resumption.ConsumerConfig{
+			RedisAddr: cfg.RedisAddr,
+		}, resumption.NewResumptionWorker())
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
 	}
 
 	return &ProdServer{
