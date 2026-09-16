@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -717,6 +718,22 @@ func TestGetHealthStatus_Singleflight(t *testing.T) {
 	})
 }
 
+func assertRPCError(t *testing.T, err error, wantCode codes.Code, wantMsg string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error with code %v, got nil", wantCode)
+	}
+	if gotCode := status.Code(err); gotCode != wantCode {
+		t.Errorf("got error code %v, want %v, err: %v", gotCode, wantCode, err)
+	}
+	if wantMsg != "" && !strings.Contains(err.Error(), wantMsg) {
+		t.Errorf("got error %q, want error containing %q", err.Error(), wantMsg)
+	}
+	if strings.Contains(err.Error(), "spanner write failure") {
+		t.Errorf("leaked internal error message to client: %v", err)
+	}
+}
+
 func TestPauseScheduling(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -724,6 +741,7 @@ func TestPauseScheduling(t *testing.T) {
 		guard       AdminRoleGuard
 		repo        pausestate.Repository
 		wantErrCode codes.Code
+		wantErrMsg  string
 		wantResp    *spb.PauseSchedulingResponse
 	}{
 		{
@@ -787,6 +805,7 @@ func TestPauseScheduling(t *testing.T) {
 			guard:       &mockAdminRoleGuard{hasRole: true},
 			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
 			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to pause scheduling",
 		},
 	}
 
@@ -803,12 +822,7 @@ func TestPauseScheduling(t *testing.T) {
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
-				if err == nil {
-					t.Fatalf("PauseScheduling() expected error with code %v, got nil", tt.wantErrCode)
-				}
-				if gotCode := status.Code(err); gotCode != tt.wantErrCode {
-					t.Errorf("PauseScheduling() got error code %v, want %v, err: %v", gotCode, tt.wantErrCode, err)
-				}
+				assertRPCError(t, err, tt.wantErrCode, tt.wantErrMsg)
 				return
 			}
 
@@ -846,6 +860,7 @@ func TestResumeScheduling(t *testing.T) {
 		guard       AdminRoleGuard
 		repo        pausestate.Repository
 		wantErrCode codes.Code
+		wantErrMsg  string
 		wantResp    *spb.ResumeSchedulingResponse
 	}{
 		{
@@ -909,6 +924,7 @@ func TestResumeScheduling(t *testing.T) {
 			guard:       &mockAdminRoleGuard{hasRole: true},
 			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
 			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to resume scheduling",
 		},
 	}
 
@@ -930,12 +946,7 @@ func TestResumeScheduling(t *testing.T) {
 			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
-				if err == nil {
-					t.Fatalf("ResumeScheduling() expected error with code %v, got nil", tt.wantErrCode)
-				}
-				if gotCode := status.Code(err); gotCode != tt.wantErrCode {
-					t.Errorf("ResumeScheduling() got error code %v, want %v, err: %v", gotCode, tt.wantErrCode, err)
-				}
+				assertRPCError(t, err, tt.wantErrCode, tt.wantErrMsg)
 				return
 			}
 
@@ -972,18 +983,19 @@ func TestResumeScheduling(t *testing.T) {
 func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("dynamically reflects pause and resume lifecycle", func(t *testing.T) {
+	t.Run("dynamically reflects pause and resume lifecycle without cache coupling", func(t *testing.T) {
 		cfg := &Config{
 			CacheTTL: 1 * time.Minute,
 			FeatureFlags: featureflags.Flags{
 				PauseSchedulingEnabled: true,
 			},
 		}
+		checker := &mockHealthChecker{result: RunChecksResult{}}
 		fakeRepo := pausestate.NewFake()
-		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(fakeRepo))
+		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(fakeRepo))
 		defer s.Close()
 
-		// 1. Initial state: scheduling is not paused
+		// 1. Initial state: scheduling is not paused (cache MISS)
 		resp1, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
 		if err != nil {
 			t.Fatalf("initial GetHealthStatus failed: %v", err)
@@ -991,13 +1003,16 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		if resp1.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to be false initially, got true")
 		}
+		if calls := atomic.LoadInt64(&checker.callCount); calls != 1 {
+			t.Fatalf("expected 1 health check call, got %d", calls)
+		}
 
-		// 2. Pause scheduling: updates repository and invalidates cache
+		// 2. Pause scheduling: updates repository (does not invalidate component health cache)
 		if _, err := s.PauseScheduling(ctx, &spb.PauseSchedulingRequest{}); err != nil {
 			t.Fatalf("PauseScheduling failed: %v", err)
 		}
 
-		// 3. Status immediately reflects paused state without forceRefresh
+		// 3. Status immediately reflects paused state even though component health is served from cache
 		resp2, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
 		if err != nil {
 			t.Fatalf("GetHealthStatus after pause failed: %v", err)
@@ -1005,19 +1020,25 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		if !resp2.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to be true after PauseScheduling, got false")
 		}
+		if calls := atomic.LoadInt64(&checker.callCount); calls != 1 {
+			t.Errorf("expected health check not to be re-run (cache HIT), but callCount is %d", calls)
+		}
 
-		// 4. Resume scheduling: updates repository and invalidates cache
+		// 4. Resume scheduling: updates repository
 		if _, err := s.ResumeScheduling(ctx, &spb.ResumeSchedulingRequest{}); err != nil {
 			t.Fatalf("ResumeScheduling failed: %v", err)
 		}
 
-		// 5. Status immediately reflects resumed state
+		// 5. Status immediately reflects resumed state while still serving component health from cache
 		resp3, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
 		if err != nil {
 			t.Fatalf("GetHealthStatus after resume failed: %v", err)
 		}
 		if resp3.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to be false after ResumeScheduling, got true")
+		}
+		if calls := atomic.LoadInt64(&checker.callCount); calls != 1 {
+			t.Errorf("expected health check not to be re-run (cache HIT), but callCount is %d", calls)
 		}
 	})
 

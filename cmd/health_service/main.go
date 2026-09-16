@@ -254,6 +254,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 }
 
+// TODO: Replace with real Spanner-backed repository implementation once available.
 func initPauseScheduler(ctx context.Context, cfg *Config) PauseScheduler {
 	logging.Warn(ctx, "Using in-memory fake for pause scheduling state repository")
 	return NewPauseScheduler(pausestate.NewFake())

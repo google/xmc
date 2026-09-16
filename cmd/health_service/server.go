@@ -95,15 +95,36 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		forceRefresh = false
 	}
 
+	var resp *spb.HealthStatusResponse
 	if !forceRefresh {
 		if cached := s.getHealthStatusCache(); cached != nil {
 			_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "HIT"))
-			return cached, nil
+			resp = cached
 		}
 	}
 
-	_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
-	return s.runChecksSingleflight(ctx)
+	if resp == nil {
+		_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
+		var err error
+		resp, err = s.runChecksSingleflight(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	isSchedulingPaused := false
+	paused, err := s.pauseScheduler.IsPaused(ctx)
+	if err != nil {
+		// TODO: Propagate error in response when pause scheduling check fails.
+		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+	} else {
+		isSchedulingPaused = paused
+	}
+	if resp.SystemInfo != nil {
+		resp.SystemInfo.IsSchedulingPaused = isSchedulingPaused
+	}
+
+	return resp, nil
 }
 
 func (s *server) runChecksSingleflight(ctx context.Context) (*spb.HealthStatusResponse, error) {
@@ -169,14 +190,6 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 		buildVersionStr = "unknown"
 	}
 
-	isSchedulingPaused := false
-	paused, err := s.pauseScheduler.IsPaused(ctx)
-	if err != nil {
-		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
-	} else {
-		isSchedulingPaused = paused
-	}
-
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
@@ -185,7 +198,6 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 			EssDbSchemaVersion: essDbSchemaVersionStr,
 			XidDbSchemaVersion: xidDbSchemaVersionStr,
 			ObservabilityUrl:   s.cfg.ObservabilityURL,
-			IsSchedulingPaused: isSchedulingPaused,
 		},
 		Components:      res.Components,
 		HealthCheckTime: timestamppb.Now(),
@@ -211,14 +223,6 @@ func (s *server) updateHealthStatusCache(resp *spb.HealthStatusResponse) {
 
 	s.cachedStatus = resp
 	s.cacheExpires = time.Now().Add(s.cfg.CacheTTL)
-}
-
-func (s *server) invalidateHealthStatusCache() {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-
-	s.cachedStatus = nil
-	s.cacheExpires = time.Time{}
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
@@ -285,9 +289,8 @@ func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRe
 	}
 	if err := s.pauseScheduler.Pause(ctx); err != nil {
 		logging.Error(ctx, "Failed to pause scheduling", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to pause scheduling: %v", err)
+		return nil, status.Error(codes.Internal, "failed to pause scheduling")
 	}
-	s.invalidateHealthStatusCache()
 	return &spb.PauseSchedulingResponse{}, nil
 }
 
@@ -301,8 +304,7 @@ func (s *server) ResumeScheduling(ctx context.Context, req *spb.ResumeScheduling
 	}
 	if _, err := s.pauseScheduler.Resume(ctx); err != nil {
 		logging.Error(ctx, "Failed to resume scheduling", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to resume scheduling: %v", err)
+		return nil, status.Error(codes.Internal, "failed to resume scheduling")
 	}
-	s.invalidateHealthStatusCache()
 	return &spb.ResumeSchedulingResponse{}, nil
 }
