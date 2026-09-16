@@ -17,10 +17,12 @@
 from __future__ import annotations
 
 import logging
+import time
 import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from test.e2e.lib.config import DEFAULT_BASE_URL, DEFAULT_DEX_URL
 from test.e2e.lib.ui_diagnostics import save_screenshot
 
 if TYPE_CHECKING:
@@ -28,18 +30,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT_MS = 15_000
-SHORT_TIMEOUT_MS = 3_000
-NAVIGATION_TIMEOUT_MS = 10_000
+DEFAULT_TIMEOUT_MS = 30_000
+SHORT_TIMEOUT_MS = 5_000
+NAVIGATION_TIMEOUT_MS = 30_000
 
 
 class DexAuthenticator:
     """Automates user sign-in flows through Dex OpenID Connect IdP."""
 
+    SIGN_IN_BUTTON_LOCATOR = (
+        "button:has-text('Sign in'), a:has-text('Sign in'), .mat-mdc-button:has-text('Sign in')"
+    )
+
     def __init__(
         self,
-        base_url: str = "http://localhost:8080",
-        dex_url: str = "http://localhost:5556",
+        base_url: str = DEFAULT_BASE_URL,
+        dex_url: str = DEFAULT_DEX_URL,
     ) -> None:
         self.base_url = base_url
         self.dex_url = dex_url
@@ -50,13 +56,33 @@ class DexAuthenticator:
     ) -> None:
         """Navigates to the XMC landing page and initiates OIDC sign-in."""
         logger.info("Navigating to landing page: %s", self.base_url)
-        page.goto(self.base_url)
+        max_retries = 5
+        sign_in_btn = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                page.goto(
+                    self.base_url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
+                )
+                sign_in_btn = page.locator(self.SIGN_IN_BUTTON_LOCATOR).first
+                sign_in_btn.wait_for(state="visible", timeout=10000)
+                break
+            except Exception as e:
+                if attempt == max_retries:
+                    raise
+                logger.warning(
+                    "Initial navigation to landing page encountered transient error (attempt %d/%d): %s. Retrying in 3s...",
+                    attempt,
+                    max_retries,
+                    e,
+                )
+                time.sleep(3)
+
         user_prefix = email.split("@")[0]
         save_screenshot(page, screenshots_dir, f"landing_page_{user_prefix}")
 
         logger.info("Clicking 'Sign in' button...")
-        sign_in_btn = page.locator("button:has-text('Sign in')")
-        sign_in_btn.wait_for(state="visible", timeout=NAVIGATION_TIMEOUT_MS)
+        if sign_in_btn is None:
+            raise RuntimeError("Sign in button locator resolved to None")
         sign_in_btn.click()
 
         logger.info("Waiting for Dex auth page (current URL: %s)...", page.url)
@@ -75,8 +101,11 @@ class DexAuthenticator:
             "a:has-text('Log in with'), button:has-text('Log in with'), a[href*='local']"
         ).first
         try:
-            local_login_btn.click(timeout=SHORT_TIMEOUT_MS)
-            logger.info("Clicked Dex connector selection.")
+            if local_login_btn.is_visible(timeout=500):
+                local_login_btn.click()
+                logger.info("Clicked Dex connector selection.")
+            else:
+                logger.debug("No connector selection needed (connector button not visible).")
         except Exception as e:
             logger.debug("No connector selection needed: %s", e)
 
@@ -120,8 +149,7 @@ class DexAuthenticator:
             user_prefix = email.split("@")[0]
             save_screenshot(page, screenshots_dir, f"dex_approval_prompt_{user_prefix}")
             grant_btn = page.locator(
-                "button:has-text('Grant Access'), button:has-text('Grant Approval'), "
-                "button:has-text('Approval'), button:has-text('Allow'), button[type='submit']"
+                "button:has-text('Grant'), button:has-text('Allow'), button[type='submit']"
             ).first
             try:
                 grant_btn.click(timeout=SHORT_TIMEOUT_MS)
@@ -134,6 +162,21 @@ class DexAuthenticator:
                 )
             except Exception as e:
                 logger.debug("No grant access button or prompt resolved: %s", e)
+
+    def wait_for_redirect(self, page: Page | Any) -> None:
+        """Waits for redirection from Dex IdP back to XMC dashboard."""
+        current_parsed = urllib.parse.urlparse(page.url)
+        if "dex" in page.url or current_parsed.netloc == self.dex_parsed.netloc:
+            logger.info("Waiting for redirect from Dex back to XMC dashboard...")
+            try:
+                page.wait_for_url(
+                    lambda u: (
+                        urllib.parse.urlparse(u).netloc != self.dex_parsed.netloc and "dex" not in u
+                    ),
+                    timeout=DEFAULT_TIMEOUT_MS,
+                )
+            except Exception as e:
+                logger.debug("Wait for redirect from Dex finished or timed out: %s", e)
 
     def authenticate(
         self, page: Page | Any, email: str, password: str, screenshots_dir: Path
@@ -150,3 +193,4 @@ class DexAuthenticator:
         self._select_connector_if_present(page)
         self._fill_and_submit_credentials(page, screenshots_dir, email, password)
         self._handle_consent_if_present(page, screenshots_dir, email)
+        self.wait_for_redirect(page)

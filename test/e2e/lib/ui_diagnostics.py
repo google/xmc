@@ -63,6 +63,25 @@ def setup_logging(screenshots_dir: Path) -> logging.Handler:
     return trace_handler
 
 
+def _capture_screenshot_target(
+    target: Page | Any,
+    screenshots_dir: Path,
+    name: str,
+    target_type: str = "screenshot",
+    **screenshot_kwargs: Any,
+) -> str:
+    """Internal helper to capture and save a screenshot from a Page or Locator target."""
+    try:
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        img_path = screenshots_dir / f"{name}.png"
+        target.screenshot(path=str(img_path), **screenshot_kwargs)
+        logger.info("📸 Saved %s: %s", target_type, img_path)
+        return str(img_path)
+    except Exception as e:
+        logger.warning("Failed to save %s %s: %s", target_type, name, e)
+        return ""
+
+
 def save_screenshot(page: Page | Any, screenshots_dir: Path, name: str) -> str:
     """Captures and saves a full-page screenshot for diagnostic logs.
 
@@ -74,12 +93,22 @@ def save_screenshot(page: Page | Any, screenshots_dir: Path, name: str) -> str:
     Returns:
         String path to the saved screenshot, or empty string on failure.
     """
-    try:
-        screenshots_dir.mkdir(parents=True, exist_ok=True)
-        img_path = screenshots_dir / f"{name}.png"
-        page.screenshot(path=str(img_path), full_page=True)
-        logger.info("📸 Saved screenshot: %s", img_path)
-        return str(img_path)
-    except Exception as e:
-        logger.warning("Failed to save screenshot %s: %s", name, e)
-        return ""
+    return _capture_screenshot_target(
+        page, screenshots_dir, name, target_type="screenshot", full_page=True
+    )
+
+
+def save_element_screenshot(element: Any, screenshots_dir: Path, name: str) -> str:
+    """Captures and saves an element screenshot for diagnostic logs.
+
+    Args:
+        element: Active Playwright Locator instance.
+        screenshots_dir: Destination directory.
+        name: Base filename prefix without extension.
+
+    Returns:
+        String path to the saved screenshot, or empty string on failure.
+    """
+    return _capture_screenshot_target(
+        element, screenshots_dir, name, target_type="element screenshot"
+    )
