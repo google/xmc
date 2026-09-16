@@ -378,6 +378,9 @@ def validate_work_units(
                 f"WorkUnits did not reach COMPLETED state within {timeout_sec}s timeout."
             )
 
+        print(
+            f"Experiment does not yet match the expected state. Sleeping for {poll_interval_sec}s..."
+        )
         time.sleep(poll_interval_sec)
 
 
