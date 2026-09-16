@@ -270,7 +270,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
 		consumer, err := resumption.StartConsumer(ctx, resumption.ConsumerConfig{
 			RedisAddr: cfg.RedisAddr,
-		}, resumption.NewStubWorker())
+		}, resumption.NewResumptionWorker())
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}

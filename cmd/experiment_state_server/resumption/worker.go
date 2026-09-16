@@ -25,17 +25,17 @@ type Worker interface {
 	Resume(ctx context.Context, req Request) error
 }
 
-// StubWorker is a placeholder resumption worker that logs received trigger requests.
-type StubWorker struct{}
+// ResumptionWorker executes paused tasks resumption.
+type ResumptionWorker struct{}
 
-// NewStubWorker creates a new StubWorker.
-func NewStubWorker() *StubWorker {
-	return &StubWorker{}
+// NewResumptionWorker creates a new ResumptionWorker.
+func NewResumptionWorker() *ResumptionWorker {
+	return &ResumptionWorker{}
 }
 
 // Resume logs the resumption request and returns nil.
-func (w *StubWorker) Resume(ctx context.Context, req Request) error {
-	logging.Info(ctx, "Stub resumption worker received resume request",
+func (w *ResumptionWorker) Resume(ctx context.Context, req Request) error {
+	logging.Info(ctx, "Resumption worker received resume request",
 		"resumption_run_id", req.ResumptionRunID,
 		"batch_size", req.BatchSize,
 		"max_backlog_threshold", req.MaxBacklogThreshold,

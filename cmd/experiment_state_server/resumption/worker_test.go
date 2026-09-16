@@ -18,12 +18,12 @@ import (
 	"testing"
 )
 
-func TestStubWorker_Resume(t *testing.T) {
+func TestResumptionWorker_Resume(t *testing.T) {
 	t.Parallel()
 
-	worker := NewStubWorker()
+	worker := NewResumptionWorker()
 	if worker == nil {
-		t.Fatal("NewStubWorker returned nil")
+		t.Fatal("NewResumptionWorker returned nil")
 	}
 
 	req := Request{
