@@ -23,6 +23,7 @@ verification in the Angular UI via Playwright.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -87,8 +88,15 @@ def _launch_demo_workload(
 def _verify_demo_workload_backend(xid: str, endpoint: str = "127.0.0.1:50051") -> None:
     """Verifies experiment metadata and WorkUnits using shared demo_workload_verify."""
     logger.info("=== [Level 2] Verifying Experiment & WorkUnits via demo_workload_verify ===")
+    os.environ["XMC_INSECURE_GRPC"] = "true"
+    os.environ["XMANAGER_INSECURE_GRPC"] = "true"
     demo_workload_verify.FLAGS(
-        ["demo_workload_verify", f"--xid={xid}", f"--endpoint={endpoint}"],
+        [
+            "demo_workload_verify",
+            f"--xid={xid}",
+            f"--endpoint={endpoint}",
+            "--wait_for_completion=false",
+        ],
         known_only=True,
     )
     demo_workload_verify.main(["demo_workload_verify"])

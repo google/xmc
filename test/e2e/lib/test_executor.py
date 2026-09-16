@@ -121,6 +121,8 @@ class PlaywrightTestExecutor:
         env = os.environ.copy()
         env["XMC_BASE_URL"] = "http://localhost:8080"
         env["XMC_DEX_URL"] = "http://localhost:5556"
+        env["XMC_INSECURE_GRPC"] = "true"
+        env["XMANAGER_INSECURE_GRPC"] = "true"
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
         env["KUBE_CONTEXT"] = self.cfg.kube_context
         if "XMC_AUTH_TOKEN" not in env:

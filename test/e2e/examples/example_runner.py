@@ -184,6 +184,7 @@ def execute_example_launch(
         proc_env = {
             **os.environ,
             "XMANAGER_ENDPOINT": active_grpc_endpoint,
+            "XMC_INSECURE_GRPC": "true",
             "XMANAGER_INSECURE_GRPC": "true",
             "XMC_USER_EMAIL": effective_user_email,
             "XMC_AUTH_TOKEN": auth_token,

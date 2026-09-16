@@ -39,6 +39,11 @@ flags.DEFINE_string(
     "Experiment XID to validate (required for experiment tests)",
 )
 flags.DEFINE_string("endpoint", None, "ESS gRPC endpoint (host:port)")
+flags.DEFINE_bool(
+    "wait_for_completion",
+    True,
+    "Whether to wait for WorkUnits to reach COMPLETED state (default: True)",
+)
 
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:

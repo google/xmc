@@ -57,7 +57,12 @@ class TestDemoWorkload(unittest.TestCase):
     ) -> None:
         _verify_demo_workload_backend("42", endpoint="127.0.0.1:50051")
         mock_flags.assert_called_once_with(
-            ["demo_workload_verify", "--xid=42", "--endpoint=127.0.0.1:50051"],
+            [
+                "demo_workload_verify",
+                "--xid=42",
+                "--endpoint=127.0.0.1:50051",
+                "--wait_for_completion=false",
+            ],
             known_only=True,
         )
         mock_verify_main.assert_called_once_with(["demo_workload_verify"])

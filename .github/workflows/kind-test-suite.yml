@@ -138,6 +138,7 @@ jobs:
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
           XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
         run: |
+          set -euo pipefail
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           python3 test/e2e/runner.py --test-script test/e2e/examples/test_demo_workload.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}" 2>&1 | tee "${GITHUB_WORKSPACE}/e2e-output.log"
 

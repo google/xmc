@@ -90,6 +90,7 @@ def main(argv: Sequence[str]) -> None:
             expected_queue=EXPECTED_QUEUE,
             expected_worker_names=EXPECTED_WORKER_NAMES,
             timeout_sec=TIMEOUT_SEC,
+            wait_for_completion=common.get_flag(FLAGS, "wait_for_completion", True),
         )
 
         for wu_info in wu_results:
