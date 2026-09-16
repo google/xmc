@@ -119,6 +119,14 @@ const (
 	RedisDLQ = "xmc-dlq-stream"
 	// RedisPauseStream is the name of the Redis stream used for broadcasting pause scheduling updates.
 	RedisPauseStream = "xmc-pause-stream"
+	// RedisResumeStream is the name of the Redis stream used for pause scheduling resumption triggers.
+	RedisResumeStream = "xmc-scheduling-resume-stream"
+	// RedisESSGroup is the name of the Redis consumer group for ESS resumption workers.
+	RedisESSGroup = "ess-group"
+	// ESSResumptionWorkerID is the prefix for the ID of the ESS resumption worker.
+	ESSResumptionWorkerID = "ess-resumption-worker"
+	// ESSResumptionCleanupWorkerID is the prefix for the ID of the ESS resumption cleanup worker.
+	ESSResumptionCleanupWorkerID = "ess-resumption-cleanup"
 	// ActuatorWorkerID is the prefix for the ID of the actuator worker.
 	ActuatorWorkerID = "actuator-worker"
 	// ActuatorCleanupWorkerID is the prefix for the ID of the Actuator cleanup worker.
