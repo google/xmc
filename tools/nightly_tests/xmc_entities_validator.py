@@ -157,74 +157,65 @@ def extract_queue_name(work_unit: Any) -> str:
     return "unknown"
 
 
-def extract_work_unit_state(
-    stub: Any,
-    work_unit: Any,
-) -> int:
-    """Retrieves current WorkUnitState enum integer for a WorkUnit."""
-    cached_state = STATE_UNSPECIFIED
-    has_cached = False
-    if (
-        hasattr(work_unit, "current_work_unit_execution")
-        and work_unit.current_work_unit_execution is not None
-        and hasattr(work_unit.current_work_unit_execution, "HasField")
-        and work_unit.current_work_unit_execution.HasField("status")
-        and getattr(work_unit.current_work_unit_execution.status, "state", None) is not None
-    ):
-        try:
-            cached_state = int(work_unit.current_work_unit_execution.status.state)
-            has_cached = True
-        except (TypeError, ValueError):
-            pass
+def _get_cached_wu_state(work_unit: Any) -> tuple[int, bool]:
+    """Extracts cached WorkUnitState from current_work_unit_execution if present."""
+    if not hasattr(work_unit, "current_work_unit_execution"):
+        return STATE_UNSPECIFIED, False
+    execution = work_unit.current_work_unit_execution
+    if execution is None or not hasattr(execution, "HasField") or not execution.HasField("status"):
+        return STATE_UNSPECIFIED, False
+    raw_state = getattr(execution.status, "state", None)
+    if raw_state is None:
+        return STATE_UNSPECIFIED, False
+    try:
+        return int(raw_state), True
+    except (TypeError, ValueError):
+        return STATE_UNSPECIFIED, False
 
-    if has_cached and cached_state in (
+
+def _fetch_remote_wu_state(stub: Any, wu_name: str) -> int | None:
+    """Queries ESS stub for the latest WorkUnitExecution state."""
+    if stub is None or wu_name == "unknown":
+        return None
+    try:
+        req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu_name)
+        cur_exec = stub.GetCurrentWorkUnitExecution(req)
+        if cur_exec and hasattr(cur_exec, "status"):
+            state = getattr(cur_exec.status, "state", None)
+            if state is not None:
+                return int(state)
+    except Exception as e:
+        logging.warning(
+            "Failed to retrieve current WorkUnitExecution for %s: %s",
+            wu_name,
+            e,
+            exc_info=True,
+        )
+    return None
+
+
+def extract_work_unit_state(stub: Any, work_unit: Any) -> int:
+    """Retrieves current WorkUnitState enum integer for a WorkUnit."""
+    cached_state, has_cached = _get_cached_wu_state(work_unit)
+    terminal_cached = (
         STATE_UNSPECIFIED,
         STATE_COMPLETED,
         STATE_FAILED,
         STATE_PARTIALLY_FAILED,
-    ):
+    )
+    if has_cached and cached_state in terminal_cached:
         return cached_state
 
     wu_name = getattr(work_unit, "name", "unknown")
-    if stub is not None and wu_name != "unknown":
-        try:
-            req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu_name)
-            cur_exec = stub.GetCurrentWorkUnitExecution(req)
-            if (
-                cur_exec
-                and hasattr(cur_exec, "status")
-                and getattr(cur_exec.status, "state", None) is not None
-            ):
-                return int(cur_exec.status.state)
-        except Exception as e:
-            logging.warning(
-                "Failed to retrieve current WorkUnitExecution for %s: %s",
-                wu_name,
-                e,
-                exc_info=True,
-            )
+    remote_state = _fetch_remote_wu_state(stub, wu_name)
+    if remote_state is not None:
+        return remote_state
 
     return cached_state
 
 
-def validate_experiment(
-    stub: Any,
-    xid: str,
-    expected_title_pattern: str | None = None,
-) -> Any:
-    """Fetches and verifies experiment existence and title.
-
-    Args:
-        stub: gRPC stub for ExperimentStateService.
-        xid: Experiment XID.
-        expected_title_pattern: Optional substring expected in the experiment title.
-
-    Returns:
-        The fetched Experiment protobuf object.
-
-    Raises:
-        AssertionError: If experiment is not found or title does not match.
-    """
+def validate_experiment(stub: Any, xid: str, expected_title_pattern: str | None = None) -> Any:
+    """Fetches and verifies experiment existence and title matching."""
     exp_name = f"experiments/{xid}"
     req = _make_req("GetExperimentRequest", name=exp_name)
     experiment = stub.GetExperiment(req)
@@ -241,6 +232,43 @@ def validate_experiment(
     return experiment
 
 
+def _evaluate_single_wu(stub: Any, wu: Any, expected_queue: str | None = None) -> dict[str, Any]:
+    """Extracts metadata and verifies queue constraint for a single WorkUnit."""
+    wu_name = getattr(wu, "name", "")
+    wu_id = wu_name.split("/")[-1]
+    worker_name = extract_worker_name(wu)
+    queue_name = extract_queue_name(wu)
+
+    if expected_queue is not None and queue_name != expected_queue:
+        raise AssertionError(
+            f"WorkUnit {wu_name} targeted queue '{queue_name}', expected '{expected_queue}'."
+        )
+
+    state_int = extract_work_unit_state(stub, wu)
+    return {
+        "id": wu_id,
+        "name": wu_name,
+        "worker_name": worker_name,
+        "queue": queue_name,
+        "state_enum": state_int,
+        "state": state_enum_to_name(state_int),
+    }
+
+
+def _check_wu_expected_workers(
+    found_workers: Sequence[str], expected_workers: Sequence[str] | None
+) -> None:
+    """Verifies all expected worker names are present in found workers."""
+    if expected_workers is None:
+        return
+    missing = set(expected_workers) - set(found_workers)
+    if missing:
+        raise AssertionError(
+            f"Expected worker names {list(expected_workers)} not satisfied. "
+            f"Missing: {sorted(missing)}, Found: {sorted(found_workers)}."
+        )
+
+
 def _evaluate_work_units(
     stub: Any,
     work_units: Sequence[Any],
@@ -254,57 +282,115 @@ def _evaluate_work_units(
             f"WorkUnit count mismatch: expected {expected_count}, found {len(work_units)}."
         )
 
-    found_worker_names: list[str] = []
-    wu_results: list[dict[str, Any]] = []
-    all_completed = True
-    has_failure = False
+    wu_results = [_evaluate_single_wu(stub, wu, expected_queue) for wu in work_units]
+    found_workers = [r["worker_name"] for r in wu_results]
+    _check_wu_expected_workers(found_workers, expected_worker_names)
 
-    for wu in work_units:
-        wu_id = getattr(wu, "name", "").split("/")[-1]
-        worker_name = extract_worker_name(wu)
-        found_worker_names.append(worker_name)
-        queue_name = extract_queue_name(wu)
-
-        if expected_queue is not None and queue_name != expected_queue:
-            raise AssertionError(
-                f"WorkUnit {getattr(wu, 'name', '')} targeted queue '{queue_name}', "
-                f"expected '{expected_queue}'."
-            )
-
-        state_int = extract_work_unit_state(stub, wu)
-        state_str = state_enum_to_name(state_int)
-
-        if state_int in (STATE_FAILED, STATE_PARTIALLY_FAILED):
-            has_failure = True
-        if state_int != STATE_COMPLETED:
-            all_completed = False
-
-        wu_results.append(
-            {
-                "id": wu_id,
-                "name": getattr(wu, "name", ""),
-                "worker_name": worker_name,
-                "queue": queue_name,
-                "state_enum": state_int,
-                "state": state_str,
-            }
-        )
-
-    if expected_worker_names is not None:
-        missing_workers = set(expected_worker_names) - set(found_worker_names)
-        if missing_workers:
-            raise AssertionError(
-                f"Expected worker names {list(expected_worker_names)} not satisfied. "
-                f"Missing: {sorted(missing_workers)}, Found: {sorted(found_worker_names)}."
-            )
-
-    if has_failure:
-        failed_units = [r for r in wu_results if "FAILED" in r["state"]]
+    failed_units = [
+        r for r in wu_results if r["state_enum"] in (STATE_FAILED, STATE_PARTIALLY_FAILED)
+    ]
+    if failed_units:
         raise TerminalFailureError(
             f"One or more WorkUnits failed execution: {json.dumps(failed_units, indent=2)}"
         )
 
+    all_completed = all(r["state_enum"] == STATE_COMPLETED for r in wu_results)
     return wu_results, all_completed
+
+
+def _fetch_raw_work_units(
+    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+) -> list[Any] | None:
+    """Fetches raw work units from ESS stub, handling transient errors."""
+    try:
+        req = _make_req("ListWorkUnitsRequest", parent=parent_name)
+        response = stub.ListWorkUnits(req)
+        return list(getattr(response, "work_units", []))
+    except Exception as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Transient error fetching work units: %s. Retrying...", e)
+        return None
+
+
+def _check_wu_count_threshold(
+    actual_count: int,
+    min_expected: int,
+    expected_count: int | None,
+    parent_name: str,
+    elapsed: float,
+    timeout_sec: int,
+) -> bool:
+    """Validates work unit count bounds and returns True if minimum count is reached."""
+    if actual_count < min_expected:
+        if elapsed >= timeout_sec:
+            raise AssertionError(
+                f"Expected at least {min_expected} WorkUnits for {parent_name}, "
+                f"but only found {actual_count} after {int(elapsed)}s."
+            )
+        return False
+    if expected_count is not None and actual_count > expected_count:
+        raise AssertionError(
+            f"WorkUnit count exceeded: expected {expected_count}, found {actual_count}."
+        )
+    return True
+
+
+def _log_wu_polling_progress(
+    current_states: dict[str, str],
+    last_states: dict[str, str],
+    last_time: float,
+    elapsed: float,
+) -> tuple[dict[str, str], float]:
+    """Logs state transitions or periodic progress if states changed or 30s elapsed."""
+    if current_states != last_states or (elapsed - last_time >= 30.0):
+        print(f"[{int(elapsed)}s] WorkUnit States: {current_states}", flush=True)
+        return current_states, elapsed
+    return last_states, last_time
+
+
+def _poll_work_units_step(
+    stub: Any,
+    parent: str,
+    min_exp: int,
+    exp_count: int | None,
+    exp_queue: str | None,
+    workers: list[str] | None,
+    elapsed: float,
+    timeout: int,
+) -> tuple[list[dict[str, Any]], bool] | None:
+    """Fetches, asserts bounds, and evaluates work units for a single poll step."""
+    work_units = _fetch_raw_work_units(stub, parent, elapsed, timeout)
+    if work_units is None or not _check_wu_count_threshold(
+        len(work_units), min_exp, exp_count, parent, elapsed, timeout
+    ):
+        return None
+    return _evaluate_work_units(stub, work_units, exp_count, exp_queue, workers)
+
+
+def _handle_wu_poll_iteration(
+    res: tuple[list[dict[str, Any]], bool] | None,
+    last_states: dict[str, str],
+    last_time: float,
+    elapsed: float,
+    wait_for_completion: bool,
+    timeout_sec: int,
+) -> tuple[list[dict[str, Any]] | None, dict[str, str], float]:
+    """Processes poll step results and returns validated records if completion conditions met."""
+    if res is None:
+        return None, last_states, last_time
+    wu_results, all_completed = res
+    current_states = {r["worker_name"]: r["state"] for r in wu_results}
+    last_states, last_time = _log_wu_polling_progress(
+        current_states, last_states, last_time, elapsed
+    )
+    if not wait_for_completion or all_completed:
+        return wu_results, last_states, last_time
+    if elapsed >= timeout_sec:
+        raise TimeoutError(
+            f"WorkUnits did not reach COMPLETED state within {timeout_sec}s timeout."
+        )
+    return None, last_states, last_time
 
 
 def validate_work_units(
@@ -317,279 +403,199 @@ def validate_work_units(
     poll_interval_sec: int = 5,
     wait_for_completion: bool = True,
 ) -> list[dict[str, Any]]:
-    """Fetches, validates, and polls work units until all assertions pass.
-
-    Args:
-        stub: gRPC stub for ExperimentStateService.
-        xid: Experiment XID.
-        expected_count: Optional expected number of work units.
-        expected_queue: Optional expected target ClusterQueue name.
-        expected_worker_names: Optional sequence of expected worker names. If omitted,
-            worker names are not asserted.
-        timeout_sec: Maximum timeout to poll for completion.
-        poll_interval_sec: Polling interval in seconds.
-        wait_for_completion: Whether to wait for terminal COMPLETED state.
-
-    Returns:
-        List of verified work unit metadata dictionaries.
-
-    Raises:
-        AssertionError: If assertions on count, names, queues, or terminal states fail.
-        TimeoutError: If execution does not complete within timeout.
-    """
-    parent_name = f"experiments/{xid}"
-    resolved_worker_names: list[str] | None = (
-        list(expected_worker_names) if expected_worker_names is not None else None
-    )
-
-    start_time = time.monotonic()
-    last_reported_states: dict[str, str] = {}
-    last_reported_time: float = -1.0
+    """Fetches, validates, and polls work units until all assertions pass."""
+    parent = f"experiments/{xid}"
+    workers = list(expected_worker_names) if expected_worker_names is not None else None
+    min_exp = expected_count if expected_count is not None else (len(workers) if workers else 0)
+    start_time, last_states, last_time = time.monotonic(), {}, -1.0
 
     while True:
         elapsed = time.monotonic() - start_time
-        try:
-            req = _make_req("ListWorkUnitsRequest", parent=parent_name)
-            response = stub.ListWorkUnits(req)
-            work_units = list(getattr(response, "work_units", []))
-        except Exception as e:
-            if elapsed >= timeout_sec:
-                raise
-            logging.warning("Transient error fetching work units: %s. Retrying...", e)
-            time.sleep(poll_interval_sec)
-            continue
-
-        min_expected = (
-            expected_count
-            if expected_count is not None
-            else (len(resolved_worker_names) if resolved_worker_names else 0)
+        res = _poll_work_units_step(
+            stub, parent, min_exp, expected_count, expected_queue, workers, elapsed, timeout_sec
         )
-        if len(work_units) < min_expected:
-            if elapsed >= timeout_sec:
-                raise AssertionError(
-                    f"Expected at least {min_expected} WorkUnits for {parent_name}, "
-                    f"but only found {len(work_units)} after {int(elapsed)}s."
-                )
-            time.sleep(poll_interval_sec)
-            continue
-
-        if expected_count is not None and len(work_units) > expected_count:
-            raise AssertionError(
-                f"WorkUnit count exceeded: expected {expected_count}, found {len(work_units)}."
-            )
-
-        wu_results, all_completed = _evaluate_work_units(
-            stub=stub,
-            work_units=work_units,
-            expected_count=expected_count,
-            expected_queue=expected_queue,
-            expected_worker_names=resolved_worker_names,
+        results, last_states, last_time = _handle_wu_poll_iteration(
+            res, last_states, last_time, elapsed, wait_for_completion, timeout_sec
         )
-
-        current_states = {r["worker_name"]: r["state"] for r in wu_results}
-        if current_states != last_reported_states or (elapsed - last_reported_time >= 30.0):
-            print(f"[{int(elapsed)}s] WorkUnit States: {current_states}", flush=True)
-            last_reported_states = current_states
-            last_reported_time = elapsed
-
-        if not wait_for_completion or all_completed:
-            return wu_results
-
-        if elapsed >= timeout_sec:
-            raise TimeoutError(
-                f"WorkUnits did not reach COMPLETED state within {timeout_sec}s timeout."
-            )
-
+        if results is not None:
+            return results
         time.sleep(poll_interval_sec)
+
+
+def _extract_jobset_jobs(work_unit: Any) -> list[Any]:
+    """Validates and extracts job objects from WorkUnit JobSet executable."""
+    wu_name = getattr(work_unit, "name", "unknown")
+    if not hasattr(work_unit, "executable"):
+        raise AssertionError(f"WorkUnit '{wu_name}' missing executable field.")
+    executable = work_unit.executable
+    if hasattr(executable, "HasField") and not executable.HasField("jobset"):
+        raise AssertionError(f"WorkUnit '{wu_name}' does not contain a JobSet executable.")
+    jobset = getattr(executable, "jobset", None)
+    if jobset is None or not hasattr(jobset, "jobs"):
+        raise AssertionError(f"WorkUnit '{wu_name}' has invalid or empty JobSet.")
+    return list(jobset.jobs)
+
+
+def _validate_job_replicas(actual_job: Any, expected_job: dict[str, Any], job_name: str) -> None:
+    """Validates job replica count matches expectation."""
+    if "replicas" not in expected_job:
+        return
+    expected_replicas = int(expected_job["replicas"])
+    actual_replicas = getattr(actual_job, "replicas", 1)
+    if actual_replicas != expected_replicas:
+        raise AssertionError(
+            f"Job '{job_name}' replica count mismatch: "
+            f"expected {expected_replicas}, found {actual_replicas}."
+        )
+
+
+def _validate_container_entry(
+    actual_c: Any, expected_c: str | dict[str, Any], job_name: str, item_type: str
+) -> None:
+    """Validates a single container against string name or dictionary properties."""
+    if isinstance(expected_c, str):
+        act_name = getattr(actual_c, "name", "")
+        if act_name != expected_c:
+            raise AssertionError(
+                f"Job '{job_name}' {item_type} container name mismatch: "
+                f"expected '{expected_c}', found '{act_name}'."
+            )
+    elif isinstance(expected_c, dict):
+        for k, v in expected_c.items():
+            act_val = getattr(actual_c, k, None)
+            if act_val != v:
+                raise AssertionError(
+                    f"Job '{job_name}' {item_type} container property '{k}' mismatch: "
+                    f"expected '{v}', found '{act_val}'."
+                )
+
+
+def _validate_container_items(
+    actual_items: Sequence[Any],
+    expected_items: Sequence[str | dict[str, Any]] | int | None,
+    job_name: str,
+    item_type: str,
+) -> None:
+    """Validates count and properties for init or sidecar containers."""
+    if expected_items is None:
+        return
+    if isinstance(expected_items, int):
+        if len(actual_items) != expected_items:
+            raise AssertionError(
+                f"Job '{job_name}' {item_type} container count mismatch: "
+                f"expected {expected_items}, found {len(actual_items)}."
+            )
+        return
+    if len(actual_items) != len(expected_items):
+        raise AssertionError(
+            f"Job '{job_name}' {item_type} container count mismatch: "
+            f"expected {len(expected_items)}, found {len(actual_items)}."
+        )
+    for exp_c, act_c in zip(expected_items, actual_items, strict=False):
+        _validate_container_entry(act_c, exp_c, job_name, item_type)
+
+
+def _validate_primary_spec(actual_job: Any, expected_job: dict[str, Any], job_name: str) -> None:
+    """Validates primary container spec specification."""
+    expected_spec = expected_job.get("spec") or expected_job.get("primary_container")
+    if expected_spec is None:
+        return
+    actual_spec = getattr(actual_job, "spec", None)
+    if actual_spec is None:
+        raise AssertionError(f"Job '{job_name}' missing primary container spec.")
+    if isinstance(expected_spec, str):
+        act_name = getattr(actual_spec, "name", "")
+        if act_name != expected_spec:
+            raise AssertionError(
+                f"Job '{job_name}' primary container name mismatch: "
+                f"expected '{expected_spec}', found '{act_name}'."
+            )
+    elif isinstance(expected_spec, dict):
+        for k, v in expected_spec.items():
+            act_val = getattr(actual_spec, k, None)
+            if act_val != v:
+                raise AssertionError(
+                    f"Job '{job_name}' primary container property '{k}' mismatch: "
+                    f"expected '{v}', found '{act_val}'."
+                )
+
+
+def _build_job_summary(actual_job: Any) -> dict[str, Any]:
+    """Constructs result dictionary summarizing validated JobSet job."""
+    actual_inits = list(getattr(actual_job, "init_containers", []))
+    actual_sidecars = list(getattr(actual_job, "sidecars", []))
+    actual_spec = getattr(actual_job, "spec", None)
+    return {
+        "name": getattr(actual_job, "name", ""),
+        "replicas": getattr(actual_job, "replicas", 1),
+        "init_containers": [
+            {
+                "name": getattr(c, "name", ""),
+                "docker_image": getattr(c, "docker_image", ""),
+            }
+            for c in actual_inits
+        ],
+        "sidecars": [
+            {
+                "name": getattr(s, "name", ""),
+                "docker_image": getattr(s, "docker_image", ""),
+            }
+            for s in actual_sidecars
+        ],
+        "primary_container": getattr(actual_spec, "name", "") if actual_spec else "",
+    }
+
+
+def _validate_single_job(
+    actual_job: Any, expected_job: dict[str, Any], job_name: str
+) -> dict[str, Any]:
+    """Validates replicas, inits, sidecars, and primary spec for a single job."""
+    _validate_job_replicas(actual_job, expected_job, job_name)
+    _validate_container_items(
+        list(getattr(actual_job, "init_containers", [])),
+        expected_job.get("init_containers"),
+        job_name,
+        "init",
+    )
+    _validate_container_items(
+        list(getattr(actual_job, "sidecars", [])),
+        expected_job.get("sidecars"),
+        job_name,
+        "sidecar",
+    )
+    _validate_primary_spec(actual_job, expected_job, job_name)
+    return _build_job_summary(actual_job)
 
 
 def validate_jobsets(
     work_unit: Any,
     expected_jobs: Sequence[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Validates constituent JobSet jobs, replica counts, init containers, and sidecars.
-
-    Args:
-        work_unit: WorkUnit protobuf message or duck-typed object.
-        expected_jobs: Sequence of expected job specification dictionaries. Each dict can contain:
-            - "name" (str): Expected job name (required).
-            - "replicas" (int, optional): Expected replica count.
-            - "init_containers" (Sequence[str | dict[str, Any]] | int, optional):
-                Expected init container names, spec dictionaries, or count.
-            - "sidecars" (Sequence[str | dict[str, Any]] | int, optional):
-                Expected sidecar container names, spec dictionaries, or count.
-            - "spec" or "primary_container" (str | dict[str, Any], optional):
-                Expected primary container name or spec dictionary.
-
-    Returns:
-        List of validated job metadata dictionaries.
-
-    Raises:
-        AssertionError: If JobSet structure or expected job specs do not match.
-    """
-    if not hasattr(work_unit, "executable"):
-        raise AssertionError(
-            f"WorkUnit '{getattr(work_unit, 'name', 'unknown')}' missing executable field."
-        )
-
-    executable = work_unit.executable
-    if hasattr(executable, "HasField") and not executable.HasField("jobset"):
-        raise AssertionError(
-            f"WorkUnit '{getattr(work_unit, 'name', 'unknown')}' does not contain a JobSet executable."
-        )
-
-    jobset = getattr(executable, "jobset", None)
-    if jobset is None or not hasattr(jobset, "jobs"):
-        raise AssertionError(
-            f"WorkUnit '{getattr(work_unit, 'name', 'unknown')}' has invalid or empty JobSet."
-        )
-
-    actual_jobs = list(jobset.jobs)
+    """Validates constituent JobSet jobs, replica counts, init containers, and sidecars."""
+    actual_jobs = _extract_jobset_jobs(work_unit)
     if len(actual_jobs) != len(expected_jobs):
         raise AssertionError(
             f"JobSet job count mismatch: expected {len(expected_jobs)}, found {len(actual_jobs)}."
         )
 
-    actual_jobs_by_name = {getattr(j, "name", ""): j for j in actual_jobs}
-    validated_results: list[dict[str, Any]] = []
+    actual_by_name = {getattr(j, "name", ""): j for j in actual_jobs}
+    validated: list[dict[str, Any]] = []
 
-    for idx, expected_job in enumerate(expected_jobs):
-        expected_name = expected_job.get("name")
-        if not expected_name:
+    for idx, exp_job in enumerate(expected_jobs):
+        exp_name = exp_job.get("name")
+        if not exp_name:
             raise AssertionError(f"Expected job at index {idx} must specify a 'name'.")
-
-        actual_job = actual_jobs_by_name.get(expected_name)
-        if actual_job is None:
-            # Fallback to positional matching if names don't directly match
-            if idx < len(actual_jobs):
-                actual_job = actual_jobs[idx]
-            else:
-                raise AssertionError(
-                    f"Expected job '{expected_name}' not found in JobSet jobs: "
-                    f"{[getattr(j, 'name', '') for j in actual_jobs]}."
-                )
-
-        # Validate replicas
-        if "replicas" in expected_job:
-            expected_replicas = int(expected_job["replicas"])
-            actual_replicas = getattr(actual_job, "replicas", 1)
-            if actual_replicas != expected_replicas:
-                raise AssertionError(
-                    f"Job '{expected_name}' replica count mismatch: "
-                    f"expected {expected_replicas}, found {actual_replicas}."
-                )
-
-        # Validate init containers
-        actual_inits = list(getattr(actual_job, "init_containers", []))
-        if "init_containers" in expected_job:
-            expected_inits = expected_job["init_containers"]
-            if isinstance(expected_inits, int):
-                if len(actual_inits) != expected_inits:
-                    raise AssertionError(
-                        f"Job '{expected_name}' init container count mismatch: "
-                        f"expected {expected_inits}, found {len(actual_inits)}."
-                    )
-            elif isinstance(expected_inits, (list, tuple)):
-                if len(actual_inits) != len(expected_inits):
-                    raise AssertionError(
-                        f"Job '{expected_name}' init container count mismatch: "
-                        f"expected {len(expected_inits)}, found {len(actual_inits)}."
-                    )
-                for exp_c, act_c in zip(expected_inits, actual_inits, strict=False):
-                    if isinstance(exp_c, str):
-                        act_name = getattr(act_c, "name", "")
-                        if act_name != exp_c:
-                            raise AssertionError(
-                                f"Job '{expected_name}' init container name mismatch: "
-                                f"expected '{exp_c}', found '{act_name}'."
-                            )
-                    elif isinstance(exp_c, dict):
-                        for k, v in exp_c.items():
-                            act_val = getattr(act_c, k, None)
-                            if act_val != v:
-                                raise AssertionError(
-                                    f"Job '{expected_name}' init container property '{k}' mismatch: "
-                                    f"expected '{v}', found '{act_val}'."
-                                )
-
-        # Validate sidecars
-        actual_sidecars = list(getattr(actual_job, "sidecars", []))
-        if "sidecars" in expected_job:
-            expected_sidecars = expected_job["sidecars"]
-            if isinstance(expected_sidecars, int):
-                if len(actual_sidecars) != expected_sidecars:
-                    raise AssertionError(
-                        f"Job '{expected_name}' sidecar container count mismatch: "
-                        f"expected {expected_sidecars}, found {len(actual_sidecars)}."
-                    )
-            elif isinstance(expected_sidecars, (list, tuple)):
-                if len(actual_sidecars) != len(expected_sidecars):
-                    raise AssertionError(
-                        f"Job '{expected_name}' sidecar container count mismatch: "
-                        f"expected {len(expected_sidecars)}, found {len(actual_sidecars)}."
-                    )
-                for exp_s, act_s in zip(expected_sidecars, actual_sidecars, strict=False):
-                    if isinstance(exp_s, str):
-                        act_name = getattr(act_s, "name", "")
-                        if act_name != exp_s:
-                            raise AssertionError(
-                                f"Job '{expected_name}' sidecar container name mismatch: "
-                                f"expected '{exp_s}', found '{act_name}'."
-                            )
-                    elif isinstance(exp_s, dict):
-                        for k, v in exp_s.items():
-                            act_val = getattr(act_s, k, None)
-                            if act_val != v:
-                                raise AssertionError(
-                                    f"Job '{expected_name}' sidecar container property '{k}' mismatch: "
-                                    f"expected '{v}', found '{act_val}'."
-                                )
-
-        # Validate primary container spec
-        expected_spec = expected_job.get("spec") or expected_job.get("primary_container")
-        actual_spec = getattr(actual_job, "spec", None)
-        if expected_spec is not None:
-            if actual_spec is None:
-                raise AssertionError(f"Job '{expected_name}' missing primary container spec.")
-            if isinstance(expected_spec, str):
-                act_name = getattr(actual_spec, "name", "")
-                if act_name != expected_spec:
-                    raise AssertionError(
-                        f"Job '{expected_name}' primary container name mismatch: "
-                        f"expected '{expected_spec}', found '{act_name}'."
-                    )
-            elif isinstance(expected_spec, dict):
-                for k, v in expected_spec.items():
-                    act_val = getattr(actual_spec, k, None)
-                    if act_val != v:
-                        raise AssertionError(
-                            f"Job '{expected_name}' primary container property '{k}' mismatch: "
-                            f"expected '{v}', found '{act_val}'."
-                        )
-
-        validated_results.append(
-            {
-                "name": getattr(actual_job, "name", ""),
-                "replicas": getattr(actual_job, "replicas", 1),
-                "init_containers": [
-                    {
-                        "name": getattr(c, "name", ""),
-                        "docker_image": getattr(c, "docker_image", ""),
-                    }
-                    for c in actual_inits
-                ],
-                "sidecars": [
-                    {
-                        "name": getattr(s, "name", ""),
-                        "docker_image": getattr(s, "docker_image", ""),
-                    }
-                    for s in actual_sidecars
-                ],
-                "primary_container": getattr(actual_spec, "name", "") if actual_spec else "",
-            }
+        act_job = actual_by_name.get(exp_name) or (
+            actual_jobs[idx] if idx < len(actual_jobs) else None
         )
+        if act_job is None:
+            raise AssertionError(
+                f"Expected job '{exp_name}' not found in JobSet jobs: "
+                f"{[getattr(j, 'name', '') for j in actual_jobs]}."
+            )
+        validated.append(_validate_single_job(act_job, exp_job, exp_name))
 
-    return validated_results
+    return validated
 
 
 def _normalize_artifact_type(type_name: str) -> str:
@@ -606,6 +612,172 @@ def _normalize_artifact_type(type_name: str) -> str:
     return snake
 
 
+def _resolve_artifact_parent(xid: str | int, wid: str | int | None = None) -> str:
+    """Formats canonical parent resource name for Experiment or WorkUnit artifacts."""
+    str_xid = str(xid).strip()
+    prefix = str_xid if str_xid.startswith("experiments/") else f"experiments/{str_xid}"
+    if wid is not None:
+        return f"{prefix}/workUnits/{wid}"
+    return prefix
+
+
+def _fetch_raw_artifacts(
+    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+) -> list[Any] | None:
+    """Fetches artifacts from ESS stub, retrying on transient errors."""
+    try:
+        req = _make_req("ListArtifactsRequest", parent=parent_name)
+        response = stub.ListArtifacts(req)
+        return list(getattr(response, "artifacts", []))
+    except Exception as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Transient error fetching artifacts for %s: %s", parent_name, e)
+        return None
+
+
+def _extract_artifact_payload_info(art: Any) -> tuple[str, str, Any]:
+    """Extracts raw and normalized payload type from an artifact object."""
+    payload = getattr(art, "payload", None)
+    payload_type = ""
+    if payload is not None:
+        if hasattr(payload, "WhichOneof"):
+            payload_type = payload.WhichOneof("type") or ""
+        if not payload_type:
+            for candidate in ("chart", "url", "managed_xprof", "code_source", "text"):
+                if getattr(payload, candidate, None) is not None:
+                    payload_type = candidate
+                    break
+    normalized = _normalize_artifact_type(payload_type) if payload_type else ""
+    return payload_type, normalized, payload
+
+
+def _extract_chart_artifact_details(art: Any, payload: Any) -> tuple[list[str], str]:
+    """Extracts chart metric names and title, failing if chart provisioning failed."""
+    chart = getattr(payload, "chart", None) if payload is not None else getattr(art, "chart", None)
+    if chart is None:
+        return [], ""
+    status = getattr(chart, "status", None)
+    if status in (3, "FAILED", "STATUS_FAILED"):
+        err = getattr(chart, "error_message", "")
+        art_name = getattr(art, "name", "")
+        raise TerminalFailureError(f"ChartArtifact '{art_name}' failed provisioning: {err}")
+    metric_names = list(getattr(chart, "metric_names", []))
+    title = getattr(chart, "title", "")
+    return metric_names, title
+
+
+def _extract_url_artifact_details(art: Any, payload: Any) -> tuple[str, str]:
+    """Extracts URL string and display name from URL artifact payload."""
+    url_obj = getattr(payload, "url", None) if payload is not None else getattr(art, "url", None)
+    if url_obj is None:
+        return "", ""
+    url_str = getattr(url_obj, "url", "") if hasattr(url_obj, "url") else str(url_obj)
+    display_name = getattr(url_obj, "display_name", "") if hasattr(url_obj, "display_name") else ""
+    return url_str, display_name
+
+
+def _process_single_artifact(art: Any) -> dict[str, Any]:
+    """Processes a single artifact object into normalized metadata dictionary."""
+    payload_type, norm_type, payload = _extract_artifact_payload_info(art)
+    metrics, chart_title = _extract_chart_artifact_details(art, payload)
+    url_str, display_name = _extract_url_artifact_details(art, payload)
+    title = chart_title or display_name or getattr(art, "notes", "")
+    return {
+        "name": getattr(art, "name", ""),
+        "parent": getattr(art, "parent", ""),
+        "type": payload_type or "unknown",
+        "normalized_type": norm_type or "unknown",
+        "metric_names": metrics,
+        "title": title,
+        "url": url_str if isinstance(url_str, str) else getattr(url_str, "url", ""),
+    }
+
+
+def _raise_artifact_timeout(
+    types_ok: bool,
+    metrics_ok: bool,
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    found_types: set[str],
+    found_metrics: set[str],
+    parent_name: str,
+    timeout_sec: int,
+) -> None:
+    """Raises descriptive AssertionError or TimeoutError on artifact polling expiration."""
+    if not types_ok and exp_types:
+        missing = sorted(exp_types - found_types)
+        raise AssertionError(
+            f"Expected artifact types {missing} not found in {parent_name}. "
+            f"Found types: {sorted(found_types)}."
+        )
+    if not metrics_ok and exp_metrics:
+        missing = sorted(exp_metrics - found_metrics)
+        raise AssertionError(
+            f"Expected metric names {missing} not found in ChartArtifacts for {parent_name}. "
+            f"Found metrics: {sorted(found_metrics)}."
+        )
+    raise TimeoutError(f"Artifact verification timed out after {timeout_sec}s.")
+
+
+def _check_artifact_satisfaction(
+    found_types: set[str],
+    found_metrics: set[str],
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    parent_name: str,
+    has_raw: bool,
+    elapsed: float,
+    timeout_sec: int,
+) -> bool:
+    """Verifies expected artifact types and metrics satisfaction or raises on timeout."""
+    types_ok = exp_types.issubset(found_types) if exp_types is not None else True
+    metrics_ok = exp_metrics.issubset(found_metrics) if exp_metrics is not None else True
+    if types_ok and metrics_ok and (has_raw or not (exp_types or exp_metrics)):
+        return True
+    if elapsed >= timeout_sec:
+        _raise_artifact_timeout(
+            types_ok,
+            metrics_ok,
+            exp_types,
+            exp_metrics,
+            found_types,
+            found_metrics,
+            parent_name,
+            timeout_sec,
+        )
+    return False
+
+
+def _poll_artifacts_step(
+    stub: Any,
+    parent_name: str,
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    elapsed: float,
+    timeout_sec: int,
+) -> list[dict[str, Any]] | None:
+    """Fetches raw artifacts and checks satisfaction for a single poll step."""
+    raw = _fetch_raw_artifacts(stub, parent_name, elapsed, timeout_sec)
+    if raw is None:
+        return None
+    results = [_process_single_artifact(art) for art in raw]
+    found_types = {r["normalized_type"] for r in results if r["normalized_type"] != "unknown"}
+    found_metrics = {m for r in results for m in r["metric_names"]}
+    if _check_artifact_satisfaction(
+        found_types,
+        found_metrics,
+        exp_types,
+        exp_metrics,
+        parent_name,
+        bool(raw),
+        elapsed,
+        timeout_sec,
+    ):
+        return results
+    return None
+
+
 def validate_artifacts(
     stub: Any,
     xid: str | int,
@@ -615,153 +787,128 @@ def validate_artifacts(
     timeout_sec: int = 60,
     poll_interval_sec: int = 2,
 ) -> list[dict[str, Any]]:
-    """Fetches and validates artifacts associated with an Experiment or WorkUnit.
-
-    Asserts the presence and health of ChartArtifact, UrlArtifact, and custom artifacts via ESS API.
-
-    Args:
-        stub: gRPC stub for ExperimentStateService.
-        xid: Experiment XID or full resource path.
-        wid: Optional WorkUnit ID. If provided, queries WorkUnit-level artifacts.
-        expected_artifact_types: Optional sequence of artifact types expected (e.g. ['chart', 'url']).
-        expected_metric_names: Optional sequence of metric names expected in ChartArtifact payloads.
-        timeout_sec: Maximum timeout to poll for artifacts.
-        poll_interval_sec: Polling interval in seconds.
-
-    Returns:
-        List of verified artifact metadata dictionaries.
-
-    Raises:
-        AssertionError: If expected artifacts or metrics are missing.
-        TerminalFailureError: If a ChartArtifact enters FAILED provisioning status.
-        TimeoutError: If artifact conditions are not met within timeout.
-    """
-    str_xid = str(xid).strip()
-    if wid is not None:
-        if str_xid.startswith("experiments/"):
-            parent_name = f"{str_xid}/workUnits/{wid}"
-        else:
-            parent_name = f"experiments/{str_xid}/workUnits/{wid}"
-    elif str_xid.startswith("experiments/"):
-        parent_name = str_xid
-    else:
-        parent_name = f"experiments/{str_xid}"
-
-    normalized_expected_types = (
+    """Fetches and validates artifacts associated with an Experiment or WorkUnit."""
+    parent = _resolve_artifact_parent(xid, wid)
+    exp_types = (
         {_normalize_artifact_type(t) for t in expected_artifact_types}
         if expected_artifact_types is not None
         else None
     )
-    expected_metrics_set = set(expected_metric_names) if expected_metric_names is not None else None
-
+    exp_metrics = set(expected_metric_names) if expected_metric_names is not None else None
     start_time = time.monotonic()
+
     while True:
         elapsed = time.monotonic() - start_time
-        try:
-            req = _make_req("ListArtifactsRequest", parent=parent_name)
-            response = stub.ListArtifacts(req)
-            raw_artifacts = list(getattr(response, "artifacts", []))
-        except Exception as e:
-            if elapsed >= timeout_sec:
-                raise
-            logging.warning("Transient error fetching artifacts for %s: %s", parent_name, e)
-            time.sleep(poll_interval_sec)
-            continue
-
-        artifact_results: list[dict[str, Any]] = []
-        found_types: set[str] = set()
-        found_metric_names: set[str] = set()
-
-        for art in raw_artifacts:
-            art_name = getattr(art, "name", "")
-            art_parent = getattr(art, "parent", "")
-            payload = getattr(art, "payload", None)
-
-            payload_type = ""
-            if payload is not None:
-                if hasattr(payload, "WhichOneof"):
-                    payload_type = payload.WhichOneof("type") or ""
-                if not payload_type:
-                    for candidate in ("chart", "url", "managed_xprof", "code_source", "text"):
-                        if getattr(payload, candidate, None) is not None:
-                            payload_type = candidate
-                            break
-
-            normalized_type = _normalize_artifact_type(payload_type) if payload_type else ""
-            if normalized_type:
-                found_types.add(normalized_type)
-
-            # Chart artifact details
-            chart_obj = (
-                getattr(payload, "chart", None)
-                if payload is not None
-                else getattr(art, "chart", None)
-            )
-            metric_names = list(getattr(chart_obj, "metric_names", [])) if chart_obj else []
-            chart_title = getattr(chart_obj, "title", "") if chart_obj else ""
-            chart_status = getattr(chart_obj, "status", None) if chart_obj else None
-            chart_err = getattr(chart_obj, "error_message", "") if chart_obj else ""
-
-            if chart_status in (3, "FAILED", "STATUS_FAILED"):
-                raise TerminalFailureError(
-                    f"ChartArtifact '{art_name}' failed provisioning: {chart_err}"
-                )
-
-            found_metric_names.update(metric_names)
-
-            # URL artifact details
-            url_obj = (
-                getattr(payload, "url", None) if payload is not None else getattr(art, "url", None)
-            )
-            url_str = getattr(url_obj, "url", "") if url_obj else getattr(art, "url", "")
-            display_name = getattr(url_obj, "display_name", "") if url_obj else ""
-
-            artifact_results.append(
-                {
-                    "name": art_name,
-                    "parent": art_parent,
-                    "type": payload_type or "unknown",
-                    "normalized_type": normalized_type or "unknown",
-                    "metric_names": metric_names,
-                    "title": chart_title or display_name or getattr(art, "notes", ""),
-                    "url": url_str if isinstance(url_str, str) else getattr(url_str, "url", ""),
-                }
-            )
-
-        types_satisfied = (
-            normalized_expected_types.issubset(found_types)
-            if normalized_expected_types is not None
-            else True
-        )
-        metrics_satisfied = (
-            expected_metrics_set.issubset(found_metric_names)
-            if expected_metrics_set is not None
-            else True
-        )
-
-        if (
-            types_satisfied
-            and metrics_satisfied
-            and (raw_artifacts or not (normalized_expected_types or expected_metrics_set))
-        ):
-            return artifact_results
-
-        if elapsed >= timeout_sec:
-            if not types_satisfied and normalized_expected_types:
-                missing_types = sorted(normalized_expected_types - found_types)
-                raise AssertionError(
-                    f"Expected artifact types {missing_types} not found in {parent_name}. "
-                    f"Found types: {sorted(found_types)}."
-                )
-            if not metrics_satisfied and expected_metrics_set:
-                missing_metrics = sorted(expected_metrics_set - found_metric_names)
-                raise AssertionError(
-                    f"Expected metric names {missing_metrics} not found in ChartArtifacts for {parent_name}. "
-                    f"Found metrics: {sorted(found_metric_names)}."
-                )
-            raise TimeoutError(f"Artifact verification timed out after {timeout_sec}s.")
-
+        results = _poll_artifacts_step(stub, parent, exp_types, exp_metrics, elapsed, timeout_sec)
+        if results is not None:
+            return results
         time.sleep(poll_interval_sec)
+
+
+def _normalize_expected_dashboards(
+    expected_dashboards: Sequence[dict[str, Any] | str],
+) -> list[dict[str, Any]]:
+    """Normalizes expected dashboard specifications to standard dictionary format."""
+    normalized: list[dict[str, Any]] = []
+    for item in expected_dashboards:
+        if isinstance(item, str):
+            normalized.append({"dashboard_id": item})
+        else:
+            normalized.append(dict(item))
+    return normalized
+
+
+def _fetch_json_from_url(url: str, timeout: int = 10) -> dict[str, Any]:
+    """Performs HTTP GET request with standard headers and parses JSON response."""
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": "xmc-validator/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _validate_dashboard_charts(base_endpoint: str, chart_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetches and verifies individual chart definitions referenced by a dashboard."""
+    verified_charts: list[dict[str, Any]] = []
+    for cid in chart_ids:
+        chart_slug = cid.split("/", 1)[1] if cid.startswith("charts/") else cid
+        chart_url = f"{base_endpoint}/v1/charts/{chart_slug}"
+        verified_charts.append(_fetch_json_from_url(chart_url))
+    return verified_charts
+
+
+def _extract_dashboard_id(exp_dash: dict[str, Any]) -> str:
+    """Extracts and normalizes the target dashboard ID."""
+    raw_id = exp_dash.get("dashboard_id") or exp_dash.get("id") or exp_dash.get("name", "")
+    dash_id = raw_id.split("/", 1)[1] if raw_id.startswith("dashboards/") else raw_id
+    if not dash_id:
+        raise AssertionError("Expected dashboard specification missing dashboard_id.")
+    return dash_id
+
+
+def _assert_dashboard_metadata(
+    dash_id: str, dash_data: dict[str, Any], exp_dash: dict[str, Any]
+) -> list[str]:
+    """Asserts title pattern and expected chart IDs for fetched dashboard data."""
+    dash_title = dash_data.get("title", "")
+    if "expected_title" in exp_dash and exp_dash["expected_title"] not in dash_title:
+        raise AssertionError(
+            f"Dashboard '{dash_id}' title mismatch: "
+            f"expected '{exp_dash['expected_title']}', found '{dash_title}'."
+        )
+    chart_ids = dash_data.get("chart_ids") or dash_data.get("chartIds") or []
+    if "expected_chart_ids" in exp_dash:
+        missing = set(exp_dash["expected_chart_ids"]) - set(chart_ids)
+        if missing:
+            raise AssertionError(
+                f"Dashboard '{dash_id}' missing expected chart IDs: {sorted(missing)}. "
+                f"Found: {sorted(chart_ids)}."
+            )
+    return chart_ids
+
+
+def _validate_single_dashboard(base_endpoint: str, exp_dash: dict[str, Any]) -> dict[str, Any]:
+    """Fetches a dashboard by ID, asserts constraints, and validates its charts."""
+    dash_id = _extract_dashboard_id(exp_dash)
+    dash_data = _fetch_json_from_url(f"{base_endpoint}/v1/dashboards/{dash_id}")
+    chart_ids = _assert_dashboard_metadata(dash_id, dash_data, exp_dash)
+    charts = _validate_dashboard_charts(base_endpoint, chart_ids)
+    return {
+        "dashboard_id": dash_id,
+        "name": dash_data.get("name", f"dashboards/{dash_id}"),
+        "title": dash_data.get("title", ""),
+        "chart_ids": chart_ids,
+        "charts": charts,
+    }
+
+
+def _normalize_dashboard_endpoint(endpoint: str) -> str:
+    """Ensures dashboard endpoint has http/https protocol prefix."""
+    base = endpoint.strip().rstrip("/")
+    return base if base.startswith(("http://", "https://")) else f"http://{base}"
+
+
+def _poll_dashboard_iteration(
+    base_endpoint: str,
+    normalized: list[dict[str, Any]],
+    elapsed: float,
+    timeout_sec: int,
+) -> list[dict[str, Any]] | None:
+    """Attempts to validate all dashboards in a single polling pass."""
+    try:
+        return [_validate_single_dashboard(base_endpoint, exp) for exp in normalized]
+    except (urllib.error.URLError, ConnectionError, OSError) as e:
+        if elapsed >= timeout_sec:
+            raise TimeoutError(
+                f"Dashboard REST endpoint verification failed after {timeout_sec}s: {e}"
+            )
+        logging.warning("Transient network error reaching dashboard: %s. Retrying...", e)
+        return None
+    except AssertionError:
+        if elapsed >= timeout_sec:
+            raise
+        return None
 
 
 def validate_dashboard(
@@ -770,117 +917,17 @@ def validate_dashboard(
     timeout_sec: int = 60,
     poll_interval_sec: int = 2,
 ) -> list[dict[str, Any]]:
-    """Validates Dashboards and Charts via Dashboard Service REST API endpoints.
-
-    Asserts GET /v1/dashboards/{id} and GET /v1/charts/{id} endpoints.
-
-    Args:
-        dashboard_endpoint: Host:port or URL of Dashboard REST API (e.g. 'localhost:8080').
-        expected_dashboards: Sequence of dashboard IDs or specification dicts. Each dict can contain:
-            - "dashboard_id" (str): Dashboard slug/ID (required).
-            - "expected_title" (str, optional): Expected substring in dashboard title.
-            - "expected_chart_ids" (Sequence[str], optional): Expected referenced chart IDs.
-        timeout_sec: Maximum timeout to poll for dashboard availability.
-        poll_interval_sec: Polling interval in seconds.
-
-    Returns:
-        List of validated dashboard metadata dictionaries.
-
-    Raises:
-        AssertionError: If dashboard or chart assertions fail.
-        TimeoutError: If endpoints fail to respond within timeout.
-    """
-    base_endpoint = dashboard_endpoint.strip().rstrip("/")
-    if not base_endpoint.startswith(("http://", "https://")):
-        base_endpoint = f"http://{base_endpoint}"
-
-    normalized_expected: list[dict[str, Any]] = []
-    for item in expected_dashboards:
-        if isinstance(item, str):
-            normalized_expected.append({"dashboard_id": item})
-        else:
-            normalized_expected.append(dict(item))
-
+    """Validates Dashboards and Charts via Dashboard Service REST API endpoints."""
+    base_endpoint = _normalize_dashboard_endpoint(dashboard_endpoint)
+    normalized = _normalize_expected_dashboards(expected_dashboards)
     start_time = time.monotonic()
+
     while True:
         elapsed = time.monotonic() - start_time
-        dash_results: list[dict[str, Any]] = []
-        try:
-            for exp_dash in normalized_expected:
-                raw_id = (
-                    exp_dash.get("dashboard_id") or exp_dash.get("id") or exp_dash.get("name", "")
-                )
-                dash_id = raw_id.split("/", 1)[1] if raw_id.startswith("dashboards/") else raw_id
-                if not dash_id:
-                    raise AssertionError("Expected dashboard specification missing dashboard_id.")
-
-                dash_url = f"{base_endpoint}/v1/dashboards/{dash_id}"
-                req = urllib.request.Request(
-                    dash_url,
-                    headers={"Accept": "application/json", "User-Agent": "xmc-validator/1.0"},
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    dash_data = json.loads(resp.read().decode("utf-8"))
-
-                # Validate dashboard title
-                dash_title = dash_data.get("title", "")
-                if "expected_title" in exp_dash:
-                    exp_title = exp_dash["expected_title"]
-                    if exp_title not in dash_title:
-                        raise AssertionError(
-                            f"Dashboard '{dash_id}' title mismatch: "
-                            f"expected '{exp_title}', found '{dash_title}'."
-                        )
-
-                # Validate chart IDs
-                chart_ids = dash_data.get("chart_ids") or dash_data.get("chartIds") or []
-                if "expected_chart_ids" in exp_dash:
-                    exp_charts = exp_dash["expected_chart_ids"]
-                    missing_charts = set(exp_charts) - set(chart_ids)
-                    if missing_charts:
-                        raise AssertionError(
-                            f"Dashboard '{dash_id}' missing expected chart IDs: {sorted(missing_charts)}. "
-                            f"Found: {sorted(chart_ids)}."
-                        )
-
-                # Validate each chart via GET /v1/charts/{id}
-                verified_charts: list[dict[str, Any]] = []
-                for cid in chart_ids:
-                    chart_slug = cid.split("/", 1)[1] if cid.startswith("charts/") else cid
-                    chart_url = f"{base_endpoint}/v1/charts/{chart_slug}"
-                    c_req = urllib.request.Request(
-                        chart_url,
-                        headers={"Accept": "application/json", "User-Agent": "xmc-validator/1.0"},
-                    )
-                    with urllib.request.urlopen(c_req, timeout=10) as c_resp:
-                        chart_data = json.loads(c_resp.read().decode("utf-8"))
-                        verified_charts.append(chart_data)
-
-                dash_results.append(
-                    {
-                        "dashboard_id": dash_id,
-                        "name": dash_data.get("name", f"dashboards/{dash_id}"),
-                        "title": dash_title,
-                        "chart_ids": chart_ids,
-                        "charts": verified_charts,
-                    }
-                )
-
-            return dash_results
-
-        except (urllib.error.URLError, ConnectionError, OSError) as e:
-            if elapsed >= timeout_sec:
-                raise TimeoutError(
-                    f"Dashboard REST endpoint verification failed after {timeout_sec}s: {e}"
-                )
-            logging.warning(
-                "Transient network error reaching dashboard endpoint: %s. Retrying...", e
-            )
-            time.sleep(poll_interval_sec)
-        except AssertionError:
-            if elapsed >= timeout_sec:
-                raise
-            time.sleep(poll_interval_sec)
+        res = _poll_dashboard_iteration(base_endpoint, normalized, elapsed, timeout_sec)
+        if res is not None:
+            return res
+        time.sleep(poll_interval_sec)
 
 
 def resolve_ui_base_url() -> str:
