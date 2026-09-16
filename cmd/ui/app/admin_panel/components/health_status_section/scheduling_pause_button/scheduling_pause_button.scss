@@ -1,0 +1,95 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+:host {
+  display: block;
+}
+
+.scheduling-pause-card {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  transition: all 0.2s ease-in-out;
+
+  &.is-paused {
+    background-color: #fffbeb;
+    border-color: #fde68a;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+    .pause-card-info {
+      .pause-icon {
+        color: #d97706;
+      }
+
+      .pause-text-group {
+        .pause-title {
+          color: #78350f;
+        }
+
+        .pause-subtitle {
+          color: #64748b;
+        }
+      }
+    }
+  }
+
+  .pause-card-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .pause-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &.paused-icon {
+        color: #d97706;
+      }
+    }
+
+    .pause-text-group {
+      .pause-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      .pause-subtitle {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+    }
+  }
+
+  .pause-action-container {
+    display: flex;
+    align-items: center;
+
+    .pause-slide-toggle {
+      cursor: pointer;
+    }
+  }
+}

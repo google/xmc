@@ -18,6 +18,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, Subject, throwError } from 'rxjs';
 
+import { FeatureFlagService } from '../service/feature_flag_service';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
@@ -29,7 +30,21 @@ describe('AdminPanelPage Component', () => {
   cleanState(() => {
     setupModule({
       imports: [AdminPanelPage, NoopAnimationsModule],
-      providers: [provideHttpClient(), { provide: HealthService, useClass: MockHealthService }],
+      providers: [
+        provideHttpClient(),
+        { provide: HealthService, useClass: MockHealthService },
+        {
+          provide: FeatureFlagService,
+          useValue: {
+            isPauseSchedulingEnabled: true,
+            isAdminPanelEnabled: true,
+            isResourceDashboardEnabled: true,
+            isPerformanceDashboardEnabled: true,
+            isNonProdAuth: false,
+            isFeatureEnabled: () => true,
+          },
+        },
+      ],
     });
   }, beforeEach);
 
@@ -355,5 +370,95 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     expect(await harness.getFooterText()).toBeNull();
+  });
+
+  it('should render scheduling pause card in unpaused state when isSchedulingPaused is false', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(healthSection).not.toBeNull();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+    expect(await healthSection!.isPauseToggleChecked()).toBeFalse();
+  });
+
+  it('should render scheduling pause card in paused state when isSchedulingPaused is true', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+          isSchedulingPaused: true,
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(healthSection).not.toBeNull();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+    expect(await healthSection!.isPauseToggleChecked()).toBeTrue();
+  });
+
+  it('should toggle local pause state when confirmed from health status section', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(healthSection).not.toBeNull();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+
+    await healthSection!.togglePause();
+    await flush();
+
+    expect(await healthSection!.hasConfirmationModal()).toBeTrue();
+    await healthSection!.clickModalConfirm();
+    await flush();
+
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+    expect(await healthSection!.isPauseToggleChecked()).toBeTrue();
+  });
+
+  it('should reset local pause state when fresh health status is fetched', async () => {
+    const healthService = get(HealthService);
+    const pausedOnBackend = false;
+    spyOn(healthService, 'getHealthStatus').and.callFake(() => {
+      return of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+          isSchedulingPaused: pausedOnBackend,
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any);
+    });
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+
+    await healthSection!.togglePause();
+    await flush();
+    await healthSection!.clickModalConfirm();
+    await flush();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+
+    await healthSection!.clickRefresh();
+    await flush();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
   });
 });

@@ -13,10 +13,12 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
 import { HealthStatusGroupCardComponent } from './health_status_group_card/health_status_group_card';
+import { SchedulingPauseButtonComponent } from './scheduling_pause_button/scheduling_pause_button';
+import { SchedulingPauseModalComponent } from './scheduling_pause_modal/scheduling_pause_modal';
 
 /** Enum representing the component types from backend health service. */
 export enum ComponentType {
@@ -45,7 +47,13 @@ export interface ComponentHealth {
 @Component({
   selector: 'xmc-health-status-section',
   standalone: true,
-  imports: [CommonModule, MatIconModule, HealthStatusGroupCardComponent],
+  imports: [
+    CommonModule,
+    MatIconModule,
+    HealthStatusGroupCardComponent,
+    SchedulingPauseButtonComponent,
+    SchedulingPauseModalComponent,
+  ],
   templateUrl: './health_status_section.ng.html',
   styleUrl: './health_status_section.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,7 +63,14 @@ export class HealthStatusSectionComponent {
   overallStatus = input<string>(HealthState.UNSPECIFIED);
   lastChecked = input<string>('');
   loading = input<boolean>(false);
+  isSchedulingPaused = input<boolean>(false);
+  isPauseSchedulingEnabled = input<boolean>(true);
+
   refresh = output<void>();
+  toggleSchedulingPause = output<boolean>();
+
+  protected readonly showPauseModal = signal<boolean>(false);
+  protected readonly pendingPauseState = signal<boolean>(false);
 
   // Computed properties to group components
   protected readonly coreComponents = computed(() =>
@@ -82,5 +97,20 @@ export class HealthStatusSectionComponent {
 
   protected onRefresh(): void {
     this.refresh.emit();
+  }
+
+  protected onTogglePause(): void {
+    this.pendingPauseState.set(!this.isSchedulingPaused());
+    this.showPauseModal.set(true);
+  }
+
+  protected onConfirmPause(): void {
+    const targetState = this.pendingPauseState();
+    this.showPauseModal.set(false);
+    this.toggleSchedulingPause.emit(targetState);
+  }
+
+  protected onCancelPause(): void {
+    this.showPauseModal.set(false);
   }
 }

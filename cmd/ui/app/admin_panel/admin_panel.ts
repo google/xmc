@@ -14,6 +14,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, of } from 'rxjs';
 import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
@@ -24,6 +25,7 @@ import {
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 import { ErrorBannerComponent } from '../common/components/error_banner/error_banner';
+import { FeatureFlagService } from '../service/feature_flag_service';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
 import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
@@ -37,6 +39,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
   selector: 'xmc-admin-panel',
   standalone: true,
   imports: [
+    MatIconModule,
     MatProgressSpinnerModule,
     SystemInfoCardComponent,
     HealthStatusSectionComponent,
@@ -50,6 +53,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
   private readonly snackbarService = inject(SnackbarService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   protected readonly healthStatusError = signal<unknown>(null);
   protected readonly configEntriesError = signal<unknown>(null);
@@ -70,6 +74,7 @@ export class AdminPanelPage {
           tap((status) => {
             this.lastKnownStatus = status;
             this.healthStatusError.set(null);
+            this.localSchedulingPaused.set(null);
           }),
           catchError((error) => {
             console.error('Failed to fetch health status', error);
@@ -112,6 +117,19 @@ export class AdminPanelPage {
     () => this.healthStatus() === undefined && !this.healthStatusError(),
   );
 
+  protected readonly localSchedulingPaused = signal<boolean | null>(null);
+
+  protected readonly isSchedulingPaused = computed(() => {
+    if (this.localSchedulingPaused() !== null) {
+      return this.localSchedulingPaused()!;
+    }
+    return !!this.healthStatus()?.systemInfo?.isSchedulingPaused;
+  });
+
+  protected readonly isPauseSchedulingEnabled = computed(
+    () => this.featureFlagService.isPauseSchedulingEnabled,
+  );
+
   protected readonly lastUpdated = computed(() => {
     const status = this.healthStatus();
     if (!status || !status.healthCheckTime) return '';
@@ -136,5 +154,9 @@ export class AdminPanelPage {
 
   protected onRetryConfigs(): void {
     this.configRefreshTrigger$.next();
+  }
+
+  protected onToggleSchedulingPause(pause: boolean): void {
+    this.localSchedulingPaused.set(pause);
   }
 }

@@ -38,6 +38,14 @@
     </div>
   </div>
 
+  <!-- Scheduling Pause Toggle -->
+  @if (isPauseSchedulingEnabled()) {
+    <xmc-scheduling-pause-button
+      [isSchedulingPaused]="isSchedulingPaused()"
+      (toggleClick)="onTogglePause()"
+    />
+  }
+
   <div class="tiers-container">
     <!-- Tier 1: Core Operations -->
     @if (coreComponents().length > 0) {
@@ -90,3 +98,12 @@
     <div class="last-checked">Last checked: {{ lastChecked() }}</div>
   }
 </div>
+
+<!-- Confirmation Modal Dialog -->
+@if (showPauseModal()) {
+  <xmc-scheduling-pause-modal
+    [isPausing]="pendingPauseState()"
+    (confirm)="onConfirmPause()"
+    (cancel)="onCancelPause()"
+  />
+}

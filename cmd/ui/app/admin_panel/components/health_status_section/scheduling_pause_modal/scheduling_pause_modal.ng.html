@@ -1,0 +1,51 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<div class="modal-backdrop" (click)="onBackdropClick()">
+  <div
+    class="modal-container"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="confirm-pause-title"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="modal-header">
+      <mat-icon class="modal-warning-icon">warning</mat-icon>
+      <h3 id="confirm-pause-title" class="modal-title">Confirm Action</h3>
+    </div>
+    <p class="modal-message">
+      Are you sure you want to
+      <strong>{{ isPausing() ? 'pause' : 'resume' }}</strong> all scheduling?
+      {{
+        isPausing()
+          ? ' This will stop the actuator from interacting with the control plane.'
+          : ' This will resume normal scheduling operations.'
+      }}
+    </p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn-cancel" (click)="onCancel()">Cancel</button>
+      <button
+        type="button"
+        class="modal-btn-confirm"
+        [class.btn-pause]="isPausing()"
+        [class.btn-resume]="!isPausing()"
+        (click)="onConfirm()"
+      >
+        Yes, {{ isPausing() ? 'Pause' : 'Resume' }}
+      </button>
+    </div>
+  </div>
+</div>
