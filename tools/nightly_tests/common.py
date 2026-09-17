@@ -47,7 +47,7 @@ flags.DEFINE_string(
 flags.DEFINE_integer("timeout_sec", 600, "Timeout in seconds")
 flags.DEFINE_integer(
     "expected_work_units",
-    1,
+    None,
     "Expected number of WorkUnits",
 )
 flags.DEFINE_string(
