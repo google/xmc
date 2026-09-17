@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 import sys
 import time
 import urllib.parse
@@ -31,6 +30,16 @@ from typing import Any
 
 from playwright.sync_api import Page, expect, sync_playwright
 
+from test.e2e.lib.config import (
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_ADMIN_USER,
+    DEFAULT_BASE_URL,
+    DEFAULT_DEX_URL,
+    DEFAULT_UNAUTHORIZED_PASSWORD,
+    DEFAULT_UNAUTHORIZED_USER,
+    DEFAULT_VIEWER_PASSWORD,
+    DEFAULT_VIEWER_USER,
+)
 from test.e2e.lib.dex_authenticator import DexAuthenticator
 from test.e2e.lib.ui_diagnostics import (
     get_screenshots_dir,
@@ -42,17 +51,17 @@ DEFAULT_TIMEOUT_MS = 15_000
 NAVIGATION_TIMEOUT_MS = 10_000
 UNAUTHORIZED_TIMEOUT_MS = 20_000
 
-BASE_URL = os.getenv("XMC_BASE_URL", "http://localhost:8080")
-DEX_URL = os.getenv("XMC_DEX_URL", "http://localhost:5556")
+BASE_URL = DEFAULT_BASE_URL
+DEX_URL = DEFAULT_DEX_URL
 
-ADMIN_USER = "admin@xmc.local"
-ADMIN_PASSWORD = "password123"
+ADMIN_USER = DEFAULT_ADMIN_USER
+ADMIN_PASSWORD = DEFAULT_ADMIN_PASSWORD
 
-VIEWER_USER = "viewer@xmc.local"
-VIEWER_PASSWORD = "password123"
+VIEWER_USER = DEFAULT_VIEWER_USER
+VIEWER_PASSWORD = DEFAULT_VIEWER_PASSWORD
 
-UNAUTHORIZED_USER = "unauthorized@xmc.local"
-UNAUTHORIZED_PASSWORD = "password123"
+UNAUTHORIZED_USER = DEFAULT_UNAUTHORIZED_USER
+UNAUTHORIZED_PASSWORD = DEFAULT_UNAUTHORIZED_PASSWORD
 
 logger = logging.getLogger(__name__)
 
@@ -68,18 +77,6 @@ class AdminResources:
 
     experiment_name: str
     artifact_name: str
-
-
-def _wait_for_dex_redirect(page: Page) -> None:
-    """Waits for redirection from Dex IdP back to XMC dashboard."""
-    dex_parsed = urllib.parse.urlparse(DEX_URL)
-    current_parsed = urllib.parse.urlparse(page.url)
-    if "dex" in page.url or current_parsed.netloc == dex_parsed.netloc:
-        logger.info("Waiting for redirect from Dex back to XMC dashboard...")
-        page.wait_for_url(
-            lambda u: urllib.parse.urlparse(u).netloc != dex_parsed.netloc and "dex" not in u,
-            timeout=DEFAULT_TIMEOUT_MS,
-        )
 
 
 def test_admin_flow_and_experiment_lifecycle(
@@ -100,7 +97,6 @@ def test_admin_flow_and_experiment_lifecycle(
     """
     logger.info("=== Testing Admin Authentication and Experiment Creation Lifecycle ===")
     auth.authenticate(page, ADMIN_USER, ADMIN_PASSWORD, screenshots_dir)
-    _wait_for_dex_redirect(page)
 
     # 1. Assert Search Input field
     logger.info("Verifying authorization: search input field...")
@@ -237,7 +233,6 @@ def test_viewer_permission_boundaries_and_isolation(
 
     # 1. Authenticate viewer persona
     auth.authenticate(page, VIEWER_USER, VIEWER_PASSWORD, screenshots_dir)
-    _wait_for_dex_redirect(page)
 
     # 2. Assert user reaches dashboard
     search_input = page.locator("input[data-testid='search-input-field']")
@@ -437,7 +432,7 @@ def test_token_expiration_and_unauthenticated_boundary(page: Page, screenshots_d
 def _run_isolated_stage(browser: Any, stage_name: str, test_func: Any, *args: Any) -> Any:
     """Runs a test stage within a dedicated isolated browser context."""
     logger.info("--- %s ---", stage_name)
-    with browser.new_context(viewport={"width": 1280, "height": 800}) as ctx:
+    with browser.new_context(viewport={"width": 1920, "height": 1200}) as ctx:
         page = ctx.new_page()
         try:
             return test_func(page, *args)

@@ -51,6 +51,22 @@ export class HealthService {
     });
   }
 
+  pauseScheduling(): Observable<void> {
+    return this.http.post<void>(
+      `${XMC_API_DOMAIN}/health/scheduling:pause`,
+      {},
+      { withCredentials: true },
+    );
+  }
+
+  resumeScheduling(): Observable<void> {
+    return this.http.post<void>(
+      `${XMC_API_DOMAIN}/health/scheduling:resume`,
+      {},
+      { withCredentials: true },
+    );
+  }
+
   private userInfo$?: Observable<UserInfoResponse>;
 
   getUserInfo(): Observable<UserInfoResponse> {

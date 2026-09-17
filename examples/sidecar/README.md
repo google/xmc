@@ -29,6 +29,20 @@ This directory contains a complete validation example demonstrating how to run *
      - `sidecars`: `sidecar-service` running `sidecar.py`.
      - `spec`: `primary-worker` running `worker.py`.
 
+7. **[requirements.txt](./requirements.txt)**:
+   - Python dependencies list.
+
+---
+
+## Prerequisites & Dependencies
+
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
+
 ---
 
 ## Usage
@@ -39,9 +53,10 @@ This directory contains a complete validation example demonstrating how to run *
 ```
 
 ### 2. Launch the Experiment
-Ensure you have installed the XManager CLI and activate your virtual environment:
+Ensure you have installed the XManager CLI, activate your virtual environment, and install dependencies:
 ```bash
 source ../../deploy/cli/venv/bin/activate
+pip install -r requirements.txt
 python3 launch.py
 ```
 

@@ -22,6 +22,20 @@ This directory contains a complete validation example for running multi-pod and 
      - **Pod Role 2 (`secondary-counter`)**: 1 Pod replica (`replicas = 1`) running a second distinct role in the same WorkUnit (`secondary-counter`).
      - Replicas discover and resolve peer pod FQDNs immediately (`<jobset>-<replicated-job>-<job-idx>-<pod-idx>.<subdomain>`).
 
+5. **[requirements.txt](./requirements.txt)**:
+   - Python dependencies list.
+
+---
+
+## Prerequisites & Dependencies
+
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
+
 ---
 
 ## Usage
@@ -32,8 +46,9 @@ This directory contains a complete validation example for running multi-pod and 
 ```
 
 ### 2. Launch the Multi-Pod & Sidecar Experiment
-Ensure you have installed the XManager CLI and activate your virtual environment:
+Ensure you have installed the XManager CLI, activate your virtual environment, and install dependencies:
 ```bash
 source ../../deploy/cli/venv/bin/activate
+pip install -r requirements.txt
 python3 launch.py
 ```

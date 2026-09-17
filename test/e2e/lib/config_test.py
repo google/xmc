@@ -15,10 +15,15 @@
 """Unit tests for E2EConfig data models and CLI argument parsing."""
 
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from test.e2e.lib.config import E2EConfig, parse_args
+from test.e2e.lib.config import (
+    E2EConfig,
+    parse_args,
+    resolve_kind_binary,
+)
 
 
 class TestE2EConfig(unittest.TestCase):
@@ -45,8 +50,6 @@ class TestE2EConfig(unittest.TestCase):
         self.assertEqual(len(xid_parts), 4)
         self.assertEqual(len(xid_parts[3]), 6)
 
-        import tempfile
-
         self.assertTrue(cfg.temp_dir.startswith(os.path.join(tempfile.gettempdir(), "xmc_e2e_")))
 
     def test_post_init_preserves_explicit_db_names(self):
@@ -66,6 +69,51 @@ class TestE2EConfig(unittest.TestCase):
         self.assertEqual(cfg.temp_dir, "/tmp/custom")
 
 
+class TestResolveKindBinary(unittest.TestCase):
+    """Tests for resolve_kind_binary resolution hierarchy."""
+
+    def test_explicit_bin_provided(self):
+        result = resolve_kind_binary("/explicit/path/to/kind")
+        self.assertEqual(result, "/explicit/path/to/kind")
+
+    def test_explicit_bin_expands_user(self):
+        result = resolve_kind_binary("~/bin/kind")
+        self.assertEqual(result, os.path.expanduser("~/bin/kind"))
+
+    @patch.dict(os.environ, {"KIND_BIN": "/env/kind"}, clear=True)
+    @patch("os.path.isfile")
+    def test_env_var_kind_bin_used_when_file_exists(self, mock_isfile):
+        mock_isfile.side_effect = lambda p: p == "/env/kind"
+        result = resolve_kind_binary()
+        self.assertEqual(result, "/env/kind")
+
+    @patch.dict(os.environ, {"KIND_BIN": "/nonexistent/kind"}, clear=True)
+    @patch("os.path.isfile")
+    @patch("shutil.which")
+    def test_env_var_kind_bin_skipped_when_nonexistent(self, mock_which, mock_isfile):
+        mock_isfile.side_effect = lambda p: p == "/path/bin/kind"
+        mock_which.return_value = "/path/bin/kind"
+        result = resolve_kind_binary()
+        self.assertEqual(result, "/path/bin/kind")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("os.path.isfile")
+    @patch("shutil.which")
+    def test_path_which_kind_used(self, mock_which, mock_isfile):
+        mock_isfile.side_effect = lambda p: p == "/usr/bin/kind"
+        mock_which.return_value = "/usr/bin/kind"
+        result = resolve_kind_binary()
+        self.assertEqual(result, "/usr/bin/kind")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("shutil.which", return_value=None)
+    @patch("os.path.isfile", return_value=False)
+    def test_not_found_raises_file_not_found_error(self, _mock_isfile, _mock_which):
+        with self.assertRaises(FileNotFoundError) as ctx:
+            resolve_kind_binary()
+        self.assertIn("Failed to locate 'kind' executable", str(ctx.exception))
+
+
 class TestParseArgs(unittest.TestCase):
     """Tests for parse_args CLI helper."""
 
@@ -80,6 +128,7 @@ class TestParseArgs(unittest.TestCase):
             "--kind-node-image=us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1",
             "--keep-cluster",
             "--skip-build",
+            "--test-script=/path/to/custom_test.py",
         ]
         cfg = parse_args(args)
         self.assertEqual(cfg.project_id, "my-proj")
@@ -91,6 +140,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(cfg.kind_node_image, "us-docker.pkg.dev/proj/xmc/kindest-node:v1.33.1")
         self.assertTrue(cfg.keep_cluster)
         self.assertTrue(cfg.skip_build)
+        self.assertEqual(cfg.test_script, "/path/to/custom_test.py")
 
     @patch.dict(
         os.environ,
@@ -102,10 +152,13 @@ class TestParseArgs(unittest.TestCase):
             "WORKSPACE_ROOT": "/env/root",
             "XMC_SCREENSHOTS_DIR": "/env/screenshots",
             "XMC_KIND_NODE_IMAGE": "us-docker.pkg.dev/env/xmc/node:v1.33.1",
+            "XMC_E2E_TEST_SCRIPT": "/env/custom_test.py",
         },
         clear=True,
     )
-    def test_parse_args_defaults_from_env(self):
+    @patch("os.path.isfile")
+    def test_parse_args_defaults_from_env(self, mock_isfile):
+        mock_isfile.side_effect = lambda p: p == "/env/kind"
         cfg = parse_args([])
         self.assertEqual(cfg.project_id, "env-proj")
         self.assertEqual(cfg.spanner_instance, "env-inst")
@@ -116,6 +169,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(cfg.kind_node_image, "us-docker.pkg.dev/env/xmc/node:v1.33.1")
         self.assertFalse(cfg.keep_cluster)
         self.assertFalse(cfg.skip_build)
+        self.assertEqual(cfg.test_script, "/env/custom_test.py")
 
 
 if __name__ == "__main__":

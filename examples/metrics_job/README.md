@@ -25,6 +25,20 @@ This directory contains a complete validation example for logging training metri
 7. **[launch.py](./launch.py)**:
    - XManager CLI launch script that creates an Experiment with a 4-job WorkUnit (`metrics-manual`, `metrics-keras`, `metrics-keras-cb`, `metrics-lightning`).
 
+8. **[requirements.txt](./requirements.txt)**:
+   - Python dependencies list.
+
+---
+
+## Prerequisites & Dependencies
+
+1. **Client-Side Dependencies**: Install host Python dependencies required to execute `launch.py`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
+
 ---
 
 ## Usage
@@ -39,9 +53,10 @@ chmod +x build_and_push.sh
 
 ### 2. Launch the Multi-Job Metrics Experiment
 
-Ensure you have your virtual environment active and `.env` configured:
+Ensure you have your virtual environment active, dependencies installed, and `.env` configured:
 ```bash
 source ../../deploy/cli/venv/bin/activate
+pip install -r requirements.txt
 python3 launch.py
 ```
 

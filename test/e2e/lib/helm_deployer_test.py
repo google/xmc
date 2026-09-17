@@ -81,6 +81,8 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("e2e-xid-1234-abc", values)
         self.assertIn("http://dex.dex.svc.cluster.local:5556/dex", values)
         self.assertIn('allowedEmails: "admin@xmc.local,viewer@xmc.local"', values)
+        self.assertIn('username: "admin@xmc.local"', values)
+        self.assertIn('password: "password123"', values)
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_wait_for_rollouts_success(self, mock_run):

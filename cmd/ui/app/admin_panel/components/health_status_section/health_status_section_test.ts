@@ -40,7 +40,10 @@ import { HealthStatusSectionHarness } from './testing/health_status_section_harn
       [overallStatus]="overallStatus()"
       [lastChecked]="lastChecked()"
       [loading]="loading()"
+      [isSchedulingPaused]="isSchedulingPaused()"
+      [isPauseSchedulingEnabled]="isPauseSchedulingEnabled()"
       (refresh)="onRefresh()"
+      (toggleSchedulingPause)="onToggleSchedulingPause($event)"
     ></xmc-health-status-section>
   `,
   standalone: true,
@@ -51,11 +54,18 @@ class TestHostComponent {
   readonly overallStatus = signal<string>(HealthState.UNSPECIFIED);
   readonly lastChecked = signal<string>('');
   readonly loading = signal<boolean>(false);
+  readonly isSchedulingPaused = signal<boolean>(false);
+  readonly isPauseSchedulingEnabled = signal<boolean>(true);
 
   refreshCalled = false;
+  lastToggledState: boolean | null = null;
 
   onRefresh() {
     this.refreshCalled = true;
+  }
+
+  onToggleSchedulingPause(state: boolean) {
+    this.lastToggledState = state;
   }
 }
 
@@ -156,5 +166,103 @@ describe('HealthStatusSectionComponent', () => {
     expect(items[0]).toContain('Running');
     expect(items[1]).toContain('log-monitor');
     expect(items[1]).toContain('Unknown');
+  });
+
+  it('should render pause scheduling toggle in active state', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(false);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    expect(await harness.hasSchedulingPauseCard()).toBeTrue();
+    expect(await harness.isSchedulingPauseCardPaused()).toBeFalse();
+    expect(await harness.isPauseToggleChecked()).toBeFalse();
+    expect(await harness.isPauseToggleDisabled()).toBeFalse();
+  });
+
+  it('should render pause scheduling toggle in paused state', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(true);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    expect(await harness.hasSchedulingPauseCard()).toBeTrue();
+    expect(await harness.isSchedulingPauseCardPaused()).toBeTrue();
+    expect(await harness.isPauseToggleChecked()).toBeTrue();
+  });
+
+  it('should not render pause scheduling toggle when isPauseSchedulingEnabled is false', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isPauseSchedulingEnabled.set(false);
+    host.isSchedulingPaused.set(true);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    expect(await harness.hasSchedulingPauseCard()).toBeFalse();
+  });
+
+  it('should open confirmation modal dialog when toggle is clicked with pause warning', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(false);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    expect(await harness.hasConfirmationModal()).toBeFalse();
+
+    await harness.togglePause();
+    await flush();
+
+    expect(await harness.hasConfirmationModal()).toBeTrue();
+    const msg = await harness.getModalMessageText();
+    expect(msg).toContain('Are you sure you want to pause all scheduling?');
+    expect(msg).toContain('stop the actuator from interacting with the control plane');
+  });
+
+  it('should open confirmation modal dialog with resume warning when toggling from paused', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(true);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    await harness.togglePause();
+    await flush();
+
+    expect(await harness.hasConfirmationModal()).toBeTrue();
+    const msg = await harness.getModalMessageText();
+    expect(msg).toContain('Are you sure you want to resume all scheduling?');
+    expect(msg).toContain('resume normal scheduling operations');
+  });
+
+  it('should close modal without emitting event when Cancel is clicked', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(false);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    await harness.togglePause();
+    await flush();
+    expect(await harness.hasConfirmationModal()).toBeTrue();
+
+    await harness.clickModalCancel();
+    await flush();
+
+    expect(await harness.hasConfirmationModal()).toBeFalse();
+    expect(host.lastToggledState).toBeNull();
+  });
+
+  it('should emit toggleSchedulingPause and close modal when Confirm is clicked', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.isSchedulingPaused.set(false);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    await harness.togglePause();
+    await flush();
+
+    await harness.clickModalConfirm();
+    await flush();
+
+    expect(await harness.hasConfirmationModal()).toBeFalse();
+    expect(host.lastToggledState).toBeTrue();
   });
 });

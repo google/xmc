@@ -36,6 +36,11 @@ on:
         type: boolean
         required: false
         default: true
+      dashboard_service_deployment_enabled:
+        description: 'Enable Dashboard Service deployment'
+        type: boolean
+        required: false
+        default: true
       rod_deployment_enabled:
         description: 'Enable Resource Observability Dashboard (ROD) deployment'
         type: boolean
@@ -120,6 +125,11 @@ on:
         default: ''
       health_service_deployment_enabled:
         description: 'Enable Health Service deployment'
+        type: boolean
+        required: false
+        default: true
+      dashboard_service_deployment_enabled:
+        description: 'Enable Dashboard Service deployment'
         type: boolean
         required: false
         default: true
@@ -253,6 +263,7 @@ jobs:
           GTS_KEY_ID: '${{ secrets.GCP_GTS_KEY_ID }}'
           GTS_HMAC_KEY: '${{ secrets.GCP_GTS_HMAC_KEY }}'
           HEALTH_SERVICE_ENABLED: '${{ inputs.health_service_deployment_enabled }}'
+          DASHBOARD_SERVICE_ENABLED: '${{ inputs.dashboard_service_deployment_enabled }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
@@ -284,6 +295,7 @@ jobs:
             gts_hmac_key: "${GTS_HMAC_KEY}"
 
             health_service_deployment_enabled: ${HEALTH_SERVICE_ENABLED}
+            dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
           EOF_YAML
 
