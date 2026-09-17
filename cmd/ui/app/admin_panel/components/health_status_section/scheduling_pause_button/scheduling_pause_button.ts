@@ -41,6 +41,7 @@ import {
 })
 export class SchedulingPauseButtonComponent {
   isSchedulingPaused = input<boolean>(false);
+  disabled = input<boolean>(false);
 
   toggleClick = output<void>();
 

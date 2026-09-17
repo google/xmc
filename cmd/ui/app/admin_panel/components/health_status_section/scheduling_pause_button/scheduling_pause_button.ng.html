@@ -32,6 +32,7 @@
       class="pause-slide-toggle"
       aria-label="Pause all scheduling"
       [checked]="isSchedulingPaused()"
+      [disabled]="disabled()"
       (toggleChange)="onToggleClick()"
     />
   </div>

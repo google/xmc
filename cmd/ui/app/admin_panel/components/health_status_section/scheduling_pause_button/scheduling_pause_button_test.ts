@@ -34,12 +34,14 @@ import { SchedulingPauseButtonHarness } from './testing/scheduling_pause_button_
   template: `
     <xmc-scheduling-pause-button
       [isSchedulingPaused]="isSchedulingPaused()"
+      [disabled]="disabled()"
       (toggleClick)="onToggle()"
     />
   `,
 })
 class TestHostComponent {
   readonly isSchedulingPaused = signal<boolean>(false);
+  readonly disabled = signal<boolean>(false);
   toggleCallCount = 0;
 
   onToggle(): void {
@@ -90,5 +92,14 @@ describe('SchedulingPauseButtonComponent', () => {
 
     expect(host.toggleCallCount).toBe(1);
     expect(await harness.isChecked()).toBeFalse();
+  });
+
+  it('should disable toggle when disabled input is true', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.disabled.set(true);
+    await flush();
+
+    const harness = await getHarness(SchedulingPauseButtonHarness);
+    expect(await harness.isDisabled()).toBeTrue();
   });
 });

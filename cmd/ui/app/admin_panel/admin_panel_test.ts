@@ -408,7 +408,12 @@ describe('AdminPanelPage Component', () => {
     expect(await healthSection!.isPauseToggleChecked()).toBeTrue();
   });
 
-  it('should toggle local pause state when confirmed from health status section', async () => {
+  it('should call pauseScheduling, update scheduling pause state, and open snackbar when pause confirmed', async () => {
+    const healthService = get(HealthService);
+    const snackbarService = get(SnackbarService);
+    const pauseSpy = spyOn(healthService, 'pauseScheduling').and.callThrough();
+    const snackbarSpy = spyOn(snackbarService, 'open');
+
     bootstrap(AdminPanelPage);
     await flush();
 
@@ -424,13 +429,69 @@ describe('AdminPanelPage Component', () => {
     await healthSection!.clickModalConfirm();
     await flush();
 
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
     expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
     expect(await healthSection!.isPauseToggleChecked()).toBeTrue();
+    expect(snackbarSpy).toHaveBeenCalledWith('All scheduling has been paused.');
   });
 
-  it('should reset local pause state when fresh health status is fetched', async () => {
+  it('should call resumeScheduling, update scheduling pause state, and open snackbar when resume confirmed', async () => {
+    const healthService = get(HealthService) as MockHealthService;
+    healthService.isSchedulingPaused = true;
+    const snackbarService = get(SnackbarService);
+    const resumeSpy = spyOn(healthService, 'resumeScheduling').and.callThrough();
+    const snackbarSpy = spyOn(snackbarService, 'open');
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(healthSection).not.toBeNull();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+
+    await healthSection!.togglePause();
+    await flush();
+
+    expect(await healthSection!.hasConfirmationModal()).toBeTrue();
+    await healthSection!.clickModalConfirm();
+    await flush();
+
+    expect(resumeSpy).toHaveBeenCalledTimes(1);
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+    expect(await healthSection!.isPauseToggleChecked()).toBeFalse();
+    expect(snackbarSpy).toHaveBeenCalledWith('Scheduling has been resumed.');
+  });
+
+  it('should show error snackbar and not mutate state when pauseScheduling fails', async () => {
     const healthService = get(HealthService);
-    const pausedOnBackend = false;
+    const snackbarService = get(SnackbarService);
+    spyOn(healthService, 'pauseScheduling').and.returnValue(
+      throwError(() => new Error('Server error')),
+    );
+    const snackbarSpy = spyOn(snackbarService, 'open');
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(healthSection).not.toBeNull();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+
+    await healthSection!.togglePause();
+    await flush();
+
+    await healthSection!.clickModalConfirm();
+    await flush();
+
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+    expect(snackbarSpy).toHaveBeenCalledWith('Failed to pause scheduling.');
+  });
+
+  it('should sync pause state when fresh health status is fetched', async () => {
+    const healthService = get(HealthService);
+    let pausedOnBackend = false;
     spyOn(healthService, 'getHealthStatus').and.callFake(() => {
       return of({
         healthState: 'HEALTH_STATE_HEALTHY',
@@ -451,14 +512,71 @@ describe('AdminPanelPage Component', () => {
     const healthSection = await harness.getHealthStatusSection();
     expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
 
+    pausedOnBackend = true;
+    await healthSection!.clickRefresh();
+    await flush();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+
+    pausedOnBackend = false;
+    await healthSection!.clickRefresh();
+    await flush();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+  });
+
+  it('should preserve paused state if subsequent refresh fails', async () => {
+    const healthService = get(HealthService) as MockHealthService;
+    spyOn(healthService, 'pauseScheduling').and.callThrough();
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
     await healthSection!.togglePause();
     await flush();
     await healthSection!.clickModalConfirm();
     await flush();
+
     expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+
+    // Subsequent refresh fails
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      throwError(() => new Error('Network error')),
+    );
 
     await healthSection!.clickRefresh();
     await flush();
-    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeFalse();
+
+    // State preserves paused: true across refresh failures
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
+  });
+
+  it('should disable toggle while pauseScheduling is in flight', async () => {
+    const healthService = get(HealthService);
+    const pauseSubject$ = new Subject<any>();
+    spyOn(healthService, 'pauseScheduling').and.returnValue(pauseSubject$);
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    const pauseBtn = await healthSection!.getSchedulingPauseButton();
+    expect(await pauseBtn!.isDisabled()).toBeFalse();
+
+    await healthSection!.togglePause();
+    await flush();
+    await healthSection!.clickModalConfirm();
+    await flush();
+
+    // While request is pending, button is disabled
+    expect(await pauseBtn!.isDisabled()).toBeTrue();
+
+    pauseSubject$.next({});
+    pauseSubject$.complete();
+    await flush();
+
+    expect(await pauseBtn!.isDisabled()).toBeFalse();
+    expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
   });
 });
