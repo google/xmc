@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
 /**
@@ -36,6 +36,10 @@ export class SchedulingPauseModalComponent {
 
   confirm = output<void>();
   cancel = output<void>();
+
+  protected readonly confirmButtonText = computed(() =>
+    this.isPausing() ? 'Yes, Pause' : 'Yes, Resume',
+  );
 
   protected onConfirm(): void {
     this.confirm.emit();

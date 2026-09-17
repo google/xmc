@@ -44,7 +44,7 @@
         [class.btn-resume]="!isPausing()"
         (click)="onConfirm()"
       >
-        Yes, {{ isPausing() ? 'Pause' : 'Resume' }}
+        {{ confirmButtonText() }}
       </button>
     </div>
   </div>
