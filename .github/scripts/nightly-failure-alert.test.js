@@ -142,7 +142,7 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
       owner: 'google',
       repo: 'xmc',
       runId: 12345678,
-      sha: 'abcdef1234567890',
+      sha: 'abcdef1234567890abcdef1234567890abcdef12',
       ref: 'refs/heads/main',
       eventName: 'schedule',
       xid: '12006',
@@ -157,7 +157,7 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
     });
 
     assert.ok(body.includes('https://github.com/google/xmc/actions/runs/12345678'));
-    assert.ok(body.includes('https://github.com/google/xmc/commit/abcdef1234567890'));
+    assert.ok(body.includes('https://github.com/google/xmc/commit/abcdef1234567890abcdef1234567890abcdef12'));
     assert.ok(body.includes('`abcdef1`'));
     assert.ok(body.includes('[PR #876: *feat: example PR*](https://github.com/google/xmc/pull/876)'));
     assert.ok(body.includes('`12006`'));
@@ -171,7 +171,7 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
       owner: 'google',
       repo: 'xmc',
       runId: 12345678,
-      sha: 'abcdef1234567890',
+      sha: 'abcdef1234567890abcdef1234567890abcdef12',
       ref: 'refs/heads/main',
       eventName: 'schedule',
       associatedPr: {
@@ -207,7 +207,7 @@ describe('formatFailureIssueBody & formatRecurringCommentBody', () => {
       owner: 'google',
       repo: 'xmc',
       runId: 123,
-      sha: '1234567',
+      sha: 'abcdef1234567890abcdef1234567890abcdef12',
       activeOwners: ['user1'],
     });
 
@@ -228,7 +228,7 @@ describe('lookupAssociatedPullRequest', () => {
       },
     };
 
-    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', { info: () => {}, warning: () => {} });
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'abcdef1234567890abcdef1234567890abcdef12', { info: () => {}, warning: () => {} });
     assert.deepEqual(pr, {
       number: 876,
       title: 'feat: add feature',
@@ -245,7 +245,7 @@ describe('lookupAssociatedPullRequest', () => {
       },
     };
 
-    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', null);
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'abcdef1234567890abcdef1234567890abcdef12', null);
     assert.equal(pr, null);
   });
 
@@ -261,7 +261,7 @@ describe('lookupAssociatedPullRequest', () => {
     };
 
     let warningLogged = false;
-    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'commit123', {
+    const pr = await lookupAssociatedPullRequest(mockGithub, 'google', 'xmc', 'abcdef1234567890abcdef1234567890abcdef12', {
       info: () => {},
       warning: () => { warningLogged = true; },
     });
@@ -327,7 +327,7 @@ describe('postOrUpdateAlertIssue', () => {
       'google',
       'xmc',
       { number: 55 },
-      { owner: 'google', repo: 'xmc', runId: 1, sha: '123' },
+      { owner: 'google', repo: 'xmc', runId: 1, sha: 'abcdef1234567890abcdef1234567890abcdef12' },
       'nightly-failure',
       { info: () => {} }
     );
@@ -355,7 +355,7 @@ describe('postOrUpdateAlertIssue', () => {
       'google',
       'xmc',
       null,
-      { owner: 'google', repo: 'xmc', runId: 1, sha: '123' },
+      { owner: 'google', repo: 'xmc', runId: 1, sha: 'abcdef1234567890abcdef1234567890abcdef12' },
       'nightly-failure',
       { info: () => {} }
     );
@@ -398,7 +398,7 @@ describe('buildAlertParams', () => {
   const baseContext = {
     repo: { owner: 'google', repo: 'xmc' },
     runId: 123456,
-    sha: 'abcdef1234567890',
+    sha: 'abcdef1234567890abcdef1234567890abcdef12',
     ref: 'refs/heads/main',
     eventName: 'schedule',
     serverUrl: 'https://github.com',
@@ -484,7 +484,7 @@ describe('run orchestrator', () => {
     const mockContext = {
       repo: { owner: 'google', repo: 'xmc' },
       runId: 777,
-      sha: 'aabbccdd',
+      sha: 'aabbccdd11223344556677889900aabbccddeeff',
       ref: 'refs/heads/main',
       eventName: 'schedule',
     };
@@ -546,7 +546,7 @@ describe('run orchestrator', () => {
     const mockContext = {
       repo: { owner: 'google', repo: 'xmc' },
       runId: 888,
-      sha: '11223344',
+      sha: '11223344556677889900aabbccddeeff11223344',
       ref: 'refs/heads/main',
       eventName: 'schedule',
     };
@@ -607,7 +607,7 @@ describe('run orchestrator', () => {
     const mockContext = {
       repo: { owner: 'google', repo: 'xmc' },
       runId: 999,
-      sha: '55667788',
+      sha: '556677889900aabbccddeeff1122334455667788',
       ref: 'refs/heads/main',
       eventName: 'schedule',
     };
