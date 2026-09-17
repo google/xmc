@@ -45,7 +45,11 @@
       [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
       [lastChecked]="lastUpdated()"
       [loading]="isRefreshing()"
+      [isSchedulingPaused]="isSchedulingPaused()"
+      [isPauseSchedulingEnabled]="isPauseSchedulingEnabled()"
+      [isUpdatingPauseState]="isUpdatingPauseState()"
       (refresh)="onRefresh()"
+      (toggleSchedulingPause)="onToggleSchedulingPause($event)"
     />
 
     <xmc-config-entries-card

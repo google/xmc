@@ -157,9 +157,18 @@ declare module 'javascript/closure/i18n/numberformat' {
 }
 
 declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
+  export interface SystemInfo {
+    appVersion?: string;
+    essDbSchemaVersion?: string;
+    xidDbSchemaVersion?: string;
+    observabilityUrl?: string;
+    isSchedulingPaused?: boolean;
+    buildVersion?: string;
+    [key: string]: any;
+  }
   export interface HealthStatusResponse {
     healthState?: string;
-    systemInfo?: any;
+    systemInfo?: SystemInfo;
     components?: any[];
     healthCheckTime?: any;
     [key: string]: any;

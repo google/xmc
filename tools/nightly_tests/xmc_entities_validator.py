@@ -41,12 +41,13 @@ except ImportError:
 # hermetically using mocks without requiring external wheel installation.
 try:
     from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
-    from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2
+    from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2, priority_pb2
 except ImportError:
     ess_api = None
     ess_api_pb2 = None
+    priority_pb2 = None
 
-# State enum names and integer constants matching cloud.xmanager.v1.WorkUnitStatus.WorkUnitState
+# State enum names matching cloud.xmanager.v1.WorkUnitStatus.WorkUnitState
 STATE_NAMES = [
     "UNSPECIFIED",
     "INITIALIZING",
@@ -76,29 +77,23 @@ STATE_NAMES = [
     STATE_FAILED,
 ) = range(len(STATE_NAMES))
 
+# Priority fallback mapping matching cloud.xmanager.v1.Priority
+PRIORITY_FALLBACK_MAP = {
+    "PRIORITY_UNSPECIFIED": 0,
+    "LOW": 1,
+    "NORMAL": 2,
+    "HIGH": 3,
+}
+
 
 class TerminalFailureError(AssertionError):
     """Raised when a work unit enters a terminal failure state."""
 
 
 def create_authenticated_stub(endpoint: str) -> tuple[Any, Any]:
-    """Creates an authenticated ExperimentStateService stub and gRPC channel.
-
-    Connects to the Experiment State Server (ESS) endpoint using native
-    xmanager_cloud client authentication.
-
-    Args:
-        endpoint: gRPC endpoint host:port.
-
-    Returns:
-        A tuple of (stub, channel).
-
-    Raises:
-        RuntimeError: If xmanager_cloud is not available.
-    """
+    """Creates an authenticated ExperimentStateService stub and gRPC channel."""
     if ess_api is None:
         raise RuntimeError("xmanager_cloud is required to establish ESS gRPC connection.")
-
     return ess_api._create_experiment_state_server_stub(endpoint)
 
 
@@ -117,10 +112,7 @@ def state_enum_to_name(state_enum: int) -> str:
 
 
 def extract_worker_name(work_unit: Any) -> str:
-    """Extracts the primary worker name from a WorkUnit message.
-
-    Reads the canonical executable job name in the JobSet specification.
-    """
+    """Extracts the primary worker name from a WorkUnit message."""
     try:
         if (
             hasattr(work_unit, "executable")
@@ -131,15 +123,11 @@ def extract_worker_name(work_unit: Any) -> str:
             return work_unit.executable.jobset.jobs[0].name
     except Exception:
         pass
-
     return "unknown"
 
 
 def extract_queue_name(work_unit: Any) -> str:
-    """Extracts the target queue name from a WorkUnit message.
-
-    Reads the canonical scheduling constraints queue name.
-    """
+    """Extracts the target queue name from a WorkUnit message."""
     try:
         if (
             hasattr(work_unit, "executable")
@@ -149,42 +137,46 @@ def extract_queue_name(work_unit: Any) -> str:
             return work_unit.executable.scheduling_constraints.queue_name
     except Exception:
         pass
-
     return "unknown"
 
 
-def extract_work_unit_state(
-    stub: Any,
-    work_unit: Any,
-) -> int:
-    """Retrieves current WorkUnitState enum integer for a WorkUnit."""
+def _get_cached_wu_state(work_unit: Any) -> tuple[int, bool]:
+    """Extracts WorkUnitState from current execution status if present."""
     if (
         hasattr(work_unit, "current_work_unit_execution")
         and work_unit.current_work_unit_execution.HasField("status")
         and getattr(work_unit.current_work_unit_execution.status, "state", None) is not None
     ):
-        return int(work_unit.current_work_unit_execution.status.state)
+        return int(work_unit.current_work_unit_execution.status.state), True
+    return STATE_UNSPECIFIED, False
 
+
+def _fetch_remote_wu_state(stub: Any, wu_name: str) -> int | None:
+    """Fetches WorkUnitState directly from ESS RPC for a given WorkUnit."""
+    if stub is None or wu_name == "unknown":
+        return None
+    try:
+        req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu_name)
+        cur_exec = stub.GetCurrentWorkUnitExecution(req)
+        if (
+            cur_exec
+            and hasattr(cur_exec, "status")
+            and getattr(cur_exec.status, "state", None) is not None
+        ):
+            return int(cur_exec.status.state)
+    except Exception as e:
+        logging.warning("Failed to fetch state for %s: %s", wu_name, e, exc_info=True)
+    return None
+
+
+def extract_work_unit_state(stub: Any, work_unit: Any) -> int:
+    """Retrieves current WorkUnitState enum integer for a WorkUnit."""
+    cached_state, found = _get_cached_wu_state(work_unit)
+    if found:
+        return cached_state
     wu_name = getattr(work_unit, "name", "unknown")
-    if stub is not None and wu_name != "unknown":
-        try:
-            req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu_name)
-            cur_exec = stub.GetCurrentWorkUnitExecution(req)
-            if (
-                cur_exec
-                and hasattr(cur_exec, "status")
-                and getattr(cur_exec.status, "state", None) is not None
-            ):
-                return int(cur_exec.status.state)
-        except Exception as e:
-            logging.warning(
-                "Failed to retrieve current WorkUnitExecution for %s: %s",
-                wu_name,
-                e,
-                exc_info=True,
-            )
-
-    return STATE_UNSPECIFIED
+    remote_state = _fetch_remote_wu_state(stub, wu_name)
+    return remote_state if remote_state is not None else STATE_UNSPECIFIED
 
 
 def validate_experiment(
@@ -192,33 +184,328 @@ def validate_experiment(
     xid: str,
     expected_title_pattern: str | None = None,
 ) -> Any:
-    """Fetches and verifies experiment existence and title.
-
-    Args:
-        stub: gRPC stub for ExperimentStateService.
-        xid: Experiment XID.
-        expected_title_pattern: Optional substring expected in the experiment title.
-
-    Returns:
-        The fetched Experiment protobuf object.
-
-    Raises:
-        AssertionError: If experiment is not found or title does not match.
-    """
+    """Fetches and verifies experiment existence and title."""
     exp_name = f"experiments/{xid}"
     req = _make_req("GetExperimentRequest", name=exp_name)
     experiment = stub.GetExperiment(req)
     if not experiment or not getattr(experiment, "name", ""):
         raise AssertionError(f"Experiment {exp_name} could not be retrieved from ESS.")
-
     exp_title = getattr(experiment, "title", "")
     if expected_title_pattern and expected_title_pattern not in exp_title:
         raise AssertionError(
             f"Experiment title mismatch: expected pattern '{expected_title_pattern}' "
             f"not found in title '{exp_title}'."
         )
-
     return experiment
+
+
+def validate_work_unit_priority(
+    work_unit: Any,
+    expected_priority: int | str,
+) -> None:
+    """Validates that a WorkUnit has the expected priority enum or string."""
+    wu_name = getattr(work_unit, "name", "unknown")
+    actual_priority = getattr(work_unit, "priority", None)
+    if actual_priority is None:
+        raise AssertionError(f"WorkUnit '{wu_name}' missing priority field.")
+
+    if isinstance(expected_priority, str):
+        if priority_pb2 is not None and hasattr(priority_pb2.Priority, expected_priority.upper()):
+            exp_val = getattr(priority_pb2.Priority, expected_priority.upper())
+        else:
+            exp_val = PRIORITY_FALLBACK_MAP.get(expected_priority.upper(), 0)
+    else:
+        exp_val = expected_priority
+
+    if int(actual_priority) != int(exp_val):
+        raise AssertionError(
+            f"WorkUnit '{wu_name}' priority mismatch: expected {exp_val}, found {actual_priority}."
+        )
+
+
+def _validate_cpu_resources(
+    cpu_res: Any,
+    expected_cpu_milli: int | None,
+    expected_memory_bytes: int | None,
+) -> None:
+    """Validates CPU millicores and memory bytes."""
+    if expected_cpu_milli is not None:
+        act_cpu = getattr(cpu_res, "cpu_millicores", 0) if cpu_res else 0
+        if act_cpu != expected_cpu_milli:
+            raise AssertionError(
+                f"CPU millicores mismatch: expected {expected_cpu_milli}m, found {act_cpu}m."
+            )
+    if expected_memory_bytes is not None:
+        act_mem = getattr(cpu_res, "memory_bytes", 0) if cpu_res else 0
+        if act_mem != expected_memory_bytes:
+            raise AssertionError(
+                f"Memory bytes mismatch: expected {expected_memory_bytes}, found {act_mem}."
+            )
+
+
+def _validate_gpu_resources(gpu_res: Any, expected_gpus: int | None) -> None:
+    """Validates GPU resource count."""
+    if expected_gpus is not None:
+        act_gpus = getattr(gpu_res, "count", 0) if gpu_res else 0
+        if act_gpus != expected_gpus:
+            raise AssertionError(f"GPU count mismatch: expected {expected_gpus}, found {act_gpus}.")
+
+
+def validate_resource_requests(
+    spec_or_job: Any,
+    expected_cpu_milli: int | None = None,
+    expected_memory_bytes: int | None = None,
+    expected_gpus: int | None = None,
+) -> None:
+    """Validates CPU millicores, memory bytes, and GPU counts on an ExecutableSpec or Job."""
+    spec = getattr(spec_or_job, "spec", spec_or_job)
+    resources = getattr(spec, "resources", None)
+    if resources is None:
+        raise AssertionError("Missing resources specification on ExecutableSpec.")
+    _validate_cpu_resources(
+        getattr(resources, "cpu_resources", None),
+        expected_cpu_milli,
+        expected_memory_bytes,
+    )
+    _validate_gpu_resources(getattr(resources, "gpu_resources", None), expected_gpus)
+
+
+def validate_work_unit_metadata(
+    work_unit: Any,
+    expected_tags: Sequence[str] | None = None,
+    expected_notes_substring: str | None = None,
+) -> None:
+    """Validates metadata tags and notes on a WorkUnit."""
+    wu_name = getattr(work_unit, "name", "unknown")
+    if expected_notes_substring is not None:
+        notes = getattr(work_unit, "notes", "")
+        if expected_notes_substring not in notes:
+            raise AssertionError(
+                f"WorkUnit '{wu_name}' notes missing substring '{expected_notes_substring}': "
+                f"found '{notes}'."
+            )
+    if expected_tags is not None:
+        actual_tags = set(getattr(work_unit, "tags", []))
+        missing_tags = set(expected_tags) - actual_tags
+        if missing_tags:
+            raise AssertionError(
+                f"WorkUnit '{wu_name}' missing expected tags: {sorted(missing_tags)}. "
+                f"Actual tags: {sorted(actual_tags)}."
+            )
+
+
+def _extract_jobset_jobs(work_unit: Any) -> list[Any]:
+    """Validates and extracts job objects from WorkUnit JobSet executable."""
+    wu_name = getattr(work_unit, "name", "unknown")
+    if not hasattr(work_unit, "executable"):
+        raise AssertionError(f"WorkUnit '{wu_name}' missing executable field.")
+    executable = work_unit.executable
+    if hasattr(executable, "HasField") and not executable.HasField("jobset"):
+        raise AssertionError(f"WorkUnit '{wu_name}' does not contain a JobSet executable.")
+    jobset = getattr(executable, "jobset", None)
+    if jobset is None or not hasattr(jobset, "jobs"):
+        raise AssertionError(f"WorkUnit '{wu_name}' has invalid or empty JobSet.")
+    return list(jobset.jobs)
+
+
+def _validate_job_replicas(actual_job: Any, expected_job: dict[str, Any], job_name: str) -> None:
+    """Validates job replica count matches expectation."""
+    if "replicas" not in expected_job:
+        return
+    expected_replicas = int(expected_job["replicas"])
+    actual_replicas = getattr(actual_job, "replicas", 1)
+    if actual_replicas != expected_replicas:
+        raise AssertionError(
+            f"Job '{job_name}' replica count mismatch: "
+            f"expected {expected_replicas}, found {actual_replicas}."
+        )
+
+
+def _validate_container_entry(
+    actual_c: Any, expected_c: str | dict[str, Any], job_name: str, item_type: str
+) -> None:
+    """Validates a single container against string name or dictionary properties."""
+    if isinstance(expected_c, str):
+        act_name = getattr(actual_c, "name", "")
+        if act_name != expected_c:
+            raise AssertionError(
+                f"Job '{job_name}' {item_type} container name mismatch: "
+                f"expected '{expected_c}', found '{act_name}'."
+            )
+    elif isinstance(expected_c, dict):
+        for k, v in expected_c.items():
+            act_val = getattr(actual_c, k, None)
+            if act_val != v:
+                raise AssertionError(
+                    f"Job '{job_name}' {item_type} container property '{k}' mismatch: "
+                    f"expected '{v}', found '{act_val}'."
+                )
+
+
+def _validate_container_items(
+    actual_items: Sequence[Any],
+    expected_items: Sequence[str | dict[str, Any]] | int | None,
+    job_name: str,
+    item_type: str,
+) -> None:
+    """Validates count and properties for init or sidecar containers."""
+    if expected_items is None:
+        return
+    if isinstance(expected_items, int):
+        if len(actual_items) != expected_items:
+            raise AssertionError(
+                f"Job '{job_name}' {item_type} container count mismatch: "
+                f"expected {expected_items}, found {len(actual_items)}."
+            )
+        return
+    if len(actual_items) != len(expected_items):
+        raise AssertionError(
+            f"Job '{job_name}' {item_type} container count mismatch: "
+            f"expected {len(expected_items)}, found {len(actual_items)}."
+        )
+    for exp_c, act_c in zip(expected_items, actual_items, strict=False):
+        _validate_container_entry(act_c, exp_c, job_name, item_type)
+
+
+def _validate_primary_spec(actual_job: Any, expected_job: dict[str, Any], job_name: str) -> None:
+    """Validates primary container spec specification."""
+    expected_spec = expected_job.get("spec") or expected_job.get("primary_container")
+    if expected_spec is None:
+        return
+    actual_spec = getattr(actual_job, "spec", None)
+    if actual_spec is None:
+        raise AssertionError(f"Job '{job_name}' missing primary container spec.")
+    if isinstance(expected_spec, str):
+        act_name = getattr(actual_spec, "name", "")
+        if act_name != expected_spec:
+            raise AssertionError(
+                f"Job '{job_name}' primary container name mismatch: "
+                f"expected '{expected_spec}', found '{act_name}'."
+            )
+    elif isinstance(expected_spec, dict):
+        for k, v in expected_spec.items():
+            act_val = getattr(actual_spec, k, None)
+            if act_val != v:
+                raise AssertionError(
+                    f"Job '{job_name}' primary container property '{k}' mismatch: "
+                    f"expected '{v}', found '{act_val}'."
+                )
+
+
+def _build_job_summary(actual_job: Any) -> dict[str, Any]:
+    """Constructs result dictionary summarizing validated JobSet job."""
+    actual_inits = list(getattr(actual_job, "init_containers", []))
+    actual_sidecars = list(getattr(actual_job, "sidecars", []))
+    actual_spec = getattr(actual_job, "spec", None)
+    return {
+        "name": getattr(actual_job, "name", ""),
+        "replicas": getattr(actual_job, "replicas", 1),
+        "init_containers": [
+            {
+                "name": getattr(c, "name", ""),
+                "docker_image": getattr(c, "docker_image", ""),
+            }
+            for c in actual_inits
+        ],
+        "sidecars": [
+            {
+                "name": getattr(s, "name", ""),
+                "docker_image": getattr(s, "docker_image", ""),
+            }
+            for s in actual_sidecars
+        ],
+        "primary_container": getattr(actual_spec, "name", "") if actual_spec else "",
+    }
+
+
+def _validate_single_job(
+    actual_job: Any, expected_job: dict[str, Any], job_name: str
+) -> dict[str, Any]:
+    """Validates replicas, inits, sidecars, and primary spec for a single job."""
+    _validate_job_replicas(actual_job, expected_job, job_name)
+    _validate_container_items(
+        list(getattr(actual_job, "init_containers", [])),
+        expected_job.get("init_containers"),
+        job_name,
+        "init",
+    )
+    _validate_container_items(
+        list(getattr(actual_job, "sidecars", [])),
+        expected_job.get("sidecars"),
+        job_name,
+        "sidecar",
+    )
+    _validate_primary_spec(actual_job, expected_job, job_name)
+    return _build_job_summary(actual_job)
+
+
+def validate_jobsets(
+    work_unit: Any,
+    expected_jobs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Validates multi-role JobSet topology and container definitions."""
+    actual_jobs = _extract_jobset_jobs(work_unit)
+    if len(actual_jobs) != len(expected_jobs):
+        raise AssertionError(
+            f"JobSet job count mismatch: expected {len(expected_jobs)}, found {len(actual_jobs)}."
+        )
+
+    actual_by_name = {getattr(j, "name", ""): j for j in actual_jobs}
+    job_summaries: list[dict[str, Any]] = []
+
+    for expected_job in expected_jobs:
+        job_name = expected_job["name"]
+        if job_name not in actual_by_name:
+            raise AssertionError(f"Expected JobSet job '{job_name}' not found in WorkUnit.")
+        summary = _validate_single_job(actual_by_name[job_name], expected_job, job_name)
+        job_summaries.append(summary)
+
+    return job_summaries
+
+
+def validate_jobset_topology(
+    work_unit: Any,
+    expected_jobs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Alias for validate_jobsets for backwards compatibility."""
+    return validate_jobsets(work_unit, expected_jobs)
+
+
+def _evaluate_single_wu(stub: Any, wu: Any, expected_queue: str | None = None) -> dict[str, Any]:
+    """Extracts metadata and evaluates state for a single WorkUnit."""
+    wu_name = getattr(wu, "name", "")
+    wu_id = wu_name.split("/")[-1]
+    worker_name = extract_worker_name(wu)
+    queue_name = extract_queue_name(wu)
+
+    if expected_queue is not None and queue_name != expected_queue:
+        raise AssertionError(
+            f"WorkUnit {wu_name} targeted queue '{queue_name}', expected '{expected_queue}'."
+        )
+
+    state_int = extract_work_unit_state(stub, wu)
+    return {
+        "id": wu_id,
+        "name": wu_name,
+        "worker_name": worker_name,
+        "queue": queue_name,
+        "state_enum": state_int,
+        "state": state_enum_to_name(state_int),
+    }
+
+
+def _check_wu_expected_workers(
+    found_workers: Sequence[str], expected_workers: Sequence[str] | None
+) -> None:
+    """Verifies all expected worker names are present in found workers."""
+    if expected_workers is None:
+        return
+    missing = set(expected_workers) - set(found_workers)
+    if missing:
+        raise AssertionError(
+            f"Expected worker names {list(expected_workers)} not satisfied. "
+            f"Missing: {sorted(missing)}, Found: {sorted(found_workers)}."
+        )
 
 
 def _evaluate_work_units(
@@ -233,58 +520,137 @@ def _evaluate_work_units(
         raise AssertionError(
             f"WorkUnit count mismatch: expected {expected_count}, found {len(work_units)}."
         )
-
-    found_worker_names: list[str] = []
-    wu_results: list[dict[str, Any]] = []
-    all_completed = True
-    has_failure = False
-
-    for wu in work_units:
-        wu_id = getattr(wu, "name", "").split("/")[-1]
-        worker_name = extract_worker_name(wu)
-        found_worker_names.append(worker_name)
-        queue_name = extract_queue_name(wu)
-
-        if expected_queue is not None and queue_name != expected_queue:
-            raise AssertionError(
-                f"WorkUnit {getattr(wu, 'name', '')} targeted queue '{queue_name}', "
-                f"expected '{expected_queue}'."
-            )
-
-        state_int = extract_work_unit_state(stub, wu)
-        state_str = state_enum_to_name(state_int)
-
-        if state_int in (STATE_FAILED, STATE_PARTIALLY_FAILED):
-            has_failure = True
-        if state_int != STATE_COMPLETED:
-            all_completed = False
-
-        wu_results.append(
-            {
-                "id": wu_id,
-                "name": getattr(wu, "name", ""),
-                "worker_name": worker_name,
-                "queue": queue_name,
-                "state_enum": state_int,
-                "state": state_str,
-            }
-        )
-
-    if expected_worker_names is not None:
-        missing_workers = set(expected_worker_names) - set(found_worker_names)
-        if missing_workers:
-            raise AssertionError(
-                f"Expected worker names {list(expected_worker_names)} not satisfied. "
-                f"Missing: {sorted(missing_workers)}, Found: {sorted(found_worker_names)}."
-            )
-
-    if has_failure:
-        failed_units = [r for r in wu_results if "FAILED" in r["state"]]
+    wu_results = [_evaluate_single_wu(stub, wu, expected_queue) for wu in work_units]
+    _check_wu_expected_workers([r["worker_name"] for r in wu_results], expected_worker_names)
+    failed_units = [
+        r for r in wu_results if r["state_enum"] in (STATE_FAILED, STATE_PARTIALLY_FAILED)
+    ]
+    if failed_units:
         raise TerminalFailureError(
             f"One or more WorkUnits failed execution: {json.dumps(failed_units, indent=2)}"
         )
+    return wu_results, all(r["state_enum"] == STATE_COMPLETED for r in wu_results)
 
-    return wu_results, all_completed
+
+def _fetch_raw_work_units(
+    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+) -> list[Any] | None:
+    """Fetches raw work units from ESS stub, handling transient errors."""
+    try:
+        req = _make_req("ListWorkUnitsRequest", parent=parent_name)
+        response = stub.ListWorkUnits(req)
+        return list(getattr(response, "work_units", []))
+    except Exception as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Transient error fetching work units: %s. Retrying...", e)
+        return None
+
+
+def _check_wu_count_threshold(
+    actual_count: int,
+    min_expected: int,
+    expected_count: int | None,
+    parent_name: str,
+    elapsed: float,
+    timeout_sec: int,
+) -> bool:
+    """Validates work unit count bounds and returns True if minimum count is reached."""
+    if actual_count < min_expected:
+        if elapsed >= timeout_sec:
+            raise AssertionError(
+                f"Expected at least {min_expected} WorkUnits for {parent_name}, "
+                f"but only found {actual_count} after {int(elapsed)}s."
+            )
+        return False
+    if expected_count is not None and actual_count > expected_count:
+        raise AssertionError(
+            f"WorkUnit count exceeded: expected {expected_count}, found {actual_count}."
+        )
+    return True
+
+
+def _log_wu_polling_progress(
+    current_states: dict[str, str],
+    last_states: dict[str, str],
+    last_time: float,
+    elapsed: float,
+) -> tuple[dict[str, str], float]:
+    """Logs state transitions or periodic progress if states changed or 30s elapsed."""
+    if current_states != last_states or (elapsed - last_time >= 30.0):
+        print(f"[{int(elapsed)}s] WorkUnit States: {current_states}", flush=True)
+        return current_states, elapsed
+    return last_states, last_time
+
+
+def _poll_work_units_step(
+    stub: Any,
+    parent: str,
+    min_exp: int,
+    exp_count: int | None,
+    exp_queue: str | None,
+    workers: list[str] | None,
+    elapsed: float,
+    timeout: int,
+) -> tuple[list[dict[str, Any]], bool] | None:
+    """Fetches, asserts bounds, and evaluates work units for a single poll step."""
+    work_units = _fetch_raw_work_units(stub, parent, elapsed, timeout)
+    if work_units is None or not _check_wu_count_threshold(
+        len(work_units), min_exp, exp_count, parent, elapsed, timeout
+    ):
+        return None
+    return _evaluate_work_units(stub, work_units, exp_count, exp_queue, workers)
+
+
+def _handle_wu_poll_iteration(
+    res: tuple[list[dict[str, Any]], bool] | None,
+    last_states: dict[str, str],
+    last_time: float,
+    elapsed: float,
+    wait_for_completion: bool,
+    timeout_sec: int,
+) -> tuple[list[dict[str, Any]] | None, dict[str, str], float]:
+    """Processes poll step results and returns validated records if completion conditions met."""
+    if res is None:
+        return None, last_states, last_time
+    wu_results, all_completed = res
+    current_states = {r["worker_name"]: r["state"] for r in wu_results}
+    last_states, last_time = _log_wu_polling_progress(
+        current_states, last_states, last_time, elapsed
+    )
+    if not wait_for_completion or all_completed:
+        return wu_results, last_states, last_time
+    if elapsed >= timeout_sec:
+        raise TimeoutError(
+            f"WorkUnits did not reach COMPLETED state within {timeout_sec}s timeout."
+        )
+    return None, last_states, last_time
+
+
+def _run_wu_poll_loop(
+    stub: Any,
+    parent: str,
+    min_exp: int,
+    exp_count: int | None,
+    exp_queue: str | None,
+    workers: list[str] | None,
+    timeout: int,
+    interval: int,
+    wait_for_completion: bool,
+) -> list[dict[str, Any]]:
+    """Runs polling loop for work units until completed or timeout."""
+    start_time, last_states, last_time = time.monotonic(), {}, -1.0
+    while True:
+        elapsed = time.monotonic() - start_time
+        res = _poll_work_units_step(
+            stub, parent, min_exp, exp_count, exp_queue, workers, elapsed, timeout
+        )
+        res_list, last_states, last_time = _handle_wu_poll_iteration(
+            res, last_states, last_time, elapsed, wait_for_completion, timeout
+        )
+        if res_list is not None:
+            return res_list
+        time.sleep(interval)
 
 
 def validate_work_units(
@@ -293,96 +659,40 @@ def validate_work_units(
     expected_count: int | None = None,
     expected_queue: str | None = None,
     expected_worker_names: Sequence[str] | None = None,
-    timeout_sec: int = 300,
+    timeout_sec: int = 600,
     poll_interval_sec: int = 5,
     wait_for_completion: bool = True,
 ) -> list[dict[str, Any]]:
-    """Fetches, validates, and polls work units until all assertions pass.
-
-    Args:
-        stub: gRPC stub for ExperimentStateService.
-        xid: Experiment XID.
-        expected_count: Optional expected number of work units.
-        expected_queue: Optional expected target ClusterQueue name.
-        expected_worker_names: Optional sequence of expected worker names. If omitted,
-            worker names are not asserted.
-        timeout_sec: Maximum timeout to poll for completion.
-        poll_interval_sec: Polling interval in seconds.
-        wait_for_completion: Whether to wait for terminal COMPLETED state.
-
-    Returns:
-        List of verified work unit metadata dictionaries.
-
-    Raises:
-        AssertionError: If assertions on count, names, queues, or terminal states fail.
-        TimeoutError: If execution does not complete within timeout.
-    """
-    parent_name = f"experiments/{xid}"
-    resolved_worker_names: list[str] | None = (
-        list(expected_worker_names) if expected_worker_names is not None else None
+    """Fetches, validates, and polls work units until all assertions pass."""
+    workers = list(expected_worker_names) if expected_worker_names is not None else None
+    min_exp = expected_count if expected_count is not None else (len(workers) if workers else 0)
+    return _run_wu_poll_loop(
+        stub,
+        f"experiments/{xid}",
+        min_exp,
+        expected_count,
+        expected_queue,
+        workers,
+        timeout_sec,
+        poll_interval_sec,
+        wait_for_completion,
     )
 
-    start_time = time.monotonic()
-    last_reported_states: dict[str, str] = {}
 
-    while True:
-        elapsed = time.monotonic() - start_time
-        try:
-            req = _make_req("ListWorkUnitsRequest", parent=parent_name)
-            response = stub.ListWorkUnits(req)
-            work_units = list(getattr(response, "work_units", []))
-        except Exception as e:
-            if elapsed >= timeout_sec:
-                raise
-            logging.warning("Transient error fetching work units: %s. Retrying...", e)
-            time.sleep(poll_interval_sec)
-            continue
-
-        min_expected = (
-            expected_count
-            if expected_count is not None
-            else (len(resolved_worker_names) if resolved_worker_names else 0)
-        )
-        if len(work_units) < min_expected:
-            if elapsed >= timeout_sec:
-                raise AssertionError(
-                    f"Expected at least {min_expected} WorkUnits for {parent_name}, "
-                    f"but only found {len(work_units)} after {int(elapsed)}s."
-                )
-            time.sleep(poll_interval_sec)
-            continue
-
-        if expected_count is not None and len(work_units) > expected_count:
-            raise AssertionError(
-                f"WorkUnit count exceeded: expected {expected_count}, found {len(work_units)}."
-            )
-
-        wu_results, all_completed = _evaluate_work_units(
-            stub=stub,
-            work_units=work_units,
-            expected_count=expected_count,
-            expected_queue=expected_queue,
-            expected_worker_names=resolved_worker_names,
-        )
-
-        current_states = {r["worker_name"]: r["state"] for r in wu_results}
-        if current_states != last_reported_states:
-            print(f"[{int(elapsed)}s] WorkUnit States: {current_states}", flush=True)
-            last_reported_states = current_states
-
-        if not wait_for_completion or all_completed:
-            return wu_results
-
-        if elapsed >= timeout_sec:
-            raise TimeoutError(
-                f"WorkUnits did not reach COMPLETED state within {timeout_sec}s timeout."
-            )
-
-        print(
-            f"Experiment does not yet match the expected state. Sleeping for {poll_interval_sec}s...",
-            flush=True,
-        )
-        time.sleep(poll_interval_sec)
+def wait_for_experiment_state(
+    stub: Any,
+    xid: str,
+    timeout_sec: int = 600,
+    poll_interval_sec: int = 5,
+) -> list[dict[str, Any]]:
+    """Polls until all WorkUnits for an experiment reach COMPLETED state."""
+    return validate_work_units(
+        stub=stub,
+        xid=xid,
+        timeout_sec=timeout_sec,
+        poll_interval_sec=poll_interval_sec,
+        wait_for_completion=True,
+    )
 
 
 def resolve_ui_base_url() -> str:
