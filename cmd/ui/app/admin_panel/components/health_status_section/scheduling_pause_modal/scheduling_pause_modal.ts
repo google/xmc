@@ -41,6 +41,14 @@ export class SchedulingPauseModalComponent {
     this.isPausing() ? 'Yes, Pause' : 'Yes, Resume',
   );
 
+  protected readonly actionWord = computed(() => (this.isPausing() ? 'pause' : 'resume'));
+
+  protected readonly actionDescription = computed(() =>
+    this.isPausing()
+      ? ' This will stop the actuator from interacting with the control plane.'
+      : ' This will resume normal scheduling operations.',
+  );
+
   protected onConfirm(): void {
     this.confirm.emit();
   }

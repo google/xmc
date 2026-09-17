@@ -28,12 +28,8 @@
     </div>
     <p class="modal-message">
       Are you sure you want to
-      <strong>{{ isPausing() ? 'pause' : 'resume' }}</strong> all scheduling?
-      {{
-        isPausing()
-          ? ' This will stop the actuator from interacting with the control plane.'
-          : ' This will resume normal scheduling operations.'
-      }}
+      <strong>{{ actionWord() }}</strong> all scheduling?
+      {{ actionDescription() }}
     </p>
     <div class="modal-actions">
       <button type="button" class="modal-btn-cancel" (click)="onCancel()">Cancel</button>
