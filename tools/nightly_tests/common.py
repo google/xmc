@@ -80,8 +80,6 @@ def parse_xid(raw_xid: str | None, required: bool = True) -> str:
     xid = str(raw_xid).strip()
     if xid.startswith("experiments/"):
         xid = xid.split("/")[-1]
-    elif xid.startswith("dashboard:"):
-        xid = xid.split("dashboard:", 1)[1].strip()
     elif xid.startswith("dashboards/"):
         xid = xid.split("dashboards/", 1)[1].strip()
     return xid
