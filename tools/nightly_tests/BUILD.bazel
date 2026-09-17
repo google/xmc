@@ -21,8 +21,10 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "common.py",
     "common_test.py",
+    "examples_verify_test.py",
     "simple_job_verify.py",
     "xmc_entities_validator.py",
+    "xmc_entities_validator_test.py",
 ])
 
 py_library(
@@ -71,6 +73,17 @@ py_test(
     srcs = ["xmc_entities_validator_test.py"],
     imports = ["../.."],
     deps = [
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "examples_verify_test",
+    srcs = ["examples_verify_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":simple_job_verify",
         ":xmc_entities_validator_lib",
     ],
 )
