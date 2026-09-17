@@ -28,8 +28,7 @@ data:
   kube_api_qps: "100"
   kube_api_burst: "200"
   metrics_port: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 | quote }}
-  xmanager_env_name: {{ .Values.environment | default "" | quote }}
-  xmanager_domain_name: {{ .Values.domainSuffix | default "" | quote }}
+  xmanager_ui_host: {{ include "xmanager-cloud.uiHostname" . | quote }}
   {{- if .Values.isDevEnvironment }}
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}

@@ -2048,10 +2048,10 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
-			if diff := cmp.Diff(buildMLRunLabels(10, 20, "", ""), mock.lastOpts.Labels); diff != "" {
+			if diff := cmp.Diff(buildMLRunLabels(10, 20, ""), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(buildMLRunLabels(10, 20, "", ""), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
+			if diff := cmp.Diff(buildMLRunLabels(10, 20, ""), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
 				t.Errorf("WorkloadDetails.Labels mismatch (-want +got):\n%s", diff)
 			}
 			var wantCreateTime string
@@ -2068,7 +2068,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				if mock.lastUpdateID != tc.wantID {
 					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
 				}
-				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels(10, 20, "", ""))
+				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels(10, 20, ""))
 				if diff := cmp.Diff(wantUpdateLabels, mock.lastUpdateOpts.Labels); diff != "" {
 					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
 				}
@@ -2294,7 +2294,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
 			inputLabels := tc.labels
 			if inputLabels == nil {
-				inputLabels = buildMLRunLabels(1, 2, "", "")
+				inputLabels = buildMLRunLabels(1, 2, "")
 			}
 			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", inputLabels, map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
@@ -2628,8 +2628,7 @@ func TestEnsureProfilesTab(t *testing.T) {
 }
 
 // TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
-// using snake_case keys, and that deployment identifiers are omitted unless they are
-// safe to send as control-plane label values.
+// and that the UI host is base32-encoded only when it is a real, in-budget hostname.
 func TestBuildMLRunLabels(t *testing.T) {
 	base := map[string]string{
 		"experiment_id": "12",
@@ -2648,57 +2647,61 @@ func TestBuildMLRunLabels(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		envName    string
-		domainName string
-		want       map[string]string
+		name   string
+		uiHost string
+		want   map[string]string
 	}{
 		{
-			name:       "both identifiers set are stamped",
-			envName:    "yinghong5",
-			domainName: "dev.xmanageriso.dev",
-			want: withExtra(map[string]string{
-				"xmanager_env_name":    "yinghong5",
-				"xmanager_domain_name": "dev_xmanageriso_dev",
-			}),
+			name:   "hostname is base32 encoded",
+			uiHost: "yinghong5.dev.xmanageriso.dev",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "pfuw4z3in5xgonjomrsxmltynvqw4ylhmvzgs43pfzsgk5q"}),
 		},
 		{
-			name: "both identifiers empty are omitted",
+			name: "empty host is omitted",
 			want: withExtra(nil),
 		},
 		{
-			name:    "only env name set stamps just that key",
-			envName: "prod",
-			want:    withExtra(map[string]string{"xmanager_env_name": "prod"}),
+			name:   "unsubstituted chart placeholder is omitted",
+			uiHost: "YOUR_UI_HOSTNAME",
+			want:   withExtra(nil),
 		},
 		{
-			name:       "unsubstituted chart placeholders are omitted",
-			envName:    "YOUR_ENVIRONMENT",
-			domainName: "YOUR_DOMAIN_SUFFIX",
-			want:       withExtra(nil),
+			name:   "value that is not a hostname is omitted",
+			uiHost: "https://xmc.example.com/experiments/1",
+			want:   withExtra(nil),
 		},
 		{
-			name:       "values with control-plane-illegal characters are omitted",
-			envName:    "https://xmc.example.com",
-			domainName: "xmc example com",
-			want:       withExtra(nil),
+			name:   "host without a dot is omitted",
+			uiHost: "localhost",
+			want:   withExtra(nil),
 		},
 		{
-			name:       "surrounding whitespace is trimmed",
-			envName:    "  dev  ",
-			domainName: "  xmanageriso.dev  ",
-			want: withExtra(map[string]string{
-				"xmanager_env_name":    "dev",
-				"xmanager_domain_name": "xmanageriso_dev",
-			}),
+			name:   "whitespace is trimmed and case is normalized",
+			uiHost: "  Yinghong5.DEV.xmanageriso.dev  ",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "pfuw4z3in5xgonjomrsxmltynvqw4ylhmvzgs43pfzsgk5q"}),
+		},
+		{
+			name:   "short host encodes without padding",
+			uiHost: "a.b",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "mexge"}),
+		},
+		{
+			name:   "host encoding exactly at the 63 character cap is kept",
+			uiHost: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.dev",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "mfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbfzsgk5q"}),
+		},
+		{
+			name:   "host encoding one character over the cap is dropped",
+			uiHost: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.dev",
+			want:   withExtra(nil),
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildMLRunLabels(12, 3, tc.envName, tc.domainName)
+			got := buildMLRunLabels(12, 3, tc.uiHost)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("buildMLRunLabels(12, 3, %q, %q) mismatch (-want +got):\n%s", tc.envName, tc.domainName, diff)
+				t.Errorf("buildMLRunLabels(12, 3, %q) mismatch (-want +got):\n%s", tc.uiHost, diff)
 			}
 		})
 	}

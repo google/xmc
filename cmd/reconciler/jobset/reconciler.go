@@ -17,6 +17,7 @@ package jobset
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -98,8 +99,7 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	XManagerEnvName          string
-	XManagerDomainName       string
+	XManagerUIHost           string
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -114,8 +114,7 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	XManagerEnvName          string
-	XManagerDomainName       string
+	XManagerUIHost           string
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -140,8 +139,7 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
-		XManagerEnvName:          p.XManagerEnvName,
-		XManagerDomainName:       p.XManagerDomainName,
+		XManagerUIHost:           p.XManagerUIHost,
 	}, nil
 }
 
@@ -683,26 +681,62 @@ const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
 
 // mlRunLabelValueRE matches the value syntax the ML Diagnostics control plane
-// accepts for resource labels: lowercase letters, digits, dashes and underscores.
+// accepts for resource labels: it must start with a lowercase letter or digit and
+// may then contain lowercase letters, digits, dashes and underscores.
 //
 // The control plane validates labels character by character and rejects the whole
 // CreateMLRun call with INVALID_ARGUMENT on the first offending rune, so a single
-// bad value costs the entire MLRun record - not just the label. Deployment
-// identifiers therefore pass through this gate before they are stamped.
+// bad value costs the entire MLRun record - not just the label. Every optional
+// value therefore passes through this gate before it is stamped.
 //
-// Uppercase is deliberately rejected rather than folded: it is the signature of an
-// unsubstituted chart placeholder such as YOUR_DOMAIN_SUFFIX, which must not be
-// published as though it were a real deployment identifier.
+// Uppercase is rejected by the control plane itself, verified against the live
+// prod API: a label value of "abcDEF123" is refused while "abcdef123" succeeds.
 var mlRunLabelValueRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-// encodeDomainLabelValue rewrites a DNS name so it survives label validation.
+// mlRunLabelMaxLength is the longest label value the control plane accepts.
 //
-// Dots are rejected by the control plane but are load-bearing in a domain, while
-// underscores are accepted and cannot legally appear in a hostname. Swapping one for
-// the other is therefore lossless and unambiguous: a consumer recovers the original
-// domain by replacing underscores with dots.
-func encodeDomainLabelValue(domain string) string {
-	return strings.ReplaceAll(strings.TrimSpace(domain), ".", "_")
+// Verified against the live prod API: a 63 character value is accepted and a 64
+// character value is rejected with INVALID_ARGUMENT.
+const mlRunLabelMaxLength = 63
+
+// uiHostRE matches a lowercase DNS hostname with at least one dot.
+//
+// Base32 makes any byte sequence label-safe, which removes the charset gate that
+// previously rejected junk by accident. An unsubstituted chart placeholder such as
+// YOUR_UI_HOSTNAME would otherwise encode cleanly and be published as though it were
+// a real host, so the input is validated as a hostname before it is encoded.
+var uiHostRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// normalizeUIHost lowercases and trims host, returning "" when it is not a DNS name.
+//
+// Extracted as a pure function so hostname acceptance is testable independently of
+// base32 encoding. Lowercasing is lossless because DNS names are case-insensitive.
+func normalizeUIHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if !uiHostRE.MatchString(host) {
+		return ""
+	}
+	return host
+}
+
+// encodeBase32LabelValue encodes s as unpadded, lowercase base32 so that an
+// arbitrary string survives MLRun label validation.
+//
+// Base64 is the more compact and more obvious choice, but it cannot be used: both
+// the standard and URL-safe base64 alphabets contain A-Z, and the control plane
+// rejects uppercase outright. Base32 lowercases to a-z2-7, a strict subset of the
+// accepted charset, and always begins with an alphanumeric so it also satisfies the
+// leading-character rule. Padding is stripped because "=" is not an accepted
+// character.
+//
+// Consumers decode by uppercasing, re-padding to a multiple of 8, and applying a
+// standard base32 decoder.
+func encodeBase32LabelValue(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte(s)))
 }
 
 // labelSafeValue returns v when it is acceptable as an MLRun label value, and ""
@@ -713,6 +747,9 @@ func encodeDomainLabelValue(domain string) string {
 // degrade to a missing label rather than break MLRun creation for the work unit.
 func labelSafeValue(v string) string {
 	v = strings.TrimSpace(v)
+	if len(v) > mlRunLabelMaxLength {
+		return ""
+	}
 	if !mlRunLabelValueRE.MatchString(v) {
 		return ""
 	}
@@ -723,24 +760,24 @@ func labelSafeValue(v string) string {
 // Extracted so create and upsert apply an identical label set (including the
 // created_by marker that lets us detect ownership on a create conflict).
 //
-// xmanager_env_name and xmanager_domain_name identify the owning XManager
-// deployment so consumers can resolve an experiment back to its UI themselves.
-// They are additive and only stamped when label-safe, so consumers never see an
-// empty-valued key and a misconfigured deployment never fails the create.
+// xmanager_base32_url carries the XManager UI host so a consumer can rebuild a link
+// back to the experiment as https://<host>/experiments/<experiment_id>, pairing it
+// with the experiment_id label. Only the host is carried because the full URL does
+// not fit: the control plane caps a label value at 63 characters, and no encoding
+// over the permitted 38-character alphabet can represent a 54 byte URL in that
+// space.
 //
-// The domain is dot-encoded (see encodeDomainLabelValue) because the control plane
-// rejects dots outright.
-func buildMLRunLabels(xid, wid int64, envName, domainName string) map[string]string {
+// The value is additive and only stamped when label-safe, so consumers never see an
+// empty-valued key and a misconfigured deployment degrades to a missing label rather
+// than a failed MLRun create.
+func buildMLRunLabels(xid, wid int64, uiHost string) map[string]string {
 	labels := map[string]string{
 		"experiment_id": fmt.Sprintf("%d", xid),
 		"workunit_id":   fmt.Sprintf("%d", wid),
 		"created_by":    createdByXManagerLabelValue,
 	}
-	if v := labelSafeValue(envName); v != "" {
-		labels["xmanager_env_name"] = v
-	}
-	if v := labelSafeValue(encodeDomainLabelValue(domainName)); v != "" {
-		labels["xmanager_domain_name"] = v
+	if v := labelSafeValue(encodeBase32LabelValue(normalizeUIHost(uiHost))); v != "" {
+		labels["xmanager_base32_url"] = v
 	}
 	return labels
 }
@@ -844,7 +881,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
-	labels := buildMLRunLabels(xid, wid, r.XManagerEnvName, r.XManagerDomainName)
+	labels := buildMLRunLabels(xid, wid, r.XManagerUIHost)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,

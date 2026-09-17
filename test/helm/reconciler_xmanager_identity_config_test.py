@@ -12,13 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verifies the reconciler ConfigMap forwards the XManager deployment identifiers.
+"""Verifies the reconciler ConfigMap forwards the XManager UI hostname.
 
-The reconciler stamps xmanager_env_name and xmanager_domain_name onto every MLRun it owns
-so consumers can resolve a run back to the deployment that produced it. Both values are
-plain pass-throughs of chart values an operator already sets, so no extra configuration is
-required. The reconciler is responsible for dropping values that are not label-safe, which
-is why the chart is allowed to forward placeholders verbatim.
+The reconciler base32-encodes this host into the xmanager_base32_url label on every
+MLRun it owns, so a consumer can rebuild a link back to the experiment. The value is
+derived from chart values an operator already sets, so enabling it requires no extra
+platform configuration.
+
+The chart deliberately forwards the host verbatim, including unsubstituted
+placeholders: rejecting values that are not real hostnames is the reconciler's job,
+so that the label contract lives in exactly one place.
 """
 
 import re
@@ -27,57 +30,46 @@ import unittest
 import chart_test_lib
 
 CONFIGMAP = "templates/reconciler/configmap.yaml"
+KEY = "xmanager_ui_host"
 
 
-def render_identity(values: dict[str, str]) -> dict[str, str]:
-    """Renders the reconciler ConfigMap and returns the two identifier values."""
+def render_ui_host(values: dict[str, str]) -> str:
+    """Renders the reconciler ConfigMap and returns the xmanager_ui_host value."""
     manifest = chart_test_lib.render_template(CONFIGMAP, values)
-    found = {}
-    for key in ("xmanager_env_name", "xmanager_domain_name"):
-        match = re.search(rf'^\s*{key}:\s*"(.*)"\s*$', manifest, re.MULTILINE)
-        if match is None:
-            raise AssertionError(f"{key} missing from rendered manifest:\n{manifest}")
-        found[key] = match.group(1)
-    return found
+    match = re.search(rf'^\s*{KEY}:\s*"(.*)"\s*$', manifest, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"{KEY} missing from rendered manifest:\n{manifest}")
+    return match.group(1)
 
 
 class ReconcilerXManagerIdentityConfigTest(unittest.TestCase):
-    """Asserts the identifiers are always emitted and always mirror chart values."""
+    """Asserts the UI host is always emitted and mirrors the chart's hostname helper."""
 
     @classmethod
     def setUpClass(cls) -> None:
         chart_test_lib.require_helm()
 
-    def test_forwards_environment_and_domain_suffix(self) -> None:
-        """A configured deployment forwards both values verbatim."""
+    def test_uses_xmc_url_when_set(self) -> None:
+        """xmcUrl is the canonical UI host and wins outright."""
         self.assertEqual(
-            render_identity({"environment": "yinghong5", "domainSuffix": "dev.xmanageriso.dev"}),
-            {
-                "xmanager_env_name": "yinghong5",
-                "xmanager_domain_name": "dev.xmanageriso.dev",
-            },
+            render_ui_host({"xmcUrl": "yinghong5.dev.xmanageriso.dev"}),
+            "yinghong5.dev.xmanageriso.dev",
         )
 
-    def test_keys_are_always_present(self) -> None:
-        """Both keys render even on stock values, so the reconciler env is stable."""
-        rendered = render_identity({})
-        self.assertIn("xmanager_env_name", rendered)
-        self.assertIn("xmanager_domain_name", rendered)
-
-    def test_environment_only(self) -> None:
-        """Setting just the environment still renders a well-formed ConfigMap."""
-        self.assertEqual(render_identity({"environment": "dev"})["xmanager_env_name"], "dev")
-
-    def test_values_are_not_rewritten_by_the_chart(self) -> None:
-        """The chart must not normalize: the reconciler owns label-safety filtering."""
+    def test_falls_back_to_gateway_ui_hostname(self) -> None:
+        """Without xmcUrl the chart falls back to the gateway hostname."""
         self.assertEqual(
-            render_identity({"environment": "Mixed_Case", "domainSuffix": "Example.COM"}),
-            {
-                "xmanager_env_name": "Mixed_Case",
-                "xmanager_domain_name": "Example.COM",
-            },
+            render_ui_host({"gateway.uiHostname": "xmc.example.com"}),
+            "xmc.example.com",
         )
 
+    def test_key_is_always_present(self) -> None:
+        """The key is emitted even when unset so the reconciler sees a stable contract."""
+        self.assertEqual(render_ui_host({"gateway.uiHostname": ""}), "")
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_chart_does_not_normalize_the_host(self) -> None:
+        """Normalization belongs to the reconciler, which owns the label contract."""
+        self.assertEqual(
+            render_ui_host({"xmcUrl": "YOUR_UI_HOSTNAME"}),
+            "YOUR_UI_HOSTNAME",
+        )
