@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+{{- $limits := (((.Values.queues).cpu).limits) | default dict }}
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
@@ -38,6 +39,23 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: "cpu-queue"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  namespace: "cpu-queue"
+  name: "cpu-queue-defaults"
+spec:
+  limits:
+  # Supplies the request XMC's jobs cannot send, and a ceiling nothing could
+  # host. See `queues` in `values.yaml`.
+  - type: Container
+    defaultRequest:
+      cpu: {{ ($limits.defaultRequest).cpu | default "500m" | quote }}
+      memory: {{ ($limits.defaultRequest).memory | default "2Gi" | quote }}
+    max:
+      cpu: {{ ($limits.max).cpu | default "4" | quote }}
+      memory: {{ ($limits.max).memory | default "16Gi" | quote }}
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
