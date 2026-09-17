@@ -21,7 +21,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "common.py",
     "common_test.py",
-    "demo_workload_verify.py",
+    "simple_job_verify.py",
     "xmc_entities_validator.py",
 ])
 
@@ -47,8 +47,8 @@ py_library(
 )
 
 py_binary(
-    name = "demo_workload_verify",
-    srcs = ["demo_workload_verify.py"],
+    name = "simple_job_verify",
+    srcs = ["simple_job_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",
