@@ -39,12 +39,17 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
 ### Feature Switches
-*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the optional metrics pipeline microservice (Ingestion Gateway).
-*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service microservice for custom chart and dashboard visualizations.
+*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the optional metrics pipeline microservice (Ingestion Gateway). Controls metrics telemetry ingestion (Ingestion Gateway / ClickHouse pipeline).
+*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
 *   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
+
+> [!IMPORTANT]
+> **Metrics Dashboards Requirement**: For proper end-to-end "Metrics dashboards" and chart visualization functionality, **both** `enable_metrics` and `dashboard_service_deployment_enabled` must be set to `true`:
+> * `enable_metrics` controls whether metrics telemetry is gathered and ingested (Ingestion Gateway / ClickHouse pipeline).
+> * `dashboard_service_deployment_enabled` controls whether the backend service and UI visualization components for metrics are deployed.
 
 ### Managed ML Diagnostics (Managed XProf)
 Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
