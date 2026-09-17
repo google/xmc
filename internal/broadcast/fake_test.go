@@ -131,3 +131,20 @@ func TestFakeClientPublishCanceledContext(t *testing.T) {
 		t.Errorf("Publish() error = %v, want context.Canceled", err)
 	}
 }
+
+func TestFakeClientLatestOffset(t *testing.T) {
+	fake := NewFakeClient("offset-stream")
+	offset, err := fake.LatestOffset(context.Background())
+	if err != nil {
+		t.Fatalf("LatestOffset() unexpected error: %v", err)
+	}
+	if offset != "0" {
+		t.Errorf("LatestOffset() = %q, want %q", offset, "0")
+	}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := fake.LatestOffset(canceledCtx); !errors.Is(err, context.Canceled) {
+		t.Errorf("LatestOffset() error = %v, want context.Canceled", err)
+	}
+}

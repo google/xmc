@@ -1,0 +1,31 @@
+# Copyright 2026 Google LLC
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+compat_go_library(
+    name = "pausescheduling",
+    srcs = [
+        "cache.go",
+        "listener.go",
+    ],
+    importpath = "xmanager_cloud/cmd/actuator/pausescheduling",
+    deps = [
+        "//internal/logging",
+        "//internal/storage/spanner/pausestate",
+    ],
+)
+
+compat_go_test(
+    name = "pausescheduling_test",
+    srcs = [
+        "cache_test.go",
+        "listener_test.go",
+    ],
+    embed = [":pausescheduling"],
+    deps = [
+        "//internal/broadcast",
+        "//internal/compat/cmp",
+        "//internal/storage/spanner/pausestate",
+    ],
+)

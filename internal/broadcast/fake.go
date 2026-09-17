@@ -62,6 +62,14 @@ func (f *FakeClient) Publish(ctx context.Context, message string) error {
 	return nil
 }
 
+// LatestOffset returns "0" as the starting stream offset for the in-memory fake.
+func (f *FakeClient) LatestOffset(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return "0", nil
+}
+
 // Subscribe listens for in-memory broadcast messages and invokes handler for each message.
 func (f *FakeClient) Subscribe(ctx context.Context, startID string, handler func(msg string)) error {
 	if handler == nil {

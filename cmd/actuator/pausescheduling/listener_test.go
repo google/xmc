@@ -1,0 +1,427 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package pausescheduling
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
+)
+
+var _ StreamSubscriber = (*mockStreamSubscriber)(nil)
+
+type mockStreamSubscriber struct {
+	mu            sync.Mutex
+	latestOffset  string
+	offsetErr     error
+	subscribeErr  error
+	subscribeDone chan struct{}
+	handler       func(msg string)
+	subscribed    chan struct{}
+}
+
+func newMockSubscriber() *mockStreamSubscriber {
+	return &mockStreamSubscriber{
+		latestOffset:  "0",
+		subscribeDone: make(chan struct{}),
+		subscribed:    make(chan struct{}, 10),
+	}
+}
+
+func (m *mockStreamSubscriber) LatestOffset(ctx context.Context) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.offsetErr != nil {
+		return "", m.offsetErr
+	}
+	return m.latestOffset, nil
+}
+
+func (m *mockStreamSubscriber) Subscribe(ctx context.Context, startID string, handler func(msg string)) error {
+	m.mu.Lock()
+	m.handler = handler
+	err := m.subscribeErr
+	m.mu.Unlock()
+
+	select {
+	case m.subscribed <- struct{}{}:
+	default:
+	}
+
+	if err != nil {
+		return err
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.subscribeDone:
+		return nil
+	}
+}
+
+func (m *mockStreamSubscriber) emit(msg string) {
+	m.mu.Lock()
+	h := m.handler
+	m.mu.Unlock()
+	if h != nil {
+		h(msg)
+	}
+}
+
+func newTestListener(t *testing.T, sub StreamSubscriber, repo pausestate.Repository) (*Listener, Cache) {
+	t.Helper()
+	c := NewCache()
+	l, err := New(Params{
+		Cache:                c,
+		Subscriber:           sub,
+		PauseStateRepository: repo,
+		Enabled:              true,
+		ReconnectBackoff:     15 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	return l, c
+}
+
+func TestNewListener_Validation(t *testing.T) {
+	cache := NewCache()
+	sub := newMockSubscriber()
+	repo := pausestate.NewFake()
+
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr string
+	}{
+		{name: "disabled_allows_nil_deps", params: Params{Enabled: false}},
+		{name: "missing_cache", params: Params{Enabled: true, Subscriber: sub, PauseStateRepository: repo}, wantErr: "cache cannot be nil"},
+		{name: "missing_subscriber", params: Params{Enabled: true, Cache: cache, PauseStateRepository: repo}, wantErr: "subscriber cannot be nil"},
+		{name: "missing_repo", params: Params{Enabled: true, Cache: cache, Subscriber: sub}, wantErr: "pause state repository cannot be nil"},
+		{name: "all_valid", params: Params{Enabled: true, Cache: cache, Subscriber: sub, PauseStateRepository: repo}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := New(tt.params)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("New() error = %v, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("New() unexpected error: %v", err)
+			}
+			if listener == nil {
+				t.Fatalf("New() returned nil listener")
+			}
+		})
+	}
+}
+
+func TestListener_Disabled_NoOp(t *testing.T) {
+	listener, err := New(Params{Enabled: false})
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := listener.Init(ctx); err != nil {
+		t.Errorf("Init() on disabled listener returned error: %v, want nil", err)
+	}
+
+	// StartListening should return immediately without blocking
+	done := make(chan struct{})
+	go func() {
+		listener.StartListening(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("StartListening() on disabled listener did not return immediately")
+	}
+}
+
+func TestListener_Init_ColdStart(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("cold_start_seeds_cache_and_offset", func(t *testing.T) {
+		sub := newMockSubscriber()
+		sub.latestOffset = "100-0"
+		repo := pausestate.NewFake()
+		_ = repo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+
+		listener, cache := newTestListener(t, sub, repo)
+		if err := listener.Init(ctx); err != nil {
+			t.Fatalf("Init() unexpected error: %v", err)
+		}
+
+		if !cache.State().IsPaused {
+			t.Errorf("IsPaused = false, want true after cold-start init")
+		}
+		if listener.getStartID() != "100-0" {
+			t.Errorf("getStartID() = %q, want %q", listener.getStartID(), "100-0")
+		}
+	})
+
+	t.Run("cold_start_uninitialized_table_defaults_to_active", func(t *testing.T) {
+		sub := newMockSubscriber()
+		repo := pausestate.NewFake()
+		listener, cache := newTestListener(t, sub, repo)
+
+		if err := listener.Init(ctx); err != nil {
+			t.Fatalf("Init() unexpected error: %v", err)
+		}
+		if cache.State().IsPaused {
+			t.Errorf("IsPaused = true, want false for uninitialized table")
+		}
+		if listener.getStartID() != "0" {
+			t.Errorf("getStartID() = %q, want %q", listener.getStartID(), "0")
+		}
+	})
+
+	t.Run("cold_start_empty_stream_offset_defaults_to_zero_id", func(t *testing.T) {
+		sub := newMockSubscriber()
+		sub.latestOffset = ""
+		repo := pausestate.NewFake()
+		listener, _ := newTestListener(t, sub, repo)
+
+		if err := listener.Init(ctx); err != nil {
+			t.Fatalf("Init() unexpected error: %v", err)
+		}
+		if listener.getStartID() != "0" {
+			t.Errorf("getStartID() = %q, want %q for empty stream offset", listener.getStartID(), "0")
+		}
+	})
+
+	t.Run("stream_offset_error_fails_init", func(t *testing.T) {
+		sub := newMockSubscriber()
+		sub.offsetErr = errors.New("redis connection refused")
+		repo := pausestate.NewFake()
+		listener, _ := newTestListener(t, sub, repo)
+
+		err := listener.Init(ctx)
+		if err == nil || !strings.Contains(err.Error(), "failed to query stream offset") {
+			t.Errorf("Init() error = %v, want stream offset failure", err)
+		}
+	})
+
+	t.Run("repo_error_fails_init", func(t *testing.T) {
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		listener, _ := newTestListener(t, newMockSubscriber(), pausestate.NewFake())
+
+		err := listener.Init(canceledCtx)
+		if err == nil || !strings.Contains(err.Error(), "failed cold-start read") {
+			t.Errorf("Init() error = %v, want cold-start read failure", err)
+		}
+	})
+}
+
+func TestListener_BroadcastUpdate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sub := newMockSubscriber()
+	repo := pausestate.NewFake()
+	listener, cache := newTestListener(t, sub, repo)
+
+	if err := listener.Init(ctx); err != nil {
+		t.Fatalf("Init() unexpected error: %v", err)
+	}
+
+	go listener.StartListening(ctx)
+
+	// Wait until subscription active
+	select {
+	case <-sub.subscribed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscription to start")
+	}
+
+	// Update state in repository
+	t1 := time.Date(2026, 3, 1, 14, 0, 0, 0, time.UTC)
+	_ = repo.Set(ctx, &pausestate.PauseSchedulingState{
+		SchedulingPaused: true,
+		UpdatedAt:        t1,
+	})
+
+	// Emit broadcast event
+	sub.emit(broadcast.EventSchedulingPaused)
+
+	// Verify cache was updated
+	time.Sleep(50 * time.Millisecond)
+	if !cache.State().IsPaused {
+		t.Errorf("IsPaused = false, want true after broadcast update")
+	}
+}
+
+func TestListener_ReconnectAndResync(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sub := newMockSubscriber()
+	sub.mu.Lock()
+	sub.subscribeErr = errors.New("temporary redis disconnection")
+	sub.mu.Unlock()
+	repo := pausestate.NewFake()
+
+	listener, cache := newTestListener(t, sub, repo)
+	if err := listener.Init(ctx); err != nil {
+		t.Fatalf("Init() unexpected error: %v", err)
+	}
+
+	// Initially active
+	if cache.State().IsPaused {
+		t.Errorf("IsPaused initially = true, want false")
+	}
+
+	// State changed while disconnected
+	_ = repo.Set(ctx, &pausestate.PauseSchedulingState{
+		SchedulingPaused: true,
+	})
+
+	go listener.StartListening(ctx)
+	// Wait for first failure
+	select {
+	case <-sub.subscribed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first subscribe attempt")
+	}
+
+	// Clear the error and update latest offset so reconnect succeeds
+	sub.mu.Lock()
+	sub.subscribeErr = nil
+	sub.latestOffset = "200-0"
+	sub.mu.Unlock()
+
+	// Wait for reconnect subscription attempt
+	select {
+	case <-sub.subscribed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for reconnect subscribe attempt")
+	}
+
+	// Verify cache was resynced from repo on reconnect
+	time.Sleep(50 * time.Millisecond)
+	if !cache.State().IsPaused {
+		t.Errorf("IsPaused = false, want true after reconnect resync")
+	}
+	if listener.getStartID() != "200-0" {
+		t.Errorf("getStartID() = %q, want %q after reconnect", listener.getStartID(), "200-0")
+	}
+
+	t.Run("retries_resync_until_database_and_offset_succeed_before_resubscribing", func(t *testing.T) {
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel2()
+
+		sub2 := newMockSubscriber()
+		sub2.mu.Lock()
+		sub2.subscribeErr = errors.New("disconnect")
+		sub2.mu.Unlock()
+		repo2 := pausestate.NewFake()
+
+		listener2, cache2 := newTestListener(t, sub2, repo2)
+		if err := listener2.Init(ctx2); err != nil {
+			t.Fatalf("Init() unexpected error: %v", err)
+		}
+
+		// Set offset error so resyncOnReconnect will fail after first Subscribe returns error
+		sub2.mu.Lock()
+		sub2.offsetErr = errors.New("offset temporarily unavailable")
+		sub2.mu.Unlock()
+
+		go listener2.StartListening(ctx2)
+
+		// Consume the first subscribe attempt (which returns subscribeErr)
+		select {
+		case <-sub2.subscribed:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for first subscribe attempt")
+		}
+
+		// Clear subscribeErr while keeping offsetErr; verify Subscribe is NOT called during backoff/resync failures
+		sub2.mu.Lock()
+		sub2.subscribeErr = nil
+		sub2.mu.Unlock()
+
+		select {
+		case <-sub2.subscribed:
+			t.Fatal("Subscribe() was called while resyncOnReconnect was failing")
+		case <-time.After(45 * time.Millisecond):
+			// Expected: no Subscribe() call while resyncOnReconnect fails
+		}
+
+		// Now allow resyncOnReconnect to succeed and update database state
+		_ = repo2.Set(ctx2, &pausestate.PauseSchedulingState{
+			SchedulingPaused: true,
+		})
+		sub2.mu.Lock()
+		sub2.offsetErr = nil
+		sub2.latestOffset = "300-0"
+		sub2.mu.Unlock()
+
+		// Now Subscribe() should resume after resync succeeds
+		select {
+		case <-sub2.subscribed:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for subscribe to resume after resync succeeded")
+		}
+
+		if !cache2.State().IsPaused {
+			t.Errorf("IsPaused = false, want true after resync succeeded")
+		}
+		if listener2.getStartID() != "300-0" {
+			t.Errorf("getStartID() = %q, want %q", listener2.getStartID(), "300-0")
+		}
+	})
+}
+
+func TestListener_StartListening_GracefulShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sub := newMockSubscriber()
+	listener, _ := newTestListener(t, sub, pausestate.NewFake())
+
+	_ = listener.Init(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		listener.StartListening(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-sub.subscribed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscription")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("StartListening() did not return after context cancellation")
+	}
+}
