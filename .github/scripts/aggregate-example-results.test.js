@@ -17,11 +17,21 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { spawnSync } = require('node:child_process');
 const {
   loadResultsFromDir,
+  formatStatusBadge,
   aggregateResults,
   run
 } = require('./aggregate-example-results');
+
+test('formatStatusBadge returns appropriate badge for each status', () => {
+  assert.strictEqual(formatStatusBadge('PASSED'), '✅ PASSED');
+  assert.strictEqual(formatStatusBadge('SKIPPED'), '⏭️ SKIPPED');
+  assert.strictEqual(formatStatusBadge('FAILED'), '❌ FAILED');
+  assert.strictEqual(formatStatusBadge('VERIFY_FAILED'), '❌ FAILED');
+  assert.strictEqual(formatStatusBadge('UNKNOWN'), '❌ FAILED');
+});
 
 test('loadResultsFromDir returns empty array when directory does not exist', () => {
   const nonExistent = path.join(os.tmpdir(), 'xmc-non-existent-dir-' + Date.now());
@@ -71,11 +81,85 @@ test('loadResultsFromDir gracefully handles malformed JSON files', () => {
   }
 });
 
-test('aggregateResults builds correct xidMap and passes status when all workloads pass', () => {
+test('aggregateResults builds 2-column property table for single test result (passed)', () => {
   const results = [
-    { id: 'simple_job', name: 'Simple Multi-Unit Job', status: 'PASSED', xid: '6018' },
-    { id: 'sidecar', name: 'Sidecar Container Job', status: 'PASSED', xid: '6019' },
-    { id: 'skipped_job', name: 'Skipped Job', status: 'SKIPPED', xid: 'skipped' }
+    {
+      id: 'simple_job',
+      name: 'Simple Multi-Unit Job',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '6018'
+    }
+  ];
+
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+
+  assert.strictEqual(allPassed, true);
+  assert.deepStrictEqual(xidMap, {
+    simple_job: '6018'
+  });
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
+  assert.ok(summaryMarkdown.includes('### ✅ Overall Status: PASSED'));
+  assert.ok(summaryMarkdown.includes('| Property | Value |'));
+  assert.ok(summaryMarkdown.includes('| **Example ID** | `simple_job` |'));
+  assert.ok(summaryMarkdown.includes('| **Name** | Simple Multi-Unit Job |'));
+  assert.ok(summaryMarkdown.includes('| **Status** | ✅ PASSED |'));
+  assert.ok(summaryMarkdown.includes('| **Launch Step** | `success` |'));
+  assert.ok(summaryMarkdown.includes('| **Verify Step** | `success` |'));
+  assert.ok(summaryMarkdown.includes('| **Experiment / Identifier** | `6018` |'));
+});
+
+test('aggregateResults builds 2-column property table for single test result (failed)', () => {
+  const results = [
+    {
+      id: 'simple_job',
+      name: 'Simple Multi-Unit Job',
+      status: 'FAILED',
+      launch_status: 'failure',
+      verify_status: 'skipped',
+      xid: 'N/A'
+    }
+  ];
+
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+
+  assert.strictEqual(allPassed, false);
+  assert.deepStrictEqual(xidMap, {});
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
+  assert.ok(summaryMarkdown.includes('### ❌ Overall Status: FAILED'));
+  assert.ok(summaryMarkdown.includes('| **Status** | ❌ FAILED |'));
+  assert.ok(summaryMarkdown.includes('| **Launch Step** | `failure` |'));
+  assert.ok(summaryMarkdown.includes('| **Verify Step** | `skipped` |'));
+  assert.ok(summaryMarkdown.includes('| **Experiment / Identifier** | `N/A` |'));
+});
+
+test('aggregateResults builds 6-column matrix table for multiple test results (all passed)', () => {
+  const results = [
+    {
+      id: 'simple_job',
+      name: 'Simple Multi-Unit Job',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '6018'
+    },
+    {
+      id: 'sidecar',
+      name: 'Sidecar Container Job',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '6019'
+    },
+    {
+      id: 'skipped_job',
+      name: 'Skipped Job',
+      status: 'SKIPPED',
+      launch_status: 'skipped',
+      verify_status: 'skipped',
+      xid: 'skipped'
+    }
   ];
 
   const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
@@ -85,23 +169,88 @@ test('aggregateResults builds correct xidMap and passes status when all workload
     simple_job: '6018',
     sidecar: '6019'
   });
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
   assert.ok(summaryMarkdown.includes('### ✅ Overall Status: ALL PASSED'));
-  assert.ok(summaryMarkdown.includes('| `simple_job` | Simple Multi-Unit Job | ✅ PASSED | `6018` |'));
-  assert.ok(summaryMarkdown.includes('| `skipped_job` | Skipped Job | ⏭️ SKIPPED | `skipped` |'));
+  assert.ok(
+    summaryMarkdown.includes('| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |')
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `simple_job` | Simple Multi-Unit Job | ✅ PASSED | `success` | `success` | `6018` |'
+    )
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `sidecar` | Sidecar Container Job | ✅ PASSED | `success` | `success` | `6019` |'
+    )
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `skipped_job` | Skipped Job | ⏭️ SKIPPED | `skipped` | `skipped` | `skipped` |'
+    )
+  );
 });
 
-test('aggregateResults marks allPassed false when any workload fails', () => {
+test('aggregateResults builds 6-column matrix table for multiple test results (some failed)', () => {
   const results = [
-    { id: 'simple_job', name: 'Simple Multi-Unit Job', status: 'PASSED', xid: '6018' },
-    { id: 'failed_job', name: 'Failed Job', status: 'FAILED', xid: 'N/A' }
+    {
+      id: 'simple_job',
+      name: 'Simple Job (3 Multi-Unit Batch)',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '8001'
+    },
+    {
+      id: 'sidecar',
+      name: 'Sidecar Container Job',
+      status: 'VERIFY_FAILED',
+      launch_status: 'success',
+      verify_status: 'failure',
+      xid: '8002'
+    }
   ];
 
   const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
 
   assert.strictEqual(allPassed, false);
-  assert.deepStrictEqual(xidMap, { simple_job: '6018' });
+  assert.deepStrictEqual(xidMap, {
+    simple_job: '8001',
+    sidecar: '8002'
+  });
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
   assert.ok(summaryMarkdown.includes('### ⚠️ Overall Status: SOME WORKLOADS FAILED'));
-  assert.ok(summaryMarkdown.includes('| `failed_job` | Failed Job | ❌ FAILED | `N/A` |'));
+  assert.ok(
+    summaryMarkdown.includes('| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |')
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `simple_job` | Simple Job (3 Multi-Unit Batch) | ✅ PASSED | `success` | `success` | `8001` |'
+    )
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `sidecar` | Sidecar Container Job | ❌ FAILED | `success` | `failure` | `8002` |'
+    )
+  );
+});
+
+test('aggregateResults handles empty results directory / array', () => {
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults([]);
+
+  assert.strictEqual(allPassed, true);
+  assert.deepStrictEqual(xidMap, {});
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
+  assert.ok(summaryMarkdown.includes('### ⚠️ Overall Status: NO RESULTS FOUND'));
+  assert.ok(summaryMarkdown.includes('_No example test results found._'));
+});
+
+test('aggregateResults uses custom title when provided', () => {
+  const results = [
+    { id: 'simple_job', name: 'Simple Job', status: 'PASSED', xid: '9000' }
+  ];
+  const { summaryMarkdown } = aggregateResults(results, { title: '## Custom Test Summary\n' });
+  assert.ok(summaryMarkdown.startsWith('## Custom Test Summary\n'));
 });
 
 test('run entrypoint writes to GITHUB_STEP_SUMMARY and GITHUB_OUTPUT files', () => {
@@ -127,8 +276,8 @@ test('run entrypoint writes to GITHUB_STEP_SUMMARY and GITHUB_OUTPUT files', () 
     assert.deepStrictEqual(xidMap, { job1: '1234' });
 
     const summaryContent = fs.readFileSync(summaryFile, 'utf8');
-    assert.ok(summaryContent.includes('## 🌟 All Example Workloads Execution Summary'));
-    assert.ok(summaryContent.includes('| `job1` | Job One | ✅ PASSED | `1234` |'));
+    assert.ok(summaryContent.includes('## 🌟 Nightly Examples Test Summary'));
+    assert.ok(summaryContent.includes('| **Example ID** | `job1` |'));
 
     const outputContent = fs.readFileSync(outputFile, 'utf8');
     assert.strictEqual(outputContent.trim(), 'launched_xids={"job1":"1234"}');
@@ -136,3 +285,77 @@ test('run entrypoint writes to GITHUB_STEP_SUMMARY and GITHUB_OUTPUT files', () 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('CLI execution exits with code 0 on all workloads passing', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-cli-pass-test-'));
+  const resultsDir = path.join(tmpDir, 'results');
+  const scriptPath = path.join(__dirname, 'aggregate-example-results.js');
+
+  try {
+    fs.mkdirSync(resultsDir);
+    fs.writeFileSync(
+      path.join(resultsDir, 'job1.json'),
+      JSON.stringify({ id: 'job1', name: 'Job One', status: 'PASSED', xid: '1234' })
+    );
+
+    const proc = spawnSync(process.execPath, [scriptPath], {
+      cwd: tmpDir,
+      encoding: 'utf8'
+    });
+
+    assert.strictEqual(proc.status, 0);
+    assert.ok(proc.stdout.includes('Aggregated launched_xids: {"job1":"1234"}'));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('CLI execution exits with code 1 and error annotation when workloads fail', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-cli-fail-test-'));
+  const resultsDir = path.join(tmpDir, 'results');
+  const scriptPath = path.join(__dirname, 'aggregate-example-results.js');
+
+  try {
+    fs.mkdirSync(resultsDir);
+    fs.writeFileSync(
+      path.join(resultsDir, 'job1.json'),
+      JSON.stringify({
+        id: 'job1',
+        name: 'Job One',
+        status: 'VERIFY_FAILED',
+        launch_status: 'success',
+        verify_status: 'failure',
+        xid: '1234'
+      })
+    );
+
+    const proc = spawnSync(process.execPath, [scriptPath], {
+      cwd: tmpDir,
+      encoding: 'utf8'
+    });
+
+    assert.strictEqual(proc.status, 1);
+    assert.ok(
+      proc.stderr.includes('::error::One or more example workloads failed launch or verification.')
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('aggregateResults handles null, undefined, missing id, and invalid entries gracefully', () => {
+  const rawResults = [
+    null,
+    undefined,
+    { id: 'job1', name: 'Job 1', status: 'PASSED', xid: '100' },
+    { xid: '200', name: 'No ID Job', status: 'PASSED' },
+    { id: 'job2', name: 'Job 2', status: 'SKIPPED', xid: 'skipped' },
+    { id: 'job3', name: 'Job 3', status: 'FAILED', xid: 'N/A' }
+  ];
+
+  const { xidMap, allPassed } = aggregateResults(rawResults);
+  assert.strictEqual(allPassed, false);
+  assert.deepStrictEqual(xidMap, { job1: '100' });
+  assert.strictEqual('undefined' in xidMap, false);
+});
+

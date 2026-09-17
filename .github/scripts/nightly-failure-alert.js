@@ -280,8 +280,14 @@ async function run({
     eventName: context.eventName,
     xid: process.env.XID || '',
     associatedPr,
-    triggerOutcome: needsContext?.['trigger-demo-workload']?.result || 'unknown',
-    verifyOutcome: needsContext?.['validate-workload-results']?.result || 'unknown',
+    triggerOutcome:
+      needsContext?.['trigger-demo-workload']?.result ||
+      needsContext?.['run-and-verify-examples']?.result ||
+      'unknown',
+    verifyOutcome:
+      needsContext?.['validate-workload-results']?.result ||
+      needsContext?.['aggregate-results']?.result ||
+      'unknown',
     activeOwners,
   };
 

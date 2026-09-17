@@ -49,43 +49,101 @@ function loadResultsFromDir(resultsDir) {
 }
 
 /**
- * Aggregates result objects into an XID mapping and markdown summary.
+ * Formats a status badge for GitHub step summary tables.
  *
- * @param {Array<object>} results - Array of result objects { id, name, status, xid }.
+ * @param {string} status - Raw workload execution status string.
+ * @returns {string} Formatted emoji badge.
+ */
+function formatStatusBadge(status) {
+  switch (status) {
+    case 'PASSED':
+      return '✅ PASSED';
+    case 'SKIPPED':
+      return '⏭️ SKIPPED';
+    default:
+      return '❌ FAILED';
+  }
+}
+
+/**
+ * Aggregates result objects into an XID mapping and markdown summary.
+ * Formats a clean single-workload summary or a multi-workload matrix table.
+ *
+ * @param {Array<object>} rawResults - Array of result objects.
+ * @param {object} [options]
+ * @param {string} [options.title] - Optional custom markdown title.
  * @returns {{ xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
  */
-function aggregateResults(results) {
+function aggregateResults(rawResults, { title } = {}) {
+  const results = (rawResults || []).filter(Boolean);
   const xidMap = {};
   let allPassed = true;
 
   for (const r of results) {
-    if (r && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
+    if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
       xidMap[r.id] = r.xid;
     }
-    if (r && r.status === 'FAILED') {
+    if (r.status !== 'PASSED' && r.status !== 'SKIPPED') {
       allPassed = false;
     }
   }
 
-  const summaryLines = [
-    '## 🌟 All Example Workloads Execution Summary\n',
-    allPassed
+  const defaultTitle = '## 🌟 Nightly Examples Test Summary\n';
+  const isMultiple = results.length > 1;
+
+  let statusHeader;
+  if (results.length === 0) {
+    statusHeader = '### ⚠️ Overall Status: NO RESULTS FOUND\n';
+  } else if (isMultiple) {
+    statusHeader = allPassed
       ? '### ✅ Overall Status: ALL PASSED\n'
-      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n',
-    '| Example ID | Name | Status | Experiment / Identifier |',
-    '| --- | --- | --- | --- |'
+      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n';
+  } else {
+    statusHeader = allPassed
+      ? '### ✅ Overall Status: PASSED\n'
+      : '### ❌ Overall Status: FAILED\n';
+  }
+
+  const summaryLines = [
+    title || defaultTitle,
+    statusHeader
   ];
 
-  for (const r of results) {
-    const id = r.id || '';
-    const name = r.name || '';
-    const status = r.status || '';
-    const xid = r.xid || '';
-    const statusBadge = status === 'PASSED'
-      ? '✅ PASSED'
-      : (status === 'SKIPPED' ? '⏭️ SKIPPED' : '❌ FAILED');
+  if (results.length === 0) {
+    summaryLines.push('_No example test results found._');
+  } else if (isMultiple) {
+    summaryLines.push('| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |');
+    summaryLines.push('| --- | --- | --- | --- | --- | --- |');
 
-    summaryLines.push(`| \`${id}\` | ${name} | ${statusBadge} | \`${xid}\` |`);
+    for (const r of results) {
+      const id = r.id || '';
+      const name = r.name || '';
+      const statusBadge = formatStatusBadge(r.status);
+      const launchStatus = r.launch_status || 'N/A';
+      const verifyStatus = r.verify_status || 'N/A';
+      const xid = r.xid || 'N/A';
+
+      summaryLines.push(
+        `| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`
+      );
+    }
+  } else {
+    const r = results[0];
+    const id = r.id || 'N/A';
+    const name = r.name || 'N/A';
+    const statusBadge = formatStatusBadge(r.status);
+    const launchStatus = r.launch_status || 'N/A';
+    const verifyStatus = r.verify_status || 'N/A';
+    const xid = r.xid || 'N/A';
+
+    summaryLines.push('| Property | Value |');
+    summaryLines.push('| --- | --- |');
+    summaryLines.push(`| **Example ID** | \`${id}\` |`);
+    summaryLines.push(`| **Name** | ${name} |`);
+    summaryLines.push(`| **Status** | ${statusBadge} |`);
+    summaryLines.push(`| **Launch Step** | \`${launchStatus}\` |`);
+    summaryLines.push(`| **Verify Step** | \`${verifyStatus}\` |`);
+    summaryLines.push(`| **Experiment / Identifier** | \`${xid}\` |`);
   }
 
   const summaryMarkdown = summaryLines.join('\n') + '\n';
@@ -99,15 +157,17 @@ function aggregateResults(results) {
  * @param {string} [options.resultsDir='results']
  * @param {string} [options.stepSummaryPath]
  * @param {string} [options.githubOutputPath]
+ * @param {string} [options.title]
  * @returns {{ results: Array<object>, xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
  */
 function run({
   resultsDir = 'results',
   stepSummaryPath = process.env.GITHUB_STEP_SUMMARY,
-  githubOutputPath = process.env.GITHUB_OUTPUT
+  githubOutputPath = process.env.GITHUB_OUTPUT,
+  title
 } = {}) {
   const results = loadResultsFromDir(resultsDir);
-  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results, { title });
 
   if (stepSummaryPath) {
     fs.appendFileSync(stepSummaryPath, summaryMarkdown, 'utf8');
@@ -115,6 +175,7 @@ function run({
 
   const xidsJson = JSON.stringify(xidMap);
   console.log(`Aggregated launched_xids: ${xidsJson}`);
+  console.log(summaryMarkdown);
 
   if (githubOutputPath) {
     fs.appendFileSync(githubOutputPath, `launched_xids=${xidsJson}\n`, 'utf8');
@@ -124,11 +185,16 @@ function run({
 }
 
 if (require.main === module) {
-  run();
+  const { allPassed } = run();
+  if (!allPassed) {
+    console.error('::error::One or more example workloads failed launch or verification.');
+    process.exit(1);
+  }
 }
 
 module.exports = {
   loadResultsFromDir,
+  formatStatusBadge,
   aggregateResults,
   run
 };
