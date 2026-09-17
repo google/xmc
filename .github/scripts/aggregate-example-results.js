@@ -66,10 +66,9 @@ function formatStatusBadge(status) {
 
 /**
  * Aggregates result objects into an XID mapping and markdown summary.
- * Supports both trigger-only results ({id, name, status, xid}) and E2E results
- * ({id, name, status, launch_status, verify_status, xid}).
+ * Formats a clean single-workload summary or a multi-workload matrix table.
  *
- * @param {Array<object>} results - Array of result objects.
+ * @param {Array<object>} rawResults - Array of result objects.
  * @param {object} [options]
  * @param {string} [options.title] - Optional custom markdown title.
  * @returns {{ xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
@@ -78,10 +77,6 @@ function aggregateResults(rawResults, { title } = {}) {
   const results = (rawResults || []).filter(Boolean);
   const xidMap = {};
   let allPassed = true;
-
-  const isE2E = results.some(
-    r => r.launch_status !== undefined || r.verify_status !== undefined
-  );
 
   for (const r of results) {
     if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
@@ -92,45 +87,62 @@ function aggregateResults(rawResults, { title } = {}) {
     }
   }
 
-  const defaultTitle = isE2E
-    ? '## 🌟 Nightly Examples E2E Test Suite Summary\n'
-    : '## 🌟 All Example Workloads Execution Summary\n';
+  const defaultTitle = '## 🌟 Nightly Examples Test Summary\n';
+  const isMultiple = results.length > 1;
+
+  let statusHeader;
+  if (results.length === 0) {
+    statusHeader = '### ⚠️ Overall Status: NO RESULTS FOUND\n';
+  } else if (isMultiple) {
+    statusHeader = allPassed
+      ? '### ✅ Overall Status: ALL PASSED\n'
+      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n';
+  } else {
+    statusHeader = allPassed
+      ? '### ✅ Overall Status: PASSED\n'
+      : '### ❌ Overall Status: FAILED\n';
+  }
 
   const summaryLines = [
     title || defaultTitle,
-    allPassed
-      ? '### ✅ Overall Status: ALL PASSED\n'
-      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n'
+    statusHeader
   ];
 
-  if (isE2E) {
-    summaryLines.push('| Example ID | Name | Overall Status | Launch | Verify | Experiment / Identifier |');
+  if (results.length === 0) {
+    summaryLines.push('_No example test results found._');
+  } else if (isMultiple) {
+    summaryLines.push('| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |');
     summaryLines.push('| --- | --- | --- | --- | --- | --- |');
 
     for (const r of results) {
       const id = r.id || '';
       const name = r.name || '';
       const statusBadge = formatStatusBadge(r.status);
-      const launchStatus = r.launch_status || '';
-      const verifyStatus = r.verify_status || '';
-      const xid = r.xid || '';
+      const launchStatus = r.launch_status || 'N/A';
+      const verifyStatus = r.verify_status || 'N/A';
+      const xid = r.xid || 'N/A';
 
       summaryLines.push(
         `| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`
       );
     }
   } else {
-    summaryLines.push('| Example ID | Name | Status | Experiment / Identifier |');
-    summaryLines.push('| --- | --- | --- | --- |');
+    const r = results[0];
+    const id = r.id || 'N/A';
+    const name = r.name || 'N/A';
+    const statusBadge = formatStatusBadge(r.status);
+    const launchStatus = r.launch_status || 'N/A';
+    const verifyStatus = r.verify_status || 'N/A';
+    const xid = r.xid || 'N/A';
 
-    for (const r of results) {
-      const id = r.id || '';
-      const name = r.name || '';
-      const statusBadge = formatStatusBadge(r.status);
-      const xid = r.xid || '';
-
-      summaryLines.push(`| \`${id}\` | ${name} | ${statusBadge} | \`${xid}\` |`);
-    }
+    summaryLines.push('| Property | Value |');
+    summaryLines.push('| --- | --- |');
+    summaryLines.push(`| **Example ID** | \`${id}\` |`);
+    summaryLines.push(`| **Name** | ${name} |`);
+    summaryLines.push(`| **Status** | ${statusBadge} |`);
+    summaryLines.push(`| **Launch Step** | \`${launchStatus}\` |`);
+    summaryLines.push(`| **Verify Step** | \`${verifyStatus}\` |`);
+    summaryLines.push(`| **Experiment / Identifier** | \`${xid}\` |`);
   }
 
   const summaryMarkdown = summaryLines.join('\n') + '\n';
