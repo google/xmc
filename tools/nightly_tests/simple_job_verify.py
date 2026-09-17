@@ -20,7 +20,7 @@ WorkUnits were correctly created, scheduled to the expected queue, and executed
 to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.demo_workload_verify --xid=16
+    python3 -m tools.nightly_tests.simple_job_verify --xid=16
 """
 
 from __future__ import annotations
