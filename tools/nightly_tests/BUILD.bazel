@@ -19,9 +19,20 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "chart_artifact_job_verify.py",
+    "clickhouse_metrics_job_verify.py",
     "common.py",
     "common_test.py",
+    "init_container_job_verify.py",
+    "managed_xprof_artifact_job_verify.py",
+    "metrics_dashboard_job_verify.py",
+    "metrics_job_verify.py",
+    "multipod_job_verify.py",
+    "pathways_job_verify.py",
+    "per_job_node_selector_verify.py",
+    "sidecar_verify.py",
     "simple_job_verify.py",
+    "xdash_dashboard_verify.py",
     "xmc_entities_validator.py",
     "xmc_entities_validator_test.py",
 ])
@@ -50,6 +61,116 @@ py_library(
 py_binary(
     name = "simple_job_verify",
     srcs = ["simple_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "init_container_job_verify",
+    srcs = ["init_container_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "sidecar_verify",
+    srcs = ["sidecar_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "multipod_job_verify",
+    srcs = ["multipod_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "per_job_node_selector_verify",
+    srcs = ["per_job_node_selector_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "pathways_job_verify",
+    srcs = ["pathways_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "chart_artifact_job_verify",
+    srcs = ["chart_artifact_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "managed_xprof_artifact_job_verify",
+    srcs = ["managed_xprof_artifact_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "xdash_dashboard_verify",
+    srcs = ["xdash_dashboard_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "metrics_job_verify",
+    srcs = ["metrics_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "clickhouse_metrics_job_verify",
+    srcs = ["clickhouse_metrics_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "metrics_dashboard_job_verify",
+    srcs = ["metrics_dashboard_job_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",

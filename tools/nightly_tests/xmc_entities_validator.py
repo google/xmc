@@ -15,7 +15,7 @@
 """Generic validator library for XMC experiments and WorkUnits.
 
 Provides reusable assertions, gRPC client establishment, and polling utilities
-for validating XMC experiment and workload execution states.
+for validating XMC experiment, workload execution states, artifacts, and dashboards.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ import json
 import logging
 import os
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any
@@ -157,7 +159,12 @@ def _fetch_remote_wu_state(stub: Any, wu_name: str) -> int | None:
         ):
             return int(cur_exec.status.state)
     except Exception as e:
-        logging.warning("Failed to fetch state for %s: %s", wu_name, e, exc_info=True)
+        logging.warning(
+            "Failed to retrieve current WorkUnitExecution for %s: %s",
+            wu_name,
+            e,
+            exc_info=True,
+        )
     return None
 
 
@@ -431,6 +438,23 @@ def _validate_single_job(
     return _build_job_summary(actual_job)
 
 
+def _match_job_for_validation(
+    expected_job: dict[str, Any],
+    idx: int,
+    actual_jobs: Sequence[Any],
+    actual_by_name: dict[str, Any],
+) -> Any:
+    """Matches an expected job specification to an actual job entity."""
+    if "name" not in expected_job:
+        raise AssertionError("Expected JobSet job specification must specify a 'name'.")
+    job_name = expected_job["name"]
+    if job_name in actual_by_name:
+        return actual_by_name[job_name]
+    if len(expected_job) > 0 and idx < len(actual_jobs):
+        return actual_jobs[idx]
+    raise AssertionError(f"Expected JobSet job '{job_name}' not found in WorkUnit.")
+
+
 def validate_jobsets(
     work_unit: Any,
     expected_jobs: Sequence[dict[str, Any]],
@@ -441,17 +465,12 @@ def validate_jobsets(
         raise AssertionError(
             f"JobSet job count mismatch: expected {len(expected_jobs)}, found {len(actual_jobs)}."
         )
-
     actual_by_name = {getattr(j, "name", ""): j for j in actual_jobs}
     job_summaries: list[dict[str, Any]] = []
-
-    for expected_job in expected_jobs:
-        job_name = expected_job["name"]
-        if job_name not in actual_by_name:
-            raise AssertionError(f"Expected JobSet job '{job_name}' not found in WorkUnit.")
-        summary = _validate_single_job(actual_by_name[job_name], expected_job, job_name)
-        job_summaries.append(summary)
-
+    for i, exp_job in enumerate(expected_jobs):
+        act_job = _match_job_for_validation(exp_job, i, actual_jobs, actual_by_name)
+        job_name = getattr(act_job, "name", exp_job.get("name", ""))
+        job_summaries.append(_validate_single_job(act_job, exp_job, job_name))
     return job_summaries
 
 
@@ -685,6 +704,357 @@ def wait_for_experiment_state(
         poll_interval_sec=poll_interval_sec,
         wait_for_completion=True,
     )
+
+
+def _normalize_artifact_type(type_name: str) -> str:
+    """Normalizes artifact type string (e.g., 'ChartArtifact' -> 'chart')."""
+    import re
+
+    t = type_name.strip()
+    if "." in t:
+        t = t.split(".")[-1]
+    if t.lower().startswith("type_"):
+        t = t[len("type_") :]
+    if t.lower().endswith("artifact"):
+        t = t[: -len("artifact")]
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", t).lower().strip("_")
+
+
+def _resolve_artifact_parent(xid: str | int, wid: str | int | None = None) -> str:
+    """Constructs canonical ESS artifact parent resource name."""
+    clean_xid = str(xid).strip()
+    if clean_xid.startswith("experiments/"):
+        clean_xid = clean_xid.split("/")[-1]
+    if wid is not None:
+        clean_wid = str(wid).strip()
+        if clean_wid.startswith("workUnits/"):
+            clean_wid = clean_wid.split("/")[-1]
+        return f"experiments/{clean_xid}/workUnits/{clean_wid}"
+    return f"experiments/{clean_xid}"
+
+
+def _fetch_raw_artifacts(
+    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+) -> list[Any] | None:
+    """Fetches raw artifacts from ESS stub with transient error handling."""
+    try:
+        req = _make_req("ListArtifactsRequest", parent=parent_name)
+        response = stub.ListArtifacts(req)
+        return list(getattr(response, "artifacts", []))
+    except Exception as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Transient error fetching artifacts: %s. Retrying...", e)
+        return None
+
+
+def _extract_artifact_payload_info(art: Any) -> tuple[str, str, Any]:
+    """Extracts payload type string, normalized type, and payload object from an Artifact."""
+    payload_type = ""
+    payload = None
+    if hasattr(art, "artifact_payload") and art.artifact_payload:
+        which = (
+            art.artifact_payload.WhichOneof("payload")
+            if hasattr(art.artifact_payload, "WhichOneof")
+            else None
+        )
+        payload_type = which or ""
+        payload = getattr(art.artifact_payload, which) if which else art.artifact_payload
+    elif hasattr(art, "payload") and art.payload:
+        which = art.payload.WhichOneof("payload") if hasattr(art.payload, "WhichOneof") else None
+        payload_type = which or ""
+        payload = getattr(art.payload, which) if which else art.payload
+    elif hasattr(art, "type"):
+        payload_type = str(art.type)
+    norm_type = _normalize_artifact_type(payload_type) if payload_type else ""
+    return payload_type, norm_type, payload
+
+
+def _extract_chart_artifact_details(art: Any, payload: Any) -> tuple[list[str], str]:
+    """Extracts metric names and title from ChartArtifact payload."""
+    chart = (
+        getattr(payload, "chart", payload) if payload is not None else getattr(art, "chart", None)
+    )
+    if chart is None or not (hasattr(chart, "status") or hasattr(chart, "metric_names")):
+        return [], ""
+    status = getattr(chart, "status", None)
+    if status in (3, "FAILED", "STATUS_FAILED"):
+        err = getattr(chart, "error_message", "")
+        art_name = getattr(art, "name", "")
+        raise TerminalFailureError(f"ChartArtifact '{art_name}' failed provisioning: {err}")
+    metric_names = list(getattr(chart, "metric_names", []))
+    title = getattr(chart, "title", "")
+    return metric_names, title
+
+
+def _extract_url_artifact_details(art: Any, payload: Any) -> tuple[str, str]:
+    """Extracts URL string and display name from URL artifact payload."""
+    url_obj = getattr(payload, "url", payload) if payload is not None else getattr(art, "url", None)
+    if url_obj is None or not (hasattr(url_obj, "url") or isinstance(url_obj, str)):
+        return "", ""
+    url_str = getattr(url_obj, "url", "") if hasattr(url_obj, "url") else str(url_obj)
+    display_name = getattr(url_obj, "display_name", "") if hasattr(url_obj, "display_name") else ""
+    return url_str, display_name
+
+
+def _process_single_artifact(art: Any) -> dict[str, Any]:
+    """Processes a single artifact object into normalized metadata dictionary."""
+    payload_type, norm_type, payload = _extract_artifact_payload_info(art)
+    metrics, chart_title = _extract_chart_artifact_details(art, payload)
+    url_str, display_name = _extract_url_artifact_details(art, payload)
+    title = chart_title or display_name or getattr(art, "notes", "")
+    return {
+        "name": getattr(art, "name", ""),
+        "parent": getattr(art, "parent", ""),
+        "type": norm_type or payload_type or "unknown",
+        "normalized_type": norm_type or "unknown",
+        "metric_names": metrics,
+        "title": title,
+        "url": url_str if isinstance(url_str, str) else getattr(url_str, "url", ""),
+    }
+
+
+def _raise_artifact_timeout(
+    types_ok: bool,
+    metrics_ok: bool,
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    found_types: set[str],
+    found_metrics: set[str],
+    parent_name: str,
+    timeout_sec: int,
+) -> None:
+    """Raises descriptive AssertionError or TimeoutError on artifact polling expiration."""
+    if not types_ok and exp_types:
+        missing = sorted(exp_types - found_types)
+        raise AssertionError(
+            f"Expected artifact types {missing} not found in {parent_name}. "
+            f"Found types: {sorted(found_types)}."
+        )
+    if not metrics_ok and exp_metrics:
+        missing = sorted(exp_metrics - found_metrics)
+        raise AssertionError(
+            f"Expected metric names {missing} not found in ChartArtifacts for {parent_name}. "
+            f"Found metrics: {sorted(found_metrics)}."
+        )
+    raise TimeoutError(f"Artifact verification timed out after {timeout_sec}s.")
+
+
+def _check_artifact_satisfaction(
+    found_types: set[str],
+    found_metrics: set[str],
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    parent_name: str,
+    has_raw: bool,
+    elapsed: float,
+    timeout_sec: int,
+) -> bool:
+    """Verifies expected artifact types and metrics satisfaction or raises on timeout."""
+    types_ok = exp_types.issubset(found_types) if exp_types is not None else True
+    metrics_ok = exp_metrics.issubset(found_metrics) if exp_metrics is not None else True
+    if types_ok and metrics_ok and (has_raw or not (exp_types or exp_metrics)):
+        return True
+    if elapsed >= timeout_sec:
+        args = (types_ok, metrics_ok, exp_types, exp_metrics, found_types, found_metrics)
+        _raise_artifact_timeout(*args, parent_name, timeout_sec)
+    return False
+
+
+def _extract_artifact_signatures(
+    raw: list[Any],
+) -> tuple[list[dict[str, Any]], set[str], set[str]]:
+    """Extracts parsed results, normalized types, and metric names from raw artifacts."""
+    results = [_process_single_artifact(art) for art in raw]
+    found_types = {r["normalized_type"] for r in results if r["normalized_type"] != "unknown"}
+    found_metrics = {m for r in results for m in r["metric_names"]}
+    return results, found_types, found_metrics
+
+
+def _poll_artifacts_step(
+    stub: Any,
+    parent_name: str,
+    exp_types: set[str] | None,
+    exp_metrics: set[str] | None,
+    elapsed: float,
+    timeout_sec: int,
+) -> list[dict[str, Any]] | None:
+    """Fetches raw artifacts and checks satisfaction for a single poll step."""
+    raw = _fetch_raw_artifacts(stub, parent_name, elapsed, timeout_sec)
+    if raw is None:
+        return None
+    results, found_types, found_metrics = _extract_artifact_signatures(raw)
+    if _check_artifact_satisfaction(
+        found_types,
+        found_metrics,
+        exp_types,
+        exp_metrics,
+        parent_name,
+        bool(raw),
+        elapsed,
+        timeout_sec,
+    ):
+        return results
+    return None
+
+
+def validate_artifacts(
+    stub: Any,
+    xid: str | int,
+    wid: str | int | None = None,
+    expected_artifact_types: Sequence[str] | None = None,
+    expected_metric_names: Sequence[str] | None = None,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 2,
+) -> list[dict[str, Any]]:
+    """Fetches and validates artifacts associated with an Experiment or WorkUnit."""
+    parent = _resolve_artifact_parent(xid, wid)
+    exp_types = (
+        {_normalize_artifact_type(t) for t in expected_artifact_types}
+        if expected_artifact_types is not None
+        else None
+    )
+    exp_metrics = set(expected_metric_names) if expected_metric_names is not None else None
+    start_time = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - start_time
+        results = _poll_artifacts_step(stub, parent, exp_types, exp_metrics, elapsed, timeout_sec)
+        if results is not None:
+            return results
+        time.sleep(poll_interval_sec)
+
+
+def _normalize_expected_dashboards(
+    expected_dashboards: Sequence[dict[str, Any] | str],
+) -> list[dict[str, Any]]:
+    """Normalizes expected dashboard specifications to standard dictionary format."""
+    normalized: list[dict[str, Any]] = []
+    for item in expected_dashboards:
+        if isinstance(item, str):
+            normalized.append({"dashboard_id": item})
+        else:
+            normalized.append(dict(item))
+    return normalized
+
+
+def _fetch_json_from_url(url: str, timeout: int = 10) -> dict[str, Any]:
+    """Performs HTTP GET request with standard headers and parses JSON response."""
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": "xmc-validator/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _validate_dashboard_charts(base_endpoint: str, chart_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetches and verifies individual chart definitions referenced by a dashboard."""
+    verified_charts: list[dict[str, Any]] = []
+    for cid in chart_ids:
+        chart_slug = cid.split("/", 1)[1] if cid.startswith("charts/") else cid
+        chart_url = f"{base_endpoint}/v1/charts/{chart_slug}"
+        verified_charts.append(_fetch_json_from_url(chart_url))
+    return verified_charts
+
+
+def _extract_dashboard_id(exp_dash: dict[str, Any]) -> str:
+    """Extracts and normalizes the target dashboard ID."""
+    raw_id = exp_dash.get("dashboard_id") or exp_dash.get("id") or exp_dash.get("name", "")
+    dash_id = raw_id.split("/", 1)[1] if raw_id.startswith("dashboards/") else raw_id
+    if not dash_id:
+        raise AssertionError("Expected dashboard specification missing dashboard_id.")
+    return dash_id
+
+
+def _assert_dashboard_metadata(
+    dash_id: str, dash_data: dict[str, Any], exp_dash: dict[str, Any]
+) -> list[str]:
+    """Asserts title pattern and expected chart IDs for fetched dashboard data."""
+    dash_title = dash_data.get("title", "")
+    if "expected_title" in exp_dash and exp_dash["expected_title"] not in dash_title:
+        raise AssertionError(
+            f"Dashboard '{dash_id}' title mismatch: "
+            f"expected '{exp_dash['expected_title']}', found '{dash_title}'."
+        )
+    chart_ids = dash_data.get("chart_ids") or dash_data.get("chartIds") or []
+    if "expected_chart_ids" in exp_dash:
+        exp_cids = exp_dash["expected_chart_ids"]
+        missing = set(exp_cids) - set(chart_ids)
+        if missing:
+            raise AssertionError(
+                f"Dashboard '{dash_id}' missing expected chart IDs: {sorted(missing)}. "
+                f"Found: {sorted(chart_ids)}."
+            )
+    return chart_ids
+
+
+def _validate_single_dashboard(base_endpoint: str, exp_dash: dict[str, Any]) -> dict[str, Any]:
+    """Fetches and validates metadata and charts for a single dashboard."""
+    dash_id = _extract_dashboard_id(exp_dash)
+    dash_url = f"{base_endpoint}/v1/dashboards/{dash_id}"
+    dash_data = _fetch_json_from_url(dash_url)
+    chart_ids = _assert_dashboard_metadata(dash_id, dash_data, exp_dash)
+    verified_charts = _validate_dashboard_charts(base_endpoint, chart_ids)
+    return {
+        "id": dash_id,
+        "dashboard_id": dash_id,
+        "title": dash_data.get("title", ""),
+        "chart_ids": chart_ids,
+        "charts": verified_charts,
+        "raw_response": dash_data,
+    }
+
+
+def _normalize_dashboard_endpoint(endpoint: str) -> str:
+    """Ensures dashboard endpoint has valid scheme and no trailing slash."""
+    ep = endpoint.strip().rstrip("/")
+    if not ep.startswith(("http://", "https://")):
+        return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
+    return ep
+
+
+def _poll_dashboard_iteration(
+    base_endpoint: str,
+    norm_dashboards: list[dict[str, Any]],
+    elapsed: float,
+    timeout_sec: int,
+) -> list[dict[str, Any]] | None:
+    """Attempts to validate all dashboards for a single poll step."""
+    try:
+        return [_validate_single_dashboard(base_endpoint, d) for d in norm_dashboards]
+    except AssertionError:
+        raise
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:
+        if elapsed >= timeout_sec:
+            raise TimeoutError(f"Dashboard verification failed after {int(elapsed)}s: {e}") from e
+        logging.warning("Transient error fetching dashboard: %s. Retrying...", e)
+        return None
+
+
+def validate_dashboard(
+    endpoint: str = "",
+    expected_dashboards: Sequence[dict[str, Any] | str] | None = None,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 2,
+    dashboard_endpoint: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetches and validates dashboard definitions and referenced charts via REST API."""
+    target_ep = dashboard_endpoint or endpoint
+    if not target_ep:
+        raise ValueError("endpoint or dashboard_endpoint must be specified.")
+    if expected_dashboards is None:
+        expected_dashboards = []
+    base_endpoint = _normalize_dashboard_endpoint(target_ep)
+    norm_dashboards = _normalize_expected_dashboards(expected_dashboards)
+    start_time = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - start_time
+        res = _poll_dashboard_iteration(base_endpoint, norm_dashboards, elapsed, timeout_sec)
+        if res is not None:
+            return res
+        time.sleep(poll_interval_sec)
 
 
 def resolve_ui_base_url() -> str:
