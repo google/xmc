@@ -60,6 +60,15 @@ func (p *pauseScheduler) Pause(ctx context.Context) error {
 
 // Resume updates the global scheduling state to unpaused with a newly generated run ID.
 func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
+	// TODO: Move state check and update into a Spanner read-write transaction.
+	current, err := p.repo.Get(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
+	}
+	if current != nil && !current.SchedulingPaused {
+		return current.ResumptionRunID, nil
+	}
+
 	resumptionRunID := uuid.NewString()
 	state := &pausestate.PauseSchedulingState{
 		SchedulingPaused:   false,

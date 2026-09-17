@@ -25,14 +25,25 @@ import (
 )
 
 type failingPauseStateRepo struct {
-	err error
+	err    error
+	getErr error
+	setErr error
 }
 
 func (r *failingPauseStateRepo) Get(ctx context.Context) (*pausestate.PauseSchedulingState, error) {
-	return nil, r.err
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &pausestate.PauseSchedulingState{SchedulingPaused: true}, nil
 }
 
 func (r *failingPauseStateRepo) Set(ctx context.Context, state *pausestate.PauseSchedulingState) error {
+	if r.setErr != nil {
+		return r.setErr
+	}
 	return r.err
 }
 
@@ -147,13 +158,49 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		}
 	})
 
-	t.Run("successive resumes generate unique run ids", func(t *testing.T) {
+	t.Run("consecutive resumes when already unpaused are idempotent and preserve worker lease", func(t *testing.T) {
+		fakeRepo := pausestate.NewFake()
+		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+			SchedulingPaused:   false,
+			ResumptionRunID:    "active-run-id",
+			ResumptionWorkerID: "active-worker-id",
+		})
+		scheduler := NewPauseScheduler(fakeRepo)
+
+		runID, err := scheduler.Resume(ctx)
+		if err != nil {
+			t.Fatalf("Resume() unexpected error: %v", err)
+		}
+		if runID != "active-run-id" {
+			t.Errorf("expected existing ResumptionRunID %q, got %q", "active-run-id", runID)
+		}
+
+		state, err := fakeRepo.Get(ctx)
+		if err != nil {
+			t.Fatalf("Get() unexpected error: %v", err)
+		}
+		if state.ResumptionWorkerID != "active-worker-id" {
+			t.Errorf("expected ResumptionWorkerID to be preserved as %q, got %q", "active-worker-id", state.ResumptionWorkerID)
+		}
+		if state.ResumptionRunID != "active-run-id" {
+			t.Errorf("expected ResumptionRunID to be preserved as %q, got %q", "active-run-id", state.ResumptionRunID)
+		}
+	})
+
+	t.Run("successive pause and resume cycles generate unique run ids", func(t *testing.T) {
 		fakeRepo := pausestate.NewFake()
 		scheduler := NewPauseScheduler(fakeRepo)
 
+		if err := scheduler.Pause(ctx); err != nil {
+			t.Fatalf("first Pause() failed: %v", err)
+		}
 		runID1, err := scheduler.Resume(ctx)
 		if err != nil {
 			t.Fatalf("first Resume() failed: %v", err)
+		}
+
+		if err := scheduler.Pause(ctx); err != nil {
+			t.Fatalf("second Pause() failed: %v", err)
 		}
 		runID2, err := scheduler.Resume(ctx)
 		if err != nil {
@@ -161,13 +208,27 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		}
 
 		if runID1 == runID2 {
-			t.Errorf("expected distinct resumption run IDs, got %q for both", runID1)
+			t.Errorf("expected distinct resumption run IDs across cycles, got %q for both", runID1)
 		}
 	})
 
-	t.Run("returns error when repo fails", func(t *testing.T) {
+	t.Run("returns error when repo Get fails", func(t *testing.T) {
+		repoErr := errors.New("spanner read failed")
+		failingRepo := &failingPauseStateRepo{getErr: repoErr}
+		scheduler := NewPauseScheduler(failingRepo)
+
+		_, err := scheduler.Resume(ctx)
+		if err == nil {
+			t.Fatalf("expected error from Resume(), got nil")
+		}
+		if !errors.Is(err, repoErr) {
+			t.Errorf("expected wrapped repoErr, got %v", err)
+		}
+	})
+
+	t.Run("returns error when repo Set fails", func(t *testing.T) {
 		repoErr := errors.New("spanner commit failed")
-		failingRepo := &failingPauseStateRepo{err: repoErr}
+		failingRepo := &failingPauseStateRepo{setErr: repoErr}
 		scheduler := NewPauseScheduler(failingRepo)
 
 		_, err := scheduler.Resume(ctx)
