@@ -162,7 +162,7 @@ def _print_simple_job_summary(
             ("Experiment", f"{experiment.name} (Title: '{experiment.title}')"),
             ("Verified WorkUnits", f"{wu_count} / {expected_work_units}"),
             ("Target Queue", expected_queue),
-            ("Priority Asserted", "HIGH (1)"),
+            ("Priority Asserted", "HIGH (3)"),
             ("CPU Requested", f"{EXPECTED_CPU_MILLICORES}m"),
             ("Memory Requested", f"{EXPECTED_MEMORY_BYTES // (1024 * 1024)} MiB"),
             ("Web UI Link", f"{ui_base_url}/experiments/{xid}"),

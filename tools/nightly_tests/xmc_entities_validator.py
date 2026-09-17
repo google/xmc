@@ -77,6 +77,14 @@ STATE_NAMES = [
     STATE_FAILED,
 ) = range(len(STATE_NAMES))
 
+# Priority fallback mapping matching cloud.xmanager.v1.Priority
+PRIORITY_FALLBACK_MAP = {
+    "PRIORITY_UNSPECIFIED": 0,
+    "LOW": 1,
+    "NORMAL": 2,
+    "HIGH": 3,
+}
+
 
 class TerminalFailureError(AssertionError):
     """Raised when a work unit enters a terminal failure state."""
@@ -205,7 +213,7 @@ def validate_work_unit_priority(
         if priority_pb2 is not None and hasattr(priority_pb2.Priority, expected_priority.upper()):
             exp_val = getattr(priority_pb2.Priority, expected_priority.upper())
         else:
-            exp_val = 1 if expected_priority.upper() == "HIGH" else 0
+            exp_val = PRIORITY_FALLBACK_MAP.get(expected_priority.upper(), 0)
     else:
         exp_val = expected_priority
 

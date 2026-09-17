@@ -463,13 +463,64 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 xmc_entities_validator.create_authenticated_stub("endpoint:443")
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
 
-    def test_validate_work_unit_priority(self) -> None:
-        wu = SimpleNamespace(name="experiments/10/workUnits/1", priority=1)
-        xmc_entities_validator.validate_work_unit_priority(wu, 1)
-        xmc_entities_validator.validate_work_unit_priority(wu, "HIGH")
+    def test_validate_work_unit_priority_success(self) -> None:
+        cases = [
+            (3, "HIGH"),
+            (3, "high"),
+            (3, 3),
+            (2, "NORMAL"),
+            (2, "normal"),
+            (2, 2),
+            (1, "LOW"),
+            (1, "low"),
+            (1, 1),
+            (0, "PRIORITY_UNSPECIFIED"),
+            (0, 0),
+        ]
+        for priority_val, expected in cases:
+            wu = SimpleNamespace(name="experiments/10/workUnits/1", priority=priority_val)
+            xmc_entities_validator.validate_work_unit_priority(wu, expected)
 
-        with self.assertRaises(AssertionError):
-            xmc_entities_validator.validate_work_unit_priority(wu, 0)
+    def test_validate_work_unit_priority_with_proto_enum(self) -> None:
+        mock_priority_pb2 = SimpleNamespace(
+            Priority=SimpleNamespace(
+                HIGH=3,
+                NORMAL=2,
+                LOW=1,
+                PRIORITY_UNSPECIFIED=0,
+            )
+        )
+        with mock.patch.object(xmc_entities_validator, "priority_pb2", mock_priority_pb2):
+            wu_high = SimpleNamespace(name="experiments/10/workUnits/1", priority=3)
+            xmc_entities_validator.validate_work_unit_priority(wu_high, "HIGH")
+            wu_norm = SimpleNamespace(name="experiments/10/workUnits/2", priority=2)
+            xmc_entities_validator.validate_work_unit_priority(wu_norm, "NORMAL")
+            wu_low = SimpleNamespace(name="experiments/10/workUnits/3", priority=1)
+            xmc_entities_validator.validate_work_unit_priority(wu_low, "LOW")
+            wu_unspec = SimpleNamespace(name="experiments/10/workUnits/4", priority=0)
+            xmc_entities_validator.validate_work_unit_priority(wu_unspec, "PRIORITY_UNSPECIFIED")
+            with self.assertRaises(AssertionError):
+                xmc_entities_validator.validate_work_unit_priority(wu_high, "LOW")
+
+    def test_validate_work_unit_priority_mismatch_and_errors(self) -> None:
+        wu_high = SimpleNamespace(name="experiments/10/workUnits/1", priority=3)
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_work_unit_priority(wu_high, "LOW")
+        self.assertIn("priority mismatch: expected 1, found 3", str(ctx.exception))
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_work_unit_priority(wu_high, 1)
+        self.assertIn("priority mismatch: expected 1, found 3", str(ctx.exception))
+
+        wu_low = SimpleNamespace(name="experiments/10/workUnits/2", priority=1)
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_work_unit_priority(wu_low, "HIGH")
+        self.assertIn("priority mismatch: expected 3, found 1", str(ctx.exception))
+
+        wu_no_prio = SimpleNamespace(name="experiments/10/workUnits/3")
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_work_unit_priority(wu_no_prio, "HIGH")
+        self.assertIn("missing priority field", str(ctx.exception))
 
     def test_validate_resource_requests(self) -> None:
         resources = SimpleNamespace(
