@@ -65,6 +65,7 @@ export class HealthStatusSectionComponent {
   loading = input<boolean>(false);
   isSchedulingPaused = input<boolean>(false);
   isPauseSchedulingEnabled = input<boolean>(true);
+  isUpdatingPauseState = input<boolean>(false);
 
   refresh = output<void>();
   toggleSchedulingPause = output<boolean>();

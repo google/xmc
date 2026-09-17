@@ -42,6 +42,7 @@
   @if (isPauseSchedulingEnabled()) {
     <xmc-scheduling-pause-button
       [isSchedulingPaused]="isSchedulingPaused()"
+      [disabled]="isUpdatingPauseState()"
       (toggleClick)="onTogglePause()"
     />
   }
