@@ -29,6 +29,7 @@ const {
   findExistingNightlyFailureIssue,
   postOrUpdateAlertIssue,
   parseNeedsContext,
+  buildAlertParams,
   run,
 } = require('./nightly-failure-alert');
 
@@ -390,6 +391,56 @@ describe('parseNeedsContext', () => {
       if (orig === undefined) delete process.env.NEEDS_CONTEXT;
       else process.env.NEEDS_CONTEXT = orig;
     }
+  });
+});
+
+describe('buildAlertParams', () => {
+  const baseContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    runId: 123456,
+    sha: 'abcdef1234567890',
+    ref: 'refs/heads/main',
+    eventName: 'schedule',
+    serverUrl: 'https://github.com',
+  };
+
+  test('resolves outcomes for run-and-verify-demo-workload workflow', () => {
+    const needsContext = {
+      'run-and-verify-demo-workload': { result: 'failure' },
+    };
+    const params = buildAlertParams(baseContext, ['alice'], null, needsContext);
+    assert.equal(params.triggerOutcome, 'failure');
+    assert.equal(params.verifyOutcome, 'failure');
+    assert.equal(params.owner, 'google');
+    assert.equal(params.repo, 'xmc');
+    assert.deepEqual(params.activeOwners, ['alice']);
+  });
+
+  test('resolves outcomes for trigger-demo-workload and validate-workload-results workflow', () => {
+    const needsContext = {
+      'trigger-demo-workload': { result: 'success' },
+      'validate-workload-results': { result: 'failure' },
+    };
+    const params = buildAlertParams(baseContext, ['bob'], { number: 895, title: 'demo' }, needsContext);
+    assert.equal(params.triggerOutcome, 'success');
+    assert.equal(params.verifyOutcome, 'failure');
+    assert.deepEqual(params.associatedPr, { number: 895, title: 'demo' });
+  });
+
+  test('resolves outcomes for run-and-verify-examples and aggregate-results workflow', () => {
+    const needsContext = {
+      'run-and-verify-examples': { result: 'failure' },
+      'aggregate-results': { result: 'cancelled' },
+    };
+    const params = buildAlertParams(baseContext, [], null, needsContext);
+    assert.equal(params.triggerOutcome, 'failure');
+    assert.equal(params.verifyOutcome, 'cancelled');
+  });
+
+  test('falls back to unknown when job keys are missing', () => {
+    const params = buildAlertParams(baseContext, [], null, {});
+    assert.equal(params.triggerOutcome, 'unknown');
+    assert.equal(params.verifyOutcome, 'unknown');
   });
 });
 

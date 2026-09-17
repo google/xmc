@@ -250,6 +250,40 @@ function parseNeedsContext(core) {
 }
 
 /**
+ * Constructs the parameter dictionary for alert issue creation and comment updates.
+ * @param {Object} context
+ * @param {string[]} activeOwners
+ * @param {Object|null} associatedPr
+ * @param {Object} needsContext
+ * @returns {Object}
+ */
+function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
+  const { owner, repo } = context.repo;
+  return {
+    serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
+    owner,
+    repo,
+    runId: context.runId,
+    sha: context.sha,
+    ref: context.ref,
+    eventName: context.eventName,
+    xid: process.env.XID || '',
+    associatedPr,
+    triggerOutcome:
+      needsContext?.['run-and-verify-demo-workload']?.result ||
+      needsContext?.['trigger-demo-workload']?.result ||
+      needsContext?.['run-and-verify-examples']?.result ||
+      'unknown',
+    verifyOutcome:
+      needsContext?.['run-and-verify-demo-workload']?.result ||
+      needsContext?.['validate-workload-results']?.result ||
+      needsContext?.['aggregate-results']?.result ||
+      'unknown',
+    activeOwners,
+  };
+}
+
+/**
  * Main orchestrator: Coordinates parsing OWNERS, resolving PR context, and posting/updating alert issue.
  * @param {Object} params
  * @param {any} params.github - Octokit client.
@@ -269,21 +303,7 @@ async function run({
   const activeOwners = resolveActiveOwners(ownersPath, absencePath, core);
   const needsContext = parseNeedsContext(core);
   const associatedPr = await lookupAssociatedPullRequest(github, owner, repo, context.sha, core);
-
-  const alertParams = {
-    serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
-    owner,
-    repo,
-    runId: context.runId,
-    sha: context.sha,
-    ref: context.ref,
-    eventName: context.eventName,
-    xid: process.env.XID || '',
-    associatedPr,
-    triggerOutcome: needsContext?.['run-and-verify-demo-workload']?.result || needsContext?.['trigger-demo-workload']?.result || 'unknown',
-    verifyOutcome: needsContext?.['run-and-verify-demo-workload']?.result || needsContext?.['validate-workload-results']?.result || 'unknown',
-    activeOwners,
-  };
+  const alertParams = buildAlertParams(context, activeOwners, associatedPr, needsContext);
 
   const LABEL_NAME = 'nightly-failure';
   const existingIssue = await findExistingNightlyFailureIssue(github, owner, repo, LABEL_NAME, core);
@@ -301,5 +321,6 @@ module.exports = {
   findExistingNightlyFailureIssue,
   postOrUpdateAlertIssue,
   parseNeedsContext,
+  buildAlertParams,
   run,
 };
