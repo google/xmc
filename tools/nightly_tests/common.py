@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import urllib.parse
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
@@ -45,6 +46,16 @@ flags.DEFINE_string(
     "Expected ClusterQueue name",
 )
 flags.DEFINE_integer("timeout_sec", 600, "Timeout in seconds")
+flags.DEFINE_string(
+    "dashboard_endpoint",
+    None,
+    "Dashboard Service endpoint (host:port or URL)",
+)
+flags.DEFINE_string(
+    "dashboard_id",
+    "example_vcc_comparison",
+    "Dashboard ID slug to validate",
+)
 flags.DEFINE_integer(
     "expected_work_units",
     1,
@@ -90,6 +101,56 @@ def parse_xid(raw_xid: str | None, required: bool = True) -> str:
 def resolve_endpoint(provided_endpoint: str | None = None) -> str:
     """Resolves ESS gRPC endpoint from parameter, environment, or default."""
     return provided_endpoint or os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
+
+
+def _resolve_custom_dashboard_endpoint() -> str | None:
+    """Checks custom dashboard endpoint environment variables."""
+    if custom_ep := (
+        os.environ.get("XMC_DASHBOARD_ENDPOINT") or os.environ.get("DASHBOARD_ENDPOINT")
+    ):
+        return custom_ep.strip()
+    if ui_url := os.environ.get("XMANAGER_UI_URL"):
+        return ui_url.strip()
+    if domain := os.environ.get("XMC_DOMAIN") or os.environ.get("GCP_DOMAIN_NAME"):
+        d = domain.strip()
+        return d if d.startswith(("http://", "https://")) else f"https://{d}"
+    return None
+
+
+def resolve_dashboard_endpoint(provided_endpoint: str | None = None) -> str:
+    """Derives HTTP REST base endpoint for dashboard validation."""
+    if provided_endpoint:
+        ep = provided_endpoint.strip()
+        if ep.startswith(("http://", "https://")):
+            return ep
+        return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
+
+    if env_ep := _resolve_custom_dashboard_endpoint():
+        return env_ep
+
+    xmanager_endpoint = os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
+    endpoint = xmanager_endpoint
+    if "://" not in endpoint:
+        endpoint = f"http://{endpoint}"
+    else:
+        for prefix in ("dns:///", "dns://", "grpc://"):
+            if endpoint.startswith(prefix):
+                endpoint = f"http://{endpoint[len(prefix) :]}"
+                break
+
+    parsed = urllib.parse.urlparse(endpoint)
+    host = parsed.hostname or ""
+    port = parsed.port
+
+    if host.startswith("grpc.api."):
+        host = host[len("grpc.api.") :]
+    elif host.startswith("grpc."):
+        host = host[len("grpc.") :]
+
+    scheme = "http" if host in {"localhost", "127.0.0.1", "::1"} else "https"
+    port_part = f":{port}" if port and host in {"localhost", "127.0.0.1", "::1"} else ""
+    host_part = f"[{host}]" if ":" in host else host
+    return f"{scheme}://{host_part}{port_part}"
 
 
 def resolve_ui_base_url() -> str:
