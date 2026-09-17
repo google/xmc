@@ -176,9 +176,13 @@ def main() -> None:
                     work_unit=work_unit,
                 )
             )
-            wid = int(created_wu.name.split("/")[3])
+            parts = created_wu.name.split("/")
+            wid = parts[3] if len(parts) >= 4 and parts[2] == "workUnits" else parts[-1]
             wu_name = f"experiments/{xid}/workUnits/{wid}"
             print(f"✅ Created Work Unit: {wu_name}")
+
+            display_name = args.display_name or f"{args.experiment_name}_{wid}"
+            run_group = args.run_group or args.experiment_name
 
             # 2. Attach ManagedXprof artifact immediately after work unit creation.
             # This is needed to make sure the reconciler is able to find the xprof artifact
@@ -191,8 +195,8 @@ def main() -> None:
                 lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
                 payload=artifact_pb2.ArtifactPayload(
                     managed_xprof=artifact_pb2.ManagedXprofArtifact(
-                        display_name=args.display_name,
-                        run_group=args.run_group,
+                        display_name=display_name,
+                        run_group=run_group,
                     )
                 ),
             )

@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 
 from test.e2e.lib.command import run_cmd
-from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.config import E2E_VENV_DEPENDENCIES, E2EConfig
+from test.e2e.lib.dev_token import fetch_dex_oidc_token
 
 logger = logging.getLogger("xmc_e2e_runner")
 
@@ -31,7 +33,7 @@ class PlaywrightTestExecutor:
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
-        self.venv_dir = os.path.join(self.cfg.workspace_root, ".venv_e2e")
+        self.venv_dir = os.path.join(self.cfg.temp_dir, "venv_e2e")
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
@@ -74,7 +76,8 @@ class PlaywrightTestExecutor:
                 pass
 
         python_bin = sys.executable
-        if not os.path.exists(os.path.join(self.venv_dir, "bin", "python")):
+        venv_python = os.path.join(self.venv_dir, "bin", "python")
+        if not os.path.exists(venv_python):
             logger.info("Creating Python virtualenv at %s...", self.venv_dir)
             run_cmd([python_bin, "-m", "venv", self.venv_dir])
             run_cmd(
@@ -83,8 +86,7 @@ class PlaywrightTestExecutor:
                     "install",
                     "--upgrade",
                     "pip",
-                    "playwright",
-                    "requests",
+                    *E2E_VENV_DEPENDENCIES,
                 ]
             )
             run_cmd(
@@ -94,19 +96,35 @@ class PlaywrightTestExecutor:
                     "chromium",
                 ]
             )
-        return os.path.join(self.venv_dir, "bin", "python")
+
+        install_script = os.path.join(
+            self.cfg.workspace_root, "deploy", "cli", "install_xmanager.py"
+        )
+        if os.path.exists(install_script):
+            try:
+                run_cmd([venv_python, "-c", "import xmanager.xm_cloud"])
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                logger.info("Setting up xmanager with xm_cloud in %s...", self.venv_dir)
+                run_cmd([python_bin, install_script, "--venv", self.venv_dir])
+
+        return venv_python
 
     def execute(self, test_script: str | None = None) -> None:
         """Runs the Playwright E2E test script."""
         logger.info("=== [Playwright] Executing E2E Test Flow ===")
         py_venv = self.setup_venv()
-        resolved_test_script = test_script or os.path.join(
-            self.cfg.workspace_root, "test", "e2e", "test_e2e_flow.py"
+        resolved_test_script = (
+            test_script
+            or self.cfg.test_script
+            or os.path.join(self.cfg.workspace_root, "test", "e2e", "test_e2e_flow.py")
         )
         env = os.environ.copy()
         env["XMC_BASE_URL"] = "http://localhost:8080"
         env["XMC_DEX_URL"] = "http://localhost:5556"
         env["XMC_SCREENSHOTS_DIR"] = self.cfg.screenshots_dir
+        env["KUBE_CONTEXT"] = self.cfg.kube_context
+        if "XMC_AUTH_TOKEN" not in env:
+            env["XMC_AUTH_TOKEN"] = fetch_dex_oidc_token()
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (
             f"{self.cfg.workspace_root}{os.pathsep}{existing_pythonpath}"

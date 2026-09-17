@@ -14,10 +14,21 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 ### 2. `worker` ReplicatedJob (Multi-pod TPU worker slices)
 - **`pathways-worker` (Primary Container on TPU nodes)**: Exposes worker gRPC port **`29005`**, secondary data port **`29006`**, TPU Inter-Chip Interconnect (ICI) port **`8471`**, and health/metrics port **`8080`**. Uses `dependency_order` to depend on `pathways-head` being `READY` before starting worker pods.
 
+## Prerequisites & Dependencies
+
+1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file, and that your Python environment (`./deploy/cli/venv`) is active.
+
 ## Running the Example
 
-Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file, and that your Python environment (`./deploy/cli/venv`) is active:
+Activate your virtual environment, install dependencies, and run the launch script:
 
 ```bash
+source deploy/cli/venv/bin/activate
+pip install -r requirements.txt
 python3 examples/pathways_job/launch.py
 ```

@@ -28,6 +28,8 @@ import { HealthService } from '../health_service';
  */
 @Injectable({ providedIn: 'root' })
 export class MockHealthService extends HealthService {
+  isSchedulingPaused = false;
+
   override getHealthStatus(): Observable<HealthStatusResponse> {
     return of({
       healthState: 'HEALTH_STATE_HEALTHY',
@@ -36,7 +38,7 @@ export class MockHealthService extends HealthService {
         essDbSchemaVersion: '6',
         xidDbSchemaVersion: '1',
         observabilityUrl: 'http://mock-observability-url',
-        isSchedulingPaused: false,
+        isSchedulingPaused: this.isSchedulingPaused,
       },
       components: [
         {
@@ -74,5 +76,15 @@ export class MockHealthService extends HealthService {
       userEmail: 'mock-user@google.com',
       privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
     } as any);
+  }
+
+  override pauseScheduling(): Observable<void> {
+    this.isSchedulingPaused = true;
+    return of(undefined);
+  }
+
+  override resumeScheduling(): Observable<void> {
+    this.isSchedulingPaused = false;
+    return of(undefined);
   }
 }

@@ -1,0 +1,39 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<div class="scheduling-pause-card" [class.is-paused]="isSchedulingPaused()">
+  <div class="pause-card-info">
+    <mat-icon class="pause-icon" [class.paused-icon]="isSchedulingPaused()">
+      {{ isSchedulingPaused() ? 'pause_circle' : 'play_circle' }}
+    </mat-icon>
+    <div class="pause-text-group">
+      <div class="pause-title">Pause All Scheduling</div>
+      <div class="pause-subtitle">
+        Temporarily stop actuator from interacting with control plane
+      </div>
+    </div>
+  </div>
+  <div class="pause-action-container">
+    <mat-slide-toggle
+      color="primary"
+      class="pause-slide-toggle"
+      aria-label="Pause all scheduling"
+      [checked]="isSchedulingPaused()"
+      [disabled]="disabled()"
+      (toggleChange)="onToggleClick()"
+    />
+  </div>
+</div>

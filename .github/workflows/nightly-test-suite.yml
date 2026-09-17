@@ -104,8 +104,12 @@ jobs:
             export XMC_AUTH_TOKEN
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
 
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/demo_workload_verify.py \
+          # Execute verification via Python module syntax (-m) using the virtual environment interpreter.
+          # This sets sys.path[0] to the repository root (${GITHUB_WORKSPACE}), ensuring canonical
+          # package imports (e.g. `from tools.nightly_tests import common`) resolve cleanly without sys.path hacks.
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_verify \
             --xid="${XID}"
 
           echo "================================================================="
@@ -139,3 +143,32 @@ jobs:
             echo ""
             echo "> Automated Nightly E2E Test Suite against \`xmc-nightly\` deployment."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # 3. Report Failure & Alert Repository OWNERS
+  report-nightly-failure:
+    name: '3. Report Failure & Alert OWNERS'
+    runs-on: 'ubuntu-latest'
+    needs: [trigger-demo-workload, validate-workload-results]
+    if: always() && github.ref == 'refs/heads/main' && (needs.trigger-demo-workload.result == 'failure' || needs.trigger-demo-workload.result == 'cancelled' || needs.validate-workload-results.result == 'failure' || needs.validate-workload-results.result == 'cancelled')
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Alert Repository OWNERS on GitHub Issue'
+        uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
+        env:
+          NEEDS_CONTEXT: ${{ toJson(needs) }}
+          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { run } = require('./.github/scripts/nightly-failure-alert.js');
+            await run({ github, context, core });
+

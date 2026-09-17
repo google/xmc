@@ -38,7 +38,7 @@ describe('MockHealthService', () => {
     const response = await firstValueFrom(service.getHealthStatus());
 
     expect(response.healthState).toBe('HEALTH_STATE_HEALTHY');
-    expect(response.systemInfo.appVersion).toBe('mock-app-version-1.0.0');
+    expect(response.systemInfo?.appVersion).toBe('mock-app-version-1.0.0');
   });
 
   it('should return mock health configs', async () => {

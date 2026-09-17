@@ -47,6 +47,7 @@ type server struct {
 	checker            healthChecker
 	guard              AdminRoleGuard
 	componentsProvider summary.CustomComponentsInfoProvider
+	pauseScheduler     PauseScheduler
 
 	// Caching
 	cacheMu      sync.RWMutex
@@ -58,7 +59,13 @@ type server struct {
 	sfGroup             singleflight.Group
 }
 
-func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard, componentsProvider summary.CustomComponentsInfoProvider) *server {
+func newServer(
+	cfg *Config,
+	checker healthChecker,
+	guard AdminRoleGuard,
+	componentsProvider summary.CustomComponentsInfoProvider,
+	pauseScheduler PauseScheduler,
+) *server {
 	var limiter *rate.Limiter
 	if cfg != nil && cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
 		limiter = rate.NewLimiter(rate.Limit(float64(cfg.ForceRefreshMaxRequests)/cfg.ForceRefreshWindow.Seconds()), cfg.ForceRefreshMaxRequests)
@@ -68,6 +75,7 @@ func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard, compone
 		checker:             checker,
 		guard:               guard,
 		componentsProvider:  componentsProvider,
+		pauseScheduler:      pauseScheduler,
 		forceRefreshLimiter: limiter,
 	}
 }
@@ -87,15 +95,36 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		forceRefresh = false
 	}
 
+	var resp *spb.HealthStatusResponse
 	if !forceRefresh {
 		if cached := s.getHealthStatusCache(); cached != nil {
 			_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "HIT"))
-			return cached, nil
+			resp = cached
 		}
 	}
 
-	_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
-	return s.runChecksSingleflight(ctx)
+	if resp == nil {
+		_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
+		var err error
+		resp, err = s.runChecksSingleflight(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	isSchedulingPaused := false
+	paused, err := s.pauseScheduler.IsPaused(ctx)
+	if err != nil {
+		// TODO: Propagate error in response when pause scheduling check fails.
+		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+	} else {
+		isSchedulingPaused = paused
+	}
+	if resp.SystemInfo != nil {
+		resp.SystemInfo.IsSchedulingPaused = isSchedulingPaused
+	}
+
+	return resp, nil
 }
 
 func (s *server) runChecksSingleflight(ctx context.Context) (*spb.HealthStatusResponse, error) {
@@ -169,7 +198,6 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 			EssDbSchemaVersion: essDbSchemaVersionStr,
 			XidDbSchemaVersion: xidDbSchemaVersionStr,
 			ObservabilityUrl:   s.cfg.ObservabilityURL,
-			IsSchedulingPaused: false,
 		},
 		Components:      res.Components,
 		HealthCheckTime: timestamppb.Now(),
@@ -249,4 +277,34 @@ func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (
 		UserEmail:  email,
 		Privileges: privileges,
 	}, nil
+}
+
+// PauseScheduling handles administrative requests to pause actuator scheduling.
+func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRequest) (*spb.PauseSchedulingResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if err := s.pauseScheduler.Pause(ctx); err != nil {
+		logging.Error(ctx, "Failed to pause scheduling", "error", err)
+		return nil, status.Error(codes.Internal, "failed to pause scheduling")
+	}
+	return &spb.PauseSchedulingResponse{}, nil
+}
+
+// ResumeScheduling handles administrative requests to resume actuator scheduling.
+func (s *server) ResumeScheduling(ctx context.Context, req *spb.ResumeSchedulingRequest) (*spb.ResumeSchedulingResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if _, err := s.pauseScheduler.Resume(ctx); err != nil {
+		logging.Error(ctx, "Failed to resume scheduling", "error", err)
+		return nil, status.Error(codes.Internal, "failed to resume scheduling")
+	}
+	return &spb.ResumeSchedulingResponse{}, nil
 }

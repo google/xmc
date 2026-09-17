@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 
 from test.e2e.lib.ui_diagnostics import (
     get_screenshots_dir,
+    save_element_screenshot,
     save_screenshot,
     setup_logging,
 )
@@ -68,6 +69,21 @@ class TestUIDiagnostics(unittest.TestCase):
             mock_page = MagicMock()
             mock_page.screenshot.side_effect = RuntimeError("Playwright error")
             path = save_screenshot(mock_page, Path(tmp_dir), "error_shot")
+            self.assertEqual(path, "")
+
+    def test_save_element_screenshot_success(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_element = MagicMock()
+            path = save_element_screenshot(mock_element, Path(tmp_dir), "element_shot")
+            expected_path = Path(tmp_dir) / "element_shot.png"
+            self.assertEqual(path, str(expected_path))
+            mock_element.screenshot.assert_called_once_with(path=str(expected_path))
+
+    def test_save_element_screenshot_handles_exception(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_element = MagicMock()
+            mock_element.screenshot.side_effect = RuntimeError("Element error")
+            path = save_element_screenshot(mock_element, Path(tmp_dir), "element_err_shot")
             self.assertEqual(path, "")
 
 

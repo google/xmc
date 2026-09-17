@@ -19,7 +19,9 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "demo_workload_verify.py",
+    "common.py",
+    "common_test.py",
+    "simple_job_verify.py",
     "xmc_entities_validator.py",
 ])
 
@@ -31,14 +33,36 @@ py_library(
     imports = ["../.."],
 )
 
-py_binary(
-    name = "demo_workload_verify",
-    srcs = ["demo_workload_verify.py"],
+py_library(
+    name = "common",
+    srcs = [
+        "common.py",
+    ],
     imports = ["../.."],
     deps = [
         ":xmc_entities_validator_lib",
-        # Note: absl is dynamically resolved at runtime in the execution environment.
-        # When running in sandboxed hermetic toolchains, include project absl dependency here.
+        "@absl_py//absl:app",
+        "@absl_py//absl/flags",
+    ],
+)
+
+py_binary(
+    name = "simple_job_verify",
+    srcs = ["simple_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "common_test",
+    srcs = ["common_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
     ],
 )
 

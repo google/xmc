@@ -12,8 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, of } from 'rxjs';
 import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
@@ -24,6 +32,7 @@ import {
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 import { ErrorBannerComponent } from '../common/components/error_banner/error_banner';
+import { FeatureFlagService } from '../service/feature_flag_service';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
 import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
@@ -37,6 +46,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
   selector: 'xmc-admin-panel',
   standalone: true,
   imports: [
+    MatIconModule,
     MatProgressSpinnerModule,
     SystemInfoCardComponent,
     HealthStatusSectionComponent,
@@ -50,6 +60,8 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
   private readonly snackbarService = inject(SnackbarService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly healthStatusError = signal<unknown>(null);
   protected readonly configEntriesError = signal<unknown>(null);
@@ -58,6 +70,7 @@ export class AdminPanelPage {
   private lastKnownStatus: HealthStatusResponse | null = null;
 
   protected readonly isRefreshing = signal<boolean>(false);
+  protected readonly isUpdatingPauseState = signal<boolean>(false);
 
   private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
   private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
@@ -70,6 +83,7 @@ export class AdminPanelPage {
           tap((status) => {
             this.lastKnownStatus = status;
             this.healthStatusError.set(null);
+            this.localSchedulingPaused.set(null);
           }),
           catchError((error) => {
             console.error('Failed to fetch health status', error);
@@ -112,6 +126,19 @@ export class AdminPanelPage {
     () => this.healthStatus() === undefined && !this.healthStatusError(),
   );
 
+  protected readonly localSchedulingPaused = signal<boolean | null>(null);
+
+  protected readonly isSchedulingPaused = computed(() => {
+    if (this.localSchedulingPaused() !== null) {
+      return this.localSchedulingPaused()!;
+    }
+    return !!this.healthStatus()?.systemInfo?.isSchedulingPaused;
+  });
+
+  protected readonly isPauseSchedulingEnabled = computed(
+    () => this.featureFlagService.isPauseSchedulingEnabled,
+  );
+
   protected readonly lastUpdated = computed(() => {
     const status = this.healthStatus();
     if (!status || !status.healthCheckTime) return '';
@@ -136,5 +163,34 @@ export class AdminPanelPage {
 
   protected onRetryConfigs(): void {
     this.configRefreshTrigger$.next();
+  }
+
+  protected onToggleSchedulingPause(pause: boolean): void {
+    if (!this.isPauseSchedulingEnabled() || this.isUpdatingPauseState()) return;
+
+    this.isUpdatingPauseState.set(true);
+    const request$ = pause
+      ? this.healthService.pauseScheduling()
+      : this.healthService.resumeScheduling();
+
+    request$
+      .pipe(
+        finalize(() => this.isUpdatingPauseState.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: () => {
+          this.localSchedulingPaused.set(pause);
+          this.snackbarService.open(
+            pause ? 'All scheduling has been paused.' : 'Scheduling has been resumed.',
+          );
+        },
+        error: (error) => {
+          console.error('Failed to update scheduling pause state', error);
+          this.snackbarService.open(
+            pause ? 'Failed to pause scheduling.' : 'Failed to resume scheduling.',
+          );
+        },
+      });
   }
 }

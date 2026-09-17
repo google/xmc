@@ -152,4 +152,32 @@ describe('HealthService', () => {
       expect(result).toBeFalse();
     });
   });
+
+  describe('pauseScheduling', () => {
+    it('should POST to /health/scheduling:pause with credentials', async () => {
+      const responsePromise = firstValueFrom(state.service.pauseScheduling());
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/scheduling:pause`);
+
+      expect(req.request.method).toBe('POST');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({});
+      const response = await responsePromise;
+
+      expect(response).toEqual({});
+    });
+  });
+
+  describe('resumeScheduling', () => {
+    it('should POST to /health/scheduling:resume with credentials', async () => {
+      const responsePromise = firstValueFrom(state.service.resumeScheduling());
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/scheduling:resume`);
+
+      expect(req.request.method).toBe('POST');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({});
+      const response = await responsePromise;
+
+      expect(response).toEqual({});
+    });
+  });
 });

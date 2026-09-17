@@ -168,6 +168,20 @@ Common OAuth environment variables for XMC services.
 - name: SECURE_COOKIE
   value: {{ .Values.auth.secureCookie | quote }}
 {{ end }}
+{{ if .Values.isDevEnvironment }}
+{{ if .Values.auth.username }}
+- name: OIDC_USERNAME
+  value: {{ .Values.auth.username | quote }}
+{{ end }}
+{{ if .Values.auth.password }}
+- name: OIDC_PASSWORD
+  value: {{ .Values.auth.password | quote }}
+{{ end }}
+{{ if .Values.auth.issuerUrl }}
+- name: OIDC_ISSUER_URL
+  value: {{ .Values.auth.issuerUrl | quote }}
+{{ end }}
+{{ end }}
 {{ if or .Values.auth.googleApplicationCredentials .Values.googleApplicationCredentials }}
 - name: GOOGLE_APPLICATION_CREDENTIALS
   value: {{ default .Values.googleApplicationCredentials .Values.auth.googleApplicationCredentials | quote }}

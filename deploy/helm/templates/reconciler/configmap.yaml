@@ -34,4 +34,3 @@ data:
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}
   XMC_CLUSTER_LOCATION: {{ .Values.clusterLocation | default "local" | quote }}
   {{- end }}
-
