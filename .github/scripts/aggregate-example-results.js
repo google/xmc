@@ -55,13 +55,14 @@ function loadResultsFromDir(resultsDir) {
  * @returns {string} Formatted emoji badge.
  */
 function formatStatusBadge(status) {
-  if (status === 'PASSED') {
-    return '✅ PASSED';
+  switch (status) {
+    case 'PASSED':
+      return '✅ PASSED';
+    case 'SKIPPED':
+      return '⏭️ SKIPPED';
+    default:
+      return '❌ FAILED';
   }
-  if (status === 'SKIPPED') {
-    return '⏭️ SKIPPED';
-  }
-  return '❌ FAILED';
 }
 
 /**
