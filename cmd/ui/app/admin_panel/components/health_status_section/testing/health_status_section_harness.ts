@@ -15,6 +15,8 @@
 import { ComponentHarness } from '@angular/cdk/testing';
 
 import { HealthStatusGroupCardHarness } from '../health_status_group_card/testing/health_status_group_card_harness';
+import { SchedulingPauseButtonHarness } from '../scheduling_pause_button/testing/scheduling_pause_button_harness';
+import { SchedulingPauseModalHarness } from '../scheduling_pause_modal/testing/scheduling_pause_modal_harness';
 
 /** Harness for interacting with <xmc-health-status-section> in tests. */
 export class HealthStatusSectionHarness extends ComponentHarness {
@@ -23,6 +25,8 @@ export class HealthStatusSectionHarness extends ComponentHarness {
   private readonly _title = this.locatorFor('.card-title');
   private readonly _refreshBtn = this.locatorFor('.refresh-button');
   private readonly _overallBadge = this.locatorFor('.status-badge');
+  private readonly _pauseButton = this.locatorForOptional(SchedulingPauseButtonHarness);
+  private readonly _modal = this.locatorForOptional(SchedulingPauseModalHarness);
 
   async getTitleText(): Promise<string> {
     const el = await this._title();
@@ -51,5 +55,61 @@ export class HealthStatusSectionHarness extends ComponentHarness {
 
   async getGroupCards(): Promise<HealthStatusGroupCardHarness[]> {
     return this.locatorForAll(HealthStatusGroupCardHarness)();
+  }
+
+  async getSchedulingPauseButton(): Promise<SchedulingPauseButtonHarness | null> {
+    return this._pauseButton();
+  }
+
+  async getSchedulingPauseModal(): Promise<SchedulingPauseModalHarness | null> {
+    return this._modal();
+  }
+
+  async hasSchedulingPauseCard(): Promise<boolean> {
+    const btn = await this._pauseButton();
+    return btn !== null;
+  }
+
+  async isSchedulingPauseCardPaused(): Promise<boolean> {
+    const btn = await this._pauseButton();
+    return btn ? btn.isPaused() : false;
+  }
+
+  async isPauseToggleChecked(): Promise<boolean> {
+    const btn = await this._pauseButton();
+    return btn ? btn.isChecked() : false;
+  }
+
+  async isPauseToggleDisabled(): Promise<boolean> {
+    const btn = await this._pauseButton();
+    return btn ? btn.isDisabled() : false;
+  }
+
+  async togglePause(): Promise<void> {
+    const btn = await this._pauseButton();
+    if (!btn) throw new Error('Pause toggle not found');
+    return btn.toggle();
+  }
+
+  async hasConfirmationModal(): Promise<boolean> {
+    const modal = await this._modal();
+    return modal !== null;
+  }
+
+  async getModalMessageText(): Promise<string | null> {
+    const modal = await this._modal();
+    return modal ? modal.getMessageText() : null;
+  }
+
+  async clickModalConfirm(): Promise<void> {
+    const modal = await this._modal();
+    if (!modal) throw new Error('Modal confirm button not found');
+    return modal.clickConfirm();
+  }
+
+  async clickModalCancel(): Promise<void> {
+    const modal = await this._modal();
+    if (!modal) throw new Error('Modal cancel button not found');
+    return modal.clickCancel();
   }
 }
