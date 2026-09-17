@@ -258,3 +258,19 @@ test('CLI execution exits with code 1 and error annotation when workloads fail',
   }
 });
 
+test('aggregateResults handles null, undefined, missing id, and invalid entries gracefully', () => {
+  const rawResults = [
+    null,
+    undefined,
+    { id: 'job1', name: 'Job 1', status: 'PASSED', xid: '100' },
+    { xid: '200', name: 'No ID Job', status: 'PASSED' },
+    { id: 'job2', name: 'Job 2', status: 'SKIPPED', xid: 'skipped' },
+    { id: 'job3', name: 'Job 3', status: 'FAILED', xid: 'N/A' }
+  ];
+
+  const { xidMap, allPassed } = aggregateResults(rawResults);
+  assert.strictEqual(allPassed, false);
+  assert.deepStrictEqual(xidMap, { job1: '100' });
+  assert.strictEqual('undefined' in xidMap, false);
+});
+

@@ -74,19 +74,20 @@ function formatStatusBadge(status) {
  * @param {string} [options.title] - Optional custom markdown title.
  * @returns {{ xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
  */
-function aggregateResults(results, { title } = {}) {
+function aggregateResults(rawResults, { title } = {}) {
+  const results = (rawResults || []).filter(Boolean);
   const xidMap = {};
   let allPassed = true;
 
   const isE2E = results.some(
-    r => r && (r.launch_status !== undefined || r.verify_status !== undefined)
+    r => r.launch_status !== undefined || r.verify_status !== undefined
   );
 
   for (const r of results) {
-    if (r && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
+    if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
       xidMap[r.id] = r.xid;
     }
-    if (r && (r.status === 'FAILED' || r.status === 'VERIFY_FAILED' || (r.status !== 'PASSED' && r.status !== 'SKIPPED'))) {
+    if (r.status !== 'PASSED' && r.status !== 'SKIPPED') {
       allPassed = false;
     }
   }
