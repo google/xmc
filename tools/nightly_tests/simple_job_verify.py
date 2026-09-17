@@ -20,7 +20,7 @@ WorkUnits were correctly created, scheduled to the expected queue, and executed
 to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.demo_workload_verify --xid=16
+    python3 -m tools.nightly_tests.simple_job_verify --xid=16
 """
 
 from __future__ import annotations
@@ -69,19 +69,20 @@ def main(argv: Sequence[str]) -> None:
         common.ess_channel_context(common.get_flag(FLAGS, "endpoint")) as (stub, _),
     ):
         # 1. Assert Experiment Existence & Title
-        print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
+        print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...", flush=True)
         experiment = xmc_entities_validator.validate_experiment(
             stub=stub,
             xid=xid,
             expected_title_pattern=EXPECTED_TITLE_PATTERN,
         )
-        print(f"  [✓] Experiment Name   : {experiment.name}")
-        print(f"  [✓] Experiment Title  : {experiment.title}")
-        print(f"  [✓] Experiment Creator: {getattr(experiment, 'creator', 'N/A')}")
+        print(f"  [✓] Experiment Name   : {experiment.name}", flush=True)
+        print(f"  [✓] Experiment Title  : {experiment.title}", flush=True)
+        print(f"  [✓] Experiment Creator: {getattr(experiment, 'creator', 'N/A')}", flush=True)
 
         # 2. Assert WorkUnits & States
         print(
-            f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnits targeted at '{EXPECTED_QUEUE}'..."
+            f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnits targeted at '{EXPECTED_QUEUE}'...",
+            flush=True,
         )
         wu_results = xmc_entities_validator.validate_work_units(
             stub=stub,
@@ -96,11 +97,12 @@ def main(argv: Sequence[str]) -> None:
         for wu_info in wu_results:
             print(
                 f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}', "
-                f"Queue='{wu_info['queue']}', State='{wu_info['state']}'"
+                f"Queue='{wu_info['queue']}', State='{wu_info['state']}'",
+                flush=True,
             )
 
         # 3. Print Final Report
-        print("\n[3/3] Validation Summary:")
+        print("\n[3/3] Validation Summary:", flush=True)
         common.print_success_summary(
             "ALL NIGHTLY WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!",
             [

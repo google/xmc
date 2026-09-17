@@ -367,7 +367,7 @@ def validate_work_units(
 
         current_states = {r["worker_name"]: r["state"] for r in wu_results}
         if current_states != last_reported_states:
-            print(f"[{int(elapsed)}s] WorkUnit States: {current_states}")
+            print(f"[{int(elapsed)}s] WorkUnit States: {current_states}", flush=True)
             last_reported_states = current_states
 
         if not wait_for_completion or all_completed:
@@ -379,7 +379,8 @@ def validate_work_units(
             )
 
         print(
-            f"Experiment does not yet match the expected state. Sleeping for {poll_interval_sec}s..."
+            f"Experiment does not yet match the expected state. Sleeping for {poll_interval_sec}s...",
+            flush=True,
         )
         time.sleep(poll_interval_sec)
 
