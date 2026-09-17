@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for nightly demonstration workload in XMC.
+"""Validation script for simple multi-unit job workload in XMC.
 
-Concrete test case asserting that the demo workload experiment and its associated
-WorkUnits were correctly created, scheduled to the expected queue, and executed
-to completion.
+Asserts that the Simple Multi-Unit Job experiment and its associated WorkUnits
+were correctly created, scheduled to the expected queue, configured with the
+expected JobSet specification, and executed to completion.
 
 Usage:
     python3 -m tools.nightly_tests.simple_job_verify --xid=16
@@ -26,89 +26,173 @@ Usage:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
 
-common.flags.mark_flag_as_required("xid")
-
-# Domain assertion constants for the nightly demo workload test case
-EXPECTED_WORK_UNITS: int = 3
-EXPECTED_QUEUE: str = "cpu-queue"
+# Domain assertion constants for simple_job workload
 EXPECTED_TITLE_PATTERN: str = "Demo Workload"
-EXPECTED_WORKER_NAMES: tuple[str, ...] = (
-    "demo-worker-1",
-    "demo-worker-2",
-    "demo-worker-3",
-)
-TIMEOUT_SEC: int = 600
+DEFAULT_WORK_UNITS: int = 3
+DEFAULT_QUEUE: str = "cpu-queue"
+DEFAULT_TIMEOUT_SEC: int = 600
+EXPECTED_CPU_MILLICORES: int = 500
+EXPECTED_MEMORY_BYTES: int = 512 * 1024 * 1024  # 512 MiB
 
 
-def main(argv: Sequence[str]) -> None:
-    """Main verification routine."""
-    common.validate_argv(argv)
+def _assert_experiment(stub: Any, xid: str) -> Any:
+    """Asserts experiment existence and title pattern."""
+    print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
+    experiment = xmc_entities_validator.validate_experiment(
+        stub=stub,
+        xid=xid,
+        expected_title_pattern=EXPECTED_TITLE_PATTERN,
+    )
+    print(f"  [✓] Experiment Name   : {experiment.name}")
+    print(f"  [✓] Experiment Title  : {experiment.title}")
+    return experiment
 
-    xid = common.parse_xid(common.get_flag(FLAGS, "xid"))
-    ui_base_url = common.resolve_ui_base_url()
 
+def _assert_work_unit_states(
+    stub: Any,
+    xid: str,
+    expected_queue: str,
+    expected_workers: list[str],
+    expected_work_units: int,
+    timeout_sec: int,
+) -> list[dict[str, Any]]:
+    """Asserts work units completion, queues, and worker names."""
+    print(f"\n[2/3] Asserting {expected_work_units} WorkUnits targeted at '{expected_queue}'...")
+    wu_results = xmc_entities_validator.validate_work_units(
+        stub=stub,
+        xid=xid,
+        expected_count=expected_work_units,
+        expected_queue=expected_queue,
+        expected_worker_names=expected_workers,
+        timeout_sec=timeout_sec,
+    )
+    for wu_info in wu_results:
+        print(
+            f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}', "
+            f"Queue='{wu_info['queue']}', State='{wu_info['state']}'"
+        )
+    return wu_results
+
+
+def _assert_work_unit_spec(
+    raw_wu: Any,
+    worker_name: str,
+    expected_queue: str,
+) -> None:
+    """Validates Priority, Scheduling Constraints, JobSet, Resources, and Metadata for a WorkUnit."""
+    xmc_entities_validator.validate_work_unit_priority(raw_wu, expected_priority="HIGH")
+    xmc_entities_validator.validate_work_unit_metadata(
+        work_unit=raw_wu,
+        expected_tags=["60s-workload", expected_queue, worker_name],
+        expected_notes_substring="Demo workload",
+    )
+    xmc_entities_validator.validate_jobsets(
+        work_unit=raw_wu,
+        expected_jobs=[{"name": worker_name, "replicas": 1}],
+    )
+    job_spec = raw_wu.executable.jobset.jobs[0].spec
+    xmc_entities_validator.validate_resource_requests(
+        spec_or_job=job_spec,
+        expected_cpu_milli=EXPECTED_CPU_MILLICORES,
+        expected_memory_bytes=EXPECTED_MEMORY_BYTES,
+    )
+    print(
+        f"  [✓] Verified 100% Protobuf spec & resources for: {raw_wu.name} (Worker={worker_name})"
+    )
+
+
+def _assert_all_work_unit_specs(
+    stub: Any,
+    xid: str,
+    expected_work_units: int,
+    expected_queue: str,
+) -> None:
+    """Fetches raw work units and validates protobuf specifications for all units."""
+    print("\n[3/3] Validating 100% Protobuf specifications for each WorkUnit...")
+    req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
+    raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
+    for raw_wu in raw_work_units:
+        worker_name = xmc_entities_validator.extract_worker_name(raw_wu)
+        _assert_work_unit_spec(raw_wu, worker_name, expected_queue)
+
+
+def _print_simple_job_banner(
+    xid: str,
+    expected_queue: str,
+    expected_work_units: int,
+    expected_workers: list[str],
+    timeout_sec: int,
+) -> None:
+    """Prints verification header banner."""
     common.print_banner(
-        "XMC Nightly Workload Verification & Assertions",
+        "XMC Simple Multi-Unit Job Verification & Assertions",
         [
             ("Experiment XID", xid),
             ("Expected Title Pattern", f"'{EXPECTED_TITLE_PATTERN}'"),
-            ("Expected WorkUnits Count", EXPECTED_WORK_UNITS),
-            ("Expected Target Queue", EXPECTED_QUEUE),
-            ("Expected Worker Names", list(EXPECTED_WORKER_NAMES)),
-            ("Timeout", f"{TIMEOUT_SEC}s"),
+            ("Expected WorkUnits Count", expected_work_units),
+            ("Expected Target Queue", expected_queue),
+            ("Expected Worker Names", expected_workers),
+            ("Timeout", f"{timeout_sec}s"),
         ],
     )
 
+
+def _print_simple_job_summary(
+    experiment: Any,
+    wu_count: int,
+    expected_work_units: int,
+    expected_queue: str,
+    ui_base_url: str,
+    xid: str,
+) -> None:
+    """Prints verification success summary."""
+    common.print_success_summary(
+        "ALL SIMPLE JOB ASSERTIONS PASSED SUCCESSFULLY!",
+        [
+            ("Experiment", f"{experiment.name} (Title: '{experiment.title}')"),
+            ("Verified WorkUnits", f"{wu_count} / {expected_work_units}"),
+            ("Target Queue", expected_queue),
+            ("Priority Asserted", "HIGH (1)"),
+            ("CPU Requested", f"{EXPECTED_CPU_MILLICORES}m"),
+            ("Memory Requested", f"{EXPECTED_MEMORY_BYTES // (1024 * 1024)} MiB"),
+            ("Web UI Link", f"{ui_base_url}/experiments/{xid}"),
+        ],
+    )
+
+
+def main(argv: Sequence[str]) -> None:
+    """Main verification routine for simple_job workload."""
+    common.validate_argv(argv)
+    xid = common.parse_xid(getattr(FLAGS, "xid", None))
+    expected_queue = common.get_flag(FLAGS, "expected_queue", DEFAULT_QUEUE)
+    expected_work_units = common.get_flag(FLAGS, "expected_work_units", DEFAULT_WORK_UNITS)
+    timeout_sec = common.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+    ui_base_url = common.resolve_ui_base_url()
+    expected_workers = (
+        [f"demo-worker-{i}" for i in range(1, expected_work_units + 1)]
+        if expected_work_units > 1
+        else ["demo-worker"]
+    )
+    _print_simple_job_banner(
+        xid, expected_queue, expected_work_units, expected_workers, timeout_sec
+    )
     with (
         common.handle_verification_errors(),
-        common.ess_channel_context(common.get_flag(FLAGS, "endpoint")) as (stub, _),
+        common.ess_channel_context(getattr(FLAGS, "endpoint", None)) as (stub, _),
     ):
-        # 1. Assert Experiment Existence & Title
-        print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
-        experiment = xmc_entities_validator.validate_experiment(
-            stub=stub,
-            xid=xid,
-            expected_title_pattern=EXPECTED_TITLE_PATTERN,
+        experiment = _assert_experiment(stub, xid)
+        wu_results = _assert_work_unit_states(
+            stub, xid, expected_queue, expected_workers, expected_work_units, timeout_sec
         )
-        print(f"  [✓] Experiment Name   : {experiment.name}")
-        print(f"  [✓] Experiment Title  : {experiment.title}")
-        print(f"  [✓] Experiment Creator: {getattr(experiment, 'creator', 'N/A')}")
-
-        # 2. Assert WorkUnits & States
-        print(
-            f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnits targeted at '{EXPECTED_QUEUE}'..."
-        )
-        wu_results = xmc_entities_validator.validate_work_units(
-            stub=stub,
-            xid=xid,
-            expected_count=EXPECTED_WORK_UNITS,
-            expected_queue=EXPECTED_QUEUE,
-            expected_worker_names=EXPECTED_WORKER_NAMES,
-            timeout_sec=TIMEOUT_SEC,
-        )
-
-        for wu_info in wu_results:
-            print(
-                f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}', "
-                f"Queue='{wu_info['queue']}', State='{wu_info['state']}'"
-            )
-
-        # 3. Print Final Report
-        print("\n[3/3] Validation Summary:")
-        common.print_success_summary(
-            "ALL NIGHTLY WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!",
-            [
-                ("Experiment", f"{experiment.name} (Title: '{experiment.title}')"),
-                ("Total Verified WorkUnits", f"{len(wu_results)} / {EXPECTED_WORK_UNITS}"),
-                ("Target Queue", EXPECTED_QUEUE),
-                ("Expected Worker Names", ", ".join(EXPECTED_WORKER_NAMES)),
-                ("Web UI Link", f"{ui_base_url}/experiments/{xid}"),
-            ],
+        _assert_all_work_unit_specs(stub, xid, expected_work_units, expected_queue)
+        _print_simple_job_summary(
+            experiment, len(wu_results), expected_work_units, expected_queue, ui_base_url, xid
         )
 
 
