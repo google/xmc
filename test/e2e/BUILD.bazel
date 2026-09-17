@@ -20,6 +20,7 @@ py_library(
     srcs = ["__init__.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//test/e2e/examples:examples_e2e_pkg",
         "//test/e2e/lib:orchestration_lib",
     ],
 )
