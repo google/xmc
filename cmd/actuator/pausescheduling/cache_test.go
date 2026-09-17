@@ -54,7 +54,7 @@ func TestCache_UpdateAndAntiThrashing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache.Update(tt.isPaused, tt.updatedAt)
+			cache.Update(State{IsPaused: tt.isPaused, UpdatedAt: tt.updatedAt})
 
 			if diff := cmp.Diff(tt.want, cache.State()); diff != "" {
 				t.Errorf("State() mismatch (-want +got):\n%s", diff)
@@ -73,7 +73,7 @@ func TestCache_ConcurrentAccess(t *testing.T) {
 		offset := time.Duration(i) * time.Millisecond
 		go func(ts time.Time, paused bool) {
 			defer wg.Done()
-			cache.Update(paused, ts)
+			cache.Update(State{IsPaused: paused, UpdatedAt: ts})
 		}(baseTime.Add(offset), i%2 == 0)
 
 		go func() {
@@ -87,7 +87,7 @@ func TestCache_ConcurrentAccess(t *testing.T) {
 func TestCache_ZeroTimestampHandling(t *testing.T) {
 	t.Run("zero_timestamp_keeps_initial_zero_timestamp", func(t *testing.T) {
 		cache := NewCache()
-		cache.Update(true, time.Time{})
+		cache.Update(State{IsPaused: true})
 		got := cache.State()
 		if !got.IsPaused {
 			t.Errorf("IsPaused = false, want true")
@@ -100,8 +100,8 @@ func TestCache_ZeroTimestampHandling(t *testing.T) {
 	t.Run("preserves_existing_non_zero_timestamp", func(t *testing.T) {
 		cache := NewCache()
 		t1 := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
-		cache.Update(false, t1)
-		cache.Update(true, time.Time{})
+		cache.Update(State{IsPaused: false, UpdatedAt: t1})
+		cache.Update(State{IsPaused: true})
 
 		got := cache.State()
 		if !got.IsPaused {

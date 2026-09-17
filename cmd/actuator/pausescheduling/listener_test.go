@@ -94,7 +94,6 @@ func newTestListener(t *testing.T, sub StreamSubscriber, repo pausestate.Reposit
 		Cache:                c,
 		Subscriber:           sub,
 		PauseStateRepository: repo,
-		Enabled:              true,
 		ReconnectBackoff:     15 * time.Millisecond,
 	})
 	if err != nil {
@@ -113,11 +112,10 @@ func TestNewListener_Validation(t *testing.T) {
 		params  Params
 		wantErr string
 	}{
-		{name: "disabled_allows_nil_deps", params: Params{Enabled: false}},
-		{name: "missing_cache", params: Params{Enabled: true, Subscriber: sub, PauseStateRepository: repo}, wantErr: "cache cannot be nil"},
-		{name: "missing_subscriber", params: Params{Enabled: true, Cache: cache, PauseStateRepository: repo}, wantErr: "subscriber cannot be nil"},
-		{name: "missing_repo", params: Params{Enabled: true, Cache: cache, Subscriber: sub}, wantErr: "pause state repository cannot be nil"},
-		{name: "all_valid", params: Params{Enabled: true, Cache: cache, Subscriber: sub, PauseStateRepository: repo}},
+		{name: "missing_cache", params: Params{Subscriber: sub, PauseStateRepository: repo}, wantErr: "cache cannot be nil"},
+		{name: "missing_subscriber", params: Params{Cache: cache, PauseStateRepository: repo}, wantErr: "subscriber cannot be nil"},
+		{name: "missing_repo", params: Params{Cache: cache, Subscriber: sub}, wantErr: "pause state repository cannot be nil"},
+		{name: "all_valid", params: Params{Cache: cache, Subscriber: sub, PauseStateRepository: repo}},
 	}
 
 	for _, tt := range tests {
@@ -136,31 +134,6 @@ func TestNewListener_Validation(t *testing.T) {
 				t.Fatalf("New() returned nil listener")
 			}
 		})
-	}
-}
-
-func TestListener_Disabled_NoOp(t *testing.T) {
-	listener, err := New(Params{Enabled: false})
-	if err != nil {
-		t.Fatalf("New() unexpected error: %v", err)
-	}
-
-	ctx := context.Background()
-	if err := listener.Init(ctx); err != nil {
-		t.Errorf("Init() on disabled listener returned error: %v, want nil", err)
-	}
-
-	// StartListening should return immediately without blocking
-	done := make(chan struct{})
-	go func() {
-		listener.StartListening(ctx)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("StartListening() on disabled listener did not return immediately")
 	}
 }
 

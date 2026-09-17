@@ -41,7 +41,6 @@ type Params struct {
 	Cache                Cache
 	Subscriber           StreamSubscriber
 	PauseStateRepository pausestate.Repository
-	Enabled              bool
 	ReconnectBackoff     time.Duration
 }
 
@@ -50,7 +49,6 @@ type Listener struct {
 	cache            Cache
 	subscriber       StreamSubscriber
 	pauseStateRepo   pausestate.Repository
-	enabled          bool
 	reconnectBackoff time.Duration
 	mu               sync.RWMutex
 	startID          string
@@ -58,9 +56,6 @@ type Listener struct {
 
 // New creates a new Listener instance.
 func New(p Params) (*Listener, error) {
-	if !p.Enabled {
-		return &Listener{enabled: false}, nil
-	}
 	if p.Cache == nil {
 		return nil, fmt.Errorf("cache cannot be nil")
 	}
@@ -80,7 +75,6 @@ func New(p Params) (*Listener, error) {
 		cache:            p.Cache,
 		subscriber:       p.Subscriber,
 		pauseStateRepo:   p.PauseStateRepository,
-		enabled:          true,
 		reconnectBackoff: backoff,
 		startID:          "0",
 	}, nil
@@ -88,10 +82,6 @@ func New(p Params) (*Listener, error) {
 
 // Init performs the synchronous startup phase: queries Redis stream offset and reads Spanner cold-start state.
 func (l *Listener) Init(ctx context.Context) error {
-	if !l.enabled {
-		return nil
-	}
-
 	startID, err := l.subscriber.LatestOffset(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to query stream offset on startup: %w", err)
@@ -106,7 +96,10 @@ func (l *Listener) Init(ctx context.Context) error {
 		return fmt.Errorf("failed cold-start read of pause scheduling state: %w", err)
 	}
 
-	l.cache.Update(state.SchedulingPaused, state.UpdatedAt)
+	l.cache.Update(State{
+		IsPaused:  state.SchedulingPaused,
+		UpdatedAt: state.UpdatedAt,
+	})
 	logging.Info(ctx, "Seeded Actuator pause scheduling cache on startup",
 		"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt, "start_id", startID)
 	return nil
@@ -114,10 +107,6 @@ func (l *Listener) Init(ctx context.Context) error {
 
 // StartListening runs the background listener loop, handling subscription disconnections and resyncing on reconnect.
 func (l *Listener) StartListening(ctx context.Context) {
-	if !l.enabled {
-		return
-	}
-
 	for {
 		if ctx.Err() != nil {
 			return
@@ -162,7 +151,10 @@ func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
 		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update", "error", err)
 		return
 	}
-	l.cache.Update(state.SchedulingPaused, state.UpdatedAt)
+	l.cache.Update(State{
+		IsPaused:  state.SchedulingPaused,
+		UpdatedAt: state.UpdatedAt,
+	})
 	logging.Info(ctx, "Updated local pause state from broadcast notification",
 		"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt)
 }
@@ -183,7 +175,10 @@ func (l *Listener) resyncOnReconnect(ctx context.Context) error {
 		return err
 	}
 
-	l.cache.Update(state.SchedulingPaused, state.UpdatedAt)
+	l.cache.Update(State{
+		IsPaused:  state.SchedulingPaused,
+		UpdatedAt: state.UpdatedAt,
+	})
 	l.setStartID(latestOffset)
 	logging.Info(ctx, "Resynced Actuator pause cache on Redis reconnect",
 		"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt, "start_id", latestOffset)

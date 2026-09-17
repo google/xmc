@@ -257,7 +257,6 @@ func initPauseScheduling(ctx context.Context, cfg *Config, cache pausescheduling
 		Cache:                cache,
 		Subscriber:           broadcast.NewFakeClient(constants.RedisPauseStream),
 		PauseStateRepository: pausestate.NewFake(),
-		Enabled:              true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pause listener: %w", err)

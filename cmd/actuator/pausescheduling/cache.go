@@ -29,8 +29,8 @@ type State struct {
 type Cache interface {
 	// State returns an atomic point-in-time view of the scheduling pause state.
 	State() State
-	// Update atomically updates is_paused and updated_at, preventing backwards state thrashing.
-	Update(isPaused bool, updatedAt time.Time)
+	// Update atomically updates the cache, preventing backwards state thrashing.
+	Update(newState State)
 }
 
 var _ Cache = (*localCache)(nil)
@@ -56,18 +56,18 @@ func (c *localCache) State() State {
 	}
 }
 
-// Update atomically updates is_paused and updated_at, preventing backwards state thrashing.
-func (c *localCache) Update(isPaused bool, updatedAt time.Time) {
+// Update atomically updates the cache, preventing backwards state thrashing.
+func (c *localCache) Update(newState State) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Prevent state thrashing from older/stale updates
-	if !updatedAt.IsZero() && !c.updatedAt.IsZero() && updatedAt.Before(c.updatedAt) {
+	if !newState.UpdatedAt.IsZero() && !c.updatedAt.IsZero() && newState.UpdatedAt.Before(c.updatedAt) {
 		return
 	}
 
-	c.isPaused = isPaused
-	if !updatedAt.IsZero() {
-		c.updatedAt = updatedAt
+	c.isPaused = newState.IsPaused
+	if !newState.UpdatedAt.IsZero() {
+		c.updatedAt = newState.UpdatedAt
 	}
 }
