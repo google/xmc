@@ -24,12 +24,11 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from test.e2e.examples.example_runner import (
-    ADMIN_USER,
     ExampleLaunchResult,
     execute_example_launch,
     is_port_open,
     parse_launch_output,
-    port_forward_grpc_service,
+    resolve_grpc_endpoint,
 )
 from test.e2e.lib.dev_token import fetch_dex_oidc_token
 
@@ -76,19 +75,90 @@ class TestExampleRunner(unittest.TestCase):
         token = fetch_dex_oidc_token(email="user@test.local")
         self.assertEqual(token, "mock.dex.rs256.jwt")
 
-    def test_parse_launch_output_success(self) -> None:
+    def test_parse_launch_output_chart_artifact_job(self) -> None:
         sample_output = """
-Creating validation experiment with a Chart artifact on a WorkUnit
-Created Work Unit successfully: experiments/42/workUnits/7/operations/op-1
-Created Chart Artifact successfully: experiments/42/workUnits/7/artifacts/101
-Experiment Dashboard URL: https://localhost:8080/experiments/42
+[1/4] Created Experiment successfully: experiments/234911125 (XID: 234911125)
+[2/4] Created WorkUnit successfully: experiments/234911125/workUnits/1 (WID: 1)
+--> Publishing Dashboard 'Chart Artifact Experiment 234911125' to HTTP REST https://xmcv2.example.com/v1/dashboards...
+--> Created Dashboard successfully: dashboards/chart_artifact_x234911125_w1 (HTTP 200)
+[4/4] Attaching artifacts to the WorkUnit...
+--> Created Chart artifact: experiments/234911125/workUnits/1/artifacts/1
+--> Created Dashboard link artifact: experiments/234911125/workUnits/1/artifacts/2
 """
         result = parse_launch_output(sample_output)
-        self.assertEqual(result.xid, "42")
-        self.assertEqual(result.wid, "7")
-        self.assertEqual(result.artifact_name, "experiments/42/workUnits/7/artifacts/101")
-        self.assertEqual(result.experiment_name, "experiments/42")
-        self.assertEqual(result.canonical_work_unit_name, "experiments/42/workUnits/7")
+        self.assertEqual(result.xid, "234911125")
+        self.assertEqual(result.wid, "1")
+        self.assertEqual(result.artifact_name, "experiments/234911125/workUnits/1/artifacts/1")
+        self.assertEqual(result.experiment_name, "experiments/234911125")
+        self.assertEqual(result.canonical_work_unit_name, "experiments/234911125/workUnits/1")
+
+    def test_parse_launch_output_metrics_dashboard_job(self) -> None:
+        sample_output = """
+[1/3] Created Experiment: experiments/45678 (XID: 45678)
+[2/3] Created WorkUnit: experiments/45678/workUnits/2 (WID: 2)
+[3/3] Creating Charts and Dashboard...
+--> Created Dashboard successfully: dashboards/exp_45678_overview
+==================================================
+  🎉 Launch completed
+  Experiment XID : 45678
+  WorkUnit ID    : 2
+  Charts populate as the worker streams metrics.
+==================================================
+"""
+        result = parse_launch_output(sample_output)
+        self.assertEqual(result.xid, "45678")
+        self.assertEqual(result.wid, "2")
+        self.assertIsNone(result.artifact_name)
+        self.assertEqual(result.experiment_name, "experiments/45678")
+        self.assertEqual(result.canonical_work_unit_name, "experiments/45678/workUnits/2")
+
+    def test_parse_launch_output_managed_xprof_artifact_job(self) -> None:
+        sample_output = """
+[1/3] Created Experiment: experiments/98765 (XID: 98765)
+✅ Created Work Unit: experiments/98765/workUnits/3
+📎 Attached ManagedXprof artifact: experiments/98765/workUnits/3/artifacts/12
+🎉 Success! View Experiment Dashboard:
+👉 http://localhost:8080/experiments/98765
+"""
+        result = parse_launch_output(sample_output)
+        self.assertEqual(result.xid, "98765")
+        self.assertEqual(result.wid, "3")
+        self.assertEqual(result.artifact_name, "experiments/98765/workUnits/3/artifacts/12")
+        self.assertEqual(result.experiment_name, "experiments/98765")
+        self.assertEqual(result.canonical_work_unit_name, "experiments/98765/workUnits/3")
+
+    def test_parse_launch_output_simple_job(self) -> None:
+        sample_output = """
+  [+] WorkUnit #0 created: ID=1 (Worker=simple-job-0)
+  [+] WorkUnit #1 created: ID=2 (Worker=simple-job-1)
+
+✅ All WorkUnits created successfully!
+   Experiment XID: 54321
+   WorkUnit IDs  : 1, 2
+
+📊 Monitor in XMC Web UI:
+   http://localhost:8080/experiments/54321
+=================================================================
+"""
+        result = parse_launch_output(sample_output)
+        self.assertEqual(result.xid, "54321")
+        self.assertEqual(result.wid, "1")
+        self.assertIsNone(result.artifact_name)
+        self.assertEqual(result.experiment_name, "experiments/54321")
+        self.assertEqual(result.canonical_work_unit_name, "experiments/54321/workUnits/1")
+
+    def test_parse_launch_output_clickhouse_metrics_job(self) -> None:
+        sample_output = """
+[1/3] Created Experiment successfully: experiments/112233 (XID: 112233)
+[2/3] Created WorkUnit successfully: experiments/112233/workUnits/4 (WID: 4)
+--> Created Dashboard successfully: dashboards/exp_112233_training_overview (HTTP 200)
+"""
+        result = parse_launch_output(sample_output)
+        self.assertEqual(result.xid, "112233")
+        self.assertEqual(result.wid, "4")
+        self.assertIsNone(result.artifact_name)
+        self.assertEqual(result.experiment_name, "experiments/112233")
+        self.assertEqual(result.canonical_work_unit_name, "experiments/112233/workUnits/4")
 
     def test_parse_launch_output_fails_on_empty(self) -> None:
         with self.assertRaises(RuntimeError):
@@ -98,11 +168,17 @@ Experiment Dashboard URL: https://localhost:8080/experiments/42
         with self.assertRaises(FileNotFoundError):
             execute_example_launch("examples/non_existent_dir/launch.py")
 
-    def test_port_forward_grpc_service_existing_endpoint(self) -> None:
-        existing_ep = "127.0.0.1:12345"
-        with patch.dict(os.environ, {"XMANAGER_ENDPOINT": existing_ep}):
-            with port_forward_grpc_service() as ep:
-                self.assertEqual(ep, existing_ep)
+    def test_resolve_grpc_endpoint_configured_env(self) -> None:
+        configured_ep = "127.0.0.1:12345"
+        with patch.dict(os.environ, {"XMANAGER_ENDPOINT": configured_ep}):
+            with resolve_grpc_endpoint() as ep:
+                self.assertEqual(ep, configured_ep)
+
+    def test_resolve_grpc_endpoint_open_port(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("test.e2e.examples.example_runner.is_port_open", return_value=True):
+                with resolve_grpc_endpoint(remote_port=50051) as ep:
+                    self.assertEqual(ep, "127.0.0.1:50051")
 
     @patch("subprocess.run")
     @patch("pathlib.Path.exists", return_value=True)
@@ -123,11 +199,11 @@ Experiment Dashboard URL: https://localhost:8080/experiments/42
         mock_proc.stderr = ""
         mock_subprocess_run.return_value = mock_proc
 
-        with patch("test.e2e.examples.example_runner.port_forward_grpc_service") as mock_pf:
-            mock_pf.return_value.__enter__.return_value = "127.0.0.1:50051"
+        with patch("test.e2e.examples.example_runner.resolve_grpc_endpoint") as mock_resolve:
+            mock_resolve.return_value.__enter__.return_value = "127.0.0.1:50051"
             res = execute_example_launch(
                 launch_script="examples/chart_artifact_job/launch.py",
-                user_email=ADMIN_USER,
+                user_email="admin@xmc.local",
             )
             self.assertEqual(res.xid, "100")
             self.assertEqual(res.wid, "2")
@@ -150,11 +226,10 @@ Experiment Dashboard URL: https://localhost:8080/experiments/42
         mock_subprocess_run.return_value = mock_proc
 
         with patch.dict(os.environ, {"XMC_AUTH_TOKEN": "pre-existing-token"}):
-            with patch("test.e2e.examples.example_runner.port_forward_grpc_service") as mock_pf:
-                mock_pf.return_value.__enter__.return_value = "127.0.0.1:50051"
+            with patch("test.e2e.examples.example_runner.resolve_grpc_endpoint") as mock_resolve:
+                mock_resolve.return_value.__enter__.return_value = "127.0.0.1:50051"
                 res = execute_example_launch(
                     launch_script="examples/chart_artifact_job/launch.py",
-                    user_email=ADMIN_USER,
                 )
                 self.assertEqual(res.xid, "100")
                 mock_gen_token.assert_not_called()
@@ -177,12 +252,11 @@ Experiment Dashboard URL: https://localhost:8080/experiments/42
         mock_proc.stderr = "Traceback (most recent call last): SomeError"
         mock_subprocess_run.return_value = mock_proc
 
-        with patch("test.e2e.examples.example_runner.port_forward_grpc_service") as mock_pf:
-            mock_pf.return_value.__enter__.return_value = "127.0.0.1:50051"
+        with patch("test.e2e.examples.example_runner.resolve_grpc_endpoint") as mock_resolve:
+            mock_resolve.return_value.__enter__.return_value = "127.0.0.1:50051"
             with self.assertRaises(RuntimeError) as ctx:
                 execute_example_launch(
                     launch_script="examples/chart_artifact_job/launch.py",
-                    user_email=ADMIN_USER,
                 )
             self.assertIn("exited with code 1", str(ctx.exception))
 
@@ -203,12 +277,11 @@ Experiment Dashboard URL: https://localhost:8080/experiments/42
             stderr="partial stderr stream\n",
         )
 
-        with patch("test.e2e.examples.example_runner.port_forward_grpc_service") as mock_pf:
-            mock_pf.return_value.__enter__.return_value = "127.0.0.1:50051"
+        with patch("test.e2e.examples.example_runner.resolve_grpc_endpoint") as mock_resolve:
+            mock_resolve.return_value.__enter__.return_value = "127.0.0.1:50051"
             with self.assertRaises(RuntimeError) as ctx:
                 execute_example_launch(
                     launch_script="examples/chart_artifact_job/launch.py",
-                    user_email=ADMIN_USER,
                     timeout_sec=15.0,
                 )
             self.assertIn("Example launch timed out after 15.0s:", str(ctx.exception))

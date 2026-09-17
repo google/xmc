@@ -32,18 +32,11 @@ import sys
 from collections.abc import Generator
 from pathlib import Path
 
-from test.e2e.lib.config import (
-    DEFAULT_ADMIN_PASSWORD,
-    DEFAULT_ADMIN_USER,
-)
 from test.e2e.lib.dev_token import (
     fetch_dex_oidc_token,
 )
 
 logger = logging.getLogger(__name__)
-
-ADMIN_USER = DEFAULT_ADMIN_USER
-ADMIN_PASSWORD = DEFAULT_ADMIN_PASSWORD
 
 
 @dataclasses.dataclass(frozen=True)
@@ -78,13 +71,14 @@ def is_port_open(host: str, port: int) -> bool:
 
 
 @contextlib.contextmanager
-def port_forward_grpc_service(
+def resolve_grpc_endpoint(
     remote_port: int = 50051,
 ) -> Generator[str, None, None]:
-    """Provides a reachable host:port gRPC endpoint for ESS.
+    """Resolves a reachable host:port gRPC endpoint for ESS.
 
-    Reuses existing open host port 50051 (e.g. mapped via KinD NodePort/Gateway)
-    without spawning ephemeral port-forward subprocesses.
+    Reuses configured XMANAGER_ENDPOINT or existing open host port 50051
+    (e.g. mapped via KinD NodePort/Gateway) without spawning ephemeral
+    port-forward subprocesses.
     """
     env_endpoint = os.getenv("XMANAGER_ENDPOINT")
     if env_endpoint:
@@ -106,14 +100,15 @@ def port_forward_grpc_service(
 def parse_launch_output(output_str: str) -> ExampleLaunchResult:
     """Parses standard XMC launch stdout to extract XID, WID, and Artifact name."""
     art_match = re.search(
-        r"(?:Created (?:[A-Za-z0-9_-]+ )?Artifact successfully:\s*|--> Created (?:[A-Za-z0-9_-]+ )?artifact:\s*)(\S+)",
+        r"(?:Created (?:[A-Za-z0-9_-]+ )?Artifact(?: successfully)?:\s*|--> Created (?:[A-Za-z0-9_-]+ )?artifact:\s*|📎 Attached (?:[A-Za-z0-9_-]+ )?artifact:\s*)(\S+)",
         output_str,
         re.IGNORECASE,
     )
     artifact_name = art_match.group(1) if art_match else None
 
+    # Try extracting XID and WID from canonical resource name path (experiments/<xid>/workUnits/<wid>)
     wu_match = re.search(
-        r"Created Work\s*Unit successfully:\s*experiments/(\d+)/workUnits/(\d+)",
+        r"experiments/(\d+)/workUnits/(\d+)",
         output_str,
         re.IGNORECASE,
     )
@@ -121,9 +116,21 @@ def parse_launch_output(output_str: str) -> ExampleLaunchResult:
         xid = wu_match.group(1)
         wid = wu_match.group(2)
     else:
-        exp_match = re.search(r"experiments/(\d+)", output_str)
+        # Fall back to standalone XID extraction (e.g. simple_job or dashboard jobs)
+        exp_match = re.search(
+            r"(?:Experiment XID\s*:\s*|XID:\s*|experiments/)(\d+)",
+            output_str,
+            re.IGNORECASE,
+        )
         xid = exp_match.group(1) if exp_match else None
-        wid = None
+
+        # Fall back to standalone WID extraction (e.g. simple_job 'WorkUnit IDs  : 1, 2')
+        wid_match = re.search(
+            r"(?:WorkUnit IDs?\s*:\s*|WorkUnit #\d+ created:\s*ID=|WID:\s*|\(WID:\s*)(\d+)",
+            output_str,
+            re.IGNORECASE,
+        )
+        wid = wid_match.group(1) if wid_match else None
 
     if not xid:
         raise RuntimeError(
@@ -142,7 +149,7 @@ def execute_example_launch(
     launch_script: str | Path,
     args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
-    user_email: str = ADMIN_USER,
+    user_email: str | None = None,
     timeout_sec: float = 60.0,
 ) -> ExampleLaunchResult:
     """Executes a canonical example launch script via subprocess with local gRPC support.
@@ -152,7 +159,7 @@ def execute_example_launch(
           (e.g. 'examples/chart_artifact_job/launch.py').
         args: Optional CLI arguments to pass to the script.
         env_overrides: Optional environment variables to override.
-        user_email: Email used for Dex OIDC authentication.
+        user_email: Email used for Dex OIDC authentication (defaults to $XMC_USER_EMAIL or admin persona).
         timeout_sec: Maximum execution timeout in seconds.
 
     Returns:
@@ -168,13 +175,18 @@ def execute_example_launch(
 
     logger.info("=== Executing Example Launch Script: %s ===", script_path)
 
-    with port_forward_grpc_service() as active_grpc_endpoint:
+    with resolve_grpc_endpoint() as active_grpc_endpoint:
+        effective_user_email = user_email or os.getenv("XMC_USER_EMAIL", "admin@xmc.local")
+        auth_token = os.getenv("XMC_AUTH_TOKEN")
+        if not auth_token:
+            auth_token = fetch_dex_oidc_token(email=effective_user_email)
+
         proc_env = {
             **os.environ,
             "XMANAGER_ENDPOINT": active_grpc_endpoint,
             "XMANAGER_INSECURE_GRPC": "true",
-            "XMC_USER_EMAIL": user_email,
-            "XMC_AUTH_TOKEN": os.getenv("XMC_AUTH_TOKEN") or fetch_dex_oidc_token(email=user_email),
+            "XMC_USER_EMAIL": effective_user_email,
+            "XMC_AUTH_TOKEN": auth_token,
             "XMC_DOMAIN": os.getenv("XMC_DOMAIN", "localhost:8080"),
             "IAP_CLIENT_ID": os.getenv("IAP_CLIENT_ID", "test-client-id"),
             **(env_overrides or {}),
