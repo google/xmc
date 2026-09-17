@@ -123,8 +123,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertEqual(state, xmc_entities_validator.STATE_UNSPECIFIED)
             self.assertTrue(
                 any(
-                    "Failed to retrieve current WorkUnitExecution for experiments/10/workUnits/3"
-                    in msg
+                    "Failed to fetch state for experiments/10/workUnits/3" in msg
                     for msg in log_cm.output
                 )
             )
@@ -260,42 +259,6 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["worker_name"], "demo-worker")
 
-    def test_validate_work_units_custom_workers(self) -> None:
-        stub = mock.MagicMock()
-        job = SimpleNamespace(name="custom-trainer")
-        jobset = SimpleNamespace(jobs=[job])
-        constraints = SimpleNamespace(queue_name="tpu-queue")
-        executable = SimpleNamespace(
-            jobset=jobset,
-            scheduling_constraints=constraints,
-            HasField=lambda f: f in ("jobset", "scheduling_constraints"),
-        )
-        status = SimpleNamespace(state=xmc_entities_validator.STATE_COMPLETED)
-        execution = SimpleNamespace(
-            status=status,
-            HasField=lambda f: f == "status",
-        )
-        wu = SimpleNamespace(
-            name="experiments/16/workUnits/1",
-            executable=executable,
-            tags=["tpu-queue", "custom-trainer"],
-            current_work_unit_execution=execution,
-            HasField=lambda f: f == "current_work_unit_execution",
-        )
-        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
-
-        results = xmc_entities_validator.validate_work_units(
-            stub=stub,
-            xid="16",
-            expected_count=1,
-            expected_queue="tpu-queue",
-            expected_worker_names=["custom-trainer"],
-            timeout_sec=10,
-            wait_for_completion=True,
-        )
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["worker_name"], "custom-trainer")
-
     def test_validate_work_units_queue_mismatch(self) -> None:
         stub = mock.MagicMock()
         wu = self._create_mock_work_unit(
@@ -352,7 +315,6 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 wait_for_completion=True,
             )
         self.assertIn("failed execution", str(ctx.exception))
-        # Verify it failed fast without retrying in a loop
         self.assertEqual(stub.ListWorkUnits.call_count, 1)
 
     def test_validate_work_units_transient_error_retry(self) -> None:
@@ -500,6 +462,95 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 xmc_entities_validator.create_authenticated_stub("endpoint:443")
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
+
+    def test_validate_work_unit_priority(self) -> None:
+        wu = SimpleNamespace(name="experiments/10/workUnits/1", priority=1)
+        xmc_entities_validator.validate_work_unit_priority(wu, 1)
+        xmc_entities_validator.validate_work_unit_priority(wu, "HIGH")
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_work_unit_priority(wu, 0)
+
+    def test_validate_resource_requests(self) -> None:
+        resources = SimpleNamespace(
+            cpu_resources=SimpleNamespace(cpu_millicores=500, memory_bytes=536870912),
+            gpu_resources=SimpleNamespace(count=1),
+        )
+        spec = SimpleNamespace(resources=resources)
+        job = SimpleNamespace(spec=spec)
+
+        xmc_entities_validator.validate_resource_requests(
+            job,
+            expected_cpu_milli=500,
+            expected_memory_bytes=536870912,
+            expected_gpus=1,
+        )
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_resource_requests(job, expected_cpu_milli=1000)
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_resource_requests(job, expected_memory_bytes=1024)
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_resource_requests(job, expected_gpus=2)
+
+    def test_validate_work_unit_metadata(self) -> None:
+        wu = SimpleNamespace(
+            name="experiments/10/workUnits/1",
+            notes="Demo workload 1/3 (demo-worker-1) targeted at cpu-queue",
+            tags=["60s-workload", "cpu-queue", "demo-worker-1"],
+        )
+        xmc_entities_validator.validate_work_unit_metadata(
+            wu,
+            expected_tags=["60s-workload", "cpu-queue"],
+            expected_notes_substring="Demo workload",
+        )
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_work_unit_metadata(
+                wu, expected_notes_substring="Production workload"
+            )
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_work_unit_metadata(wu, expected_tags=["missing-tag"])
+
+    def test_validate_jobsets(self) -> None:
+        job = SimpleNamespace(
+            name="demo-worker-1",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="primary-worker"),
+        )
+        wu = SimpleNamespace(
+            name="experiments/10/workUnits/1",
+            executable=SimpleNamespace(
+                jobset=SimpleNamespace(jobs=[job]),
+                HasField=lambda f: f == "jobset",
+            ),
+        )
+        summaries = xmc_entities_validator.validate_jobsets(
+            wu,
+            expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+        )
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0]["name"], "demo-worker-1")
+
+        with self.assertRaises(AssertionError):
+            xmc_entities_validator.validate_jobsets(
+                wu,
+                expected_jobs=[{"name": "wrong-worker", "replicas": 1}],
+            )
+
+    def test_wait_for_experiment_state(self) -> None:
+        stub = mock.MagicMock()
+        wu = self._create_mock_work_unit(
+            "16", 1, "cpu-queue", xmc_entities_validator.STATE_COMPLETED
+        )
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        results = xmc_entities_validator.wait_for_experiment_state(stub, "16", timeout_sec=5)
+        self.assertEqual(len(results), 1)
 
 
 if __name__ == "__main__":

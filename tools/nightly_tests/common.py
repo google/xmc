@@ -39,6 +39,22 @@ flags.DEFINE_string(
     "Experiment XID to validate (required for experiment tests)",
 )
 flags.DEFINE_string("endpoint", None, "ESS gRPC endpoint (host:port)")
+flags.DEFINE_string(
+    "expected_queue",
+    os.environ.get("QUEUE_NAME", "cpu-queue"),
+    "Expected ClusterQueue name",
+)
+flags.DEFINE_integer("timeout_sec", 600, "Timeout in seconds")
+flags.DEFINE_integer(
+    "expected_work_units",
+    1,
+    "Expected number of WorkUnits",
+)
+flags.DEFINE_string(
+    "expected_title_pattern",
+    None,
+    "Expected substring in title",
+)
 
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
@@ -64,6 +80,10 @@ def parse_xid(raw_xid: str | None, required: bool = True) -> str:
     xid = str(raw_xid).strip()
     if xid.startswith("experiments/"):
         xid = xid.split("/")[-1]
+    elif xid.startswith("dashboard:"):
+        xid = xid.split("dashboard:", 1)[1].strip()
+    elif xid.startswith("dashboards/"):
+        xid = xid.split("dashboards/", 1)[1].strip()
     return xid
 
 

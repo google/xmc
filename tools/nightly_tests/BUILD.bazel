@@ -23,6 +23,7 @@ exports_files([
     "common_test.py",
     "simple_job_verify.py",
     "xmc_entities_validator.py",
+    "xmc_entities_validator_test.py",
 ])
 
 py_library(
