@@ -117,6 +117,10 @@ def _assert_all_work_unit_specs(
     print("\n[3/3] Validating 100% Protobuf specifications for each WorkUnit...")
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
     raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
+    if len(raw_work_units) != expected_work_units:
+        raise AssertionError(
+            f"Expected {expected_work_units} raw WorkUnits, but found {len(raw_work_units)}."
+        )
     for raw_wu in raw_work_units:
         worker_name = xmc_entities_validator.extract_worker_name(raw_wu)
         _assert_work_unit_spec(raw_wu, worker_name, expected_queue)
