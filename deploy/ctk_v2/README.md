@@ -39,7 +39,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
 ### Feature Switches
-*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and Ingestion Services).
+*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the optional metrics pipeline microservice (Ingestion Gateway).
 *   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service microservice for custom chart and dashboard visualizations.
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
