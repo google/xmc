@@ -174,6 +174,9 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	if err != nil {
 		return nil, err
 	}
+	if pauseListener != nil {
+		cleanups = append(cleanups, pauseListener.Close)
+	}
 
 	redisConsumer.SetTaskHandler(handler.HandleWorkUnitRedisTask)
 	workerID := actuatorWorkerID(ctx)
@@ -252,16 +255,27 @@ func initPauseScheduling(ctx context.Context, cfg *Config, cache pausescheduling
 		return nil, nil
 	}
 
-	// TODO: Replace with concrete Spanner repository and Redis broadcast consumer once available.
+	if cfg.RedisConfig.RedisAddr == "" {
+		return nil, fmt.Errorf("redis address must be provided for pause scheduling listener")
+	}
+
+	redisClient := redisclient.NewClient(redisclient.Config{
+		Addr: cfg.RedisConfig.RedisAddr,
+	})
+	consumer := broadcast.NewConsumer(redisClient, constants.RedisPauseStream)
+
+	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
 	listener, err := pausescheduling.New(pausescheduling.Params{
 		Cache:                cache,
-		Subscriber:           broadcast.NewFakeClient(constants.RedisPauseStream),
+		Subscriber:           consumer,
 		PauseStateRepository: pausestate.NewFake(),
 	})
 	if err != nil {
+		_ = consumer.Close()
 		return nil, fmt.Errorf("failed to create pause listener: %w", err)
 	}
 	if err := listener.Init(ctx); err != nil {
+		_ = listener.Close()
 		return nil, fmt.Errorf("failed to initialize pause scheduling listener: %w", err)
 	}
 	go listener.StartListening(ctx)
