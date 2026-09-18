@@ -271,12 +271,10 @@ function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
     associatedPr,
     triggerOutcome:
       needsContext?.['run-and-verify-demo-workload']?.result ||
-      needsContext?.['trigger-demo-workload']?.result ||
       needsContext?.['run-and-verify-examples']?.result ||
       'unknown',
     verifyOutcome:
       needsContext?.['run-and-verify-demo-workload']?.result ||
-      needsContext?.['validate-workload-results']?.result ||
       needsContext?.['aggregate-results']?.result ||
       'unknown',
     activeOwners,
