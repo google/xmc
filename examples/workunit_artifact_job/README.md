@@ -1,0 +1,67 @@
+# WorkUnit Artifact Example
+
+This example demonstrates how to interact with the XManager on Cloud (XMC) **Experiment State Service (ESS)** to manage WorkUnit artifacts across all lifecycle phases end-to-end:
+
+1. Connect to the Experiment State Service via the XMC CLI (`xm_cloud.create_experiment`).
+2. Create an Experiment (`experiments/{xid}`).
+3. Create a WorkUnit (`experiments/{xid}/workUnits/{wid}`).
+4. Construct and attach artifacts across all three lifecycle phases (`INPUT`, `EXECUTION`, `OUTPUT`) in deterministic display priority order (`priority=1..3`):
+   - **`build_input_artifact`** (`CodeSourceArtifact` in the `INPUT` lifecycle phase, `priority=1`)
+   - **`build_executable_artifact`** (`TextArtifact` in the `EXECUTION` lifecycle phase, `priority=2`)
+   - **`build_output_artifact`** (`UrlArtifact` in the `OUTPUT` lifecycle phase, `priority=3`)
+5. Read back and verify every attached artifact via `get_artifact` and `list_artifacts`.
+
+## Prerequisites
+
+1. Activate the XMC virtual environment and install dependencies:
+
+   ```bash
+   source deploy/cli/venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**:
+   Verify environment variables in your active shell or `.env`:
+
+   ```bash
+   export PROJECT_ID="<your-gcp-project-id>"
+   export XMC_DOMAIN="<your-xmc-domain>"
+   ```
+
+## Running the Example
+
+Run [launch.py](launch.py) from the repository root:
+
+```bash
+python3 examples/workunit_artifact_job/launch.py
+```
+
+Optional CLI flags:
+
+- `--experiment_title`: Title of the experiment in XMC UI (default: `WorkUnit Artifact Lifecycle Example`).
+- `--queue`: Target scheduling queue name (default: `QUEUE_NAME` env var or `cpu-queue`).
+
+## Expected Output
+
+The script creates the experiment and work unit, attaches the `INPUT`, `EXECUTION`, and `OUTPUT` artifacts via `build_input_artifact`, `build_executable_artifact`, and `build_output_artifact`, and verifies all three via both `get_artifact` and `list_artifacts`:
+
+```text
+🚀 Connecting to Experiment State Service (UI: https://<your-xmc-domain>)
+✅ Created Experiment: experiments/<xid> (XID: <xid>)
+✅ Created WorkUnit: experiments/<xid>/workUnits/<wid>
+📎 Attached artifact: artifacts/<aid1> (phase=INPUT, priority=1, payload=code_source) to experiments/<xid>/workUnits/<wid>
+📎 Attached artifact: artifacts/<aid2> (phase=EXECUTION, priority=2, payload=text) to experiments/<xid>/workUnits/<wid>
+📎 Attached artifact: artifacts/<aid3> (phase=OUTPUT, priority=3, payload=url) to experiments/<xid>/workUnits/<wid>
+
+🔍 Reading back and verifying artifacts...
+  [✓] Verified via get_artifact: name=artifacts/<aid1>, phase=INPUT, priority=1, payload=code_source, notes='Input code source snapshot consumed by the WorkUnit'
+  [✓] Verified via get_artifact: name=artifacts/<aid2>, phase=EXECUTION, priority=2, payload=text, notes='Execution logs captured from primary worker container'
+  [✓] Verified via get_artifact: name=artifacts/<aid3>, phase=OUTPUT, priority=3, payload=url, notes='External training metrics dashboard URL'
+  [✓] Verified via list_artifacts: found all 3 expected artifacts under experiments/<xid>/workUnits/<wid>
+
+==================================================
+  🎉 Experiment and WorkUnit Launch Completed!    
+  Work Unit : https://<your-xmc-domain>/experiments/<xid>/workUnits/<wid>
+  Dashboard : https://<your-xmc-domain>/experiments/<xid>
+==================================================
+```
