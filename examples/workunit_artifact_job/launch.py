@@ -182,10 +182,8 @@ def build_output_artifact(
 def get_artifact(stub: Any, artifact_name: str) -> artifact_pb2.Artifact:
     """Fetches a single artifact by resource name (`artifacts/{aid}`)."""
     request = ess_api_pb2.GetArtifactRequest(name=artifact_name)
-    if hasattr(stub, "get_artifact"):
-        return stub.get_artifact(request)
-    if hasattr(stub, "GetArtifact"):
-        return stub.GetArtifact(request)
+    # ExperimentStateApi in xmanager_cloud wraps create_artifact/list_artifacts
+    # but does not expose a get_artifact() helper, so invoke the gRPC stub directly.
     return stub._stub.GetArtifact(request)
 
 
@@ -195,11 +193,7 @@ def list_work_unit_artifacts(
 ) -> list[artifact_pb2.Artifact]:
     """Lists all artifacts attached to a WorkUnit (`experiments/{xid}/workUnits/{wid}`)."""
     request = ess_api_pb2.ListArtifactsRequest(parent=work_unit_name)
-    if hasattr(stub, "list_artifacts"):
-        response = stub.list_artifacts(request)
-    else:
-        response = stub.ListArtifacts(request)
-    return list(response.artifacts)
+    return list(stub.list_artifacts(request).artifacts)
 
 
 def verify_artifacts(
@@ -256,15 +250,15 @@ def main(argv: Sequence[str]) -> None:
         xid = experiment.resource_name.split("/")[-1]
         print(f"✅ Created Experiment: {experiment.resource_name} (XID: {xid})")
 
-        created_wu = stub.create_work_unit(
+        work_unit_id = 1
+        stub.create_work_unit(
             ess_api_pb2.CreateWorkUnitRequest(
                 parent=experiment.resource_name,
                 work_unit=build_work_unit(FLAGS.queue),
+                work_unit_id=work_unit_id,
             )
         )
-        wu_parts = created_wu.name.split("/")
-        wid = wu_parts[3] if len(wu_parts) > 3 and wu_parts[2] == "workUnits" else wu_parts[-1]
-        work_unit_name = f"experiments/{xid}/workUnits/{wid}"
+        work_unit_name = f"experiments/{xid}/workUnits/{work_unit_id}"
         print(f"✅ Created WorkUnit: {work_unit_name}")
 
         artifacts_to_create = [
