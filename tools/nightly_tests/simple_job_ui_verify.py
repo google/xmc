@@ -34,6 +34,9 @@ flags.DEFINE_string(
 flags.DEFINE_bool("headless", True, "Run browser in headless mode")
 flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
 
+EXPECTED_WORK_UNITS: int = 3
+EXPECTED_WORK_UNIT_NAMES: tuple[str, ...] = ("1", "2", "3")
+
 
 def verify_simple_job_ui(
     xid: str | int,
@@ -51,6 +54,11 @@ def verify_simple_job_ui(
         session.navigate_to_experiment(xid)
         header = session.assert_experiment_header(expected_title_pattern="Demo Workload")
         session.take_screenshot(f"ui_step2_header_xid_{xid}.png")
+        session.assert_work_units_tab(
+            min_units=EXPECTED_WORK_UNITS,
+            expected_names=EXPECTED_WORK_UNIT_NAMES,
+        )
+        session.take_screenshot(f"ui_step3_work_units_xid_{xid}.png")
         common.print_success_summary(
             "SIMPLE DEMO WORKLOAD UI TRAVERSAL PASSED SUCCESSFULLY!",
             [
