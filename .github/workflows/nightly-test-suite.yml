@@ -19,33 +19,44 @@ on:
     # Trigger nightly test suite at 2:00 AM UTC every day (1 hour after 1:00 AM nightly deployment)
     - cron: '0 2 * * *'
   workflow_dispatch:
+    inputs:
+      verify_workload:
+        description: 'Verify workload completion and assert statuses via SDK'
+        type: boolean
+        default: true
+        required: false
+      report_failure:
+        description: 'Report failures and alert repository OWNERS on GitHub Issues'
+        type: boolean
+        default: true
+        required: false
+      duration_seconds:
+        description: 'Workload duration in seconds per WorkUnit'
+        type: number
+        default: 60
+        required: false
+      num_work_units:
+        description: 'Number of WorkUnits to launch'
+        type: number
+        default: 3
+        required: false
+      queue_name:
+        description: 'Target ClusterQueue name'
+        type: string
+        default: 'cpu-queue'
+        required: false
 
 permissions:
   contents: read
 
 jobs:
-  # 1. Trigger the trigger-demo-workload GitHub Action workflow
-  trigger-demo-workload:
-    name: '1. Trigger Demo Workload Action'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/trigger-demo-workload.yml
-    secrets:
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      GCP_REGION: ${{ secrets.GCP_REGION }}
-      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
-
-  # 2. Validate Experiment and WorkUnits via SDK assertions
-  validate-workload-results:
-    name: '2. Validate Experiment & WorkUnits via SDK'
-    needs: [trigger-demo-workload]
+  run-and-verify-demo-workload:
+    name: 'Run & Verify Demo Workload'
     runs-on: 'arc-runner-set'
     environment: xmc-nightly
     timeout-minutes: 30
+    outputs:
+      experiment_xid: ${{ steps.launch-demo-workload.outputs.xid }}
 
     permissions:
       contents: read
@@ -60,6 +71,9 @@ jobs:
       XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+      QUEUE_NAME: ${{ inputs.queue_name || 'cpu-queue' }}
+      NUM_WORK_UNITS: ${{ inputs.num_work_units || 3 }}
+      DURATION_SECONDS: ${{ inputs.duration_seconds || 60 }}
 
     steps:
       - name: 'Checkout Repository'
@@ -83,12 +97,57 @@ jobs:
         run: |
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r examples/simple_job/requirements.txt
+
+      - name: 'Mint XMC Identity Token'
+        run: |
+          TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
+          echo "::add-mask::${TOKEN}"
+          echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: 'Launch Demo Workload'
+        id: launch-demo-workload
+        env:
+          ACTOR: '${{ github.actor }}'
+          XMC_USER_EMAIL: '${{ github.actor }}@google.com'
+        run: |
+          set -euo pipefail
+          if [ -n "${IAP_CLIENT_ID:-}" ]; then
+            if [ -n "${XMC_CLIENT_SA:-}" ]; then
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
+            else
+              XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)
+            fi
+            export XMC_AUTH_TOKEN
+          fi
+          export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" examples/simple_job/launch.py \
+            --queue="${QUEUE_NAME}" \
+            --num_work_units="${NUM_WORK_UNITS}" \
+            --duration="${DURATION_SECONDS}" \
+            --gpus=0 \
+            --author="${ACTOR}@google.com" | tee /dev/stderr)
+
+          # Extract XID from output
+          XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)
+          if [ -z "${XID}" ]; then
+            XID=$(echo "${OUTPUT}" | grep -oP 'experiments/\K\d+' | head -n 1 || true)
+          fi
+
+          if [ -z "${XID}" ]; then
+            echo "::error::Failed to parse experiment XID from workload launch output."
+            exit 1
+          fi
+
+          echo "xid=${XID}" >> "$GITHUB_OUTPUT"
 
       - name: 'Run Workload Assertions via XMC SDK'
         id: verify-workload
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.verify_workload }}
         env:
           ACTOR: '${{ github.actor }}'
-          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
+          XID: '${{ steps.launch-demo-workload.outputs.xid }}'
         run: |
           set -euo pipefail
           echo "================================================================="
@@ -119,14 +178,14 @@ jobs:
       - name: 'Publish Nightly Test Findings Summary'
         if: always()
         env:
-          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
-          TRIGGER_OUTCOME: '${{ needs.trigger-demo-workload.result }}'
+          XID: '${{ steps.launch-demo-workload.outputs.xid }}'
+          LAUNCH_OUTCOME: '${{ steps.launch-demo-workload.outcome }}'
           VERIFY_OUTCOME: '${{ steps.verify-workload.outcome }}'
         run: |
           {
             echo "## 🌙 Nightly Test Suite Execution Summary"
             echo ""
-            if [ "${VERIFY_OUTCOME}" = "success" ]; then
+            if [ "${VERIFY_OUTCOME}" = "success" ] || ( [ "${VERIFY_OUTCOME}" = "skipped" ] && [ "${LAUNCH_OUTCOME}" = "success" ] ); then
               echo "### ✅ Outcome: PASSED"
             else
               echo "### ❌ Outcome: FAILED"
@@ -135,7 +194,7 @@ jobs:
             echo "| Metric / Step | Status / Value |"
             echo "| --- | --- |"
             echo "| **Experiment XID** | \`${XID:-N/A}\` |"
-            echo "| **Trigger Action Run** | \`${TRIGGER_OUTCOME}\` |"
+            echo "| **Launch Demo Workload** | \`${LAUNCH_OUTCOME}\` |"
             echo "| **Verification Assertions** | \`${VERIFY_OUTCOME}\` |"
             if [ -n "${XID:-}" ]; then
               echo "| **Web UI URL** | https://xmc-nightly.${DOMAIN_NAME}/experiments/${XID} |"
@@ -144,12 +203,11 @@ jobs:
             echo "> Automated Nightly E2E Test Suite against \`xmc-nightly\` deployment."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # 3. Report Failure & Alert Repository OWNERS
   report-nightly-failure:
-    name: '3. Report Failure & Alert OWNERS'
+    name: 'Report Failure & Alert OWNERS'
     runs-on: 'ubuntu-latest'
-    needs: [trigger-demo-workload, validate-workload-results]
-    if: always() && github.ref == 'refs/heads/main' && (needs.trigger-demo-workload.result == 'failure' || needs.trigger-demo-workload.result == 'cancelled' || needs.validate-workload-results.result == 'failure' || needs.validate-workload-results.result == 'cancelled')
+    needs: [run-and-verify-demo-workload]
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.report_failure) && (needs.run-and-verify-demo-workload.result == 'failure' || needs.run-and-verify-demo-workload.result == 'cancelled')
 
     permissions:
       contents: read
@@ -165,7 +223,7 @@ jobs:
         uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
         env:
           NEEDS_CONTEXT: ${{ toJson(needs) }}
-          XID: '${{ needs.trigger-demo-workload.outputs.experiment_xid }}'
+          XID: '${{ needs.run-and-verify-demo-workload.outputs.experiment_xid }}'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

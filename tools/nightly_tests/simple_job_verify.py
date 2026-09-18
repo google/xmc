@@ -43,14 +43,15 @@ EXPECTED_MEMORY_BYTES: int = 512 * 1024 * 1024  # 512 MiB
 
 def _assert_experiment(stub: Any, xid: str) -> Any:
     """Asserts experiment existence and title pattern."""
-    print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
+    print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...", flush=True)
     experiment = xmc_entities_validator.validate_experiment(
         stub=stub,
         xid=xid,
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
     )
-    print(f"  [✓] Experiment Name   : {experiment.name}")
-    print(f"  [✓] Experiment Title  : {experiment.title}")
+    print(f"  [✓] Experiment Name   : {experiment.name}", flush=True)
+    print(f"  [✓] Experiment Title  : {experiment.title}", flush=True)
+    print(f"  [✓] Experiment Creator: {getattr(experiment, 'creator', 'N/A')}", flush=True)
     return experiment
 
 
@@ -63,7 +64,10 @@ def _assert_work_unit_states(
     timeout_sec: int,
 ) -> list[dict[str, Any]]:
     """Asserts work units completion, queues, and worker names."""
-    print(f"\n[2/3] Asserting {expected_work_units} WorkUnits targeted at '{expected_queue}'...")
+    print(
+        f"\n[2/3] Asserting {expected_work_units} WorkUnits targeted at '{expected_queue}'...",
+        flush=True,
+    )
     wu_results = xmc_entities_validator.validate_work_units(
         stub=stub,
         xid=xid,
@@ -71,11 +75,13 @@ def _assert_work_unit_states(
         expected_queue=expected_queue,
         expected_worker_names=expected_workers,
         timeout_sec=timeout_sec,
+        wait_for_completion=True,
     )
     for wu_info in wu_results:
         print(
             f"  [✓] WorkUnit #{wu_info['id']}: Worker='{wu_info['worker_name']}', "
-            f"Queue='{wu_info['queue']}', State='{wu_info['state']}'"
+            f"Queue='{wu_info['queue']}', State='{wu_info['state']}'",
+            flush=True,
         )
     return wu_results
 
@@ -103,7 +109,8 @@ def _assert_work_unit_spec(
         expected_memory_bytes=EXPECTED_MEMORY_BYTES,
     )
     print(
-        f"  [✓] Verified 100% Protobuf spec & resources for: {raw_wu.name} (Worker={worker_name})"
+        f"  [✓] Verified 100% Protobuf spec & resources for: {raw_wu.name} (Worker={worker_name})",
+        flush=True,
     )
 
 
@@ -114,7 +121,7 @@ def _assert_all_work_unit_specs(
     expected_queue: str,
 ) -> None:
     """Fetches raw work units and validates protobuf specifications for all units."""
-    print("\n[3/3] Validating 100% Protobuf specifications for each WorkUnit...")
+    print("\n[3/3] Validating 100% Protobuf specifications for each WorkUnit...", flush=True)
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
     raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
     if len(raw_work_units) != expected_work_units:

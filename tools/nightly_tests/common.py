@@ -99,7 +99,7 @@ def resolve_ui_base_url() -> str:
 def ess_channel_context(endpoint: str | None = None) -> Iterator[tuple[Any, Any]]:
     """Context manager for authenticated ESS gRPC channel and stub lifecycle."""
     resolved_endpoint = resolve_endpoint(endpoint)
-    print(f"Connecting to Experiment State Server at: {resolved_endpoint} ...")
+    print(f"Connecting to Experiment State Server at: {resolved_endpoint} ...", flush=True)
     stub, channel = xmc_entities_validator.create_authenticated_stub(resolved_endpoint)
     try:
         yield stub, channel
@@ -114,23 +114,23 @@ def handle_verification_errors() -> Iterator[None]:
     try:
         yield
     except (AssertionError, TimeoutError) as e:
-        print(f"\n❌ ASSERTION FAILED: {e}", file=sys.stderr)
+        print(f"\n❌ ASSERTION FAILED: {e}", file=sys.stderr, flush=True)
         sys.exit(1)
     except Exception as e:
-        print(f"\n💥 UNEXPECTED ERROR during verification: {e}", file=sys.stderr)
+        print(f"\n💥 UNEXPECTED ERROR during verification: {e}", file=sys.stderr, flush=True)
         sys.exit(2)
 
 
 def print_banner(title: str, details: Mapping[str, Any] | Sequence[tuple[str, Any]]) -> None:
     """Prints a formatted verification header banner."""
-    print("=================================================================")
-    print(f"       {title.strip()}       ".center(65))
-    print("=================================================================")
+    print("=================================================================", flush=True)
+    print(f"       {title.strip()}       ".center(65), flush=True)
+    print("=================================================================", flush=True)
     items = details.items() if isinstance(details, Mapping) else details
     for label, val in items:
         val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"{label:<24}: {val_str}")
-    print("-----------------------------------------------------------------")
+        print(f"{label:<24}: {val_str}", flush=True)
+    print("-----------------------------------------------------------------", flush=True)
 
 
 def print_success_summary(
@@ -138,14 +138,14 @@ def print_success_summary(
     details: Mapping[str, Any] | Sequence[tuple[str, Any]],
 ) -> None:
     """Prints a formatted verification success summary."""
-    print("\n=================================================================")
-    print(f"🎉 {title.strip()}")
-    print("=================================================================")
+    print("\n=================================================================", flush=True)
+    print(f"🎉 {title.strip()}", flush=True)
+    print("=================================================================", flush=True)
     items = details.items() if isinstance(details, Mapping) else details
     for label, val in items:
         val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"  • {label:<24}: {val_str}")
-    print("=================================================================\n")
+        print(f"  • {label:<24}: {val_str}", flush=True)
+    print("=================================================================\n", flush=True)
 
 
 def run_main(main_fn: Any) -> None:
