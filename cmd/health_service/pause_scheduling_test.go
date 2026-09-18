@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -57,6 +58,67 @@ func newFakePauseScheduler(pauseStateRepository pausestate.Repository) PauseSche
 		BroadcastPublisher:   broadcast.NewFakeClient(""),
 		TaskQueuePublisher:   redisclient.NewFakeClient(),
 	})
+}
+
+func assertBroadcastPaused(t *testing.T, msgs []string) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 broadcast message, got %d", len(msgs))
+	}
+	var event broadcast.SchedulingPaused
+	if err := json.Unmarshal([]byte(msgs[0]), &event); err != nil {
+		t.Fatalf("failed to unmarshal broadcast event: %v", err)
+	}
+	if event.Event != broadcast.EventSchedulingPaused {
+		t.Errorf("expected event %q, got %q", broadcast.EventSchedulingPaused, event.Event)
+	}
+	if event.Timestamp.IsZero() {
+		t.Errorf("expected non-zero event timestamp")
+	}
+}
+
+func assertBroadcastResumed(t *testing.T, msgs []string, expectedRunID string) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 broadcast message, got %d", len(msgs))
+	}
+	var event broadcast.SchedulingResumed
+	if err := json.Unmarshal([]byte(msgs[0]), &event); err != nil {
+		t.Fatalf("failed to unmarshal broadcast event: %v", err)
+	}
+	if event.Event != broadcast.EventSchedulingResumed {
+		t.Errorf("expected event %q, got %q", broadcast.EventSchedulingResumed, event.Event)
+	}
+	if event.ResumptionRunID != expectedRunID {
+		t.Errorf("expected resumption_run_id %q, got %q", expectedRunID, event.ResumptionRunID)
+	}
+	if event.Timestamp.IsZero() {
+		t.Errorf("expected non-zero event timestamp")
+	}
+}
+
+func assertResumeTrigger(t *testing.T, msgs []string, expectedRunID string, expectedBatchSize, expectedMaxBacklog int) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 published task, got %d", len(msgs))
+	}
+	var payload struct {
+		ResumptionRunID     string `json:"resumption_run_id"`
+		BatchSize           int    `json:"batch_size"`
+		MaxBacklogThreshold int    `json:"max_backlog_threshold"`
+	}
+	if err := json.Unmarshal([]byte(msgs[0]), &payload); err != nil {
+		t.Fatalf("failed to unmarshal trigger payload: %v", err)
+	}
+	if payload.ResumptionRunID != expectedRunID {
+		t.Errorf("expected resumption_run_id %q, got %q", expectedRunID, payload.ResumptionRunID)
+	}
+	if payload.BatchSize != expectedBatchSize {
+		t.Errorf("expected batch_size %d, got %d", expectedBatchSize, payload.BatchSize)
+	}
+	if payload.MaxBacklogThreshold != expectedMaxBacklog {
+		t.Errorf("expected max_backlog_threshold %d, got %d", expectedMaxBacklog, payload.MaxBacklogThreshold)
+	}
 }
 
 func TestPauseScheduler_Pause(t *testing.T) {
