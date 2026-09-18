@@ -23,7 +23,10 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
+	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
 	constants "xmanager_cloud/kubernetes/common/constants"
@@ -43,6 +46,8 @@ type ProdServer struct {
 	K8sClient     *k8sclient.Client
 	SpannerClient *spanner.Client
 	RedisClient   redisclient.Consumer
+	PauseCache    pausescheduling.Cache
+	PauseListener *pausescheduling.Listener
 	cleanup       func() error
 }
 
@@ -164,6 +169,12 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
 	}
 
+	pauseCache := pausescheduling.NewCache()
+	pauseListener, err := initPauseScheduling(ctx, cfg, pauseCache)
+	if err != nil {
+		return nil, err
+	}
+
 	redisConsumer.SetTaskHandler(handler.HandleWorkUnitRedisTask)
 	workerID := actuatorWorkerID(ctx)
 	go redisConsumer.StartWorker(ctx, workerID)
@@ -184,6 +195,8 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		K8sClient:     k8sClient,
 		SpannerClient: spannerClient,
 		RedisClient:   redisConsumer,
+		PauseCache:    pauseCache,
+		PauseListener: pauseListener,
 		cleanup:       cleanup,
 	}, nil
 }
@@ -232,4 +245,26 @@ func initJWKSTokenValidator(cfg *Config) workunittaskhandler.TokenValidator {
 		AllowedAudiences:       allowedAudiences,
 		AllowedServiceAccounts: allowedSAs,
 	})
+}
+
+func initPauseScheduling(ctx context.Context, cfg *Config, cache pausescheduling.Cache) (*pausescheduling.Listener, error) {
+	if !cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, nil
+	}
+
+	// TODO: Replace with concrete Spanner repository and Redis broadcast consumer once available.
+	listener, err := pausescheduling.New(pausescheduling.Params{
+		Cache:                cache,
+		Subscriber:           broadcast.NewFakeClient(constants.RedisPauseStream),
+		PauseStateRepository: pausestate.NewFake(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pause listener: %w", err)
+	}
+	if err := listener.Init(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize pause scheduling listener: %w", err)
+	}
+	go listener.StartListening(ctx)
+	logging.Info(ctx, "Started Actuator pause scheduling listener worker")
+	return listener, nil
 }

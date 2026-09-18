@@ -17,7 +17,9 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/main",
     deps = [
         "//cmd/actuator/k8s_client",
+        "//cmd/actuator/pausescheduling",
         "//cmd/actuator/workunittaskhandler",
+        "//internal/broadcast",
         "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
@@ -29,6 +31,7 @@ compat_go_library(
         "//internal/security/keyreloader",
         "//internal/storage",
         "//internal/storage/spanner",
+        "//internal/storage/spanner/pausestate",
         "//internal/task_queue_redis/redisclient",
         "//pkg/auth/jwks",
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
