@@ -16,14 +16,29 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 
+	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 )
 
-// PauseScheduler manages the pause scheduling domain logic and state persistence.
+var (
+	// errBroadcastPublisherNotConfigured is returned when scheduling state changes are requested
+	// but the broadcast publisher is unavailable, so actuators could not be notified.
+	errBroadcastPublisherNotConfigured = errors.New("broadcast publisher is not configured")
+
+	// errTaskQueuePublisherNotConfigured is returned when a resume is requested but the task queue
+	// publisher is unavailable, so the resumption trigger could not be dispatched.
+	errTaskQueuePublisherNotConfigured = errors.New("task queue publisher is not configured")
+)
+
+// PauseScheduler manages the pause scheduling domain logic, state persistence,
+// broadcast notifications, and task queue trigger dispatching.
 type PauseScheduler interface {
 	// Pause sets the scheduling state to paused and clears resumption metadata.
 	Pause(ctx context.Context) error
@@ -36,32 +51,68 @@ type PauseScheduler interface {
 	IsPaused(ctx context.Context) (bool, error)
 }
 
+// PauseSchedulerParams holds the dependencies and configuration for PauseScheduler.
+type PauseSchedulerParams struct {
+	PauseStateRepository pausestate.Repository
+	BroadcastPublisher   broadcast.Publisher
+	TaskQueuePublisher   redisclient.Publisher
+	BatchSize            int
+	MaxBacklogThreshold  int
+}
+
+type schedulingResumeTrigger struct {
+	ResumptionRunID     string `json:"resumption_run_id"`
+	BatchSize           int    `json:"batch_size"`
+	MaxBacklogThreshold int    `json:"max_backlog_threshold"`
+}
+
 type pauseScheduler struct {
-	repo pausestate.Repository
+	pauseStateRepository pausestate.Repository
+	broadcastPublisher   broadcast.Publisher
+	taskQueuePublisher   redisclient.Publisher
+	batchSize            int
+	maxBacklogThreshold  int
 }
 
-// NewPauseScheduler creates a new PauseScheduler backed by the given repository.
-func NewPauseScheduler(repo pausestate.Repository) PauseScheduler {
-	return &pauseScheduler{repo: repo}
+// NewPauseScheduler creates a new PauseScheduler with the provided dependencies and configuration.
+func NewPauseScheduler(params PauseSchedulerParams) PauseScheduler {
+	return &pauseScheduler{
+		pauseStateRepository: params.PauseStateRepository,
+		broadcastPublisher:   params.BroadcastPublisher,
+		taskQueuePublisher:   params.TaskQueuePublisher,
+		batchSize:            params.BatchSize,
+		maxBacklogThreshold:  params.MaxBacklogThreshold,
+	}
 }
 
-// Pause updates the global scheduling state to paused.
+// Pause updates the global scheduling state to paused and broadcasts the pause event.
 func (p *pauseScheduler) Pause(ctx context.Context) error {
+	if p.broadcastPublisher == nil {
+		return errBroadcastPublisherNotConfigured
+	}
 	state := &pausestate.PauseSchedulingState{
 		SchedulingPaused:   true,
 		ResumptionRunID:    "",
 		ResumptionWorkerID: "",
 	}
-	if err := p.repo.Set(ctx, state); err != nil {
+	if err := p.pauseStateRepository.Set(ctx, state); err != nil {
 		return fmt.Errorf("failed to persist pause scheduling state: %w", err)
 	}
-	return nil
+	return p.broadcastPauseEvent(ctx)
 }
 
-// Resume updates the global scheduling state to unpaused with a newly generated run ID.
+// Resume updates the global scheduling state to unpaused with a newly generated run ID,
+// broadcasts the resume event, and publishes the task queue resume trigger.
 func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
+	if p.broadcastPublisher == nil {
+		return "", errBroadcastPublisherNotConfigured
+	}
+	if p.taskQueuePublisher == nil {
+		return "", errTaskQueuePublisherNotConfigured
+	}
+
 	// TODO: Move state check and update into a Spanner read-write transaction.
-	current, err := p.repo.Get(ctx)
+	current, err := p.pauseStateRepository.Get(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 	}
@@ -75,15 +126,61 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 		ResumptionRunID:    resumptionRunID,
 		ResumptionWorkerID: "",
 	}
-	if err := p.repo.Set(ctx, state); err != nil {
+	if err := p.pauseStateRepository.Set(ctx, state); err != nil {
 		return "", fmt.Errorf("failed to persist resume scheduling state: %w", err)
 	}
+
+	if err := p.broadcastResumeEvent(ctx, resumptionRunID); err != nil {
+		return "", err
+	}
+	if err := p.publishResumeTrigger(ctx, resumptionRunID); err != nil {
+		return "", err
+	}
+
 	return resumptionRunID, nil
+}
+
+func (p *pauseScheduler) broadcastPauseEvent(ctx context.Context) error {
+	event := broadcast.NewSchedulingPaused()
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scheduling paused event: %w", err)
+	}
+	if err := p.broadcastPublisher.Publish(ctx, string(payload)); err != nil {
+		return fmt.Errorf("failed to broadcast scheduling paused event: %w", err)
+	}
+	return nil
+}
+
+func (p *pauseScheduler) broadcastResumeEvent(ctx context.Context, resumptionRunID string) error {
+	event := broadcast.NewSchedulingResumed(resumptionRunID)
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scheduling resumed event: %w", err)
+	}
+	if err := p.broadcastPublisher.Publish(ctx, string(payload)); err != nil {
+		return fmt.Errorf("failed to broadcast scheduling resumed event: %w", err)
+	}
+	return nil
+}
+
+func (p *pauseScheduler) publishResumeTrigger(ctx context.Context, resumptionRunID string) error {
+	trigger := schedulingResumeTrigger{
+		ResumptionRunID:     resumptionRunID,
+		BatchSize:           p.batchSize,
+		MaxBacklogThreshold: p.maxBacklogThreshold,
+	}
+	payload, err := json.Marshal(trigger)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scheduling resume trigger: %w", err)
+	}
+	p.taskQueuePublisher.AddMessage(ctx, string(payload), "0")
+	return nil
 }
 
 // IsPaused returns whether scheduling is currently paused according to repository state.
 func (p *pauseScheduler) IsPaused(ctx context.Context) (bool, error) {
-	state, err := p.repo.Get(ctx)
+	state, err := p.pauseStateRepository.Get(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 	}

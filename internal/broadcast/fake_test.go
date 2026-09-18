@@ -148,3 +148,24 @@ func TestFakeClientLatestOffset(t *testing.T) {
 		t.Errorf("LatestOffset() error = %v, want context.Canceled", err)
 	}
 }
+
+func TestFakeClientSetPublishError(t *testing.T) {
+	publisher := NewFakeClient("")
+	ctx := context.Background()
+
+	if err := publisher.Publish(ctx, "msg-1"); err != nil {
+		t.Fatalf("Publish() unexpected error: %v", err)
+	}
+
+	testErr := errors.New("injected publish error")
+	publisher.SetPublishError(testErr)
+
+	if err := publisher.Publish(ctx, "msg-2"); !errors.Is(err, testErr) {
+		t.Fatalf("Publish() error = %v, want %v", err, testErr)
+	}
+
+	msgs := publisher.Messages()
+	if len(msgs) != 1 || msgs[0] != "msg-1" {
+		t.Errorf("Messages() = %v, want [\"msg-1\"]", msgs)
+	}
+}

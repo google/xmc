@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -27,9 +28,11 @@ import (
 	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/pkg/components/summary"
+	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -39,6 +42,76 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 )
+
+func newTestServer(
+	cfg *Config,
+	checker healthChecker,
+	guard AdminRoleGuard,
+	componentsProvider summary.CustomComponentsInfoProvider,
+	pauseScheduler PauseScheduler,
+) *server {
+	return newServer(cfg, checker, guard, componentsProvider, pauseScheduler)
+}
+func assertBroadcastPaused(t *testing.T, msgs []string) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 broadcast message, got %d", len(msgs))
+	}
+	var event broadcast.SchedulingPaused
+	if err := json.Unmarshal([]byte(msgs[0]), &event); err != nil {
+		t.Fatalf("failed to unmarshal broadcast event: %v", err)
+	}
+	if event.Event != broadcast.EventSchedulingPaused {
+		t.Errorf("expected event %q, got %q", broadcast.EventSchedulingPaused, event.Event)
+	}
+	if event.Timestamp.IsZero() {
+		t.Errorf("expected non-zero event timestamp")
+	}
+}
+
+func assertBroadcastResumed(t *testing.T, msgs []string, expectedRunID string) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 broadcast message, got %d", len(msgs))
+	}
+	var event broadcast.SchedulingResumed
+	if err := json.Unmarshal([]byte(msgs[0]), &event); err != nil {
+		t.Fatalf("failed to unmarshal broadcast event: %v", err)
+	}
+	if event.Event != broadcast.EventSchedulingResumed {
+		t.Errorf("expected event %q, got %q", broadcast.EventSchedulingResumed, event.Event)
+	}
+	if event.ResumptionRunID != expectedRunID {
+		t.Errorf("expected resumption_run_id %q, got %q", expectedRunID, event.ResumptionRunID)
+	}
+	if event.Timestamp.IsZero() {
+		t.Errorf("expected non-zero event timestamp")
+	}
+}
+
+func assertResumeTrigger(t *testing.T, msgs []string, expectedRunID string, expectedBatchSize, expectedMaxBacklog int) {
+	t.Helper()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 published task, got %d", len(msgs))
+	}
+	var payload struct {
+		ResumptionRunID     string `json:"resumption_run_id"`
+		BatchSize           int    `json:"batch_size"`
+		MaxBacklogThreshold int    `json:"max_backlog_threshold"`
+	}
+	if err := json.Unmarshal([]byte(msgs[0]), &payload); err != nil {
+		t.Fatalf("failed to unmarshal trigger payload: %v", err)
+	}
+	if payload.ResumptionRunID != expectedRunID {
+		t.Errorf("expected resumption_run_id %q, got %q", expectedRunID, payload.ResumptionRunID)
+	}
+	if payload.BatchSize != expectedBatchSize {
+		t.Errorf("expected batch_size %d, got %d", expectedBatchSize, payload.BatchSize)
+	}
+	if payload.MaxBacklogThreshold != expectedMaxBacklog {
+		t.Errorf("expected max_backlog_threshold %d, got %d", expectedMaxBacklog, payload.MaxBacklogThreshold)
+	}
+}
 
 type mockHealthChecker struct {
 	result    RunChecksResult
@@ -102,7 +175,7 @@ func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, windo
 	}
 	checker := &mockHealthChecker{result: mockResult}
 	pauseRepo := pausestate.NewFake()
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pauseRepo))
+	s := newTestServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pauseRepo))
 	return &testFixture{
 		checker:   checker,
 		pauseRepo: pauseRepo,
@@ -250,7 +323,7 @@ func TestGetHealthStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := &mockHealthChecker{result: tt.mockResult}
-			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newTestServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 			defer s.Close()
 
 			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -300,7 +373,7 @@ func TestGetHealthStatus_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -341,7 +414,7 @@ func TestListConfigEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -370,7 +443,7 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -411,7 +484,7 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 			},
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -455,7 +528,7 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -483,7 +556,7 @@ func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: context.Canceled,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newTestServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
@@ -569,7 +642,7 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 					Components: tt.components,
 				},
 			}
-			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newTestServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 			defer s.Close()
 
 			resp := s.calculateHealthStatus(context.Background())
@@ -619,7 +692,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newTestServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
 			if err != nil {
 				t.Fatalf("GetUserInfo failed: %v", err)
@@ -740,6 +813,7 @@ func TestPauseScheduling(t *testing.T) {
 		cfg         *Config
 		guard       AdminRoleGuard
 		repo        pausestate.Repository
+		publisher   broadcast.Publisher
 		wantErrCode codes.Code
 		wantErrMsg  string
 		wantResp    *spb.PauseSchedulingResponse
@@ -807,6 +881,22 @@ func TestPauseScheduling(t *testing.T) {
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to pause scheduling",
 		},
+		{
+			name: "internal error when broadcast publishing fails",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			publisher: func() broadcast.Publisher {
+				fp := broadcast.NewFakeClient("")
+				fp.SetPublishError(errors.New("redis broadcast connection error"))
+				return fp
+			}(),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to pause scheduling",
+		},
 	}
 
 	for _, tt := range tests {
@@ -818,11 +908,30 @@ func TestPauseScheduling(t *testing.T) {
 				repo = fakeRepo
 			}
 
-			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(repo))
+			var fakePublisher *broadcast.FakeClient
+			var publisher broadcast.Publisher
+			if tt.publisher != nil {
+				publisher = tt.publisher
+				if fp, ok := publisher.(*broadcast.FakeClient); ok {
+					fakePublisher = fp
+				}
+			} else {
+				fakePublisher = broadcast.NewFakeClient("")
+				publisher = fakePublisher
+			}
+
+			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
+				PauseStateRepository: repo,
+				BroadcastPublisher:   publisher,
+			})
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
 				assertRPCError(t, err, tt.wantErrCode, tt.wantErrMsg)
+				if fakePublisher != nil && len(fakePublisher.Messages()) > 0 && tt.publisher == nil {
+					t.Errorf("expected no broadcast messages on error, got %d", len(fakePublisher.Messages()))
+				}
 				return
 			}
 
@@ -831,6 +940,10 @@ func TestPauseScheduling(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantResp, resp, protocmp.Transform()); diff != "" {
 				t.Errorf("PauseScheduling() mismatch (-want +got):\n%s", diff)
+			}
+
+			if fakePublisher != nil {
+				assertBroadcastPaused(t, fakePublisher.Messages())
 			}
 
 			if fakeRepo == nil {
@@ -855,13 +968,17 @@ func TestPauseScheduling(t *testing.T) {
 
 func TestResumeScheduling(t *testing.T) {
 	tests := []struct {
-		name        string
-		cfg         *Config
-		guard       AdminRoleGuard
-		repo        pausestate.Repository
-		wantErrCode codes.Code
-		wantErrMsg  string
-		wantResp    *spb.ResumeSchedulingResponse
+		name            string
+		cfg             *Config
+		guard           AdminRoleGuard
+		repo            pausestate.Repository
+		publisher       broadcast.Publisher
+		taskQueueClient redisclient.Publisher
+		wantErrCode     codes.Code
+		wantErrMsg      string
+		wantResp        *spb.ResumeSchedulingResponse
+		wantBatchSize   int
+		wantMaxBacklog  int
 	}{
 		{
 			name: "success when authorized and feature flag enabled",
@@ -869,10 +986,29 @@ func TestResumeScheduling(t *testing.T) {
 				FeatureFlags: featureflags.Flags{
 					PauseSchedulingEnabled: true,
 				},
+				SchedulingResumeBatchSize:  100,
+				SchedulingResumeMaxBacklog: 500,
 			},
-			guard:       &mockAdminRoleGuard{hasRole: true},
-			wantErrCode: codes.OK,
-			wantResp:    &spb.ResumeSchedulingResponse{},
+			guard:          &mockAdminRoleGuard{hasRole: true},
+			wantErrCode:    codes.OK,
+			wantResp:       &spb.ResumeSchedulingResponse{},
+			wantBatchSize:  100,
+			wantMaxBacklog: 500,
+		},
+		{
+			name: "success with custom resume config",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+				SchedulingResumeBatchSize:  42,
+				SchedulingResumeMaxBacklog: 150,
+			},
+			guard:          &mockAdminRoleGuard{hasRole: true},
+			wantErrCode:    codes.OK,
+			wantResp:       &spb.ResumeSchedulingResponse{},
+			wantBatchSize:  42,
+			wantMaxBacklog: 150,
 		},
 		{
 			name: "forbidden when caller lacks admin role even if flag enabled",
@@ -926,6 +1062,22 @@ func TestResumeScheduling(t *testing.T) {
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to resume scheduling",
 		},
+		{
+			name: "internal error when broadcast publishing fails",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			publisher: func() broadcast.Publisher {
+				fp := broadcast.NewFakeClient("")
+				fp.SetPublishError(errors.New("broadcast stream failure"))
+				return fp
+			}(),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to resume scheduling",
+		},
 	}
 
 	for _, tt := range tests {
@@ -942,11 +1094,48 @@ func TestResumeScheduling(t *testing.T) {
 				repo = fakeRepo
 			}
 
-			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(repo))
+			var fakePublisher *broadcast.FakeClient
+			var publisher broadcast.Publisher
+			if tt.publisher != nil {
+				publisher = tt.publisher
+				if fp, ok := publisher.(*broadcast.FakeClient); ok {
+					fakePublisher = fp
+				}
+			} else {
+				fakePublisher = broadcast.NewFakeClient("")
+				publisher = fakePublisher
+			}
+
+			var fakeRedis *redisclient.FakeClient
+			var taskClient redisclient.Publisher
+			if tt.taskQueueClient != nil {
+				taskClient = tt.taskQueueClient
+				if fc, ok := taskClient.(*redisclient.FakeClient); ok {
+					fakeRedis = fc
+				}
+			} else {
+				fakeRedis = redisclient.NewFakeClient()
+				taskClient = fakeRedis
+			}
+
+			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
+				PauseStateRepository: repo,
+				BroadcastPublisher:   publisher,
+				TaskQueuePublisher:   taskClient,
+				BatchSize:            tt.cfg.SchedulingResumeBatchSize,
+				MaxBacklogThreshold:  tt.cfg.SchedulingResumeMaxBacklog,
+			})
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
 				assertRPCError(t, err, tt.wantErrCode, tt.wantErrMsg)
+				if fakePublisher != nil && len(fakePublisher.Messages()) > 0 && tt.publisher == nil {
+					t.Errorf("expected no broadcast messages on error, got %d", len(fakePublisher.Messages()))
+				}
+				if fakeRedis != nil && len(fakeRedis.Messages) > 0 && tt.taskQueueClient == nil {
+					t.Errorf("expected no task queue messages on error, got %d", len(fakeRedis.Messages))
+				}
 				return
 			}
 
@@ -976,6 +1165,13 @@ func TestResumeScheduling(t *testing.T) {
 			if state.ResumptionWorkerID != "" {
 				t.Errorf("expected ResumptionWorkerID to be empty, got %q", state.ResumptionWorkerID)
 			}
+
+			if fakePublisher != nil {
+				assertBroadcastResumed(t, fakePublisher.Messages(), state.ResumptionRunID)
+			}
+			if fakeRedis != nil {
+				assertResumeTrigger(t, fakeRedis.Messages, state.ResumptionRunID, tt.wantBatchSize, tt.wantMaxBacklog)
+			}
 		})
 	}
 }
@@ -992,7 +1188,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		}
 		checker := &mockHealthChecker{result: RunChecksResult{}}
 		fakeRepo := pausestate.NewFake()
-		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(fakeRepo))
+		s := newTestServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(fakeRepo))
 		defer s.Close()
 
 		// 1. Initial state: scheduling is not paused (cache MISS)
@@ -1045,7 +1241,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 	t.Run("handles repository read errors gracefully", func(t *testing.T) {
 		cfg := &Config{CacheTTL: 1 * time.Minute}
 		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
-		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(failingRepo))
+		s := newTestServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
 		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
