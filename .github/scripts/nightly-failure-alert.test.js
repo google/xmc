@@ -416,14 +416,13 @@ describe('buildAlertParams', () => {
     assert.deepEqual(params.activeOwners, ['alice']);
   });
 
-  test('resolves outcomes for trigger-demo-workload and validate-workload-results workflow', () => {
+  test('resolves outcomes with associated PR metadata', () => {
     const needsContext = {
-      'trigger-demo-workload': { result: 'success' },
-      'validate-workload-results': { result: 'failure' },
+      'run-and-verify-demo-workload': { result: 'success' },
     };
     const params = buildAlertParams(baseContext, ['bob'], { number: 895, title: 'demo' }, needsContext);
     assert.equal(params.triggerOutcome, 'success');
-    assert.equal(params.verifyOutcome, 'failure');
+    assert.equal(params.verifyOutcome, 'success');
     assert.deepEqual(params.associatedPr, { number: 895, title: 'demo' });
   });
 
@@ -457,8 +456,7 @@ describe('run orchestrator', () => {
     const origXid = process.env.XID;
 
     process.env.NEEDS_CONTEXT = JSON.stringify({
-      'trigger-demo-workload': { result: 'success' },
-      'validate-workload-results': { result: 'failure' },
+      'run-and-verify-demo-workload': { result: 'failure' },
     });
     process.env.XID = '999';
 
