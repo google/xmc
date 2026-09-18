@@ -85,3 +85,51 @@ jobs:
       GCP_JWT_SECRET: ${{ secrets.GCP_JWT_SECRET }}
       GCP_GTS_KEY_ID: ${{ secrets.GCP_GTS_KEY_ID }}
       GCP_GTS_HMAC_KEY: ${{ secrets.GCP_GTS_HMAC_KEY }}
+
+  # 3. Tag Commit on Main upon Successful Deployment
+  tag-nightly-release:
+    name: 'Tag Commit on Main'
+    needs: [deploy-nightly]
+    if: success() && github.ref == 'refs/heads/main'
+    runs-on: 'arc-runner-set'
+    permissions:
+      contents: write
+
+    steps:
+      - name: 'Generate and Push Nightly Tag'
+        uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+            const tagName = `nightly-${dateStr}`;
+            const targetSha = context.sha;
+
+            core.info(`Creating tag '${tagName}' for commit ${targetSha}...`);
+
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/${tagName}`,
+                sha: targetSha,
+              });
+              core.info(`Successfully created tag ${tagName}`);
+            } catch (error) {
+              if (error.status === 422) {
+                // Tag already exists (e.g. re-run on the same day), update it to targetSha
+                core.warning(`Tag ${tagName} already exists. Updating ref to ${targetSha}...`);
+                await github.rest.git.updateRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${tagName}`,
+                  sha: targetSha,
+                  force: true,
+                });
+                core.info(`Successfully updated tag ${tagName} to ${targetSha}`);
+              } else {
+                throw error;
+              }
+            }
+
