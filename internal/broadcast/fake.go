@@ -31,6 +31,7 @@ type FakeClient struct {
 	mu         sync.RWMutex
 	messages   []string
 	subs       []chan string
+	publishErr error
 }
 
 // NewFakeClient creates a new FakeClient test double for a broadcast stream.
@@ -42,12 +43,24 @@ func NewFakeClient(streamName string) *FakeClient {
 	}
 }
 
+// SetPublishError configures an error to be returned by future Publish calls.
+func (f *FakeClient) SetPublishError(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.publishErr = err
+}
+
 // Publish records the message and broadcasts it to all active in-memory subscribers.
 func (f *FakeClient) Publish(ctx context.Context, message string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	f.mu.Lock()
+	if f.publishErr != nil {
+		err := f.publishErr
+		f.mu.Unlock()
+		return err
+	}
 	f.messages = append(f.messages, message)
 	subs := make([]chan string, len(f.subs))
 	copy(subs, f.subs)

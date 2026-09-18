@@ -27,9 +27,11 @@ import (
 	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/pkg/components/summary"
+	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -102,7 +104,7 @@ func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, windo
 	}
 	checker := &mockHealthChecker{result: mockResult}
 	pauseRepo := pausestate.NewFake()
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pauseRepo))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pauseRepo))
 	return &testFixture{
 		checker:   checker,
 		pauseRepo: pauseRepo,
@@ -250,7 +252,7 @@ func TestGetHealthStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := &mockHealthChecker{result: tt.mockResult}
-			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 			defer s.Close()
 
 			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -300,7 +302,7 @@ func TestGetHealthStatus_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -341,7 +343,7 @@ func TestListConfigEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -370,7 +372,7 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -411,7 +413,7 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 			},
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -455,7 +457,7 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -483,7 +485,7 @@ func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: context.Canceled,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, NewPauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
@@ -569,7 +571,7 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 					Components: tt.components,
 				},
 			}
-			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
 			defer s.Close()
 
 			resp := s.calculateHealthStatus(context.Background())
@@ -619,7 +621,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(pausestate.NewFake()))
+			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, newFakePauseScheduler(pausestate.NewFake()))
 			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
 			if err != nil {
 				t.Fatalf("GetUserInfo failed: %v", err)
@@ -740,6 +742,7 @@ func TestPauseScheduling(t *testing.T) {
 		cfg         *Config
 		guard       AdminRoleGuard
 		repo        pausestate.Repository
+		publisher   broadcast.Publisher
 		wantErrCode codes.Code
 		wantErrMsg  string
 		wantResp    *spb.PauseSchedulingResponse
@@ -807,6 +810,22 @@ func TestPauseScheduling(t *testing.T) {
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to pause scheduling",
 		},
+		{
+			name: "internal error when broadcast publishing fails",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			publisher: func() broadcast.Publisher {
+				fp := broadcast.NewFakeClient("")
+				fp.SetPublishError(errors.New("redis broadcast connection error"))
+				return fp
+			}(),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to pause scheduling",
+		},
 	}
 
 	for _, tt := range tests {
@@ -818,7 +837,16 @@ func TestPauseScheduling(t *testing.T) {
 				repo = fakeRepo
 			}
 
-			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(repo))
+			publisher := tt.publisher
+			if publisher == nil {
+				publisher = broadcast.NewFakeClient("")
+			}
+
+			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
+				PauseStateRepository: repo,
+				BroadcastPublisher:   publisher,
+			})
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
@@ -859,6 +887,7 @@ func TestResumeScheduling(t *testing.T) {
 		cfg         *Config
 		guard       AdminRoleGuard
 		repo        pausestate.Repository
+		publisher   broadcast.Publisher
 		wantErrCode codes.Code
 		wantErrMsg  string
 		wantResp    *spb.ResumeSchedulingResponse
@@ -926,6 +955,22 @@ func TestResumeScheduling(t *testing.T) {
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to resume scheduling",
 		},
+		{
+			name: "internal error when broadcast publishing fails",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			publisher: func() broadcast.Publisher {
+				fp := broadcast.NewFakeClient("")
+				fp.SetPublishError(errors.New("broadcast stream failure"))
+				return fp
+			}(),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to resume scheduling",
+		},
 	}
 
 	for _, tt := range tests {
@@ -942,7 +987,17 @@ func TestResumeScheduling(t *testing.T) {
 				repo = fakeRepo
 			}
 
-			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, NewPauseScheduler(repo))
+			publisher := tt.publisher
+			if publisher == nil {
+				publisher = broadcast.NewFakeClient("")
+			}
+
+			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
+				PauseStateRepository: repo,
+				BroadcastPublisher:   publisher,
+				TaskQueuePublisher:   redisclient.NewFakeClient(),
+			})
+			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})
 
 			if tt.wantErrCode != codes.OK {
@@ -992,7 +1047,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		}
 		checker := &mockHealthChecker{result: RunChecksResult{}}
 		fakeRepo := pausestate.NewFake()
-		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(fakeRepo))
+		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(fakeRepo))
 		defer s.Close()
 
 		// 1. Initial state: scheduling is not paused (cache MISS)
@@ -1045,7 +1100,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 	t.Run("handles repository read errors gracefully", func(t *testing.T) {
 		cfg := &Config{CacheTTL: 1 * time.Minute}
 		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
-		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, NewPauseScheduler(failingRepo))
+		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
 		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})

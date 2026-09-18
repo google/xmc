@@ -33,9 +33,11 @@ import (
 	"golang/grpc/reflection/reflection"
 	health "xmanager_cloud/common/health"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/store"
@@ -57,7 +59,7 @@ type grpcServerDeps struct {
 	srv               *server
 	essSpannerClient  health.SpannerHealthClient
 	xidSpannerClient  health.SpannerHealthClient
-	redisClient       *redisclient.PublisherClient
+	redisClient       redisclient.Publisher
 	compSpannerClient *spanner.Client
 }
 
@@ -205,10 +207,10 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	xidSpannerClient := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
 	var redisPingClient RedisPingClient
-	var publisher *redisclient.PublisherClient
+	var publisher redisclient.Publisher
 	if cfg.RedisAddr != "" {
 		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
-		publisher = redisclient.NewPublisher(redisCfg, "")
+		publisher = redisclient.NewPublisher(redisCfg, constants.RedisResumeStream)
 		redisPingClient = publisher
 	}
 
@@ -238,7 +240,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
 	})
-	pauseScheduler := initPauseScheduler(ctx, cfg)
+	pauseScheduler := initPauseScheduler(ctx, cfg, publisher)
 	srv := newServer(cfg, checker, guard, customProvider, pauseScheduler)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
@@ -255,9 +257,15 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 }
 
 // TODO: Replace with real Spanner-backed repository implementation once available.
-func initPauseScheduler(ctx context.Context, cfg *Config) PauseScheduler {
-	logging.Warn(ctx, "Using in-memory fake for pause scheduling state repository")
-	return NewPauseScheduler(pausestate.NewFake())
+func initPauseScheduler(ctx context.Context, cfg *Config, taskQueuePublisher redisclient.Publisher) PauseScheduler {
+	logging.Warn(ctx, "Using in-memory fake for pause scheduling state repository and broadcast publisher")
+	return NewPauseScheduler(PauseSchedulerParams{
+		PauseStateRepository: pausestate.NewFake(),
+		BroadcastPublisher:   broadcast.NewFakeClient(constants.RedisPauseStream),
+		TaskQueuePublisher:   taskQueuePublisher,
+		BatchSize:            cfg.SchedulingResumeBatchSize,
+		MaxBacklogThreshold:  cfg.SchedulingResumeMaxBacklog,
+	})
 }
 
 func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
