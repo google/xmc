@@ -31,6 +31,11 @@ on:
         type: string
         required: false
         default: 'xmc-v2'
+      image_tag:
+        description: 'Docker image tag to deploy'
+        type: string
+        required: false
+        default: 'latest'
       health_service_deployment_enabled:
         description: 'Enable Health Service deployment'
         type: boolean
@@ -101,6 +106,11 @@ on:
         type: string
         required: false
         default: 'xmc-v2'
+      image_tag:
+        description: 'Docker image tag to deploy'
+        type: string
+        required: false
+        default: 'latest'
       domain_name:
         description: 'Base DNS Domain name'
         type: string
@@ -167,7 +177,7 @@ jobs:
       DNS_PROJECT_ID: '${{ inputs.dns_project_id || secrets.GCP_DNS_PROJECT_ID }}'
       DNS_ZONE_NAME: '${{ inputs.dns_zone_name || secrets.GCP_DNS_ZONE_NAME }}'
       XMC_ACR_TARGET: 'us-docker.pkg.dev/${{ inputs.project_id || secrets.GCP_PROJECT_ID }}/xmc'
-      IMAGE_TAG: 'latest'
+      IMAGE_TAG: '${{ inputs.image_tag || \'latest\' }}'
 
     steps:
       - name: 'Checkout Repository'

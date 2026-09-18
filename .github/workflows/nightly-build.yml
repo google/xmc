@@ -38,9 +38,10 @@ jobs:
     name: 'Generate Nightly Context'
     runs-on: 'arc-runner-set'
     permissions:
-      contents: read
+      contents: write
     outputs:
       environment_name: ${{ steps.gen-env.outputs.environment_name }}
+      tag_name: ${{ steps.gen-tag.outputs.tag_name }}
     steps:
       - name: 'Compute Environment Name'
         id: gen-env
@@ -55,55 +56,23 @@ jobs:
           echo "environment_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
           echo "Selected Nightly Environment Name: ${ENV_NAME}"
 
-  deploy-nightly:
-    name: 'Trigger GKE Deployment'
-    needs: prepare-environment
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy-gke.yml
-    with:
-      environment: ${{ needs.prepare-environment.outputs.environment_name }}
-      deployment_name: 'xmc-nightly'
-      region: 'us-central1'
-      health_service_deployment_enabled: true
-      dashboard_service_deployment_enabled: true
-      rod_deployment_enabled: true
-      skip_verification: false
-    secrets:
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      GCP_REGION: ${{ secrets.GCP_REGION }}
-      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
-      GCP_DNS_PROJECT_ID: ${{ secrets.GCP_DNS_PROJECT_ID }}
-      GCP_DNS_ZONE_NAME: ${{ secrets.GCP_DNS_ZONE_NAME }}
-      GCP_ALLOWED_EMAILS: ${{ secrets.GCP_ALLOWED_EMAILS }}
-      GCP_CERTS_EMAIL: ${{ secrets.GCP_CERTS_EMAIL }}
-      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
-      GCP_IAP_CLIENT_SECRET: ${{ secrets.GCP_IAP_CLIENT_SECRET }}
-      GCP_JWT_SECRET: ${{ secrets.GCP_JWT_SECRET }}
-      GCP_GTS_KEY_ID: ${{ secrets.GCP_GTS_KEY_ID }}
-      GCP_GTS_HMAC_KEY: ${{ secrets.GCP_GTS_HMAC_KEY }}
+      - name: 'Compute Nightly Tag'
+        id: gen-tag
+        run: |
+          DATE_STR=$(date -u +'%Y-%m-%d')
+          TAG_NAME="nightly-${DATE_STR}.${{ github.run_number }}"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Selected Nightly Tag Name: ${TAG_NAME}"
 
-  # 3. Tag Commit on Main upon Successful Deployment
-  tag-nightly-release:
-    name: 'Tag Commit on Main'
-    needs: [deploy-nightly]
-    if: success() && github.ref == 'refs/heads/main'
-    runs-on: 'arc-runner-set'
-    permissions:
-      contents: write
-
-    steps:
-      - name: 'Generate and Push Nightly Tag'
+      - name: 'Tag Commit on Main'
+        if: github.ref == 'refs/heads/main'
         uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
+        env:
+          TAG_NAME: ${{ steps.gen-tag.outputs.tag_name }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const now = new Date();
-            const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-            const tagName = `nightly-${dateStr}`;
+            const tagName = process.env.TAG_NAME;
             const targetSha = context.sha;
 
             core.info(`Creating tag '${tagName}' for commit ${targetSha}...`);
@@ -132,4 +101,36 @@ jobs:
                 throw error;
               }
             }
+
+  deploy-nightly:
+    name: 'Trigger GKE Deployment'
+    needs: prepare-environment
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-gke.yml
+    with:
+      environment: ${{ needs.prepare-environment.outputs.environment_name }}
+      image_tag: ${{ needs.prepare-environment.outputs.tag_name }}
+      deployment_name: 'xmc-nightly'
+      region: 'us-central1'
+      health_service_deployment_enabled: true
+      dashboard_service_deployment_enabled: true
+      rod_deployment_enabled: true
+      skip_verification: false
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_DOMAIN_NAME: ${{ secrets.GCP_DOMAIN_NAME }}
+      GCP_DNS_PROJECT_ID: ${{ secrets.GCP_DNS_PROJECT_ID }}
+      GCP_DNS_ZONE_NAME: ${{ secrets.GCP_DNS_ZONE_NAME }}
+      GCP_ALLOWED_EMAILS: ${{ secrets.GCP_ALLOWED_EMAILS }}
+      GCP_CERTS_EMAIL: ${{ secrets.GCP_CERTS_EMAIL }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_IAP_CLIENT_ID: ${{ secrets.GCP_IAP_CLIENT_ID }}
+      GCP_IAP_CLIENT_SECRET: ${{ secrets.GCP_IAP_CLIENT_SECRET }}
+      GCP_JWT_SECRET: ${{ secrets.GCP_JWT_SECRET }}
+      GCP_GTS_KEY_ID: ${{ secrets.GCP_GTS_KEY_ID }}
+      GCP_GTS_HMAC_KEY: ${{ secrets.GCP_GTS_HMAC_KEY }}
 
