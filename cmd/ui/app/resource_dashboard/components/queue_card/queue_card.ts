@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { DecimalPipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -32,7 +31,6 @@ import {
   ClusterQueueSecondaryMetrics,
   QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   COHORT_STATE_BORROWING,
@@ -66,7 +64,6 @@ export interface PredictabilityViewModel {
   styleUrl: './queue_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DecimalPipe,
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
@@ -74,7 +71,6 @@ export interface PredictabilityViewModel {
     CohortStateInfoPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
-    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
