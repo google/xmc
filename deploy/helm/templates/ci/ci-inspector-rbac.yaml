@@ -37,6 +37,10 @@ rules:
   verbs: ["get", "list", "watch"]
 ---
 {{- if or .Values.gcpServiceAccount .Values.projectId }}
+{{- $ciSa := "" }}
+{{- if .Values.projectId }}
+{{- $ciSa = printf "xmc-github-actions@%s.iam.gserviceaccount.com" .Values.projectId }}
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -47,9 +51,9 @@ subjects:
   name: {{ .Values.gcpServiceAccount | quote }}
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
-{{- if .Values.projectId }}
+{{- if and $ciSa (ne $ciSa (.Values.gcpServiceAccount | default "")) }}
 - kind: User
-  name: {{ printf "xmc-github-actions@%s.iam.gserviceaccount.com" .Values.projectId | quote }}
+  name: {{ $ciSa | quote }}
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
 roleRef:
