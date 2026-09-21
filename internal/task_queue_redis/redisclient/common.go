@@ -97,11 +97,6 @@ func getRedisOptions(redisConfig Config) *redis.Options {
 	return options
 }
 
-// GetRedisOptions returns *redis.Options configured with the provided Config and credentials.
-func GetRedisOptions(redisConfig Config) *redis.Options {
-	return getRedisOptions(redisConfig)
-}
-
 // NewClient returns a new *redis.Client configured with standard options for the given Config.
 func NewClient(redisConfig Config) *redis.Client {
 	return redis.NewClient(getRedisOptions(redisConfig))

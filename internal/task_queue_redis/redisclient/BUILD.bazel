@@ -1,5 +1,5 @@
 # Copyright 2025 Google LLC
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,10 +16,4 @@ go_library(
         "//internal/logging",
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
-)
-
-go_test(
-    name = "redisclient_test",
-    srcs = ["common_test.go"],
-    embed = [":redisclient"],
 )

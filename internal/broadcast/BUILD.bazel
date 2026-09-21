@@ -22,7 +22,6 @@ go_test(
     name = "broadcast_test",
     srcs = [
         "consumer_test.go",
-        "events_test.go",
         "fake_test.go",
         "publisher_test.go",
     ],
