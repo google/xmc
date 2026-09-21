@@ -200,11 +200,18 @@ func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref Compone
 	if f.ActuatedGenerations == nil {
 		f.ActuatedGenerations = make(map[string]int64)
 	}
-	activeInMemory, hasActive := f.ActiveComponents[ref.String()]
-	if crReady && (!hasActive || activeInMemory) {
-		f.ActiveComponents[ref.String()] = true
-		if observedGeneration > 0 && f.ActuatedGenerations[ref.String()] == 0 {
-			f.ActuatedGenerations[ref.String()] = observedGeneration
+	key := ref.String()
+	activeInMemory, hasActive := f.ActiveComponents[key]
+	if !crReady {
+		if observedGeneration > 0 && f.ActuatedGenerations[key] == 0 {
+			f.ActiveComponents[key] = false
+		}
+		return nil
+	}
+	if observedGeneration == 0 || !hasActive || activeInMemory {
+		f.ActiveComponents[key] = true
+		if observedGeneration > 0 && f.ActuatedGenerations[key] == 0 {
+			f.ActuatedGenerations[key] = observedGeneration
 		}
 	}
 	return nil
