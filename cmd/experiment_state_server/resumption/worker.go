@@ -147,7 +147,6 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 		// TODO(pausescheduling): Fetch live WorkUnit from storage for filtering and payload reconstruction.
 		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
 		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, nil, task.Action, task.OperationName); err != nil {
-			// TODO(pausescheduling): Propagate Redis publish errors from task_queue.Client.
 			return fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 		}
 
