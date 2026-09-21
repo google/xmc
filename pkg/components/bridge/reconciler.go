@@ -399,7 +399,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 	}
 	ref := resolveComponentRef(in)
 	wasPreviouslyActive := wasComponentPreviouslyActive(in.ExistingConditions)
-	_ = r.helmManager.HydrateComponentState(ctx, ref, 0, wasPreviouslyActive)
+	if err := r.helmManager.HydrateComponentState(ctx, ref, 0, wasPreviouslyActive); err != nil {
+		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
+	}
 	if !r.helmManager.IsComponentActive(ref) && !wasPreviouslyActive {
 		return nil
 	}
@@ -423,7 +425,9 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	}
 	ref := resolveComponentRef(in)
 	readyAtGen := isReadyAtGeneration(in.ExistingConditions, in.Generation)
-	_ = r.helmManager.HydrateComponentState(ctx, ref, in.Generation, readyAtGen)
+	if err := r.helmManager.HydrateComponentState(ctx, ref, in.Generation, readyAtGen); err != nil {
+		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
+	}
 	if r.helmManager.IsComponentActuated(ref, in.Generation) {
 		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
 		return nil

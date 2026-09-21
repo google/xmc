@@ -1322,11 +1322,38 @@ func TestResolveComponentChartPath(t *testing.T) {
 		wantPath     string
 	}{
 		{
-			name:         "ExplicitOverridePrecedence",
+			name:         "ExplicitRelativeOverrideWithinBaseDir",
 			basePath:     baseDir,
+			ref:          ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
+			overridePath: "custom/override/chart",
+			wantPath:     filepath.Join(baseDir, "custom", "override", "chart"),
+		},
+		{
+			name:         "ExplicitOverrideWithoutBaseDir",
+			basePath:     "",
 			ref:          ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
 			overridePath: "/custom/override/chart",
 			wantPath:     "/custom/override/chart",
+		},
+		{
+			name:         "RejectOutOfBoundsOverrideFallsBackToBaseDirDiscovery",
+			basePath:     baseDir,
+			ref:          ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
+			overridePath: "/outside/base/dir/chart",
+			wantPath:     compSubDir,
+		},
+		{
+			name:         "RejectPathTraversalInOverride",
+			basePath:     baseDir,
+			ref:          ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
+			overridePath: "../../etc/passwd",
+			wantPath:     compSubDir,
+		},
+		{
+			name:     "RejectPathTraversalInComponentName",
+			basePath: baseDir,
+			ref:      ComponentRef{Namespace: "xmc", Name: "../escape"},
+			wantPath: baseDir,
 		},
 		{
 			name:     "ComponentsSubdirectoryResolution",

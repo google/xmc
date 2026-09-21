@@ -222,14 +222,11 @@ func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
 	if rel := extractStr(specMap, "releaseName"); rel != "" {
 		opts.ReleaseName = rel
 	}
-	if cp := extractStr(specMap, "chartPath"); cp != "" {
-		opts.ChartPath = cp
-	}
 	if tag := extractStr(specMap, "imageTag"); tag != "" {
 		opts.ImageTag = tag
 	}
 	extractParams(specMap["parameters"], opts.Parameters)
-	if opts.ChartPath == "" && opts.Parameters["chartPath"] != "" {
+	if opts.Parameters["chartPath"] != "" {
 		opts.ChartPath = opts.Parameters["chartPath"]
 	}
 	extractRawValues(specMap["values"], opts.RawValues)

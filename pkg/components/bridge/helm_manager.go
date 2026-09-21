@@ -196,7 +196,7 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 			getter = settings.RESTClientGetter()
 		}
 		mgr.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(mgr.chartPath), WithRunnerChartPathResolver(func(releaseName string) string {
-			return mgr.resolveChartPathForComponent(ComponentRef{Namespace: mgr.namespace, Name: strings.TrimPrefix(releaseName, "xmc-cmp-")}, "")
+			return mgr.resolveChartPathForComponent(ComponentRef{Namespace: mgr.namespace, Name: strings.TrimPrefix(releaseName, "xmc-cmp-")})
 		}))
 	}
 	if !mgr.syncExecution {
@@ -320,7 +320,7 @@ func (m *K8sHelmManager) releaseUpgradeLock() {
 
 // ResolveComponentChartPath resolves the filesystem chart path for a specific 1P component.
 // Resolution precedence:
-// 1. Explicit component override path (overridePath), if non-empty.
+// 1. Explicit component override path (overridePath), if non-empty and within baseChartPath (when baseChartPath is set).
 // 2. Per-component directory or archive under baseChartPath:
 //   - <baseChartPath>/components/<componentName> (containing Chart.yaml)
 //   - <baseChartPath>/<componentName> (containing Chart.yaml)
@@ -328,10 +328,10 @@ func (m *K8sHelmManager) releaseUpgradeLock() {
 //
 // 3. Fallback to baseChartPath (umbrella chart directory or archive).
 func ResolveComponentChartPath(baseChartPath string, ref ComponentRef, overridePath string) string {
-	if overridePath != "" {
-		return overridePath
+	if resolvedOverride, ok := resolveOverrideChartPath(baseChartPath, overridePath); ok {
+		return resolvedOverride
 	}
-	if baseChartPath == "" || ref.Name == "" {
+	if baseChartPath == "" || !isSafeComponentSegment(ref.Name) {
 		return baseChartPath
 	}
 	dirCandidates := []string{
@@ -350,6 +350,49 @@ func ResolveComponentChartPath(baseChartPath string, ref ComponentRef, overrideP
 	return baseChartPath
 }
 
+func resolveOverrideChartPath(baseChartPath, overridePath string) (string, bool) {
+	if overridePath == "" {
+		return "", false
+	}
+	if containsPathTraversal(overridePath) {
+		logging.Warn(context.Background(), "Rejecting component chartPath override containing path traversal segments", "overridePath", overridePath)
+		return "", false
+	}
+	if baseChartPath == "" {
+		return filepath.Clean(overridePath), true
+	}
+	candidate := filepath.Clean(overridePath)
+	if !filepath.IsAbs(overridePath) {
+		candidate = filepath.Join(baseChartPath, overridePath)
+	}
+	if !isWithinBaseDir(baseChartPath, candidate) {
+		logging.Warn(context.Background(), "Rejecting component chartPath override outside baseChartPath", "overridePath", overridePath, "baseChartPath", baseChartPath)
+		return "", false
+	}
+	return candidate, true
+}
+
+func containsPathTraversal(p string) bool {
+	for _, seg := range strings.FieldsFunc(filepath.ToSlash(p), func(r rune) bool { return r == '/' }) {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func isSafeComponentSegment(name string) bool {
+	return name != "" && !containsPathTraversal(name) && !strings.ContainsAny(name, `/\`)
+}
+
+func isWithinBaseDir(baseDir, candidatePath string) bool {
+	rel, err := filepath.Rel(filepath.Clean(baseDir), filepath.Clean(candidatePath))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func chartFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
@@ -362,12 +405,9 @@ func chartExistsOnDisk(chartPath string) bool {
 	return chartFileExists(filepath.Join(chartPath, "Chart.yaml")) || chartFileExists(chartPath)
 }
 
-func (m *K8sHelmManager) resolveChartPathForComponent(ref ComponentRef, overridePath string) string {
+func (m *K8sHelmManager) resolveChartPathForComponent(ref ComponentRef) string {
 	if m == nil {
-		return overridePath
-	}
-	if overridePath != "" {
-		return overridePath
+		return ""
 	}
 	m.mu.RLock()
 	savedOverride := m.componentChartPaths[componentKey(ref.Namespace, ref.Name)]
@@ -375,19 +415,18 @@ func (m *K8sHelmManager) resolveChartPathForComponent(ref ComponentRef, override
 	basePath := m.chartPath
 	m.mu.RUnlock()
 
-	if savedOverride != "" {
-		return savedOverride
+	if savedOverride == "" && resolver != nil {
+		savedOverride = resolver(ref)
 	}
-	if resolver != nil {
-		if resolved := resolver(ref); resolved != "" {
-			return resolved
-		}
-	}
-	return ResolveComponentChartPath(basePath, ref, "")
+	return ResolveComponentChartPath(basePath, ref, savedOverride)
 }
 
 func (m *K8sHelmManager) loadComponentChart(chartPath string) (*chart.Chart, error) {
-	if m == nil || chartPath == "" || chartPath == m.chartPath || !chartExistsOnDisk(chartPath) {
+	if m == nil || chartPath == "" || chartPath == m.chartPath {
+		return nil, nil
+	}
+	if !chartExistsOnDisk(chartPath) {
+		logging.Warn(context.Background(), "Resolved component chart path does not exist on disk; falling back to default runner chart", "chartPath", chartPath)
 		return nil, nil
 	}
 	m.mu.RLock()
@@ -431,7 +470,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return err
 	}
 	targetNamespace := ref.Namespace
-	resolvedChartPath := m.resolveChartPathForComponent(ref, "")
+	resolvedChartPath := m.resolveChartPathForComponent(ref)
 
 	m.stopMu.RLock()
 	if m.stopped {
@@ -834,11 +873,12 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 	m.mu.RLock()
 	_, known := m.activeState[key]
 	m.mu.RUnlock()
+	var hydrateErr error
 	if !known {
-		_ = m.hydrateNamespaceFromConfigMap(ctx, ref.Namespace)
+		hydrateErr = m.hydrateNamespaceFromConfigMap(ctx, ref.Namespace)
 	}
 	m.applyHydratedState(key, observedGeneration, crReady)
-	return nil
+	return hydrateErr
 }
 
 func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {

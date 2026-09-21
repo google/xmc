@@ -107,7 +107,7 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
 - **Dynamic Per-Component Chart Path Resolution (`ResolveComponentChartPath`)**:
   - Supports custom `ChartPathResolver` injection via `WithChartPathResolver` as well as deterministic filesystem candidate discovery relative to a configured base chart path:
-    1. Explicit per-component override (`opts.ChartPath` from `spec.parameters["chartPath"]` or `spec.chartPath`).
+    1. Explicit per-component override (`opts.ChartPath` from `spec.parameters["chartPath"]`, validated against path traversal and confined within `<baseChartPath>` when `<baseChartPath>` is configured).
     2. Custom `ChartPathResolver` callback (if configured via `WithChartPathResolver`).
     3. `<baseChartPath>/components/<componentName>` (when `Chart.yaml` is present).
     4. `<baseChartPath>/<componentName>` (when `Chart.yaml` is present).
