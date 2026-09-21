@@ -17,6 +17,7 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -421,6 +422,9 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	if res.RecommendedDrainSec != 60 {
 		t.Errorf("expected RecommendedDrainSec=60, got %d", res.RecommendedDrainSec)
 	}
+	if diff := cmp.Diff([]string{"client-app"}, res.CascadedDeactivations); diff != "" {
+		t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
+	}
 
 	// Verify both are now in DISABLING state
 	baseRec, _ := s.GetComponent(ctx, "base-dep")
@@ -436,6 +440,9 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	err = s.CompleteDeactivation(ctx, "base-dep", false)
 	if err == nil {
 		t.Fatalf("expected CompleteDeactivation to fail when active dependent client-app is remaining")
+	}
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("expected FailedPrecondition, got %v", status.Code(err))
 	}
 
 	// Complete client-app first
@@ -850,38 +857,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 	}
 	histConfigBytes, _ := proto.Marshal(histCompProto)
 	histAccessBytes, _ := proto.Marshal(access)
-
-	testExp := &essmsgpb.Experiment{
-		Name:      "experiments/20001",
-		Title:     "Test Experiment Soft Del",
-		Creator:   "test-user",
-		Priority:  100,
-		Urls:      []*essmsgpb.Url{},
-		Tags:      []string{},
-		Notes:     "test-notes",
-		Resources: []*essmsgpb.ResourceSet{},
-		Status: &essmsgpb.ExperimentStatus{
-			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
-		},
-		CreateTime: timestamppb.Now(),
-		UpdateTime: timestamppb.Now(),
-	}
-	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
-	if err != nil {
-		t.Fatalf("failed to create experiment mutation: %v", err)
-	}
-	bitReversedXid := data.ReverseBits(20001)
-
-	_, err = essClient.Apply(ctx, []*spanner.Mutation{
-		expMut,
-		spanner.Insert("ExperimentComponentSnapshots",
-			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
-			[]any{bitReversedXid, rec.ComponentID, int64(1), histConfigBytes, histAccessBytes}),
-	})
-	if err != nil {
-		t.Fatalf("failed to insert ExperimentComponentSnapshots: %v", err)
-	}
+	seedExperimentWithSnapshot(ctx, t, essClient, 20001, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Soft-delete the component via ExecuteDeletion
 	if err := s.ExecuteDeletion(ctx, "soft-del-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
@@ -935,7 +911,13 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	if err != nil {
 		t.Fatalf("SetComponentIntent gen 2 failed: %v", err)
 	}
-	_, err = s.SetComponentIntent(ctx, "reincarnated-comp", specV1, nil, 3)
+	// Generation 3 carries a distinguishable version so the resolved snapshot payload can be
+	// attributed to this incarnation rather than the one recreated later.
+	specV3 := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.3.0-historical",
+	}
+	_, err = s.SetComponentIntent(ctx, "reincarnated-comp", specV3, nil, 3)
 	if err != nil {
 		t.Fatalf("SetComponentIntent gen 3 failed: %v", err)
 	}
@@ -957,42 +939,11 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	// Snapshot for gen 3 under reincarnation 1
 	compProto3 := &componentspb.Component{
 		Name: "components/reincarnated-comp",
-		Spec: specV1,
+		Spec: specV3,
 	}
 	configBytes3, _ := proto.Marshal(compProto3)
 	accessBytes3, _ := proto.Marshal(accessV3)
-
-	testExp := &essmsgpb.Experiment{
-		Name:      "experiments/20002",
-		Title:     "Test Reincarnation",
-		Creator:   "test-user",
-		Priority:  100,
-		Urls:      []*essmsgpb.Url{},
-		Tags:      []string{},
-		Notes:     "test-notes",
-		Resources: []*essmsgpb.ResourceSet{},
-		Status: &essmsgpb.ExperimentStatus{
-			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
-		},
-		CreateTime: timestamppb.Now(),
-		UpdateTime: timestamppb.Now(),
-	}
-	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
-	if err != nil {
-		t.Fatalf("failed to create experiment mutation: %v", err)
-	}
-	bitReversedXid := data.ReverseBits(20002)
-
-	_, err = essClient.Apply(ctx, []*spanner.Mutation{
-		expMut,
-		spanner.Insert("ExperimentComponentSnapshots",
-			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
-			[]any{bitReversedXid, rec1.ComponentID, int64(3), configBytes3, accessBytes3}),
-	})
-	if err != nil {
-		t.Fatalf("failed to insert snapshot for rec1 gen 3: %v", err)
-	}
+	seedExperimentWithSnapshot(ctx, t, essClient, 20002, rec1.ComponentID, 3, configBytes3, accessBytes3)
 
 	// Soft-delete reincarnation 1 via ExecuteDeletion
 	if err := s.ExecuteDeletion(ctx, "reincarnated-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
@@ -1023,6 +974,9 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	}
 	if histRec.Generation != 3 {
 		t.Errorf("expected generation 3, got %d", histRec.Generation)
+	}
+	if got := histRec.Spec.GetVersion(); got != "v1.3.0-historical" {
+		t.Errorf("expected historical spec version v1.3.0-historical, got %q (live incarnation is %q)", got, specV2.GetVersion())
 	}
 	if histCoords.GetServiceName() != "reincarnated-v3" || histCoords.GetPort() != 3000 {
 		t.Errorf("expected coordinates reincarnated-v3:3000, got %v", histCoords)
@@ -1086,37 +1040,7 @@ func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIso
 	}
 	histAccessBytes, _ := proto.Marshal(histAccessProto)
 
-	testExp := &essmsgpb.Experiment{
-		Name:      "experiments/20003",
-		Title:     "Test Isolation",
-		Creator:   "test-user",
-		Priority:  100,
-		Urls:      []*essmsgpb.Url{},
-		Tags:      []string{},
-		Notes:     "test-notes",
-		Resources: []*essmsgpb.ResourceSet{},
-		Status: &essmsgpb.ExperimentStatus{
-			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
-		},
-		CreateTime: timestamppb.Now(),
-		UpdateTime: timestamppb.Now(),
-	}
-	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
-	if err != nil {
-		t.Fatalf("failed to create experiment mutation: %v", err)
-	}
-	bitReversedXid := data.ReverseBits(20003)
-
-	_, err = essClient.Apply(ctx, []*spanner.Mutation{
-		expMut,
-		spanner.Insert("ExperimentComponentSnapshots",
-			[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
-			[]any{bitReversedXid, rec.ComponentID, int64(1), histConfigBytes, histAccessBytes}),
-	})
-	if err != nil {
-		t.Fatalf("failed to insert snapshot: %v", err)
-	}
+	seedExperimentWithSnapshot(ctx, t, essClient, 20003, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Resolve gen 1 (via resolveHistoricalSnapshot)
 	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "isolated-comp", 1)
@@ -1262,5 +1186,250 @@ func TestSpannerStore_ConcurrentOperations(t *testing.T) {
 	}
 	if len(list) != numGoroutines {
 		t.Errorf("expected %d components, got %d", numGoroutines, len(list))
+	}
+}
+
+// seedExperimentWithSnapshot creates an ACTIVE experiment for xid and binds componentID to it via
+// an ExperimentComponentSnapshots row locked at lockedGen.
+func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, essClient *spanner.Client, xid, componentID, lockedGen int64, configProto, accessPayload []byte) {
+	t.Helper()
+	testExp := &essmsgpb.Experiment{
+		Name:      fmt.Sprintf("experiments/%d", xid),
+		Title:     fmt.Sprintf("Test Experiment %d", xid),
+		Creator:   "test-user",
+		Priority:  100,
+		Urls:      []*essmsgpb.Url{},
+		Tags:      []string{},
+		Notes:     "test-notes",
+		Resources: []*essmsgpb.ResourceSet{},
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+		},
+		CreateTime: timestamppb.Now(),
+		UpdateTime: timestamppb.Now(),
+	}
+	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
+	if err != nil {
+		t.Fatalf("failed to create experiment mutation for xid %d: %v", xid, err)
+	}
+	snapMut := spanner.Insert("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+		[]any{data.ReverseBits(xid), componentID, lockedGen, configProto, accessPayload})
+
+	if _, err := essClient.Apply(ctx, []*spanner.Mutation{expMut, snapMut}); err != nil {
+		t.Fatalf("failed to seed experiment %d with snapshot: %v", xid, err)
+	}
+}
+
+func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
+	ctx := context.Background()
+	s, essClient := setupTestStore(ctx, t)
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	if _, err := s.SetComponentIntent(ctx, "fk-comp", spec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	access := &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ObservedGeneration: 1,
+	}
+	rec, err := s.UpdateObservedGeneration(ctx, "fk-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	compProto := &componentspb.Component{Name: "components/fk-comp", Spec: spec}
+	configBytes, _ := proto.Marshal(compProto)
+	accessBytes, _ := proto.Marshal(access)
+	seedExperimentWithSnapshot(ctx, t, essClient, 20004, rec.ComponentID, 1, configBytes, accessBytes)
+
+	// A hard row delete must be rejected: FK_Snapshots_Component still references this component.
+	_, err = essClient.Apply(ctx, []*spanner.Mutation{spanner.Delete("Components", spanner.Key{rec.ComponentID})})
+	if err == nil {
+		t.Fatalf("hard DELETE on Components succeeded, want rejection by FK_Snapshots_Component")
+	}
+	errStr := strings.ToLower(err.Error())
+	if !strings.Contains(errStr, "foreign key") && !strings.Contains(errStr, "fk_snapshots_component") && status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("expected a foreign key violation, got: %v", err)
+	}
+
+	// Soft deletion is the supported path and must leave the row (and therefore the FK) intact.
+	if err := s.ExecuteDeletion(ctx, "fk-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion failed: %v", err)
+	}
+
+	var (
+		state      int64
+		activeName spanner.NullString
+	)
+	row, err := essClient.Single().ReadRow(ctx, "Components", spanner.Key{rec.ComponentID}, []string{"State", "ActiveName"})
+	if err != nil {
+		t.Fatalf("soft-deleted Components row is unreadable: %v", err)
+	}
+	if err := row.Columns(&state, &activeName); err != nil {
+		t.Fatalf("failed to read soft-deleted Components row: %v", err)
+	}
+	if want := int64(componentspb.ComponentState_COMPONENT_STATE_DELETED); state != want {
+		t.Errorf("State = %d, want %d (DELETED)", state, want)
+	}
+	if activeName.Valid {
+		t.Errorf("ActiveName = %q, want NULL so the name can be reused", activeName.StringVal)
+	}
+
+	var snapCount int64
+	countIter := essClient.Single().Query(ctx, spanner.Statement{
+		SQL:    "SELECT COUNT(1) AS Total FROM ExperimentComponentSnapshots WHERE ComponentId = @id",
+		Params: map[string]any{"id": rec.ComponentID},
+	})
+	defer countIter.Stop()
+	if err := countIter.Do(func(r *spanner.Row) error { return r.ColumnByName("Total", &snapCount) }); err != nil {
+		t.Fatalf("failed to count snapshots: %v", err)
+	}
+	if snapCount != 1 {
+		t.Errorf("snapshot count = %d, want 1 preserved after soft deletion", snapCount)
+	}
+}
+
+func TestSpannerStore_ConcurrentIntentUpdatesOnSameComponent(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	s, _ := setupTestStore(ctx, t)
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	if _, err := s.SetComponentIntent(ctx, "contended-comp", spec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	access := &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ObservedGeneration: 1,
+	}
+	if _, err := s.UpdateObservedGeneration(ctx, "contended-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// Unlike TestSpannerStore_ConcurrentOperations, every worker contends for the same row, so
+	// Spanner's 2PL must serialize the read-modify-write generation bumps rather than interleave
+	// them. Generations are collected to assert no two writers were handed the same one.
+	const (
+		numWriters       = 8
+		writerIterations = 4
+	)
+	var (
+		mu       sync.Mutex
+		observed = make(map[int64]int)
+		wg       sync.WaitGroup
+	)
+	wg.Add(numWriters)
+	for w := 0; w < numWriters; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+			for it := 0; it < writerIterations; it++ {
+				wSpec := &componentspb.ComponentSpec{
+					Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Version: fmt.Sprintf("v%d.%d.0", workerID, it),
+				}
+				// Generation 0 asks the store to auto-increment, which is the contended path.
+				rec, err := s.SetComponentIntent(ctx, "contended-comp", wSpec, nil, 0)
+				if err != nil {
+					t.Errorf("writer %d iteration %d: SetComponentIntent failed: %v", workerID, it, err)
+					return
+				}
+				mu.Lock()
+				observed[rec.Generation]++
+				mu.Unlock()
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	for gen, count := range observed {
+		if count > 1 {
+			t.Errorf("generation %d was handed out %d times, want 1 (lost update under contention)", gen, count)
+		}
+	}
+
+	finalRec, err := s.GetComponent(ctx, "contended-comp")
+	if err != nil {
+		t.Fatalf("GetComponent failed after concurrent writes: %v", err)
+	}
+	if want := int64(1 + numWriters*writerIterations); finalRec.Generation != want {
+		t.Errorf("final Generation = %d, want %d (one bump per serialized write)", finalRec.Generation, want)
+	}
+	// Every writer bumped Generation without a matching UpdateObservedGeneration, so the last
+	// write must leave the component awaiting reconciliation of its newest generation.
+	if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("final State = %v, want PENDING_RECONCILIATION", finalRec.State)
+	}
+}
+
+func TestSpannerStore_ConcurrentDeactivationAndIntentUpdate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	s, _ := setupTestStore(ctx, t)
+
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	if _, err := s.SetComponentIntent(ctx, "conflict-comp", spec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent failed: %v", err)
+	}
+	access := &componentspb.ComponentAccessStatus{
+		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ObservedGeneration: 1,
+	}
+	if _, err := s.UpdateObservedGeneration(ctx, "conflict-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); err != nil {
+		t.Fatalf("UpdateObservedGeneration failed: %v", err)
+	}
+
+	// Deactivation and intent updates mutate the same row. Either may lose the race, but neither
+	// may leave the record in a state outside the lifecycle contract.
+	const concurrentPairs = 4
+	var wg sync.WaitGroup
+	wg.Add(concurrentPairs * 2)
+	for i := 0; i < concurrentPairs; i++ {
+		go func(workerID int) {
+			defer wg.Done()
+			if _, err := s.PrepareDeactivation(ctx, "conflict-comp", false); err != nil && status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("worker %d: PrepareDeactivation returned unexpected code %v: %v", workerID, status.Code(err), err)
+			}
+		}(i)
+
+		go func(workerID int) {
+			defer wg.Done()
+			intentSpec := &componentspb.ComponentSpec{
+				Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Version: fmt.Sprintf("v1.%d.0", workerID),
+			}
+			if _, err := s.SetComponentIntent(ctx, "conflict-comp", intentSpec, nil, 0); err != nil && status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("worker %d: SetComponentIntent returned unexpected code %v: %v", workerID, status.Code(err), err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	finalRec, err := s.GetComponent(ctx, "conflict-comp")
+	if err != nil {
+		t.Fatalf("GetComponent failed after concurrent deactivation and intent updates: %v", err)
+	}
+	legalStates := map[componentspb.ComponentState]bool{
+		componentspb.ComponentState_COMPONENT_STATE_ENABLED:                true,
+		componentspb.ComponentState_COMPONENT_STATE_DISABLING:              true,
+		componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION: true,
+	}
+	if !legalStates[finalRec.State] {
+		t.Errorf("final State = %v, want one of ENABLED, DISABLING, PENDING_RECONCILIATION", finalRec.State)
+	}
+	if finalRec.Generation < 1 {
+		t.Errorf("final Generation = %d, want monotonically >= 1", finalRec.Generation)
 	}
 }
