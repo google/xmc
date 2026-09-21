@@ -55,58 +55,72 @@ func DetectAllCycles(nodes []string, graph DependencyGraph, isValidTarget func(s
 	return detectCyclesInternal(nodes, graph, isValidTarget, false)
 }
 
+type cycleDetector struct {
+	graph         DependencyGraph
+	isValidTarget func(string) bool
+	stopOnFirst   bool
+	colors        map[string]int
+	path          []string
+	reported      map[string]bool
+	findings      []CycleFinding
+}
+
 func detectCyclesInternal(nodes []string, graph DependencyGraph, isValidTarget func(string) bool, stopOnFirst bool) []CycleFinding {
-	colors := make(map[string]int, len(nodes))
-	path := make([]string, 0, len(nodes))
-	reported := make(map[string]bool)
-	var findings []CycleFinding
+	detector := &cycleDetector{
+		graph:         graph,
+		isValidTarget: isValidTarget,
+		stopOnFirst:   stopOnFirst,
+		colors:        make(map[string]int, len(nodes)),
+		path:          make([]string, 0, len(nodes)),
+		reported:      make(map[string]bool),
+	}
 
 	for _, node := range nodes {
-		if colors[node] == colorWhite {
-			dfsVisit(node, graph, isValidTarget, stopOnFirst, colors, &path, reported, &findings)
-			if stopOnFirst && len(findings) > 0 {
-				return findings
+		if detector.colors[node] == colorWhite {
+			detector.dfsVisit(node)
+			if detector.stopOnFirst && len(detector.findings) > 0 {
+				return detector.findings
 			}
 		}
 	}
-	return findings
+	return detector.findings
 }
 
-func dfsVisit(u string, graph DependencyGraph, isValidTarget func(string) bool, stopOnFirst bool, colors map[string]int, path *[]string, reported map[string]bool, findings *[]CycleFinding) {
-	colors[u] = colorGray
-	*path = append(*path, u)
+func (d *cycleDetector) dfsVisit(u string) {
+	d.colors[u] = colorGray
+	d.path = append(d.path, u)
 
-	for _, v := range graph[u] {
-		if isValidTarget != nil && !isValidTarget(v) {
+	for _, v := range d.graph[u] {
+		if d.isValidTarget != nil && !d.isValidTarget(v) {
 			continue
 		}
-		if colors[v] == colorGray {
-			recordCycleFinding(u, v, *path, reported, findings)
-			if stopOnFirst {
+		if d.colors[v] == colorGray {
+			d.recordCycleFinding(u, v)
+			if d.stopOnFirst {
 				return
 			}
 			continue
 		}
-		if colors[v] == colorWhite {
-			dfsVisit(v, graph, isValidTarget, stopOnFirst, colors, path, reported, findings)
-			if stopOnFirst && len(*findings) > 0 {
+		if d.colors[v] == colorWhite {
+			d.dfsVisit(v)
+			if d.stopOnFirst && len(d.findings) > 0 {
 				return
 			}
 		}
 	}
 
-	*path = (*path)[:len(*path)-1]
-	colors[u] = colorBlack
+	d.path = d.path[:len(d.path)-1]
+	d.colors[u] = colorBlack
 }
 
-func recordCycleFinding(u, v string, path []string, reported map[string]bool, findings *[]CycleFinding) {
-	cyclePath := extractCyclePath(path, v)
+func (d *cycleDetector) recordCycleFinding(u, v string) {
+	cyclePath := extractCyclePath(d.path, v)
 	cycleStr := FormatCycle(cyclePath)
-	if cycleStr == "" || reported[cycleStr] {
+	if cycleStr == "" || d.reported[cycleStr] {
 		return
 	}
-	reported[cycleStr] = true
-	*findings = append(*findings, CycleFinding{SourceNode: u, CyclePath: cyclePath})
+	d.reported[cycleStr] = true
+	d.findings = append(d.findings, CycleFinding{SourceNode: u, CyclePath: cyclePath})
 }
 
 func extractCyclePath(path []string, closingNode string) []string {
