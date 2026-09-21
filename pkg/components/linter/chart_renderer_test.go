@@ -90,7 +90,7 @@ func TestChartTemplateFuncsAndHelpers(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
 		t.Fatalf("failed to create templates dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nversion: 1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: release-name\nversion: 1.0.0\n"), 0o644); err != nil {
 		t.Fatalf("failed to write Chart.yaml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("emptyList: []\nemptyMap: {}\nprefixed: \"<nil>value\"\nmeta:\n  tier: core\n"), 0o644); err != nil {

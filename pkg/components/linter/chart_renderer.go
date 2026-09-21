@@ -15,20 +15,15 @@
 package linter
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strconv"
 	"strings"
-	"sync"
-	"text/template"
 
-	"gopkg.in/yaml.v3"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
 )
-
-var chartContextCache sync.Map
 
 // isChartOrRulesConfigFile returns true if the YAML file is a Helm chart metadata/values/helper file or a rules file.
 func isChartOrRulesConfigFile(path string) bool {
@@ -55,6 +50,7 @@ func isChartOrRulesConfigFile(path string) bool {
 	return true
 }
 
+// findChartRoot walks up the directory tree from filePath to locate an enclosing Helm chart root (containing Chart.yaml or Chart.yml).
 func findChartRoot(filePath string) string {
 	absPath, _ := filepath.Abs(filePath)
 	for dir := filepath.Dir(absPath); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
@@ -67,99 +63,51 @@ func findChartRoot(filePath string) string {
 	return ""
 }
 
-// RenderChartTemplate renders a Helm template against Chart.yaml and values.yaml in chartRoot.
-func RenderChartTemplate(chartRoot, templatePath string, rawData []byte) ([]byte, error) {
-	data, err := loadChartTemplateContext(chartRoot)
+// RenderChartTemplate loads the Helm chart at chartRoot and renders templatePath
+// against Chart.yaml, default values.yaml, and helper partials using the Helm v3 engine.
+func RenderChartTemplate(chartRoot, templatePath string, _ []byte) ([]byte, error) {
+	ch, err := loader.LoadDir(chartRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
+	}
+	releaseOpts := chartutil.ReleaseOptions{
+		Name:      ch.Name(),
+		Namespace: "xmc",
+		Revision:  1,
+		IsInstall: true,
+	}
+	renderValues, err := chartutil.ToRenderValues(ch, ch.Values, releaseOpts, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", chartRoot, err)
+	}
+	renderedFiles, err := engine.Render(ch, renderValues)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render Helm template %s: %w", templatePath, err)
+	}
+	key, err := renderedTemplateKey(chartRoot, ch.Name(), templatePath)
 	if err != nil {
 		return nil, err
 	}
-	tmpl := template.New(filepath.Base(templatePath))
-	tmpl.Funcs(chartTemplateFuncs(tmpl))
-	helpers, _ := filepath.Glob(filepath.Join(chartRoot, "templates", "_*"))
-	for _, h := range helpers {
-		if info, err := os.Stat(h); err == nil && !info.IsDir() {
-			if _, err := tmpl.ParseFiles(h); err != nil {
-				return nil, fmt.Errorf("failed to parse helper %s: %w", h, err)
-			}
-		}
+	rendered, ok := renderedFiles[key]
+	if !ok {
+		return nil, fmt.Errorf("rendered output for %s (key %q) not found in chart %s", templatePath, key, chartRoot)
 	}
-	var buf bytes.Buffer
-	if _, err := tmpl.Parse(string(rawData)); err != nil {
-		return nil, fmt.Errorf("failed to parse template %s: %w", templatePath, err)
-	}
-	err = tmpl.Execute(&buf, data)
-	return buf.Bytes(), err
+	return []byte(rendered), nil
 }
 
-func loadChartTemplateContext(chartRoot string) (map[string]any, error) {
-	if cached, ok := chartContextCache.Load(chartRoot); ok {
-		return cached.(map[string]any), nil
-	}
-	chartMeta, err := readYAMLFileMap(chartRoot, "Chart.yaml", "Chart.yml")
+// renderedTemplateKey computes the "<chartName>/<relPath>" lookup key produced by Helm's engine.Render.
+func renderedTemplateKey(chartRoot, chartName, templatePath string) (string, error) {
+	absRoot, err := filepath.Abs(chartRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Chart.yaml in %s: %w", chartRoot, err)
+		return "", err
 	}
-	chartMeta["Name"] = "release-name"
-	for src, dst := range map[string]string{"name": "Name", "version": "Version", "appVersion": "AppVersion", "description": "Description", "type": "Type", "apiVersion": "APIVersion"} {
-		if s, ok := chartMeta[src].(string); ok && s != "" {
-			chartMeta[dst] = s
-		}
-	}
-	valuesMap, err := readYAMLFileMap(chartRoot, "values.yaml", "values.yml")
+	absTmpl, err := filepath.Abs(templatePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read values.yaml in %s: %w", chartRoot, err)
+		return "", err
 	}
-	data := map[string]any{"Chart": chartMeta, "Values": valuesMap, "Release": map[string]any{"Name": chartMeta["Name"], "Namespace": "xmc", "Service": "Helm", "IsInstall": true, "IsUpgrade": false}}
-	chartContextCache.Store(chartRoot, data)
-	return data, nil
-}
-
-func readYAMLFileMap(dir string, candidates ...string) (map[string]any, error) {
-	for _, name := range candidates {
-		if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
-			out := make(map[string]any)
-			if err := yaml.Unmarshal(b, &out); err != nil {
-				return nil, err
-			}
-			return out, nil
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
+	rel, err := filepath.Rel(absRoot, absTmpl)
+	if err != nil {
+		return "", err
 	}
-	return make(map[string]any), nil
-}
-
-func chartTemplateFuncs(tmpl *template.Template) template.FuncMap {
-	toStr := func(v any) string {
-		if v == nil {
-			return ""
-		}
-		return fmt.Sprint(v)
-	}
-	indent := func(spaces int, v string) string {
-		return strings.Repeat(" ", spaces) + strings.ReplaceAll(v, "\n", "\n"+strings.Repeat(" ", spaces))
-	}
-	return template.FuncMap{
-		"default": func(d any, given ...any) any {
-			if len(given) > 0 && given[0] != nil {
-				if v := reflect.ValueOf(given[0]); !v.IsZero() && ((v.Kind() != reflect.Slice && v.Kind() != reflect.Map) || v.Len() > 0) {
-					return given[0]
-				}
-			}
-			return d
-		},
-		"quote":    func(v any) string { return strconv.Quote(toStr(v)) },
-		"toString": toStr,
-		"trim":     func(v any) string { return strings.TrimSpace(toStr(v)) },
-		"lower":    func(v any) string { return strings.ToLower(toStr(v)) },
-		"upper":    func(v any) string { return strings.ToUpper(toStr(v)) },
-		"indent":   indent,
-		"nindent":  func(spaces int, v string) string { return "\n" + indent(spaces, v) },
-		"toYaml":   func(v any) string { b, _ := yaml.Marshal(v); return strings.TrimSuffix(string(b), "\n") },
-		"include": func(name string, d any) (string, error) {
-			var b bytes.Buffer
-			err := tmpl.ExecuteTemplate(&b, name, d)
-			return b.String(), err
-		},
-	}
+	return filepath.ToSlash(filepath.Join(chartName, rel)), nil
 }
