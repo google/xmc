@@ -456,7 +456,7 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 	}
 	readyAtGen := false
 	for _, c := range existing {
-		if c.Type == ConditionTypeDegraded && c.Status == ConditionStatusTrue {
+		if c.Type == ConditionTypeDegraded && c.Status == ConditionStatusTrue && c.ObservedGeneration == generation {
 			return false
 		}
 		if c.Type == ConditionTypeReady && c.Status == ConditionStatusTrue && c.ObservedGeneration == generation {

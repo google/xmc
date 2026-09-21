@@ -824,7 +824,10 @@ func (m *K8sHelmManager) HydrateFromCluster(ctx context.Context) error {
 // HydrateComponentState synchronizes in-memory activeState and actuatedGenerations for a component
 // from cluster storage and existing CR status conditions on cold start.
 func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
-	if _, err := m.validateAndResolve(ref); m == nil || err != nil {
+	if m == nil {
+		return nil
+	}
+	if _, err := m.validateAndResolve(ref); err != nil {
 		return nil
 	}
 	key := componentKey(ref.Namespace, ref.Name)
