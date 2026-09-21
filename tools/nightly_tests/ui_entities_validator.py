@@ -80,15 +80,6 @@ class XMCUIBrowserSession:
         self._context: Any = None
         self._page: Any = None
 
-    @property
-    def _playwright_mgr(self) -> Any:
-        """Backward-compatible alias for the active Playwright instance."""
-        return self._playwright
-
-    @_playwright_mgr.setter
-    def _playwright_mgr(self, value: Any) -> None:
-        self._playwright = value
-
     def __enter__(self) -> XMCUIBrowserSession:
         """Starts the Playwright session upon entering the context manager."""
         self.start()
@@ -127,11 +118,16 @@ class XMCUIBrowserSession:
             token = self.auth_token
             host = self.domain_host
             scheme = self.scheme
-            port = self.port
+            base_port = self.port or (
+                443 if scheme == "https" else (80 if scheme == "http" else None)
+            )
 
             def _handle_route(route: Any) -> None:
                 parsed = urllib.parse.urlparse(route.request.url)
-                if parsed.hostname == host and parsed.scheme == scheme and parsed.port == port:
+                req_port = parsed.port or (
+                    443 if parsed.scheme == "https" else (80 if parsed.scheme == "http" else None)
+                )
+                if parsed.hostname == host and parsed.scheme == scheme and req_port == base_port:
                     route.continue_(
                         headers={**route.request.headers, "authorization": f"Bearer {token}"}
                     )
