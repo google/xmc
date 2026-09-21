@@ -236,7 +236,7 @@ def _build_gh_release_cmd(
         gh_cmd.append("--draft")
     if prerelease:
         gh_cmd.append("--prerelease")
-    if target_commit:
+    if target_commit and not skip_push:
         gh_cmd.extend(["--target", target_commit])
     if force:
         gh_cmd.append("--clobber")
