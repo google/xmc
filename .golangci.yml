@@ -39,6 +39,10 @@ linters:
     - revive
     # Phase 5: Cyclomatic complexity enforcement
     - gocyclo
+    # Note: Typecheck-dependent linters (unparam, errcheck, gosec) are configured in
+    # linters-settings below and invoked via `golangci-lint run --enable=unparam,errcheck,gosec ./pkg/components/...`
+    # in .githooks/pre-commit and .github/workflows/lint.yml because legacy packages outside
+    # pkg/components/ depend on Bazel-generated .pb.go and //go:embed outputs not present in git.
 
 linters-settings:
   gofmt:
@@ -56,6 +60,21 @@ linters-settings:
     min-complexity: 15
   dupl:
     threshold: 100
+  unparam:
+    check-exported: false
+  errcheck:
+    check-blank: true
+    exclude-functions:
+      - (*os.File).Close
+      - (io.Closer).Close
+      - (net.Conn).Close
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
+  gosec:
+    includes:
+      - G304
+      - G305
   revive:
     rules:
       - name: function-result-limit
@@ -94,8 +113,23 @@ issues:
     - path: _test\.go
       linters:
         - gocyclo
+        - errcheck
+        - unparam
+        - gosec
     # TODO(Phase 5): Refactor legacy query filter ASTs and Spanner row decoders exceeding cyclomatic complexity 15
     - path: (api/filter/go|internal/query_generator|internal/storage/spanner)
       linters:
         - gocyclo
+    # TODO: clean up legacy packages outside pkg/components/ with pre-existing errcheck/unparam/gosec debt
+    - path: ^(api/|cmd/|internal/|pkg/apis/|pkg/auth/|test/|tools/)
+      linters:
+        - errcheck
+        - unparam
+        - gosec
+
+
+
+
+
+
 

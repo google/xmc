@@ -639,7 +639,8 @@ def _run_wu_poll_loop(
     wait_for_completion: bool,
 ) -> list[dict[str, Any]]:
     """Runs polling loop for work units until completed or timeout."""
-    start_time, last_states, last_time = time.monotonic(), {}, -1.0
+    start_time, last_time = time.monotonic(), -1.0
+    last_states: dict[str, str] = {}
     while True:
         elapsed = time.monotonic() - start_time
         res = _poll_work_units_step(

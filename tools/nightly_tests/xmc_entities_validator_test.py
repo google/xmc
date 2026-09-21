@@ -464,7 +464,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
 
     def test_validate_work_unit_priority_success(self) -> None:
-        cases = [
+        cases: list[tuple[int, int | str]] = [
             (3, "HIGH"),
             (3, "high"),
             (3, 3),

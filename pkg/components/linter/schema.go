@@ -28,14 +28,14 @@ func (l *Linter) validateSchema(rawManifests []*RawManifest, compManifests []*Co
 		rules = &RulesConfig{}
 	}
 	for _, m := range rawManifests {
-		l.validateRawManifest(m, rules, res)
+		l.validateRawManifest(m, res)
 	}
 	for _, c := range compManifests {
 		l.validateComponentManifest(c, rules, res)
 	}
 }
 
-func (l *Linter) validateRawManifest(m *RawManifest, rules *RulesConfig, res *ValidationResult) {
+func (l *Linter) validateRawManifest(m *RawManifest, res *ValidationResult) {
 	line := m.Line
 	if line <= 0 {
 		line = 1

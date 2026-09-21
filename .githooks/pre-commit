@@ -85,9 +85,17 @@ check_go() {
         echo "❌ golangci-lint check failed."
         FAILED=1
       fi
+      if ! $golangci_bin run --enable=unparam,errcheck,gosec ./pkg/components/...; then
+        echo "❌ golangci-lint (unparam,errcheck,gosec) check failed on pkg/components."
+        FAILED=1
+      fi
     else
       if ! $golangci_bin run --fix; then
         echo "❌ golangci-lint run --fix failed or found unfixed issues."
+        FAILED=1
+      fi
+      if ! $golangci_bin run --enable=unparam,errcheck,gosec ./pkg/components/...; then
+        echo "❌ golangci-lint (unparam,errcheck,gosec) check failed on pkg/components."
         FAILED=1
       fi
     fi
