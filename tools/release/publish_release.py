@@ -55,7 +55,7 @@ def _run_git(
     err_prefix: str,
     instruction: str,
     check: bool = True,
-) -> subprocess.CompletedProcess[str]:
+) -> subprocess.CompletedProcess:
     """Runs a git command with unified error handling."""
     try:
         return subprocess.run(
@@ -94,6 +94,24 @@ def verify_local_tag(tag: str, repo_dir: Path, force: bool) -> None:
         raise HandledError(
             f"Git tag '{tag}' already exists in local repository.",
             "Verify the version number or use a new incremented version.",
+        )
+
+
+def verify_remote_tag(tag: str, repo_dir: Path, force: bool, remote: str = "origin") -> None:
+    """Verifies whether the target git tag already exists on the remote repository."""
+    if force:
+        return
+    res = _run_git(
+        ["git", "ls-remote", "--tags", remote, f"refs/tags/{tag}"],
+        repo_dir,
+        "Failed to check remote git tags",
+        f"Ensure the remote '{remote}' is configured and accessible.",
+        check=False,
+    )
+    if res.returncode == 0 and res.stdout.strip():
+        raise HandledError(
+            f"Git tag '{tag}' already exists on remote repository '{remote}'.",
+            "Verify the version number or use --force to overwrite.",
         )
 
 
@@ -264,6 +282,8 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
     target_commit = resolve_target_commit(args.target_commit or "HEAD", repo_dir)
 
     verify_local_tag(tag, repo_dir, args.force)
+    if not args.skip_push:
+        verify_remote_tag(tag, repo_dir, args.force, remote=args.remote)
     create_git_tag(tag, target_commit, title, repo_dir, args.force)
     if not args.skip_push:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)

@@ -32,6 +32,7 @@ from tools.release.publish_release import (
     resolve_repo_owner_and_name,
     resolve_target_commit,
     verify_local_tag,
+    verify_remote_tag,
 )
 
 
@@ -78,6 +79,21 @@ class PublishReleaseTest(unittest.TestCase):
         mock_subprocess.side_effect = FileNotFoundError()
         with self.assertRaises(HandledError):
             verify_local_tag("0.6.0", Path("."), force=False)
+
+    @patch("subprocess.run")
+    def test_verify_remote_tag(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
+        verify_remote_tag("0.6.0", Path("."), force=False)
+
+        mock_subprocess.return_value = MagicMock(stdout="a1b2c3d4\trefs/tags/0.6.0\n", returncode=0)
+        with self.assertRaises(HandledError) as ctx:
+            verify_remote_tag("0.6.0", Path("."), force=False, remote="origin")
+        self.assertIn("already exists on remote repository 'origin'", str(ctx.exception))
+
+        # When force is True, remote check is skipped
+        mock_subprocess.reset_mock()
+        verify_remote_tag("0.6.0", Path("."), force=True)
+        mock_subprocess.assert_not_called()
 
     @patch("subprocess.run")
     def test_create_git_tag_and_error(self, mock_subprocess: MagicMock) -> None:
@@ -209,10 +225,16 @@ class PublishReleaseTest(unittest.TestCase):
     ) -> None:
         mock_remote_url.return_value = "https://github.com/google/xmc"
         mock_which.return_value = "/usr/bin/gh"
-        mock_subprocess.return_value = MagicMock(
-            stdout="https://github.com/google/xmc/releases/tag/0.6.0\n",
-            returncode=0,
-        )
+
+        def side_effect(cmd: list[str], **_kwargs: object) -> MagicMock:
+            if cmd[:2] == ["gh", "release"]:
+                return MagicMock(
+                    stdout="https://github.com/google/xmc/releases/tag/0.6.0\n",
+                    returncode=0,
+                )
+            return MagicMock(stdout="", returncode=0)
+
+        mock_subprocess.side_effect = side_effect
 
         args = argparse.Namespace(
             tag="0.6.0",
