@@ -158,6 +158,7 @@ def publish_via_gh_cli(
     target_commit: str,
     repo_dir: Path,
     remote: str = "origin",
+    force: bool = False,
 ) -> str:
     """Publishes a GitHub release using the gh CLI."""
     owner, repo = resolve_repo_owner_and_name(repo_dir, remote)
@@ -179,13 +180,16 @@ def publish_via_gh_cli(
         gh_cmd.append("--prerelease")
     if target_commit:
         gh_cmd.extend(["--target", target_commit])
+    if force:
+        gh_cmd.append("--clobber")
 
     try:
         res = subprocess.run(gh_cmd, cwd=str(repo_dir), capture_output=True, text=True, check=True)
         return res.stdout.strip()
     except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.strip() if e.stderr else str(e)
         raise HandledError(
-            f"Failed to create GitHub release via gh CLI: {e.stderr}",
+            f"Failed to create GitHub release via gh CLI: {err_msg}",
             "Ensure gh CLI is authenticated and has release creation permissions.",
         ) from e
 
@@ -235,6 +239,7 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             target_commit,
             repo_dir,
             remote=args.remote,
+            force=args.force,
         )
     except HandledError as e:
         if not args.skip_push:

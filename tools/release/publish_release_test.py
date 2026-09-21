@@ -138,10 +138,12 @@ class PublishReleaseTest(unittest.TestCase):
             target_commit="HEAD",
             repo_dir=Path("."),
             remote="origin",
+            force=True,
         )
         self.assertEqual(url, "https://github.com/myorg/myrepo/releases/tag/0.6.0")
         self.assertIn("--repo", mock_subprocess.call_args[0][0])
         self.assertIn("myorg/myrepo", mock_subprocess.call_args[0][0])
+        self.assertIn("--clobber", mock_subprocess.call_args[0][0])
 
         mock_subprocess.side_effect = subprocess.CalledProcessError(1, "gh", stderr="gh error")
         with self.assertRaises(HandledError):
