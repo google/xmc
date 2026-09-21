@@ -138,18 +138,21 @@ class PublishReleaseTest(unittest.TestCase):
     @patch("tools.release.git_ops.get_git_remote_url")
     @patch("shutil.which")
     @patch("subprocess.run")
-    def test_publish_release_gh_missing(
+    @patch("tools.release.github_release_client.call_github_api")
+    def test_publish_release_fallback_to_rest(
         self,
+        mock_api: MagicMock,
         mock_subprocess: MagicMock,
         mock_which: MagicMock,
         mock_remote_url: MagicMock,
     ) -> None:
         mock_remote_url.return_value = "https://github.com/google/xmc"
         mock_which.return_value = None
-        mock_subprocess.return_value = MagicMock(
-            stdout="",
-            returncode=0,
-        )
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout="")
+        mock_api.return_value = {
+            "html_url": "https://github.com/google/xmc/releases/tag/0.6.0",
+            "id": 9999,
+        }
 
         args = argparse.Namespace(
             tag="0.6.0",
@@ -160,13 +163,13 @@ class PublishReleaseTest(unittest.TestCase):
             remote="origin",
             draft=False,
             prerelease=False,
-            skip_push=True,
+            skip_push=False,
             force=False,
         )
-        with self.assertRaises(HandledError) as ctx:
-            publish_release(args)
-        self.assertIn("GitHub CLI ('gh') is not installed", str(ctx.exception))
-        mock_subprocess.assert_not_called()
+        res = publish_release(args)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["release_url"], "https://github.com/google/xmc/releases/tag/0.6.0")
+        self.assertEqual(res["release_id"], 9999)
 
     def test_publish_release_empty_tag(self) -> None:
         for invalid_tag in ["   ", "-v0.6.0"]:

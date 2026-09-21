@@ -14,10 +14,18 @@
 
 """GitHub release publishing client transports."""
 
+import contextlib
+import os
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 from tools.common.tool_utils import HandledError
+from tools.pr_review.github_utils import (
+    GithubAPIError,
+    GithubAuthError,
+    call_github_api,
+)
 from tools.release.git_ops import resolve_repo_owner_and_name
 
 
@@ -104,3 +112,60 @@ def publish_via_gh_cli(
             f"Failed to create GitHub release via gh CLI: {err_msg}",
             "Ensure gh CLI is authenticated and has release creation permissions.",
         ) from e
+
+
+@contextlib.contextmanager
+def _temporary_github_token() -> Iterator[None]:
+    """Temporarily sets GITHUB_TOKEN from GH_TOKEN if GITHUB_TOKEN is unset or empty."""
+    gh_token = os.environ.get("GH_TOKEN")
+    original_token = os.environ.get("GITHUB_TOKEN")
+    temp_token_set = bool(gh_token and not original_token)
+    if temp_token_set and gh_token:
+        os.environ["GITHUB_TOKEN"] = gh_token
+    try:
+        yield
+    finally:
+        if temp_token_set:
+            if original_token is None:
+                os.environ.pop("GITHUB_TOKEN", None)
+            else:
+                os.environ["GITHUB_TOKEN"] = original_token
+
+
+def publish_via_rest_api(
+    tag: str,
+    title: str,
+    notes_content: str,
+    draft: bool,
+    prerelease: bool,
+    target_commit: str,
+    repo_dir: Path,
+    remote: str = "origin",
+) -> tuple[str, int | None]:
+    """Publishes a GitHub release using the GitHub REST API."""
+    with _temporary_github_token():
+        owner, repo = resolve_repo_owner_and_name(repo_dir, remote)
+        endpoint = f"/repos/{owner}/{repo}/releases"
+        payload = {
+            "tag_name": tag,
+            "target_commitish": target_commit,
+            "name": title,
+            "body": notes_content,
+            "draft": draft,
+            "prerelease": prerelease,
+        }
+        try:
+            resp = call_github_api(
+                endpoint,
+                method="POST",
+                payload=payload,
+                user_agent="XMC-Release-Publisher",
+            )
+            if isinstance(resp, dict):
+                return resp.get("html_url", ""), resp.get("id")
+            return "", None
+        except (GithubAuthError, GithubAPIError) as e:
+            raise HandledError(
+                f"Failed to create GitHub release via REST API: {e}",
+                "Check GitHub token permissions.",
+            ) from e

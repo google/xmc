@@ -14,6 +14,7 @@
 
 """Unit tests for GitHub release client transports."""
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -21,7 +22,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
-from tools.release.github_release_client import _build_gh_release_cmd, publish_via_gh_cli
+from tools.pr_review.github_utils import GithubAPIError
+from tools.release.github_release_client import (
+    _build_gh_release_cmd,
+    publish_via_gh_cli,
+    publish_via_rest_api,
+)
 
 
 class GithubReleaseClientTest(unittest.TestCase):
@@ -116,6 +122,81 @@ class GithubReleaseClientTest(unittest.TestCase):
                 target_commit="HEAD",
                 repo_dir=Path("."),
             )
+
+    @patch("tools.release.github_release_client.resolve_repo_owner_and_name")
+    @patch("tools.release.github_release_client.call_github_api")
+    def test_publish_via_rest_api(self, mock_api: MagicMock, mock_resolve_repo: MagicMock) -> None:
+        mock_resolve_repo.return_value = ("google", "xmc")
+        mock_api.return_value = {
+            "html_url": "https://github.com/google/xmc/releases/tag/0.6.0",
+            "id": 12345,
+        }
+        url, rel_id = publish_via_rest_api(
+            "0.6.0",
+            "Release 0.6.0",
+            "# Notes",
+            draft=True,
+            prerelease=False,
+            target_commit="HEAD",
+            repo_dir=Path("."),
+        )
+        self.assertEqual(url, "https://github.com/google/xmc/releases/tag/0.6.0")
+        self.assertEqual(rel_id, 12345)
+
+        mock_api.side_effect = GithubAPIError("API Error")
+        with self.assertRaises(HandledError):
+            publish_via_rest_api(
+                "0.6.0",
+                "Release 0.6.0",
+                "# Notes",
+                draft=True,
+                prerelease=False,
+                target_commit="HEAD",
+                repo_dir=Path("."),
+            )
+
+    @patch("tools.release.github_release_client.resolve_repo_owner_and_name")
+    @patch("tools.release.github_release_client.call_github_api")
+    @patch.dict(
+        "os.environ",
+        {"GITHUB_OWNER": "custom_owner", "GITHUB_TOKEN": "", "GH_TOKEN": "fallback_gh_token"},
+        clear=True,
+    )
+    def test_publish_via_rest_api_single_env_var(
+        self, mock_api: MagicMock, mock_resolve_repo: MagicMock
+    ) -> None:
+        mock_resolve_repo.return_value = ("custom_owner", "xmc")
+        captured_token: list[str | None] = []
+
+        def _fake_api(*_args: object, **_kwargs: object) -> dict[str, str]:
+            captured_token.append(os.environ.get("GITHUB_TOKEN"))
+            return {"html_url": "https://github.com/custom_owner/xmc/releases/1"}
+
+        mock_api.side_effect = _fake_api
+        publish_via_rest_api(
+            "0.6.0",
+            "Release 0.6.0",
+            "# Notes",
+            draft=False,
+            prerelease=False,
+            target_commit="HEAD",
+            repo_dir=Path("."),
+        )
+        mock_api.assert_called_once_with(
+            "/repos/custom_owner/xmc/releases",
+            method="POST",
+            payload={
+                "tag_name": "0.6.0",
+                "target_commitish": "HEAD",
+                "name": "Release 0.6.0",
+                "body": "# Notes",
+                "draft": False,
+                "prerelease": False,
+            },
+            user_agent="XMC-Release-Publisher",
+        )
+        self.assertEqual(captured_token, ["fallback_gh_token"])
+        self.assertEqual(os.environ.get("GITHUB_TOKEN"), "")
 
 
 if __name__ == "__main__":

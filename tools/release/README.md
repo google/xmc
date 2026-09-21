@@ -174,6 +174,15 @@ python3 tools/release/publish_release.py \
 | `--prerelease` | | `false` | Mark release as prerelease on GitHub |
 | `--force` | | `false` | Overwrite existing local or remote tag |
 
+### Headless CI & REST API Fallback
+
+In headless environments where the `gh` CLI is not installed, `publish_release.py` automatically falls back to creating the release using the GitHub REST API (`POST /repos/{owner}/{repo}/releases`). Ensure `GITHUB_TOKEN` or `GH_TOKEN` is exported in the environment with repo write permissions:
+
+```bash
+export GITHUB_TOKEN="ghp_your_personal_access_token"
+python3 tools/release/publish_release.py --tag 0.6.0 --notes-file /tmp/release_notes_v0.6.0.md
+```
+
 ---
 
 ## 6. Package Architecture
@@ -181,7 +190,7 @@ python3 tools/release/publish_release.py \
 - [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, SemVer recommendation, and output generation.
 - [`feature_flags.py`](feature_flags.py): Discovers feature toggles from CTK and Helm manifests and computes flag transitions between releases.
 - [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, `git remote`, `git show`, and annotated tag lifecycle operations (`verify_local_tag`, `verify_remote_tag`, `create_git_tag`, `push_git_tag`).
-- [`github_release_client.py`](github_release_client.py): GitHub release creation client transports (`publish_via_gh_cli`).
+- [`github_release_client.py`](github_release_client.py): GitHub release creation client transports (`publish_via_gh_cli` and headless REST API fallback `publish_via_rest_api`).
 - [`models.py`](models.py): Strongly-typed dataclasses and TypedDicts for release metadata, commits, flag transitions, and publication results.
 - [`publish_release.py`](publish_release.py): CLI entrypoint orchestrating pre-flight validation, git tag lifecycle, and GitHub release publication.
 - [`semver_engine.py`](semver_engine.py): Semantic version calculation and release increment recommendation engine.
