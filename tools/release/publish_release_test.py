@@ -157,6 +157,47 @@ class PublishReleaseTest(unittest.TestCase):
                 repo_dir=Path("."),
             )
 
+        mock_subprocess.side_effect = FileNotFoundError()
+        with self.assertRaises(HandledError):
+            publish_via_gh_cli(
+                "0.6.0",
+                "Release 0.6.0",
+                self.notes_file,
+                draft=False,
+                prerelease=False,
+                target_commit="HEAD",
+                repo_dir=Path("."),
+            )
+
+    @patch("tools.release.publish_release.publish_via_gh_cli")
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_publish_release_post_push_failure_adds_rollback_note(
+        self,
+        mock_subprocess: MagicMock,
+        mock_which: MagicMock,
+        mock_publish_gh: MagicMock,
+    ) -> None:
+        mock_which.return_value = "/usr/bin/gh"
+        mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
+        mock_publish_gh.side_effect = HandledError("gh failed", "fix gh")
+
+        args = argparse.Namespace(
+            tag="0.6.0",
+            notes_file=str(self.notes_file),
+            title="Release 0.6.0",
+            target_commit="HEAD",
+            repo_dir=".",
+            remote="origin",
+            draft=False,
+            prerelease=False,
+            skip_push=False,
+            force=False,
+        )
+        with self.assertRaises(HandledError) as ctx:
+            publish_release(args)
+        self.assertIn("git tag -d 0.6.0", ctx.exception.instruction)
+
     @patch("tools.release.publish_release.get_git_remote_url")
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -223,20 +264,21 @@ class PublishReleaseTest(unittest.TestCase):
         mock_subprocess.assert_not_called()
 
     def test_publish_release_empty_tag(self) -> None:
-        args = argparse.Namespace(
-            tag="   ",
-            notes_file=str(self.notes_file),
-            title=None,
-            target_commit="HEAD",
-            repo_dir=".",
-            remote="origin",
-            draft=False,
-            prerelease=False,
-            skip_push=True,
-            force=False,
-        )
-        with self.assertRaises(HandledError):
-            publish_release(args)
+        for invalid_tag in ["   ", "-v0.6.0"]:
+            args = argparse.Namespace(
+                tag=invalid_tag,
+                notes_file=str(self.notes_file),
+                title=None,
+                target_commit="HEAD",
+                repo_dir=".",
+                remote="origin",
+                draft=False,
+                prerelease=False,
+                skip_push=True,
+                force=False,
+            )
+            with self.assertRaises(HandledError):
+                publish_release(args)
 
     def test_publish_release_invalid_repo_dir(self) -> None:
         args = argparse.Namespace(

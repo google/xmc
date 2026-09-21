@@ -58,7 +58,14 @@ def _run_git(
 ) -> subprocess.CompletedProcess[str]:
     """Runs a git command with unified error handling."""
     try:
-        return subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, check=check)
+        return subprocess.run(
+            cmd,
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=check,
+        )
     except FileNotFoundError as e:
         raise HandledError(
             "git command not found.",
@@ -149,19 +156,18 @@ def resolve_target_commit(target_commit: str, repo_dir: Path) -> str:
         raise
 
 
-def publish_via_gh_cli(
+def _build_gh_release_cmd(
     tag: str,
     title: str,
     notes_path: Path,
+    owner: str,
+    repo: str,
     draft: bool,
     prerelease: bool,
     target_commit: str,
-    repo_dir: Path,
-    remote: str = "origin",
-    force: bool = False,
-) -> str:
-    """Publishes a GitHub release using the gh CLI."""
-    owner, repo = resolve_repo_owner_and_name(repo_dir, remote)
+    force: bool,
+) -> list[str]:
+    """Builds the gh release create command arguments."""
     gh_cmd = [
         "gh",
         "release",
@@ -182,10 +188,40 @@ def publish_via_gh_cli(
         gh_cmd.extend(["--target", target_commit])
     if force:
         gh_cmd.append("--clobber")
+    return gh_cmd
 
+
+def publish_via_gh_cli(
+    tag: str,
+    title: str,
+    notes_path: Path,
+    draft: bool,
+    prerelease: bool,
+    target_commit: str,
+    repo_dir: Path,
+    remote: str = "origin",
+    force: bool = False,
+) -> str:
+    """Publishes a GitHub release using the gh CLI."""
+    owner, repo = resolve_repo_owner_and_name(repo_dir, remote)
+    gh_cmd = _build_gh_release_cmd(
+        tag, title, notes_path, owner, repo, draft, prerelease, target_commit, force
+    )
     try:
-        res = subprocess.run(gh_cmd, cwd=str(repo_dir), capture_output=True, text=True, check=True)
+        res = subprocess.run(
+            gh_cmd,
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=True,
+        )
         return res.stdout.strip()
+    except FileNotFoundError as e:
+        raise HandledError(
+            "GitHub CLI ('gh') is not installed or not in PATH.",
+            "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
+        ) from e
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr.strip() if e.stderr else str(e)
         raise HandledError(
@@ -194,12 +230,13 @@ def publish_via_gh_cli(
         ) from e
 
 
-def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
-    """Creates an annotated git tag and publishes a GitHub Release."""
+def _validate_preflight(args: argparse.Namespace) -> tuple[str, Path, Path]:
+    """Validates CLI inputs, files, and environment dependencies before git mutations."""
     tag = args.tag.strip()
-    if not tag:
+    if not tag or tag.startswith("-"):
         raise HandledError(
-            "Tag name cannot be empty.", "Provide a valid tag name, e.g. --tag 0.6.0."
+            "Tag name cannot be empty or start with '-'.",
+            "Provide a valid tag name, e.g. --tag 0.6.0.",
         )
 
     repo_dir = Path(args.repo_dir).resolve()
@@ -212,25 +249,24 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
     notes_path = Path(args.notes_file).resolve()
     read_notes_file(notes_path)
 
-    # Pre-flight check: Ensure GitHub CLI is installed before making any remote changes
     if not shutil.which("gh"):
         raise HandledError(
             "GitHub CLI ('gh') is not installed or not in PATH.",
             "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
         )
+    return tag, repo_dir, notes_path
 
+
+def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
+    """Creates an annotated git tag and publishes a GitHub Release."""
+    tag, repo_dir, notes_path = _validate_preflight(args)
     title = args.title or f"Release {tag}"
     target_commit = resolve_target_commit(args.target_commit or "HEAD", repo_dir)
 
-    # 1. Verify and create git tag
     verify_local_tag(tag, repo_dir, args.force)
     create_git_tag(tag, target_commit, title, repo_dir, args.force)
-
-    # 2. Push git tag to remote (if not skipped)
     if not args.skip_push:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
-
-    # 3. Publish release via gh CLI
 
     try:
         release_url = publish_via_gh_cli(
