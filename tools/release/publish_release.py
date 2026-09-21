@@ -76,8 +76,13 @@ def _run_git(
         raise HandledError(f"{err_prefix}: {detail}", instruction) from e
 
 
-def verify_local_tag(tag: str, repo_dir: Path, force: bool) -> None:
-    """Verifies whether the target git tag already exists locally."""
+def verify_local_tag(
+    tag: str, repo_dir: Path, force: bool, target_commit: str | None = None
+) -> bool:
+    """Verifies whether the target git tag already exists locally.
+
+    Returns True if the tag exists and matches target_commit (can be reused), False otherwise.
+    """
     res = _run_git(
         ["git", "tag", "-l", tag],
         repo_dir,
@@ -90,11 +95,27 @@ def verify_local_tag(tag: str, repo_dir: Path, force: bool) -> None:
             f"Failed to check local git tags: {res.stderr.strip() if res.stderr else ''}",
             "Ensure the repository directory is a valid Git repository.",
         )
-    if res.stdout.strip() == tag and not force:
-        raise HandledError(
-            f"Git tag '{tag}' already exists in local repository.",
-            "Verify the version number or use a new incremented version.",
-        )
+    if res.stdout.strip() == tag:
+        if not force:
+            if target_commit:
+                tag_commit_res = _run_git(
+                    ["git", "rev-parse", f"refs/tags/{tag}^{{commit}}"],
+                    repo_dir,
+                    "Failed to resolve existing tag commit",
+                    "",
+                    check=False,
+                )
+                if (
+                    tag_commit_res.returncode == 0
+                    and tag_commit_res.stdout.strip() == target_commit
+                ):
+                    return True
+            raise HandledError(
+                f"Git tag '{tag}' already exists in local repository.",
+                "Verify the version number or use a new incremented version.",
+            )
+        return False
+    return False
 
 
 def verify_remote_tag(tag: str, repo_dir: Path, force: bool, remote: str = "origin") -> None:
@@ -306,7 +327,7 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
     title = args.title or f"Release {tag}"
     target_commit = resolve_target_commit(args.target_commit or "HEAD", repo_dir)
 
-    verify_local_tag(tag, repo_dir, args.force)
+    tag_exists_and_matches = verify_local_tag(tag, repo_dir, args.force, target_commit)
     if not args.skip_push:
         verify_remote_tag(tag, repo_dir, args.force, remote=args.remote)
 
@@ -322,7 +343,8 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             "notes_file": str(notes_path),
         }
 
-    create_git_tag(tag, target_commit, title, repo_dir, args.force)
+    if not tag_exists_and_matches:
+        create_git_tag(tag, target_commit, title, repo_dir, args.force)
     if not args.skip_push:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
 

@@ -63,14 +63,42 @@ class PublishReleaseTest(unittest.TestCase):
     @patch("subprocess.run")
     def test_verify_local_tag(self, mock_subprocess: MagicMock) -> None:
         mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
-        verify_local_tag("0.6.0", Path("."), force=False)
+        self.assertFalse(verify_local_tag("0.6.0", Path("."), force=False))
 
+        # Tag exists but no target_commit provided -> raises HandledError
         mock_subprocess.return_value = MagicMock(stdout="0.6.0\n", returncode=0)
         with self.assertRaises(HandledError):
             verify_local_tag("0.6.0", Path("."), force=False)
 
+        # Tag exists and matches target_commit -> returns True (no raise)
+        def side_effect(cmd: list[str], **_kwargs: object) -> MagicMock:
+            if cmd == ["git", "tag", "-l", "0.6.0"]:
+                return MagicMock(stdout="0.6.0\n", returncode=0)
+            if cmd == ["git", "rev-parse", "refs/tags/0.6.0^{commit}"]:
+                return MagicMock(stdout="a1b2c3d4\n", returncode=0)
+            return MagicMock(stdout="", returncode=0)
+
+        mock_subprocess.side_effect = side_effect
+        self.assertTrue(verify_local_tag("0.6.0", Path("."), force=False, target_commit="a1b2c3d4"))
+
+        # Tag exists but points to different commit -> raises HandledError
+        def side_effect_diff(cmd: list[str], **_kwargs: object) -> MagicMock:
+            if cmd == ["git", "tag", "-l", "0.6.0"]:
+                return MagicMock(stdout="0.6.0\n", returncode=0)
+            if cmd == ["git", "rev-parse", "refs/tags/0.6.0^{commit}"]:
+                return MagicMock(stdout="different_sha\n", returncode=0)
+            return MagicMock(stdout="", returncode=0)
+
+        mock_subprocess.side_effect = side_effect_diff
+        with self.assertRaises(HandledError):
+            verify_local_tag("0.6.0", Path("."), force=False, target_commit="a1b2c3d4")
+
+        # Reset side_effect for remaining tests
+        mock_subprocess.side_effect = None
+
         # When force is True, tag collision should not raise
-        verify_local_tag("0.6.0", Path("."), force=True)
+        mock_subprocess.return_value = MagicMock(stdout="0.6.0\n", returncode=0)
+        self.assertFalse(verify_local_tag("0.6.0", Path("."), force=True))
 
         mock_subprocess.return_value = MagicMock(stderr="error", returncode=1)
         with self.assertRaises(HandledError):
