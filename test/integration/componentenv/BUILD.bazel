@@ -45,7 +45,10 @@ go_library(
 go_test(
     name = "componentenv_test",
     size = "small",
-    srcs = ["admission_errors_test.go"],
+    srcs = [
+        "admission_errors_test.go",
+        "policy_activation_test.go",
+    ],
     embed = [":componentenv"],
     deps = [
         "@io_k8s_apimachinery//pkg/api/errors",

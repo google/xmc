@@ -63,12 +63,18 @@ const policyActivationTimeout = 30 * time.Second
 // policyActivationPollInterval is the delay between deletion-protection activation probes.
 const policyActivationPollInterval = 50 * time.Millisecond
 
+// probeComponentName is the name of the throwaway Component used to detect policy activation.
+const probeComponentName = "policy-activation-probe"
+
 // Harness owns a running envtest control plane preloaded with the Component CRD and policy.
 type Harness struct {
 	env          *envtest.Environment
-	adminCfg     *rest.Config
-	subjectCfg   *rest.Config
 	adminClients kubernetes.Interface
+	// adminDynamic and subjectDynamic are built once and re-scoped per namespace. Constructing a
+	// dynamic client allocates a fresh HTTP transport and connection pool, so building one per
+	// test namespace would be wasteful.
+	adminDynamic   dynamic.Interface
+	subjectDynamic dynamic.Interface
 }
 
 // Clients holds the Component clients scoped to one test namespace.
@@ -125,7 +131,20 @@ func configure(ctx context.Context, env *envtest.Environment, adminCfg *rest.Con
 	if err != nil {
 		return nil, fmt.Errorf("provisioning policy-subject user: %w", err)
 	}
-	return &Harness{env: env, adminCfg: adminCfg, subjectCfg: subjectCfg, adminClients: adminClients}, nil
+	adminDynamic, err := dynamic.NewForConfig(adminCfg)
+	if err != nil {
+		return nil, fmt.Errorf("building admin dynamic client: %w", err)
+	}
+	subjectDynamic, err := dynamic.NewForConfig(subjectCfg)
+	if err != nil {
+		return nil, fmt.Errorf("building policy-subject dynamic client: %w", err)
+	}
+	return &Harness{
+		env:            env,
+		adminClients:   adminClients,
+		adminDynamic:   adminDynamic,
+		subjectDynamic: subjectDynamic,
+	}, nil
 }
 
 // Stop shuts the control plane down.
@@ -134,6 +153,10 @@ func (h *Harness) Stop() error {
 }
 
 // NewNamespace creates a uniquely named namespace and returns Component clients scoped to it.
+//
+// The namespace is intentionally not deleted afterwards. envtest runs only etcd and the API
+// server, with no kube-controller-manager, so nothing finalizes a deleted namespace: it would
+// simply sit in the Terminating phase for the rest of the run.
 func (h *Harness) NewNamespace(ctx context.Context) (*Clients, error) {
 	ns, err := h.adminClients.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: "xmc-components-"},
@@ -141,15 +164,24 @@ func (h *Harness) NewNamespace(ctx context.Context) (*Clients, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating test namespace: %w", err)
 	}
-	admin, err := componentClient(h.adminCfg, ns.GetName())
-	if err != nil {
-		return nil, err
-	}
-	subject, err := componentClient(h.subjectCfg, ns.GetName())
-	if err != nil {
-		return nil, err
-	}
-	return &Clients{Namespace: ns.GetName(), Admin: admin, PolicySubject: subject}, nil
+	name := ns.GetName()
+	return &Clients{
+		Namespace:     name,
+		Admin:         h.adminDynamic.Resource(ComponentGVR).Namespace(name),
+		PolicySubject: h.subjectDynamic.Resource(ComponentGVR).Namespace(name),
+	}, nil
+}
+
+// probeOps are the probe operations the activation poll loop depends on. They are injected so the
+// retry behavior can be unit tested without a control plane: against a real API server the policy
+// is live on the first attempt, so the retry path would otherwise never be exercised.
+type probeOps struct {
+	// create provisions a deletion-protected probe Component as the admin user.
+	create func(context.Context) error
+	// deleteAsSubject attempts the deletion whose rejection proves the policy is enforced.
+	deleteAsSubject func(context.Context) error
+	// deleteAsAdmin removes the probe once the policy is confirmed, via the breakglass user.
+	deleteAsAdmin func(context.Context) error
 }
 
 // WaitForDeletionPolicy blocks until the deletion-protection policy is actually enforced, which it
@@ -161,23 +193,44 @@ func (h *Harness) WaitForDeletionPolicy(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("creating activation probe namespace: %w", err)
 	}
-	probe, err := clients.Admin.Create(ctx, NewComponent("policy-activation-probe", true), metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("creating activation probe: %w", err)
+	ops := probeOps{
+		create: func(ctx context.Context) error {
+			_, err := clients.Admin.Create(ctx, NewComponent(probeComponentName, true), metav1.CreateOptions{})
+			return err
+		},
+		deleteAsSubject: func(ctx context.Context) error {
+			return clients.PolicySubject.Delete(ctx, probeComponentName, metav1.DeleteOptions{})
+		},
+		deleteAsAdmin: func(ctx context.Context) error {
+			return clients.Admin.Delete(ctx, probeComponentName, metav1.DeleteOptions{})
+		},
 	}
+	return pollUntilPolicyEnforced(ctx, ops, policyActivationTimeout)
+}
 
-	deadline := time.Now().Add(policyActivationTimeout)
+// pollUntilPolicyEnforced retries the probe until its deletion is denied by the policy.
+func pollUntilPolicyEnforced(ctx context.Context, ops probeOps, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for {
-		err := clients.PolicySubject.Delete(ctx, probe.GetName(), metav1.DeleteOptions{})
+		// The probe is recreated on every attempt: while the policy is not yet enforced the
+		// deletion below actually succeeds and destroys it, so a probe created once outside the
+		// loop would be usable exactly once.
+		if err := ops.create(ctx); err != nil {
+			return fmt.Errorf("creating activation probe: %w", err)
+		}
+
+		err := ops.deleteAsSubject(ctx)
 		if IsDeniedByPolicy(err) {
+			if err := ops.deleteAsAdmin(ctx); err != nil {
+				return fmt.Errorf("deleting activation probe: %w", err)
+			}
 			return nil
 		}
-
-		if err == nil {
-			return fmt.Errorf("activation probe was deleted, so the deletion-protection policy is not enforced")
+		if err != nil {
+			return fmt.Errorf("deleting activation probe: %w", err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("deletion-protection policy was not enforced within %v, last error: %w", policyActivationTimeout, err)
+			return fmt.Errorf("deletion-protection policy was not enforced within %v", timeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -198,15 +251,6 @@ func NewComponent(name string, deletionProtection bool) *unstructured.Unstructur
 			"deletionProtection": deletionProtection,
 		},
 	}}
-}
-
-// componentClient returns a namespaced Component client for the supplied credentials.
-func componentClient(cfg *rest.Config, namespace string) (dynamic.ResourceInterface, error) {
-	client, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("building dynamic client for namespace %q: %w", namespace, err)
-	}
-	return client.Resource(ComponentGVR).Namespace(namespace), nil
 }
 
 // addPolicySubjectUser provisions a cluster-admin user outside system:masters, so that the
