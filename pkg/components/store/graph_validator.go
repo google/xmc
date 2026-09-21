@@ -15,11 +15,13 @@
 package store
 
 import (
+	"context"
 	"sort"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/components/graph"
 	"xmanager_cloud/pkg/components/naming"
 )
@@ -128,14 +130,18 @@ func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord
 func validateProspectiveGraph(depGraph DependencyGraph, canonicalTarget string, normalized []string) error {
 	for _, dep := range normalized {
 		if dep == canonicalTarget {
-			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s -> %s", canonicalTarget, canonicalTarget)
+			cycleStr := canonicalTarget + " -> " + canonicalTarget
+			logging.Warn(context.Background(), "Prospective dependency self-cycle detected", "target", canonicalTarget, "cycle", cycleStr)
+			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", cycleStr)
 		}
 	}
 
 	depGraph[canonicalTarget] = normalized
 
 	if cycle, found := DetectCycles(depGraph); found {
-		return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", graph.FormatCycle(cycle))
+		cycleStr := graph.FormatCycle(cycle)
+		logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
+		return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", cycleStr)
 	}
 	return nil
 }
