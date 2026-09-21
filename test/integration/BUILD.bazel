@@ -35,15 +35,24 @@ go_test(
     name = "integration_test",
     size = "medium",
     timeout = "short",
-    srcs = ["components_admission_test.go"],
+    srcs = [
+        "components_admission_test.go",
+        "components_status_sync_test.go",
+    ],
     data = [
         ":envtest_control_plane_binaries",
         "//deploy/helm:chart",
     ],
     deps = [
+        "//api/protos/components/v1alpha1",
+        "//pkg/components/bridge",
+        "//pkg/components/bridge/statussync",
         "//test/integration/componentenv",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//dynamic",
     ],
 )

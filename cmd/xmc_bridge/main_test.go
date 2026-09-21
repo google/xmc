@@ -240,85 +240,7 @@ func TestController_RunReconcilePass(t *testing.T) {
 	}
 }
 
-func TestBuildStatus(t *testing.T) {
-	res := &bridge.ReconcileResult{
-		ObservedGeneration: 5,
-		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Access:             &bridge.AccessStatus{EnvVars: map[string]string{"PORT": "8080"}},
-		Conditions: []bridge.Condition{
-			{
-				Type:               bridge.ConditionTypeReady,
-				Status:             bridge.ConditionStatusTrue,
-				ObservedGeneration: 5,
-				Reason:             "ComponentReady",
-				Message:            "All good",
-				LastTransitionTime: time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
-			},
-		},
-	}
-
-	status := BuildStatus(res)
-	if status.ObservedGeneration != 5 {
-		t.Errorf("expected ObservedGeneration 5, got %v", status.ObservedGeneration)
-	}
-	if status.State != "COMPONENT_STATE_ENABLED" {
-		t.Errorf("expected State COMPONENT_STATE_ENABLED, got %v", status.State)
-	}
-	if status.Access == nil || status.Access.EnvVars["PORT"] != "8080" {
-		t.Errorf("expected Access.EnvVars[PORT]=8080, got %+v", status.Access)
-	}
-	if len(status.Conditions) != 1 {
-		t.Fatalf("expected 1 condition, got %d", len(status.Conditions))
-	}
-	cond := status.Conditions[0]
-	if cond.Type != bridge.ConditionTypeReady || cond.Status != string(bridge.ConditionStatusTrue) || cond.ObservedGeneration != 5 || cond.Reason != "ComponentReady" || cond.Message != "All good" {
-		t.Errorf("unexpected condition content: %+v", cond)
-	}
-}
-
-func TestBuildStatusMap(t *testing.T) {
-	res := &bridge.ReconcileResult{
-		ObservedGeneration: 5,
-		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Access:             &bridge.AccessStatus{EnvVars: map[string]string{"PORT": "8080"}},
-		Conditions: []bridge.Condition{
-			{
-				Type:               bridge.ConditionTypeReady,
-				Status:             bridge.ConditionStatusTrue,
-				ObservedGeneration: 5,
-				Reason:             "ComponentReady",
-				Message:            "All good",
-				LastTransitionTime: time.Now(),
-			},
-		},
-	}
-
-	statusMap := BuildStatusMap(res)
-	if statusMap["observedGeneration"] != int64(5) {
-		t.Errorf("expected observedGeneration 5, got %v", statusMap["observedGeneration"])
-	}
-	if statusMap["state"] != "COMPONENT_STATE_ENABLED" {
-		t.Errorf("expected state COMPONENT_STATE_ENABLED, got %v", statusMap["state"])
-	}
-
-	accessMap, ok := statusMap["access"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected access map in status, got %v", statusMap["access"])
-	}
-	envVars, ok := accessMap["envVars"].(map[string]any)
-	if !ok || envVars["PORT"] != "8080" {
-		t.Errorf("expected envVars[PORT]=8080, got %v", accessMap["envVars"])
-	}
-
-	conds, ok := statusMap["conditions"].([]any)
-	if !ok || len(conds) != 1 {
-		t.Fatalf("expected 1 condition in status, got %v", statusMap["conditions"])
-	}
-	condMap, ok := conds[0].(map[string]any)
-	if !ok || condMap["type"] != bridge.ConditionTypeReady || condMap["status"] != string(bridge.ConditionStatusTrue) {
-		t.Errorf("unexpected condition content: %+v", condMap)
-	}
-}
+// ... removed TestBuildStatus and TestBuildStatusMap
 
 func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("CMS_ADDRESS", "custom-cms:50051")
@@ -430,29 +352,8 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
 	}
 }
-func TestController_SyncFinalizers_NilResult(t *testing.T) {
-	ctx := context.Background()
-	scheme := runtime.NewScheme()
-	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
-	ctrl := NewController(fakeDynamic, nil, "xmc", time.Second, time.Second)
 
-	item := &unstructured.Unstructured{
-		Object: map[string]any{
-			"metadata": map[string]any{
-				"name":      "test-item",
-				"namespace": "xmc",
-			},
-		},
-	}
-
-	got, err := ctrl.syncFinalizers(ctx, item, nil)
-	if err != nil {
-		t.Fatalf("syncFinalizers returned unexpected error: %v", err)
-	}
-	if got != item {
-		t.Errorf("expected original item returned on nil res, got %v", got)
-	}
-}
+// ... removed TestController_SyncFinalizers_NilResult
 
 func TestController_ReconcileItem(t *testing.T) {
 	ctx := context.Background()

@@ -28,6 +28,7 @@ go_library(
         "//api/protos/components/v1alpha1",
         "//internal/logging",
         "//pkg/components/bridge",
+        "//pkg/components/bridge/statussync",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",

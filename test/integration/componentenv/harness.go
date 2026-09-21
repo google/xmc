@@ -87,6 +87,9 @@ type Clients struct {
 	// PolicySubject acts as a cluster-admin user outside system:masters, and is therefore
 	// subject to the deletion-protection policy.
 	PolicySubject dynamic.ResourceInterface
+	// Dynamic is the unscoped admin dynamic client, for production types that construct their
+	// own resource clients from a dynamic.Interface.
+	Dynamic dynamic.Interface
 }
 
 // New boots an API server, installs the Component CRD and the deletion-protection policy, and
@@ -169,6 +172,7 @@ func (h *Harness) NewNamespace(ctx context.Context) (*Clients, error) {
 		Namespace:     name,
 		Admin:         h.adminDynamic.Resource(ComponentGVR).Namespace(name),
 		PolicySubject: h.subjectDynamic.Resource(ComponentGVR).Namespace(name),
+		Dynamic:       h.adminDynamic,
 	}, nil
 }
 
