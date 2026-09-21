@@ -117,10 +117,16 @@ jobs:
         if: steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
         run: |
           echo "Starting background port-forward for ClickHouse..."
-          kubectl port-forward svc/clickhouse 9000:9000 8123:8123 -n xmc-metrics &
+          RUNNER_TRACKING_ID="" nohup kubectl port-forward svc/clickhouse 9000:9000 8123:8123 -n xmc-metrics >/tmp/clickhouse-pf.log 2>&1 &
           PF_PID=$!
           echo "CLICKHOUSE_PF_PID=${PF_PID}" >> "${GITHUB_ENV}"
-          sleep 3
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
+              echo "ClickHouse port-forward ready on http://127.0.0.1:8123"
+              break
+            fi
+            sleep 1
+          done
 
       - name: 'Set up Python 3.13'
         if: steps.filter-check.outputs.should_run == 'true'
@@ -135,6 +141,7 @@ jobs:
         run: |
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
           if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"

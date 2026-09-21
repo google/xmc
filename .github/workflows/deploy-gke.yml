@@ -334,6 +334,23 @@ jobs:
             managed_xprof_gcs_bucket: "gs://${PROJECT_ID}-mlruns"
           EOF_YAML
 
+      - name: 'Pre-Deploy Metrics Addons (If Cluster Exists)'
+        if: ${{ inputs.enable_metrics == true }}
+        run: |
+          if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+            gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
+            kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create namespace xmc --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create configmap clickhouse-format-schemas \
+              --from-file=metrics.proto=api/protos/metrics/metrics.proto \
+              -n xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+            kubectl apply -f deploy/addons/metrics/metrics-k8s-stack.yaml
+            kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
+            kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
+            kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
+            kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
+          fi
+
       - name: 'Execute GKE Deployment Pipeline'
         run: |
           python3 tools/dev_env/dev_env.py gke-deploy \
@@ -345,27 +362,18 @@ jobs:
         if: ${{ inputs.enable_metrics == true }}
         run: |
           gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
-          helm repo add redpanda https://charts.redpanda.com
-          helm repo add clickhouse https://charts.clickhouse.com
-          helm repo update
-
           kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
-
-          helm upgrade --install redpanda redpanda/redpanda \
-            --namespace xmc-metrics \
-            --create-namespace \
-            -f deploy/addons/metrics/redpanda/values.yaml
-
-          helm upgrade --install clickhouse clickhouse/clickhouse \
-            --namespace xmc-metrics \
-            --create-namespace \
-            -f deploy/addons/metrics/clickhouse/values.yaml
-
-          kubectl rollout status statefulset -l app.kubernetes.io/name=clickhouse -n xmc-metrics --timeout=300s || kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=clickhouse -n xmc-metrics --timeout=300s
-          CLICKHOUSE_POD=$(kubectl get pod -n xmc-metrics -l app.kubernetes.io/name=clickhouse -o jsonpath='{.items[0].metadata.name}')
-          if [ -n "${CLICKHOUSE_POD}" ]; then
-            kubectl exec -i -n xmc-metrics "${CLICKHOUSE_POD}" -- clickhouse-client < deploy/clickhouse/schema.sql
-          fi
+          kubectl create namespace xmc --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap clickhouse-format-schemas \
+            --from-file=metrics.proto=api/protos/metrics/metrics.proto \
+            -n xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f deploy/addons/metrics/metrics-k8s-stack.yaml
+          kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
+          kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
+          kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
+          kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
+          docker build -t "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest" -f examples/clickhouse_metrics_job/Dockerfile .
+          docker push "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest"
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}
