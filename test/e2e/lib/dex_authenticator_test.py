@@ -60,12 +60,20 @@ class TestDexAuthenticator(unittest.TestCase):
             ("http://localhost:5556/dex/approval?req=x", False),
             ("http://localhost:8080/experiments", True),
             ("http://localhost:8080/?error=forbidden&email=unauthorized%40xmc.local", True),
+            ("http://localhost:8080/?error=forbidden&email=dexter%40xmc.local", True),
             ("http://localhost:8080/?error=permission_error", True),
             ("http://localhost:8080/api/callback?code=a&state=b", True),
         ]
         for url, expected in cases:
             with self.subTest(url=url):
                 self.assertEqual(self.auth._is_off_dex(url), expected)
+
+        same_host_auth = DexAuthenticator(
+            base_url="http://localhost:8080",
+            dex_url="http://localhost:8080/dex",
+        )
+        self.assertFalse(same_host_auth._is_off_dex("http://localhost:8080/dex/auth/local"))
+        self.assertTrue(same_host_auth._is_off_dex("http://localhost:8080/experiments"))
 
     def test_credentials_wait_predicate_accepts_denial_redirect_and_approval(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -47,7 +47,7 @@ DEFAULT_DEX_CLIENT_ID = "xmc-client"
 DEFAULT_DEX_CLIENT_SECRET = "xmc-client-secret"
 
 
-class E2ETier(enum.StrEnum):
+class E2ETier(str, enum.Enum):
     """Execution tier determining virtualenv dependency set."""
 
     UI = "ui"

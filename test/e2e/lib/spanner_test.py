@@ -307,23 +307,25 @@ class TestSpannerManager(unittest.TestCase):
 
     @patch("time.sleep")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_init_migration_version_retries_on_duplicate_name_error(self, mock_run, mock_sleep):
-        mock_run.side_effect = [
-            subprocess.CalledProcessError(
-                returncode=1,
-                cmd=["migrations"],
-                stderr=b"rpc error: code = FailedPrecondition desc = Duplicate name in schema: SchemaMigrations",
-            ),
-            subprocess.CompletedProcess(args=[], returncode=0),
-        ]
+    def test_init_migration_version_fails_fast_on_duplicate_name_error(self, mock_run, mock_sleep):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["migrations"],
+            stderr=b"rpc error: code = FailedPrecondition desc = Duplicate name in schema: SchemaMigrations",
+        )
 
-        with patch.object(
-            self.mgr, "_resolve_migration_binary", return_value="/workspace/bazel-bin/migrations"
+        with (
+            patch.object(
+                self.mgr,
+                "_resolve_migration_binary",
+                return_value="/workspace/bazel-bin/migrations",
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
         ):
             self.mgr._init_migration_version("test-db", "ess")
 
-        self.assertEqual(mock_run.call_count, 2)
-        mock_sleep.assert_called_once_with(5)
+        self.assertEqual(mock_run.call_count, 1)
+        mock_sleep.assert_not_called()
 
 
 if __name__ == "__main__":

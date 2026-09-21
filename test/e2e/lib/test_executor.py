@@ -80,12 +80,18 @@ class PlaywrightTestExecutor:
                 import playwright  # noqa: F401
                 import requests  # noqa: F401
 
+                if self.cfg.tier == E2ETier.WORKLOAD:
+                    import absl  # noqa: F401
+                    import dotenv  # noqa: F401
+                    import google.auth  # noqa: F401
+                    import grpc  # noqa: F401
+                    import xmanager.xm_cloud  # noqa: F401
+
                 if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
                     logger.info(
                         "Using pre-baked Playwright environment at %s (0s setup).",
                         sys.executable,
                     )
-                    self._ensure_xmanager_installed(sys.executable)
                     return sys.executable
             except ImportError as e:
                 logger.debug(

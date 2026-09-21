@@ -53,7 +53,11 @@ class DexAuthenticator:
 
     def _is_off_dex(self, url: str) -> bool:
         """Reports whether the browser has navigated away from the Dex IdP host."""
-        return urllib.parse.urlparse(url).netloc != self.dex_parsed.netloc and "dex" not in url
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc != self.dex_parsed.netloc:
+            return True
+        dex_path = self.dex_parsed.path.rstrip("/")
+        return not parsed.path.startswith(dex_path) if dex_path else False
 
     def _navigate_to_landing_and_sign_in(
         self, page: Page | Any, screenshots_dir: Path, email: str

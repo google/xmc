@@ -58,7 +58,6 @@ def _is_retryable_spanner_error(err_str: str) -> bool:
         "maximum database limit",
         "too many concurrent",
         "pending ddl operations",
-        "duplicate name",
     )
     return any(marker in err_str for marker in retryable_markers)
 
