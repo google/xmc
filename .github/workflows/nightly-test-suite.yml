@@ -100,11 +100,13 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r examples/simple_job/requirements.txt
 
       - name: 'Mint XMC Identity Token'
+        env:
+          DEFAULT_USER_EMAIL: "${{ secrets.XMC_USER_EMAIL || format('{0}@google.com', github.actor) }}"
         run: |
           TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
           echo "::add-mask::${TOKEN}"
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
-          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || format('{0}@google.com', github.actor) }}" >> "${GITHUB_ENV}"
+          echo "XMC_USER_EMAIL=${DEFAULT_USER_EMAIL}" >> "${GITHUB_ENV}"
 
       - name: 'Launch Demo Workload'
         id: launch-demo-workload
