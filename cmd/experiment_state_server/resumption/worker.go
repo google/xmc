@@ -114,7 +114,14 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return err
 		}
 
-		// TODO(pausescheduling): Check on every batch iteration if scheduling was re-paused or if this worker still claims the current resumption process (via ResumptionRunID and ResumptionWorkerID).
+		stop, err := w.shouldStopReplay(ctx, req.ResumptionRunID, resumptionWorkerID)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+
 		// TODO(pausescheduling): Check downstream Redis backlog against req.MaxBacklogThreshold before fetching next batch.
 
 		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
@@ -134,6 +141,34 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 
 		// TODO(pausescheduling): Extend message lease via heartbeat during batch processing.
 	}
+}
+
+func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
+	state, err := w.pauseStateRepo.Get(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get pause state during batch iteration: %w", err)
+	}
+	if state.SchedulingPaused {
+		logging.Info(ctx, "Scheduling re-paused mid-resumption; halting replay loop",
+			"resumption_run_id", runID,
+			"resumption_worker_id", resumptionWorkerID)
+		return true, nil
+	}
+	if state.ResumptionRunID != runID {
+		logging.Info(ctx, "Resumption run ID changed mid-resumption; halting replay loop",
+			"expected_run_id", runID,
+			"current_run_id", state.ResumptionRunID,
+			"resumption_worker_id", resumptionWorkerID)
+		return true, nil
+	}
+	if state.ResumptionWorkerID != resumptionWorkerID {
+		logging.Info(ctx, "Resumption worker fenced; another worker claimed the resumption process",
+			"resumption_run_id", runID,
+			"current_worker_id", state.ResumptionWorkerID,
+			"resumption_worker_id", resumptionWorkerID)
+		return true, nil
+	}
+	return false, nil
 }
 
 func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch []*pausedtask.PausedTask) error {
