@@ -44,7 +44,3 @@ service:
 # Disable TLS for internal testing inside cluster
 tls:
   enabled: false
-
-# Target main-pool nodepool in GKE cluster
-nodeSelector:
-  cloud.google.com/gke-nodepool: main-pool

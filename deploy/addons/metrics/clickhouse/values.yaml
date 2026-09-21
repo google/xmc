@@ -49,7 +49,3 @@ resources:
 
 # Set timezone to UTC for consistency with metrics generators
 timezone: UTC
-
-# Ensure deployment on main-pool
-nodeSelector:
-  cloud.google.com/gke-nodepool: main-pool

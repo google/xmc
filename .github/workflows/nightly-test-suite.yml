@@ -88,6 +88,12 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
+      - name: 'Get GKE Cluster Credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'xmc-xmc-nightly-xmc-nightly'
+          location: '${{ secrets.GCP_REGION }}'
+
       - name: 'Set up Python 3.13'
         uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
         with:

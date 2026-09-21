@@ -106,6 +106,22 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
+      - name: 'Get GKE Cluster Credentials'
+        if: steps.filter-check.outputs.should_run == 'true'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'xmc-xmc-nightly-xmc-nightly'
+          location: '${{ secrets.GCP_REGION }}'
+
+      - name: 'Start ClickHouse Port-Forward'
+        if: steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
+        run: |
+          echo "Starting background port-forward for ClickHouse..."
+          kubectl port-forward svc/clickhouse 9000:9000 8123:8123 -n xmc-metrics &
+          PF_PID=$!
+          echo "CLICKHOUSE_PF_PID=${PF_PID}" >> "${GITHUB_ENV}"
+          sleep 3
+
       - name: 'Set up Python 3.13'
         if: steps.filter-check.outputs.should_run == 'true'
         uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
@@ -263,6 +279,14 @@ jobs:
             fi
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'Stop ClickHouse Port-Forward'
+        if: always() && steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
+        run: |
+          if [ -n "${CLICKHOUSE_PF_PID:-}" ]; then
+            echo "Stopping ClickHouse port-forward PID ${CLICKHOUSE_PF_PID}..."
+            kill "${CLICKHOUSE_PF_PID}" 2>/dev/null || true
+          fi
 
       - name: 'Upload Matrix Result Artifact'
         if: always()
