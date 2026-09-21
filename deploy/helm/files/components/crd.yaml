@@ -61,6 +61,11 @@ spec:
       schema:
         openAPIV3Schema:
           type: object
+          # Without this, a manifest omitting spec entirely reaches the CEL rules below, which
+          # then fail with "no such key: spec evaluating rule: wrapperRef must be specified ..."
+          # — an error that names the wrong field. Structural validation reports it correctly.
+          required:
+            - spec
           # Only cross-field constraints belong here. Single-field constraints must be expressed in
           # the structural schema instead (enum, minimum, ...), because the API server evaluates
           # structural validation before CEL, which makes an equivalent CEL rule unreachable.

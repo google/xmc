@@ -175,6 +175,27 @@ func TestComponentRequiredFieldValidation(t *testing.T) {
 	}
 }
 
+func TestComponentMissingSpecIsRejected(t *testing.T) {
+	t.Parallel()
+	clients := newNamespace(t)
+	// No spec block at all. The per-field "required" list inside spec cannot catch this, because
+	// it only applies once spec exists.
+	component := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": componentenv.ComponentGVR.Group + "/" + componentenv.ComponentGVR.Version,
+		"kind":       "Component",
+		"metadata":   map[string]any{"name": "missing-spec"},
+	}}
+
+	_, err := clients.Admin.Create(t.Context(), component, metav1.CreateOptions{})
+
+	if err == nil {
+		t.Fatalf("Create() succeeded for a Component with no spec, want rejection")
+	}
+	if !strings.Contains(err.Error(), "spec: Required value") {
+		t.Errorf("Create() error = %q, want the standard schema message 'spec: Required value'", err.Error())
+	}
+}
+
 func TestComponentSchemaDefaults(t *testing.T) {
 	t.Parallel()
 	clients := newNamespace(t)
