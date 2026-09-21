@@ -104,7 +104,7 @@ In addition to the automated bump calculation, the metadata extraction output su
 
 To ensure release notes are readable and constructive:
 
-* **Group Related PRs**: If 4 PRs contribute to the same subsystem (e.g. PRs adding backend stubs, cache helpers, and UI telemetry for ROD), synthesize them into a single cohesive bullet point citing all PR numbers:
+* **Group Related PRs**: If multiple PRs contribute to the same subsystem (e.g. PRs adding backend stubs, cache helpers, and UI telemetry for ROD), synthesize them into a single cohesive bullet point citing all PR numbers:
   * ❌ *Bad*:
     * `feat(rod): sort listSnapshot by key name (#435)`
     * `feat(rod): implement GetSubmitQueue primary data endpoint (#417)`
