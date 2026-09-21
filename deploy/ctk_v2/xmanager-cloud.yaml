@@ -341,9 +341,7 @@ deployment_groups:
     settings:
       name: tpu-pool
       machine_type: ct5lp-hightpu-4t
-      auto_scaling: true
-      min_node_count: 0
-      max_node_count: 2
+      static_node_count: 1
 
 - group: kubernetes_prereqs
   modules:

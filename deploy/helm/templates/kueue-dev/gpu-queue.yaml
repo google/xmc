@@ -19,8 +19,7 @@ spec:
   nodeLabels: {}
   tolerations:
   - key: "nvidia.com/gpu"
-    operator: "Equal"
-    value: "present"
+    operator: "Exists"
     effect: "NoSchedule"
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
