@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
@@ -46,8 +47,8 @@ type ProdServer struct {
 	K8sClient     *k8sclient.Client
 	SpannerClient *spanner.Client
 	RedisClient   redisclient.Consumer
-	PauseCache    pausescheduling.Cache
 	PauseListener *pausescheduling.Listener
+	PauseHandler  pausescheduling.PauseHandler
 	cleanup       func() error
 }
 
@@ -155,6 +156,17 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
+	pauseCache := pausescheduling.NewCache()
+	pauseListener, err := initPauseListener(ctx, cfg, pauseCache)
+	if err != nil {
+		return nil, err
+	}
+
+	pauseHandler, err := initPauseHandler(cfg, pauseCache, storageClient)
+	if err != nil {
+		return nil, err
+	}
+
 	tokenValidator := initJWKSTokenValidator(cfg)
 
 	handler, err := workunittaskhandler.New(workunittaskhandler.Params{
@@ -164,15 +176,10 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		XManagerServiceAccount: cfg.XManagerServiceAccount,
 		JWTVerifier:            keyReloader.Verifier,
 		TokenValidator:         tokenValidator,
+		PauseHandler:           pauseHandler,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
-	}
-
-	pauseCache := pausescheduling.NewCache()
-	pauseListener, err := initPauseScheduling(ctx, cfg, pauseCache)
-	if err != nil {
-		return nil, err
 	}
 
 	redisConsumer.SetTaskHandler(handler.HandleWorkUnitRedisTask)
@@ -195,8 +202,8 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		K8sClient:     k8sClient,
 		SpannerClient: spannerClient,
 		RedisClient:   redisConsumer,
-		PauseCache:    pauseCache,
 		PauseListener: pauseListener,
+		PauseHandler:  pauseHandler,
 		cleanup:       cleanup,
 	}, nil
 }
@@ -247,7 +254,7 @@ func initJWKSTokenValidator(cfg *Config) workunittaskhandler.TokenValidator {
 	})
 }
 
-func initPauseScheduling(ctx context.Context, cfg *Config, cache pausescheduling.Cache) (*pausescheduling.Listener, error) {
+func initPauseListener(ctx context.Context, cfg *Config, cache pausescheduling.Cache) (*pausescheduling.Listener, error) {
 	if !cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, nil
 	}
@@ -267,4 +274,19 @@ func initPauseScheduling(ctx context.Context, cfg *Config, cache pausescheduling
 	go listener.StartListening(ctx)
 	logging.Info(ctx, "Started Actuator pause scheduling listener worker")
 	return listener, nil
+}
+
+func initPauseHandler(cfg *Config, cache pausescheduling.Cache, storageClient storage.Storage) (pausescheduling.PauseHandler, error) {
+	if !cfg.FeatureFlags.PauseSchedulingEnabled {
+		return nil, nil
+	}
+	if storageClient == nil {
+		return nil, fmt.Errorf("cannot enable pause scheduling without spanner storage client")
+	}
+	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
+	handler, err := pausescheduling.NewPauseHandler(cache, pausedtask.NewFake(), storageClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pause handler: %w", err)
+	}
+	return handler, nil
 }

@@ -32,6 +32,7 @@ import (
 	"golang/protobuf/v2/encoding/protojson/protojson"
 	"golang/uuid/uuid"
 	"tink/go/jwt/jwt"
+	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/interfaces"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -122,6 +123,7 @@ type Params struct {
 	XManagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
 	TokenValidator         TokenValidator
+	PauseHandler           pausescheduling.PauseHandler
 }
 
 // Handler processes incoming actuation requests.
@@ -132,6 +134,7 @@ type Handler struct {
 	xmanagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
 	tokenValidator         TokenValidator
+	pauseHandler           pausescheduling.PauseHandler
 }
 
 // New creates a new Handler.
@@ -166,12 +169,28 @@ func New(p Params) (*Handler, error) {
 		xmanagerServiceAccount: p.XManagerServiceAccount,
 		JWTVerifier:            p.JWTVerifier,
 		tokenValidator:         validator,
+		pauseHandler:           p.PauseHandler,
 	}, nil
 }
 
 // TokenValidator returns the configured token validator.
 func (h *Handler) TokenValidator() TokenValidator {
 	return h.tokenValidator
+}
+
+func (h *Handler) isPaused() bool {
+	return h.pauseHandler != nil && h.pauseHandler.IsPaused()
+}
+
+func (h *Handler) shouldPause(action *actuatortaskpb.Action) bool {
+	return h.pauseHandler != nil && h.pauseHandler.ShouldPause(action)
+}
+
+func (h *Handler) handlePause(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, traceID string) error {
+	if h.pauseHandler == nil {
+		return nil
+	}
+	return h.pauseHandler.HandlePause(ctx, payload, traceID)
 }
 
 func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
@@ -191,6 +210,10 @@ func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatorta
 	}
 
 	action := payload.GetAction()
+
+	if h.isPaused() && h.shouldPause(action) {
+		return h.handlePause(ctx, payload, traceID)
+	}
 
 	switch {
 	case action.GetCreate() != nil:

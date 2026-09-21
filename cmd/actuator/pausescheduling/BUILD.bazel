@@ -8,11 +8,20 @@ compat_go_library(
     srcs = [
         "cache.go",
         "listener.go",
+        "pause_handler.go",
     ],
     importpath = "xmanager_cloud/cmd/actuator/pausescheduling",
     deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue:task_go_proto",
+        "//internal/compat/field_mask",
         "//internal/logging",
+        "//internal/storage",
+        "//internal/storage/spanner/pausedtask",
         "//internal/storage/spanner/pausestate",
+        "//internal/validator",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
 
@@ -21,11 +30,19 @@ compat_go_test(
     srcs = [
         "cache_test.go",
         "listener_test.go",
+        "pause_handler_test.go",
     ],
     embed = [":pausescheduling"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue:task_go_proto",
         "//internal/broadcast",
         "//internal/compat/cmp",
+        "//internal/compat/proto",
+        "//internal/storage",
+        "//internal/storage/spanner/pausedtask",
         "//internal/storage/spanner/pausestate",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
