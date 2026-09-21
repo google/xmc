@@ -104,7 +104,7 @@ jobs:
           TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
           echo "::add-mask::${TOKEN}"
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
-          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || 'janzak@google.com' }}" >> "${GITHUB_ENV}"
+          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || secrets.GCP_ALLOWED_EMAILS }}" >> "${GITHUB_ENV}"
 
       - name: 'Launch Demo Workload'
         id: launch-demo-workload
