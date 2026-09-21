@@ -61,6 +61,7 @@ type grpcServerDeps struct {
 	xidSpannerClient  health.SpannerHealthClient
 	redisClient       redisclient.Publisher
 	compSpannerClient *spanner.Client
+	pauseScheduler    PauseScheduler
 }
 
 func (d *grpcServerDeps) Close(ctx context.Context) {
@@ -79,6 +80,11 @@ func (d *grpcServerDeps) Close(ctx context.Context) {
 	}
 	if d.compSpannerClient != nil {
 		d.compSpannerClient.Close()
+	}
+	if d.pauseScheduler != nil {
+		if err := d.pauseScheduler.Close(); err != nil {
+			logging.Error(ctx, "Failed to close pause scheduler", "error", err)
+		}
 	}
 }
 
@@ -253,15 +259,25 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		xidSpannerClient:  xidSpannerClient,
 		redisClient:       publisher,
 		compSpannerClient: compSpannerClient,
+		pauseScheduler:    pauseScheduler,
 	}
 }
 
-// TODO: Replace with real Spanner-backed repository implementation once available.
+// TODO(pausescheduling): Replace with real Spanner-backed repository implementation once available.
+// TODO(pausescheduling): Consider introducing a lazy Redis broadcast publisher wrapper (similar to LazySpannerHealthClient)
+// in a follow-up PR to allow deferred connection initialization and reconnection handling without failing startup.
 func initPauseScheduler(ctx context.Context, cfg *Config, taskQueuePublisher redisclient.Publisher) PauseScheduler {
-	logging.Warn(ctx, "Using in-memory fake for pause scheduling state repository and broadcast publisher")
+	var broadcastPublisher broadcast.Publisher
+	if cfg.RedisAddr != "" {
+		broadcastRedisClient := redisclient.NewClient(redisclient.Config{
+			Addr: cfg.RedisAddr,
+		})
+		broadcastPublisher = broadcast.NewPublisher(broadcastRedisClient, constants.RedisPauseStream)
+	}
+
 	return NewPauseScheduler(PauseSchedulerParams{
 		PauseStateRepository: pausestate.NewFake(),
-		BroadcastPublisher:   broadcast.NewFakeClient(constants.RedisPauseStream),
+		BroadcastPublisher:   broadcastPublisher,
 		TaskQueuePublisher:   taskQueuePublisher,
 		BatchSize:            cfg.SchedulingResumeBatchSize,
 		MaxBacklogThreshold:  cfg.SchedulingResumeMaxBacklog,

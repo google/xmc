@@ -115,7 +115,7 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 	isSchedulingPaused := false
 	paused, err := s.pauseScheduler.IsPaused(ctx)
 	if err != nil {
-		// TODO: Propagate error in response when pause scheduling check fails.
+		// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
 		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
 	} else {
 		isSchedulingPaused = paused

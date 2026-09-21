@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang/protobuf/v2/proto/proto"
+	"golang/uuid/uuid"
 	"task/go/status"
 
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -72,6 +73,10 @@ func (f *Fake) Create(ctx context.Context, task *PausedTask) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if task.TaskID == "" {
+		task.TaskID = uuid.New()
+	}
 
 	if f.findTask(task.XID, task.WID, task.TaskID) != nil {
 		return fmt.Errorf("%w: (xid=%d, wid=%d, task_id=%s)", ErrTaskAlreadyExists, task.XID, task.WID, task.TaskID)

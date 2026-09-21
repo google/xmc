@@ -547,3 +547,22 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 		}
 	})
 }
+
+func TestPauseSchedulerClose(t *testing.T) {
+	t.Run("closes publisher if closer", func(t *testing.T) {
+		pub := broadcast.NewPublisher(nil, "stream")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			BroadcastPublisher: pub,
+		})
+		if err := scheduler.Close(); err != nil {
+			t.Errorf("Close() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("noop if publisher is not closer or nil", func(t *testing.T) {
+		scheduler := NewPauseScheduler(PauseSchedulerParams{})
+		if err := scheduler.Close(); err != nil {
+			t.Errorf("Close() error = %v, want nil", err)
+		}
+	})
+}

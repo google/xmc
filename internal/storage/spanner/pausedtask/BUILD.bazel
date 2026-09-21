@@ -28,6 +28,7 @@ compat_go_library(
         "//api/protos/task_queue:task_go_proto",
         "//internal/compat/proto",
         "//internal/compat/status",
+        "//internal/compat/uuid",
     ],
 )
 

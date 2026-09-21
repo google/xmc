@@ -17,12 +17,15 @@ package pausescheduling
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/logging/logging"
 )
+
+var _ io.Closer = (*Listener)(nil)
 
 const (
 	defaultReconnectBackoff = 500 * time.Millisecond
@@ -105,6 +108,14 @@ func (l *Listener) Init(ctx context.Context) error {
 	return nil
 }
 
+// Close closes the underlying subscriber if it implements io.Closer.
+func (l *Listener) Close() error {
+	if closer, ok := l.subscriber.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // StartListening runs the background listener loop, handling subscription disconnections and resyncing on reconnect.
 func (l *Listener) StartListening(ctx context.Context) {
 	for {
@@ -146,6 +157,7 @@ func (l *Listener) waitForBackoff(ctx context.Context) {
 }
 
 func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
+	logging.Info(ctx, "Received broadcast update notification", "message", msg)
 	state, err := l.pauseStateRepo.Get(ctx)
 	if err != nil {
 		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update", "error", err)
