@@ -90,6 +90,11 @@ class PublishReleaseTest(unittest.TestCase):
             verify_remote_tag("0.6.0", Path("."), force=False, remote="origin")
         self.assertIn("already exists on remote repository 'origin'", str(ctx.exception))
 
+        mock_subprocess.return_value = MagicMock(stderr="remote error", returncode=128)
+        with self.assertRaises(HandledError) as ctx:
+            verify_remote_tag("0.6.0", Path("."), force=False, remote="origin")
+        self.assertIn("Failed to check remote git tags", str(ctx.exception))
+
         # When force is True, remote check is skipped
         mock_subprocess.reset_mock()
         verify_remote_tag("0.6.0", Path("."), force=True)
@@ -213,6 +218,13 @@ class PublishReleaseTest(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
         self.assertIn("git tag -d 0.6.0", ctx.exception.instruction)
+        self.assertIn("already pushed", ctx.exception.instruction)
+
+        mock_publish_gh.side_effect = HandledError("gh failed", "fix gh")
+        args.skip_push = True
+        with self.assertRaises(HandledError) as ctx:
+            publish_release(args)
+        self.assertIn("already created locally", ctx.exception.instruction)
 
     @patch("tools.release.publish_release.get_git_remote_url")
     @patch("shutil.which")

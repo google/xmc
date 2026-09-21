@@ -108,7 +108,12 @@ def verify_remote_tag(tag: str, repo_dir: Path, force: bool, remote: str = "orig
         f"Ensure the remote '{remote}' is configured and accessible.",
         check=False,
     )
-    if res.returncode == 0 and res.stdout.strip():
+    if res.returncode != 0:
+        raise HandledError(
+            f"Failed to check remote git tags: {res.stderr.strip() if res.stderr else ''}",
+            f"Ensure the remote '{remote}' is configured and accessible.",
+        )
+    if res.stdout.strip():
         raise HandledError(
             f"Git tag '{tag}' already exists on remote repository '{remote}'.",
             "Verify the version number or use --force to overwrite.",
@@ -136,11 +141,12 @@ def push_git_tag(tag: str, repo_dir: Path, force: bool, remote: str = "origin") 
     try:
         _run_git(cmd, repo_dir, f"Failed to push git tag '{tag}' to {remote}", "")
     except HandledError as e:
-        stderr = str(e)
-        if "already exists" in stderr or "rejected" in stderr:
-            e.instruction = f"The tag may already exist on the remote repository '{remote}'. Verify the version or use --force."
-        else:
-            e.instruction = f"Ensure you have write permissions to push git tags to remote repository '{remote}'."
+        if not e.instruction:
+            stderr = str(e)
+            if "already exists" in stderr or "rejected" in stderr:
+                e.instruction = f"The tag may already exist on the remote repository '{remote}'. Verify the version or use --force."
+            else:
+                e.instruction = f"Ensure you have write permissions to push git tags to remote repository '{remote}'."
         raise
 
 
@@ -301,7 +307,13 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             force=args.force,
         )
     except HandledError as e:
-        if not args.skip_push:
+        if args.skip_push:
+            e.instruction = (
+                f"Note: The git tag '{tag}' was already created locally. "
+                f"You may need to delete it locally (e.g., `git tag -d {tag}`) "
+                f"before retrying, or run with `--force`.\n{e.instruction}"
+            )
+        else:
             e.instruction = (
                 f"Note: The git tag '{tag}' was already pushed to '{args.remote}'. "
                 f"You may need to delete it locally and remotely (e.g., `git tag -d {tag} && git push {args.remote} :refs/tags/{tag}`) "
