@@ -24,13 +24,11 @@ from tools.nightly_tests import common, ui_entities_validator
 
 FLAGS = flags.FLAGS
 
-_UI_BASE_URL = flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
-_AUTH_TOKEN = flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
-_USER_EMAIL = flags.DEFINE_string("user_email", None, "Optional user email identity override")
-_HEADLESS = flags.DEFINE_bool("headless", True, "Run browser in headless mode")
-_SCREENSHOTS_DIR = flags.DEFINE_string(
-    "screenshots_dir", None, "Target directory for diagnostic screenshots"
-)
+flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
+flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
+flags.DEFINE_string("user_email", None, "Optional user email identity override")
+flags.DEFINE_bool("headless", True, "Run browser in headless mode")
+flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
 
 EXPECTED_WORK_UNITS: int = 3
 EXPECTED_WORK_UNIT_NAMES: tuple[str, ...] = ("1", "2", "3")

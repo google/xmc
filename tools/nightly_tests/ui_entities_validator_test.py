@@ -213,6 +213,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
     def test_route_interception_security(self) -> None:
         routes: list[tuple[str, bool]] = [
             ("https://xmc.example.com/api/v1/data", True),
+            ("https://xmc.example.com:443/api/v1/data", True),  # default port normalized
             ("http://xmc.example.com/api/v1/data", False),  # cleartext downgrade prevented
             ("https://xmc.example.com:8443/api/v1/data", False),  # port mismatch
             ("https://xmc.example.com.evil.com/api", False),
@@ -243,6 +244,26 @@ class UIEntitiesValidatorTest(unittest.TestCase):
                 else:
                     route.continue_.assert_called_once_with()
         s.close()
+
+        # Verify base URL with explicit default port 443 matches implicit port in requests
+        mock_pw2, _, _, mock_page2 = self._create_mock_playwright()
+        with mock.patch.object(
+            ui_entities_validator,
+            "sync_playwright",
+            return_value=mock.MagicMock(start=mock.MagicMock(return_value=mock_pw2)),
+        ):
+            s2 = ui_entities_validator.XMCUIBrowserSession(
+                "https://xmc.example.com:443", auth_token="bearer-tok"
+            )
+            s2.start()
+
+        handler2 = mock_page2.route.call_args[0][1]
+        route2 = mock.MagicMock(
+            request=mock.MagicMock(url="https://xmc.example.com/api/v1/data", headers={})
+        )
+        handler2(route2)
+        route2.continue_.assert_called_once_with(headers={"authorization": "Bearer bearer-tok"})
+        s2.close()
 
     def test_response_logging_strips_query_and_fragment(self) -> None:
         mock_pw, _, _, mock_page = self._create_mock_playwright()
