@@ -12,43 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The policy and its binding live in files/components/deletion-vap.yaml as plain, non-templated
+# YAML so that the envtest integration suite can install the exact manifest that ships to
+# production. This template only applies the componentsDeployment.enabled gate.
 {{- if .Values.componentsDeployment.enabled }}
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
-metadata:
-  name: component-deletion-protection
-  labels:
-    app.kubernetes.io/name: xmc
-    app.kubernetes.io/part-of: xmanager-cloud
-spec:
-  failurePolicy: Fail
-  matchConstraints:
-    resourceRules:
-      - apiGroups:
-          - xmc.dev
-        apiVersions:
-          - v1alpha1
-        operations:
-          - DELETE
-        resources:
-          - components
-  matchConditions:
-    - name: exclude-system-controllers-and-admin-breakglass
-      expression: "request.userInfo.username != 'system:serviceaccount:kube-system:namespace-controller' && request.userInfo.username != 'system:serviceaccount:kube-system:generic-garbage-collector' && !('system:masters' in request.userInfo.groups) && !('xmc-platform-admins' in request.userInfo.groups)"
-  validations:
-    - expression: "has(oldObject.spec) && has(oldObject.spec.deletionProtection) && oldObject.spec.deletionProtection == false"
-      message: "Deletion rejected: Component has deletionProtection enabled (or default true). Disable deletionProtection before deleting the manifest."
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
-metadata:
-  name: component-deletion-protection-binding
-  labels:
-    app.kubernetes.io/name: xmc
-    app.kubernetes.io/part-of: xmanager-cloud
-spec:
-  policyName: component-deletion-protection
-  validationActions:
-    - Deny
-  matchResources: {}
+{{ .Files.Get "files/components/deletion-vap.yaml" }}
 {{- end }}

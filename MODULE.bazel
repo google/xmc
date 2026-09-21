@@ -26,12 +26,47 @@ bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf"
 bazel_dep(name = "googleapis", version = "0.0.0-20260514-1dbb1a14", repo_name = "com_google_googleapis")
 bazel_dep(name = "googleapis-go", version = "1.1.5")
 bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "platforms", version = "0.0.11")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
 
 repo_import = use_extension("//:import.bzl", "repo_import")
 use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
+
+# Kubernetes control-plane binaries (kube-apiserver, etcd, kubectl) used by the controller-runtime
+# envtest integration suite in //test/integration. Pinning them as checksummed archives keeps the
+# tests hermetic: they need no Docker daemon and no network access at test time, unlike the
+# testcontainers-based suites. The version tracks the k8s.io/* libraries declared in go.mod.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+_ENVTEST_BUILD_FILE = """
+filegroup(
+    name = "control_plane",
+    srcs = [
+        "etcd",
+        "kube-apiserver",
+        "kubectl",
+    ],
+    visibility = ["//visibility:public"],
+)
+"""
+
+http_archive(
+    name = "envtest_control_plane_linux_amd64",
+    build_file_content = _ENVTEST_BUILD_FILE,
+    sha256 = "d84f910bcefa3f6ab0205a49a7255672150c73b14bca3c36ac627db65040edf0",
+    strip_prefix = "controller-tools/envtest",
+    urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.36.0/envtest-v1.36.0-linux-amd64.tar.gz"],
+)
+
+http_archive(
+    name = "envtest_control_plane_linux_arm64",
+    build_file_content = _ENVTEST_BUILD_FILE,
+    sha256 = "84df585fea6e5b5ce9034dc66e4ceffef0cd300999811ae1102aab00ee9b4da6",
+    strip_prefix = "controller-tools/envtest",
+    urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.36.0/envtest-v1.36.0-linux-arm64.tar.gz"],
+)
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")

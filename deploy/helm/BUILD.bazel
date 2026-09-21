@@ -18,6 +18,7 @@ filegroup(
         "Chart.yaml",
         "values.yaml",
         "values-local.yaml",
+        "files/**",
         "templates/**",
     ]),
     visibility = ["//visibility:public"],
