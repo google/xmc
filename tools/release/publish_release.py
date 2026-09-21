@@ -134,7 +134,7 @@ def resolve_target_commit(target_commit: str, repo_dir: Path) -> str:
     """Resolves target commit/ref to a full commit SHA locally."""
     try:
         res = _run_git(
-            ["git", "rev-parse", target_commit],
+            ["git", "rev-parse", f"{target_commit}^{{commit}}"],
             repo_dir,
             f"Failed to resolve target commit '{target_commit}'",
             "Ensure the target commit, branch, or tag exists in the repository.",
@@ -211,6 +211,14 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
 
     notes_path = Path(args.notes_file).resolve()
     read_notes_file(notes_path)
+
+    # Pre-flight check: Ensure GitHub CLI is installed before making any remote changes
+    if not shutil.which("gh"):
+        raise HandledError(
+            "GitHub CLI ('gh') is not installed or not in PATH.",
+            "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
+        )
+
     title = args.title or f"Release {tag}"
     target_commit = resolve_target_commit(args.target_commit or "HEAD", repo_dir)
 
@@ -223,11 +231,6 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
 
     # 3. Publish release via gh CLI
-    if not shutil.which("gh"):
-        raise HandledError(
-            "GitHub CLI ('gh') is not installed or not in PATH.",
-            "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
-        )
 
     try:
         release_url = publish_via_gh_cli(

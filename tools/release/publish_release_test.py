@@ -220,6 +220,7 @@ class PublishReleaseTest(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
         self.assertIn("GitHub CLI ('gh') is not installed", str(ctx.exception))
+        mock_subprocess.assert_not_called()
 
     def test_publish_release_empty_tag(self) -> None:
         args = argparse.Namespace(
@@ -305,6 +306,7 @@ class PublishReleaseTest(unittest.TestCase):
         mock_subprocess.return_value = MagicMock(stdout="a1b2c3d4e5f6\n", returncode=0)
         commit = resolve_target_commit("HEAD", Path("."))
         self.assertEqual(commit, "a1b2c3d4e5f6")
+        self.assertIn("HEAD^{commit}", mock_subprocess.call_args[0][0])
 
     @patch("subprocess.run")
     def test_resolve_target_commit_errors(self, mock_subprocess: MagicMock) -> None:
