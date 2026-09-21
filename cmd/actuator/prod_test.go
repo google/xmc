@@ -244,7 +244,7 @@ func TestInitJWKSTokenValidator(t *testing.T) {
 	})
 }
 
-func TestInitPauseScheduling(t *testing.T) {
+func TestInitPauseListener(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("feature_flag_disabled", func(t *testing.T) {
@@ -253,12 +253,12 @@ func TestInitPauseScheduling(t *testing.T) {
 				PauseSchedulingEnabled: false,
 			},
 		}
-		listener, err := initPauseScheduling(ctx, cfg, pausescheduling.NewCache())
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
 		if err != nil {
-			t.Errorf("initPauseScheduling() error = %v, want nil", err)
+			t.Errorf("initPauseListener() error = %v, want nil", err)
 		}
 		if listener != nil {
-			t.Errorf("initPauseScheduling() listener = %v, want nil", listener)
+			t.Errorf("initPauseListener() listener = %v, want nil", listener)
 		}
 	})
 
@@ -271,12 +271,12 @@ func TestInitPauseScheduling(t *testing.T) {
 				RedisAddr: "",
 			},
 		}
-		listener, err := initPauseScheduling(ctx, cfg, pausescheduling.NewCache())
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
 		if err == nil {
-			t.Fatalf("initPauseScheduling() expected error for empty redis address, got nil (listener: %v)", listener)
+			t.Fatalf("initPauseListener() expected error for empty redis address, got nil (listener: %v)", listener)
 		}
 		if !strings.Contains(err.Error(), "redis address must be provided") {
-			t.Errorf("initPauseScheduling() error = %q, want 'redis address must be provided'", err.Error())
+			t.Errorf("initPauseListener() error = %q, want 'redis address must be provided'", err.Error())
 		}
 	})
 }

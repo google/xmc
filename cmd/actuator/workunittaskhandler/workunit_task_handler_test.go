@@ -30,8 +30,11 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/validation/field/field"
 	"golang/prometheus/client/prometheus/testutil/testutil"
+	"golang/protobuf/v2/proto/proto"
 	"k8s.io/utils/ptr"
 	"tink/go/jwt/jwt"
+	"xmanager_cloud/cmd/actuator/pausescheduling"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -97,19 +100,54 @@ func validJWTOptions(body []byte, audience, serviceAccount string) *jwtOptions {
 }
 
 type mockK8sClient struct {
-	err error
+	err          error
+	createCalls  int
+	deleteCalls  int
+	restartCalls int
+	updateCalls  int
+	lastPayload  *actuatortaskpb.ActuatorPayload
 }
 
 func (m *mockK8sClient) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	m.createCalls++
+	m.lastPayload = payload
 	return m.err
 }
 func (m *mockK8sClient) DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	m.deleteCalls++
+	m.lastPayload = payload
 	return m.err
 }
 func (m *mockK8sClient) RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	m.restartCalls++
+	m.lastPayload = payload
 	return m.err
 }
 func (m *mockK8sClient) UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	m.updateCalls++
+	m.lastPayload = payload
+	return m.err
+}
+
+type mockPauseHandler struct {
+	isPaused    bool
+	shouldPause bool
+	err         error
+	handleCalls int
+	lastPayload *actuatortaskpb.ActuatorPayload
+}
+
+func (m *mockPauseHandler) IsPaused() bool {
+	return m.isPaused
+}
+
+func (m *mockPauseHandler) ShouldPause(action *actuatortaskpb.Action) bool {
+	return m.shouldPause
+}
+
+func (m *mockPauseHandler) HandlePause(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, traceID string) error {
+	m.handleCalls++
+	m.lastPayload = payload
 	return m.err
 }
 
@@ -139,6 +177,12 @@ func withTokenValidator(v TokenValidator) testHandlerOption {
 	}
 }
 
+func withPauseHandler(ph pausescheduling.PauseHandler) testHandlerOption {
+	return func(p *Params) {
+		p.PauseHandler = ph
+	}
+}
+
 func newTestTaskHandler(t *testing.T, opts ...testHandlerOption) *Handler {
 	t.Helper()
 	params := Params{
@@ -160,6 +204,7 @@ func newTestTaskHandler(t *testing.T, opts ...testHandlerOption) *Handler {
 				}, nil
 			},
 		},
+		PauseHandler: &mockPauseHandler{},
 	}
 	for _, opt := range opts {
 		opt(&params)
@@ -1279,3 +1324,92 @@ type mockHTTPStatusCodeErr struct{ code int }
 
 func (m mockHTTPStatusCodeErr) Error() string       { return fmt.Sprintf("http status code %d", m.code) }
 func (m mockHTTPStatusCodeErr) HTTPStatusCode() int { return m.code }
+
+func TestHandleActuatorPayload_PauseHandler_Paused(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	pauseHandler := &mockPauseHandler{isPaused: true, shouldPause: true}
+	handler := newTestTaskHandler(t, withK8sClient(k8sClient), withPauseHandler(pauseHandler))
+
+	payload := &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+	}
+
+	if err := handler.handleActuatorPayload(context.Background(), payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pauseHandler.handleCalls != 1 {
+		t.Errorf("pauseHandler.handleCalls = %d, want 1", pauseHandler.handleCalls)
+	}
+	if k8sClient.createCalls != 0 {
+		t.Errorf("k8sClient.CreateWorkUnit called %d times, want 0", k8sClient.createCalls)
+	}
+}
+
+func TestHandleActuatorPayload_PauseHandler_NotPaused(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	pauseHandler := &mockPauseHandler{isPaused: false, shouldPause: true}
+	handler := newTestTaskHandler(t, withK8sClient(k8sClient), withPauseHandler(pauseHandler))
+
+	payload := &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+	}
+
+	if err := handler.handleActuatorPayload(context.Background(), payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pauseHandler.handleCalls != 0 {
+		t.Errorf("pauseHandler.handleCalls = %d, want 0", pauseHandler.handleCalls)
+	}
+	if k8sClient.createCalls != 1 {
+		t.Errorf("k8sClient.CreateWorkUnit called %d times, want 1", k8sClient.createCalls)
+	}
+}
+
+func TestHandleActuatorPayload_PauseHandler_DeleteBypasses(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	pauseHandler := &mockPauseHandler{isPaused: true, shouldPause: false}
+	handler := newTestTaskHandler(t, withK8sClient(k8sClient), withPauseHandler(pauseHandler))
+
+	payload := &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Delete{Delete: &actuatortaskpb.DeleteAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+	}
+
+	if err := handler.handleActuatorPayload(context.Background(), payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pauseHandler.handleCalls != 0 {
+		t.Errorf("pauseHandler.handleCalls = %d, want 0", pauseHandler.handleCalls)
+	}
+	if k8sClient.deleteCalls != 1 {
+		t.Errorf("k8sClient.DeleteWorkUnit called %d times, want 1", k8sClient.deleteCalls)
+	}
+}
+
+func TestHandleActuatorPayload_PauseHandler_Error(t *testing.T) {
+	pauseHandler := &mockPauseHandler{isPaused: true, shouldPause: true, err: errors.New("pause handling failed")}
+	handler := newTestTaskHandler(t, withPauseHandler(pauseHandler))
+
+	payload := &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+	}
+
+	if err := handler.handleActuatorPayload(context.Background(), payload); err == nil {
+		t.Fatal("expected error from pauseHandler, got nil")
+	}
+}
