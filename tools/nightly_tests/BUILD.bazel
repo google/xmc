@@ -41,7 +41,6 @@ py_library(
     name = "ui_entities_validator_lib",
     srcs = ["ui_entities_validator.py"],
     imports = ["../.."],
-    deps = ["//test/e2e/lib:orchestration_lib"],
 )
 
 py_library(
@@ -99,6 +98,7 @@ py_test(
 
 py_test(
     name = "ui_entities_validator_test",
+    size = "small",
     srcs = ["ui_entities_validator_test.py"],
     imports = ["../.."],
     deps = [":ui_entities_validator_lib"],

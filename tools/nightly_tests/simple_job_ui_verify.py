@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Sequence
 
 from absl import flags
@@ -27,12 +26,7 @@ FLAGS = flags.FLAGS
 
 _UI_BASE_URL = flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
 _AUTH_TOKEN = flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
-_DEX_URL = flags.DEFINE_string(
-    "dex_url", os.environ.get("XMC_DEX_URL"), "Optional Dex OIDC IdP URL for authentication"
-)
-_USER_EMAIL = flags.DEFINE_string(
-    "user_email", os.environ.get("XMC_USER_EMAIL", "test@example.com"), "User email identity"
-)
+_USER_EMAIL = flags.DEFINE_string("user_email", None, "Optional user email identity override")
 _HEADLESS = flags.DEFINE_bool("headless", True, "Run browser in headless mode")
 _SCREENSHOTS_DIR = flags.DEFINE_string(
     "screenshots_dir", None, "Target directory for diagnostic screenshots"
@@ -46,7 +40,6 @@ def verify_simple_job_ui(
     xid: str | int,
     ui_base_url: str,
     auth_token: str | None = None,
-    dex_url: str | None = None,
     user_email: str | None = None,
     headless: bool = True,
     screenshots_dir: str | None = None,
@@ -57,7 +50,6 @@ def verify_simple_job_ui(
         xid: Experiment XID to verify.
         ui_base_url: Base URL of the XMC Web UI.
         auth_token: Optional Bearer or IAP OIDC token.
-        dex_url: Optional Dex OIDC provider URL for browser login.
         user_email: Optional user email identity.
         headless: Whether to run Chromium in headless mode.
         screenshots_dir: Directory where diagnostic screenshots are saved.
@@ -66,7 +58,6 @@ def verify_simple_job_ui(
         ui_base_url=ui_base_url,
         auth_token=auth_token,
         user_email=user_email,
-        dex_url=dex_url,
         headless=headless,
         screenshots_dir=screenshots_dir,
     ) as session:
@@ -97,7 +88,6 @@ def main(argv: Sequence[str]) -> None:
             xid=common.parse_xid(common.get_flag(FLAGS, "xid")),
             ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
             auth_token=common.get_flag(FLAGS, "auth_token"),
-            dex_url=common.get_flag(FLAGS, "dex_url"),
             user_email=common.get_flag(FLAGS, "user_email"),
             headless=common.get_flag(FLAGS, "headless", True),
             screenshots_dir=common.get_flag(FLAGS, "screenshots_dir"),
