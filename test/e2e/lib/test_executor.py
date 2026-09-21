@@ -93,7 +93,7 @@ class PlaywrightTestExecutor:
                         sys.executable,
                     )
                     return sys.executable
-            except ImportError as e:
+            except Exception as e:
                 logger.debug(
                     "Pre-baked Python missing required packages (%s); falling back to virtualenv.",
                     e,

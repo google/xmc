@@ -67,6 +67,7 @@ E2E_WORKLOAD_VENV_DEPENDENCIES: list[str] = [
     "absl-py",
     "python-dotenv",
     "google-auth",
+    "xmanager",
 ]
 
 # Default Tier-1 UI dependency set
