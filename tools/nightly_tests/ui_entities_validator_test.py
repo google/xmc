@@ -16,10 +16,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
+import os
+import pathlib
 import unittest
+from typing import Any
 from unittest import mock
 
 from tools.nightly_tests import ui_entities_validator
@@ -28,34 +28,49 @@ from tools.nightly_tests import ui_entities_validator
 class UIEntitiesValidatorTest(unittest.TestCase):
     """Test suite for ui_entities_validator library."""
 
-    def test_generate_session_cookie_jwt(self) -> None:
-        secret = "test-secret-key-at-least-32-bytes-long!!"
-        token = ui_entities_validator.generate_session_cookie_jwt("testuser@google.com", secret)
-        parts = token.split(".")
-        self.assertEqual(len(parts), 3)
-        self.assertEqual(
-            json.loads(ui_entities_validator._base64url_decode(parts[0])),
-            {"alg": "HS256", "typ": "JWT"},
-        )
-        payload = json.loads(ui_entities_validator._base64url_decode(parts[1]))
-        self.assertEqual(payload["email"], "testuser@google.com")
-        self.assertEqual(payload["name"], "testuser")
-        self.assertEqual(payload["iss"], "xmanager-cloud-backend")
-        self.assertIn("xmanager-cloud-frontend", payload["aud"])
-        self.assertGreater(payload["exp"], payload["iat"])
+    def setUp(self) -> None:
+        super().setUp()
+        self.enterContext(mock.patch.object(os, "makedirs"))
 
-        sig = ui_entities_validator._base64url_encode(
-            hmac.new(secret.encode(), f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
-        )
-        self.assertEqual(parts[2], sig)
+    def _create_mock_playwright(self) -> tuple[Any, Any, Any, Any]:
+        """Creates a mocked Playwright hierarchy with default experiment page state."""
+        mock_pw = mock.MagicMock()
+        mock_browser = mock.MagicMock()
+        mock_ctx = mock.MagicMock()
+        mock_page = mock.MagicMock()
+        mock_page.url = "https://xmc.example.com/experiments/10"
+        mock_page.locator.return_value.count.return_value = 0
+        mock_pw.chromium.launch.return_value = mock_browser
+        mock_browser.new_context.return_value = mock_ctx
+        mock_ctx.new_page.return_value = mock_page
+        return mock_pw, mock_browser, mock_ctx, mock_page
 
     def test_ui_browser_session_init_and_defaults(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession(
-            "https://xmc.example.com/", "tok", "sec", "stok", "u@google.com", True, "/tmp/s"
+            ui_base_url="https://xmc.example.com/",
+            auth_token="tok",
+            session_token="stok",
+            user_email="u@google.com",
+            user_password="pw",
+            dex_url="https://dex.example.com",
+            headless=True,
+            screenshots_dir="/tmp/s",
         )
         self.assertEqual(
-            (session.ui_base_url, session.domain_host, session.scheme, session.user_email),
-            ("https://xmc.example.com", "xmc.example.com", "https", "u@google.com"),
+            (
+                session.ui_base_url,
+                session.domain_host,
+                session.scheme,
+                session.user_email,
+                session.dex_url,
+            ),
+            (
+                "https://xmc.example.com",
+                "xmc.example.com",
+                "https",
+                "u@google.com",
+                "https://dex.example.com",
+            ),
         )
         with mock.patch.dict("os.environ", {}, clear=True):
             s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
@@ -71,11 +86,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _ = session.page
 
-        mock_pw = mock.MagicMock()
-        mock_browser, mock_ctx, mock_page = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
-        mock_pw.chromium.launch.return_value = mock_browser
-        mock_browser.new_context.return_value = mock_ctx
-        mock_ctx.new_page.return_value = mock_page
+        mock_pw, mock_browser, mock_ctx, mock_page = self._create_mock_playwright()
 
         with mock.patch.object(
             ui_entities_validator,
@@ -84,45 +95,95 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         ):
             with session:
                 self.assertEqual(session.page, mock_page)
+            mock_ctx.close.assert_called_once()
             mock_browser.close.assert_called_once()
             mock_pw.stop.assert_called_once()
 
-    def test_jwt_generation_failure_raises_verification_error(self) -> None:
+    def test_dex_authenticator_session_cookie_injection(self) -> None:
+        mock_pw, _, _, mock_page = self._create_mock_playwright()
         with (
             mock.patch.object(
-                ui_entities_validator, "sync_playwright", return_value=mock.MagicMock()
-            ),
-            mock.patch.object(
                 ui_entities_validator,
-                "generate_session_cookie_jwt",
-                side_effect=ValueError("bad key"),
+                "sync_playwright",
+                return_value=mock.MagicMock(start=mock.MagicMock(return_value=mock_pw)),
             ),
+            mock.patch.object(ui_entities_validator, "DexAuthenticator") as mock_dex_cls,
         ):
-            with self.assertRaises(ui_entities_validator.UIVerificationError):
-                ui_entities_validator.XMCUIBrowserSession(
-                    "https://xmc.example.com", jwt_secret="bad"
-                ).start()
+            session = ui_entities_validator.XMCUIBrowserSession(
+                ui_base_url="https://xmc.example.com",
+                user_email="admin@xmc.local",
+                user_password="secret-password",
+                dex_url="https://dex.example.com",
+                screenshots_dir="/tmp/shots",
+            )
+            session.start()
+
+            mock_dex_cls.assert_called_once_with(
+                base_url="https://xmc.example.com",
+                dex_url="https://dex.example.com",
+            )
+            mock_dex_cls.return_value.authenticate.assert_called_once_with(
+                mock_page,
+                "admin@xmc.local",
+                "secret-password",
+                pathlib.Path("/tmp/shots"),
+            )
+            session.close()
+
+    def test_start_cleans_up_resources_on_launch_failure(self) -> None:
+        mock_pw, _, _, _ = self._create_mock_playwright()
+        mock_pw.chromium.launch.side_effect = RuntimeError("chromium binary missing")
+
+        with mock.patch.object(
+            ui_entities_validator,
+            "sync_playwright",
+            return_value=mock.MagicMock(start=mock.MagicMock(return_value=mock_pw)),
+        ):
+            session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+            with self.assertRaisesRegex(RuntimeError, "chromium binary missing"):
+                session.start()
+
+            mock_pw.stop.assert_called_once()
+            self.assertIsNone(session._playwright)
+            self.assertIsNone(session._browser)
+            self.assertIsNone(session._context)
+
+    def test_close_continues_cleanup_when_context_close_raises(self) -> None:
+        mock_pw, mock_browser, mock_ctx, _ = self._create_mock_playwright()
+        mock_ctx.close.side_effect = RuntimeError("context already closed")
+        session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        session._playwright = mock_pw
+        session._browser = mock_browser
+        session._context = mock_ctx
+
+        with self.assertRaisesRegex(RuntimeError, "context already closed"):
+            session.close()
+
+        mock_browser.close.assert_called_once()
+        mock_pw.stop.assert_called_once()
+        self.assertIsNone(session._context)
+        self.assertIsNone(session._browser)
+        self.assertIsNone(session._playwright)
 
     def test_cookie_injection_modes(self) -> None:
         cases = [
-            ("tok", None, None, ["GCP_IAAP_AUTH_TOKEN"]),
-            (None, "sec", None, ["session_token"]),
-            (None, None, "raw-session", ["session_token"]),
-            ("tok", "sec", None, ["GCP_IAAP_AUTH_TOKEN", "session_token"]),
-            (None, None, None, []),
+            ("tok", None, ["GCP_IAAP_AUTH_TOKEN"]),
+            (None, "raw-session", ["session_token"]),
+            ("tok", "raw-session", ["GCP_IAAP_AUTH_TOKEN", "session_token"]),
+            (None, None, []),
         ]
-        for auth, sec, sess, expected_names in cases:
-            with self.subTest(auth=auth, sec=sec, sess=sess):
-                mock_ctx = mock.MagicMock()
-                mock_pw = mock.MagicMock()
-                mock_pw.chromium.launch.return_value.new_context.return_value = mock_ctx
+        for auth, sess, expected_names in cases:
+            with self.subTest(auth=auth, sess=sess):
+                mock_pw, _, mock_ctx, _ = self._create_mock_playwright()
                 with mock.patch.object(
                     ui_entities_validator,
                     "sync_playwright",
                     return_value=mock.MagicMock(start=mock.MagicMock(return_value=mock_pw)),
                 ):
                     s = ui_entities_validator.XMCUIBrowserSession(
-                        "https://xmc.example.com", auth, sec, sess
+                        "https://xmc.example.com",
+                        auth_token=auth,
+                        session_token=sess,
                     )
                     s.start()
                     if expected_names:
@@ -139,11 +200,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             ("https://cdn.org?url=xmc.example.com", False),
             ("https://fonts.googleapis.com/css", False),
         ]
-        mock_page = mock.MagicMock()
-        mock_pw = mock.MagicMock()
-        mock_pw.chromium.launch.return_value.new_context.return_value.new_page.return_value = (
-            mock_page
-        )
+        mock_pw, _, _, mock_page = self._create_mock_playwright()
 
         with mock.patch.object(
             ui_entities_validator,
@@ -179,7 +236,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         session = ui_entities_validator.XMCUIBrowserSession(
             "https://xmc.example.com", screenshots_dir="/tmp/shots"
         )
-        mock_page = mock.MagicMock()
+        _, _, _, mock_page = self._create_mock_playwright()
         session._page = mock_page
         mock_page.locator.return_value.inner_text.return_value = "Dashboard ready"
         mock_page.locator.return_value.first.text_content.return_value = (
@@ -190,19 +247,41 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page.goto.assert_called_once_with(
             "https://xmc.example.com/experiments/10", wait_until="networkidle", timeout=60000
         )
+        mock_page.wait_for_selector.assert_called_once_with(
+            "xmc-experiment-page, xmc-home-page, .guest-page-container",
+            timeout=60000,
+        )
         mock_page.screenshot.assert_called()
 
         header = session.assert_experiment_header(expected_title_pattern="Demo Workload")
         self.assertEqual(header, "Demo Workload - Exp 10")
+        mock_page.locator.return_value.first.wait_for.assert_called_once_with(
+            state="visible", timeout=30000
+        )
 
         # Mismatch title
         with self.assertRaises(ui_entities_validator.UIVerificationError):
             session.assert_experiment_header(expected_title_pattern="Nonexistent")
 
-        # Guest login redirection detection
-        mock_page.locator.return_value.inner_text.return_value = "Sign in with Google"
+        # Guest login / HTTP 401/403 redirection detection
+        for bad_body in (
+            "Sign in with Google",
+            "HTTP ERROR 401",
+            "HTTP ERROR 403",
+            "Access Denied",
+        ):
+            mock_page.locator.return_value.inner_text.return_value = bad_body
+            with self.assertRaises(ui_entities_validator.UIVerificationError):
+                session.navigate_to_experiment(10)
+
+    def test_assert_experiment_header_empty_text_raises(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        _, _, _, mock_page = self._create_mock_playwright()
+        session._page = mock_page
+        mock_page.locator.return_value.first.text_content.return_value = "   "
+
         with self.assertRaises(ui_entities_validator.UIVerificationError):
-            session.navigate_to_experiment(10)
+            session.assert_experiment_header(expected_title_pattern="Demo Workload")
 
     def test_switch_tab_success(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession(

@@ -25,14 +25,18 @@ from tools.nightly_tests import common, ui_entities_validator
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
-flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
-flags.DEFINE_string("jwt_secret", None, "Optional backend JWT secret for session_token cookies")
-flags.DEFINE_string(
+_UI_BASE_URL = flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
+_AUTH_TOKEN = flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
+_DEX_URL = flags.DEFINE_string(
+    "dex_url", os.environ.get("XMC_DEX_URL"), "Optional Dex OIDC IdP URL for authentication"
+)
+_USER_EMAIL = flags.DEFINE_string(
     "user_email", os.environ.get("XMC_USER_EMAIL", "test@example.com"), "User email identity"
 )
-flags.DEFINE_bool("headless", True, "Run browser in headless mode")
-flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
+_HEADLESS = flags.DEFINE_bool("headless", True, "Run browser in headless mode")
+_SCREENSHOTS_DIR = flags.DEFINE_string(
+    "screenshots_dir", None, "Target directory for diagnostic screenshots"
+)
 
 EXPECTED_WORK_UNITS: int = 3
 EXPECTED_WORK_UNIT_NAMES: tuple[str, ...] = ("1", "2", "3")
@@ -42,14 +46,29 @@ def verify_simple_job_ui(
     xid: str | int,
     ui_base_url: str,
     auth_token: str | None = None,
-    jwt_secret: str | None = None,
+    dex_url: str | None = None,
     user_email: str | None = None,
     headless: bool = True,
     screenshots_dir: str | None = None,
 ) -> None:
-    """Executes UI traversal assertions for the simple demo workload experiment."""
+    """Executes UI traversal assertions for the simple demo workload experiment.
+
+    Args:
+        xid: Experiment XID to verify.
+        ui_base_url: Base URL of the XMC Web UI.
+        auth_token: Optional Bearer or IAP OIDC token.
+        dex_url: Optional Dex OIDC provider URL for browser login.
+        user_email: Optional user email identity.
+        headless: Whether to run Chromium in headless mode.
+        screenshots_dir: Directory where diagnostic screenshots are saved.
+    """
     with ui_entities_validator.XMCUIBrowserSession(
-        ui_base_url, auth_token, jwt_secret, None, user_email, headless, screenshots_dir
+        ui_base_url=ui_base_url,
+        auth_token=auth_token,
+        user_email=user_email,
+        dex_url=dex_url,
+        headless=headless,
+        screenshots_dir=screenshots_dir,
     ) as session:
         session.navigate_to_experiment(xid)
         header = session.assert_experiment_header(expected_title_pattern="Demo Workload")
@@ -75,13 +94,13 @@ def main(argv: Sequence[str]) -> None:
     common.validate_argv(argv)
     with common.handle_verification_errors():
         verify_simple_job_ui(
-            common.parse_xid(common.get_flag(FLAGS, "xid")),
-            common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
-            common.get_flag(FLAGS, "auth_token"),
-            common.get_flag(FLAGS, "jwt_secret"),
-            common.get_flag(FLAGS, "user_email"),
-            common.get_flag(FLAGS, "headless", True),
-            common.get_flag(FLAGS, "screenshots_dir"),
+            xid=common.parse_xid(common.get_flag(FLAGS, "xid")),
+            ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
+            auth_token=common.get_flag(FLAGS, "auth_token"),
+            dex_url=common.get_flag(FLAGS, "dex_url"),
+            user_email=common.get_flag(FLAGS, "user_email"),
+            headless=common.get_flag(FLAGS, "headless", True),
+            screenshots_dir=common.get_flag(FLAGS, "screenshots_dir"),
         )
 
 
