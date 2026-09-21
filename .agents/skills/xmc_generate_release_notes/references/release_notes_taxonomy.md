@@ -12,7 +12,7 @@ Release notes generated for XMC are structured into a unified document with four
 Contains all changes that directly impact end users, cluster users, or administrators without requiring any non-default feature flags.
 
 1. **🚀 Major Highlights & Promoted Capabilities**:
-   - **Feature Flag Default Flips**: Any capability whose deployment flag or Helm toggle was changed from `false` $\to$ `true` in this release.
+   - **Feature Flag Default Flips**: Any capability whose deployment flag or Helm toggle was changed from `false` to `true` in this release.
    - **Major User-Facing Additions**: High-impact capabilities activated out-of-the-box.
    - **Action Required / Breaking Changes**: Schema changes, required Spanner migrations, deprecated flags, or new IAM permissions.
 2. **✨ New Features & Improvements**:
@@ -86,7 +86,7 @@ The release generator calculates the recommended version bump (`Major`, `Minor`,
 * **Minor Bump (`0.(Y+1).0`)**:
   - Any new feature enabled out-of-the-box (`commit_type == "feat"`).
   - Any production-ready feature approved for enablement behind flags (`approved_flags`).
-  - Any feature flag promoted from `false` $\to$ `true` (`is_promotion_to_default`).
+  - Any feature flag promoted from `false` to `true` (`is_promotion_to_default`).
   - Any new deployment configuration knob introduced in Cluster Toolkit or Helm.
   - Any database schema migration or breaking change in `0.y.z` development.
 * **Patch Bump (`0.Y.(Z+1)`)**:

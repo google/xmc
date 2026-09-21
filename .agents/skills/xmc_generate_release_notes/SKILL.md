@@ -43,8 +43,8 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    The release generator checks current disabled feature flags in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `deploy/helm/values.yaml`.
 2. **Interactive Check for Approved / Production-Ready Flags**:
    Before or during metadata extraction, prompt the user in chat:
-   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `enable_components`, `dashboard_service_deployment_enabled`, `enable_metrics`.*
-   > *Are any of these flags approved / production-ready for this release (safe to be enabled)?"*
+   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `enable_components`, `dashboard_service_deployment_enabled`, `enable_metrics`."*
+   > *"Are any of these flags approved / production-ready for this release (safe to be enabled)?"*
    
    > [!TIP]
    > When specifying `--approved-flags`, provide both the CTK variable (e.g. `enable_metrics`, `health_service_deployment_enabled`) and the Helm manifest path (e.g. `metrics.enabled`, `healthServiceDeployment.enabled`) to ensure commits across both deployment layers are recognized as approved preview features.
@@ -62,7 +62,7 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    The output JSON provides:
    - `metadata`: Git commit, PR counts, and `approved_flags` list.
    - `recommended_version`: Automated SemVer recommendation (`current_version`, `recommended_version`, `recommended_bump`, `rationale`, boolean bump triggers).
-   - `flag_transitions`: Flips ($false \to true$, $true \to false$) and configuration additions.
+   - `flag_transitions`: Flips (`false` -> `true`, `true` -> `false`) and configuration additions.
    - `gated_subsystems_status`: Current status of each gated subsystem (Active vs Production-Ready vs Experimental).
    - `raw_commits`: Full list of parsed git commits with `commit_hash`, `short_hash`, `commit_type`, `scope`, `description`, `pr_number`, and `files_changed`.
 
