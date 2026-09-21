@@ -369,6 +369,38 @@ class PublishReleaseTest(unittest.TestCase):
         self.assertEqual(owner, "env_owner")
         self.assertEqual(repo, "env_repo")
 
+    @patch.dict("os.environ", {"GITHUB_REPOSITORY": "env_owner/env_repo"}, clear=True)
+    def test_resolve_repo_owner_and_name_from_github_repository_env(self) -> None:
+        owner, repo = resolve_repo_owner_and_name(Path("."))
+        self.assertEqual(owner, "env_owner")
+        self.assertEqual(repo, "env_repo")
+
+    @patch("tools.release.publish_release.get_git_remote_url")
+    @patch("subprocess.run")
+    def test_publish_release_dry_run(
+        self,
+        mock_subprocess: MagicMock,
+        mock_remote_url: MagicMock,
+    ) -> None:
+        mock_remote_url.return_value = "https://github.com/google/xmc"
+        mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
+        args = argparse.Namespace(
+            tag="0.6.0",
+            notes_file=str(self.notes_file),
+            title="Release 0.6.0",
+            target_commit="HEAD",
+            repo_dir=".",
+            remote="origin",
+            draft=False,
+            prerelease=False,
+            skip_push=False,
+            dry_run=True,
+            force=False,
+        )
+        res = publish_release(args)
+        self.assertEqual(res["status"], "dry_run")
+        self.assertEqual(res["release_url"], "https://github.com/google/xmc/releases/tag/0.6.0")
+
     @patch("tools.release.publish_release.get_git_remote_url")
     @patch.dict("os.environ", {}, clear=True)
     def test_resolve_repo_owner_and_name_fallback(self, mock_remote_url: MagicMock) -> None:

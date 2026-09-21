@@ -155,6 +155,12 @@ def resolve_repo_owner_and_name(repo_dir: Path, remote: str = "origin") -> tuple
     owner = os.environ.get("GITHUB_OWNER")
     repo = os.environ.get("GITHUB_REPO")
     if not owner or not repo:
+        gh_repo_env = os.environ.get("GITHUB_REPOSITORY")
+        if gh_repo_env and "/" in gh_repo_env:
+            parts = gh_repo_env.split("/", 1)
+            owner = owner or parts[0]
+            repo = repo or parts[1]
+    if not owner or not repo:
         detected_owner, detected_repo = parse_remote_url(get_git_remote_url(repo_dir, remote))
         owner = owner or detected_owner
         repo = repo or detected_repo
@@ -190,6 +196,7 @@ def _build_gh_release_cmd(
     prerelease: bool,
     target_commit: str,
     force: bool,
+    skip_push: bool = False,
 ) -> list[str]:
     """Builds the gh release create command arguments."""
     gh_cmd = [
@@ -212,6 +219,8 @@ def _build_gh_release_cmd(
         gh_cmd.extend(["--target", target_commit])
     if force:
         gh_cmd.append("--clobber")
+    if skip_push:
+        gh_cmd.append("--verify-tag")
     return gh_cmd
 
 
@@ -225,11 +234,21 @@ def publish_via_gh_cli(
     repo_dir: Path,
     remote: str = "origin",
     force: bool = False,
+    skip_push: bool = False,
 ) -> str:
     """Publishes a GitHub release using the gh CLI."""
     owner, repo = resolve_repo_owner_and_name(repo_dir, remote)
     gh_cmd = _build_gh_release_cmd(
-        tag, title, notes_path, owner, repo, draft, prerelease, target_commit, force
+        tag,
+        title,
+        notes_path,
+        owner,
+        repo,
+        draft,
+        prerelease,
+        target_commit,
+        force,
+        skip_push=skip_push,
     )
     try:
         res = subprocess.run(
@@ -273,7 +292,7 @@ def _validate_preflight(args: argparse.Namespace) -> tuple[str, Path, Path]:
     notes_path = Path(args.notes_file).resolve()
     read_notes_file(notes_path)
 
-    if not shutil.which("gh"):
+    if not getattr(args, "dry_run", False) and not shutil.which("gh"):
         raise HandledError(
             "GitHub CLI ('gh') is not installed or not in PATH.",
             "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
@@ -290,6 +309,19 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
     verify_local_tag(tag, repo_dir, args.force)
     if not args.skip_push:
         verify_remote_tag(tag, repo_dir, args.force, remote=args.remote)
+
+    if getattr(args, "dry_run", False):
+        owner, repo = resolve_repo_owner_and_name(repo_dir, args.remote)
+        return {
+            "status": "dry_run",
+            "tag": tag,
+            "title": title,
+            "release_url": f"https://github.com/{owner}/{repo}/releases/tag/{tag}",
+            "release_id": None,
+            "is_draft": bool(args.draft),
+            "notes_file": str(notes_path),
+        }
+
     create_git_tag(tag, target_commit, title, repo_dir, args.force)
     if not args.skip_push:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
@@ -305,6 +337,7 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             repo_dir,
             remote=args.remote,
             force=args.force,
+            skip_push=args.skip_push,
         )
     except HandledError as e:
         if args.skip_push:
@@ -358,7 +391,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--draft", action="store_true", help="Publish release as a draft.")
     parser.add_argument("--prerelease", action="store_true", help="Mark release as pre-release.")
     parser.add_argument(
-        "--skip-push", action="store_true", help="Skip pushing tag to remote repository."
+        "--skip-push",
+        action="store_true",
+        help="Skip pushing local tag to remote (requires tag to already exist on remote via --verify-tag).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate inputs, commit resolution, and tag availability without creating tags or publishing.",
     )
     parser.add_argument("--force", action="store_true", help="Force overwrite existing tag.")
     return parser

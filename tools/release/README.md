@@ -145,7 +145,13 @@ python3 tools/release/publish_release.py \
   --title "XMC 0.6.0 - Enhanced Telemetry and Dashboard" \
   --notes-file /tmp/release_notes_v0.6.0.md
 
-# Create release without pushing git tag (for local testing or dry run)
+# Validate release tag and notes locally without creating tags or publishing (dry run)
+python3 tools/release/publish_release.py \
+  --tag 0.6.0 \
+  --notes-file /tmp/release_notes_v0.6.0.md \
+  --dry-run
+
+# Publish release notes when the git tag already exists on the remote repository
 python3 tools/release/publish_release.py \
   --tag 0.6.0 \
   --notes-file /tmp/release_notes_v0.6.0.md \
@@ -162,7 +168,8 @@ python3 tools/release/publish_release.py \
 | `--target-commit` | `-c` | `HEAD` | Target commit SHA, branch, or tag |
 | `--repo-dir` | `-r` | `.` | Path to git repository root |
 | `--remote` | | `origin` | Git remote name |
-| `--skip-push` | | `false` | Skip pushing local tag to remote (publish notes only) |
+| `--dry-run` | | `false` | Validate inputs, commit resolution, and tag availability without creating tags or publishing |
+| `--skip-push` | | `false` | Skip pushing local tag to remote (passes `--verify-tag` to `gh release create`, requiring the tag to already exist on remote) |
 | `--draft` | | `false` | Create release as draft on GitHub |
 | `--prerelease` | | `false` | Mark release as prerelease on GitHub |
 | `--force` | | `false` | Overwrite existing local or remote tag |
