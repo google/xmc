@@ -86,11 +86,13 @@ jobs:
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
       - name: 'Configure Bazel Cache Settings'
+        env:
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         run: |
           mkdir -p ~/.cache/bazel-repo
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
-          common --remote_upload_local_results=false
+          common --remote_upload_local_results=${REMOTE_UPLOAD}
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
