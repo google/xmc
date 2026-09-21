@@ -14,24 +14,12 @@
 
 """Unit tests for YAML boolean parsing and flattening."""
 
-import sys
 import unittest
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.release.yaml_parser import (
-        _scan_yaml_lines,
-        parse_yaml_booleans,
-    )
-except ImportError:
-    from yaml_parser import (  # type: ignore[no-redef]
-        _scan_yaml_lines,
-        parse_yaml_booleans,
-    )
+from tools.release.yaml_parser import (
+    _scan_yaml_lines,
+    parse_yaml_booleans,
+)
 
 
 class YamlParserTest(unittest.TestCase):

@@ -15,34 +15,23 @@
 """Unit tests for extract_release_metadata tool."""
 
 import argparse
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.common.tool_utils import HandledError
-    from tools.release.extract_release_metadata import (
-        CommitInfo,
-        FeatureFlagInfo,
-        FlagTransition,
-        create_parser,
-        extract_release_metadata,
-    )
-except ImportError:
-    from common.tool_utils import HandledError  # type: ignore[no-redef]
-    from extract_release_metadata import (  # type: ignore[no-redef]
-        CommitInfo,
-        FeatureFlagInfo,
-        FlagTransition,
-        create_parser,
-        extract_release_metadata,
-    )
+from tools.common.tool_utils import HandledError
+from tools.release.extract_release_metadata import (
+    CommitInfo,
+    FeatureFlagInfo,
+    FlagTransition,
+    create_parser,
+    extract_release_metadata,
+)
+from tools.release.models import (
+    STATUS_APPROVED_PREVIEW_TOGGLE,
+    STATUS_ENABLED_BY_DEFAULT,
+)
 
 
 class ExtractReleaseMetadataTest(unittest.TestCase):
@@ -123,6 +112,14 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
         self.assertEqual(res["metadata"]["approved_flags"], ["rod_deployment_enabled"])
         self.assertEqual(len(res["flag_transitions"]), 1)
         self.assertEqual(len(res["gated_subsystems_status"]), 2)
+        self.assertEqual(
+            res["gated_subsystems_status"][0]["status"],
+            STATUS_ENABLED_BY_DEFAULT,
+        )
+        self.assertEqual(
+            res["gated_subsystems_status"][1]["status"],
+            STATUS_APPROVED_PREVIEW_TOGGLE,
+        )
         self.assertEqual(len(res["raw_commits"]), 2)
 
     @patch("tools.release.extract_release_metadata.get_git_commits")

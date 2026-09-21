@@ -14,33 +14,18 @@
 
 """Unit tests for feature flags discovery, token normalization, and transitions."""
 
-import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.release.feature_flags import (
-        derive_display_name,
-        derive_flag_tokens,
-        discover_feature_flags,
-        extract_flag_transitions,
-        get_current_feature_states,
-        normalize_flag_name,
-    )
-except ImportError:
-    from feature_flags import (  # type: ignore[no-redef]
-        derive_display_name,
-        derive_flag_tokens,
-        discover_feature_flags,
-        extract_flag_transitions,
-        get_current_feature_states,
-        normalize_flag_name,
-    )
+from tools.release.feature_flags import (
+    derive_display_name,
+    derive_flag_tokens,
+    discover_feature_flags,
+    extract_flag_transitions,
+    get_current_feature_states,
+    normalize_flag_name,
+)
 
 
 class FeatureFlagsTest(unittest.TestCase):

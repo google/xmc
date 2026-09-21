@@ -16,52 +16,33 @@
 
 import argparse
 import json
-import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.common.tool_utils import HandledError, run_tool
-    from tools.release.feature_flags import (
-        discover_feature_flags,
-        extract_flag_transitions,
-    )
-    from tools.release.git_ops import get_git_commits, get_latest_tag_before
-    from tools.release.models import (
-        CommitDict,
-        CommitInfo,
-        FeatureFlagInfo,
-        FlagTransition,
-        FlagTransitionDict,
-        GatedSubsystemStatus,
-        ReleaseMetadataResult,
-    )
-except ImportError:
-    from common.tool_utils import HandledError, run_tool  # type: ignore[no-redef]
-    from feature_flags import (  # type: ignore[no-redef]
-        discover_feature_flags,
-        extract_flag_transitions,
-    )
-    from git_ops import (  # type: ignore[no-redef]
-        get_git_commits,
-        get_latest_tag_before,
-    )
-    from models import (  # type: ignore[no-redef]
-        CommitDict,
-        CommitInfo,
-        FeatureFlagInfo,
-        FlagTransition,
-        FlagTransitionDict,
-        GatedSubsystemStatus,
-        ReleaseMetadataResult,
-    )
+from tools.common.tool_utils import HandledError, run_tool
+from tools.release.feature_flags import (
+    discover_feature_flags,
+    extract_flag_transitions,
+)
+from tools.release.git_ops import get_git_commits, get_latest_tag_before
+from tools.release.models import (
+    STATUS_APPROVED_PREVIEW_TOGGLE,
+    STATUS_ENABLED_BY_DEFAULT,
+    STATUS_EXPERIMENTAL_PREVIEW_TOGGLE,
+    CommitDict,
+    CommitInfo,
+    FeatureFlagInfo,
+    FlagTransition,
+    FlagTransitionDict,
+    GatedSubsystemStatus,
+    ReleaseMetadataResult,
+)
 
 __all__ = [
+    "STATUS_APPROVED_PREVIEW_TOGGLE",
+    "STATUS_ENABLED_BY_DEFAULT",
+    "STATUS_EXPERIMENTAL_PREVIEW_TOGGLE",
     "CommitDict",
     "CommitInfo",
     "FeatureFlagInfo",
@@ -91,11 +72,11 @@ def _build_gated_status_matrix(
         seen_displays.add(info.display_name)
 
         if info.is_active:
-            status = "enabled_by_default"
+            status = STATUS_ENABLED_BY_DEFAULT
         elif info.flag_name in approved_flags or flag_name in approved_flags:
-            status = "approved_preview_toggle"
+            status = STATUS_APPROVED_PREVIEW_TOGGLE
         else:
-            status = "experimental_preview_toggle"
+            status = STATUS_EXPERIMENTAL_PREVIEW_TOGGLE
 
         matrix.append(
             {

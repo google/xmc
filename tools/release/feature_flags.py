@@ -15,21 +15,11 @@
 """Feature flag discovery, token normalization, and transition extraction."""
 
 import re
-import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.release.git_ops import get_git_file_content
-    from tools.release.models import FeatureFlagInfo, FlagTransition
-    from tools.release.yaml_parser import parse_yaml_booleans
-except ImportError:
-    from git_ops import get_git_file_content  # type: ignore[no-redef]
-    from models import FeatureFlagInfo, FlagTransition  # type: ignore[no-redef]
-    from yaml_parser import parse_yaml_booleans  # type: ignore[no-redef]
+from tools.release.git_ops import get_git_file_content
+from tools.release.models import FeatureFlagInfo, FlagTransition
+from tools.release.yaml_parser import parse_yaml_booleans
 
 _CTK_CONFIG_FILES = [
     "deploy/ctk_v2/xmanager-cloud-deployment.yaml",

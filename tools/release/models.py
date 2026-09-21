@@ -17,6 +17,10 @@
 from dataclasses import dataclass, field
 from typing import TypedDict
 
+STATUS_ENABLED_BY_DEFAULT = "enabled_by_default"
+STATUS_APPROVED_PREVIEW_TOGGLE = "approved_preview_toggle"
+STATUS_EXPERIMENTAL_PREVIEW_TOGGLE = "experimental_preview_toggle"
+
 
 @dataclass
 class CommitInfo:

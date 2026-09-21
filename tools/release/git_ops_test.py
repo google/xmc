@@ -15,31 +15,17 @@
 """Unit tests for git operations and log streaming."""
 
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.common.tool_utils import HandledError
-    from tools.release.git_ops import (
-        get_git_commits,
-        get_git_file_content,
-        get_latest_tag_before,
-        parse_remote_url,
-    )
-except ImportError:
-    from common.tool_utils import HandledError  # type: ignore[no-redef]
-    from git_ops import (  # type: ignore[no-redef]
-        get_git_commits,
-        get_git_file_content,
-        get_latest_tag_before,
-        parse_remote_url,
-    )
+from tools.common.tool_utils import HandledError
+from tools.release.git_ops import (
+    get_git_commits,
+    get_git_file_content,
+    get_latest_tag_before,
+    parse_remote_url,
+)
 
 
 class GitOpsTest(unittest.TestCase):
