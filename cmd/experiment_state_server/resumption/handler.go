@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package resumption implements the ESS resumption stream handling and stub worker.
+// Package resumption implements the ESS resumption stream handling and worker.
 package resumption
 
 import (
@@ -56,7 +56,7 @@ func (h *Handler) HandleTask(ctx context.Context, workerID, data string) rediscl
 		}
 	}
 
-	if err := h.worker.Resume(ctx, req); err != nil {
+	if err := h.worker.StartResumption(ctx, req); err != nil {
 		logging.Error(ctx, "Resumption worker execution failed", "error", err, "resumption_run_id", req.ResumptionRunID)
 		return redisclient.TaskResult{
 			WasRunSuccessful: false,
