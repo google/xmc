@@ -60,7 +60,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=True):
             s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
             self.assertEqual(
-                (s.user_email, s.screenshots_dir), ("janzak@google.com", "/tmp/xmc_screenshots")
+                (s.user_email, s.screenshots_dir), ("test@example.com", "/tmp/xmc_screenshots")
             )
 
     def test_ui_verification_error(self) -> None:

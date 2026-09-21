@@ -64,7 +64,7 @@ def generate_session_cookie_jwt(email: str, jwt_secret: str) -> str:
     return f"{header}.{payload}.{sig}"
 
 
-DEFAULT_USER_EMAIL: str = os.environ.get("XMC_USER_EMAIL", "janzak@google.com")
+DEFAULT_USER_EMAIL: str = os.environ.get("XMC_USER_EMAIL", "test@example.com")
 DEFAULT_SCREENSHOTS_DIR: str = os.environ.get("XMC_SCREENSHOTS_DIR", "/tmp/xmc_screenshots")
 
 sync_playwright: Any = None

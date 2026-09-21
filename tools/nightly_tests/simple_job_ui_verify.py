@@ -29,7 +29,7 @@ flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
 flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
 flags.DEFINE_string("jwt_secret", None, "Optional backend JWT secret for session_token cookies")
 flags.DEFINE_string(
-    "user_email", os.environ.get("XMC_USER_EMAIL", "janzak@google.com"), "User email identity"
+    "user_email", os.environ.get("XMC_USER_EMAIL", "test@example.com"), "User email identity"
 )
 flags.DEFINE_bool("headless", True, "Run browser in headless mode")
 flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
