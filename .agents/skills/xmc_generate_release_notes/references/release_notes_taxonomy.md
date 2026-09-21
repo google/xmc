@@ -44,7 +44,7 @@ Contains features under active ongoing development that are experimental, opt-in
 
 For each experimental gated feature:
 - **Subsystem Title**: Explicit contract-grounded name of the gated subsystem.
-- **Activation Flag & File**: Exact parameter name and configuration file (e.g. `enable_components: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `components.enabled: true` in Helm `values.yaml`).
+- **Activation Flag & File**: Exact parameter name and configuration file (e.g. `enable_components: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `componentsDeployment.enabled: true` in Helm `values.yaml`).
 - **Narrative Summary of Changes**: Synthesized description of in-progress capabilities with grouped PR links.
 
 ---
@@ -80,22 +80,23 @@ Because commit categorization requires human and NLP semantic reasoning that sta
 
 ## 3. Automated Version Increment Determination (SemVer)
 
-The release generator calculates the recommended version bump (`Major`, `Minor`, or `Patch`) using deterministic rules:
+The release metadata engine (`tools/release/semver_engine.py`) calculates the baseline `recommended_bump` (`major`, `minor`, `patch`, or `none`) using deterministic trigger evaluation across `X.Y.Z` versions:
 
-### A. Pre-1.0 Zero-Major Versioning (`0.Y.Z`):
-* **Minor Bump (`0.(Y+1).0`)**:
-  - Any new feature enabled out-of-the-box (`commit_type == "feat"`).
-  - Any production-ready feature approved for enablement behind flags (`approved_flags`).
-  - Any feature flag promoted from `false` to `true` (`is_promotion_to_default`).
-  - Any new deployment configuration knob introduced in Cluster Toolkit or Helm.
-  - Any database schema migration or breaking change in `0.y.z` development.
-* **Patch Bump (`0.Y.(Z+1)`)**:
-  - Contains **only** bug fixes, security patches, internal refactoring, CI improvements, or experimental preview work without activating new capabilities out-of-the-box.
+### A. Deterministic Engine Rules (`semver_engine.py`):
+* **Major Bump (`(X+1).0.0`)**:
+  - Triggered when `has_breaking` is `true` (commits containing `!:` in the Conventional Commit header or `BREAKING CHANGE:` in the commit subject/description).
+* **Minor Bump (`X.(Y+1).0`)**:
+  - Any new feature commit (`has_ootb_features`: `commit_type == "feat"`).
+  - Any production-ready feature approved for enablement behind flags (`has_approved`: non-empty `approved_flags`).
+  - Any feature flag promoted from `false` to `true` (`has_promotions`: `is_promotion_to_default == true`).
+* **Patch Bump (`X.Y.(Z+1)`)**:
+  - Triggered when changes contain bug fixes (`has_ootb_fixes`: `commit_type == "fix"`), security patches, internal refactoring, CI improvements, or experimental preview work without activating new capabilities.
 
-### B. Standard Post-1.0 Versioning (`X.Y.Z`):
-* **Major Bump (`(X+1).0.0`)**: Incompatible API changes, breaking Spanner migrations, removed CTK flags.
-* **Minor Bump (`X.(Y+1).0`)**: Backwards-compatible new features, approved feature flags, flag promotions, new config knobs.
-* **Patch Bump (`X.Y.(Z+1)`)**: Backwards-compatible bug fixes and stability improvements only.
+### B. Advisory Metadata Signals & Pre-1.0 (`0.Y.Z`) Operator Review:
+In addition to the automated bump calculation, the metadata extraction output surfaces advisory signals for the agent and operator during the Interactive Review Gate:
+* **Database Migrations (`has_migrations`)**: Detected when commits touch `migrations/` directories or `.sql`/`.ddl` files and included in `recommended_version.rationale`, allowing operators to verify whether a migration requires a minor (`0.(Y+1).0`) or major (`(X+1).0.0`) increment.
+* **New Configuration Knobs (`flag_transitions`)**: Newly introduced Cluster Toolkit variables or Helm toggles are surfaced with `transition_type == "added"` in `flag_transitions`.
+* **Pre-1.0 (`0.Y.Z`) Versioning Convention**: If `has_breaking` triggers a baseline `major` recommendation (`1.0.0`) while the project remains in `0.Y.Z` pre-release development, the agent highlights this during Step 5 so the operator can confirm `0.(Y+1).0` if `1.0.0` graduation is not yet intended.
 
 ---
 
