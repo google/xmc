@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -229,7 +230,7 @@ func TestSyncFinalizersAddsAndRemovesDeletionProtection(t *testing.T) {
 	if _, err := writer.SyncFinalizers(ctx, deleting, &bridge.ReconcileResult{RemoveFinalizer: true}); err != nil {
 		t.Fatalf("SyncFinalizers(remove) returned unexpected error: %v", err)
 	}
-	if _, err := clients.Admin.Get(ctx, created.GetName(), metav1.GetOptions{}); !isNotFound(err) {
+	if _, err := clients.Admin.Get(ctx, created.GetName(), metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("Get() error = %v, want a not-found error once the finalizer is released", err)
 	}
 }
@@ -317,9 +318,4 @@ func containsFinalizer(finalizers []string) bool {
 		}
 	}
 	return false
-}
-
-// isNotFound reports whether err is a Kubernetes not-found error.
-func isNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "not found")
 }

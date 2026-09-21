@@ -73,7 +73,7 @@ func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
 		for _, c := range res.Conditions {
 			status.Conditions = append(status.Conditions, ComponentCondition{
 				Type:               c.Type,
-				Status:             string(c.Status),
+				Status:             c.Status,
 				ObservedGeneration: c.ObservedGeneration,
 				Reason:             c.Reason,
 				Message:            c.Message,
