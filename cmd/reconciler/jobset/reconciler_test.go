@@ -2048,8 +2048,11 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
-			if diff := cmp.Diff(buildMLRunLabels(10, 20), mock.lastOpts.Labels); diff != "" {
+			if diff := cmp.Diff(buildMLRunLabels(10, 20, ""), mock.lastOpts.Labels); diff != "" {
 				t.Errorf("Labels mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(buildMLRunLabels(10, 20, ""), mock.lastOpts.WorkloadDetails.Labels); diff != "" {
+				t.Errorf("WorkloadDetails.Labels mismatch (-want +got):\n%s", diff)
 			}
 			var wantCreateTime string
 			if tc.jobSet != nil {
@@ -2065,7 +2068,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				if mock.lastUpdateID != tc.wantID {
 					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
 				}
-				wantUpdateLabels := map[string]string{listExistingSessionsOnlyLabel: "true"}
+				wantUpdateLabels := buildMLRunUpdateLabels(buildMLRunLabels(10, 20, ""))
 				if diff := cmp.Diff(wantUpdateLabels, mock.lastUpdateOpts.Labels); diff != "" {
 					t.Errorf("update Labels mismatch (-want +got):\n%s", diff)
 				}
@@ -2235,6 +2238,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	tests := []struct {
 		name            string
 		client          *mockMLRunCreator
+		labels          map[string]string
 		wantURLContains string
 		wantGetCalls    int
 		wantUpdateCalls int
@@ -2245,6 +2249,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 				"labels": map[string]any{
 					"created_by":                  createdByXManagerLabelValue,
 					listExistingSessionsOnlyLabel: "true",
+					"experiment_url":              "/experiments/1",
 				},
 			}},
 			wantURLContains: "console.cloud.google.com",
@@ -2255,7 +2260,10 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			name: "already exists, owned but missing scan label triggers update",
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
-					"labels": map[string]any{"created_by": createdByXManagerLabelValue},
+					"labels": map[string]any{
+						"created_by":     createdByXManagerLabelValue,
+						"experiment_url": "/experiments/1",
+					},
 				},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
@@ -2284,7 +2292,11 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
-			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			inputLabels := tc.labels
+			if inputLabels == nil {
+				inputLabels = buildMLRunLabels(1, 2, "")
+			}
+			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", inputLabels, map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
 				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
 			}
@@ -2616,15 +2628,142 @@ func TestEnsureProfilesTab(t *testing.T) {
 }
 
 // TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
-// using snake_case keys (created_by, experiment_id, workunit_id).
+// and that the UI host is base32-encoded only when it is a real, in-budget hostname.
 func TestBuildMLRunLabels(t *testing.T) {
-	got := buildMLRunLabels(12, 3)
-	want := map[string]string{
+	base := map[string]string{
 		"experiment_id": "12",
 		"workunit_id":   "3",
 		"created_by":    createdByXManagerLabelValue,
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	withExtra := func(extra map[string]string) map[string]string {
+		want := map[string]string{}
+		for k, v := range base {
+			want[k] = v
+		}
+		for k, v := range extra {
+			want[k] = v
+		}
+		return want
+	}
+
+	tests := []struct {
+		name   string
+		uiHost string
+		want   map[string]string
+	}{
+		{
+			name:   "hostname is base32 encoded",
+			uiHost: "yinghong5.dev.xmanageriso.dev",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "pfuw4z3in5xgonjomrsxmltynvqw4ylhmvzgs43pfzsgk5q"}),
+		},
+		{
+			name: "empty host is omitted",
+			want: withExtra(nil),
+		},
+		{
+			name:   "unsubstituted chart placeholder is omitted",
+			uiHost: "YOUR_UI_HOSTNAME",
+			want:   withExtra(nil),
+		},
+		{
+			name:   "value that is not a hostname is omitted",
+			uiHost: "https://xmc.example.com/experiments/1",
+			want:   withExtra(nil),
+		},
+		{
+			name:   "host without a dot is omitted",
+			uiHost: "localhost",
+			want:   withExtra(nil),
+		},
+		{
+			name:   "whitespace is trimmed and case is normalized",
+			uiHost: "  Yinghong5.DEV.xmanageriso.dev  ",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "pfuw4z3in5xgonjomrsxmltynvqw4ylhmvzgs43pfzsgk5q"}),
+		},
+		{
+			name:   "short host encodes without padding",
+			uiHost: "a.b",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "mexge"}),
+		},
+		{
+			name:   "host encoding exactly at the 63 character cap is kept",
+			uiHost: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.dev",
+			want:   withExtra(map[string]string{"xmanager_base32_url": "mfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbmfqwcylbfzsgk5q"}),
+		},
+		{
+			name:   "host encoding one character over the cap is dropped",
+			uiHost: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.dev",
+			want:   withExtra(nil),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildMLRunLabels(12, 3, tc.uiHost)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildMLRunLabels(12, 3, %q) mismatch (-want +got):\n%s", tc.uiHost, diff)
+			}
+		})
 	}
 }
+
+// TestBuildMLRunUpdateLabels verifies that updating an MLRun combines existing metadata
+// labels with the list_existing_sessions_only scan trigger.
+func TestBuildMLRunUpdateLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseLabels map[string]string
+		want       map[string]string
+	}{
+		{
+			name:       "nil baseLabels initializes map with scan label",
+			baseLabels: nil,
+			want: map[string]string{
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name:       "empty baseLabels returns map with scan label",
+			baseLabels: map[string]string{},
+			want: map[string]string{
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name: "standard baseLabels preserves all keys and appends scan label",
+			baseLabels: map[string]string{
+				"experiment_url": "https://example.com/experiments/100",
+				"workunit_id":    "200",
+				"created_by":     createdByXManagerLabelValue,
+			},
+			want: map[string]string{
+				"experiment_url":              "https://example.com/experiments/100",
+				"workunit_id":                 "200",
+				"created_by":                  createdByXManagerLabelValue,
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+		{
+			name: "baseLabels with existing scan label enforces true value",
+			baseLabels: map[string]string{
+				"experiment_url":              "https://example.com/experiments/100",
+				listExistingSessionsOnlyLabel: "false",
+			},
+			want: map[string]string{
+				"experiment_url":              "https://example.com/experiments/100",
+				listExistingSessionsOnlyLabel: "true",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildMLRunUpdateLabels(tc.baseLabels)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildMLRunUpdateLabels(%v) mismatch (-want +got):\n%s", tc.baseLabels, diff)
+			}
+		})
+	}
+}
+
+// TestConstructExperimentURL exercises the input cases defined in step 3 (empty baseURL,

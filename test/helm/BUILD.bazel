@@ -105,3 +105,19 @@ py_test(
         "manual",
     ],
 )
+
+py_test(
+    name = "reconciler_xmanager_identity_config_test",
+    srcs = ["reconciler_xmanager_identity_config_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "reconciler_xmanager_identity_config_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)

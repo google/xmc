@@ -17,6 +17,7 @@ package jobset
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -98,6 +99,7 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	XManagerUIHost           string
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -112,6 +114,7 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	XManagerUIHost           string
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -136,6 +139,7 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
+		XManagerUIHost:           p.XManagerUIHost,
 	}, nil
 }
 
@@ -676,15 +680,121 @@ const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 // resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
 var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
 
+// mlRunLabelValueRE matches the value syntax the ML Diagnostics control plane
+// accepts for resource labels: it must start with a lowercase letter or digit and
+// may then contain lowercase letters, digits, dashes and underscores.
+//
+// The control plane validates labels character by character and rejects the whole
+// CreateMLRun call with INVALID_ARGUMENT on the first offending rune, so a single
+// bad value costs the entire MLRun record - not just the label. Every optional
+// value therefore passes through this gate before it is stamped.
+//
+// Uppercase is rejected by the control plane itself, verified against the live
+// prod API: a label value of "abcDEF123" is refused while "abcdef123" succeeds.
+var mlRunLabelValueRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// mlRunLabelMaxLength is the longest label value the control plane accepts.
+//
+// Verified against the live prod API: a 63 character value is accepted and a 64
+// character value is rejected with INVALID_ARGUMENT.
+const mlRunLabelMaxLength = 63
+
+// uiHostRE matches a lowercase DNS hostname with at least one dot.
+//
+// Base32 makes any byte sequence label-safe, which removes the charset gate that
+// previously rejected junk by accident. An unsubstituted chart placeholder such as
+// YOUR_UI_HOSTNAME would otherwise encode cleanly and be published as though it were
+// a real host, so the input is validated as a hostname before it is encoded.
+var uiHostRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// normalizeUIHost lowercases and trims host, returning "" when it is not a DNS name.
+//
+// Extracted as a pure function so hostname acceptance is testable independently of
+// base32 encoding. Lowercasing is lossless because DNS names are case-insensitive.
+func normalizeUIHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if !uiHostRE.MatchString(host) {
+		return ""
+	}
+	return host
+}
+
+// encodeBase32LabelValue encodes s as unpadded, lowercase base32 so that an
+// arbitrary string survives MLRun label validation.
+//
+// Base64 is the more compact and more obvious choice, but it cannot be used: both
+// the standard and URL-safe base64 alphabets contain A-Z, and the control plane
+// rejects uppercase outright. Base32 lowercases to a-z2-7, a strict subset of the
+// accepted charset, and always begins with an alphanumeric so it also satisfies the
+// leading-character rule. Padding is stripped because "=" is not an accepted
+// character.
+//
+// Consumers decode by uppercasing, re-padding to a multiple of 8, and applying a
+// standard base32 decoder.
+func encodeBase32LabelValue(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte(s)))
+}
+
+// labelSafeValue returns v when it is acceptable as an MLRun label value, and ""
+// otherwise.
+//
+// Extracted as a pure function because the chart forwards raw values: an
+// unsubstituted placeholder such as YOUR_DOMAIN_SUFFIX, or an operator typo, must
+// degrade to a missing label rather than break MLRun creation for the work unit.
+func labelSafeValue(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > mlRunLabelMaxLength {
+		return ""
+	}
+	if !mlRunLabelValueRE.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
 // buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
 // Extracted so create and upsert apply an identical label set (including the
 // created_by marker that lets us detect ownership on a create conflict).
-func buildMLRunLabels(xid, wid int64) map[string]string {
-	return map[string]string{
+//
+// xmanager_base32_url carries the XManager UI host so a consumer can rebuild a link
+// back to the experiment as https://<host>/experiments/<experiment_id>, pairing it
+// with the experiment_id label. Only the host is carried because the full URL does
+// not fit: the control plane caps a label value at 63 characters, and no encoding
+// over the permitted 38-character alphabet can represent a 54 byte URL in that
+// space.
+//
+// The value is additive and only stamped when label-safe, so consumers never see an
+// empty-valued key and a misconfigured deployment degrades to a missing label rather
+// than a failed MLRun create.
+func buildMLRunLabels(xid, wid int64, uiHost string) map[string]string {
+	labels := map[string]string{
 		"experiment_id": fmt.Sprintf("%d", xid),
 		"workunit_id":   fmt.Sprintf("%d", wid),
 		"created_by":    createdByXManagerLabelValue,
 	}
+	if v := labelSafeValue(encodeBase32LabelValue(normalizeUIHost(uiHost))); v != "" {
+		labels["xmanager_base32_url"] = v
+	}
+	return labels
+}
+
+// buildMLRunUpdateLabels constructs the complete label map for MLRun update calls,
+// combining the base labels (experiment_id, workunit_id, created_by) with the
+// list_existing_sessions_only scan trigger.
+//
+// Extracted so that post-creation updates and conflict upserts apply an identical,
+// consistent set of labels without duplicating map-copying logic.
+func buildMLRunUpdateLabels(baseLabels map[string]string) map[string]string {
+	updateLabels := make(map[string]string, len(baseLabels)+1)
+	for k, v := range baseLabels {
+		updateLabels[k] = v
+	}
+	updateLabels[listExistingSessionsOnlyLabel] = "true"
+	return updateLabels
 }
 
 // normalizeClusterName extracts the short cluster name from either a bare name or a full GCP resource path.
@@ -771,7 +881,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
 	// same ManagedXprof fields (and ownership marker) the create would have.
-	labels := buildMLRunLabels(xid, wid)
+	labels := buildMLRunLabels(xid, wid, r.XManagerUIHost)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,
@@ -784,6 +894,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 			Cluster:    clusterPath,
 			Namespace:  jobSet.Namespace,
 			ID:         jobSet.Name,
+			Labels:     labels,
 			CreateTime: createTime,
 		},
 	}
@@ -803,8 +914,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 
 	// Create-then-update: stamp list_existing_sessions_only post-creation to preserve
 	// the ACTIVE phase (creating with it forces COMPLETED, which blocks on-demand profiling).
+	// Pass the complete label set so the deployment identifiers and ownership marker
+	// are preserved even if the control plane's GET response omits labels or replaces the map.
+	updateLabels := buildMLRunUpdateLabels(labels)
 	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-		Labels: map[string]string{listExistingSessionsOnlyLabel: "true"},
+		Labels: updateLabels,
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to stamp list_existing_sessions_only on MLRun", "mlRunID", mlRunID, "error", err)
@@ -915,11 +1029,7 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	}
 
 	logging.Info(ctx, "Updating existing MLRun with ManagedXprof fields", "mlRunID", existingID)
-	updateLabels := make(map[string]string, len(labels)+1)
-	for k, v := range labels {
-		updateLabels[k] = v
-	}
-	updateLabels[listExistingSessionsOnlyLabel] = "true"
+	updateLabels := buildMLRunUpdateLabels(labels)
 
 	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
 		DisplayName: displayName,
