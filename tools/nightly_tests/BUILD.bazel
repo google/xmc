@@ -21,9 +21,11 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "common.py",
     "common_test.py",
+    "simple_job_ui_verify.py",
     "simple_job_verify.py",
+    "ui_entities_validator.py",
+    "ui_entities_validator_test.py",
     "xmc_entities_validator.py",
-    "xmc_entities_validator_test.py",
 ])
 
 py_library(
@@ -31,6 +33,12 @@ py_library(
     srcs = [
         "xmc_entities_validator.py",
     ],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "ui_entities_validator_lib",
+    srcs = ["ui_entities_validator.py"],
     imports = ["../.."],
 )
 
@@ -57,6 +65,16 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "simple_job_ui_verify",
+    srcs = ["simple_job_ui_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":ui_entities_validator_lib",
+    ],
+)
+
 py_test(
     name = "common_test",
     srcs = ["common_test.py"],
@@ -74,4 +92,11 @@ py_test(
     deps = [
         ":xmc_entities_validator_lib",
     ],
+)
+
+py_test(
+    name = "ui_entities_validator_test",
+    srcs = ["ui_entities_validator_test.py"],
+    imports = ["../.."],
+    deps = [":ui_entities_validator_lib"],
 )

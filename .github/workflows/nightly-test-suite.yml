@@ -104,6 +104,7 @@ jobs:
           TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
           echo "::add-mask::${TOKEN}"
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || 'janzak@google.com' }}" >> "${GITHUB_ENV}"
 
       - name: 'Launch Demo Workload'
         id: launch-demo-workload
@@ -175,17 +176,43 @@ jobs:
           echo " Workload Verification Completed Successfully!"
           echo "================================================================="
 
+      - name: 'Execute Playwright UI Traversal Assertions against xmc-nightly UI'
+        id: 'verify-ui-traversal'
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.verify_workload }}
+        env:
+          XID: '${{ steps.launch-demo-workload.outputs.xid }}'
+          JWT_SECRET: '${{ secrets.GCP_JWT_SECRET }}'
+          UI_URL: '${{ env.XMANAGER_UI_URL }}'
+          XMC_SCREENSHOTS_DIR: '/tmp/xmc_screenshots'
+        run: |
+          mkdir -p "${XMC_SCREENSHOTS_DIR}"
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install playwright
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_ui_verify \
+            --xid="${XID}" --ui_base_url="${UI_URL}"
+
+      - name: 'Upload UI Diagnostic Screenshots'
+        if: always()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'ui-traversal-screenshots'
+          path: '/tmp/xmc_screenshots/'
+          retention-days: 7
+
       - name: 'Publish Nightly Test Findings Summary'
         if: always()
         env:
           XID: '${{ steps.launch-demo-workload.outputs.xid }}'
           LAUNCH_OUTCOME: '${{ steps.launch-demo-workload.outcome }}'
           VERIFY_OUTCOME: '${{ steps.verify-workload.outcome }}'
+          UI_VERIFY_OUTCOME: '${{ steps.verify-ui-traversal.outcome }}'
         run: |
           {
             echo "## 🌙 Nightly Test Suite Execution Summary"
             echo ""
-            if [ "${VERIFY_OUTCOME}" = "success" ] || ( [ "${VERIFY_OUTCOME}" = "skipped" ] && [ "${LAUNCH_OUTCOME}" = "success" ] ); then
+            if [ "${VERIFY_OUTCOME}" = "success" ] && [ "${UI_VERIFY_OUTCOME}" = "success" ]; then
+              echo "### ✅ Outcome: PASSED"
+            elif [ "${VERIFY_OUTCOME}" = "skipped" ] && [ "${LAUNCH_OUTCOME}" = "success" ]; then
               echo "### ✅ Outcome: PASSED"
             else
               echo "### ❌ Outcome: FAILED"
@@ -195,7 +222,8 @@ jobs:
             echo "| --- | --- |"
             echo "| **Experiment XID** | \`${XID:-N/A}\` |"
             echo "| **Launch Demo Workload** | \`${LAUNCH_OUTCOME}\` |"
-            echo "| **Verification Assertions** | \`${VERIFY_OUTCOME}\` |"
+            echo "| **SDK gRPC Verification** | \`${VERIFY_OUTCOME}\` |"
+            echo "| **UI Browser Traversal** | \`${UI_VERIFY_OUTCOME}\` |"
             if [ -n "${XID:-}" ]; then
               echo "| **Web UI URL** | https://xmc-nightly.${DOMAIN_NAME}/experiments/${XID} |"
             fi
