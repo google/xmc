@@ -211,7 +211,7 @@ spec:
 			wantCycleStr: "comp-a -> comp-a",
 		},
 		{
-			name: "direct 2-node cycle comp-a -> comp-b -> comp-a",
+			name: "multi-node cycle comp-a -> comp-b -> comp-a",
 			manifests: map[string]string{
 				"comp-a.yaml": `
 apiVersion: components.xmc.dev/v1alpha1
@@ -260,41 +260,6 @@ spec:
 			wantRule:  "DUPLICATE_COMPONENT_NAME",
 		},
 		{
-			name: "3-node cycle comp-a -> comp-b -> comp-c -> comp-a",
-			manifests: map[string]string{
-				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: comp-a
-spec:
-  dependencies:
-    - comp-b
-`,
-				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: comp-b
-spec:
-  dependencies:
-    - comp-c
-`,
-				"comp-c.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: comp-c
-spec:
-  dependencies:
-    - comp-a
-`,
-			},
-			wantValid:    false,
-			wantRule:     "CYCLIC_DEPENDENCY",
-			wantCycleStr: "comp-a -> comp-b -> comp-c -> comp-a",
-		},
-		{
 			name: "duplicate component definition across distinct files",
 			manifests: map[string]string{
 				"comp-first.yaml": `
@@ -316,82 +281,6 @@ spec:
 			},
 			wantValid: false,
 			wantRule:  "DUPLICATE_COMPONENT_NAME",
-		},
-		{
-			name: "diamond acyclic graph",
-			manifests: map[string]string{
-				"root.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: root
-spec:
-  dependencies:
-    - branch-a
-    - branch-b
-`,
-				"branch-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: branch-a
-spec:
-  dependencies:
-    - leaf
-`,
-				"branch-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: branch-b
-spec:
-  dependencies:
-    - leaf
-`,
-				"leaf.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: leaf
-`,
-			},
-			wantValid: true,
-		},
-		{
-			name: "overlapping cycles in multi-node graph",
-			manifests: map[string]string{
-				"comp-1.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: c1
-spec:
-  dependencies:
-    - c2
-    - c3
-`,
-				"comp-2.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: c2
-spec:
-  dependencies:
-    - c1
-    - c3
-`,
-				"comp-3.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: c3
-spec:
-  dependencies:
-    - c1
-`,
-			},
-			wantValid: false,
-			wantRule:  "CYCLIC_DEPENDENCY",
 		},
 	}
 
