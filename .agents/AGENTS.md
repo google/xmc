@@ -38,7 +38,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | PR Sizing & Vertical Splitting | [XMC PR Split Verification Skill](skills/xmc_pr_split_verification/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
-| Release Notes Generation | [XMC Generate Release Notes Skill](skills/xmc_generate_release_notes/SKILL.md) |
+| Release Notes Generation | [XMC Generate Release Notes Skill](skills/xmc_generate_release_notes/SKILL.md) & [Release Notes Taxonomy](skills/xmc_generate_release_notes/references/release_notes_taxonomy.md) |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
 | Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |

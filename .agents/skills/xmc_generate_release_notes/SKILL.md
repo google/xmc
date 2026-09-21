@@ -28,7 +28,7 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    - Determine target version (e.g., `0.6.0`, `HEAD`, or release branch).
    - If not specified by the user, discover the latest previous tag:
      ```bash
-     git describe --tags --abbrev=0 HEAD^
+     git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD
      ```
 2. **Inspect Commit Range**:
    ```bash
@@ -121,7 +121,7 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 > The following capabilities are fully developed, verified, and safe to be enabled. Their default enablement is temporarily postponed solely to align with managed solution milestones.
 
 ### 🔹 [Flag: `<ctk_flag_name>`] <Subsystem Display Name>
-* **How to enable**: Set `<ctk_flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (or `<helm_flag_name>: true` in Helm `values.yaml`).
+* **How to enable**: Set `<ctk_flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (or the nested `<helm_flag_path>: true` in Helm `values.yaml`).
 * **What's New**:
   * Synthesized summary of ready endpoints, controllers, UI components, or APIs (#PRs).
 
@@ -132,7 +132,7 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 > The following capabilities are under active ongoing development, experimental, and may not yet be functional. They are available for early preview and evaluation by enabling their deployment flags in your Cluster Toolkit deployment YAML or Helm `values.yaml`.
 
 ### 🔹 [Flag: `<ctk_flag_name>`] <Subsystem Display Name>
-* **How to enable**: Set `<ctk_flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (or `<helm_flag_name>: true` in Helm `values.yaml`).
+* **How to enable**: Set `<ctk_flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` (or the nested `<helm_flag_path>: true` in Helm `values.yaml`).
 * **What's New**:
   * Synthesized summary of experimental capabilities (#PRs).
 
