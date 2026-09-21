@@ -22,6 +22,7 @@ exports_files([
     "extract_release_metadata.py",
     "feature_flags.py",
     "git_ops.py",
+    "github_release_client.py",
     "models.py",
     "publish_release.py",
     "semver_engine.py",
@@ -148,11 +149,33 @@ py_test(
 )
 
 py_library(
+    name = "github_release_client_lib",
+    srcs = ["github_release_client.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "github_release_client_test",
+    srcs = ["github_release_client_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":git_ops_lib",
+        ":github_release_client_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "publish_release_lib",
     srcs = ["publish_release.py"],
     imports = ["../.."],
     deps = [
         ":git_ops_lib",
+        ":github_release_client_lib",
         ":models_lib",
         "//tools/common:tool_utils",
     ],
@@ -174,6 +197,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":git_ops_lib",
+        ":github_release_client_lib",
         ":models_lib",
         ":publish_release_lib",
         "//tools/common:tool_utils",

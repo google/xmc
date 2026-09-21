@@ -21,11 +21,17 @@ from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
 from tools.release.git_ops import (
+    create_git_tag,
     get_git_commits,
     get_git_file_content,
     get_git_remote_url,
     get_latest_tag_before,
     parse_remote_url,
+    push_git_tag,
+    resolve_repo_owner_and_name,
+    resolve_target_commit,
+    verify_local_tag,
+    verify_remote_tag,
 )
 
 
@@ -125,6 +131,146 @@ malformed_line_with_missing_separators
         self.assertEqual(parse_remote_url("https://github.com/google/xmc/"), ("google", "xmc"))
         self.assertEqual(parse_remote_url("https://github.com/google/xmc"), ("google", "xmc"))
         self.assertEqual(parse_remote_url("invalid"), ("google", "xmc"))
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_verify_local_tag(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
+        self.assertFalse(verify_local_tag("0.6.0", Path("."), force=False))
+
+        mock_subprocess.return_value = MagicMock(stdout="0.6.0\n", returncode=0)
+        with self.assertRaises(HandledError):
+            verify_local_tag("0.6.0", Path("."), force=False)
+
+        def side_effect(cmd: list[str], **_kwargs: object) -> MagicMock:
+            if cmd == ["git", "tag", "-l", "0.6.0"]:
+                return MagicMock(stdout="0.6.0\n", returncode=0)
+            if cmd == ["git", "rev-parse", "refs/tags/0.6.0^{commit}"]:
+                return MagicMock(stdout="a1b2c3d4\n", returncode=0)
+            return MagicMock(stdout="", returncode=0)
+
+        mock_subprocess.side_effect = side_effect
+        self.assertTrue(verify_local_tag("0.6.0", Path("."), force=False, target_commit="a1b2c3d4"))
+
+        def side_effect_diff(cmd: list[str], **_kwargs: object) -> MagicMock:
+            if cmd == ["git", "tag", "-l", "0.6.0"]:
+                return MagicMock(stdout="0.6.0\n", returncode=0)
+            if cmd == ["git", "rev-parse", "refs/tags/0.6.0^{commit}"]:
+                return MagicMock(stdout="different_sha\n", returncode=0)
+            return MagicMock(stdout="", returncode=0)
+
+        mock_subprocess.side_effect = side_effect_diff
+        with self.assertRaises(HandledError):
+            verify_local_tag("0.6.0", Path("."), force=False, target_commit="a1b2c3d4")
+
+        mock_subprocess.side_effect = None
+        mock_subprocess.return_value = MagicMock(stdout="0.6.0\n", returncode=0)
+        self.assertFalse(verify_local_tag("0.6.0", Path("."), force=True))
+
+        mock_subprocess.return_value = MagicMock(stderr="error", returncode=1)
+        with self.assertRaises(HandledError):
+            verify_local_tag("0.6.0", Path("."), force=False)
+
+        mock_subprocess.side_effect = FileNotFoundError()
+        with self.assertRaises(HandledError):
+            verify_local_tag("0.6.0", Path("."), force=False)
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_verify_remote_tag(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(stdout="", returncode=0)
+        verify_remote_tag("0.6.0", Path("."), force=False)
+
+        mock_subprocess.return_value = MagicMock(stdout="a1b2c3d4\trefs/tags/0.6.0\n", returncode=0)
+        with self.assertRaises(HandledError) as ctx:
+            verify_remote_tag("0.6.0", Path("."), force=False, remote="origin")
+        self.assertIn("already exists on remote repository 'origin'", str(ctx.exception))
+
+        mock_subprocess.return_value = MagicMock(stderr="remote error", returncode=128)
+        with self.assertRaises(HandledError) as ctx:
+            verify_remote_tag("0.6.0", Path("."), force=False, remote="origin")
+        self.assertIn("Failed to check remote git tags", str(ctx.exception))
+
+        mock_subprocess.reset_mock()
+        verify_remote_tag("0.6.0", Path("."), force=True)
+        mock_subprocess.assert_not_called()
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_create_git_tag_and_error(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(returncode=0)
+        create_git_tag("0.6.0", "HEAD", "Release 0.6.0", Path("."), force=False)
+        self.assertIn("-a", mock_subprocess.call_args[0][0])
+        self.assertNotIn("--force", mock_subprocess.call_args[0][0])
+
+        create_git_tag("0.6.0", "HEAD", "Release 0.6.0", Path("."), force=True)
+        self.assertIn("--force", mock_subprocess.call_args[0][0])
+
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, "git")
+        with self.assertRaises(HandledError):
+            create_git_tag("0.6.0", "HEAD", "Release 0.6.0", Path("."), force=False)
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_push_git_tag_and_errors(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(returncode=0)
+        push_git_tag("0.6.0", Path("."), force=False, remote="origin")
+        self.assertIn("push", mock_subprocess.call_args[0][0])
+        self.assertIn("origin", mock_subprocess.call_args[0][0])
+        self.assertNotIn("--force", mock_subprocess.call_args[0][0])
+
+        push_git_tag("0.6.0", Path("."), force=True, remote="upstream")
+        self.assertIn("--force", mock_subprocess.call_args[0][0])
+        self.assertIn("upstream", mock_subprocess.call_args[0][0])
+
+        mock_subprocess.side_effect = subprocess.CalledProcessError(
+            1, "git", stderr="already exists"
+        )
+        with self.assertRaises(HandledError) as ctx:
+            push_git_tag("0.6.0", Path("."), force=False)
+        self.assertIn("already exist", ctx.exception.instruction)
+
+        mock_subprocess.side_effect = subprocess.CalledProcessError(
+            1, "git", stderr="permission denied"
+        )
+        with self.assertRaises(HandledError) as ctx:
+            push_git_tag("0.6.0", Path("."), force=False)
+        self.assertIn("write permissions", ctx.exception.instruction)
+
+    @patch.dict("os.environ", {"GITHUB_OWNER": "env_owner", "GITHUB_REPO": "env_repo"}, clear=True)
+    def test_resolve_repo_owner_and_name_from_env(self) -> None:
+        owner, repo = resolve_repo_owner_and_name(Path("."))
+        self.assertEqual(owner, "env_owner")
+        self.assertEqual(repo, "env_repo")
+
+    @patch.dict("os.environ", {"GITHUB_REPOSITORY": "env_owner/env_repo"}, clear=True)
+    def test_resolve_repo_owner_and_name_from_github_repository_env(self) -> None:
+        owner, repo = resolve_repo_owner_and_name(Path("."))
+        self.assertEqual(owner, "env_owner")
+        self.assertEqual(repo, "env_repo")
+
+    @patch("tools.release.git_ops.get_git_remote_url")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_resolve_repo_owner_and_name_fallback(self, mock_remote_url: MagicMock) -> None:
+        mock_remote_url.return_value = "https://github.com/fallback_owner/fallback_repo.git"
+        owner, repo = resolve_repo_owner_and_name(Path("."), remote="custom")
+        self.assertEqual(owner, "fallback_owner")
+        self.assertEqual(repo, "fallback_repo")
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_resolve_target_commit_success(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.return_value = MagicMock(stdout="a1b2c3d4e5f6\n", returncode=0)
+        commit = resolve_target_commit("HEAD", Path("."))
+        self.assertEqual(commit, "a1b2c3d4e5f6")
+        self.assertIn("HEAD^{commit}", mock_subprocess.call_args[0][0])
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_resolve_target_commit_errors(self, mock_subprocess: MagicMock) -> None:
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, ["git"], stderr="bad ref")
+        with self.assertRaises(HandledError) as ctx:
+            resolve_target_commit("nonexistent", Path("."))
+        self.assertIn("Failed to resolve target commit", str(ctx.exception))
+
+        mock_subprocess.side_effect = FileNotFoundError()
+        with self.assertRaises(HandledError) as ctx:
+            resolve_target_commit("HEAD", Path("."))
+        self.assertIn("Failed to resolve target commit", str(ctx.exception))
 
 
 if __name__ == "__main__":

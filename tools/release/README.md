@@ -180,9 +180,10 @@ python3 tools/release/publish_release.py \
 
 - [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, SemVer recommendation, and output generation.
 - [`feature_flags.py`](feature_flags.py): Discovers feature toggles from CTK and Helm manifests and computes flag transitions between releases.
-- [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, `git remote`, and `git show` with error handling.
+- [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, `git remote`, `git show`, and annotated tag lifecycle operations (`verify_local_tag`, `verify_remote_tag`, `create_git_tag`, `push_git_tag`).
+- [`github_release_client.py`](github_release_client.py): GitHub release creation client transports (`publish_via_gh_cli`).
 - [`models.py`](models.py): Strongly-typed dataclasses and TypedDicts for release metadata, commits, flag transitions, and publication results.
-- [`publish_release.py`](publish_release.py): Annotated git tag creation, tag push, and GitHub release publication via `gh release create`.
+- [`publish_release.py`](publish_release.py): CLI entrypoint orchestrating pre-flight validation, git tag lifecycle, and GitHub release publication.
 - [`semver_engine.py`](semver_engine.py): Semantic version calculation and release increment recommendation engine.
 - [`yaml_parser.py`](yaml_parser.py): Robust YAML AST parsing and indentation fallback scanner for extracting nested boolean configurations.
 
@@ -196,6 +197,7 @@ Run unit tests via Bazel:
 bazel test //tools/release:extract_release_metadata_test \
   //tools/release:feature_flags_test \
   //tools/release:git_ops_test \
+  //tools/release:github_release_client_test \
   //tools/release:publish_release_test \
   //tools/release:semver_engine_test \
   //tools/release:yaml_parser_test
