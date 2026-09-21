@@ -205,6 +205,23 @@ func (m *mockHelm) RecordActuation(ref ComponentRef, generation int64) {
 	m.actuatedGenerations[ref.String()] = generation
 }
 
+func (m *mockHelm) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
+	if m == nil || !crReady {
+		return nil
+	}
+	m.active = true
+	if observedGeneration <= 0 {
+		return nil
+	}
+	if m.actuatedGenerations == nil {
+		m.actuatedGenerations = make(map[string]int64)
+	}
+	if m.actuatedGenerations[ref.String()] == 0 {
+		m.actuatedGenerations[ref.String()] = observedGeneration
+	}
+	return nil
+}
+
 func TestNewReconciler(t *testing.T) {
 	if _, err := NewReconciler(nil, nil, nil); err == nil {
 		t.Fatal("expected error on nil CMS client")
@@ -1911,5 +1928,89 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 	}
 	if resUnhealthy.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
 		t.Errorf("expected COMPONENT_STATE_PENDING_RECONCILIATION, got %v", resUnhealthy.State)
+	}
+}
+
+func TestReconciler_ColdStartHydration_SkipsRedundantUpgrade(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{active: false}
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, helm)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+
+	in := ReconcileComponentInput{
+		Namespace:    "xmc",
+		Name:         "ingestion-gateway",
+		Generation:   4,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled:      true,
+		HasFinalizer: true,
+		ExistingConditions: []Condition{
+			{
+				Type:               ConditionTypeReady,
+				Status:             ConditionStatusTrue,
+				ObservedGeneration: 4,
+				Reason:             "ComponentHealthy",
+				LastTransitionTime: time.Now().UTC(),
+			},
+			{
+				Type:               ConditionTypeDegraded,
+				Status:             ConditionStatusFalse,
+				ObservedGeneration: 4,
+				Reason:             "ComponentHealthy",
+				LastTransitionTime: time.Now().UTC(),
+			},
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent failed: %v", err)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+		t.Errorf("expected COMPONENT_STATE_ENABLED, got %v", res.State)
+	}
+	if helm.ensureCalls != 0 {
+		t.Errorf("expected 0 Ensure1PComponent calls after cold-start hydration of Ready@gen4, got %d", helm.ensureCalls)
+	}
+}
+
+func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{active: false}
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, helm)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+
+	in := ReconcileComponentInput{
+		Namespace:    "xmc",
+		Name:         "ingestion-gateway",
+		Generation:   2,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled:      false,
+		HasFinalizer: true,
+		ExistingConditions: []Condition{
+			{
+				Type:               ConditionTypeReady,
+				Status:             ConditionStatusTrue,
+				ObservedGeneration: 1,
+				Reason:             "ComponentHealthy",
+			},
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent failed: %v", err)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("expected COMPONENT_STATE_DISABLED, got %v", res.State)
+	}
+	if !helm.deleteCalled {
+		t.Error("expected Delete1PComponent to be called when deactivating previously Ready component after controller restart")
 	}
 }

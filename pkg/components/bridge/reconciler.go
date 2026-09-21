@@ -398,10 +398,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 		return nil
 	}
 	ref := resolveComponentRef(in)
-	// TODO: Hydrate active state and observed generation from existing CR status (.status.observedGeneration)
-	// and release storage on controller startup. This avoids redundant Helm metadata revision increments on
-	// cold start and resolves the post-restart deactivation edge case.
-	if !r.helmManager.IsComponentActive(ref) {
+	wasPreviouslyActive := wasComponentPreviouslyActive(in.ExistingConditions)
+	_ = r.helmManager.HydrateComponentState(ctx, ref, 0, wasPreviouslyActive)
+	if !r.helmManager.IsComponentActive(ref) && !wasPreviouslyActive {
 		return nil
 	}
 	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
@@ -423,6 +422,8 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 		return nil
 	}
 	ref := resolveComponentRef(in)
+	readyAtGen := isReadyAtGeneration(in.ExistingConditions, in.Generation)
+	_ = r.helmManager.HydrateComponentState(ctx, ref, in.Generation, readyAtGen)
 	if r.helmManager.IsComponentActuated(ref, in.Generation) {
 		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
 		return nil
@@ -438,6 +439,31 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	r.helmManager.RecordActuation(ref, in.Generation)
 	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace, "generation", in.Generation)
 	return nil
+}
+
+func wasComponentPreviouslyActive(existing []Condition) bool {
+	for _, c := range existing {
+		if c.Type == ConditionTypeReady {
+			return c.Status == ConditionStatusTrue || (c.Reason != "" && c.Reason != "ComponentDisabled")
+		}
+	}
+	return false
+}
+
+func isReadyAtGeneration(existing []Condition, generation int64) bool {
+	if generation <= 0 {
+		return false
+	}
+	readyAtGen := false
+	for _, c := range existing {
+		if c.Type == ConditionTypeDegraded && c.Status == ConditionStatusTrue {
+			return false
+		}
+		if c.Type == ConditionTypeReady && c.Status == ConditionStatusTrue && c.ObservedGeneration == generation {
+			readyAtGen = true
+		}
+	}
+	return readyAtGen
 }
 
 // evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and Degraded

@@ -482,6 +482,7 @@ type mockHelmActionRunner struct {
 	mu              sync.Mutex
 	lastRelease     string
 	lastNS          string
+	lastChart       *chart.Chart
 	lastValues      map[string]any
 	upgradeErr      error
 	upgradeCalls    int
@@ -501,6 +502,7 @@ func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespa
 	m.upgradeCalls++
 	m.lastRelease = releaseName
 	m.lastNS = namespace
+	m.lastChart = chartObj
 	m.lastValues = values
 	if m.upgradeErr != nil {
 		return nil, m.upgradeErr
@@ -1286,5 +1288,148 @@ func TestK8sHelmManager_UninstallRelease_PanicSafeLockDefer(t *testing.T) {
 	panickingRunner.panicOnUninstall = false
 	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
 		t.Fatalf("expected Delete1PComponent to succeed after recovered panic, got: %v", err)
+	}
+}
+
+func TestResolveComponentChartPath(t *testing.T) {
+	baseDir := t.TempDir()
+	compSubDir := filepath.Join(baseDir, "components", "ingestion-gateway")
+	if err := os.MkdirAll(compSubDir, 0755); err != nil {
+		t.Fatalf("failed to create component subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(compSubDir, "Chart.yaml"), []byte("apiVersion: v2\nname: ingestion-gateway\nversion: 0.1.0\n"), 0644); err != nil {
+		t.Fatalf("failed to write Chart.yaml: %v", err)
+	}
+
+	directSubDir := filepath.Join(baseDir, "rod-data-provider")
+	if err := os.MkdirAll(directSubDir, 0755); err != nil {
+		t.Fatalf("failed to create direct subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directSubDir, "Chart.yaml"), []byte("apiVersion: v2\nname: rod-data-provider\nversion: 0.1.0\n"), 0644); err != nil {
+		t.Fatalf("failed to write Chart.yaml: %v", err)
+	}
+
+	tgzPath := filepath.Join(baseDir, "health-service.tgz")
+	if err := os.WriteFile(tgzPath, []byte("dummy-tgz"), 0644); err != nil {
+		t.Fatalf("failed to write tgz file: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		basePath     string
+		ref          ComponentRef
+		overridePath string
+		wantPath     string
+	}{
+		{
+			name:         "ExplicitOverridePrecedence",
+			basePath:     baseDir,
+			ref:          ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
+			overridePath: "/custom/override/chart",
+			wantPath:     "/custom/override/chart",
+		},
+		{
+			name:     "ComponentsSubdirectoryResolution",
+			basePath: baseDir,
+			ref:      ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"},
+			wantPath: compSubDir,
+		},
+		{
+			name:     "DirectSubdirectoryResolution",
+			basePath: baseDir,
+			ref:      ComponentRef{Namespace: "xmc", Name: "rod-data-provider"},
+			wantPath: directSubDir,
+		},
+		{
+			name:     "PackagedArchiveResolution",
+			basePath: baseDir,
+			ref:      ComponentRef{Namespace: "xmc", Name: "health-service"},
+			wantPath: tgzPath,
+		},
+		{
+			name:     "UmbrellaChartFallback",
+			basePath: baseDir,
+			ref:      ComponentRef{Namespace: "xmc", Name: "unknown-component"},
+			wantPath: baseDir,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveComponentChartPath(tc.basePath, tc.ref, tc.overridePath)
+			if got != tc.wantPath {
+				t.Errorf("ResolveComponentChartPath() = %q, want %q", got, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestK8sHelmManager_PerComponentChartLoading(t *testing.T) {
+	ctx := context.Background()
+	baseDir := t.TempDir()
+	compChartDir := filepath.Join(baseDir, "components", "ingestion-gateway")
+	if err := os.MkdirAll(compChartDir, 0755); err != nil {
+		t.Fatalf("failed to create component chart dir: %v", err)
+	}
+	chartYAML := "apiVersion: v2\nname: ingestion-gateway-chart\nversion: 1.2.3\n"
+	if err := os.WriteFile(filepath.Join(compChartDir, "Chart.yaml"), []byte(chartYAML), 0644); err != nil {
+		t.Fatalf("failed to write Chart.yaml: %v", err)
+	}
+
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(
+		client,
+		"xmc",
+		"xmanager-cloud",
+		WithActionRunner(runner),
+		WithChartPath(baseDir),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
+
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+
+	runner.mu.Lock()
+	loadedChart := runner.lastChart
+	runner.mu.Unlock()
+
+	if loadedChart == nil || loadedChart.Metadata == nil || loadedChart.Metadata.Name != "ingestion-gateway-chart" {
+		t.Fatalf("expected per-component chart 'ingestion-gateway-chart' to be loaded and passed to runner, got %+v", loadedChart)
+	}
+}
+
+func TestK8sHelmManager_ColdStartHydration(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+
+	// First manager persists active component values into xmc-component-values ConfigMap
+	mgr1 := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	if err := mgr1.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true, ImageTag: "v1.0.0"}); err != nil {
+		t.Fatalf("mgr1 Ensure1PComponent failed: %v", err)
+	}
+	_ = mgr1.Close()
+
+	// Simulate controller restart with a new K8sHelmManager instance
+	mgr2 := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer mgr2.Close()
+
+	if err := mgr2.HydrateFromCluster(ctx); err != nil {
+		t.Fatalf("HydrateFromCluster failed: %v", err)
+	}
+	if !mgr2.IsComponentActive(ref) {
+		t.Fatal("expected ingestion-gateway to be active after HydrateFromCluster")
+	}
+
+	if err := mgr2.HydrateComponentState(ctx, ref, 3, true); err != nil {
+		t.Fatalf("HydrateComponentState failed: %v", err)
+	}
+	if !mgr2.IsComponentActuated(ref, 3) {
+		t.Fatal("expected ingestion-gateway to be marked actuated at generation 3 after HydrateComponentState")
 	}
 }

@@ -68,8 +68,8 @@ type Config struct {
 	ProbeTimeout time.Duration
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
-	// ChartPath is the optional filesystem path to the Helm chart to actuate.
-	// TODO: Support dynamic per-component chart path resolution rather than a single static path.
+	// ChartPath is the base directory containing per-component Helm charts (e.g. <chart-path>/components/<name>)
+	// or a single fallback Helm chart directory/tarball.
 	ChartPath string
 }
 
@@ -130,14 +130,7 @@ func ParseConfig(args []string) (*Config, error) {
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
-	// TODO: Replace static single-chart path resolution with dynamic per-component chart
-	// resolution. Currently, a single chart path is passed via HELM_CHART_PATH or --chart-path
-	// and reused across all 1P component releases. Under AI Components Design Doc
-	// Section 3.2.5 (Profile 1 and Alternative 3), per-component independent release actuation
-	// will dynamically resolve per-component chart paths (e.g.,
-	// baseChartPath + "/" + profile + "/components/" + componentName or remote OCI repository URLs)
-	// rather than reusing a single static umbrella chart.
-	chartPath := fs.String("chart-path", defaultChartPath, "Path to the Helm chart directory or tarball")
+	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
@@ -469,6 +462,9 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	}
 	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
 	defer helmMgr.Close()
+	if err := helmMgr.HydrateFromCluster(ctx); err != nil {
+		logging.Warn(ctx, "Failed to hydrate HelmManager state from cluster ConfigMap on startup", "error", err)
+	}
 	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), bridgeProber, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)

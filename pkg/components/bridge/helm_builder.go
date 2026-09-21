@@ -50,6 +50,8 @@ type HelmComponentOptions struct {
 	Ref ComponentRef
 	// ReleaseName is the Helm release name (defaults to "xmanager-cloud").
 	ReleaseName string
+	// ChartPath specifies an optional explicit filesystem path to the component's Helm chart.
+	ChartPath string
 	// Enabled indicates whether the component should be enabled in the Helm release.
 	Enabled bool
 	// ImageTag specifies an optional container image tag override.
@@ -88,7 +90,7 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	}
 
 	for k, v := range opts.Parameters {
-		if k == "image" || k == "imageRepository" {
+		if k == "image" || k == "imageRepository" || k == "chartPath" {
 			continue
 		}
 		compValues[k] = parseParamValue(v)
@@ -202,6 +204,9 @@ func applyProtoSpec(opts *HelmComponentOptions, spec *componentspb.ComponentSpec
 		return
 	}
 	opts.ImageTag = spec.GetVersion()
+	if cp := spec.GetParameters()["chartPath"]; cp != "" {
+		opts.ChartPath = cp
+	}
 	if lc := spec.GetLifecycleControl(); lc != nil && lc.GetDrainingTimeout() != nil {
 		opts.DrainTimeoutSeconds = int32(lc.GetDrainingTimeout().GetSeconds())
 	}
@@ -217,10 +222,16 @@ func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
 	if rel := extractStr(specMap, "releaseName"); rel != "" {
 		opts.ReleaseName = rel
 	}
+	if cp := extractStr(specMap, "chartPath"); cp != "" {
+		opts.ChartPath = cp
+	}
 	if tag := extractStr(specMap, "imageTag"); tag != "" {
 		opts.ImageTag = tag
 	}
 	extractParams(specMap["parameters"], opts.Parameters)
+	if opts.ChartPath == "" && opts.Parameters["chartPath"] != "" {
+		opts.ChartPath = opts.Parameters["chartPath"]
+	}
 	extractRawValues(specMap["values"], opts.RawValues)
 }
 

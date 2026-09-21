@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +32,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 
 	"xmanager_cloud/logging/logging"
@@ -43,6 +47,9 @@ const (
 	// ComponentValuesConfigMapName is the ConfigMap storing active 1P component Helm values overrides.
 	ComponentValuesConfigMapName = "xmc-component-values"
 )
+
+// ChartPathResolver resolves the filesystem Helm chart path for a given component reference.
+type ChartPathResolver func(ref ComponentRef) string
 
 // HelmManager defines the contract for provisioning and managing 1P component workloads via Helm releases.
 type HelmManager interface {
@@ -60,33 +67,39 @@ type HelmManager interface {
 	IsComponentActuated(ref ComponentRef, generation int64) bool
 	// RecordActuation records that the component was successfully actuated at the specified generation.
 	RecordActuation(ref ComponentRef, generation int64)
+	// HydrateComponentState synchronizes in-memory active and actuated generation state from existing CR status and cluster storage on cold start.
+	HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error
 }
 
 // upgradeRequest encapsulates a component upgrade request for debounced asynchronous execution.
 type upgradeRequest struct {
 	ref       ComponentRef
 	namespace string
+	chartPath string
 	values    map[string]any
 }
 
 // K8sHelmManager implements HelmManager by synchronizing component values in Kubernetes ConfigMaps
 // and executing Helm release upgrades via the Helm Go SDK.
 type K8sHelmManager struct {
-	client           kubernetes.Interface
-	namespace        string
-	releaseName      string
-	chartPath        string
-	kubeconfig       string
-	hasKubeconfig    bool
-	restGetter       genericclioptions.RESTClientGetter
-	hasRESTGetter    bool
-	runner           HelmActionRunner
-	syncExecution    bool
-	debounceDuration time.Duration
+	client            kubernetes.Interface
+	namespace         string
+	releaseName       string
+	chartPath         string
+	chartPathResolver ChartPathResolver
+	kubeconfig        string
+	hasKubeconfig     bool
+	restGetter        genericclioptions.RESTClientGetter
+	hasRESTGetter     bool
+	runner            HelmActionRunner
+	syncExecution     bool
+	debounceDuration  time.Duration
 
 	mu                  sync.RWMutex
 	activeState         map[string]bool
 	actuatedGenerations map[string]int64
+	componentChartPaths map[string]string
+	chartCache          map[string]*chart.Chart
 	upgradeErrs         map[string]error
 	upgradeMu           sync.Mutex
 	upgradeSem          chan struct{}
@@ -110,10 +123,14 @@ func WithActionRunner(runner HelmActionRunner) HelmManagerOption {
 	return func(m *K8sHelmManager) { m.runner = runner }
 }
 
-// WithChartPath sets the filesystem chart path for release upgrades.
-// TODO: Support dynamic per-component chart path resolution rather than a single static path.
+// WithChartPath sets the base or single-chart filesystem path for release upgrades.
 func WithChartPath(chartPath string) HelmManagerOption {
 	return func(m *K8sHelmManager) { m.chartPath = chartPath }
+}
+
+// WithChartPathResolver sets a custom per-component Helm chart path resolver.
+func WithChartPathResolver(resolver ChartPathResolver) HelmManagerOption {
+	return func(m *K8sHelmManager) { m.chartPathResolver = resolver }
 }
 
 // WithSyncExecution configures whether Helm upgrades execute synchronously or via background workers.
@@ -156,6 +173,8 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		debounceDuration:    25 * time.Millisecond,
 		activeState:         make(map[string]bool),
 		actuatedGenerations: make(map[string]int64),
+		componentChartPaths: make(map[string]string),
+		chartCache:          make(map[string]*chart.Chart),
 		upgradeErrs:         make(map[string]error),
 		upgradeSem:          make(chan struct{}, 1),
 		upgradeChan:         make(chan upgradeRequest, 100),
@@ -176,7 +195,9 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 			}
 			getter = settings.RESTClientGetter()
 		}
-		mgr.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(mgr.chartPath))
+		mgr.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(mgr.chartPath), WithRunnerChartPathResolver(func(releaseName string) string {
+			return mgr.resolveChartPathForComponent(ComponentRef{Namespace: mgr.namespace, Name: strings.TrimPrefix(releaseName, "xmc-cmp-")}, "")
+		}))
 	}
 	if !mgr.syncExecution {
 		mgr.wg.Add(1)
@@ -296,6 +317,99 @@ func (m *K8sHelmManager) releaseUpgradeLock() {
 		}
 	}
 }
+
+// ResolveComponentChartPath resolves the filesystem chart path for a specific 1P component.
+// Resolution precedence:
+// 1. Explicit component override path (overridePath), if non-empty.
+// 2. Per-component directory or archive under baseChartPath:
+//   - <baseChartPath>/components/<componentName> (containing Chart.yaml)
+//   - <baseChartPath>/<componentName> (containing Chart.yaml)
+//   - <baseChartPath>/<componentName>.tgz
+//
+// 3. Fallback to baseChartPath (umbrella chart directory or archive).
+func ResolveComponentChartPath(baseChartPath string, ref ComponentRef, overridePath string) string {
+	if overridePath != "" {
+		return overridePath
+	}
+	if baseChartPath == "" || ref.Name == "" {
+		return baseChartPath
+	}
+	dirCandidates := []string{
+		filepath.Join(baseChartPath, "components", ref.Name),
+		filepath.Join(baseChartPath, ref.Name),
+	}
+	for _, dir := range dirCandidates {
+		if chartFileExists(filepath.Join(dir, "Chart.yaml")) {
+			return dir
+		}
+	}
+	tgzCandidate := filepath.Join(baseChartPath, ref.Name+".tgz")
+	if chartFileExists(tgzCandidate) {
+		return tgzCandidate
+	}
+	return baseChartPath
+}
+
+func chartFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func chartExistsOnDisk(chartPath string) bool {
+	if chartPath == "" {
+		return false
+	}
+	return chartFileExists(filepath.Join(chartPath, "Chart.yaml")) || chartFileExists(chartPath)
+}
+
+func (m *K8sHelmManager) resolveChartPathForComponent(ref ComponentRef, overridePath string) string {
+	if m == nil {
+		return overridePath
+	}
+	if overridePath != "" {
+		return overridePath
+	}
+	m.mu.RLock()
+	savedOverride := m.componentChartPaths[componentKey(ref.Namespace, ref.Name)]
+	resolver := m.chartPathResolver
+	basePath := m.chartPath
+	m.mu.RUnlock()
+
+	if savedOverride != "" {
+		return savedOverride
+	}
+	if resolver != nil {
+		if resolved := resolver(ref); resolved != "" {
+			return resolved
+		}
+	}
+	return ResolveComponentChartPath(basePath, ref, "")
+}
+
+func (m *K8sHelmManager) loadComponentChart(chartPath string) (*chart.Chart, error) {
+	if m == nil || chartPath == "" || chartPath == m.chartPath || !chartExistsOnDisk(chartPath) {
+		return nil, nil
+	}
+	m.mu.RLock()
+	cached := m.chartCache[chartPath]
+	m.mu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
+
+	loaded, err := loader.Load(chartPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load component Helm chart from %q: %w", chartPath, err)
+	}
+	m.mu.Lock()
+	if m.chartCache == nil {
+		m.chartCache = make(map[string]*chart.Chart)
+	}
+	m.chartCache[chartPath] = loaded
+	m.mu.Unlock()
+	return loaded, nil
+}
+
 func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, values map[string]any) error {
 	if m == nil {
 		return nil
@@ -317,6 +431,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return err
 	}
 	targetNamespace := ref.Namespace
+	resolvedChartPath := m.resolveChartPathForComponent(ref, "")
 
 	m.stopMu.RLock()
 	if m.stopped {
@@ -328,7 +443,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	defer m.producerWg.Done()
 
 	if m.syncExecution {
-		return m.executeSyncUpgrade(ctx, ref, targetNamespace, values)
+		return m.executeSyncUpgrade(ctx, ref, targetNamespace, resolvedChartPath, values)
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -339,7 +454,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	select {
 	case <-m.stopCh:
 		return errors.New("helm manager is stopped")
-	case m.upgradeChan <- upgradeRequest{ref: ref, namespace: targetNamespace, values: values}:
+	case m.upgradeChan <- upgradeRequest{ref: ref, namespace: targetNamespace, chartPath: resolvedChartPath, values: values}:
 		return nil
 	case <-ctx.Done():
 		m.setUpgradeErr(ref, ctx.Err())
@@ -347,7 +462,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	}
 }
 
-func (m *K8sHelmManager) executeSyncUpgrade(ctx context.Context, ref ComponentRef, targetNamespace string, values map[string]any) error {
+func (m *K8sHelmManager) executeSyncUpgrade(ctx context.Context, ref ComponentRef, targetNamespace, chartPath string, values map[string]any) error {
 	m.setUpgradeErr(ref, nil)
 	releaseName := ComponentReleaseName(ref.Name)
 
@@ -361,7 +476,12 @@ func (m *K8sHelmManager) executeSyncUpgrade(ctx context.Context, ref ComponentRe
 		m.setUpgradeErr(ref, err)
 		return err
 	}
-	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, nil, values)
+	chartObj, loadErr := m.loadComponentChart(chartPath)
+	if loadErr != nil {
+		m.setUpgradeErr(ref, loadErr)
+		return loadErr
+	}
+	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, chartObj, values)
 	m.setUpgradeErr(ref, err)
 	return err
 }
@@ -477,7 +597,11 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 	upgradeErr := func() error {
 		m.upgradeMu.Lock()
 		defer m.upgradeMu.Unlock()
-		_, err := m.runner.Upgrade(execCtx, releaseName, req.namespace, nil, req.values)
+		chartObj, loadErr := m.loadComponentChart(req.chartPath)
+		if loadErr != nil {
+			return loadErr
+		}
+		_, err := m.runner.Upgrade(execCtx, releaseName, req.namespace, chartObj, req.values)
 		return err
 	}()
 
@@ -507,7 +631,20 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	}
 
 	key := componentKey(targetNamespace, ref.Name)
-	if !modified && m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
+	m.mu.Lock()
+	if m.componentChartPaths == nil {
+		m.componentChartPaths = make(map[string]string)
+	}
+	prevChartPath := m.componentChartPaths[key]
+	chartPathChanged := prevChartPath != opts.ChartPath
+	if opts.ChartPath != "" {
+		m.componentChartPaths[key] = opts.ChartPath
+	} else {
+		delete(m.componentChartPaths, key)
+	}
+	m.mu.Unlock()
+
+	if !modified && !chartPathChanged && m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
 		return nil
 	}
 
@@ -598,6 +735,7 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 	if m.actuatedGenerations != nil {
 		delete(m.actuatedGenerations, key)
 	}
+	delete(m.componentChartPaths, key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -623,14 +761,13 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	if m.actuatedGenerations != nil {
 		delete(m.actuatedGenerations, key)
 	}
+	delete(m.componentChartPaths, key)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
 	return nil
 }
 
 // IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
-// TODO: Hydrate actuatedGenerations from existing CR status and cluster release storage on controller startup
-// to eliminate redundant cold-start release metadata increments.
 func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
@@ -673,6 +810,106 @@ func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.activeState[key]
+}
+
+// HydrateFromCluster populates in-memory active state from the release ConfigMap (<namespace>/xmc-component-values)
+// on controller startup to avoid cold-start state drift.
+func (m *K8sHelmManager) HydrateFromCluster(ctx context.Context) error {
+	if m == nil || m.client == nil || m.namespace == "" {
+		return nil
+	}
+	return m.hydrateNamespaceFromConfigMap(ctx, m.namespace)
+}
+
+// HydrateComponentState synchronizes in-memory activeState and actuatedGenerations for a component
+// from cluster storage and existing CR status conditions on cold start.
+func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
+	if _, err := m.validateAndResolve(ref); m == nil || err != nil {
+		return nil
+	}
+	key := componentKey(ref.Namespace, ref.Name)
+	m.mu.RLock()
+	_, known := m.activeState[key]
+	m.mu.RUnlock()
+	if !known {
+		_ = m.hydrateNamespaceFromConfigMap(ctx, ref.Namespace)
+	}
+	m.applyHydratedState(key, observedGeneration, crReady)
+	return nil
+}
+
+func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeState == nil {
+		m.activeState = make(map[string]bool)
+	}
+	if m.actuatedGenerations == nil {
+		m.actuatedGenerations = make(map[string]int64)
+	}
+	activeInCM, hasCM := m.activeState[key]
+	if !crReady {
+		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
+			m.activeState[key] = false
+		}
+		return
+	}
+	if observedGeneration == 0 || !hasCM || activeInCM {
+		m.activeState[key] = true
+		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
+			m.actuatedGenerations[key] = observedGeneration
+		}
+	}
+}
+
+func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, namespace string) error {
+	if m == nil || m.client == nil || namespace == "" {
+		return nil
+	}
+	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeState == nil {
+		m.activeState = make(map[string]bool)
+	}
+	for k, rawJSON := range cm.Data {
+		if !strings.HasSuffix(k, ".json") {
+			continue
+		}
+		compName := strings.TrimSuffix(k, ".json")
+		stateKey := componentKey(namespace, compName)
+		if _, exists := m.activeState[stateKey]; exists {
+			continue
+		}
+		if enabled, ok := extractComponentEnabledFromValuesJSON(compName, rawJSON); ok {
+			m.activeState[stateKey] = enabled
+		}
+	}
+	return nil
+}
+
+func extractComponentEnabledFromValuesJSON(componentName, rawJSON string) (bool, bool) {
+	if rawJSON == "" {
+		return false, false
+	}
+	var values map[string]any
+	if err := json.Unmarshal([]byte(rawJSON), &values); err != nil {
+		return false, false
+	}
+	deploymentKey := ComponentNameToHelmKey(componentName)
+	depValues, ok := values[deploymentKey].(map[string]any)
+	if !ok || depValues == nil {
+		return false, false
+	}
+	enabled, ok := depValues["enabled"].(bool)
+	return enabled, ok
 }
 
 // persistComponentValues serializes the synthesized component Helm values map into JSON and writes it
