@@ -107,6 +107,8 @@ message WorkUnitStatus {
     // The work unit finished unsuccessfully or bringing it up has failed.
     // This is a terminal state.
     FAILED = 11;
+    // The work unit scheduling is paused.
+    SCHEDULING_PAUSED = 12;
   }
 
   // The state of the work unit.

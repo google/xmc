@@ -232,3 +232,31 @@ func TestFake_Concurrency(t *testing.T) {
 		t.Fatalf("List() = (%d tasks, %v), want (100, nil)", len(tasks), err)
 	}
 }
+
+func TestFake_Create_GeneratesTaskIDWhenEmpty(t *testing.T) {
+	ctx := context.Background()
+	fake := NewFake()
+	task := newTask("", 100)
+
+	if err := fake.Create(ctx, task); err != nil {
+		t.Fatalf("Create() unexpected error: %v", err)
+	}
+
+	if task.TaskID == "" {
+		t.Errorf("expected generated TaskID on task, got empty string")
+	}
+
+	list, err := fake.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(list))
+	}
+	if list[0].TaskID == "" {
+		t.Errorf("expected stored task to have generated TaskID, got empty string")
+	}
+	if list[0].TaskID != task.TaskID {
+		t.Errorf("stored TaskID mismatch: got %q, want %q", list[0].TaskID, task.TaskID)
+	}
+}
