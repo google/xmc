@@ -18,25 +18,18 @@ from __future__ import annotations
 
 import os
 import urllib.parse
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-    DEFAULT_DEV_PASSWORD: str = "password123"
-    DexAuthenticator: Any = None
-else:
-    from test.e2e.lib.config import DEFAULT_DEV_PASSWORD
-    from test.e2e.lib.dex_authenticator import DexAuthenticator
 
 
 class UIVerificationError(AssertionError):
     """Raised when an assertion against the Web UI DOM or state fails."""
 
 
-DEFAULT_USER_EMAIL: str = os.environ.get("XMC_USER_EMAIL", "test@example.com")
-DEFAULT_SCREENSHOTS_DIR: str = os.environ.get("XMC_SCREENSHOTS_DIR", "/tmp/xmc_screenshots")
+DEFAULT_USER_EMAIL: str = "test@example.com"
+DEFAULT_SCREENSHOTS_DIR: str = "/tmp/xmc_screenshots"
 
 sync_playwright: Any = None
 try:
@@ -54,8 +47,7 @@ class XMCUIBrowserSession:
         auth_token: str | None = None,
         session_token: str | None = None,
         user_email: str | None = None,
-        user_password: str | None = None,
-        dex_url: str | None = None,
+        allow_insecure_tls: bool = False,
         headless: bool = True,
         screenshots_dir: str | None = None,
     ) -> None:
@@ -65,9 +57,8 @@ class XMCUIBrowserSession:
             ui_base_url: Base URL of the target XMC Web UI.
             auth_token: Optional Bearer or Cloud IAP OIDC token.
             session_token: Optional pre-authenticated session cookie value.
-            user_email: Optional user email identity for Dex authentication.
-            user_password: Optional user password for Dex authentication.
-            dex_url: Optional Dex OIDC identity provider URL.
+            user_email: Optional user email identity.
+            allow_insecure_tls: Whether to disable TLS validation (default False).
             headless: Whether to launch Chromium in headless mode.
             screenshots_dir: Directory path where diagnostic screenshots are saved.
         """
@@ -75,16 +66,15 @@ class XMCUIBrowserSession:
         self.auth_token = auth_token or os.environ.get("XMC_AUTH_TOKEN")
         self.session_token = session_token or os.environ.get("XMC_SESSION_TOKEN")
         self.user_email = user_email or os.environ.get("XMC_USER_EMAIL", DEFAULT_USER_EMAIL)
-        self.user_password = user_password or os.environ.get(
-            "XMC_USER_PASSWORD", DEFAULT_DEV_PASSWORD
-        )
-        self.dex_url = dex_url or os.environ.get("XMC_DEX_URL")
+        self.allow_insecure_tls = allow_insecure_tls
         self.headless = headless
         self.screenshots_dir = screenshots_dir or os.environ.get(
             "XMC_SCREENSHOTS_DIR", DEFAULT_SCREENSHOTS_DIR
         )
         p = urllib.parse.urlparse(self.ui_base_url)
-        self.domain_host, self.scheme = p.hostname or "localhost", p.scheme or "http"
+        self.domain_host = p.hostname or "localhost"
+        self.scheme = p.scheme or "http"
+        self.port = p.port
         self._playwright: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -134,35 +124,32 @@ class XMCUIBrowserSession:
     def _configure_page_interception(self) -> None:
         """Configures domain-scoped Bearer header injection and diagnostic event listeners."""
         if self.auth_token:
-            token, host = self.auth_token, self.domain_host
-            self._page.route(
-                "**/*",
-                lambda r: (
-                    r.continue_(headers={**r.request.headers, "authorization": f"Bearer {token}"})
-                    if urllib.parse.urlparse(r.request.url).hostname == host
-                    else r.continue_()
-                ),
-            )
-        self._page.on("console", lambda m: print(f"  [Browser Console] {m.type.upper()}: {m.text}"))
-        self._page.on(
-            "response",
-            lambda r: (
-                print(f"  [Network Response] {r.status} {r.url}")
-                if r.status >= 400 or "/api/" in r.url
-                else None
-            ),
-        )
+            token = self.auth_token
+            host = self.domain_host
+            scheme = self.scheme
+            port = self.port
 
-    def _authenticate_via_dex(self) -> None:
-        """Executes OIDC login via DexAuthenticator when dex_url is provided without token auth."""
-        if self.dex_url and not self.auth_token and not self.session_token:
-            authenticator = DexAuthenticator(base_url=self.ui_base_url, dex_url=self.dex_url)
-            authenticator.authenticate(
-                self._page,
-                self.user_email,
-                self.user_password,
-                Path(self.screenshots_dir),
-            )
+            def _handle_route(route: Any) -> None:
+                parsed = urllib.parse.urlparse(route.request.url)
+                if parsed.hostname == host and parsed.scheme == scheme and parsed.port == port:
+                    route.continue_(
+                        headers={**route.request.headers, "authorization": f"Bearer {token}"}
+                    )
+                else:
+                    route.continue_()
+
+            self._page.route("**/*", _handle_route)
+
+        self._page.on("console", lambda m: print(f"  [Browser Console] {m.type.upper()}: {m.text}"))
+
+        def _log_response(response: Any) -> None:
+            if response.status >= 400 or "/api/" in response.url:
+                safe_url = (
+                    urllib.parse.urlsplit(response.url)._replace(query="", fragment="").geturl()
+                )
+                print(f"  [Network Response] {response.status} {safe_url}")
+
+        self._page.on("response", _log_response)
 
     def start(self) -> None:
         """Launches Chromium and configures the authenticated browser context.
@@ -183,7 +170,7 @@ class XMCUIBrowserSession:
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
             self._context = self._browser.new_context(
-                ignore_https_errors=True,
+                ignore_https_errors=self.allow_insecure_tls,
                 viewport={"width": 1920, "height": 1080},
                 device_scale_factor=2,
             )
@@ -191,28 +178,34 @@ class XMCUIBrowserSession:
                 self._context.add_cookies(cookies)
             self._page = self._context.new_page()
             self._configure_page_interception()
-            self._authenticate_via_dex()
         except Exception:
             self.close()
             raise
 
     def close(self) -> None:
-        """Closes the browser context, browser instance, and Playwright driver safely."""
-        try:
-            if self._context is not None:
-                self._context.close()
-        finally:
-            self._context = None
+        """Closes the browser page, context, browser instance, and Playwright driver safely."""
+        self._page = None
+        if self._context is not None:
             try:
-                if self._browser is not None:
-                    self._browser.close()
+                self._context.close()
+            except Exception as e:
+                print(f"  [Warning] Failed to close browser context: {e}")
+            finally:
+                self._context = None
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception as e:
+                print(f"  [Warning] Failed to close browser: {e}")
             finally:
                 self._browser = None
-                try:
-                    if self._playwright is not None:
-                        self._playwright.stop()
-                finally:
-                    self._playwright = None
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+            except Exception as e:
+                print(f"  [Warning] Failed to stop Playwright driver: {e}")
+            finally:
+                self._playwright = None
 
     @property
     def page(self) -> Page:
@@ -265,8 +258,8 @@ class XMCUIBrowserSession:
         Raises:
             UIVerificationError: If redirected to guest login, home page, or an HTTP 401/403 page.
         """
-        expected_path = f"/experiments/{xid}"
-        target_url = f"{self.ui_base_url}{expected_path}"
+        target_url = f"{self.ui_base_url}/experiments/{xid}"
+        expected_path = urllib.parse.urlparse(target_url).path.rstrip("/")
         print(f"\n[UI Action] Navigating to Experiment Dashboard: {target_url}...")
         self.page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
         self.page.wait_for_selector(
@@ -289,7 +282,6 @@ class XMCUIBrowserSession:
         if (
             any(marker in body for marker in auth_error_markers)
             or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
-            or current_path != expected_path
         ):
             err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_xid_{xid}.png")
             raise UIVerificationError(
@@ -297,19 +289,22 @@ class XMCUIBrowserSession:
                 f"(url={self.page.url}). Screenshot -> {err_shot}"
             )
 
+        if current_path != expected_path:
+            err_shot = self.take_screenshot(f"ui_REDIRECT_xid_{xid}.png")
+            raise UIVerificationError(
+                f"❌ UNEXPECTED REDIRECT: Expected path '{expected_path}' but landed on '{current_path}' "
+                f"(url={self.page.url}). Screenshot -> {err_shot}"
+            )
+
     def assert_experiment_header(
         self,
         expected_title_pattern: str | None = None,
-        expected_name: str | None = None,
-        xid: str | int | None = None,
         timeout_ms: int = 30000,
     ) -> str:
         """Asserts that the experiment title header is visible, non-empty, and matches expectations.
 
         Args:
             expected_title_pattern: Optional expected substring in the experiment header title.
-            expected_name: Optional alias for expected experiment name substring.
-            xid: Optional experiment XID expected to appear in the header text.
             timeout_ms: Visibility wait timeout in milliseconds.
 
         Returns:
@@ -325,14 +320,9 @@ class XMCUIBrowserSession:
         text = (title_locator.text_content() or "").strip()
         if not text:
             raise UIVerificationError("Experiment header title element rendered with empty text.")
-        target_pattern = expected_name if expected_name is not None else expected_title_pattern
-        if target_pattern and target_pattern not in text:
+        if expected_title_pattern and expected_title_pattern not in text:
             raise UIVerificationError(
-                f"Expected header title pattern '{target_pattern}' not found in DOM text: '{text}'"
-            )
-        if xid is not None and str(xid) not in text:
-            raise UIVerificationError(
-                f"Expected experiment XID '{xid}' not found in DOM text: '{text}'"
+                f"Expected header title pattern '{expected_title_pattern}' not found in DOM text: '{text}'"
             )
         print(f"  [✓] Verified Header Title DOM text: '{text}'")
         return text

@@ -182,20 +182,14 @@ jobs:
         id: 'verify-ui-traversal'
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.verify_workload }}
         env:
-          GCP_IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
           XID: '${{ steps.launch-demo-workload.outputs.xid }}'
           UI_URL: '${{ env.XMANAGER_UI_URL }}'
           XMC_SCREENSHOTS_DIR: '/tmp/xmc_screenshots'
         run: |
           set -euo pipefail
+          : "${IAP_CLIENT_ID:?GCP_IAP_CLIENT_ID secret is required for IAP-authenticated UI traversal}"
+          : "${XMC_AUTH_TOKEN:?XMC_AUTH_TOKEN must be minted by the 'Mint XMC Identity Token' step}"
           export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
-          if [ -n "${XMC_CLIENT_SA:-}" ]; then
-            XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${GCP_IAP_CLIENT_ID}" --include-email)"
-          else
-            XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences="${GCP_IAP_CLIENT_ID}" --include-email)"
-          fi
-          echo "::add-mask::${XMC_AUTH_TOKEN}"
-          export XMC_AUTH_TOKEN
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
@@ -203,11 +197,12 @@ jobs:
             --xid="${XID}" --ui_base_url="${UI_URL}"
 
       - name: 'Upload UI Diagnostic Screenshots'
-        if: always()
+        if: failure() && steps.verify-ui-traversal.outcome == 'failure'
         uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
         with:
           name: 'ui-traversal-screenshots'
-          path: '/tmp/xmc_screenshots/'
+          path: '/tmp/xmc_screenshots/ui_step*.png'
+          if-no-files-found: 'ignore'
           retention-days: 7
 
       - name: 'Publish Nightly Test Findings Summary'
@@ -218,12 +213,13 @@ jobs:
           VERIFY_OUTCOME: '${{ steps.verify-workload.outcome }}'
           UI_VERIFY_OUTCOME: '${{ steps.verify-ui-traversal.outcome }}'
         run: |
+          set -euo pipefail
           {
             echo "## 🌙 Nightly Test Suite Execution Summary"
             echo ""
-            if [ "${VERIFY_OUTCOME}" = "success" ] && [ "${UI_VERIFY_OUTCOME}" = "success" ]; then
-              echo "### ✅ Outcome: PASSED"
-            elif [ "${VERIFY_OUTCOME}" = "skipped" ] && [ "${LAUNCH_OUTCOME}" = "success" ]; then
+            if [ "${LAUNCH_OUTCOME}" = "success" ] \
+              && [ "${VERIFY_OUTCOME}" != "failure" ] \
+              && [ "${UI_VERIFY_OUTCOME}" != "failure" ]; then
               echo "### ✅ Outcome: PASSED"
             else
               echo "### ❌ Outcome: FAILED"
@@ -240,7 +236,7 @@ jobs:
             fi
             echo ""
             echo "> Automated Nightly E2E Test Suite against \`xmc-nightly\` deployment."
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   report-nightly-failure:
     name: 'Report Failure & Alert OWNERS'
