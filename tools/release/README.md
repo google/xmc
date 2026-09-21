@@ -46,7 +46,18 @@ The tool analyzes Cluster Toolkit (CTK v2) and Helm deployment configuration tem
 
 ---
 
-## 3. Output Schema
+## 3. Semantic Version Recommendation Engine (`semver_engine.py`)
+
+The tool calculates a deterministic semantic version bump recommendation based on changes between `base_ref` and `target_ref`:
+
+- **Major (`X.0.0`)**: Breaking changes detected in commit subjects (`type!:`) or body descriptions (`BREAKING CHANGE:`).
+- **Minor (`0.X.0`)**: Behind-the-flag features promoted to default `true`, flags explicitly approved via `--approved-flags`, or user-facing feature commits (`feat`).
+- **Patch (`0.0.X`)**: User-facing bug fixes (`fix`), database schema migrations, or general developer velocity and infrastructure updates.
+- **None**: No changes between references.
+
+---
+
+## 4. Output Schema
 
 The tool emits structured JSON metadata:
 
@@ -58,6 +69,22 @@ The tool emits structured JSON metadata:
     "commit_count": 42,
     "pr_count": 39,
     "approved_flags": ["rod_deployment_enabled"]
+  },
+  "recommended_version": {
+    "current_version": "0.5.0",
+    "recommended_version": "0.6.0",
+    "recommended_bump": "minor",
+    "has_breaking_changes": false,
+    "has_promotions": true,
+    "has_approved_features": true,
+    "has_ootb_features": true,
+    "has_ootb_fixes": false,
+    "has_migrations": false,
+    "rationale": [
+      "Feature flags promoted to default true.",
+      "Behind-the-flag features approved for deployment.",
+      "New out-of-the-box user-facing features introduced."
+    ]
   },
   "flag_transitions": [
     {
@@ -100,17 +127,18 @@ The tool emits structured JSON metadata:
 
 ---
 
-## 4. Package Architecture
+## 5. Package Architecture
 
 - [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, and output generation.
 - [`feature_flags.py`](feature_flags.py): Discovers feature toggles from CTK and Helm manifests and computes flag transitions between releases.
 - [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, and `git show` with error handling.
 - [`models.py`](models.py): Strongly-typed dataclasses and TypedDicts for release metadata, commits, and flag transitions.
+- [`semver_engine.py`](semver_engine.py): Semantic version calculation and release increment recommendation engine.
 - [`yaml_parser.py`](yaml_parser.py): Robust YAML AST parsing and indentation fallback scanner for extracting nested boolean configurations.
 
 ---
 
-## 5. Testing
+## 6. Testing
 
 Run unit tests via Bazel:
 
@@ -118,5 +146,6 @@ Run unit tests via Bazel:
 bazel test //tools/release:extract_release_metadata_test \
   //tools/release:feature_flags_test \
   //tools/release:git_ops_test \
+  //tools/release:semver_engine_test \
   //tools/release:yaml_parser_test
 ```
