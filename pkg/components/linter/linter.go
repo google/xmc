@@ -149,7 +149,7 @@ func decodeDocumentNode(path string, node *yaml.Node, res *ValidationResult) (*R
 }
 
 func isComponentGroup(apiVersion string) bool {
-	return strings.HasPrefix(apiVersion, "xmc.dev/") || apiVersion == "xmc.dev" || strings.HasPrefix(apiVersion, "components.xmc.dev/") || apiVersion == "components.xmc.dev"
+	return strings.HasPrefix(apiVersion, "xmc.dev/") || apiVersion == "xmc.dev"
 }
 
 func decodeRawDocumentNode(path string, node *yaml.Node, res *ValidationResult) *RawManifest {

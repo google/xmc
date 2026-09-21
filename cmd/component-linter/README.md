@@ -120,7 +120,7 @@ When scanning a Helm component sub-chart directory (`Chart.yaml`, `values.yaml`,
 ### Manifest Structure
 
 ```yaml
-apiVersion: xmc.dev/v1alpha1 # Supports both xmc.dev/v1alpha1 and components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: storage-controller

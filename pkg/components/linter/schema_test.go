@@ -35,7 +35,7 @@ func TestSchema_StructuralAndSecurityChecks(t *testing.T) {
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: test-component
@@ -68,7 +68,7 @@ metadata:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 spec:
   version: "1.0.0"
@@ -82,7 +82,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: components/my-comp
@@ -98,7 +98,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: Invalid_Component_Name!
@@ -114,7 +114,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: bad-type
@@ -130,7 +130,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: bad-policy
@@ -163,7 +163,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: wrapper-comp
@@ -179,7 +179,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: wrapper-comp
@@ -200,7 +200,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: wrapper-comp
@@ -220,7 +220,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: neg-drain
@@ -241,7 +241,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: long-drain
@@ -258,7 +258,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: bad-grace
@@ -275,7 +275,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: int-duration
@@ -296,7 +296,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: unprotected
@@ -316,7 +316,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: protected
@@ -346,7 +346,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 metadata:
   name: missing-kind
 spec:
@@ -361,7 +361,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: custom-comp
@@ -381,7 +381,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: informal-type
@@ -397,7 +397,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: informal-policy
@@ -492,7 +492,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: unspecified-comp
@@ -539,7 +539,7 @@ func TestLinter_ZeroValueRulesValidation(t *testing.T) {
 
 	dir := t.TempDir()
 	writeTestManifest(t, dir, "comp.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: safe-component
@@ -577,7 +577,7 @@ func TestSchema_EdgeCaseCoverage(t *testing.T) {
 
 	dir := t.TempDir()
 	writeTestManifest(t, dir, "comp_wrapper.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: wrapper-empty-fields
