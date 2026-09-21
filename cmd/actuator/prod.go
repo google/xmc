@@ -94,34 +94,15 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		}
 	}()
 
-	var spannerClient *spanner.Client
-	var storageClient storage.Storage
-	if cfg.RuntimeConfig.SpannerDatabaseName != "" {
-		sessionPoolConfig := spanner.SessionPoolConfig{
-			TrackSessionHandles: true,
-			InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-				ActionOnInactiveTransaction: spanner.Warn,
-			},
-		}
-		var err error
-		spannerClient, err = spanner.NewClientWithConfig(
-			ctx,
-			cfg.RuntimeConfig.SpannerDatabaseName,
-			spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-			option.WithQuotaProject(cfg.RuntimeConfig.QuotaProjectID),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create spanner client: %w", err)
-		}
+	spannerClient, storageClient, err := initSpannerStorage(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if spannerClient != nil {
 		cleanups = append(cleanups, func() error {
 			spannerClient.Close()
 			return nil
 		})
-
-		storageClient, err = ss.NewStorage(spannerClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create storage: %w", err)
-		}
 	}
 
 	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storageClient, spannerClient)
@@ -162,6 +143,10 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		return nil, err
 	}
 
+	if pauseListener != nil {
+		cleanups = append(cleanups, pauseListener.Close)
+	}
+
 	pauseHandler, err := initPauseHandler(cfg, pauseCache, storageClient)
 	if err != nil {
 		return nil, err
@@ -181,7 +166,6 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
 	}
-
 	redisConsumer.SetTaskHandler(handler.HandleWorkUnitRedisTask)
 	workerID := actuatorWorkerID(ctx)
 	go redisConsumer.StartWorker(ctx, workerID)
@@ -259,16 +243,27 @@ func initPauseListener(ctx context.Context, cfg *Config, cache pausescheduling.C
 		return nil, nil
 	}
 
-	// TODO: Replace with concrete Spanner repository and Redis broadcast consumer once available.
+	if cfg.RedisConfig.RedisAddr == "" {
+		return nil, fmt.Errorf("redis address must be provided for pause scheduling listener")
+	}
+
+	redisClient := redisclient.NewClient(redisclient.Config{
+		Addr: cfg.RedisConfig.RedisAddr,
+	})
+	consumer := broadcast.NewConsumer(redisClient, constants.RedisPauseStream)
+
+	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
 	listener, err := pausescheduling.New(pausescheduling.Params{
 		Cache:                cache,
-		Subscriber:           broadcast.NewFakeClient(constants.RedisPauseStream),
+		Subscriber:           consumer,
 		PauseStateRepository: pausestate.NewFake(),
 	})
 	if err != nil {
+		_ = consumer.Close()
 		return nil, fmt.Errorf("failed to create pause listener: %w", err)
 	}
 	if err := listener.Init(ctx); err != nil {
+		_ = listener.Close()
 		return nil, fmt.Errorf("failed to initialize pause scheduling listener: %w", err)
 	}
 	go listener.StartListening(ctx)
@@ -289,4 +284,34 @@ func initPauseHandler(cfg *Config, cache pausescheduling.Cache, storageClient st
 		return nil, fmt.Errorf("failed to create pause handler: %w", err)
 	}
 	return handler, nil
+}
+
+func initSpannerStorage(ctx context.Context, cfg *Config) (*spanner.Client, storage.Storage, error) {
+	if cfg.RuntimeConfig.SpannerDatabaseName == "" {
+		return nil, nil, nil
+	}
+
+	sessionPoolConfig := spanner.SessionPoolConfig{
+		TrackSessionHandles: true,
+		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
+			ActionOnInactiveTransaction: spanner.Warn,
+		},
+	}
+	spannerClient, err := spanner.NewClientWithConfig(
+		ctx,
+		cfg.RuntimeConfig.SpannerDatabaseName,
+		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
+		option.WithQuotaProject(cfg.RuntimeConfig.QuotaProjectID),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create spanner client: %w", err)
+	}
+
+	storageClient, err := ss.NewStorage(spannerClient)
+	if err != nil {
+		spannerClient.Close()
+		return nil, nil, fmt.Errorf("failed to create storage: %w", err)
+	}
+
+	return spannerClient, storageClient, nil
 }

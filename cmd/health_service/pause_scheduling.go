@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
@@ -40,6 +41,8 @@ var (
 // PauseScheduler manages the pause scheduling domain logic, state persistence,
 // broadcast notifications, and task queue trigger dispatching.
 type PauseScheduler interface {
+	io.Closer
+
 	// Pause sets the scheduling state to paused and clears resumption metadata.
 	Pause(ctx context.Context) error
 
@@ -85,6 +88,14 @@ func NewPauseScheduler(params PauseSchedulerParams) PauseScheduler {
 	}
 }
 
+// Close closes any underlying resources that implement io.Closer, such as the broadcast publisher.
+func (p *pauseScheduler) Close() error {
+	if closer, ok := p.broadcastPublisher.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // Pause updates the global scheduling state to paused and broadcasts the pause event.
 func (p *pauseScheduler) Pause(ctx context.Context) error {
 	if p.broadcastPublisher == nil {
@@ -111,7 +122,7 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 		return "", errTaskQueuePublisherNotConfigured
 	}
 
-	// TODO: Move state check and update into a Spanner read-write transaction.
+	// TODO(pausescheduling): Move state check and update into a Spanner read-write transaction.
 	current, err := p.pauseStateRepository.Get(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
