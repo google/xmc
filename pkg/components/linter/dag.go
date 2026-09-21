@@ -17,8 +17,8 @@ package linter
 import (
 	"fmt"
 	"sort"
-	"strings"
 
+	"xmanager_cloud/pkg/components/graph"
 	"xmanager_cloud/pkg/components/naming"
 )
 
@@ -69,8 +69,8 @@ func detectCycles(compMap map[string]*ComponentManifest, res *ValidationResult) 
 	findDependencyCycles(nodes, adj, compMap, res)
 }
 
-func buildDependencyGraph(compMap map[string]*ComponentManifest) map[string][]string {
-	adj := make(map[string][]string, len(compMap))
+func buildDependencyGraph(compMap map[string]*ComponentManifest) graph.DependencyGraph {
+	adj := make(graph.DependencyGraph, len(compMap))
 	for name, comp := range compMap {
 		numDeps := len(comp.Spec.Dependencies)
 		if numDeps == 0 {
@@ -90,75 +90,20 @@ func buildDependencyGraph(compMap map[string]*ComponentManifest) map[string][]st
 	return adj
 }
 
-func findDependencyCycles(nodes []string, adj map[string][]string, compMap map[string]*ComponentManifest, res *ValidationResult) {
-	const (
-		unvisited = iota
-		visiting
-		visited
-	)
-
-	state := make(map[string]int, len(nodes))
-	path := make([]string, 0, len(nodes))
-	reported := make(map[string]bool)
-
-	var dfs func(u string)
-	dfs = func(u string) {
-		state[u] = visiting
-		path = append(path, u)
-
-		for _, v := range adj[u] {
-			if _, inMap := compMap[v]; !inMap {
-				continue
-			}
-			switch state[v] {
-			case visiting:
-				handleVisitingNode(u, v, path, compMap, reported, res)
-			case unvisited:
-				dfs(v)
+func findDependencyCycles(nodes []string, adj graph.DependencyGraph, compMap map[string]*ComponentManifest, res *ValidationResult) {
+	findings := graph.DetectAllCycles(nodes, adj, func(target string) bool {
+		_, exists := compMap[target]
+		return exists
+	})
+	for _, f := range findings {
+		filePath := ""
+		line := 1
+		if comp := compMap[f.SourceNode]; comp != nil {
+			filePath = comp.FilePath
+			if comp.Line > 0 {
+				line = comp.Line
 			}
 		}
-
-		path = path[:len(path)-1]
-		state[u] = visited
+		res.AddError(filePath, line, "CYCLIC_DEPENDENCY", fmt.Sprintf("dependency cycle detected: %s", graph.FormatCycle(f.CyclePath)))
 	}
-
-	for _, node := range nodes {
-		if state[node] == unvisited {
-			dfs(node)
-		}
-	}
-}
-
-func handleVisitingNode(u, v string, path []string, compMap map[string]*ComponentManifest, reported map[string]bool, res *ValidationResult) {
-	cycleStr := formatCyclePath(path, v)
-	if cycleStr == "" || reported[cycleStr] {
-		return
-	}
-	reported[cycleStr] = true
-	filePath := ""
-	line := 1
-	if comp := compMap[u]; comp != nil {
-		filePath = comp.FilePath
-		if comp.Line > 0 {
-			line = comp.Line
-		}
-	}
-	res.AddError(filePath, line, "CYCLIC_DEPENDENCY", fmt.Sprintf("dependency cycle detected: %s", cycleStr))
-}
-
-func formatCyclePath(path []string, v string) string {
-	cycleStart := -1
-	for i, node := range path {
-		if node == v {
-			cycleStart = i
-			break
-		}
-	}
-	if cycleStart == -1 {
-		return ""
-	}
-	cycleNodes := make([]string, 0, len(path)-cycleStart+1)
-	cycleNodes = append(cycleNodes, path[cycleStart:]...)
-	cycleNodes = append(cycleNodes, v)
-	return strings.Join(cycleNodes, " -> ")
 }
