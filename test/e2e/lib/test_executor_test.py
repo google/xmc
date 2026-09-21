@@ -207,6 +207,26 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         self.assertEqual(kwargs["cwd"], "/workspace")
         self.assertEqual(kwargs["env"]["XMC_AUTH_TOKEN"], "mock.token")
 
+    @patch("os.path.exists", return_value=True)
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_ensure_xmanager_installed_runs_for_workload_tier_only(self, mock_run, mock_exists):
+        import subprocess
+
+        from test.e2e.lib.config import E2ETier
+
+        # UI tier should not invoke install_xmanager.py
+        self.executor._ensure_xmanager_installed("/mock/python")
+        mock_run.assert_not_called()
+
+        # WORKLOAD tier should probe import and invoke install_xmanager.py on failure
+        self.cfg.tier = E2ETier.WORKLOAD
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(returncode=1, cmd=["python", "-c"]),
+            None,
+        ]
+        self.executor._ensure_xmanager_installed("/mock/python")
+        self.assertEqual(mock_run.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
