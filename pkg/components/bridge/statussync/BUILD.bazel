@@ -39,6 +39,7 @@ go_test(
     name = "statussync_test",
     srcs = [
         "component_status_test.go",
+        "nil_input_test.go",
         "writer_test.go",
     ],
     embed = [":statussync"],

@@ -55,7 +55,12 @@ type ComponentCondition struct {
 
 // BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
 // including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
+//
+// A nil res yields the zero ComponentStatus.
 func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
+	if res == nil {
+		return ComponentStatus{}
+	}
 	status := ComponentStatus{
 		ObservedGeneration: res.ObservedGeneration,
 		State:              res.State.String(),
@@ -80,7 +85,14 @@ func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
 }
 
 // BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema.
+//
+// A nil res yields a nil map rather than a map of zero values. Serializing the zero ComponentStatus
+// would produce observedGeneration 0 and an empty state, which Server-Side Apply would then write
+// over a live status. Returning nil makes the caller apply nothing instead.
 func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
+	if res == nil {
+		return nil
+	}
 	status := BuildStatus(res)
 	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
 	if err != nil {

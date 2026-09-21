@@ -17,6 +17,7 @@ package statussync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +50,17 @@ func NewWriter(client dynamic.Interface, defaultNamespace string) *Writer {
 
 // ApplyStatus serializes the ReconcileResult into the .status map of item and persists it
 // via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
+//
+// item and res must both be non-nil. The bridge never calls this with nil, because it skips the
+// status write entirely when Reconcile yields no result, but this is an exported entry point so
+// the precondition is enforced rather than assumed.
 func (w *Writer) ApplyStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	if item == nil {
+		return errors.New("component must not be nil")
+	}
+	if res == nil {
+		return errors.New("reconcile result must not be nil")
+	}
 	ns := item.GetNamespace()
 	if ns == "" {
 		ns = w.defaultNamespace
@@ -93,9 +104,15 @@ func (w *Writer) ApplyStatus(ctx context.Context, item *unstructured.Unstructure
 // or removes it if res.RemoveFinalizer is true, updating the custom resource in Kubernetes.
 // If the Kubernetes API update fails, the error is returned so that the controller can retry
 // on the next pass while ensuring the finalizer remains in place to prevent premature deletion.
+//
+// A nil res means there is nothing to reconcile and item is returned unchanged. item itself must
+// be non-nil.
 func (w *Writer) SyncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
 	if res == nil {
 		return item, nil
+	}
+	if item == nil {
+		return nil, errors.New("component must not be nil")
 	}
 	hasFin := false
 	for _, f := range item.GetFinalizers() {
