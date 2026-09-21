@@ -104,7 +104,7 @@ jobs:
           TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
           echo "::add-mask::${TOKEN}"
           echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
-          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || secrets.GCP_ALLOWED_EMAILS }}" >> "${GITHUB_ENV}"
+          echo "XMC_USER_EMAIL=${{ secrets.XMC_USER_EMAIL || format('{0}@google.com', github.actor) }}" >> "${GITHUB_ENV}"
 
       - name: 'Launch Demo Workload'
         id: launch-demo-workload
@@ -180,13 +180,22 @@ jobs:
         id: 'verify-ui-traversal'
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.verify_workload }}
         env:
+          GCP_IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
           XID: '${{ steps.launch-demo-workload.outputs.xid }}'
-          JWT_SECRET: '${{ secrets.GCP_JWT_SECRET }}'
           UI_URL: '${{ env.XMANAGER_UI_URL }}'
           XMC_SCREENSHOTS_DIR: '/tmp/xmc_screenshots'
         run: |
+          set -euo pipefail
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+          if [ -n "${XMC_CLIENT_SA:-}" ]; then
+            XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${GCP_IAP_CLIENT_ID}" --include-email)"
+          else
+            XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences="${GCP_IAP_CLIENT_ID}" --include-email)"
+          fi
+          echo "::add-mask::${XMC_AUTH_TOKEN}"
+          export XMC_AUTH_TOKEN
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
-          "${GITHUB_WORKSPACE}/.venv/bin/pip" install playwright
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_ui_verify \
             --xid="${XID}" --ui_base_url="${UI_URL}"
