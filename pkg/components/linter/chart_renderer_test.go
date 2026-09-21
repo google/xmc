@@ -113,9 +113,9 @@ spec:
     helperVal: {{ include "ignored" . | quote }}
     yamlBlock: |{{ .Values.meta | toYaml | nindent 6 }}
 `
-	tmplPath := filepath.Join(chartDir, "templates", "component.yaml")
+	tmplPath := filepath.Join(chartDir, "templates", "values-component.yaml")
 	if err := os.WriteFile(tmplPath, []byte(tmplContent), 0o644); err != nil {
-		t.Fatalf("failed to write component.yaml: %v", err)
+		t.Fatalf("failed to write values-component.yaml: %v", err)
 	}
 
 	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath, []byte(tmplContent))

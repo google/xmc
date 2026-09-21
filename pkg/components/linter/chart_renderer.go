@@ -33,7 +33,26 @@ var chartContextCache sync.Map
 // isChartOrRulesConfigFile returns true if the YAML file is a Helm chart metadata/values/helper file or a rules file.
 func isChartOrRulesConfigFile(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
-	return strings.HasPrefix(base, "_") || strings.HasPrefix(base, "values") || base == "chart.yaml" || base == "chart.yml" || base == "rules.yaml" || base == "rules.yml"
+	if base == "rules.yaml" || base == "rules.yml" {
+		return true
+	}
+	chartRoot := findChartRoot(path)
+	if chartRoot == "" {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(chartRoot, absPath)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) > 1 && parts[0] == "templates" {
+		return strings.HasPrefix(parts[len(parts)-1], "_")
+	}
+	return true
 }
 
 func findChartRoot(filePath string) string {
