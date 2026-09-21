@@ -43,6 +43,9 @@ py_binary(
 py_test(
     name = "run_linter_test",
     srcs = ["run_linter_test.py"],
+    data = [
+        "//deploy/profiles/stable-2026a/components/redpanda:chart",
+    ],
     imports = ["../.."],
     deps = [
         ":run_linter_lib",

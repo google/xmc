@@ -141,9 +141,11 @@ spec:
                       description: "Target Kubernetes namespace where the wrapper/CRD operates."
                     observedGenerationPath:
                       type: string
+                      pattern: '^\$\.status\..+'
                       description: "JSONPath or field path to observedGeneration in the underlying resource."
                     readyConditionPath:
                       type: string
+                      pattern: '^\$\.status\..+'
                       description: "JSONPath or field path to evaluate ready condition."
                     expectedReadyValue:
                       type: string

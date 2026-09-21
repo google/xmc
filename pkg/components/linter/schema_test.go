@@ -142,6 +142,23 @@ spec:
 			wantRules: []string{"INVALID_DELETION_POLICY"},
 		},
 		{
+			name:  "legacy deletionPolicy emits DEPRECATED_DELETION_POLICY warning",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: legacy-policy
+spec:
+  componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
+  deletionPolicy: DELETE
+`,
+			},
+			wantValid: true,
+			wantRules: []string{"DEPRECATED_DELETION_POLICY"},
+		},
+		{
 			name:  "3P wrapper missing wrapperRef",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
@@ -392,11 +409,11 @@ spec:
 			wantRules: []string{"INVALID_DELETION_POLICY"},
 		},
 		{
-			name:  "proto-prefixed componentType COMPONENT_TYPE_CUSTOM_1P_COMPONENT is rejected",
+			name:  "proto-prefixed componentType COMPONENT_TYPE_CUSTOM_1P_COMPONENT is accepted",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: proto-type
@@ -404,24 +421,71 @@ spec:
   componentType: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"
 `,
 			},
-			wantValid: false,
-			wantRules: []string{"INVALID_COMPONENT_TYPE"},
+			wantValid: true,
 		},
 		{
-			name:  "proto-prefixed deletionPolicy DELETION_POLICY_DELETE is rejected",
+			name:  "proto-prefixed and TitleCase deletionPolicy values are accepted",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+				"comp1.yaml": `
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: proto-policy
 spec:
   deletionPolicy: "DELETION_POLICY_DELETE"
 `,
+				"comp2.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: crd-policy
+spec:
+  deletionPolicy: "Delete"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name:  "3P wrapper with invalid observedGenerationPath or readyConditionPath is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: invalid-paths
+spec:
+  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
+  wrapperRef:
+    group: redpanda.vectorized.io
+    version: v1alpha1
+    kind: Cluster
+    name: redpanda
+    observedGenerationPath: "$.spec.generation"
+    readyConditionPath: "status.ready"
+`,
 			},
 			wantValid: false,
-			wantRules: []string{"INVALID_DELETION_POLICY"},
+			wantRules: []string{"INVALID_WRAPPER_REF"},
+		},
+		{
+			name:  "component with non-string parameter value is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: non-string-param
+spec:
+  componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
+  parameters:
+    kafkaPort: 9092
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"SCHEMA_ERROR"},
 		},
 		{
 			name:  "explicit UNSPECIFIED componentType and deletionPolicy is valid",

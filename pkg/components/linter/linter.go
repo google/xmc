@@ -76,13 +76,20 @@ func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawMani
 			return walkErr
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".yaml" && ext != ".yml" {
+		if (ext != ".yaml" && ext != ".yml") || isChartOrRulesConfigFile(path) {
 			return nil
 		}
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			res.AddError(path, 1, "FILE_READ_ERROR", fmt.Sprintf("failed to read file: %v", readErr))
 			return nil
+		}
+		if chartRoot := findChartRoot(path); chartRoot != "" {
+			var renderErr error
+			if data, renderErr = RenderChartTemplate(chartRoot, path, data); renderErr != nil {
+				res.AddError(path, 1, "YAML_SYNTAX", fmt.Sprintf("failed to render chart template in %s: %v", path, renderErr))
+				return nil
+			}
 		}
 		raws, comps := l.parseManifestFile(path, data, res)
 		rawManifests = append(rawManifests, raws...)
@@ -124,7 +131,7 @@ func decodeDocumentNode(path string, node *yaml.Node, res *ValidationResult) (*R
 	if raw == nil {
 		return nil, nil
 	}
-	hasComponentGroup := strings.HasPrefix(raw.APIVersion, "components.xmc.dev/") || raw.APIVersion == "components.xmc.dev"
+	hasComponentGroup := isComponentGroup(raw.APIVersion)
 	if hasComponentGroup && raw.Kind != "Component" {
 		res.AddError(path, raw.Line, "SCHEMA_ERROR", fmt.Sprintf("invalid kind %q for apiVersion %q; expected \"Component\"", raw.Kind, raw.APIVersion))
 		return raw, nil
@@ -139,6 +146,10 @@ func decodeDocumentNode(path string, node *yaml.Node, res *ValidationResult) (*R
 	}
 	comp.FilePath, comp.Line = raw.FilePath, raw.Line
 	return raw, &comp
+}
+
+func isComponentGroup(apiVersion string) bool {
+	return strings.HasPrefix(apiVersion, "xmc.dev/") || apiVersion == "xmc.dev" || strings.HasPrefix(apiVersion, "components.xmc.dev/") || apiVersion == "components.xmc.dev"
 }
 
 func decodeRawDocumentNode(path string, node *yaml.Node, res *ValidationResult) *RawManifest {

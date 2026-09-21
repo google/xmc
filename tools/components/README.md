@@ -58,7 +58,7 @@ python3 tools/components/run_linter.py \
 ## 3. Profile Discovery Rules
 
 A directory is recognized as a valid lint target if:
-1. It contains at least one `.yaml` or `.yml` file that is not a rules configuration file (`rules.yaml`, `rules.yml`, `.rules.yaml`, `.rules.yml`).
+1. It is a Helm chart root containing `Chart.yaml` or `Chart.yml` (treated as a single hermetic lint target without descending into subdirectories such as `templates/`, `charts/`, or `tests/`), or it contains at least one `.yaml` or `.yml` file that is not a rules configuration file (`rules.yaml`, `rules.yml`, `.rules.yaml`, `.rules.yml`).
 2. If a `rules.yaml` (or variants) file is present in the same directory, it is automatically passed to `component-linter` as `--rules-config=<path>`.
 3. Directories that are empty or contain only non-manifest files are skipped.
 4. If no targets are found across all scan roots:

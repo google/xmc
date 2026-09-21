@@ -107,26 +107,34 @@ When validation issues are detected:
 
 ---
 
-## 5. Component Manifest Specification & Flexible YAML AST
+## 5. Component Manifest Specification, Helm Sub-Charts & Flexible YAML AST
 
-`xmc-linter` defines the typed Component AST in `pkg/components/linter/manifest.go` and implements custom YAML deserializers in `pkg/components/linter/manifest_decoder.go` supporting flexible dependency declarations, duration formats, and YAML aliases.
+`xmc-linter` defines the typed Component AST in `pkg/components/linter/manifest.go`, renders Helm sub-chart templates via `pkg/components/linter/chart_renderer.go`, and implements custom YAML deserializers in `pkg/components/linter/manifest_decoder.go` supporting flexible dependency declarations, duration formats, YAML merge keys (`<<`), and aliases.
+
+### Helm Sub-Chart Template Rendering (`chart_renderer.go`)
+
+When scanning a Helm component sub-chart directory (`Chart.yaml`, `values.yaml`, `templates/*.yaml`):
+- Chart metadata files (`Chart.yaml`, `Chart.yml`, `values*.yaml`, `rules.yaml`) and underscore-prefixed helper partials (`templates/_*`, e.g. `_helpers.tpl`) are automatically skipped as standalone Kubernetes documents.
+- Template manifests under `templates/*.yaml` are rendered against `Chart.yaml`, `values.yaml`, and `templates/_*` helpers using standard Helm/Sprig template functions (`default`, `quote`, `toString`, `trim`, `lower`, `upper`, `indent`, `nindent`, `toYaml`, and `include`) before YAML decoding.
 
 ### Manifest Structure
 
 ```yaml
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1 # Supports both xmc.dev/v1alpha1 and components.xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: storage-controller
   namespace: xmc
 spec:
-  version: "1.4.2"
-  componentType: CUSTOM_1P_COMPONENT # CUSTOM_1P_COMPONENT | CUSTOM_3P_WRAPPER
+  chartVersion: "1.4.2"
+  componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT # COMPONENT_TYPE_CUSTOM_1P_COMPONENT | COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   enabled: true
   deletionProtection: false
-  deletionPolicy: DELETE             # DELETE | ORPHAN | UNSPECIFIED
+  deletionPolicy: Delete                            # Delete | Orphan (legacy DELETE/ORPHAN emit DEPRECATED_DELETION_POLICY warning)
+  parameters:
+    brokerEndpoints: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
   lifecycleControl:
-    drainTimeoutSeconds: "60s"       # Supports "60s", "5m", or integer 60
+    drainTimeoutSeconds: "60s"                      # Supports "60s", "5m", or integer 60
     gracePeriodSeconds: 30
   dependencies:
     - name: storage-driver
@@ -175,9 +183,10 @@ The schema validation layer (`pkg/components/linter/schema.go`) verifies baselin
 ### CRD Schema Checks
 
 - **DNS-1123 RFC-1123 Label Conformance**: Validates that `metadata.name` contains only lowercase alphanumeric characters or `-`, starts and ends with an alphanumeric character, and does not exceed 63 characters (`INVALID_COMPONENT_NAME`).
-- **Component Type Validation**: Asserts `spec.componentType` is one of `CUSTOM_1P_COMPONENT` or `CUSTOM_3P_WRAPPER` (`INVALID_COMPONENT_TYPE`).
-- **3P Wrapper CRD References**: For `CUSTOM_3P_WRAPPER`, requires `spec.wrapperRef.crdGroup`, `crdVersion`, `crdKind`, and `targetName` to be non-empty (`MISSING_WRAPPER_REF`, `INVALID_WRAPPER_REF`). For `CUSTOM_1P_COMPONENT`, forbids `wrapperRef`.
-- **Deletion Policy & Protection**: Asserts `spec.deletionPolicy` is valid (`DELETE`, `ORPHAN`, or `UNSPECIFIED` / `DELETION_POLICY_UNSPECIFIED`). If `staticChecks.enforceDeletionProtection: true` is enabled, asserts `spec.deletionProtection == true` (`DELETION_PROTECTION_REQUIRED`).
+- **Component Type Validation**: Asserts `spec.componentType` is one of `COMPONENT_TYPE_CUSTOM_1P_COMPONENT` (`CUSTOM_1P_COMPONENT`) or `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` (`CUSTOM_3P_WRAPPER`) (`INVALID_COMPONENT_TYPE`).
+- **3P Wrapper CRD References**: For `COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, requires `spec.wrapperRef.group` (`crdGroup`), `version` (`crdVersion`), `kind` (`crdKind`), and `name` (`targetName`) to be non-empty (`MISSING_WRAPPER_REF`, `INVALID_WRAPPER_REF`), and validates that `observedGenerationPath` and `readyConditionPath` match `^\$\.status\..+`. For 1P components, forbids `wrapperRef`.
+- **String Parameters Validation**: Enforces that `spec.parameters` entries resolve to scalar string values (`!!str`) matching the CRD `additionalProperties: { type: string }` schema.
+- **Deletion Policy & Protection**: Asserts `spec.deletionPolicy` is valid (`Delete` or `Orphan`; legacy `DELETE`, `ORPHAN`, or `DELETION_POLICY_*` values emit a `DEPRECATED_DELETION_POLICY` warning). If `staticChecks.enforceDeletionProtection: true` is enabled, asserts `spec.deletionProtection == true` (`DELETION_PROTECTION_REQUIRED`).
 - **Lifecycle Drain Timeout Boundaries**: Validates that `spec.lifecycleControl.drainTimeoutSeconds` is non-negative and does not exceed `staticChecks.maxDrainTimeoutSeconds` (`DRAIN_TIMEOUT_EXCEEDED`).
 
 ### Rules Configuration Schema (`rules.yaml`)

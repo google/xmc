@@ -110,6 +110,21 @@ class RunLinterTest(unittest.TestCase):
         self.assertEqual(targets[1].manifests_dir, self.temp_dir / "root2")
         self.assertIsNone(targets[1].rules_config)
 
+    def test_discover_lint_targets_helm_chart_deduplicates_templates(self) -> None:
+        """Tests that a Helm sub-chart directory is discovered once without duplicating templates/."""
+        chart_rel = "profiles/stable-2026a/components/redpanda"
+        self.create_file(
+            f"{chart_rel}/Chart.yaml", "apiVersion: v2\nname: redpanda\nversion: 2.1.0\n"
+        )
+        self.create_file(f"{chart_rel}/values.yaml", "enabled: false\n")
+        self.create_file(
+            f"{chart_rel}/templates/component.yaml",
+            "apiVersion: xmc.dev/v1alpha1\nkind: Component\n",
+        )
+
+        dirs = run_linter.discover_manifest_dirs([self.temp_dir / "profiles"])
+        self.assertEqual(dirs, [self.temp_dir / chart_rel])
+
     def test_resolve_linter_binary(self) -> None:
         """Tests resolving explicit binary or pre-built executable candidates."""
         self.assertEqual(

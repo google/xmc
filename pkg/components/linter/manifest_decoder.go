@@ -53,16 +53,21 @@ func (d *ComponentDependencyRef) UnmarshalYAML(node *yaml.Node) error {
 // UnmarshalYAML decodes ComponentWrapperRef with fallback aliases.
 func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
 	var raw struct {
-		CrdGroup        string `yaml:"crdGroup"`
-		CrdVersion      string `yaml:"crdVersion"`
-		CrdKind         string `yaml:"crdKind"`
-		TargetNamespace string `yaml:"targetNamespace"`
-		TargetName      string `yaml:"targetName"`
-		Group           string `yaml:"group"`
-		Version         string `yaml:"version"`
-		Kind            string `yaml:"kind"`
-		Namespace       string `yaml:"namespace"`
-		Name            string `yaml:"name"`
+		CrdGroup                 string `yaml:"crdGroup"`
+		CrdVersion               string `yaml:"crdVersion"`
+		CrdKind                  string `yaml:"crdKind"`
+		TargetNamespace          string `yaml:"targetNamespace"`
+		TargetName               string `yaml:"targetName"`
+		Group                    string `yaml:"group"`
+		Version                  string `yaml:"version"`
+		Kind                     string `yaml:"kind"`
+		Namespace                string `yaml:"namespace"`
+		Name                     string `yaml:"name"`
+		ObservedGenerationPath   string `yaml:"observedGenerationPath"`
+		ReadyConditionPath       string `yaml:"readyConditionPath"`
+		ExpectedReadyValue       string `yaml:"expectedReadyValue"`
+		EndpointJsonPath         string `yaml:"endpointJsonPath"`
+		ConnectionSecretJsonPath string `yaml:"connectionSecretJsonPath"`
 	}
 	if err := node.Decode(&raw); err != nil {
 		return err
@@ -72,6 +77,8 @@ func (w *ComponentWrapperRef) UnmarshalYAML(node *yaml.Node) error {
 	w.CrdKind = firstNonEmpty(raw.CrdKind, raw.Kind)
 	w.TargetNamespace = firstNonEmpty(raw.TargetNamespace, raw.Namespace)
 	w.TargetName = firstNonEmpty(raw.TargetName, raw.Name)
+	w.ObservedGenerationPath, w.ReadyConditionPath, w.ExpectedReadyValue = raw.ObservedGenerationPath, raw.ReadyConditionPath, raw.ExpectedReadyValue
+	w.EndpointJsonPath, w.ConnectionSecretJsonPath = raw.EndpointJsonPath, raw.ConnectionSecretJsonPath
 	return nil
 }
 
@@ -168,11 +175,14 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 		Enabled            *bool                   `yaml:"enabled,omitempty"`
 		Type               string                  `yaml:"type,omitempty"`
 		ComponentType      string                  `yaml:"componentType,omitempty"`
+		ComponentClass     string                  `yaml:"componentClass,omitempty"`
 		Version            string                  `yaml:"version,omitempty"`
+		ChartVersion       string                  `yaml:"chartVersion,omitempty"`
 		DeletionPolicy     string                  `yaml:"deletionPolicy,omitempty"`
 		DeletionProtection bool                    `yaml:"deletionProtection,omitempty"`
 		WrapperRef         *ComponentWrapperRef    `yaml:"wrapperRef,omitempty"`
 		LifecycleControl   *ComponentLifecycleCtrl `yaml:"lifecycleControl,omitempty"`
+		Parameters         yaml.Node               `yaml:"parameters,omitempty"`
 		Dependencies       yaml.Node               `yaml:"dependencies,omitempty"`
 		Manifests          []string                `yaml:"manifests,omitempty"`
 		Description        string                  `yaml:"description,omitempty"`
@@ -182,9 +192,34 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 	}
 	s.Enabled = raw.Enabled
 	s.ComponentType = firstNonEmpty(raw.ComponentType, raw.Type)
-	s.Version, s.DeletionPolicy, s.DeletionProtection = raw.Version, raw.DeletionPolicy, raw.DeletionProtection
+	s.ComponentClass, s.ChartVersion = raw.ComponentClass, raw.ChartVersion
+	s.Version, s.DeletionPolicy, s.DeletionProtection = firstNonEmpty(raw.Version, raw.ChartVersion), raw.DeletionPolicy, raw.DeletionProtection
 	s.WrapperRef, s.LifecycleControl, s.Manifests, s.Description = raw.WrapperRef, raw.LifecycleControl, raw.Manifests, raw.Description
+	if err := s.decodeParameters(&raw.Parameters); err != nil {
+		return err
+	}
 	return s.decodeDependencies(&raw.Dependencies)
+}
+
+func (s *ComponentManifestSpec) decodeParameters(node *yaml.Node) error {
+	var temp map[string]yaml.Node
+	if node == nil || node.Kind == 0 {
+		return nil
+	}
+	if err := node.Decode(&temp); err != nil || len(temp) == 0 {
+		return err
+	}
+	s.Parameters = make(map[string]string, len(temp))
+	for k, v := range temp {
+		for v.Kind == yaml.AliasNode && v.Alias != nil {
+			v = *v.Alias
+		}
+		if v.Kind != yaml.ScalarNode || v.Tag != "!!str" {
+			return fmt.Errorf("spec.parameters[%q] must be a string, got %s", k, v.Tag)
+		}
+		s.Parameters[k] = v.Value
+	}
+	return nil
 }
 
 func (s *ComponentManifestSpec) decodeDependencies(node *yaml.Node) error {

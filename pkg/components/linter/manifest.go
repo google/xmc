@@ -58,11 +58,16 @@ type ComponentDependencyRef struct {
 
 // ComponentWrapperRef configures reference metadata for third-party CRDs and controllers.
 type ComponentWrapperRef struct {
-	CrdGroup        string `yaml:"crdGroup" json:"crdGroup"`
-	CrdVersion      string `yaml:"crdVersion" json:"crdVersion"`
-	CrdKind         string `yaml:"crdKind" json:"crdKind"`
-	TargetNamespace string `yaml:"targetNamespace,omitempty" json:"targetNamespace,omitempty"`
-	TargetName      string `yaml:"targetName" json:"targetName"`
+	CrdGroup                 string `yaml:"crdGroup" json:"crdGroup"`
+	CrdVersion               string `yaml:"crdVersion" json:"crdVersion"`
+	CrdKind                  string `yaml:"crdKind" json:"crdKind"`
+	TargetNamespace          string `yaml:"targetNamespace,omitempty" json:"targetNamespace,omitempty"`
+	TargetName               string `yaml:"targetName" json:"targetName"`
+	ObservedGenerationPath   string `yaml:"observedGenerationPath,omitempty" json:"observedGenerationPath,omitempty"`
+	ReadyConditionPath       string `yaml:"readyConditionPath,omitempty" json:"readyConditionPath,omitempty"`
+	ExpectedReadyValue       string `yaml:"expectedReadyValue,omitempty" json:"expectedReadyValue,omitempty"`
+	EndpointJsonPath         string `yaml:"endpointJsonPath,omitempty" json:"endpointJsonPath,omitempty"`
+	ConnectionSecretJsonPath string `yaml:"connectionSecretJsonPath,omitempty" json:"connectionSecretJsonPath,omitempty"`
 }
 
 // ComponentLifecycleCtrl defines lifecycle timeouts and drain control.
@@ -76,11 +81,14 @@ type ComponentLifecycleCtrl struct {
 type ComponentManifestSpec struct {
 	Enabled            *bool                    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	ComponentType      string                   `yaml:"componentType,omitempty" json:"componentType,omitempty"`
+	ComponentClass     string                   `yaml:"componentClass,omitempty" json:"componentClass,omitempty"`
 	Version            string                   `yaml:"version,omitempty" json:"version,omitempty"`
+	ChartVersion       string                   `yaml:"chartVersion,omitempty" json:"chartVersion,omitempty"`
 	DeletionPolicy     string                   `yaml:"deletionPolicy,omitempty" json:"deletionPolicy,omitempty"`
 	DeletionProtection bool                     `yaml:"deletionProtection,omitempty" json:"deletionProtection,omitempty"`
 	WrapperRef         *ComponentWrapperRef     `yaml:"wrapperRef,omitempty" json:"wrapperRef,omitempty"`
 	LifecycleControl   *ComponentLifecycleCtrl  `yaml:"lifecycleControl,omitempty" json:"lifecycleControl,omitempty"`
+	Parameters         map[string]string        `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 	Dependencies       []ComponentDependencyRef `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 	Manifests          []string                 `yaml:"manifests,omitempty" json:"manifests,omitempty"`
 	Description        string                   `yaml:"description,omitempty" json:"description,omitempty"`
