@@ -15,40 +15,62 @@
 """Unit tests for extract_release_metadata tool."""
 
 import argparse
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.common.tool_utils import HandledError
-    from tools.release.extract_release_metadata import (
-        CommitInfo,
-        create_parser,
-        extract_release_metadata,
-    )
-except ImportError:
-    from common.tool_utils import HandledError  # type: ignore[no-redef]
-    from extract_release_metadata import (  # type: ignore[no-redef]
-        CommitInfo,
-        create_parser,
-        extract_release_metadata,
-    )
+from tools.common.tool_utils import HandledError
+from tools.release.extract_release_metadata import (
+    CommitInfo,
+    FeatureFlagInfo,
+    FlagTransition,
+    create_parser,
+    extract_release_metadata,
+)
+from tools.release.models import (
+    STATUS_APPROVED_PREVIEW_TOGGLE,
+    STATUS_ENABLED_BY_DEFAULT,
+)
 
 
 class ExtractReleaseMetadataTest(unittest.TestCase):
     """Test suite for base release metadata extraction."""
 
     @patch("tools.release.extract_release_metadata.get_git_commits")
+    @patch("tools.release.extract_release_metadata.discover_feature_flags")
+    @patch("tools.release.extract_release_metadata.extract_flag_transitions")
     def test_extract_release_metadata_handler(
         self,
+        mock_transitions: MagicMock,
+        mock_flags: MagicMock,
         mock_commits: MagicMock,
     ) -> None:
+        mock_transitions.return_value = [
+            FlagTransition(
+                flag_name="enable_components",
+                source_file="deploy/ctk_v2/xmanager-cloud.yaml",
+                base_value=False,
+                target_value=True,
+                is_flip=True,
+                is_promotion_to_default=True,
+                description="Promoted enable_components to default true",
+            )
+        ]
+        mock_flags.return_value = {
+            "enable_components": FeatureFlagInfo(
+                flag_name="enable_components",
+                display_name="Components",
+                tokens={"components", "component"},
+                is_active=True,
+            ),
+            "rod_deployment_enabled": FeatureFlagInfo(
+                flag_name="rod_deployment_enabled",
+                display_name="ROD",
+                tokens={"rod"},
+                is_active=False,
+            ),
+        }
         mock_commits.return_value = [
             CommitInfo(
                 commit_hash="1111",
@@ -80,12 +102,24 @@ class ExtractReleaseMetadataTest(unittest.TestCase):
             base_ref="0.5.0",
             target_ref="0.6.0",
             repo_dir=".",
+            approved_flags=["rod_deployment_enabled"],
             output=None,
         )
 
         res = extract_release_metadata(args)
         self.assertEqual(res["metadata"]["commit_count"], 2)
         self.assertEqual(res["metadata"]["pr_count"], 2)
+        self.assertEqual(res["metadata"]["approved_flags"], ["rod_deployment_enabled"])
+        self.assertEqual(len(res["flag_transitions"]), 1)
+        self.assertEqual(len(res["gated_subsystems_status"]), 2)
+        self.assertEqual(
+            res["gated_subsystems_status"][0]["status"],
+            STATUS_ENABLED_BY_DEFAULT,
+        )
+        self.assertEqual(
+            res["gated_subsystems_status"][1]["status"],
+            STATUS_APPROVED_PREVIEW_TOGGLE,
+        )
         self.assertEqual(len(res["raw_commits"]), 2)
 
     @patch("tools.release.extract_release_metadata.get_git_commits")

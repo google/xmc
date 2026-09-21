@@ -19,16 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-try:
-    from tools.common.tool_utils import HandledError
-    from tools.release.models import CommitInfo
-except ImportError:
-    from common.tool_utils import HandledError  # type: ignore[no-redef]
-    from models import CommitInfo  # type: ignore[no-redef]
+from tools.common.tool_utils import HandledError
+from tools.release.models import CommitInfo
 
 
 def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str | None:
