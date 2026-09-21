@@ -30,6 +30,7 @@ go_library(
     importpath = "xmanager_cloud/pkg/components/linter",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/components/graph",
         "//pkg/components/naming",
         "//pkg/components/semver",
         "@com_github_masterminds_semver_v3//:semver",
