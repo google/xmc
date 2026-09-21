@@ -486,6 +486,10 @@ jobs:
           kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
           kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
           kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
+          kubectl label clusterrole xmc-ci-inspector app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null || true
+          kubectl annotate clusterrole xmc-ci-inspector "meta.helm.sh/release-name=xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" "meta.helm.sh/release-namespace=xmc" --overwrite 2>/dev/null || true
+          kubectl label clusterrolebinding xmc-ci-inspector-binding app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null || true
+          kubectl annotate clusterrolebinding xmc-ci-inspector-binding "meta.helm.sh/release-name=xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" "meta.helm.sh/release-namespace=xmc" --overwrite 2>/dev/null || true
           EOF_SCRIPT
           chmod +x /tmp/deploy-metrics-addons.sh
           if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
@@ -505,8 +509,8 @@ jobs:
         run: |
           gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
           /tmp/deploy-metrics-addons.sh
-          kubectl rollout status deployment/xmc-ingestion-gateway -n xmc --timeout=120s || (kubectl rollout restart deployment/xmc-ingestion-gateway -n xmc && kubectl rollout status deployment/xmc-ingestion-gateway -n xmc --timeout=180s)
-          kubectl rollout status deployment/xmc-dashboard-service -n xmc --timeout=120s || (kubectl rollout restart deployment/xmc-dashboard-service -n xmc && kubectl rollout status deployment/xmc-dashboard-service -n xmc --timeout=180s)
+          kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=120s || (kubectl rollout restart deployment/ingestion-gateway-deployment -n xmc && kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=180s)
+          kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=120s || (kubectl rollout restart deployment/dashboard-service-deployment -n xmc && kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=180s)
           docker build -t "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest" -f examples/clickhouse_metrics_job/Dockerfile .
           docker push "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest"
 
