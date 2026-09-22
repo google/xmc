@@ -27,14 +27,14 @@ limitations under the License.
 
     <mat-sidenav-container
       class="sidenav-container"
+      autosize
       [class.nav-expanded]="isExpanded() && isSidenavOpened()"
       [class.nav-closed]="!isSidenavOpened()"
-      autosize
     >
       <mat-sidenav
         class="sidenav"
-        [class.expanded]="isExpanded()"
         mode="side"
+        [class.expanded]="isExpanded()"
         [(opened)]="isSidenavOpened"
       >
         <mat-nav-list class="icon-nav-list">
@@ -111,9 +111,9 @@ limitations under the License.
             class="nav-expand-btn"
             href="#"
             role="button"
-            (click)="toggleExpand(); $event.preventDefault()"
             [attr.title]="isExpanded() ? 'Collapse' : 'Expand'"
             [attr.aria-label]="isExpanded() ? 'Collapse navigation' : 'Expand navigation'"
+            (click)="toggleExpand(); $event.preventDefault()"
           >
             <div class="menu-item-container expand-container">
               <mat-icon>{{ isExpanded() ? 'chevron_left' : 'chevron_right' }}</mat-icon>
