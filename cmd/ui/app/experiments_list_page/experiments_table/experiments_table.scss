@@ -23,17 +23,17 @@ xmc-resource-chip {
 .table-container {
   width: 100%;
   overflow: auto;
-  border: 1px solid #dadce0;
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
   border-radius: 8px;
-  background-color: #ffffff;
+  background-color: var(--mat-sys-surface, #ffffff);
 }
 
 th.mat-mdc-header-cell {
   font-size: 13px;
   font-weight: 600;
-  color: #202124;
-  background-color: #ffffff;
-  border-bottom: 1px solid #dadce0;
+  color: var(--mat-sys-on-surface, #202124);
+  background-color: var(--mat-sys-surface, #ffffff);
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #dadce0);
   padding: 12px 16px;
 }
 
@@ -41,12 +41,12 @@ td,
 td.mat-mdc-cell {
   padding: 12px 16px;
   font-size: 13px;
-  color: #202124;
-  border-bottom: 1px solid #f1f3f4;
+  color: var(--mat-sys-on-surface, #202124);
+  border-bottom: 1px solid var(--mat-sys-surface-variant, #f1f3f4);
 }
 
 tr.mat-mdc-row:hover {
-  background-color: #f8f9fa;
+  background-color: var(--mat-sys-surface-container-low, #f8f9fa);
 }
 
 .tags-container,
@@ -153,11 +153,11 @@ tr:active {
   .cell-link {
     display: block;
     text-decoration: underline;
-    color: #1a73e8;
+    color: var(--mat-sys-primary, #1a73e8);
     font-weight: 400;
 
     &:hover {
-      color: #174ea6;
+      filter: brightness(0.8);
     }
   }
 }
