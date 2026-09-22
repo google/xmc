@@ -104,11 +104,7 @@ func TestRedpandaBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 	}
 
 	tmplPath := filepath.Join(redpandaDir, "templates", "component.yaml")
-	rawTmpl, err := os.ReadFile(tmplPath)
-	if err != nil {
-		t.Fatalf("failed to read %s: %v", tmplPath, err)
-	}
-	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath, rawTmpl)
+	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath, nil)
 	if err != nil {
 		t.Fatalf("RenderChartTemplate() failed: %v", err)
 	}
@@ -217,12 +213,20 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
 	}
 
-	wantAPIVersion := crd.Spec.Group + "/" + crd.Spec.Versions[0].Name
+	if len(crd.Spec.Versions) == 0 {
+		t.Fatalf("CRD has no versions defined")
+	}
+	version := crd.Spec.Versions[0]
+	wantAPIVersion := crd.Spec.Group + "/" + version.Name
 	if comp.APIVersion != wantAPIVersion || comp.Kind != crd.Spec.Names.Kind {
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
 	}
 
-	wrapperProps := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
+	if comp.Spec.WrapperRef == nil {
+		t.Fatal("comp.Spec.WrapperRef is nil")
+	}
+
+	wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
 	obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
 	if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
 		t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())

@@ -27,7 +27,7 @@ spec:
   componentClass: {{ .Values.componentClass | default "event-stream" | quote }}
   chartVersion: {{ .Values.chartVersion | default .Chart.Version | quote }}
   deletionProtection: {{ .Values.deletionProtection }}
-  deletionPolicy: {{ .Values.deletionPolicy | default "Delete" }}
+  deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- if .Values.wrapperRef }}
   wrapperRef:
     group: {{ .Values.wrapperRef.group | default "redpanda.vectorized.io" | quote }}
