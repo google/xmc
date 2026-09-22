@@ -329,6 +329,35 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantTopic:   "static-topic",
 			wantErr:     true,
 		},
+		{
+			name: "handles malformed field types in Component CR and retains static config",
+			cfg: &Config{
+				Port:             "8080",
+				MessageBus:       MessageBusRedpanda,
+				RedpandaBrokers:  []string{"static-broker:9092"},
+				TopicName:        "static-topic",
+				MinPartitions:    1,
+				MinReplicas:      1,
+				EnableComponents: true,
+			},
+			getter: &fakeComponentGetter{comp: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "components.xmc.dev/v1alpha1",
+					"kind":       "Component",
+					"spec": map[string]any{
+						"parameters": "invalid-not-a-map",
+					},
+					"status": map[string]any{
+						"state": int64(42),
+						"access": map[string]any{
+							"envVars": "invalid-not-a-map",
+						},
+					},
+				},
+			}},
+			wantBrokers: []string{"static-broker:9092"},
+			wantTopic:   "static-topic",
+		},
 	}
 
 	for _, tc := range tests {

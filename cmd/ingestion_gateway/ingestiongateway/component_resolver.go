@@ -132,9 +132,18 @@ func isRedpandaComponentDisabled(comp *unstructured.Unstructured) bool {
 }
 
 func applyRedpandaComponentOverrides(ctx context.Context, cfg *Config, ns string, comp *unstructured.Unstructured) {
-	params, _, _ := unstructured.NestedStringMap(comp.Object, "spec", "parameters")
-	envVars, _, _ := unstructured.NestedStringMap(comp.Object, "status", "access", "envVars")
-	statusState, _, _ := unstructured.NestedString(comp.Object, "status", "state")
+	params, _, err := unstructured.NestedStringMap(comp.Object, "spec", "parameters")
+	if err != nil {
+		logging.Warn(ctx, "Failed to parse spec.parameters from Component CR", "error", err)
+	}
+	envVars, _, err := unstructured.NestedStringMap(comp.Object, "status", "access", "envVars")
+	if err != nil {
+		logging.Warn(ctx, "Failed to parse status.access.envVars from Component CR", "error", err)
+	}
+	statusState, _, err := unstructured.NestedString(comp.Object, "status", "state")
+	if err != nil {
+		logging.Warn(ctx, "Failed to parse status.state from Component CR", "error", err)
+	}
 
 	if brokers, source := resolveBrokersFromComponent(params, envVars); len(brokers) > 0 {
 		cfg.RedpandaBrokers = brokers
