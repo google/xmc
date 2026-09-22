@@ -16,21 +16,21 @@
 @use 'custom_colors' as *;
 
 html {
-  background-color: #ffffff;
-  color: #202124;
+  background-color: var(--mat-sys-surface, #ffffff);
+  color: var(--mat-sys-on-surface, #202124);
 }
 
 body {
   font-family: 'Roboto', 'Google Sans', sans-serif;
   margin: 0;
-  background-color: #ffffff;
-  color: #202124;
+  background-color: var(--mat-sys-surface, #ffffff);
+  color: var(--mat-sys-on-surface, #202124);
 }
 
 mat-card.mat-mdc-card {
-  border: 1px solid #dadce0;
+  border: 1px solid var(--xmc-border-color, #dadce0);
   border-radius: 8px;
-  background-color: #ffffff;
+  background-color: var(--mat-sys-surface, #ffffff);
   box-shadow: none;
 }
 

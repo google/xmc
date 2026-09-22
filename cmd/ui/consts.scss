@@ -51,7 +51,7 @@ $font-size-large: 18px;
 $font-size-xlarge: 24px;
 
 // Header height
-$xmc-header-height: 48px;
+$xmc-header-height: 64px;
 
 // Z-indices
 $z-index-header: 100;
@@ -67,12 +67,12 @@ $z-index-header: 100;
   border-bottom: 1px solid #f1f3f4;
 
   dt {
-    color: #5f6368;
+    color: var(--mat-sys-on-surface-variant, #5f6368);
     font-weight: 500;
   }
 
   dd {
-    color: #202124;
+    color: var(--mat-sys-on-surface, #202124);
     margin: 0;
   }
 }
@@ -91,7 +91,7 @@ $z-index-header: 100;
   justify-content: flex-start;
   font-size: 16px;
   font-weight: 400;
-  color: #202124;
+  color: var(--mat-sys-on-surface, #202124);
 }
 
 @mixin small-chip {
