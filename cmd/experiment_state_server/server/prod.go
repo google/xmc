@@ -33,6 +33,8 @@ import (
 	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
@@ -268,9 +270,13 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	}
 
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
+		// TODO(pausescheduling): Replace in-memory fake repositories with Spanner repositories once implemented.
+		pauseStateRepo := pausestate.NewFake()
+		pausedTaskRepo := pausedtask.NewFake()
+		worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueueClient)
 		consumer, err := resumption.StartConsumer(ctx, resumption.ConsumerConfig{
 			RedisAddr: cfg.RedisAddr,
-		}, resumption.NewResumptionWorker())
+		}, worker)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}

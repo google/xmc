@@ -207,7 +207,9 @@ func TestDriftDetection_TerminalExperimentFiltered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment failed: %v", err)
 	}
-	// Terminal experiments are filtered out by ActiveState = 1 in the consistency view.
+	// Drift detection returns early in Go for non-ACTIVE experiments, before the consistency
+	// view is ever queried. The view's own `WHERE e.ActiveState = 1` predicate is covered
+	// separately by TestConsistencyView_TerminalExperimentExcluded.
 	if gotExp.GetStatus().GetStructuredStatusMessage() != nil {
 		t.Errorf("Expected nil structured status message for inactive experiment, got: %v", gotExp.GetStatus().GetStructuredStatusMessage())
 	}
@@ -457,5 +459,153 @@ func TestDriftDetection_CacheHitsWithinTTL(t *testing.T) {
 	}
 	if gotExp2.GetStatus().GetStructuredStatusMessage() == nil {
 		t.Errorf("Expected cached drift warning to be returned from in-memory cache within TTL")
+	}
+}
+
+// The tests below assert the SQL contract of the ExperimentConsistencyInfo view directly, rather
+// than through drift detection. They cover parts of the view that FetchExperiment cannot reach:
+// the HasPendingReconciliation column (which has no production consumer), the view's own
+// `WHERE e.ActiveState = 1` predicate (drift detection short-circuits in Go before querying), and
+// NOT EXISTS aggregation across multiple components.
+
+// consistencyResult mirrors one row of the ExperimentConsistencyInfo view.
+type consistencyResult struct {
+	isConsistent bool
+	hasPending   bool
+}
+
+// queryConsistencyInfo reads the ExperimentConsistencyInfo row for xid, reporting whether the view
+// emitted a row at all.
+func queryConsistencyInfo(ctx context.Context, t *testing.T, client *cloudspanner.Client, xid int64) (consistencyResult, bool) {
+	t.Helper()
+	stmt := cloudspanner.Statement{
+		SQL:    "SELECT IsExperimentConsistent, HasPendingReconciliation FROM ExperimentConsistencyInfo WHERE Xid = @xid",
+		Params: map[string]any{"xid": xid},
+	}
+	iter := client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	var (
+		got   consistencyResult
+		found bool
+	)
+	err := iter.Do(func(row *cloudspanner.Row) error {
+		if err := row.ColumnByName("IsExperimentConsistent", &got.isConsistent); err != nil {
+			return err
+		}
+		if err := row.ColumnByName("HasPendingReconciliation", &got.hasPending); err != nil {
+			return err
+		}
+		found = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("query ExperimentConsistencyInfo failed: %v", err)
+	}
+	return got, found
+}
+
+// seedComponentWithSnapshot inserts a Components row and an ExperimentComponentSnapshots row
+// binding it to xid. A nil observedGen leaves ObservedGeneration NULL (pending reconciliation).
+func seedComponentWithSnapshot(ctx context.Context, t *testing.T, client *cloudspanner.Client, xid, componentID int64, name string, state, generation int64, observedGen *int64, lockedGen int64) {
+	t.Helper()
+	cols := []string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "CreateTime", "UpdateTime"}
+	vals := []any{componentID, name, "storage", []byte{}, state, generation, cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp}
+	if observedGen != nil {
+		cols = append(cols, "ObservedGeneration")
+		vals = append(vals, *observedGen)
+	}
+
+	componentMutation := cloudspanner.InsertOrUpdate("Components", cols, vals)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), componentID, lockedGen, []byte{}},
+	)
+	if _, err := client.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations for component %q failed: %v", name, err)
+	}
+}
+
+func TestConsistencyView_HasPendingReconciliationColumn(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage := newTestStorageWithComponents(ctx, t, essClient)
+
+	const xid = int64(1200)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
+
+	// ObservedGeneration NULL: awaiting the first GKE reconciliation, not drifted.
+	seedComponentWithSnapshot(ctx, t, essClient, xid, int64(400), "pending-view-comp", 1, 1, nil, 1)
+
+	got, found := queryConsistencyInfo(ctx, t, essClient, xid)
+	if !found {
+		t.Fatalf("expected a view row for Xid %d, got none", xid)
+	}
+	if !got.isConsistent {
+		t.Errorf("IsExperimentConsistent = false, want true (NULL ObservedGeneration is not drift)")
+	}
+	if !got.hasPending {
+		t.Errorf("HasPendingReconciliation = false, want true (component has NULL ObservedGeneration)")
+	}
+}
+
+func TestConsistencyView_TerminalExperimentExcluded(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage := newTestStorageWithComponents(ctx, t, essClient)
+
+	const xid = int64(1201)
+	expProto := spanner.BlankExperimentProto(xid)
+	expProto.Status.ActiveState = essmsgpb.ExperimentStatus_INACTIVE
+	spanner.CreateAndStoreExperiment(ctx, t, storage, expProto)
+
+	// Drifted component (live generation 2 vs locked generation 1) that the view must still ignore
+	// because the owning experiment is terminal.
+	observedGen := int64(2)
+	seedComponentWithSnapshot(ctx, t, essClient, xid, int64(401), "terminal-view-comp", 1, 2, &observedGen, 1)
+
+	if _, found := queryConsistencyInfo(ctx, t, essClient, xid); found {
+		t.Errorf("view returned a row for terminal experiment %d, want it excluded by WHERE e.ActiveState = 1", xid)
+	}
+}
+
+func TestConsistencyView_MultipleComponentsAggregation(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage := newTestStorageWithComponents(ctx, t, essClient)
+
+	const xid = int64(1202)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
+
+	// Three components, all reconciled at the generation their snapshot locked.
+	observedGen := int64(1)
+	for i, name := range []string{"multi-view-comp-1", "multi-view-comp-2", "multi-view-comp-3"} {
+		seedComponentWithSnapshot(ctx, t, essClient, xid, int64(410+i), name, 1, 1, &observedGen, 1)
+	}
+
+	got, found := queryConsistencyInfo(ctx, t, essClient, xid)
+	if !found {
+		t.Fatalf("expected a view row for Xid %d, got none", xid)
+	}
+	if !got.isConsistent || got.hasPending {
+		t.Errorf("got isConsistent=%v hasPending=%v, want true/false with all components reconciled", got.isConsistent, got.hasPending)
+	}
+
+	// Drift exactly one of the three: NOT EXISTS must flip the whole experiment inconsistent.
+	driftedGen := int64(2)
+	drift := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(411), "multi-view-comp-2", "storage", []byte{}, int64(1), driftedGen, driftedGen, cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{drift}); err != nil {
+		t.Fatalf("Apply drift mutation failed: %v", err)
+	}
+
+	got, found = queryConsistencyInfo(ctx, t, essClient, xid)
+	if !found {
+		t.Fatalf("expected a view row for Xid %d after drift, got none", xid)
+	}
+	if got.isConsistent {
+		t.Errorf("IsExperimentConsistent = true, want false when 1 of 3 components has drifted")
 	}
 }

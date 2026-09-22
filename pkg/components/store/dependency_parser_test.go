@@ -145,7 +145,7 @@ metadata:
   annotations:
     xmc.dev/dependencies: "doc2-dep"
 ---
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp1
@@ -166,7 +166,7 @@ spec:
 			name: "spec dependencies as comma string",
 			manifests: []string{
 				`
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp2
@@ -180,7 +180,7 @@ spec:
 			name: "spec dependencies as map",
 			manifests: []string{
 				`
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp3

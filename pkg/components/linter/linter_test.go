@@ -28,8 +28,8 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 	t.Run("valid directory with multiple component manifests", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeTestManifest(t, dir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
-		writeTestManifest(t, dir, "c2.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 2.0.0 }\n")
+		writeTestManifest(t, dir, "c1.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 2.0.0 }\n")
 		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil || !res.Valid {
@@ -72,7 +72,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 	t.Run("multi-document stream in single yaml file", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeTestManifest(t, dir, "components.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-1 }\nspec: { version: 1.0.0 }\n---\napiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-2 }\nspec: { version: 1.2.0 }\n---\n# Comment only\n")
+		writeTestManifest(t, dir, "components.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-1 }\nspec: { version: 1.0.0 }\n---\napiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-2 }\nspec: { version: 1.2.0 }\n---\n# Comment only\n")
 		l := linter.NewLinter(nil)
 		if res, err := l.ValidateDirectory(dir); err != nil || !res.Valid {
 			t.Fatalf("expected multi-doc directory to be valid, got err=%v, errors=%v", err, res.Errors)
@@ -94,8 +94,8 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "empty.yaml", "foo: bar\n---\nmetadata: 123\n")
-		writeTestManifest(t, dir, "invalid-group-kind.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: InvalidKind\nmetadata: { name: invalid }\n")
-		writeTestManifest(t, dir, "decode-error.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nspec: [invalid_seq]\n")
+		writeTestManifest(t, dir, "invalid-group-kind.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: InvalidKind\nmetadata: { name: invalid }\n")
+		writeTestManifest(t, dir, "decode-error.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nspec: [invalid_seq]\n")
 		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil {
@@ -127,7 +127,7 @@ func TestValidateDirectory_ScaffoldingE2E(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "comp-a.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata: { name: comp-a }
 spec:
@@ -137,7 +137,7 @@ spec:
       version: ">=2.0.0 <3.0.0"
 `)
 		writeTestManifest(t, dir, "comp-b.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata: { name: comp-b }
 spec:
@@ -154,7 +154,7 @@ spec:
 		t.Parallel()
 		dir := t.TempDir()
 		writeTestManifest(t, dir, "comp-a.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata: { name: comp-a }
 spec:
@@ -164,7 +164,7 @@ spec:
       version: "^3.0.0"
 `)
 		writeTestManifest(t, dir, "comp-b.yaml", `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata: { name: comp-b }
 spec:
@@ -184,8 +184,8 @@ spec:
 	t.Run("mixed yaml yml and non-manifest file extensions", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeTestManifest(t, dir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
-		writeTestManifest(t, dir, "c2.yml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c1.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
 		writeTestManifest(t, dir, "notes.txt", "this is a text file")
 		writeTestManifest(t, dir, "config.json", "{}")
 		l := linter.NewLinter(nil)
@@ -202,8 +202,8 @@ spec:
 		if err := os.MkdirAll(subDir, 0755); err != nil {
 			t.Fatalf("failed to create subDir: %v", err)
 		}
-		writeTestManifest(t, subDir, "c1.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
-		writeTestManifest(t, dir, "c2.yaml", "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, subDir, "c1.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n")
+		writeTestManifest(t, dir, "c2.yaml", "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c2 }\nspec: { version: 1.0.0 }\n")
 		l := linter.NewLinter(nil)
 		res, err := l.ValidateDirectory(dir)
 		if err != nil || !res.Valid {

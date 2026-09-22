@@ -164,7 +164,12 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
         for current_dir, dirnames, filenames in os.walk(root):
             dirnames.sort()
             dir_path = Path(current_dir)
-            has_manifests = any(
+            lower_files = {f.lower() for f in filenames}
+            is_helm_chart = "chart.yaml" in lower_files or "chart.yml" in lower_files
+            if is_helm_chart:
+                dirnames[:] = []
+
+            has_manifests = is_helm_chart or any(
                 f.lower().endswith((".yaml", ".yml"))
                 and f.lower() not in ("rules.yaml", "rules.yml")
                 for f in filenames
@@ -177,6 +182,11 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
                         rules_config=find_rules_config(dir_path),
                     )
     return sorted(discovered.values(), key=lambda t: str(t.manifests_dir))
+
+
+def discover_manifest_dirs(scan_roots: Sequence[Path]) -> list[Path]:
+    """Returns discovered manifest and Helm chart root directories across scan roots."""
+    return [target.manifests_dir for target in discover_lint_targets(scan_roots)]
 
 
 def build_linter_command(

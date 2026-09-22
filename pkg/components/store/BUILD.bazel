@@ -32,6 +32,8 @@ go_library(
     importpath = "xmanager_cloud/pkg/components/store",
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
+        "//pkg/components/graph",
         "//pkg/components/naming",
         "//pkg/components/semver",
         "@com_google_cloud_go_spanner//:spanner",

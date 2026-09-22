@@ -615,3 +615,21 @@ func TestNew_DefaultTokenProvider(t *testing.T) {
 		}
 	})
 }
+
+func TestEnqueueWorkUnitTask_RedisAddMessageError(t *testing.T) {
+	ctx := t.Context()
+	c, fakeRedis := createTaskQueueClient(ctx, t)
+	redisErr := errors.New("redis connection lost")
+	fakeRedis.AddMessageError = redisErr
+
+	err := c.EnqueueWorkUnitTask(
+		ctx,
+		"experiments/1/workUnits/1",
+		&essmsgpb.WorkUnit{Name: "experiments/1/workUnits/1"},
+		&actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		"operations/op1",
+	)
+	if !errors.Is(err, redisErr) {
+		t.Fatalf("EnqueueWorkUnitTask() error = %v, want %v", err, redisErr)
+	}
+}
