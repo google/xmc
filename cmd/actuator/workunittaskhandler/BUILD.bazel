@@ -9,6 +9,7 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
     deps = [
         "//api/protos/task_queue:task_go_proto",
+        "//cmd/actuator/pausescheduling",
         "//internal/common/interfaces",
         "//internal/compat/uuid",
         "//internal/logging",
@@ -28,6 +29,9 @@ compat_go_test(
     srcs = ["workunit_task_handler_test.go"],
     embed = [":workunittaskhandler"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//cmd/actuator/pausescheduling",
+        "//internal/compat/proto",
         "//internal/security/securitytest",
         "@com_github_prometheus_client_golang//prometheus/testutil:go_default_library",
         "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",

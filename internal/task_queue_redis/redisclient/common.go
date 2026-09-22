@@ -41,7 +41,7 @@ type Config struct {
 
 // Publisher is an interface for publishing messages to Redis.
 type Publisher interface {
-	AddMessage(ctx context.Context, data string, failedAttempts string)
+	AddMessage(ctx context.Context, data string, failedAttempts string) error
 	Ping(ctx context.Context) error
 	Close(ctx context.Context) error
 }
@@ -95,4 +95,9 @@ func getRedisOptions(redisConfig Config) *redis.Options {
 		logging.Warn(context.Background(), "Redis password environment variable is empty")
 	}
 	return options
+}
+
+// NewClient returns a new *redis.Client configured with standard options for the given Config.
+func NewClient(redisConfig Config) *redis.Client {
+	return redis.NewClient(getRedisOptions(redisConfig))
 }

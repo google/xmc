@@ -883,14 +883,15 @@ func TestPauseScheduling(t *testing.T) {
 
 func TestResumeScheduling(t *testing.T) {
 	tests := []struct {
-		name        string
-		cfg         *Config
-		guard       AdminRoleGuard
-		repo        pausestate.Repository
-		publisher   broadcast.Publisher
-		wantErrCode codes.Code
-		wantErrMsg  string
-		wantResp    *spb.ResumeSchedulingResponse
+		name          string
+		cfg           *Config
+		guard         AdminRoleGuard
+		repo          pausestate.Repository
+		publisher     broadcast.Publisher
+		taskPublisher redisclient.Publisher
+		wantErrCode   codes.Code
+		wantErrMsg    string
+		wantResp      *spb.ResumeSchedulingResponse
 	}{
 		{
 			name: "success when authorized and feature flag enabled",
@@ -971,6 +972,22 @@ func TestResumeScheduling(t *testing.T) {
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to resume scheduling",
 		},
+		{
+			name: "internal error when task queue trigger publishing fails",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: true,
+				},
+			},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			taskPublisher: func() redisclient.Publisher {
+				fc := redisclient.NewFakeClient()
+				fc.AddMessageError = errors.New("redis stream failure")
+				return fc
+			}(),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  "failed to resume scheduling",
+		},
 	}
 
 	for _, tt := range tests {
@@ -992,10 +1009,15 @@ func TestResumeScheduling(t *testing.T) {
 				publisher = broadcast.NewFakeClient("")
 			}
 
+			taskPublisher := tt.taskPublisher
+			if taskPublisher == nil {
+				taskPublisher = redisclient.NewFakeClient()
+			}
+
 			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
 				PauseStateRepository: repo,
 				BroadcastPublisher:   publisher,
-				TaskQueuePublisher:   redisclient.NewFakeClient(),
+				TaskQueuePublisher:   taskPublisher,
 			})
 			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})

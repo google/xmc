@@ -132,85 +132,16 @@ func TestBuildDependentsGraph(t *testing.T) {
 	}
 }
 
-func TestDetectCycles(t *testing.T) {
-	tests := []struct {
-		name      string
-		graph     DependencyGraph
-		wantCycle bool
-		wantNodes []string
-	}{
-		{
-			name: "NoCycles_LinearDAG",
-			graph: DependencyGraph{
-				"a": {"b"},
-				"b": {"c"},
-				"c": {},
-			},
-			wantCycle: false,
-		},
-		{
-			name: "NoCycles_DiamondDAG",
-			graph: DependencyGraph{
-				"a": {"b", "c"},
-				"b": {"d"},
-				"c": {"d"},
-				"d": {},
-			},
-			wantCycle: false,
-		},
-		{
-			name: "Cycle_SelfLoop",
-			graph: DependencyGraph{
-				"a": {"a"},
-			},
-			wantCycle: true,
-			wantNodes: []string{"a", "a"},
-		},
-		{
-			name: "Cycle_TwoNodes",
-			graph: DependencyGraph{
-				"a": {"b"},
-				"b": {"a"},
-			},
-			wantCycle: true,
-			wantNodes: []string{"a", "b", "a"},
-		},
-		{
-			name: "Cycle_ThreeNodes",
-			graph: DependencyGraph{
-				"a": {"b"},
-				"b": {"c"},
-				"c": {"a"},
-			},
-			wantCycle: true,
-			wantNodes: []string{"a", "b", "c", "a"},
-		},
-		{
-			name: "Cycle_DisconnectedSubgraph",
-			graph: DependencyGraph{
-				"ok1": {"ok2"},
-				"ok2": {},
-				"a":   {"b"},
-				"b":   {"c"},
-				"c":   {"b"},
-			},
-			wantCycle: true,
-			wantNodes: []string{"b", "c", "b"},
-		},
+func TestDetectCycles_DelegatesToGraphPackage(t *testing.T) {
+	gotPath, gotCycle := DetectCycles(DependencyGraph{
+		"a": {"b"},
+		"b": {"a"},
+	})
+	if !gotCycle {
+		t.Fatal("DetectCycles() = false, want true")
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path, hasCycle := DetectCycles(tc.graph)
-			if hasCycle != tc.wantCycle {
-				t.Fatalf("DetectCycles() cycle = %v, want %v (path: %v)", hasCycle, tc.wantCycle, path)
-			}
-			if tc.wantCycle && len(tc.wantNodes) > 0 {
-				if diff := cmp.Diff(tc.wantNodes, path); diff != "" {
-					t.Errorf("DetectCycles() path mismatch (-want +got):\n%s", diff)
-				}
-			}
-		})
+	if diff := cmp.Diff([]string{"a", "b", "a"}, gotPath); diff != "" {
+		t.Errorf("DetectCycles() path mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -304,18 +235,14 @@ func TestValidateProspectiveDependenciesFromMap(t *testing.T) {
 	}
 }
 
-func TestFindTransitiveDependents(t *testing.T) {
+func TestFindTransitiveDependents_CanonicalizesRoot(t *testing.T) {
 	records := []*ComponentRecord{
 		{
-			Name:         "comp-a",
+			Name:         "components/comp-a",
 			Dependencies: []string{"comp-b"},
 		},
 		{
 			Name:         "comp-b",
-			Dependencies: []string{"comp-c"},
-		},
-		{
-			Name:         "comp-d",
 			Dependencies: []string{"comp-c"},
 		},
 		{
@@ -326,22 +253,9 @@ func TestFindTransitiveDependents(t *testing.T) {
 
 	dependentsGraph := BuildDependentsGraph(records)
 
-	// Dependents of comp-c should be comp-b, comp-a (transitive via b), and comp-d
-	got := FindTransitiveDependents(dependentsGraph, "comp-c")
-	want := []string{"comp-a", "comp-b", "comp-d"}
+	got := FindTransitiveDependents(dependentsGraph, "components/comp-c")
+	want := []string{"comp-a", "comp-b"}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("FindTransitiveDependents(comp-c) mismatch (-want +got):\n%s", diff)
-	}
-
-	// Dependents of comp-a should be empty
-	gotA := FindTransitiveDependents(dependentsGraph, "comp-a")
-	if len(gotA) != 0 {
-		t.Errorf("FindTransitiveDependents(comp-a) = %v, want empty", gotA)
-	}
-
-	// Empty root name
-	gotEmpty := FindTransitiveDependents(dependentsGraph, "")
-	if gotEmpty != nil {
-		t.Errorf("FindTransitiveDependents('') = %v, want nil", gotEmpty)
+		t.Errorf("FindTransitiveDependents(components/comp-c) mismatch (-want +got):\n%s", diff)
 	}
 }

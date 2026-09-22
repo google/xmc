@@ -34,8 +34,8 @@ func TestMatrix_SemVerCompatibility(t *testing.T) {
 			name:  "satisfies manifest-level SemVer constraint",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.2.0 <2.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.4.2\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.2.0 <2.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.4.2\" }\n",
 			},
 			wantValid: true,
 		},
@@ -44,7 +44,7 @@ func TestMatrix_SemVerCompatibility(t *testing.T) {
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -55,7 +55,7 @@ spec:
       version: "^2.0.0"
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -85,7 +85,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -93,7 +93,7 @@ spec:
   version: "0.2.0"
 `,
 				"cert-manager.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: cert-manager
@@ -122,7 +122,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -130,7 +130,7 @@ spec:
   version: "0.2.0"
 `,
 				"cert-manager.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: cert-manager
@@ -161,7 +161,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -192,7 +192,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -223,7 +223,7 @@ spec:
 			manifests: map[string]string{
 				// jobset version is 1.0.0, so rule for >=2.0.0 should NOT trigger
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -254,7 +254,7 @@ spec:
 			manifests: map[string]string{
 				// jobset has no version declared, so version-specific rule for >=2.0.0 should NOT trigger
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -282,7 +282,7 @@ spec: {}
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -312,7 +312,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -321,7 +321,7 @@ spec:
   version: "1.0.0"
 `,
 				"kueue.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: kueue
@@ -338,7 +338,7 @@ spec:
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
 				"comp.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp
@@ -353,8 +353,8 @@ spec:
 			name:  "invalid version constraint in dependency manifest",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">>bad\" }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.0.0\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">>bad\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.0.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
@@ -372,7 +372,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
@@ -395,8 +395,8 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
-				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.0.0\" }\n",
+				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.0.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
@@ -405,8 +405,8 @@ spec:
 			name:  "dependency component has empty version string",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: {}\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: {}\n",
 			},
 			wantValid: true,
 		},
@@ -428,8 +428,8 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
-				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: {}\n",
+				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: {}\n",
 			},
 			wantValid: true,
 		},
@@ -437,8 +437,8 @@ spec:
 			name:  "disabled requiring component in manifest dependencies is skipped",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: false, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.8.0\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: false, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.8.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -446,8 +446,8 @@ spec:
 			name:  "disabled target dependency component in manifest dependencies is skipped",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\", optional: true }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { enabled: false, version: \"1.8.0\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\", optional: true }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { enabled: false, version: \"1.8.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -455,8 +455,8 @@ spec:
 			name:  "invalid version on target dependency emits INVALID_VERSION and skips constraint evaluation",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"invalid-semver\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"invalid-semver\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION",
@@ -480,7 +480,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"invalid-semver\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"invalid-semver\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION",
@@ -503,8 +503,8 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
-				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"invalid-semver\" }\n",
+				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"invalid-semver\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION",
@@ -527,7 +527,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "REQUIRED_COMPONENT_MISSING",
@@ -551,8 +551,8 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml":       "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
-				"cert-manager.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.4.0\" }\n",
+				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { version: \"1.4.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "VERSION_INCOMPATIBILITY",
@@ -574,7 +574,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -600,7 +600,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -626,7 +626,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
@@ -646,7 +646,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { enabled: false, version: \"1.0.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { enabled: false, version: \"1.0.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -669,7 +669,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -695,7 +695,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -723,7 +723,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -750,7 +750,7 @@ spec:
 			},
 			manifests: map[string]string{
 				"jobset.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
@@ -776,7 +776,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -796,7 +796,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -816,7 +816,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -836,7 +836,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -857,7 +857,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -877,7 +877,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_VERSION_CONSTRAINT",
@@ -897,7 +897,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -918,7 +918,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -944,7 +944,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: false,
 			wantRule:  "INVALID_CRD_REQUIREMENT",
@@ -970,7 +970,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: components.xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},

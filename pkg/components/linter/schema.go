@@ -64,6 +64,8 @@ func (l *Linter) validateComponentManifest(c *ComponentManifest, rules *RulesCon
 	}
 	if c.Spec.DeletionPolicy != "" && !isValidDeletionPolicy(c.Spec.DeletionPolicy) {
 		res.AddError(c.FilePath, line, "INVALID_DELETION_POLICY", fmt.Sprintf("invalid spec.deletionPolicy %q", c.Spec.DeletionPolicy))
+	} else if isLegacyDeletionPolicy(c.Spec.DeletionPolicy) {
+		res.AddWarning(c.FilePath, line, "DEPRECATED_DELETION_POLICY", fmt.Sprintf("spec.deletionPolicy %q uses legacy format; prefer CRD values \"Delete\" or \"Orphan\"", c.Spec.DeletionPolicy))
 	}
 	if is3PWrapper(c.Spec.ComponentType) {
 		l.validate3PWrapper(c, line, res)
@@ -113,11 +115,19 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 	if strings.TrimSpace(w.TargetName) == "" {
 		res.AddError(c.FilePath, line, "INVALID_WRAPPER_REF", "spec.wrapperRef.targetName is required")
 	}
+	validateWrapperStatusPath(c.FilePath, line, "observedGenerationPath", w.ObservedGenerationPath, res)
+	validateWrapperStatusPath(c.FilePath, line, "readyConditionPath", w.ReadyConditionPath, res)
+}
+
+func validateWrapperStatusPath(filePath string, line int, fieldName, val string, res *ValidationResult) {
+	if val != "" && (!strings.HasPrefix(val, "$.status.") || len(val) <= len("$.status.")) {
+		res.AddError(filePath, line, "INVALID_WRAPPER_REF", fmt.Sprintf("spec.wrapperRef.%s must match pattern ^\\$\\.status\\..+", fieldName))
+	}
 }
 
 func is1PComponent(ct string) bool {
 	switch strings.TrimSpace(ct) {
-	case "CUSTOM_1P_COMPONENT", "UNSPECIFIED", "":
+	case "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "CUSTOM_1P_COMPONENT", "UNSPECIFIED", "":
 		return true
 	default:
 		return false
@@ -125,7 +135,7 @@ func is1PComponent(ct string) bool {
 }
 
 func is3PWrapper(ct string) bool {
-	return strings.TrimSpace(ct) == "CUSTOM_3P_WRAPPER"
+	return strings.TrimSpace(ct) == "CUSTOM_3P_WRAPPER" || strings.TrimSpace(ct) == "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"
 }
 
 func isValidComponentType(ct string) bool {
@@ -134,9 +144,14 @@ func isValidComponentType(ct string) bool {
 
 func isValidDeletionPolicy(dp string) bool {
 	switch strings.TrimSpace(dp) {
-	case "DELETE", "ORPHAN", "UNSPECIFIED", "":
+	case "Delete", "Orphan", "":
 		return true
 	default:
-		return false
+		return isLegacyDeletionPolicy(dp)
 	}
+}
+
+func isLegacyDeletionPolicy(dp string) bool {
+	t := strings.TrimSpace(dp)
+	return t == "DELETE" || t == "ORPHAN" || t == "DELETION_POLICY_DELETE" || t == "DELETION_POLICY_ORPHAN" || t == "UNSPECIFIED"
 }

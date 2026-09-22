@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	"xmanager_cloud/cmd/actuator/pausescheduling"
+	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
 
@@ -238,6 +240,43 @@ func TestInitJWKSTokenValidator(t *testing.T) {
 		validator := initJWKSTokenValidator(cfg)
 		if validator == nil {
 			t.Fatalf("initJWKSTokenValidator() returned nil, want non-nil validator")
+		}
+	})
+}
+
+func TestInitPauseListener(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("feature_flag_disabled", func(t *testing.T) {
+		cfg := &Config{
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: false,
+			},
+		}
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
+		if err != nil {
+			t.Errorf("initPauseListener() error = %v, want nil", err)
+		}
+		if listener != nil {
+			t.Errorf("initPauseListener() listener = %v, want nil", listener)
+		}
+	})
+
+	t.Run("missing_redis_addr", func(t *testing.T) {
+		cfg := &Config{
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+			RedisConfig: RedisConfig{
+				RedisAddr: "",
+			},
+		}
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
+		if err == nil {
+			t.Fatalf("initPauseListener() expected error for empty redis address, got nil (listener: %v)", listener)
+		}
+		if !strings.Contains(err.Error(), "redis address must be provided") {
+			t.Errorf("initPauseListener() error = %q, want 'redis address must be provided'", err.Error())
 		}
 	})
 }

@@ -15,9 +15,9 @@ package redisclient
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
-	"xmanager_cloud/logging/logging"
 )
 
 const (
@@ -43,7 +43,7 @@ func (p *PublisherClient) Close(ctx context.Context) error {
 }
 
 // AddMessage adds a message to the Redis stream.
-func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAttempts string) {
+func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAttempts string) error {
 	args := &redis.XAddArgs{
 		Stream: p.StreamName,
 		MaxLen: DefaultMaxLen,
@@ -53,8 +53,8 @@ func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAtt
 			"failedAttempts": failedAttempts,
 		},
 	}
-	err := p.XAdd(ctx, args).Err()
-	if err != nil {
-		logging.Error(ctx, "Failed to add message to stream", "stream", p.StreamName, "error", err)
+	if err := p.XAdd(ctx, args).Err(); err != nil {
+		return fmt.Errorf("failed to add message to stream %s: %w", p.StreamName, err)
 	}
+	return nil
 }

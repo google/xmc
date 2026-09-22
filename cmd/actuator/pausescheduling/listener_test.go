@@ -398,3 +398,47 @@ func TestListener_StartListening_GracefulShutdown(t *testing.T) {
 		t.Fatal("StartListening() did not return after context cancellation")
 	}
 }
+
+type mockCloserSubscriber struct {
+	mockStreamSubscriber
+	closeErr error
+	closed   bool
+}
+
+func (m *mockCloserSubscriber) Close() error {
+	m.closed = true
+	return m.closeErr
+}
+
+func TestListener_Close(t *testing.T) {
+	t.Run("non_closer_subscriber", func(t *testing.T) {
+		sub := newMockSubscriber()
+		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		if err := listener.Close(); err != nil {
+			t.Errorf("Close() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("closer_subscriber_success", func(t *testing.T) {
+		sub := &mockCloserSubscriber{}
+		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		if err := listener.Close(); err != nil {
+			t.Errorf("Close() error = %v, want nil", err)
+		}
+		if !sub.closed {
+			t.Errorf("subscriber Close() was not called")
+		}
+	})
+
+	t.Run("closer_subscriber_error", func(t *testing.T) {
+		wantErr := errors.New("close failure")
+		sub := &mockCloserSubscriber{closeErr: wantErr}
+		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		if err := listener.Close(); !errors.Is(err, wantErr) {
+			t.Errorf("Close() error = %v, want %v", err, wantErr)
+		}
+		if !sub.closed {
+			t.Errorf("subscriber Close() was not called")
+		}
+	})
+}
