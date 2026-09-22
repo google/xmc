@@ -78,7 +78,7 @@ upper: "MIXEDCASE"`,
 				t.Fatalf("failed to write template: %v", err)
 			}
 
-			got, err := linter.RenderChartTemplate(dir, tmplPath, []byte(tc.template))
+			got, err := linter.RenderChartTemplate(dir, tmplPath)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("RenderChartTemplate() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -104,7 +104,7 @@ func TestRedpandaBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 	}
 
 	tmplPath := filepath.Join(redpandaDir, "templates", "component.yaml")
-	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath, nil)
+	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath)
 	if err != nil {
 		t.Fatalf("RenderChartTemplate() failed: %v", err)
 	}
@@ -259,6 +259,8 @@ func resolveRepoPath(t *testing.T, relPath string) string {
 }
 
 func TestChartTemplateFuncsAndHelpers(t *testing.T) {
+	t.Parallel()
+
 	chartDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
 		t.Fatalf("failed to create templates dir: %v", err)
@@ -291,7 +293,7 @@ spec:
 		t.Fatalf("failed to write values-component.yaml: %v", err)
 	}
 
-	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath, []byte(tmplContent))
+	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath)
 	if err != nil {
 		t.Fatalf("RenderChartTemplate(%s) returned error: %v", chartDir, err)
 	}

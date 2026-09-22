@@ -65,7 +65,7 @@ func findChartRoot(filePath string) string {
 
 // RenderChartTemplate loads the Helm chart at chartRoot and renders templatePath
 // against Chart.yaml, default values.yaml, and helper partials using the Helm v3 engine.
-func RenderChartTemplate(chartRoot, templatePath string, _ []byte) ([]byte, error) {
+func RenderChartTemplate(chartRoot, templatePath string) ([]byte, error) {
 	ch, err := loader.LoadDir(chartRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
@@ -86,7 +86,7 @@ func RenderChartTemplate(chartRoot, templatePath string, _ []byte) ([]byte, erro
 	}
 	key, err := renderedTemplateKey(chartRoot, ch.Name(), templatePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to compute rendered template key for %s: %w", templatePath, err)
 	}
 	rendered, ok := renderedFiles[key]
 	if !ok {
