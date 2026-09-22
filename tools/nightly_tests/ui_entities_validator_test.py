@@ -62,7 +62,6 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             ui_base_url="https://xmc.example.com/",
             auth_token="tok",
             session_token="stok",
-            user_email="u@google.com",
             allow_insecure_tls=True,
             headless=True,
             screenshots_dir="/tmp/s",
@@ -73,7 +72,6 @@ class UIEntitiesValidatorTest(unittest.TestCase):
                 session.domain_host,
                 session.scheme,
                 session.port,
-                session.user_email,
                 session.allow_insecure_tls,
             ),
             (
@@ -81,21 +79,29 @@ class UIEntitiesValidatorTest(unittest.TestCase):
                 "xmc.example.com",
                 "https",
                 None,
-                "u@google.com",
                 True,
             ),
         )
         with mock.patch.dict("os.environ", {}, clear=True):
             s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
             self.assertEqual(
-                (s.user_email, s.screenshots_dir, s.allow_insecure_tls),
-                ("test@example.com", "/tmp/xmc_screenshots", False),
+                (s.screenshots_dir, s.allow_insecure_tls),
+                ("/tmp/xmc_screenshots", False),
             )
 
     def test_session_init_respects_runtime_env(self) -> None:
-        with mock.patch.dict("os.environ", {"XMC_USER_EMAIL": "runtime-bot@example.com"}):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "XMC_AUTH_TOKEN": "runtime-tok",
+                "XMC_SESSION_TOKEN": "runtime-session-tok",
+                "XMC_SCREENSHOTS_DIR": "/custom/screenshots",
+            },
+        ):
             s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
-            self.assertEqual(s.user_email, "runtime-bot@example.com")
+            self.assertEqual(s.auth_token, "runtime-tok")
+            self.assertEqual(s.session_token, "runtime-session-tok")
+            self.assertEqual(s.screenshots_dir, "/custom/screenshots")
 
     def test_ui_verification_error(self) -> None:
         self.assertIsInstance(ui_entities_validator.UIVerificationError("msg"), AssertionError)
