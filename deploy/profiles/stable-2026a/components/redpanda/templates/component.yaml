@@ -25,29 +25,30 @@ spec:
   enabled: {{ .Values.enabled }}
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: {{ .Values.componentClass | default "event-stream" | quote }}
+  version: {{ .Chart.Version | quote }}
   chartVersion: {{ .Values.chartVersion | default .Chart.Version | quote }}
   deletionProtection: {{ .Values.deletionProtection }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
-  {{- if .Values.wrapperRef }}
+  {{- $wrapper := .Values.wrapperRef | default dict }}
   wrapperRef:
-    group: {{ .Values.wrapperRef.group | default "redpanda.vectorized.io" | quote }}
-    version: {{ .Values.wrapperRef.version | default "v1alpha1" | quote }}
-    kind: {{ .Values.wrapperRef.kind | default "Cluster" | quote }}
-    name: {{ .Values.wrapperRef.name | default "redpanda" | quote }}
-    namespace: {{ .Values.wrapperRef.namespace | default .Values.namespace | default "xmc" | quote }}
-    observedGenerationPath: {{ .Values.wrapperRef.observedGenerationPath | default "$.status.observedGeneration" | quote }}
-    readyConditionPath: {{ .Values.wrapperRef.readyConditionPath | default "$.status.conditions[?(@.type=='Ready')].status" | quote }}
-    expectedReadyValue: {{ .Values.wrapperRef.expectedReadyValue | default "True" | quote }}
-    endpointJsonPath: {{ .Values.wrapperRef.endpointJsonPath | default "$.status.nodes.internal[0]" | quote }}
-    {{- if .Values.wrapperRef.connectionSecretJsonPath }}
-    connectionSecretJsonPath: {{ .Values.wrapperRef.connectionSecretJsonPath | quote }}
+    group: {{ $wrapper.group | default "redpanda.vectorized.io" | quote }}
+    version: {{ $wrapper.version | default "v1alpha1" | quote }}
+    kind: {{ $wrapper.kind | default "Cluster" | quote }}
+    name: {{ $wrapper.name | default "redpanda" | quote }}
+    namespace: {{ $wrapper.namespace | default .Values.namespace | default "xmc" | quote }}
+    observedGenerationPath: {{ $wrapper.observedGenerationPath | default "$.status.observedGeneration" | quote }}
+    readyConditionPath: {{ $wrapper.readyConditionPath | default "$.status.conditions[?(@.type=='Ready')].status" | quote }}
+    expectedReadyValue: {{ $wrapper.expectedReadyValue | default "True" | quote }}
+    endpointJsonPath: {{ $wrapper.endpointJsonPath | default "$.status.nodes.internal[0]" | quote }}
+    {{- if $wrapper.connectionSecretJsonPath }}
+    connectionSecretJsonPath: {{ $wrapper.connectionSecretJsonPath | quote }}
     {{- end }}
-  {{- end }}
+  {{- $params := .Values.parameters | default dict }}
   parameters:
-    brokerEndpoints: {{ .Values.parameters.brokerEndpoints | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" | quote }}
-    kafkaPort: {{ .Values.parameters.kafkaPort | default 9092 | toString | quote }}
-    defaultTopic: {{ .Values.parameters.defaultTopic | default "xmc-metrics" | quote }}
-    storageSize: {{ .Values.parameters.storageSize | default "10Gi" | quote }}
+    brokerEndpoints: {{ $params.brokerEndpoints | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" | quote }}
+    kafkaPort: {{ $params.kafkaPort | default 9092 | toString | quote }}
+    defaultTopic: {{ $params.defaultTopic | default "xmc-metrics" | quote }}
+    storageSize: {{ $params.storageSize | default "10Gi" | quote }}
   {{- if .Values.dependencies }}
   dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
   {{- end }}
