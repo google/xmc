@@ -179,6 +179,38 @@ def build_output_artifact(
     )
 
 
+def get_work_unit(stub: Any, work_unit_name: str) -> work_unit_pb2.WorkUnit:
+    """Fetches a WorkUnit by canonical resource name (`experiments/{xid}/workUnits/{wid}`)."""
+    request = ess_api_pb2.GetWorkUnitRequest(name=work_unit_name)
+    # ExperimentStateApi in xmanager_cloud exposes get_work_unit(request) directly
+    # as a public wrapper method around GetWorkUnit.
+    return stub.get_work_unit(request)
+
+
+def timestamp_key(ts: Any) -> tuple[int, int]:
+    """Returns a comparable `(seconds, nanos)` tuple for a protobuf Timestamp."""
+    return (int(getattr(ts, "seconds", 0)), int(getattr(ts, "nanos", 0)))
+
+
+def assert_artifact_parent_and_timestamp(
+    work_unit: work_unit_pb2.WorkUnit,
+    artifact: artifact_pb2.Artifact,
+) -> None:
+    """Asserts artifact parent linkage and `WorkUnit.create_time <= Artifact.create_time`."""
+    if artifact.parent != work_unit.name:
+        raise RuntimeError(
+            f"Artifact {artifact.name} parent mismatch: "
+            f"expected {work_unit.name!r}, got {artifact.parent!r}"
+        )
+    wu_ts = timestamp_key(work_unit.create_time)
+    art_ts = timestamp_key(artifact.create_time)
+    if wu_ts > art_ts:
+        raise RuntimeError(
+            f"Timestamp ordering violation for {artifact.name}: "
+            f"WorkUnit.create_time {wu_ts} > Artifact.create_time {art_ts}"
+        )
+
+
 def get_artifact(stub: Any, artifact_name: str) -> artifact_pb2.Artifact:
     """Fetches a single artifact by resource name (`artifacts/{aid}`)."""
     request = ess_api_pb2.GetArtifactRequest(name=artifact_name)
@@ -202,6 +234,7 @@ def verify_artifacts(
     created_artifacts: list[artifact_pb2.Artifact],
 ) -> None:
     """Reads back and verifies created artifacts via get_artifact and list_artifacts."""
+    work_unit = get_work_unit(stub, work_unit_name)
     for expected in created_artifacts:
         fetched = get_artifact(stub, expected.name)
         if fetched.name != expected.name:
@@ -213,10 +246,12 @@ def verify_artifacts(
                 f"get_artifact lifecycle_phase mismatch for {fetched.name}: "
                 f"expected {expected.lifecycle_phase}, got {fetched.lifecycle_phase}"
             )
+        assert_artifact_parent_and_timestamp(work_unit, fetched)
         payload_type = fetched.payload.WhichOneof("type")
         phase_name = artifact_pb2.Artifact.LifecyclePhase.Name(fetched.lifecycle_phase)
         print(
             f"  [✓] Verified via get_artifact: name={fetched.name}, "
+            f"parent={fetched.parent}, wu_create_time<=art_create_time, "
             f"phase={phase_name}, priority={fetched.priority}, "
             f"payload={payload_type}, notes={fetched.notes!r}"
         )
@@ -226,9 +261,10 @@ def verify_artifacts(
     for expected in created_artifacts:
         if expected.name not in listed_by_name:
             raise RuntimeError(f"Artifact {expected.name} missing from list_artifacts response")
+        assert_artifact_parent_and_timestamp(work_unit, listed_by_name[expected.name])
     print(
         f"  [✓] Verified via list_artifacts: found all {len(created_artifacts)} "
-        f"expected artifacts under {work_unit_name}"
+        f"expected artifacts under parent {work_unit_name} with valid timestamp ordering"
     )
 
 
