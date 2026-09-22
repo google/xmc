@@ -204,7 +204,10 @@ func applyProtoSpec(opts *HelmComponentOptions, spec *componentspb.ComponentSpec
 		return
 	}
 	opts.ImageTag = spec.GetVersion()
-	if cp := spec.GetParameters()["chartPath"]; cp != "" {
+	for k, v := range spec.GetParameters() {
+		opts.Parameters[k] = v
+	}
+	if cp := opts.Parameters["chartPath"]; cp != "" {
 		opts.ChartPath = cp
 	}
 	if lc := spec.GetLifecycleControl(); lc != nil && lc.GetDrainingTimeout() != nil {

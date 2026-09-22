@@ -355,7 +355,7 @@ func resolveOverrideChartPath(baseChartPath, overridePath string) (string, bool)
 		return "", false
 	}
 	if containsPathTraversal(overridePath) {
-		logging.Warn(context.Background(), "Rejecting component chartPath override containing path traversal segments", "overridePath", overridePath)
+		logging.Error(context.Background(), "Rejecting component chartPath override containing path traversal segments", "overridePath", overridePath)
 		return "", false
 	}
 	if baseChartPath == "" {
@@ -366,7 +366,7 @@ func resolveOverrideChartPath(baseChartPath, overridePath string) (string, bool)
 		candidate = filepath.Join(baseChartPath, overridePath)
 	}
 	if !isWithinBaseDir(baseChartPath, candidate) {
-		logging.Warn(context.Background(), "Rejecting component chartPath override outside baseChartPath", "overridePath", overridePath, "baseChartPath", baseChartPath)
+		logging.Error(context.Background(), "Rejecting component chartPath override outside baseChartPath", "overridePath", overridePath, "baseChartPath", baseChartPath)
 		return "", false
 	}
 	return candidate, true
