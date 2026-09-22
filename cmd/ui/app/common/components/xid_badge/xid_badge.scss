@@ -16,9 +16,11 @@
 :host {
   @include mat.chips-overrides(
     (
-      container-height: 20px,
+      container-height: 22px,
+      container-shape-radius: 4px,
       elevated-container-color: var(--xmc-xid-badge-container-color),
       label-text-color: var(--xmc-xid-badge-text-color),
+      label-text-weight: 500,
     )
   );
 }

@@ -51,7 +51,7 @@ $font-size-large: 18px;
 $font-size-xlarge: 24px;
 
 // Header height
-$xmc-header-height: 64px;
+$xmc-header-height: 48px;
 
 // Z-indices
 $z-index-header: 100;
@@ -62,10 +62,18 @@ $z-index-header: 100;
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  font-size: $font-size-medium;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f1f3f4;
 
   dt {
-    color: var(--mat-sys-on-surface-variant);
+    color: #5f6368;
+    font-weight: 500;
+  }
+
+  dd {
+    color: #202124;
+    margin: 0;
   }
 }
 
@@ -80,15 +88,17 @@ $z-index-header: 100;
 
 @mixin summary-secondary-title {
   display: flex;
-  justify-content: center;
-  font-size: $font-size-large;
-  font-weight: 500;
+  justify-content: flex-start;
+  font-size: 16px;
+  font-weight: 400;
+  color: #202124;
 }
 
 @mixin small-chip {
   @include mat.chips-overrides(
     (
       container-height: 24px,
+      container-shape-radius: 4px,
       label-text-size: 12px,
     )
   );
