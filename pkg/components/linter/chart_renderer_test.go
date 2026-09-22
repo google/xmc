@@ -200,16 +200,11 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 	if err != nil {
 		t.Fatalf("failed to read CRD %s: %v", crdPath, err)
 	}
-	var cleanedLines []string
-	for _, line := range strings.Split(string(rawCRD), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "{{") {
-			continue
-		}
-		cleanedLines = append(cleanedLines, line)
-	}
+	re := regexp.MustCompile(`(?s)\{\{.*?\}\}`)
+	cleaned := re.ReplaceAllString(string(rawCRD), "")
 
 	var crd crdSchemaDoc
-	if err := yaml.Unmarshal([]byte(strings.Join(cleanedLines, "\n")), &crd); err != nil {
+	if err := yaml.Unmarshal([]byte(cleaned), &crd); err != nil {
 		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
 	}
 

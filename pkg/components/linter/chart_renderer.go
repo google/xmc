@@ -19,10 +19,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
+)
+
+type cachedChart struct {
+	chartName     string
+	renderedFiles map[string]string
+}
+
+var (
+	renderCacheMu sync.RWMutex
+	renderCache   = make(map[string]*cachedChart)
 )
 
 // isChartOrRulesConfigFile returns true if the YAML file is a Helm chart metadata/values/helper file or a rules file.
@@ -63,12 +74,52 @@ func findChartRoot(filePath string) string {
 	return ""
 }
 
-// RenderChartTemplate loads the Helm chart at chartRoot and renders templatePath
+// RenderChartTemplate loads the Helm chart at chartRoot (using a thread-safe cache) and renders templatePath
 // against Chart.yaml, default values.yaml, and helper partials using the Helm v3 engine.
 func RenderChartTemplate(chartRoot, templatePath string) ([]byte, error) {
-	ch, err := loader.LoadDir(chartRoot)
+	absRoot, err := filepath.Abs(chartRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
+		return nil, fmt.Errorf("failed to get absolute path for chart root %s: %w", chartRoot, err)
+	}
+	cc, err := getOrRenderChart(absRoot, templatePath)
+	if err != nil {
+		return nil, err
+	}
+	key, err := renderedTemplateKey(absRoot, cc.chartName, templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute rendered template key for %s: %w", templatePath, err)
+	}
+	rendered, ok := cc.renderedFiles[key]
+	if !ok {
+		return nil, fmt.Errorf("rendered output for %s (key %q) not found in chart %s", templatePath, key, absRoot)
+	}
+	return []byte(rendered), nil
+}
+
+func getOrRenderChart(absRoot, templatePath string) (*cachedChart, error) {
+	renderCacheMu.RLock()
+	cc, ok := renderCache[absRoot]
+	renderCacheMu.RUnlock()
+	if ok {
+		return cc, nil
+	}
+	renderCacheMu.Lock()
+	defer renderCacheMu.Unlock()
+	if cc, ok = renderCache[absRoot]; ok {
+		return cc, nil
+	}
+	cc, err := loadAndRenderChart(absRoot, templatePath)
+	if err != nil {
+		return nil, err
+	}
+	renderCache[absRoot] = cc
+	return cc, nil
+}
+
+func loadAndRenderChart(absRoot, templatePath string) (*cachedChart, error) {
+	ch, err := loader.LoadDir(absRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", absRoot, err)
 	}
 	releaseOpts := chartutil.ReleaseOptions{
 		Name:      ch.Name(),
@@ -78,21 +129,13 @@ func RenderChartTemplate(chartRoot, templatePath string) ([]byte, error) {
 	}
 	renderValues, err := chartutil.ToRenderValues(ch, ch.Values, releaseOpts, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", chartRoot, err)
+		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", absRoot, err)
 	}
 	renderedFiles, err := engine.Render(ch, renderValues)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render Helm template %s: %w", templatePath, err)
 	}
-	key, err := renderedTemplateKey(chartRoot, ch.Name(), templatePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute rendered template key for %s: %w", templatePath, err)
-	}
-	rendered, ok := renderedFiles[key]
-	if !ok {
-		return nil, fmt.Errorf("rendered output for %s (key %q) not found in chart %s", templatePath, key, chartRoot)
-	}
-	return []byte(rendered), nil
+	return &cachedChart{chartName: ch.Name(), renderedFiles: renderedFiles}, nil
 }
 
 // renderedTemplateKey computes the "<chartName>/<relPath>" lookup key produced by Helm's engine.Render.
