@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type stubProducer struct{}
@@ -38,5 +40,79 @@ func TestStartHTTPServerWithProducer(t *testing.T) {
 
 	if srv == nil {
 		t.Fatalf("expected non-nil server from startHTTPServer")
+	}
+}
+
+type mockMainComponentGetter struct {
+	comp *unstructured.Unstructured
+	err  error
+}
+
+func (m *mockMainComponentGetter) GetComponent(_ context.Context, _, _ string) (*unstructured.Unstructured, error) {
+	return m.comp, m.err
+}
+
+func TestResolveComponentConfigIfEnabled(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Nil or disabled config is a safe no-op.
+	resolveComponentConfigIfEnabled(ctx, nil)
+	disabledCfg := &ingestiongateway.Config{
+		Port:             "8080",
+		MessageBus:       ingestiongateway.MessageBusRedpanda,
+		RedpandaBrokers:  []string{"static:9092"},
+		TopicName:        "static-topic",
+		MinPartitions:    1,
+		MinReplicas:      1,
+		EnableComponents: false,
+	}
+	resolveComponentConfigIfEnabled(ctx, disabledCfg)
+	if disabledCfg.TopicName != "static-topic" {
+		t.Fatalf("TopicName changed when EnableComponents=false: %q", disabledCfg.TopicName)
+	}
+
+	// 2. Enabled config resolves from ComponentGetter.
+	enabledCfg := &ingestiongateway.Config{
+		Port:                "8080",
+		MessageBus:          ingestiongateway.MessageBusRedpanda,
+		RedpandaBrokers:     []string{"static:9092"},
+		TopicName:           "static-topic",
+		MinPartitions:       1,
+		MinReplicas:         1,
+		EnableComponents:    true,
+		ComponentsNamespace: "xmc",
+	}
+	comp := &unstructured.Unstructured{
+		Object: map[string]any{
+			"spec": map[string]any{
+				"enabled": true,
+				"parameters": map[string]any{
+					"brokerEndpoints": "dynamic-broker:9092",
+					"defaultTopic":    "dynamic-topic",
+				},
+			},
+		},
+	}
+	resolveComponentConfigIfEnabled(ctx, enabledCfg, &mockMainComponentGetter{comp: comp})
+	if len(enabledCfg.RedpandaBrokers) != 1 || enabledCfg.RedpandaBrokers[0] != "dynamic-broker:9092" {
+		t.Errorf("RedpandaBrokers = %v, want [dynamic-broker:9092]", enabledCfg.RedpandaBrokers)
+	}
+	if enabledCfg.TopicName != "dynamic-topic" {
+		t.Errorf("TopicName = %q, want dynamic-topic", enabledCfg.TopicName)
+	}
+
+	// 3. Getter error logs warning and retains static config.
+	fallbackCfg := &ingestiongateway.Config{
+		Port:             "8080",
+		MessageBus:       ingestiongateway.MessageBusRedpanda,
+		RedpandaBrokers:  []string{"static:9092"},
+		TopicName:        "static-topic",
+		MinPartitions:    1,
+		MinReplicas:      1,
+		EnableComponents: true,
+	}
+	resolveComponentConfigIfEnabled(ctx, fallbackCfg, &mockMainComponentGetter{err: context.DeadlineExceeded})
+	if fallbackCfg.TopicName != "static-topic" {
+		t.Errorf("TopicName = %q, want static-topic on fallback", fallbackCfg.TopicName)
 	}
 }

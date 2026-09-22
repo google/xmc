@@ -46,6 +46,7 @@ func main() {
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
+	resolveComponentConfigIfEnabled(ctx, cfg)
 	logInitializing(ctx, cfg)
 
 	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
@@ -61,6 +62,28 @@ func main() {
 
 	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, gMetrics, producer)
 	awaitShutdown(ctx, server)
+}
+
+func resolveComponentConfigIfEnabled(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
+	if cfg == nil || !cfg.EnableComponents {
+		return
+	}
+	var getter ingestiongateway.ComponentGetter
+	if len(optionalGetter) > 0 && optionalGetter[0] != nil {
+		getter = optionalGetter[0]
+	} else {
+		var err error
+		getter, err = ingestiongateway.NewK8sComponentGetter()
+		if err != nil {
+			logging.Warn(ctx, "Failed to initialize Kubernetes client for component resolution; falling back to static flags",
+				"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)
+			return
+		}
+	}
+	if err := ingestiongateway.ResolveRedpandaComponentConfig(ctx, cfg, getter); err != nil {
+		logging.Warn(ctx, "Failed to resolve redpanda Component CR; falling back to static flags",
+			"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)
+	}
 }
 
 // logInitializing reports the startup configuration relevant to the selected message bus, omitting

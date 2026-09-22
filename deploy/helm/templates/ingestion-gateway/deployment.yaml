@@ -81,6 +81,8 @@ spec:
           name: http-port
         args:
         - "-port=8080"
+        - "-enable_components={{ .Values.componentsDeployment.enabled | default false }}"
+        - "-components_namespace={{ .Release.Namespace | default "xmc" }}"
         - "-redpanda_brokers={{ .Values.ingestionGatewayDeployment.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
         - "-topic_name={{ .Values.ingestionGatewayDeployment.topicName | default "xmc-metrics" }}"
         - "-min_partitions={{ .Values.ingestionGatewayDeployment.minPartitions | default 128 }}"
