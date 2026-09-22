@@ -75,16 +75,55 @@ When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-
 
 ---
 
-## 4. `wrapperRef` Configuration Examples
+## 4. Rendered Manifest & `wrapperRef` Configuration Examples
 
-### Default: Upstream Redpanda Operator (`Cluster.redpanda.vectorized.io`)
+### Example 1: Default Upstream Redpanda Operator (`Cluster.redpanda.vectorized.io`)
+
+Render the manifest with `enabled=true`:
 
 ```bash
 helm template redpanda deploy/profiles/stable-2026a/components/redpanda \
   --set enabled=true
 ```
 
-### Kubernetes `StatefulSet` Override (`StatefulSet.apps/v1`)
+Rendered valid `Component` manifest (`apiVersion: xmc.dev/v1alpha1`):
+
+```yaml
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: "redpanda"
+  namespace: "xmc"
+  labels:
+    xmc.dev/profile: "stable-2026a"
+    app.kubernetes.io/name: "redpanda"
+    app.kubernetes.io/managed-by: "Helm"
+spec:
+  enabled: true
+  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
+  componentClass: "event-stream"
+  version: "0.1.0"
+  chartVersion: "0.1.0"
+  deletionProtection: true
+  deletionPolicy: "Delete"
+  wrapperRef:
+    group: "redpanda.vectorized.io"
+    version: "v1alpha1"
+    kind: "Cluster"
+    name: "redpanda"
+    namespace: "xmc"
+    observedGenerationPath: "$.status.observedGeneration"
+    readyConditionPath: "$.status.conditions[?(@.type=='Ready')].status"
+    expectedReadyValue: "True"
+    endpointJsonPath: "$.status.nodes.internal[0]"
+  parameters:
+    brokerEndpoints: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+    kafkaPort: "9092"
+    defaultTopic: "xmc-metrics"
+    storageSize: "10Gi"
+```
+
+### Example 2: Kubernetes `StatefulSet` Override (`StatefulSet.apps/v1`)
 
 For environments where Redpanda is deployed as a standard Kubernetes `StatefulSet` (`apps/v1`, `metadata.name: redpanda`):
 
@@ -98,3 +137,17 @@ helm template redpanda deploy/profiles/stable-2026a/components/redpanda \
   --set-string wrapperRef.expectedReadyValue="1"
 ```
 
+Rendered `spec.wrapperRef` section:
+
+```yaml
+  wrapperRef:
+    group: "apps"
+    version: "v1"
+    kind: "StatefulSet"
+    name: "redpanda"
+    namespace: "xmc"
+    observedGenerationPath: "$.status.observedGeneration"
+    readyConditionPath: "$.status.readyReplicas"
+    expectedReadyValue: "1"
+    endpointJsonPath: "$.status.nodes.internal[0]"
+```
