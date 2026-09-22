@@ -16,13 +16,22 @@
 @use 'custom_colors' as *;
 
 html {
-  background-color: var(--mat-sys-surface, #f8f9fa);
-  color: var(--mat-sys-on-surface, #202124);
+  background-color: #ffffff;
+  color: #202124;
 }
 
 body {
-  font-family: 'Google Sans', sans-serif;
+  font-family: 'Roboto', 'Google Sans', sans-serif;
   margin: 0;
+  background-color: #ffffff;
+  color: #202124;
+}
+
+mat-card.mat-mdc-card {
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: none;
 }
 
 @keyframes shimmer-loading {

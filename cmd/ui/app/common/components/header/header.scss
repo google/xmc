@@ -14,23 +14,27 @@
 @use '@angular/material' as mat;
 @use 'consts' as *;
 
-$small-margin: 15px;
-$max-searchbar-width: 1200px;
-$side-sections-width: 256px;
+$small-margin: 12px;
+$max-searchbar-width: 640px;
+$side-sections-width: 220px;
 
 :host {
   @include mat.form-field-overrides(
     (
-      container-vertical-padding: 9px,
-      container-height: 18px,
+      container-vertical-padding: 6px,
+      container-height: 32px,
     )
   );
 }
 
 mat-toolbar {
-  border-bottom: 1px solid var(--mat-sys-outline);
+  height: 48px;
+  min-height: 48px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dadce0;
   justify-content: space-between;
   gap: $small-margin;
+  padding: 0 16px;
 }
 
 .side-sections {
@@ -40,7 +44,7 @@ mat-toolbar {
 .side-sections:link,
 .side-sections:visited {
   text-decoration: none;
-  color: var(--mat-sys-on-surface);
+  color: #3c4043;
 }
 
 .logo-container {
@@ -49,13 +53,15 @@ mat-toolbar {
 }
 
 .logo-image {
-  height: 40px;
-  width: 40px;
+  height: 28px;
+  width: 28px;
 }
 
 .app-name {
-  margin-left: $small-margin;
-  color: var(--mat-sys-on-surface);
+  margin-left: 10px;
+  font-size: 18px;
+  font-weight: 400;
+  color: #3c4043;
 }
 
 .search-textbox {
@@ -63,6 +69,8 @@ mat-toolbar {
   margin-right: auto;
   width: 100%;
   max-width: $max-searchbar-width;
+  background-color: #ffffff;
+  border-radius: 6px;
 }
 
 :host ::ng-deep .search-textbox .mat-mdc-form-field-subscript-wrapper {

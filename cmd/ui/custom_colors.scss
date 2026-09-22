@@ -18,7 +18,8 @@
 :root {
   --xmc-code-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
   --xmc-border-color: #dadce0;
-  --xmc-tag-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+  --xmc-tag-container-color: #385155;
+  --xmc-tag-text-color: #ffffff;
 
   // Custom colors for mat chip container and text.
   --xmc-chip-green-container-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
@@ -27,12 +28,12 @@
   --xmc-chip-yellow-container-color: rgb(254 249 195 / var(--tw-bg-opacity, 1));
   --xmc-chip-yellow-text-color: rgb(133 77 14 / var(--tw-text-opacity, 1));
 
-  --xmc-chip-grey-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
-  --xmc-chip-grey-text-color: rgb(60 64 67 / var(--tw-text-opacity, 1));
+  --xmc-chip-grey-container-color: #f1f3f4;
+  --xmc-chip-grey-text-color: #3c4043;
 
   // XID badge colors
-  --xmc-xid-badge-container-color: rgb(224 231 255 / var(--tw-bg-opacity, 1));
-  --xmc-xid-badge-text-color: rgb(67 56 202 / var(--tw-text-opacity, 1));
+  --xmc-xid-badge-container-color: #e8f0fe;
+  --xmc-xid-badge-text-color: #1a73e8;
 
   // WIP banner colors
   --xmc-wip-banner-bg: #fef7e0;

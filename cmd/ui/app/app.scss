@@ -17,7 +17,7 @@
 .page-container {
   margin: 0 auto;
   min-height: calc(100vh - $xmc-header-height);
-  background-color: var(--mat-sys-surface-container);
+  background-color: #ffffff;
 }
 
 .sidenav-container {
@@ -28,15 +28,37 @@
   @include mat.sidenav-overrides(
     (
       container-width: 200px,
-      container-divider-color: var(--mat-sys-outline),
+      container-background-color: #f8f9fa,
+      container-divider-color: #e8eaed,
       container-shape: 0,
     )
   );
 
+  a[mat-list-item] {
+    border-radius: 0 24px 24px 0;
+    margin-right: 8px;
+    color: #3c4043;
+    font-size: 13px;
+
+    &.active-link {
+      background-color: #e8f0fe;
+      color: #1a73e8;
+      font-weight: 500;
+
+      .menu-item-container,
+      mat-icon,
+      .google-symbols {
+        color: #1a73e8;
+      }
+    }
+  }
+
   .menu-item-container {
     display: flex;
     align-items: center;
-    gap: $xsmall-margin;
+    gap: 12px;
+    color: #3c4043;
+    font-size: 13px;
   }
 }
 

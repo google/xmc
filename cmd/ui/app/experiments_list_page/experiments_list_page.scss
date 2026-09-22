@@ -15,18 +15,23 @@
 
 :host {
   @include page-layout;
-  gap: 0;
-  padding: $page-padding;
+  gap: 16px;
+  padding: 24px 32px;
   margin: 0 auto;
-  max-width: $max-page-width;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: Roboto, sans-serif;
+  color: #202124;
 }
 
 .paginator {
-  margin-top: 16px;
+  margin-top: 8px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+  font-size: 12px;
+  color: #5f6368;
 }
 
 .paginator-controls {
@@ -36,6 +41,8 @@
 }
 
 h1 {
-  font-size: $font-size-large;
-  margin-top: 0;
+  font-size: 20px;
+  font-weight: 400;
+  color: #202124;
+  margin: 0;
 }
