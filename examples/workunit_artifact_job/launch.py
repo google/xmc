@@ -182,6 +182,8 @@ def build_output_artifact(
 def get_work_unit(stub: Any, work_unit_name: str) -> work_unit_pb2.WorkUnit:
     """Fetches a WorkUnit by canonical resource name (`experiments/{xid}/workUnits/{wid}`)."""
     request = ess_api_pb2.GetWorkUnitRequest(name=work_unit_name)
+    # ExperimentStateApi in xmanager_cloud exposes get_work_unit(request) directly
+    # as a public wrapper method around GetWorkUnit.
     return stub.get_work_unit(request)
 
 
