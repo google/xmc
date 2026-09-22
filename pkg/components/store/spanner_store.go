@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -69,6 +70,13 @@ ORDER BY cd.ComponentId, dep.Name ASC`
 	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
 FROM ExperimentComponentSnapshots
 WHERE ComponentId = @id AND LockedGeneration = @gen
+LIMIT 1`
+
+	selectSnapshotByNameAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime
+FROM ExperimentComponentSnapshots s
+JOIN Components c ON s.ComponentId = c.ComponentId
+WHERE c.Name = @name AND s.LockedGeneration = @gen
+ORDER BY c.CreateTime DESC, c.ComponentId DESC
 LIMIT 1`
 )
 
@@ -756,6 +764,9 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 
 	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 	if err != nil {
+		if errors.Is(err, ErrComponentNotFound) && generation > 0 {
+			return s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
+		}
 		return nil, nil, err
 	}
 
@@ -765,6 +776,16 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 	}
 
 	if targetGen > rec.Generation {
+		// If the active component is at a lower generation than requested (e.g. name was reused
+		// after soft-deleting an older incarnation that reached a higher generation), attempt
+		// resolving historically by name before returning NotFound.
+		snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen)
+		if err == nil {
+			return snapRec, coords, nil
+		}
+		if status.Code(err) != codes.NotFound {
+			return nil, nil, err
+		}
 		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
 	}
 
@@ -779,6 +800,82 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 	return s.resolveHistoricalSnapshot(ctx, txn, rec, targetGen, canonicalName)
 }
 
+// snapshotRowData holds the raw ExperimentComponentSnapshots column values read from a query row.
+type snapshotRowData struct {
+	componentID   int64
+	lockedGen     int64
+	configProto   []byte
+	accessPayload []byte
+}
+
+// querySnapshotRow executes stmt and returns the first matching ExperimentComponentSnapshots row.
+// It returns a NotFound status error when no snapshot exists for the requested generation.
+func querySnapshotRow(ctx context.Context, queryable spannerQueryable, stmt spanner.Statement, canonicalName string, targetGen int64) (*spanner.Row, error) {
+	iter := queryable.Query(ctx, stmt)
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if err != nil {
+		if errors.Is(err, iterator.Done) {
+			return nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
+		}
+		return nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
+	}
+	return row, nil
+}
+
+// scanSnapshotRow reads the ExperimentComponentSnapshots columns shared by all snapshot queries.
+func scanSnapshotRow(row *spanner.Row) (*snapshotRowData, error) {
+	var d snapshotRowData
+	if err := row.ColumnByName("ComponentId", &d.componentID); err != nil {
+		return nil, fmt.Errorf("failed to read ComponentId: %w", err)
+	}
+	if err := row.ColumnByName("LockedGeneration", &d.lockedGen); err != nil {
+		return nil, fmt.Errorf("failed to read LockedGeneration: %w", err)
+	}
+	if err := row.ColumnByName("ConfigProto", &d.configProto); err != nil {
+		return nil, fmt.Errorf("failed to read ConfigProto: %w", err)
+	}
+	if err := row.ColumnByName("AccessPayload", &d.accessPayload); err != nil {
+		return nil, fmt.Errorf("failed to read AccessPayload: %w", err)
+	}
+	return &d, nil
+}
+
+// snapshotRowToRecord hydrates a historical ComponentRecord and its coordinates from a scanned
+// snapshot row. Timestamps are supplied by the caller because snapshots do not store their own;
+// the record is built from scratch so no active component state leaks into the historical view.
+func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, updateTime time.Time) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	snapRec := &ComponentRecord{
+		ComponentID: d.componentID,
+		Name:        canonicalName,
+		Generation:  d.lockedGen,
+		CreateTime:  createTime,
+		UpdateTime:  updateTime,
+	}
+	if err := unmarshalConfigProto(d.configProto, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
+	}
+	if err := unmarshalAccessStatus(d.accessPayload, snapRec); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
+	}
+	if snapRec.Status != nil {
+		snapRec.State = snapRec.Status.State
+		obsGen := snapRec.Status.ObservedGeneration
+		snapRec.ObservedGeneration = &obsGen
+	}
+	snapRec.Dependencies = ExtractDependencies(snapRec.Spec, snapRec.Labels)
+	snapRec.Etag = generateEtag(snapRec)
+
+	var coords *componentspb.ResolvedComponentCoordinates
+	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
+		coords = cloneCoordinates(snapRec.Status.Coordinates)
+	}
+	return snapRec, coords, nil
+}
+
+// resolveHistoricalSnapshot resolves a snapshot of an active component by its ComponentId,
+// inheriting the timestamps of the owning active record.
 func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable spannerQueryable, rec *ComponentRecord, targetGen int64, canonicalName string) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	stmt := spanner.Statement{
 		SQL: selectSnapshotByComponentIDAndGenSQL,
@@ -787,52 +884,45 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 			"gen": targetGen,
 		},
 	}
-	iter := queryable.Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
+	row, err := querySnapshotRow(ctx, queryable, stmt, canonicalName, targetGen)
 	if err != nil {
-		if err == iterator.Done {
-			return nil, nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
-		}
-		return nil, nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
-	}
-
-	var (
-		compID        int64
-		lockedGen     int64
-		configProto   []byte
-		accessPayload []byte
-	)
-	if err := row.ColumnByName("ComponentId", &compID); err != nil {
 		return nil, nil, err
 	}
-	if err := row.ColumnByName("LockedGeneration", &lockedGen); err != nil {
+	d, err := scanSnapshotRow(row)
+	if err != nil {
 		return nil, nil, err
 	}
-	if err := row.ColumnByName("ConfigProto", &configProto); err != nil {
+	return snapshotRowToRecord(d, canonicalName, rec.CreateTime, rec.UpdateTime)
+}
+
+// resolveHistoricalSnapshotByName resolves a snapshot by component name, covering soft-deleted or
+// recreated incarnations whose active record is unavailable. Timestamps come from the joined
+// Components row of the incarnation that owns the snapshot.
+func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, queryable spannerQueryable, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	stmt := spanner.Statement{
+		SQL: selectSnapshotByNameAndGenSQL,
+		Params: map[string]any{
+			"name": canonicalName,
+			"gen":  targetGen,
+		},
+	}
+	row, err := querySnapshotRow(ctx, queryable, stmt, canonicalName, targetGen)
+	if err != nil {
 		return nil, nil, err
 	}
-	if err := row.ColumnByName("AccessPayload", &accessPayload); err != nil {
+	d, err := scanSnapshotRow(row)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	snapRec := cloneRecord(rec)
-	snapRec.Generation = lockedGen
-	snapRec.Status = nil
-	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
+	var createTime, updateTime time.Time
+	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read CreateTime: %w", err)
 	}
-	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
+	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read UpdateTime: %w", err)
 	}
-
-	var coords *componentspb.ResolvedComponentCoordinates
-	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-		coords = cloneCoordinates(snapRec.Status.Coordinates)
-	}
-
-	return snapRec, coords, nil
+	return snapshotRowToRecord(d, canonicalName, createTime, updateTime)
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
