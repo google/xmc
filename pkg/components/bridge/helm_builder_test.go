@@ -193,6 +193,21 @@ func TestParseHelmComponentOptions(t *testing.T) {
 	if emptyOpts.Ref.Name != "test" || !emptyOpts.Enabled {
 		t.Errorf("unexpected empty options: %+v", emptyOpts)
 	}
+
+	chartPathOpts := ParseHelmComponentOptions("ingestion-gateway", "xmc", map[string]any{
+		"parameters": map[string]any{
+			"chartPath": "/charts/components/ingestion-gateway",
+			"replicas":  2,
+		},
+	}, nil)
+	if chartPathOpts.ChartPath != "/charts/components/ingestion-gateway" {
+		t.Errorf("expected ChartPath '/charts/components/ingestion-gateway', got %q", chartPathOpts.ChartPath)
+	}
+	builtVals := BuildHelmValues(chartPathOpts)
+	depVals, _ := builtVals["ingestionGatewayDeployment"].(map[string]any)
+	if _, leaked := depVals["chartPath"]; leaked {
+		t.Errorf("expected chartPath to be excluded from Helm deployment values, got %+v", depVals)
+	}
 }
 
 func TestResolveImage(t *testing.T) {

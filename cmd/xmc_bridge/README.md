@@ -45,7 +45,7 @@ The `Component` Custom Resource Definition defines the declarative intent for pl
 | `deletionProtection` | `boolean` | `true` | Safeguards component inventory against accidental manifest deletion. |
 | `deletionPolicy` | `string` | `Delete` | Teardown behavior upon deletion: `Delete` (prunes child workloads) or `Orphan` (retains child workloads). |
 | `lifecycleControl` | `object` | `{}` | Lifecycle configuration such as `drainTimeoutSeconds` for graceful connection draining. |
-| `parameters` | `map[string]string` | `{}` | Key-value configuration parameters passed into workload manifests (e.g. `image`, `port`). |
+| `parameters` | `map[string]string` | `{}` | Key-value configuration parameters passed into workload manifests (e.g. `image`, `port`, `chartPath`). |
 | `wrapperRef` | `object` | `{}` | Target 3P CRD reference (`group`, `version`, `kind`, `name`, `namespace`) and custom JSONPath query paths. |
 
 ---
@@ -58,9 +58,12 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | :--- | :--- | :--- |
 | `--cms-address` / `CMS_ADDRESS` | `"localhost:50051"` | gRPC endpoint address of the Component Manager Service. |
 | `--namespace` / `NAMESPACE` | `"xmc"` | Target Kubernetes namespace to watch and reconcile Component custom resources. |
+| `--chart-path` / `HELM_CHART_PATH` | `""` | Base directory containing per-component Helm charts (`<base>/components/<name>`, `<base>/<name>`, `<base>/<name>.tgz`) or fallback umbrella chart path (defaults to embedded chart when empty). |
 | `--probe-interval` / `PROBE_INTERVAL` | `5s` | Duration interval between dynamic reconciliation sweeps across the namespace. |
 | `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout duration for individual component reconciliation passes. |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
+
+On startup, `xmc-bridge` invokes `HydrateFromCluster` before entering the reconciliation loop to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly.
 
 ---
 
@@ -72,7 +75,7 @@ The component bridge controller is feature-flagged under `componentsDeployment` 
 componentsDeployment:
   enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
-  chartPath: ""                                   # Optional Helm chart directory or tarball path
+  chartPath: ""                                   # Optional base Helm chart directory or fallback chart path
   probeInterval: "5s"                             # Namespace reconciliation sweep interval
   probeTimeout: "2s"                              # Timeout per component reconciliation pass
 

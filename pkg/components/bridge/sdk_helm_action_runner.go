@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -39,11 +40,13 @@ type HelmActionRunner interface {
 
 // SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
 type SDKHelmActionRunner struct {
-	restClientGetter genericclioptions.RESTClientGetter
-	helmDriver       string
-	chartPath        string
-	chartObj         *chart.Chart
-	mu               sync.RWMutex
+	restClientGetter  genericclioptions.RESTClientGetter
+	helmDriver        string
+	chartPath         string
+	chartPathResolver func(releaseName string) string
+	chartObj          *chart.Chart
+	chartCache        map[string]*chart.Chart
+	mu                sync.RWMutex
 }
 
 // SDKRunnerOption configures an SDKHelmActionRunner.
@@ -58,9 +61,14 @@ func WithDriver(driver string) SDKRunnerOption {
 	}
 }
 
-// WithRunnerChartPath sets the filesystem path to the Helm chart to load.
+// WithRunnerChartPath sets the base or explicit filesystem path to the Helm chart to load.
 func WithRunnerChartPath(path string) SDKRunnerOption {
 	return func(r *SDKHelmActionRunner) { r.chartPath = path }
+}
+
+// WithRunnerChartPathResolver sets a dynamic chart path resolver keyed by Helm release name.
+func WithRunnerChartPathResolver(resolver func(releaseName string) string) SDKRunnerOption {
+	return func(r *SDKHelmActionRunner) { r.chartPathResolver = resolver }
 }
 
 // WithRunnerChartObj provides a pre-loaded Chart object for upgrades.
@@ -73,6 +81,7 @@ func NewSDKHelmActionRunner(getter genericclioptions.RESTClientGetter, opts ...S
 	runner := &SDKHelmActionRunner{
 		restClientGetter: getter,
 		helmDriver:       "secrets",
+		chartCache:       make(map[string]*chart.Chart),
 	}
 	for _, opt := range opts {
 		opt(runner)
@@ -139,29 +148,57 @@ func (r *SDKHelmActionRunner) Uninstall(ctx context.Context, releaseName, namesp
 	return rel, nil
 }
 
+func (r *SDKHelmActionRunner) resolveTargetChartPath(releaseName string) string {
+	if r.chartPathResolver != nil {
+		if resolved := r.chartPathResolver(releaseName); resolved != "" {
+			return resolved
+		}
+	}
+	if r.chartPath == "" {
+		return ""
+	}
+	compName := strings.TrimPrefix(releaseName, "xmc-cmp-")
+	return ResolveComponentChartPath(r.chartPath, ComponentRef{Name: compName}, "")
+}
+
 func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.Chart) (*chart.Chart, error) {
 	if chartObj != nil {
 		return chartObj, nil
 	}
 	r.mu.RLock()
-	cached := r.chartObj
+	preloaded := r.chartObj
+	r.mu.RUnlock()
+	if preloaded != nil {
+		return preloaded, nil
+	}
+
+	targetPath := r.resolveTargetChartPath(releaseName)
+	if targetPath == "" {
+		return defaultComponentChart(releaseName), nil
+	}
+
+	r.mu.RLock()
+	cached := r.chartCache[targetPath]
 	r.mu.RUnlock()
 	if cached != nil {
 		return cached, nil
 	}
+
+	loaded, err := loader.Load(targetPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Helm chart from %q: %w", targetPath, err)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.chartObj == nil && r.chartPath != "" {
-		loaded, err := loader.Load(r.chartPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load Helm chart from %q: %w", r.chartPath, err)
-		}
-		r.chartObj = loaded
+	if r.chartCache == nil {
+		r.chartCache = make(map[string]*chart.Chart)
 	}
-	if r.chartObj != nil {
-		return r.chartObj, nil
+	if existing := r.chartCache[targetPath]; existing != nil {
+		return existing, nil
 	}
-	return defaultComponentChart(releaseName), nil
+	r.chartCache[targetPath] = loaded
+	return loaded, nil
 }
 
 func defaultComponentChart(name string) *chart.Chart {

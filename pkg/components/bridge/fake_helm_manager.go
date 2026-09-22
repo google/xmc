@@ -187,6 +187,36 @@ func (f *FakeHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	f.ActuatedGenerations[ref.String()] = generation
 }
 
+// HydrateComponentState synchronizes in-memory active and actuated generation state on cold start.
+func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
+	if f == nil || ref.Name == "" {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ActiveComponents == nil {
+		f.ActiveComponents = make(map[string]bool)
+	}
+	if f.ActuatedGenerations == nil {
+		f.ActuatedGenerations = make(map[string]int64)
+	}
+	key := ref.String()
+	activeInMemory, hasActive := f.ActiveComponents[key]
+	if !crReady {
+		if observedGeneration > 0 && f.ActuatedGenerations[key] == 0 {
+			f.ActiveComponents[key] = false
+		}
+		return nil
+	}
+	if observedGeneration == 0 || !hasActive || activeInMemory {
+		f.ActiveComponents[key] = true
+		if observedGeneration > 0 && f.ActuatedGenerations[key] == 0 {
+			f.ActuatedGenerations[key] = observedGeneration
+		}
+	}
+	return nil
+}
+
 // GetAppliedValues returns a thread-safe deep copy of the applied Helm values for a component.
 func (f *FakeHelmManager) GetAppliedValues(ref ComponentRef) map[string]any {
 	if f == nil || ref.Name == "" {

@@ -83,9 +83,9 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
 
 First-party (1P) components are managed natively through XMC Helm charts. Rather than constructing duplicate Kubernetes `Deployment` and `Service` manifests in Go code, the bridge translates Component CR specifications directly into structured Helm parameter values:
 
-- **`HelmComponentOptions`**: Encapsulates component parameters, image tags, replica counts, port bindings, and lifecycle controls.
+- **`HelmComponentOptions`**: Encapsulates component parameters, explicit chart path overrides (`ChartPath`), image tags, replica counts, port bindings, and lifecycle controls.
 - **`BuildHelmValues(opts HelmComponentOptions) map[string]any`**: Translates declarative component options into hierarchical Helm parameter maps (e.g., enabling `<component>Deployment.enabled: true`, setting custom images, and binding ports).
-- **`HelmManager` Interface**: Declarative contract for applying and removing synthesized 1P values:
+- **`HelmManager` Interface**: Declarative contract for applying, removing, and hydrating synthesized 1P values:
   - `Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error`
   - `Delete1PComponent(ctx context.Context, ref ComponentRef) error`
   - `Purge1PComponent(ctx context.Context, ref ComponentRef) error`
@@ -93,29 +93,42 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `IsComponentActive(ref ComponentRef) bool`
   - `IsComponentActuated(ref ComponentRef, generation int64) bool`
   - `RecordActuation(ref ComponentRef, generation int64)`
-- **`FakeHelmManager`**: In-memory test double supporting concurrent testing and error injection.
+  - `HydrateFromCluster(ctx context.Context) error`
+  - `HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error`
+- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection.
 
 ---
 
 ## Kubernetes Helm Manager (`helm_manager.go`)
 
-`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, executing independent per-component Helm releases, and tracking active 1P component states:
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states:
 
 - **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
+- **Dynamic Per-Component Chart Path Resolution (`ResolveComponentChartPath`)**:
+  - Supports custom `ChartPathResolver` injection via `WithChartPathResolver` as well as deterministic filesystem candidate discovery relative to a configured base chart path:
+    1. Explicit per-component override (`opts.ChartPath` from `spec.parameters["chartPath"]`, validated against path traversal and confined within `<baseChartPath>` when `<baseChartPath>` is configured).
+    2. Custom `ChartPathResolver` callback (if configured via `WithChartPathResolver`).
+    3. `<baseChartPath>/components/<componentName>` (when `Chart.yaml` is present).
+    4. `<baseChartPath>/<componentName>` (when `Chart.yaml` is present).
+    5. `<baseChartPath>/<componentName>.tgz` (packaged component chart archive).
+    6. Fallback to `<baseChartPath>` (or embedded default chart if empty).
+- **Cold-Start State Hydration (`HydrateFromCluster` & `HydrateComponentState`)**:
+  - `HydrateFromCluster(ctx)` inspects the `xmc-component-values` ConfigMap in the target namespace on controller startup and restores `activeState` for all previously enabled components.
+  - `HydrateComponentState(ctx, ref, observedGeneration, crReady)` lazily reconciles in-memory `activeState` and `actuatedGenerations` from the `xmc-component-values` ConfigMap and the `Component` CR's `.status` (`observedGeneration` and `Ready=True` condition). This prevents redundant Helm release revision increments on cold start and ensures post-restart deactivation (`spec.enabled: false`) properly triggers `Delete1PComponent`.
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
   - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
 - **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
 - **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
 - **Clean Lifecycle Operations**:
-  - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap, records component enablement, and triggers a release upgrade.
+  - `Ensure1PComponent`: Writes synthesized values JSON to the release ConfigMap, records per-component chart path overrides and enablement, and triggers a release upgrade.
   - `Delete1PComponent`: Disables the component in the ConfigMap (writing `enabled: false`) while retaining parameter configuration, clears active tracking state, and uninstalls/updates the release.
   - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and uninstalls the release.
   - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
   - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`), allowing in-process Helm release upgrades and uninstalls without CLI child processes.
-  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
+  - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Resolves per-component chart paths via `WithRunnerChartPathResolver` and caches loaded `*chart.Chart` instances by path (`chartCache`) to avoid repeated disk I/O. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
 - **Context-Aware Upgrade Lock**:
   - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.
 - **Asynchronous Upgrade Worker Queue & Per-Component Coalescing**:
