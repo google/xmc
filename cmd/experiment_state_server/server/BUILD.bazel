@@ -70,6 +70,8 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/spanner",
+        "//internal/storage/spanner/pausedtask",
+        "//internal/storage/spanner/pausestate",
         "//internal/task_queue:client",
         "//internal/toollibs/execution_environments",
         "//internal/validator",

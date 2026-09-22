@@ -23,14 +23,14 @@ import (
 )
 
 type mockWorker struct {
-	resumeFunc func(ctx context.Context, req Request) error
-	calls      []Request
+	startResumptionFunc func(ctx context.Context, req Request) error
+	calls               []Request
 }
 
-func (m *mockWorker) Resume(ctx context.Context, req Request) error {
+func (m *mockWorker) StartResumption(ctx context.Context, req Request) error {
 	m.calls = append(m.calls, req)
-	if m.resumeFunc != nil {
-		return m.resumeFunc(ctx, req)
+	if m.startResumptionFunc != nil {
+		return m.startResumptionFunc(ctx, req)
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func TestHandler_HandleTask(t *testing.T) {
 			},
 		}
 		if diff := cmp.Diff(wantCalls, worker.calls); diff != "" {
-			t.Errorf("worker.Resume calls mismatch (-want +got):\n%s", diff)
+			t.Errorf("worker.StartResumption calls mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -152,7 +152,7 @@ func TestHandler_HandleTask(t *testing.T) {
 		t.Parallel()
 		workerErr := errors.New("spanner transient error")
 		worker := &mockWorker{
-			resumeFunc: func(ctx context.Context, req Request) error {
+			startResumptionFunc: func(ctx context.Context, req Request) error {
 				return workerErr
 			},
 		}
