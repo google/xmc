@@ -21,7 +21,7 @@ html {
 }
 
 body {
-  font-family: 'Roboto', 'Google Sans', sans-serif;
+  font-family: 'Google Sans', Roboto, sans-serif;
   margin: 0;
   background-color: var(--mat-sys-surface, #ffffff);
   color: var(--mat-sys-on-surface, #202124);
@@ -30,7 +30,6 @@ body {
 mat-card.mat-mdc-card {
   border: 1px solid var(--xmc-border-color, #dadce0);
   border-radius: 8px;
-  background-color: var(--mat-sys-surface, #ffffff);
   box-shadow: none;
 }
 
