@@ -29,7 +29,7 @@ td.mat-mdc-cell {
   border-bottom: 1px solid #f1f3f4;
 }
 
-tr.mat-mdc-row:hover {
+tr.mat-mdc-row:not(.detail-row):hover {
   background-color: #f8f9fa;
 }
 
@@ -48,7 +48,8 @@ tr.mat-mdc-row:hover {
   text-decoration: underline;
   font-weight: 400;
 
-  &:hover {
+  &:hover,
+  &:focus-visible {
     color: #174ea6;
   }
 }
