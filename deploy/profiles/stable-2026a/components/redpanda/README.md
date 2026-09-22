@@ -6,14 +6,16 @@ This Helm sub-chart (`deploy/profiles/stable-2026a/components/redpanda/`) render
 
 ## 1. Fixed Blueprint Identity & Contract Fields
 
-The following fields are structural constants of the Redpanda blueprint in [`templates/component.yaml`](templates/component.yaml) and are **not** configurable via `values.yaml`:
+The following fields are structural constants of the Redpanda blueprint hardcoded in [`templates/component.yaml`](templates/component.yaml) and are **not** configurable by users via `values.yaml`:
 
 | Manifest Field | Fixed Value | Rationale |
 | :--- | :--- | :--- |
 | `metadata.name` | `"redpanda"` | Canonical catalog identifier referenced by dependent components (e.g., `dependencies: [redpanda]`). |
 | `metadata.labels["xmc.dev/profile"]` | `"stable-2026a"` | Binds this component definition to the `stable-2026a` release profile. |
 | `metadata.labels["app.kubernetes.io/name"]` | `"redpanda"` | Standard Kubernetes application label. |
-| `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Declares that Redpanda is managed via an external 3P Kubernetes Operator CR (`spec.wrapperRef`). |
+| `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Hardcoded as a 3P Wrapper Component (`Redpanda` is always a third-party operator/workload wrapper, never a 1P XMC component). |
+| `spec.componentClass` | `"event-stream"` | Canonical service class used by XMC workloads to discover the event-streaming broker. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 
 ---
 
@@ -25,8 +27,6 @@ The following fields are structural constants of the Redpanda blueprint in [`tem
 | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `false` | Enables or disables the Redpanda component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
 | `namespace` | `string` | `"xmc"` | Namespace where the `Component` CR is installed. |
-| `componentClass` | `string` | `"event-stream"` | Logical service class used by XMC workloads to discover the event-streaming broker. |
-| `chartVersion` | `string` | `.Chart.Version` (`"0.1.0"`) | Optional override for `spec.chartVersion`. Omitted from `values.yaml` by default so [`Chart.yaml`](Chart.yaml) (`version: 0.1.0`) serves as the single source of truth. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `list[string]` | `[]` | Optional list of prerequisite XMC Component names that must be healthy before Redpanda is reconciled. |
@@ -75,37 +75,50 @@ When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-
 
 ---
 
-## 4. Rendered Manifest & `wrapperRef` Configuration Examples
+## 4. Configuration & Rendered Manifest Examples
 
-### Minimum Valid 3P Wrapper `Component` Manifest (Required Fields Only)
+### Example 1: Minimum Valid User Configuration (`values.yaml` Without Optional Overrides)
 
-Per the `components.xmc.dev` CRD schema (`deploy/helm/templates/components/crd.yaml`) and `xmc-linter`, the smallest valid 3P Wrapper `Component` manifest without optional metadata, JSONPaths, or `parameters` requires only `metadata.name`, `spec.enabled`, `spec.componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, and the four required `spec.wrapperRef` coordinates (`group`, `version`, `kind`, `name`) — with Kubernetes CRD schema defaults automatically supplying `deletionProtection: true` and `deletionPolicy: Delete`:
+Because `metadata.name`, `spec.componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, `spec.componentClass: "event-stream"`, `spec.version`, and all default `wrapperRef` and `parameters` fields are pre-configured by the chart, the **minimum valid user `values.yaml` override** required to activate the Redpanda component is simply:
 
 ```yaml
-apiVersion: xmc.dev/v1alpha1
-kind: Component
-metadata:
-  name: "redpanda"
-spec:
-  enabled: true
-  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
-  wrapperRef:
-    group: "redpanda.vectorized.io"
-    version: "v1alpha1"
-    kind: "Cluster"
-    name: "redpanda"
+enabled: true
 ```
 
-### Example 1: Default Upstream Redpanda Operator (`Cluster.redpanda.vectorized.io`)
-
-Render the full blueprint manifest with `enabled=true`:
+Or via CLI:
 
 ```bash
 helm template redpanda deploy/profiles/stable-2026a/components/redpanda \
   --set enabled=true
 ```
 
-Rendered valid `Component` manifest (`apiVersion: xmc.dev/v1alpha1`):
+### Example 2: Custom User Configuration (`values.yaml` With Optional Overrides)
+
+To target a custom Redpanda instance or Kubernetes `StatefulSet` (`apps/v1`) and custom broker/topic settings:
+
+```yaml
+enabled: true
+namespace: xmc
+deletionProtection: true
+deletionPolicy: Delete
+wrapperRef:
+  group: "apps"
+  version: "v1"
+  kind: "StatefulSet"
+  name: "redpanda"
+  namespace: "xmc"
+  readyConditionPath: "$.status.readyReplicas"
+  expectedReadyValue: "1"
+parameters:
+  brokerEndpoints: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+  kafkaPort: 9092
+  defaultTopic: "xmc-metrics"
+  storageSize: "10Gi"
+```
+
+### Example 3: Rendered Kubernetes `Component` Manifest Output
+
+Running `helm template redpanda deploy/profiles/stable-2026a/components/redpanda --set enabled=true` produces the following `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`), with `spec.componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER` and `spec.componentClass: "event-stream"` automatically enforced by [`templates/component.yaml`](templates/component.yaml):
 
 ```yaml
 apiVersion: xmc.dev/v1alpha1
@@ -140,33 +153,4 @@ spec:
     kafkaPort: "9092"
     defaultTopic: "xmc-metrics"
     storageSize: "10Gi"
-```
-
-### Example 2: Kubernetes `StatefulSet` Override (`StatefulSet.apps/v1`)
-
-For environments where Redpanda is deployed as a standard Kubernetes `StatefulSet` (`apps/v1`, `metadata.name: redpanda`):
-
-```bash
-helm template redpanda deploy/profiles/stable-2026a/components/redpanda \
-  --set enabled=true \
-  --set wrapperRef.group=apps \
-  --set wrapperRef.version=v1 \
-  --set wrapperRef.kind=StatefulSet \
-  --set wrapperRef.readyConditionPath='$.status.readyReplicas' \
-  --set-string wrapperRef.expectedReadyValue="1"
-```
-
-Rendered `spec.wrapperRef` section:
-
-```yaml
-  wrapperRef:
-    group: "apps"
-    version: "v1"
-    kind: "StatefulSet"
-    name: "redpanda"
-    namespace: "xmc"
-    observedGenerationPath: "$.status.observedGeneration"
-    readyConditionPath: "$.status.readyReplicas"
-    expectedReadyValue: "1"
-    endpointJsonPath: "$.status.nodes.internal[0]"
 ```

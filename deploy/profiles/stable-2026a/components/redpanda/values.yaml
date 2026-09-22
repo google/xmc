@@ -19,9 +19,6 @@ enabled: false
 # Target Kubernetes namespace where the Component CR and Redpanda resources reside.
 namespace: xmc
 
-# Logical catalog classification used by workloads to discover the event-streaming broker.
-componentClass: "event-stream"
-
 # Admission guard preventing accidental deletion of the active Component CR when enabled.
 deletionProtection: true
 

@@ -24,9 +24,9 @@ metadata:
 spec:
   enabled: {{ default false .Values.enabled }}
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
-  componentClass: {{ .Values.componentClass | default "event-stream" | quote }}
-  version: {{ .Values.version | default .Chart.Version | default "0.1.0" | quote }}
-  chartVersion: {{ .Values.chartVersion | default .Chart.Version | quote }}
+  componentClass: "event-stream"
+  version: {{ .Chart.Version | default "0.1.0" | quote }}
+  chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- $wrapper := .Values.wrapperRef | default dict }}
