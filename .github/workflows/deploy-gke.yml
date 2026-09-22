@@ -61,11 +61,6 @@ on:
         type: boolean
         required: false
         default: false
-      enable_managed_mldiagnostics:
-        description: 'Enable Google Cloud Managed ML Diagnostics'
-        type: boolean
-        required: false
-        default: false
     secrets:
       GCP_PROJECT_ID:
         required: false
@@ -165,11 +160,6 @@ on:
         default: false
       enable_metrics:
         description: 'Enable Metrics system (ClickHouse & Redpanda) deployment'
-        type: boolean
-        required: false
-        default: false
-      enable_managed_mldiagnostics:
-        description: 'Enable Google Cloud Managed ML Diagnostics'
         type: boolean
         required: false
         default: false
@@ -296,7 +286,6 @@ jobs:
           DASHBOARD_SERVICE_ENABLED: '${{ inputs.dashboard_service_deployment_enabled }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
           ENABLE_METRICS: '${{ inputs.enable_metrics }}'
-          ENABLE_MANAGED_MLDIAGNOSTICS: '${{ inputs.enable_managed_mldiagnostics }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
           terraform_backend_defaults:
@@ -330,36 +319,7 @@ jobs:
             dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
             enable_metrics: ${ENABLE_METRICS}
-            enable_managed_mldiagnostics: ${ENABLE_MANAGED_MLDIAGNOSTICS}
-            managed_xprof_gcs_bucket: "gs://${PROJECT_ID}-mlruns"
           EOF_YAML
-
-      - name: 'Pre-Deploy Metrics Addons (If Cluster Exists)'
-        if: ${{ inputs.enable_metrics == true }}
-        run: |
-          cat << 'EOF_SCRIPT' > /tmp/deploy-metrics-addons.sh
-          #!/usr/bin/env bash
-          set -euo pipefail
-          kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace xmc --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap clickhouse-format-schemas \
-            --from-file=metrics.proto=api/protos/metrics/metrics.proto \
-            -n xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f deploy/addons/metrics/manifests/metrics-addons.yaml
-          kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
-          kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
-          kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
-          kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
-          kubectl label clusterrole xmc-ci-inspector app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null || true
-          kubectl annotate clusterrole xmc-ci-inspector "meta.helm.sh/release-name=xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" "meta.helm.sh/release-namespace=xmc" --overwrite 2>/dev/null || true
-          kubectl label clusterrolebinding xmc-ci-inspector-binding app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null || true
-          kubectl annotate clusterrolebinding xmc-ci-inspector-binding "meta.helm.sh/release-name=xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" "meta.helm.sh/release-namespace=xmc" --overwrite 2>/dev/null || true
-          EOF_SCRIPT
-          chmod +x /tmp/deploy-metrics-addons.sh
-          if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
-            gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
-            /tmp/deploy-metrics-addons.sh
-          fi
 
       - name: 'Execute GKE Deployment Pipeline'
         run: |
@@ -372,11 +332,18 @@ jobs:
         if: ${{ inputs.enable_metrics == true }}
         run: |
           gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
-          /tmp/deploy-metrics-addons.sh
-          kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=120s || (kubectl rollout restart deployment/ingestion-gateway-deployment -n xmc && kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=180s)
-          kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=120s || (kubectl rollout restart deployment/dashboard-service-deployment -n xmc && kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=180s)
-          docker build -t "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest" -f examples/clickhouse_metrics_job/Dockerfile .
-          docker push "${XMC_ACR_TARGET}/clickhouse-metrics-job:latest"
+          kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace xmc --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap clickhouse-format-schemas \
+            --from-file=metrics.proto=api/protos/metrics/metrics.proto \
+            -n xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f deploy/addons/metrics/manifests/metrics-addons.yaml
+          kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
+          kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
+          kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
+          kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
+          kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=120s || true
+          kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=120s || true
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}
