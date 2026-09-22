@@ -23,7 +23,7 @@ Contains all changes that directly impact end users, cluster users, or administr
 ---
 
 ### Section 2: Production-Ready Features Behind Feature Flags (Safe to Enable)
-Contains all features that are fully implemented, tested, and verified safe to enable, but whose default activation is temporarily postponed solely to align with managed solution milestones (e.g. `rod_deployment_enabled`, `health_service_deployment_enabled`).
+Contains all features that are fully implemented, tested, and verified safe to enable, but whose default activation is temporarily postponed solely to align with managed solution milestones.
 
 > [!IMPORTANT]
 > **Subsystem Grounding & Anti-Embellishment Invariant**:
@@ -31,20 +31,20 @@ Contains all features that are fully implemented, tested, and verified safe to e
 
 For each approved/production-ready feature:
 - **Subsystem Title**: Explicit contract-grounded name of the gated subsystem.
-- **Activation Flag & File**: Exact parameter name and configuration file (e.g. `rod_deployment_enabled: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `rodDeployment.enabled: true` in Helm `values.yaml`).
+- **Activation Flag & File**: Exact parameter name and configuration file as discovered from the repository (e.g. `<flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and corresponding Helm template values in `deploy/helm/`).
 - **Narrative Summary of Changes**: Synthesized description of ready endpoints, controllers, UI components, and capabilities added in this release with grouped PR links (`#123, #124`).
 
 ---
 
 ### Section 3: In-Development / Experimental Features Behind Flags
-Contains features under active ongoing development that are experimental, opt-in, and not yet guaranteed to be fully functional (e.g. `enable_components`, `dashboard_service_deployment_enabled`).
+Contains features under active ongoing development that are experimental, opt-in, and not yet guaranteed to be fully functional.
 
 > [!WARNING]
 > Always include a clear disclaimer callout under Section 3 noting that these gated features are in active development, experimental, and may not yet be functional. Subsystem titles must strictly follow the Subsystem Grounding & Anti-Embellishment Invariant.
 
 For each experimental gated feature:
 - **Subsystem Title**: Explicit contract-grounded name of the gated subsystem.
-- **Activation Flag & File**: Exact parameter name and configuration file (e.g. `enable_components: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `componentsDeployment.enabled: true` in Helm `values.yaml`).
+- **Activation Flag & File**: Exact parameter name and configuration file as discovered from the repository (e.g. `<flag_name>: true` in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and corresponding Helm template values in `deploy/helm/`).
 - **Narrative Summary of Changes**: Synthesized description of in-progress capabilities with grouped PR links.
 
 ---

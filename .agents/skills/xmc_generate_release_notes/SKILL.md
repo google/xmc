@@ -178,10 +178,12 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 
 1. **Wait for Explicit User Approval**:
    Confirm that the user has explicitly approved both the **version number** and the **release notes content**.
-2. **Publish Release (Post-Approval Only)**:
-   Execute the release publishing tool to create the annotated git tag, push to origin, and create the GitHub Release:
+2. **Publish Release as GitHub Draft (Post-Approval Only)**:
+   Execute the release publishing tool with `--draft` to create the annotated git tag, push to origin, and create a draft release visible on GitHub Releases:
    ```bash
-   python3 ./tools/release/publish_release.py --tag <version> --notes-file <path_to_markdown_file>
+   python3 ./tools/release/publish_release.py --tag <version> --notes-file <path_to_markdown_file> --draft
    ```
+   > [!NOTE]
+   > Publishing as a draft gives the team a collaborative proofreading window (e.g. 1–2 hours) on GitHub Releases to review the changelog and propose adjustments before manually publishing it to the public. Omit `--draft` only if the user explicitly instructs to publish publicly immediately.
 3. **Confirm Publication**:
    Provide the user with the generated GitHub Release URL and confirm that the git tag was successfully pushed.
