@@ -22,14 +22,14 @@ $max-page-width: 1500px;
   margin: 0 auto;
   box-sizing: border-box;
   font-family: Roboto, sans-serif;
-  color: #202124;
+  color: var(--mat-sys-on-surface, #202124);
   gap: 20px;
 }
 
 h1 {
   font-size: 20px;
   font-weight: 400;
-  color: #202124;
+  color: var(--mat-sys-on-surface, #202124);
   margin: 0;
 }
 
@@ -75,7 +75,7 @@ h1 {
   .experiment-summary-metadata {
     flex: 1 1 0;
     padding-right: 28px;
-    border-right: 1px solid #dadce0;
+    border-right: 1px solid var(--mat-sys-outline-variant, #dadce0);
     max-width: 480px;
   }
 
@@ -86,7 +86,7 @@ h1 {
       white-space: pre-wrap;
       overflow-wrap: break-word;
       font-size: 13px;
-      color: #3c4043;
+      color: var(--mat-sys-on-surface-variant, #3c4043);
       line-height: 1.5;
     }
   }
@@ -103,9 +103,9 @@ h1 {
 
 .url-button {
   margin-right: $small-margin;
-  border: 1px solid #dadce0;
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
   border-radius: 6px;
-  color: #1a73e8;
+  color: var(--mat-sys-primary, #1a73e8);
   font-size: 13px;
 }
 
@@ -113,7 +113,7 @@ mat-card-title {
   padding: 16px 20px 8px;
   font-size: 16px;
   font-weight: 400;
-  color: #202124;
+  color: var(--mat-sys-on-surface, #202124);
 }
 
 mat-card-content {
