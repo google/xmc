@@ -48,6 +48,7 @@ import { SidePanel } from './side_panel/side_panel';
 })
 export class App {
   readonly isSidenavOpened = signal(true);
+  readonly isExpanded = signal(false);
 
   private readonly authService = inject(AuthService);
   protected readonly user = toSignal(this.authService.getUser());
@@ -70,5 +71,9 @@ export class App {
 
   toggleSidenav() {
     this.isSidenavOpened.set(!this.isSidenavOpened());
+  }
+
+  toggleExpand() {
+    this.isExpanded.set(!this.isExpanded());
   }
 }

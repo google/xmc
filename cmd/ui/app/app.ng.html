@@ -25,33 +25,102 @@ limitations under the License.
   <xmc-side-panel>
     <xmc-header class="header" (menuToggle)="toggleSidenav()" />
 
-    <mat-sidenav-container class="sidenav-container">
-      <mat-sidenav class="sidenav" mode="side" [(opened)]="isSidenavOpened">
-        <mat-nav-list>
-          <a mat-list-item routerLink="/experiments" routerLinkActive="active-link">
+    <mat-sidenav-container
+      class="sidenav-container"
+      [class.nav-expanded]="isExpanded() && isSidenavOpened()"
+      [class.nav-closed]="!isSidenavOpened()"
+      autosize
+    >
+      <mat-sidenav
+        class="sidenav"
+        [class.expanded]="isExpanded()"
+        mode="side"
+        [(opened)]="isSidenavOpened"
+      >
+        <mat-nav-list class="icon-nav-list">
+          <a
+            mat-list-item
+            routerLink="/experiments"
+            title="Experiments"
+            routerLinkActive="active-link"
+          >
             <div class="menu-item-container">
-              <span class="google-symbols"> experiment </span> Experiments
+              <span class="google-symbols"> experiment </span>
+              @if (isExpanded()) {
+                <span class="nav-label">Experiments</span>
+              }
             </div>
           </a>
           @if (isPerformanceDashboardEnabled) {
-            <a mat-list-item routerLink="/dashboards" routerLinkActive="active-link">
-              <div class="menu-item-container"><mat-icon>insert_chart</mat-icon> Dashboards</div>
-            </a>
-          }
-          @if (isResourceDashboardEnabled) {
-            <a mat-list-item routerLink="/resources" routerLinkActive="active-link">
-              <div class="menu-item-container"><mat-icon>dashboard</mat-icon> Resources</div>
-            </a>
-          }
-          @if (isAdminPanelEnabled()) {
-            <a mat-list-item routerLink="/admin" routerLinkActive="active-link">
+            <a
+              mat-list-item
+              routerLink="/dashboards"
+              title="Dashboards"
+              routerLinkActive="active-link"
+            >
               <div class="menu-item-container">
-                <mat-icon>admin_panel_settings</mat-icon> Admin Panel
+                <mat-icon>insert_chart</mat-icon>
+                @if (isExpanded()) {
+                  <span class="nav-label">Dashboards</span>
+                }
               </div>
             </a>
           }
-          <a mat-list-item href="https://google.com" target="_blank" rel="noopener">
-            <div class="menu-item-container"><mat-icon>book_4</mat-icon> Documentation</div>
+          @if (isResourceDashboardEnabled) {
+            <a
+              mat-list-item
+              routerLink="/resources"
+              title="Resources"
+              routerLinkActive="active-link"
+            >
+              <div class="menu-item-container">
+                <mat-icon>dashboard</mat-icon>
+                @if (isExpanded()) {
+                  <span class="nav-label">Resources</span>
+                }
+              </div>
+            </a>
+          }
+          @if (isAdminPanelEnabled()) {
+            <a mat-list-item routerLink="/admin" title="Admin Panel" routerLinkActive="active-link">
+              <div class="menu-item-container">
+                <mat-icon>admin_panel_settings</mat-icon>
+                @if (isExpanded()) {
+                  <span class="nav-label">Admin Panel</span>
+                }
+              </div>
+            </a>
+          }
+          <a
+            mat-list-item
+            href="https://google.com"
+            target="_blank"
+            rel="noopener"
+            title="Documentation"
+          >
+            <div class="menu-item-container">
+              <mat-icon>book_4</mat-icon>
+              @if (isExpanded()) {
+                <span class="nav-label">Documentation</span>
+              }
+            </div>
+          </a>
+          <div class="nav-divider"></div>
+          <a
+            mat-list-item
+            class="nav-expand-btn"
+            href="#"
+            role="button"
+            (click)="toggleExpand(); $event.preventDefault()"
+            [attr.title]="isExpanded() ? 'Collapse' : 'Expand'"
+            [attr.aria-label]="isExpanded() ? 'Collapse navigation' : 'Expand navigation'"
+          >
+            <div class="menu-item-container expand-container">
+              <mat-icon>{{ isExpanded() ? 'chevron_left' : 'chevron_right' }}</mat-icon>
+              @if (isExpanded()) {
+                <span class="nav-label">Collapse</span>
+              }
+            </div>
           </a>
         </mat-nav-list>
       </mat-sidenav>
