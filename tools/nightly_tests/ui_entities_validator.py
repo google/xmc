@@ -17,7 +17,9 @@
 from __future__ import annotations
 
 import os
+import re
 import urllib.parse
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -318,3 +320,85 @@ class XMCUIBrowserSession:
             )
         print(f"  [✓] Verified Header Title DOM text: '{text}'")
         return text
+
+    def switch_tab(self, tab_name: str, timeout_ms: int = 15000) -> None:
+        """Clicks a navigation tab (e.g., 'Work Units', 'Status History').
+
+        Args:
+            tab_name: Visible label text of the Material tab to activate.
+            timeout_ms: Visibility wait timeout in milliseconds.
+        """
+        print(f"\n[UI Action] Traversing to tab: '{tab_name}'...")
+        tab_locator = self.page.locator(
+            f'mat-tab-header .mdc-tab:has-text("{tab_name}"), .mat-tab-label:has-text("{tab_name}")'
+        ).first
+        tab_locator.wait_for(state="visible", timeout=timeout_ms)
+        tab_locator.click()
+        self.settle_and_wait_fonts()
+        print(f"  [✓] Successfully activated tab: '{tab_name}'")
+
+    def assert_work_units_tab(
+        self,
+        min_units: int = 1,
+        expected_names: Sequence[str] | None = None,
+        timeout_ms: int = 15000,
+    ) -> list[str]:
+        """Asserts that the Work Units tab table is visible with active unit rows.
+
+        Args:
+            min_units: Minimum number of work unit table rows expected.
+            expected_names: Optional sequence of substrings or regex patterns to match against rows.
+            timeout_ms: Table selector wait timeout in milliseconds.
+
+        Returns:
+            List of stripped row text strings from the Work Units table.
+
+        Raises:
+            UIVerificationError: If fewer than `min_units` rows exist or a pattern fails to match.
+        """
+        self.switch_tab("Work Units", timeout_ms=timeout_ms)
+        self.page.wait_for_selector(
+            "xmc-work-units-table, table.mat-mdc-table, mat-table",
+            timeout=timeout_ms,
+        )
+        self.settle_and_wait_fonts()
+
+        # Locate work unit rows
+        rows_locator = self.page.locator(
+            "xmc-work-units-table table tr.mat-mdc-row:not(.detail-row), xmc-work-units-table tr.mat-row:not(.detail-row)"
+        )
+        extracted_texts = [(text or "").strip() for text in rows_locator.all_inner_texts()]
+        row_count = len(extracted_texts)
+
+        if row_count < min_units:
+            raise UIVerificationError(
+                f"Expected at least {min_units} work unit row(s), but found {row_count} in the table."
+            )
+
+        for idx, text in enumerate(extracted_texts, 1):
+            print(f"  [✓] Work Unit Row #{idx}: {text.replace(chr(10), ' ')}")
+
+        if expected_names:
+            print(
+                f"\n[UI Assertion] Validating {len(expected_names)} expected work unit name pattern(s)..."
+            )
+            for pattern in expected_names:
+                try:
+                    regex = re.compile(pattern)
+                except re.error:
+                    regex = None
+                matched = any(
+                    pattern in row_text
+                    or (regex is not None and regex.search(row_text) is not None)
+                    for row_text in extracted_texts
+                )
+                if not matched:
+                    raise UIVerificationError(
+                        f"Expected work unit name/pattern '{pattern}' did not match any of the {row_count} rendered work units: {extracted_texts}"
+                    )
+                print(f"  [✓] Verified expected work unit name pattern match: '{pattern}'")
+
+        print(
+            f"  [✓] Verified Work Units table rendering ({row_count} units found, min required: {min_units})"
+        )
+        return extracted_texts

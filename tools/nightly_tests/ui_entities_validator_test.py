@@ -442,6 +442,85 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             session.assert_experiment_header(expected_title_pattern="NonexistentPattern")
         self.assertIn("NonexistentPattern", str(ctx.exception))
 
+    def test_switch_tab_success(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+        mock_tab = mock.MagicMock()
+        mock_page.locator.return_value.first = mock_tab
+
+        session.switch_tab("Work Units", timeout_ms=5000)
+
+        mock_tab.wait_for.assert_called_once_with(state="visible", timeout=5000)
+        mock_tab.click.assert_called_once()
+
+    def test_assert_work_units_tab_success(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+
+        mock_page.locator.return_value.all_inner_texts.return_value = [
+            "1 COMPLETED demo-worker-1",
+            "2 COMPLETED demo-worker-2",
+            "3 COMPLETED demo-worker-3",
+        ]
+
+        res = session.assert_work_units_tab(
+            min_units=3,
+            expected_names=["demo-worker-1", r"demo-worker-\d", "3"],
+        )
+        self.assertEqual(len(res), 3)
+
+    def test_assert_work_units_tab_pattern_mismatch(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+
+        mock_page.locator.return_value.all_inner_texts.return_value = ["1 COMPLETED demo-worker-1"]
+
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
+            session.assert_work_units_tab(
+                min_units=1,
+                expected_names=["missing-worker-name-99"],
+            )
+        self.assertIn("missing-worker-name-99", str(ctx.exception))
+
+    def test_assert_work_units_tab_min_units_error(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+
+        mock_page.locator.return_value.all_inner_texts.return_value = ["1 COMPLETED"]
+
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
+            session.assert_work_units_tab(min_units=3)
+        self.assertIn("Expected at least 3 work unit row(s)", str(ctx.exception))
+
+    def test_assert_work_units_tab_invalid_regex_fallback_literal_match(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+
+        mock_page.locator.return_value.all_inner_texts.return_value = [
+            "1 COMPLETED demo-[worker-1",
+        ]
+
+        res = session.assert_work_units_tab(
+            min_units=1,
+            expected_names=["demo-[worker-1"],
+        )
+        self.assertEqual(len(res), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
