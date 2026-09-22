@@ -14,7 +14,7 @@
 @use '@angular/material' as mat;
 @use 'consts' as *;
 
-$small-margin: 12px;
+$header-gap: 12px;
 $max-searchbar-width: 640px;
 $side-sections-width: 220px;
 
@@ -30,10 +30,10 @@ $side-sections-width: 220px;
 mat-toolbar {
   height: 48px;
   min-height: 48px;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dadce0;
+  background-color: var(--mat-sys-surface, #f8f9fa);
+  border-bottom: 1px solid var(--mat-sys-outline, #dadce0);
   justify-content: space-between;
-  gap: $small-margin;
+  gap: $header-gap;
   padding: 0 16px;
 }
 
@@ -44,7 +44,7 @@ mat-toolbar {
 .side-sections:link,
 .side-sections:visited {
   text-decoration: none;
-  color: #3c4043;
+  color: var(--mat-sys-on-surface, #3c4043);
 }
 
 .logo-container {
@@ -61,7 +61,7 @@ mat-toolbar {
   margin-left: 10px;
   font-size: 18px;
   font-weight: 400;
-  color: #3c4043;
+  color: var(--mat-sys-on-surface, #3c4043);
 }
 
 .search-textbox {
@@ -69,7 +69,7 @@ mat-toolbar {
   margin-right: auto;
   width: 100%;
   max-width: $max-searchbar-width;
-  background-color: #ffffff;
+  background-color: var(--mat-sys-surface-container, #ffffff);
   border-radius: 6px;
 }
 
