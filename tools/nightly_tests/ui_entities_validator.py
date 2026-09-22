@@ -28,7 +28,6 @@ class UIVerificationError(AssertionError):
     """Raised when an assertion against the Web UI DOM or state fails."""
 
 
-DEFAULT_USER_EMAIL: str = "test@example.com"
 DEFAULT_SCREENSHOTS_DIR: str = "/tmp/xmc_screenshots"
 
 sync_playwright: Any = None
@@ -46,7 +45,6 @@ class XMCUIBrowserSession:
         ui_base_url: str,
         auth_token: str | None = None,
         session_token: str | None = None,
-        user_email: str | None = None,
         allow_insecure_tls: bool = False,
         headless: bool = True,
         screenshots_dir: str | None = None,
@@ -57,7 +55,6 @@ class XMCUIBrowserSession:
             ui_base_url: Base URL of the target XMC Web UI.
             auth_token: Optional Bearer or Cloud IAP OIDC token.
             session_token: Optional pre-authenticated session cookie value.
-            user_email: Optional user email identity.
             allow_insecure_tls: Whether to disable TLS validation (default False).
             headless: Whether to launch Chromium in headless mode.
             screenshots_dir: Directory path where diagnostic screenshots are saved.
@@ -65,7 +62,6 @@ class XMCUIBrowserSession:
         self.ui_base_url = ui_base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("XMC_AUTH_TOKEN")
         self.session_token = session_token or os.environ.get("XMC_SESSION_TOKEN")
-        self.user_email = user_email or os.environ.get("XMC_USER_EMAIL", DEFAULT_USER_EMAIL)
         self.allow_insecure_tls = allow_insecure_tls
         self.headless = headless
         self.screenshots_dir = screenshots_dir or os.environ.get(

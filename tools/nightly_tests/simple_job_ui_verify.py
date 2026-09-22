@@ -26,7 +26,6 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
 flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
-flags.DEFINE_string("user_email", None, "Optional user email identity override")
 flags.DEFINE_bool("headless", True, "Run browser in headless mode")
 flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
 
@@ -35,7 +34,6 @@ def verify_simple_job_ui(
     xid: str | int,
     ui_base_url: str,
     auth_token: str | None = None,
-    user_email: str | None = None,
     headless: bool = True,
     screenshots_dir: str | None = None,
 ) -> None:
@@ -45,14 +43,12 @@ def verify_simple_job_ui(
         xid: Experiment XID to verify.
         ui_base_url: Base URL of the XMC Web UI.
         auth_token: Optional Bearer or IAP OIDC token.
-        user_email: Optional user email identity.
         headless: Whether to run Chromium in headless mode.
         screenshots_dir: Directory where diagnostic screenshots are saved.
     """
     with ui_entities_validator.XMCUIBrowserSession(
         ui_base_url=ui_base_url,
         auth_token=auth_token,
-        user_email=user_email,
         headless=headless,
         screenshots_dir=screenshots_dir,
     ) as session:
@@ -78,7 +74,6 @@ def main(argv: Sequence[str]) -> None:
             xid=common.parse_xid(common.get_flag(FLAGS, "xid")),
             ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
             auth_token=common.get_flag(FLAGS, "auth_token"),
-            user_email=common.get_flag(FLAGS, "user_email"),
             headless=common.get_flag(FLAGS, "headless", True),
             screenshots_dir=common.get_flag(FLAGS, "screenshots_dir"),
         )
