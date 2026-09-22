@@ -77,9 +77,28 @@ When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-
 
 ## 4. Rendered Manifest & `wrapperRef` Configuration Examples
 
+### Minimum Valid 3P Wrapper `Component` Manifest (Required Fields Only)
+
+Per the `components.xmc.dev` CRD schema (`deploy/helm/templates/components/crd.yaml`) and `xmc-linter`, the smallest valid 3P Wrapper `Component` manifest without optional metadata, JSONPaths, or `parameters` requires only `metadata.name`, `spec.enabled`, `spec.componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, and the four required `spec.wrapperRef` coordinates (`group`, `version`, `kind`, `name`) — with Kubernetes CRD schema defaults automatically supplying `deletionProtection: true` and `deletionPolicy: Delete`:
+
+```yaml
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: "redpanda"
+spec:
+  enabled: true
+  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
+  wrapperRef:
+    group: "redpanda.vectorized.io"
+    version: "v1alpha1"
+    kind: "Cluster"
+    name: "redpanda"
+```
+
 ### Example 1: Default Upstream Redpanda Operator (`Cluster.redpanda.vectorized.io`)
 
-Render the manifest with `enabled=true`:
+Render the full blueprint manifest with `enabled=true`:
 
 ```bash
 helm template redpanda deploy/profiles/stable-2026a/components/redpanda \
