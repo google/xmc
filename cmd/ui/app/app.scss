@@ -17,7 +17,7 @@
 .page-container {
   margin: 0 auto;
   min-height: calc(100vh - $xmc-header-height);
-  background-color: #ffffff;
+  background-color: var(--mat-sys-surface, #ffffff);
 }
 
 .sidenav-container {
@@ -28,8 +28,8 @@
   @include mat.sidenav-overrides(
     (
       container-width: 200px,
-      container-background-color: #f8f9fa,
-      container-divider-color: #e8eaed,
+      container-background-color: var(--mat-sys-surface-container-low, #f8f9fa),
+      container-divider-color: var(--mat-sys-outline-variant, #e8eaed),
       container-shape: 0,
     )
   );
@@ -41,14 +41,14 @@
     font-size: 13px;
 
     &.active-link {
-      background-color: #e8f0fe;
-      color: #1a73e8;
+      background-color: var(--mat-sys-primary-container, #e8f0fe);
+      color: var(--mat-sys-on-primary-container, #1a73e8);
       font-weight: 500;
 
       .menu-item-container,
       mat-icon,
       .google-symbols {
-        color: #1a73e8;
+        color: var(--mat-sys-on-primary-container, #1a73e8);
       }
     }
   }
@@ -57,8 +57,6 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #3c4043;
-    font-size: 13px;
   }
 }
 
