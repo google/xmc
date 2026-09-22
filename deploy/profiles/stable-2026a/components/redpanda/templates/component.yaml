@@ -22,12 +22,12 @@ metadata:
     app.kubernetes.io/name: "redpanda"
     app.kubernetes.io/managed-by: {{ .Release.Service | default "Helm" | quote }}
 spec:
-  enabled: {{ .Values.enabled }}
+  enabled: {{ default false .Values.enabled }}
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: {{ .Values.componentClass | default "event-stream" | quote }}
-  version: {{ .Chart.Version | quote }}
+  version: {{ .Values.version | default .Chart.Version | default "0.1.0" | quote }}
   chartVersion: {{ .Values.chartVersion | default .Chart.Version | quote }}
-  deletionProtection: {{ .Values.deletionProtection }}
+  deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- $wrapper := .Values.wrapperRef | default dict }}
   wrapperRef:
