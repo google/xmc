@@ -26,6 +26,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
@@ -132,4 +133,13 @@ func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.
 		return err
 	}
 	return tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
+}
+
+// SaveExperimentStatus saves an experiment's status within an active read-write transaction in context.
+func (r *Repository) SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
+	tx, err := transaction.RequireReadWriteTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateExperimentStatus(ctx, tx, exp)
 }

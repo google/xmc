@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
@@ -31,6 +32,9 @@ import (
 // FetchWorkUnit retrieves a single WorkUnit from storage by its unique XID and WID.
 func (r *Repository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
+	if tx, ok := transaction.ReadWriteTransactionFromContext(ctx); ok {
+		return r.FetchWorkUnitTransaction(ctx, xid, wid, tx)
+	}
 	return r.FetchWorkUnitTransaction(ctx, xid, wid, r.client.Single())
 }
 

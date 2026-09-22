@@ -20,10 +20,13 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/storage/spanner/xid"
 )
@@ -34,15 +37,20 @@ type ArtifactRepository = artifact.Repository
 type XIDRepository = xid.Repository
 type StatusMessageRepository = statusmessage.Repository
 type OperationRepository = operation.Repository
+type StatusHistoryRepository = statushistory.Repository
+
+var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using Google Cloud Spanner.
 type Storage struct {
+	*transaction.TransactionRunner
 	*ExperimentRepository
 	*WorkUnitRepository
 	*ArtifactRepository
 	*XIDRepository
 	*StatusMessageRepository
 	*OperationRepository
+	*StatusHistoryRepository
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -59,6 +67,11 @@ type StorageConfig struct {
 func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
+	}
+
+	txRunner, err := transaction.NewTransactionRunner(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transaction runner: %w", err)
 	}
 
 	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{
@@ -93,12 +106,16 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 		return nil, fmt.Errorf("failed to create operation repository: %w", err)
 	}
 
+	statusHistoryRepo := statushistory.NewRepository(client)
+
 	return &Storage{
+		TransactionRunner:       txRunner,
 		ExperimentRepository:    expRepo,
 		WorkUnitRepository:      wuRepo,
 		ArtifactRepository:      artifactRepo,
 		XIDRepository:           xidRepo,
 		StatusMessageRepository: statusMsgRepo,
 		OperationRepository:     opRepo,
+		StatusHistoryRepository: statusHistoryRepo,
 	}, nil
 }

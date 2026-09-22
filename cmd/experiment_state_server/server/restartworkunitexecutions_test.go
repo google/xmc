@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package workunit_test
+package server
 
 import (
 	"context"
@@ -37,6 +37,12 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
+	handler := &WorkUnitHandler{
+		baseHandler: baseHandler{
+			storage: storageClient,
+		},
+	}
+
 	xid := int64(123)
 	wids := []int64{1, 2}
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
@@ -57,27 +63,27 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		t.Errorf("Initial experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
-	restartedWLEs, err := storageClient.RestartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	restartedWLEs, err := handler.restartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
 	if err != nil {
-		t.Fatalf("RestartWorkUnitExecutions failed: %v", err)
+		t.Fatalf("restartWorkUnitExecutions failed: %v", err)
 	}
 
 	if len(restartedWLEs) != 2 {
-		t.Errorf("RestartWorkUnitExecutions returned %d executions, want 2", len(restartedWLEs))
+		t.Errorf("restartWorkUnitExecutions returned %d executions, want 2", len(restartedWLEs))
 	}
 
 	for _, wid := range wids {
 		restartedWLE := restartedWLEs[wid]
 		if restartedWLE == nil {
-			t.Errorf("RestartWorkUnitExecutions returned nil execution for wid %d", wid)
+			t.Errorf("restartWorkUnitExecutions returned nil execution for wid %d", wid)
 			continue
 		}
 		expectedName := fmt.Sprintf("experiments/123/workUnits/%d/executions/2", wid)
 		if restartedWLE.GetName() != expectedName {
-			t.Errorf("RestartWorkUnitExecutions returned execution with name %q, want %q for wid %d", restartedWLE.GetName(), expectedName, wid)
+			t.Errorf("restartWorkUnitExecutions returned execution with name %q, want %q for wid %d", restartedWLE.GetName(), expectedName, wid)
 		}
 		if want := essmsgpb.WorkUnitStatus_RESTARTING; restartedWLE.GetStatus().GetState() != want {
-			t.Errorf("RestartWorkUnitExecutions returned execution with state %v, want %v for wid %d", restartedWLE.GetStatus().GetState(), want, wid)
+			t.Errorf("restartWorkUnitExecutions returned execution with state %v, want %v for wid %d", restartedWLE.GetStatus().GetState(), want, wid)
 		}
 
 		// Verify work unit has new execution as current.
@@ -136,12 +142,18 @@ func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
+	handler := &WorkUnitHandler{
+		baseHandler: baseHandler{
+			storage: storageClient,
+		},
+	}
+
 	xid := int64(456)
 	wids := []int64{1}
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
-	_, err = storageClient.RestartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	_, err = handler.restartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
 	if status.ExtractCanonicalCode(err) != status.Internal {
-		t.Errorf("RestartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
+		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
 	}
 }

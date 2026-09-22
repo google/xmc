@@ -20,8 +20,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
@@ -287,5 +289,59 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			}
 			compareQueueMetricRows(t, got, tt.want)
 		})
+	}
+}
+
+func TestRepository_SaveWorkUnitStatusHistory_RequiresTransaction(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	repo := NewRepository(essClient)
+
+	err := repo.SaveWorkUnitStatusHistory(ctx, 1, 1, nil, "", nil, nil, nil, time.Now())
+	if status.ExtractCanonicalCode(err) != status.FailedPrecondition {
+		t.Errorf("SaveWorkUnitStatusHistory outside tx returned %v, want FailedPrecondition", err)
+	}
+}
+
+func TestRepository_SaveWorkUnitStatusHistory_HappyPath(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	repo := NewRepository(essClient)
+	txRunner, err := transaction.NewTransactionRunner(essClient)
+	if err != nil {
+		t.Fatalf("NewTransactionRunner failed: %v", err)
+	}
+
+	xid := int64(42)
+	wid := int64(1)
+	eid := int64(2)
+	prevState := essmsgpb.WorkUnitStatus_STARTING
+	newState := essmsgpb.WorkUnitStatus_RUNNING
+	resources := map[string]int64{"cpu": 4}
+	now := time.Now()
+
+	err = txRunner.RunInTransaction(ctx, func(txCtx context.Context) error {
+		return repo.SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "test-queue", &prevState, &newState, resources, now)
+	})
+	if err != nil {
+		t.Fatalf("RunInTransaction failed: %v", err)
+	}
+
+	stmt := spanner.Statement{
+		SQL:    "SELECT COUNT(1) FROM WorkUnitStatusHistory WHERE Xid = @xid AND WorkUnitId = @wid",
+		Params: map[string]any{"xid": xid, "wid": wid},
+	}
+	iter := essClient.Single().Query(ctx, stmt)
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		t.Fatalf("query WorkUnitStatusHistory failed: %v", err)
+	}
+	var count int64
+	if err := row.Column(0, &count); err != nil {
+		t.Fatalf("parse count failed: %v", err)
+	}
+	if count == 0 {
+		t.Error("expected WorkUnitStatusHistory record, got 0")
 	}
 }

@@ -25,6 +25,8 @@ import (
 	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/kubernetes/common/constants"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
@@ -93,6 +95,8 @@ func generateHistoryID() int64 {
 	return mrand.Int63n(math.MaxInt64-1) + 1
 }
 
+var _ storage.StatusHistoryStore = (*Repository)(nil)
+
 // Repository handles Spanner operations for status history and velocity metrics.
 type Repository struct {
 	client *spanner.Client
@@ -101,6 +105,16 @@ type Repository struct {
 // NewRepository initializes a new statushistory Repository.
 func NewRepository(client *spanner.Client) *Repository {
 	return &Repository{client: client}
+}
+
+// SaveWorkUnitStatusHistory buffers a work unit status history mutation using the active read-write transaction in context.
+func (r *Repository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+	tx, err := transaction.RequireReadWriteTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, eid, queueName, prevState, newState, resources, timestamp, tx)
+	return nil
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues and returns raw rows.

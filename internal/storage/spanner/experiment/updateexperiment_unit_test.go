@@ -16,8 +16,10 @@ package experiment
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -66,5 +68,19 @@ func TestUpdateExperimentResources_NilTransaction(t *testing.T) {
 	err := r.UpdateExperimentResources(ctx, nil, exp)
 	if err == nil || err.Error() != "transaction must not be nil" {
 		t.Errorf("UpdateExperimentResources(nil tx) returned error: %v, want 'transaction must not be nil'", err)
+	}
+}
+
+func TestSaveExperimentStatus_RequiresTransaction(t *testing.T) {
+	ctx := context.Background()
+	r := &Repository{}
+
+	exp := &essmsgpb.Experiment{
+		Name: "experiments/1001",
+	}
+
+	err := r.SaveExperimentStatus(ctx, exp)
+	if !errors.Is(err, status.ErrFailedPrecondition) {
+		t.Errorf("SaveExperimentStatus outside tx returned error: %v, want FailedPrecondition", err)
 	}
 }

@@ -71,7 +71,7 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.
 	wids, multiErr := extractWorkUnitIDs(ctx, workUnits)
 
 	// 6. Restart all of the work unit executions in a single transaction.
-	restartedExecutions, err := h.storage.RestartWorkUnitExecutions(ctx, email, xid, wids)
+	restartedExecutions, err := h.restartWorkUnitExecutions(ctx, email, xid, wids)
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
 		multiErr = errors.Join(multiErr, fmt.Errorf("failed to restart work unit executions: %w (%v)", status.ErrInternal, err))

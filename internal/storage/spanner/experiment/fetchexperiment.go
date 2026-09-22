@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
@@ -31,6 +32,9 @@ import (
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID.
 func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
+	if tx, ok := transaction.ReadWriteTransactionFromContext(ctx); ok {
+		return r.FetchExperimentTransaction(ctx, xid, tx)
+	}
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 	exp, err := r.FetchExperimentTransaction(ctx, xid, txn)

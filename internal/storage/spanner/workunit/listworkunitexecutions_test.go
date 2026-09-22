@@ -60,10 +60,21 @@ func TestListWorkUnitExecutions(t *testing.T) {
 		t.Errorf("ListWorkUnitExecutions(%d, %d) returned diff (-want +got):\n%s", xid, wid, diff)
 	}
 
-	// Now restart work unit to create a second execution.
-	_, err = storage.RestartWorkUnitExecutions(ctx, "test-restarter", xid, []int64{wid})
+	// Now archive the first execution and create a second execution using a transaction.
+	err = storage.RunInTransaction(ctx, func(txCtx context.Context) error {
+		firstExec := createdWu.CurrentWorkUnitExecution
+		firstExec.State = essmsgpb.WorkUnitExecution_INACTIVE
+		if err := storage.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
+			return err
+		}
+		secondExec := &essmsgpb.WorkUnitExecution{
+			Name:  "experiments/123/workUnits/1/executions/2",
+			State: essmsgpb.WorkUnitExecution_ACTIVE,
+		}
+		return storage.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
+	})
 	if err != nil {
-		t.Fatalf("RestartWorkUnitExecutions failed: %v", err)
+		t.Fatalf("archiving and creating second execution failed: %v", err)
 	}
 
 	gotWues, err = storage.ListWorkUnitExecutions(ctx, xid, wid)

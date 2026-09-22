@@ -25,9 +25,20 @@ import (
 	"golang/protobuf/v2/proto/proto"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 )
+
+// SaveStatusMessageHistory buffers a status message history mutation in the active Spanner transaction.
+func (r *Repository) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	tx, err := transaction.RequireReadWriteTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	SaveStatusMessageHistoryIfChanged(ctx, xid, wid, eid, oldMsg, newMsg, tx)
+	return nil
+}
 
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation if the message changed.
 // TODO(b/517479143): Move status message change detection above the repository layer.
