@@ -287,6 +287,48 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "xmc-metrics-from-component",
 		},
+		{
+			name: "appends port to each broker in comma-separated status.access.envVars.ENDPOINT",
+			cfg: &Config{
+				Port:             "8080",
+				MessageBus:       MessageBusRedpanda,
+				RedpandaBrokers:  []string{"static-broker:9092"},
+				TopicName:        "static-topic",
+				MinPartitions:    1,
+				MinReplicas:      1,
+				EnableComponents: true,
+			},
+			getter: &fakeComponentGetter{comp: func() *unstructured.Unstructured {
+				u := baselineRedpandaComponent()
+				_ = unstructured.SetNestedField(
+					u.Object,
+					"redpanda-0.redpanda.xmc.svc.cluster.local, redpanda-1.redpanda.xmc.svc.cluster.local:9093",
+					"status", "access", "envVars", "ENDPOINT",
+				)
+				return u
+			}()},
+			wantBrokers: []string{
+				"redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+				"redpanda-1.redpanda.xmc.svc.cluster.local:9093",
+			},
+			wantTopic: "xmc-metrics-from-component",
+		},
+		{
+			name: "restores original brokers and topic when cfg.Validate fails",
+			cfg: &Config{
+				Port:             "invalid-port",
+				MessageBus:       MessageBusRedpanda,
+				RedpandaBrokers:  []string{"static-broker:9092"},
+				TopicName:        "static-topic",
+				MinPartitions:    1,
+				MinReplicas:      1,
+				EnableComponents: true,
+			},
+			getter:      &fakeComponentGetter{comp: baselineRedpandaComponent()},
+			wantBrokers: []string{"static-broker:9092"},
+			wantTopic:   "static-topic",
+			wantErr:     true,
+		},
 	}
 
 	for _, tc := range tests {

@@ -107,8 +107,15 @@ func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter Com
 		return nil
 	}
 
+	originalBrokers := cfg.RedpandaBrokers
+	originalTopic := cfg.TopicName
 	applyRedpandaComponentOverrides(ctx, cfg, ns, comp)
-	return cfg.Validate()
+	if err := cfg.Validate(); err != nil {
+		cfg.RedpandaBrokers = originalBrokers
+		cfg.TopicName = originalTopic
+		return err
+	}
+	return nil
 }
 
 func isRedpandaComponentDisabled(comp *unstructured.Unstructured) bool {
@@ -151,7 +158,11 @@ func resolveBrokersFromComponent(params, envVars map[string]string) ([]string, s
 		port = strings.TrimSpace(params["kafkaPort"])
 	}
 	if endpoint := strings.TrimSpace(envVars["ENDPOINT"]); endpoint != "" {
-		return parseBrokers(ensureEndpointPort(endpoint, port)), "status.access.envVars.ENDPOINT"
+		brokers := parseBrokers(endpoint)
+		for i, b := range brokers {
+			brokers[i] = ensureEndpointPort(b, port)
+		}
+		return brokers, "status.access.envVars.ENDPOINT"
 	}
 	if brokerEndpoints := strings.TrimSpace(params["brokerEndpoints"]); brokerEndpoints != "" {
 		return parseBrokers(brokerEndpoints), "spec.parameters.brokerEndpoints"
