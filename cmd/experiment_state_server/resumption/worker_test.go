@@ -59,6 +59,7 @@ type errPausedTaskRepo struct {
 	*pausedtask.Fake
 	markProcessedErr error
 	listPendingErr   error
+	onMarkProcessed  func()
 }
 
 func (r *errPausedTaskRepo) ListPending(ctx context.Context, limit int) ([]*pausedtask.PausedTask, error) {
@@ -72,7 +73,11 @@ func (r *errPausedTaskRepo) MarkProcessed(ctx context.Context, resolutions []pau
 	if r.markProcessedErr != nil {
 		return r.markProcessedErr
 	}
-	return r.Fake.MarkProcessed(ctx, resolutions)
+	err := r.Fake.MarkProcessed(ctx, resolutions)
+	if r.onMarkProcessed != nil {
+		r.onMarkProcessed()
+	}
+	return err
 }
 
 type errPauseStateRepo struct {
@@ -342,5 +347,71 @@ func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 	}
 	if len(pending) != 1 || pending[0].TaskID != "task-2" {
 		t.Fatalf("expected only task-2 to remain pending after task-1 succeeded, got %+v", pending)
+	}
+}
+
+func TestResumptionWorker_MidLoopTermination(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(state *pausestate.PauseSchedulingState)
+	}{
+		{
+			name: "halts after batch when scheduling is re-paused",
+			mutate: func(state *pausestate.PauseSchedulingState) {
+				state.SchedulingPaused = true
+			},
+		},
+		{
+			name: "halts after batch when resumption run ID changes",
+			mutate: func(state *pausestate.PauseSchedulingState) {
+				state.ResumptionRunID = "run-newer"
+			},
+		},
+		{
+			name: "halts after batch when another worker claims ResumptionWorkerID",
+			mutate: func(state *pausestate.PauseSchedulingState) {
+				state.ResumptionWorkerID = "worker-other"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pauseRepo := pausestate.NewFake()
+			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
+
+			baseTaskRepo := pausedtask.NewFake()
+			for i := 1; i <= 4; i++ {
+				_ = baseTaskRepo.Create(ctx, &pausedtask.PausedTask{
+					XID:    1,
+					WID:    int64(i),
+					TaskID: "task-" + string(rune('0'+i)),
+					Action: &actuatortaskpb.Action{},
+				})
+			}
+
+			taskRepo := &errPausedTaskRepo{
+				Fake: baseTaskRepo,
+				onMarkProcessed: func() {
+					state, _ := pauseRepo.Get(ctx)
+					tt.mutate(state)
+					_ = pauseRepo.Set(ctx, state)
+				},
+			}
+			publisher := &mockPublisher{}
+			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+
+			if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 2}); err != nil {
+				t.Fatalf("StartResumption() unexpected error: %v", err)
+			}
+
+			if len(publisher.calls) != 2 {
+				t.Errorf("expected 2 published tasks (1 batch) before halting, got %d", len(publisher.calls))
+			}
+			if pending, _ := baseTaskRepo.ListPending(ctx, 0); len(pending) != 2 {
+				t.Errorf("expected 2 remaining pending tasks, got %d", len(pending))
+			}
+		})
 	}
 }
