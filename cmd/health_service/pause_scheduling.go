@@ -185,7 +185,9 @@ func (p *pauseScheduler) publishResumeTrigger(ctx context.Context, resumptionRun
 	if err != nil {
 		return fmt.Errorf("failed to marshal scheduling resume trigger: %w", err)
 	}
-	p.taskQueuePublisher.AddMessage(ctx, string(payload), "0")
+	if err := p.taskQueuePublisher.AddMessage(ctx, string(payload), "0"); err != nil {
+		return fmt.Errorf("failed to publish scheduling resume trigger: %w", err)
+	}
 	return nil
 }
 

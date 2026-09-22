@@ -16,6 +16,7 @@ package resumption
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -139,6 +140,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 	resolutions := make([]pausedtask.TaskResolution, 0, len(batch))
 	now := time.Now().UTC()
 
+	var publishErr error
 	for _, task := range batch {
 		taskCtx := ctx
 		if task.TraceID != "" {
@@ -147,8 +149,8 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 		// TODO(pausescheduling): Fetch live WorkUnit from storage for filtering and payload reconstruction.
 		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
 		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, nil, task.Action, task.OperationName); err != nil {
-			// TODO(pausescheduling): Propagate Redis publish errors from task_queue.Client.
-			return fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
+			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
+			break
 		}
 
 		resolutions = append(resolutions, pausedtask.TaskResolution{
@@ -161,8 +163,10 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 		})
 	}
 
-	if err := w.pausedTaskRepo.MarkProcessed(ctx, resolutions); err != nil {
-		return fmt.Errorf("failed to mark paused tasks as processed: %w", err)
+	if len(resolutions) > 0 {
+		if err := w.pausedTaskRepo.MarkProcessed(ctx, resolutions); err != nil {
+			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
+		}
 	}
-	return nil
+	return publishErr
 }

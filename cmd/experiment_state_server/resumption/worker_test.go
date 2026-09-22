@@ -36,12 +36,13 @@ type enqueuedTaskCall struct {
 }
 
 type mockPublisher struct {
-	calls []enqueuedTaskCall
-	err   error
+	calls     []enqueuedTaskCall
+	err       error
+	failAfter int
 }
 
 func (m *mockPublisher) EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error {
-	if m.err != nil {
+	if m.err != nil && len(m.calls) >= m.failAfter {
 		return m.err
 	}
 	m.calls = append(m.calls, enqueuedTaskCall{
@@ -308,5 +309,38 @@ func TestResumptionWorker_Errors(t *testing.T) {
 				t.Fatalf("StartResumption() error = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
+
+	taskRepo := pausedtask.NewFake()
+	for i := 1; i <= 2; i++ {
+		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+			XID:    1,
+			WID:    int64(i),
+			TaskID: "task-" + string(rune('0'+i)),
+			Action: &actuatortaskpb.Action{},
+		})
+	}
+
+	publishErr := errors.New("redis publish failure")
+	publisher := &mockPublisher{err: publishErr, failAfter: 1}
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+
+	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10})
+	if !errors.Is(err, publishErr) {
+		t.Fatalf("StartResumption() error = %v, want %v", err, publishErr)
+	}
+
+	pending, err := taskRepo.ListPending(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListPending() error: %v", err)
+	}
+	if len(pending) != 1 || pending[0].TaskID != "task-2" {
+		t.Fatalf("expected only task-2 to remain pending after task-1 succeeded, got %+v", pending)
 	}
 }
