@@ -363,20 +363,19 @@ class XMCUIBrowserSession:
         )
         self.settle_and_wait_fonts()
 
-        row_locators = self.page.locator(
+        # Locate work unit rows
+        rows_locator = self.page.locator(
             "xmc-work-units-table table tr.mat-mdc-row:not(.detail-row), xmc-work-units-table tr.mat-row:not(.detail-row)"
-        ).all()
-        row_count = len(row_locators)
+        )
+        extracted_texts = [(text or "").strip() for text in rows_locator.all_inner_texts()]
+        row_count = len(extracted_texts)
 
         if row_count < min_units:
             raise UIVerificationError(
                 f"Expected at least {min_units} work unit row(s), but found {row_count} in the table."
             )
 
-        extracted_texts: list[str] = []
-        for idx, row in enumerate(row_locators, 1):
-            text = (row.inner_text() or "").strip()
-            extracted_texts.append(text)
+        for idx, text in enumerate(extracted_texts, 1):
             print(f"  [✓] Work Unit Row #{idx}: {text.replace(chr(10), ' ')}")
 
         if expected_names:
@@ -384,9 +383,14 @@ class XMCUIBrowserSession:
                 f"\n[UI Assertion] Validating {len(expected_names)} expected work unit name pattern(s)..."
             )
             for pattern in expected_names:
-                regex = re.compile(pattern)
+                try:
+                    regex = re.compile(pattern)
+                except re.error:
+                    regex = None
                 matched = any(
-                    regex.search(row_text) or pattern in row_text for row_text in extracted_texts
+                    pattern in row_text
+                    or (regex is not None and regex.search(row_text) is not None)
+                    for row_text in extracted_texts
                 )
                 if not matched:
                     raise UIVerificationError(

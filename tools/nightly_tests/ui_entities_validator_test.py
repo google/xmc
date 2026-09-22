@@ -463,16 +463,11 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page = mock.MagicMock()
         session._page = mock_page
 
-        row1 = mock.MagicMock()
-        row1.inner_text.return_value = "1 COMPLETED demo-worker-1"
-
-        row2 = mock.MagicMock()
-        row2.inner_text.return_value = "2 COMPLETED demo-worker-2"
-
-        row3 = mock.MagicMock()
-        row3.inner_text.return_value = "3 COMPLETED demo-worker-3"
-
-        mock_page.locator.return_value.all.return_value = [row1, row2, row3]
+        mock_page.locator.return_value.all_inner_texts.return_value = [
+            "1 COMPLETED demo-worker-1",
+            "2 COMPLETED demo-worker-2",
+            "3 COMPLETED demo-worker-3",
+        ]
 
         res = session.assert_work_units_tab(
             min_units=3,
@@ -487,10 +482,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page = mock.MagicMock()
         session._page = mock_page
 
-        row1 = mock.MagicMock()
-        row1.inner_text.return_value = "1 COMPLETED demo-worker-1"
-
-        mock_page.locator.return_value.all.return_value = [row1]
+        mock_page.locator.return_value.all_inner_texts.return_value = ["1 COMPLETED demo-worker-1"]
 
         with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
             session.assert_work_units_tab(
@@ -506,14 +498,28 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page = mock.MagicMock()
         session._page = mock_page
 
-        row1 = mock.MagicMock()
-        row1.inner_text.return_value = "1 COMPLETED"
-
-        mock_page.locator.return_value.all.return_value = [row1]
+        mock_page.locator.return_value.all_inner_texts.return_value = ["1 COMPLETED"]
 
         with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
             session.assert_work_units_tab(min_units=3)
         self.assertIn("Expected at least 3 work unit row(s)", str(ctx.exception))
+
+    def test_assert_work_units_tab_invalid_regex_fallback_literal_match(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession(
+            ui_base_url="https://xmc-nightly.example.com"
+        )
+        mock_page = mock.MagicMock()
+        session._page = mock_page
+
+        mock_page.locator.return_value.all_inner_texts.return_value = [
+            "1 COMPLETED demo-[worker-1",
+        ]
+
+        res = session.assert_work_units_tab(
+            min_units=1,
+            expected_names=["demo-[worker-1"],
+        )
+        self.assertEqual(len(res), 1)
 
 
 if __name__ == "__main__":
