@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "linter",
     srcs = [
+        "chart_renderer.go",
         "constraints.go",
         "dag.go",
         "diagnostic.go",
@@ -35,12 +36,16 @@ go_library(
         "//pkg/components/semver",
         "@com_github_masterminds_semver_v3//:semver",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@sh_helm_helm_v3//pkg/chart/loader",
+        "@sh_helm_helm_v3//pkg/chartutil",
+        "@sh_helm_helm_v3//pkg/engine",
     ],
 )
 
 go_test(
     name = "linter_test",
     srcs = [
+        "chart_renderer_test.go",
         "constraints_test.go",
         "dag_test.go",
         "diagnostic_test.go",

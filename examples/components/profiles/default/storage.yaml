@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: storage

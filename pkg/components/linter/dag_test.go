@@ -35,7 +35,7 @@ func TestDAG_AcyclicAndCompletenessChecks(t *testing.T) {
 			name: "valid multi-dependency acyclic DAG",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -45,7 +45,7 @@ spec:
     - comp-c
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -54,7 +54,7 @@ spec:
     - comp-d
 `,
 				"comp-c.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-c
@@ -63,7 +63,7 @@ spec:
     - comp-d
 `,
 				"comp-d.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-d
@@ -75,7 +75,7 @@ metadata:
 			name: "missing required dependency",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -91,7 +91,7 @@ spec:
 			name: "disabled component with missing dependency is allowed",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -107,7 +107,7 @@ spec:
 			name: "missing optional dependency is allowed",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -123,7 +123,7 @@ spec:
 			name: "enabled dependent depends on disabled optional dependency is allowed",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -134,7 +134,7 @@ spec:
       optional: true
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -148,7 +148,7 @@ spec:
 			name: "enabled dependent depends on disabled dependency",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -158,7 +158,7 @@ spec:
     - comp-b
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -173,7 +173,7 @@ spec:
 			name: "disabled dependent on disabled dependency is allowed",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -183,7 +183,7 @@ spec:
     - comp-b
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -197,7 +197,7 @@ spec:
 			name: "self cycle comp-a -> comp-a",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -214,7 +214,7 @@ spec:
 			name: "multi-node cycle comp-a -> comp-b -> comp-a",
 			manifests: map[string]string{
 				"comp-a.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-a
@@ -223,7 +223,7 @@ spec:
     - comp-b
 `,
 				"comp-b.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-b
@@ -240,7 +240,7 @@ spec:
 			name: "duplicate component definition in directory",
 			manifests: map[string]string{
 				"comp-1.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: duplicated-comp
@@ -248,7 +248,7 @@ spec:
   version: "1.0.0"
 `,
 				"comp-2.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: duplicated-comp
@@ -263,7 +263,7 @@ spec:
 			name: "duplicate component definition across distinct files",
 			manifests: map[string]string{
 				"comp-first.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset-operator
@@ -271,7 +271,7 @@ spec:
   version: "1.0.0"
 `,
 				"comp-second.yaml": `
-apiVersion: components.xmc.dev/v1alpha1
+apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset-operator
