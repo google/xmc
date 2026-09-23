@@ -145,10 +145,40 @@ python3 tools/benchmark/teardown_benchmark.py --manifest /tmp/benchmark_manifest
 ```
 
 ### Phase 5: Dual-Pillar Evaluation & Relevance Gate
-Pass the `transcript.jsonl` log file paths from both subagents to `tools/benchmark/compare_trajectories.py`:
+
+Write the pre-registered predicates from Phase 1b into an assertion spec — **before** the arms are
+launched, so the verdict cannot be fitted to the transcripts afterwards. Each scenario names its
+arm's worktree and the predicates that must hold within it:
+
+```json
+{
+  "origin":   {"workspace": "/path/to/candidate/arm", "assertions": [
+                 {"kind": "file_exists", "path": "examples/xdash_dashboard/create_dashboard_test.py"}]},
+  "transfer": {"workspace": "/path/to/transfer/arm", "assertions": [
+                 {"kind": "file_contains", "path": "pyproject.toml", "pattern": "^\\s*\"SLF001\""}]},
+  "negative": {"workspace": "/path/to/negative/arm", "assertions": [
+                 {"kind": "file_absent", "path": "examples/chart_artifact_job/training_metrics_test.py"}]}
+}
+```
+
+Predicate kinds are `file_exists`, `file_absent`, `file_contains`, and `file_omits`; the latter two
+take a `pattern` matched as a multiline regex. A scenario passes only when every one of its
+assertions passes, and `origin` is mandatory.
+
+Pass the `transcript.jsonl` log file paths from both origin arms to
+`tools/benchmark/compare_trajectories.py`, along with the spec:
 
 ```bash
-python3 tools/benchmark/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> --prompt "<test_prompt>" -o /tmp/trajectory_report.md
+python3 tools/benchmark/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> \
+  --prompt "<test_prompt>" --assertions /tmp/benchmark_assertions.json -o /tmp/trajectory_report.md
+```
+
+With `--assertions`, the verdict matrix is derived mechanically and written into the report; without
+it, the report carries a placeholder for the agent to fill in by judgement. The spec can also be
+evaluated on its own, for instance while iterating on a predicate:
+
+```bash
+python3 tools/benchmark/scenario_assertions.py /tmp/benchmark_assertions.json
 ```
 
 The main agent reviews the output and populates the scorecard using the **Prompt Relevance Gate**:

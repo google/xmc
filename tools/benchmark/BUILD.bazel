@@ -24,6 +24,7 @@ exports_files([
     "compare_trajectories.py",
     "extract_telemetry.py",
     "resolve_test_scope.py",
+    "scenario_assertions.py",
     "teardown_benchmark.py",
 ])
 
@@ -59,10 +60,40 @@ py_test(
 )
 
 py_library(
+    name = "scenario_assertions_lib",
+    srcs = ["scenario_assertions.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "scenario_assertions",
+    srcs = ["scenario_assertions.py"],
+    imports = ["../.."],
+    deps = [
+        ":scenario_assertions_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "scenario_assertions_test",
+    srcs = ["scenario_assertions_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":scenario_assertions_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "compare_trajectories_lib",
     srcs = ["compare_trajectories.py"],
     imports = ["../.."],
     deps = [
+        ":scenario_assertions_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -73,6 +104,7 @@ py_binary(
     imports = ["../.."],
     deps = [
         ":compare_trajectories_lib",
+        ":scenario_assertions_lib",
         "//tools/common:tool_utils",
     ],
 )

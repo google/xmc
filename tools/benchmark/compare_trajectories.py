@@ -25,6 +25,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools.benchmark.scenario_assertions import (  # noqa: E402
+    evaluate_spec,
+    load_spec,
+    render_report,
+)
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 
@@ -112,9 +117,16 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
 
 
 def generate_markdown_report(
-    baseline: dict[str, Any], candidate: dict[str, Any], prompt: str | None = None
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    prompt: str | None = None,
+    verdict_section: str | None = None,
 ) -> str:
-    """Generates a Markdown report comparing baseline vs candidate trajectories and outcomes."""
+    """Generates a Markdown report comparing baseline vs candidate trajectories and outcomes.
+
+    When `verdict_section` is supplied it replaces the agent-authored verdict placeholder with a
+    machine-derived one, produced by evaluating pre-registered scenario assertions.
+    """
     turn_diff = candidate["turns"] - baseline["turns"]
     error_diff = candidate["error_count"] - baseline["error_count"]
 
@@ -140,6 +152,14 @@ def generate_markdown_report(
         tool_rows.append(f"| `{tool}` | {b_cnt} | {c_cnt} | {c_cnt - b_cnt:+d} |")
 
     tool_table = "\n".join(tool_rows) if tool_rows else "| *No tools called* | - | - | - |"
+
+    verdict_block = verdict_section or (
+        "### 🏆 Final Benchmark Verdict\n"
+        "*[Main Agent Verdict: SHIP / SHIP WITH RESERVATIONS (NEEDS EFFICIENCY TUNING) / "
+        "UNDER-GENERALIZED / OVER-GENERALIZED / WRONG PREDICATE / REJECTED]*\n"
+        "*[No pre-registered assertions were supplied, so this verdict is a judgement call. "
+        "Prefer `--assertions` so the matrix is derived mechanically.]*\n"
+    )
 
     return f"""### 📊 Trajectory & Outcome Comparison Report
 
@@ -193,10 +213,7 @@ def generate_markdown_report(
 
 ---
 
-### 🏆 Final Benchmark Verdict
-*[Main Agent Verdict: PASSED / PASSED WITH RESERVATIONS (NEEDS EFFICIENCY TUNING) / REJECTED]*
-*[Rationale: Evaluate whether Candidate improved output quality without causing unnecessary turn/token bloat for the given prompt.]*
-"""
+{verdict_block}"""
 
 
 def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
@@ -204,7 +221,16 @@ def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
     baseline = parse_transcript(Path(args.baseline_transcript))
     candidate = parse_transcript(Path(args.candidate_transcript))
 
-    report = generate_markdown_report(baseline, candidate, prompt=args.prompt)
+    verdict_section = None
+    verdict = None
+    if args.assertions:
+        outcomes, derived = evaluate_spec(load_spec(Path(args.assertions)))
+        verdict_section = render_report(outcomes, derived)
+        verdict = str(derived)
+
+    report = generate_markdown_report(
+        baseline, candidate, prompt=args.prompt, verdict_section=verdict_section
+    )
 
     result = {
         "baseline": baseline,
@@ -213,6 +239,7 @@ def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
             "turn_diff": candidate["turns"] - baseline["turns"],
             "error_diff": candidate["error_count"] - baseline["error_count"],
         },
+        "verdict": verdict,
         "markdown_report": report,
     }
 
@@ -244,6 +271,13 @@ def main() -> None:
     parser.add_argument(
         "--prompt",
         help="Optional test prompt text executed by the subagents.",
+    )
+    parser.add_argument(
+        "--assertions",
+        help=(
+            "Optional path to a pre-registered scenario assertion spec. When supplied, the verdict "
+            "matrix is derived mechanically instead of being left to the reviewing agent."
+        ),
     )
     parser.add_argument(
         "-o",

@@ -111,6 +111,24 @@ class CompareTrajectoriesTest(unittest.TestCase):
         self.assertIn("Pillar 2: Outcome & Quality Evaluation", report)
         self.assertIn("Final Benchmark Verdict", report)
 
+    def test_supplied_verdict_section_replaces_the_placeholder(self):
+        baseline = {
+            "turns": 5,
+            "file_bytes": 10240,
+            "est_tokens": 2560,
+            "error_count": 1,
+            "total_steps": 10,
+            "tool_counts": {"run_command": 3},
+            "last_response_snippet": "Baseline done",
+        }
+        candidate = dict(baseline, last_response_snippet="Candidate done")
+
+        report = generate_markdown_report(
+            baseline, candidate, verdict_section="### Derived Verdict\n\n**SHIP**\n"
+        )
+        self.assertIn("**SHIP**", report)
+        self.assertNotIn("Final Benchmark Verdict", report)
+
 
 if __name__ == "__main__":
     unittest.main()
