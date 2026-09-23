@@ -44,5 +44,8 @@ go_test(
     name = "ingestion_gateway_test",
     srcs = ["main_test.go"],
     embed = [":ingestion_gateway_lib"],
-    deps = ["//cmd/ingestion_gateway/ingestiongateway"],
+    deps = [
+        "//cmd/ingestion_gateway/ingestiongateway",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+    ],
 )

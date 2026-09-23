@@ -15,6 +15,7 @@
 package ingestiongateway
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"os"
@@ -42,6 +43,8 @@ type Config struct {
 	TLSCaFile             string
 	TLSInsecureSkipVerify bool
 	ProjectID             string
+	EnableComponents      bool
+	ComponentsNamespace   string
 }
 
 // Flags holds the CLI flag value bindings for FlagSet registration.
@@ -63,6 +66,8 @@ type Flags struct {
 	TLSCaFile             string
 	TLSInsecureSkipVerify bool
 	ProjectID             string
+	EnableComponents      bool
+	ComponentsNamespace   string
 }
 
 // RegisterFlags registers the ingestion gateway CLI flags on the given FlagSet and returns a Flags struct binding.
@@ -88,6 +93,8 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
+	fs.BoolVar(&f.EnableComponents, "enable_components", false, "Whether to resolve Redpanda connection parameters from the redpanda Component CR.")
+	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
 	return f
 }
 
@@ -98,46 +105,24 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		f = *optionalFlags[0]
 	}
 
-	if f.Port == "" {
-		f.Port = "8080"
-	}
-	if f.RedpandaBrokers == "" {
-		f.RedpandaBrokers = "localhost:9092"
-	}
-	if f.TopicName == "" {
-		f.TopicName = "xmc-metrics"
-	}
-
 	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
 	// Passing "" as the default keeps the flag's own value distinguishable from its absence, so the
 	// precedence is flag, then environment, then the built-in default applied below. Passing
 	// MessageBusRedpanda here instead would make -message_bus=redpanda look unset and let
 	// MESSAGE_BUS=pubsub silently redirect an explicitly configured gateway.
-	effectiveMessageBus := getEnvOrDefault(f.MessageBus, "", "MESSAGE_BUS")
-	if strings.TrimSpace(effectiveMessageBus) == "" {
-		effectiveMessageBus = MessageBusRedpanda
-	}
+	effectiveMessageBus := cmp.Or(strings.TrimSpace(getEnvOrDefault(f.MessageBus, "", "MESSAGE_BUS")), MessageBusRedpanda)
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
-
-	minParts := f.MinPartitions
-	if minParts == 0 {
-		minParts = 128
-	}
-	minReps := f.MinReplicas
-	if minReps == 0 {
-		minReps = 3
-	}
-
-	brokers := parseBrokers(effectiveBrokersStr)
+	effectiveComponentsNS := getEnvOrDefault(f.ComponentsNamespace, "xmc", "COMPONENTS_NAMESPACE")
+	effectiveEnableComponents := resolveBoolFlagOrEnv(f.EnableComponents, "ENABLE_COMPONENTS")
 
 	cfg := &Config{
 		Port:                  strings.TrimSpace(effectivePort),
-		MessageBus:            strings.ToLower(strings.TrimSpace(effectiveMessageBus)),
-		RedpandaBrokers:       brokers,
+		MessageBus:            strings.ToLower(effectiveMessageBus),
+		RedpandaBrokers:       parseBrokers(effectiveBrokersStr),
 		TopicName:             strings.TrimSpace(effectiveTopicName),
-		MinPartitions:         minParts,
-		MinReplicas:           minReps,
+		MinPartitions:         cmp.Or(f.MinPartitions, 128),
+		MinReplicas:           cmp.Or(f.MinReplicas, 3),
 		SASLEnabled:           f.SASLEnabled,
 		SASLMechanism:         strings.ToUpper(strings.TrimSpace(f.SASLMechanism)),
 		SASLUser:              strings.TrimSpace(f.SASLUser),
@@ -149,6 +134,8 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		TLSCaFile:             strings.TrimSpace(f.TLSCaFile),
 		TLSInsecureSkipVerify: f.TLSInsecureSkipVerify,
 		ProjectID:             strings.TrimSpace(f.ProjectID),
+		EnableComponents:      effectiveEnableComponents,
+		ComponentsNamespace:   strings.TrimSpace(effectiveComponentsNS),
 	}
 
 	// SASL is a Kafka wire-protocol concept. Skip the secret file reads in Pub/Sub mode so that a
@@ -166,7 +153,15 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	return cfg, nil
 }
 
-// getEnvOrDefault returns flagVal if set (differs from default or non-empty), otherwise falls back to environment variables.
+func resolveBoolFlagOrEnv(flagVal bool, envKey string) bool {
+	if flagVal {
+		return true
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(envKey)))
+	return err == nil && b
+}
+
+// getEnvOrDefault returns flagVal if set (differs from default or non-empty), otherwise falls back to environment variables or defaultVal.
 func getEnvOrDefault(flagVal, defaultVal string, envKeys ...string) string {
 	if flagVal != defaultVal && strings.TrimSpace(flagVal) != "" {
 		return flagVal
@@ -176,7 +171,7 @@ func getEnvOrDefault(flagVal, defaultVal string, envKeys ...string) string {
 			return envVal
 		}
 	}
-	return flagVal
+	return defaultVal
 }
 
 func parseBrokers(brokersStr string) []string {

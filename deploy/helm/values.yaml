@@ -78,6 +78,10 @@ ingestionGatewayDeployment:
   hpa:
     minReplicas: 3
     maxReplicas: 10
+  # Static defaults used when componentsDeployment.enabled is false or the redpanda Component CR
+  # (xmc.dev/v1alpha1) is disabled/absent. When componentsDeployment.enabled is true and the
+  # redpanda Component CR is enabled, ingestion-gateway resolves broker addresses and defaultTopic
+  # dynamically from the Component CR.
   redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
   topicName: "xmc-metrics"
   minPartitions: 128

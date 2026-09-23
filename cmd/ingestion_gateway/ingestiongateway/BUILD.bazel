@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:private"])
 compat_go_library(
     name = "ingestiongateway",
     srcs = [
+        "component_resolver.go",
         "config.go",
         "handler.go",
         "kafka_producer.go",
@@ -49,6 +50,12 @@ compat_go_library(
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_google_cloud_go_pubsub//:pubsub",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_client_go//dynamic",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/clientcmd",
         "@org_golang_google_api//option",
         "@org_golang_google_api//support/bundler",
         "@org_golang_google_grpc//codes:go_default_library",
@@ -61,6 +68,7 @@ compat_go_library(
 compat_go_test(
     name = "ingestiongateway_test",
     srcs = [
+        "component_resolver_test.go",
         "config_test.go",
         "handler_test.go",
         "kafka_producer_test.go",
@@ -88,6 +96,9 @@ compat_go_test(
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_pubsub//apiv1/pubsubpb",
         "@com_google_cloud_go_pubsub//pstest",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//dynamic/fake",
         "@org_golang_google_api//option",
         "@org_golang_google_api//support/bundler",
         "@org_golang_google_grpc//:go_default_library",
