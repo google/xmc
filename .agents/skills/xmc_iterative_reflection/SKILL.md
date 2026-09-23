@@ -84,12 +84,13 @@ Before adding any item to the proposed enhancements list, pass it through these 
 ## 4. Root-Cause Routing
 
 Each finding that survives the pragmatism filter MUST be assigned a destination before any fix is
-drafted. Apply the control ladder defined in
+drafted. First trace the causal chain across **both** definition and consumption sites, then apply
+the control ladder defined in
 [Rule Authoring Standards](../../rules/rule_authoring_standards.md#1-root-cause-routing-the-control-ladder):
 
 | Rung | Control | Destination |
 | :--- | :--- | :--- |
-| 1 | Eliminate | Product code or API fix (separate PR) |
+| 1 | Eliminate | Shared API, SDK, or type-definition fix for all callers (separate PR) |
 | 2 | Automate | Lint rule or CI gate |
 | 3 | Tool | Helper script in `tools/` |
 | 4 | Route | [`AGENTS.md`](../../AGENTS.md) routing matrices or rule relocation |
@@ -100,11 +101,17 @@ drafted. Apply the control ladder defined in
 > [!IMPORTANT]
 > Apply the [Lint-First Test](../../rules/rule_authoring_standards.md#3-rung-2-the-lint-first-test):
 > if the finding is a mechanically checkable invariant, it MUST become a lint rule rather than prose.
-> Selecting rung 5 requires recording why rungs 1–4 do not apply.
+> Fixing one call site in the active PR is ordinary review work, not rung 1 — it does not excuse
+> skipping the rung-2 gate that stops the next caller from repeating the pattern. Selecting rung 5
+> requires recording why rungs 1–4 do not apply.
 
-Findings originating from an automated review bot must first be checked for
-[false positives](../../rules/rule_authoring_standards.md#non-ladder-branch-external-tooling-false-positives);
-a bot's misunderstanding is never grounds for a rule.
+Findings originating from an automated review bot must pass the two-step
+[false-positive check](../../rules/rule_authoring_standards.md#non-ladder-branch-external-tooling-false-positives):
+confirm the claim is false, **and** trace why the tool was misled. If a shared surface or missing
+typecheck/lint gate under our control made the code ambiguous to static analysis, that ambiguity is a
+rung 1 or rung 2 finding in its own right; only when the chain terminates outside our control does it
+discard, and a bot's misunderstanding is never grounds for a prose rule or an inline comment addressed
+to the bot.
 
 ---
 

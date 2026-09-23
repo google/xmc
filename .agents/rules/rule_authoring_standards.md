@@ -14,33 +14,50 @@ stronger control was available, and scoping a rule to the single file that happe
 Every finding MUST be routed to a destination before any fix is drafted. Detecting *what went
 wrong* does not determine *what should change* — choose the destination deliberately.
 
+### Trace Before Routing
+
+Before selecting **any** rung, trace the causal chain from the observed symptom back to its origin
+and record where it terminates. Inspect **both** the definition site and the consumption site: a
+symbol can be perfectly well declared and still be unresolvable at the point of use because of an
+`Any` annotation, a dynamic attribute lookup, or a value obtained through a private field.
+
+Tracing is a **diagnosis** step, not a control. Looking only at the definition site and missing a
+call-site `Any` is how an agent falls past rungs 1–2 and writes a superficial prose rule about the
+symptom; looking only at the call site and calling the local fix "rung 1" is how it skips the lint
+gate that stops the next caller from repeating the pattern.
+
+### The Control Ladder
+
 Rungs are ordered by **enforcement strength**. Select the strongest applicable rung; rungs compose.
 
 | # | Control | Destination | Applies when |
 | :--- | :--- | :--- | :--- |
-| 1 | **Eliminate** | Product code or API fix, as a separate PR | Anything under our control — API shape, type annotations, or call-site construction — contributed to the mistake |
+| 1 | **Eliminate** | Shared API, SDK, or type-definition fix, as a separate PR | A shared surface made the mistake possible or likely, and changing it eliminates the hazard **for all callers** |
 | 2 | **Automate** | Lint rule or CI gate | The invariant is mechanically checkable |
 | 3 | **Tool** | Helper script in `tools/` | A multi-step procedure needs automating |
 | 4 | **Route** | [`AGENTS.md`](../AGENTS.md) routing matrices, or rule relocation | The rule already existed but was never found |
 | 5 | **Document** | New prose rule in `.agents/rules/` or skill in `.agents/skills/` | A genuine, generalizable knowledge gap remains |
 | 6 | **Annotate** | Scoped suppression with a stated reason | A governed control exists and this file legitimately deviates |
-| 7 | **Discard** | No change | The causal chain terminates outside our control, or the finding is one-off and low ROI |
+| 7 | **Discard** | No change | The traced chain terminates outside our control, or the root cause inside our control is a non-recurring, low-ROI one-off |
+
+> [!IMPORTANT]
+> **Fixing a single call site is not rung 1.** Patching the file in front of you repairs the
+> incident; it does nothing for the next caller. Because rung 1 outranks rung 2, classifying a local
+> call-site edit (`stub: Any`, a missing annotation, a one-file construction mistake) as rung 1 lets
+> an agent declare the strongest control applied and stop — bypassing the rung-2 lint or typecheck
+> gate (`ANN401`, `SLF001`, `mypy`) that actually prevents recurrence. Fix the call site in the
+> active PR as ordinary review work, and route the **recurring pattern** to rung 2.
 
 > [!IMPORTANT]
 > Prose rules are a **last-resort control**. Every rule permanently consumes the attention budget of
 > every future agent, whereas a lint rule costs nothing at steady state. Reaching rung 5 requires
 > explicitly recording why rungs 1–4 do not apply.
 
-### Causal Chain Requirement
-
-Before selecting rung 6 or rung 7, trace the chain from the observed symptom back to its origin and
-record where it terminates. Inspect **both** the definition site and the consumption site: a symbol
-can be perfectly well declared and still be unresolvable at the point of use because of an `Any`
-annotation, a dynamic attribute lookup, or a value obtained through a private field.
-
-Rung 7 is only valid when the chain terminates **outside** our control. A correct verdict on the
-surface claim does not license skipping this step — confirming that code behaves correctly says
-nothing about whether our code made it *look* incorrect.
+Rung 7 is valid in two cases, both gated on the trace having been done first: **(a)** the chain
+terminates outside our control, or **(b)** the root cause inside our control is verified to be a
+non-recurring, low-ROI one-off. A correct verdict on the surface claim does not license skipping the
+trace to reach either exit — confirming that code behaves correctly says nothing about whether our
+code made it *look* incorrect, nor about whether the same pattern appears elsewhere.
 
 ### Non-Ladder Branch: External Tooling False Positives
 
@@ -48,9 +65,10 @@ When an automated review bot flags code that is in fact correct, two things must
 one:
 
 1. **The claim is false.** Verify against the source tree.
-2. **Why the tool was misled.** Apply the Causal Chain Requirement above. If anything under our
-   control made the code ambiguous to static analysis, that ambiguity is a **rung 1** finding in its
-   own right, even though the bot's claim was wrong.
+2. **Why the tool was misled.** Apply [Trace Before Routing](#trace-before-routing) above. If a
+   shared surface or missing lint/typecheck gate under our control made the code ambiguous to static
+   analysis, that ambiguity is a **rung 1 or rung 2** finding in its own right, even though the bot's
+   claim was wrong.
 
 Only when the chain terminates outside our control does this route to bot configuration or a reply
 on the review thread. Never encode a workaround for a tool's misunderstanding as a rule — and note
