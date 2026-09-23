@@ -11,29 +11,57 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-{{- $limits := (((.Values.queues).cpu).limits) | default dict }}
+{{- $queue := (.Values.queues).cpu | default dict }}
+{{- $limits := $queue.limits | default dict }}
+{{- $flavors := $queue.flavors | default list }}
+{{- $covered := list }}
+{{- if $flavors }}
+{{- $covered = keys (index $flavors 0).resources | sortAlpha }}
+{{- end }}
+{{- range $flavors }}
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
-  name: cpu-flavor
+  name: {{ .name }}
 spec:
+{{- if .nodeLabels }}
+  nodeLabels:
+    {{- toYaml .nodeLabels | nindent 4 }}
+{{- else }}
   nodeLabels: {}
+{{- end }}
 ---
+{{- end }}
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: "cpu-cluster-queue"
 spec:
   namespaceSelector: {}
+  preemption:
+    withinClusterQueue: {{ ($queue.preemption).withinClusterQueue | default "Never" }}
+{{- if ($queue.multikueue).clusters }}
+  # Everything this queue admits runs on a worker, so the quota below describes
+  # the workers' capacity rather than this cluster's.
+  admissionChecksStrategy:
+    admissionChecks:
+    # No `onFlavors`, so the check runs for every workload in the queue.
+    - name: multikueue-cpu
+{{- end }}
+{{- if $flavors }}
   resourceGroups:
-  - coveredResources: ["cpu", "memory"]
+  - coveredResources: {{ $covered | toJson }}
     flavors:
-    - name: "cpu-flavor"
+    {{- range $flavors }}
+    - name: {{ .name }}
       resources:
-      - name: "cpu"
-        nominalQuota: 100000000
-      - name: "memory"
-        nominalQuota: 100000000Gi
+      {{- $resources := .resources }}
+      {{- range $covered }}
+      - name: {{ . | quote }}
+        nominalQuota: {{ index $resources . | quote }}
+      {{- end }}
+    {{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Namespace
