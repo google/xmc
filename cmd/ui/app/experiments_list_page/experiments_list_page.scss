@@ -101,12 +101,13 @@ h1 {
 }
 
 mat-card.mat-mdc-card {
+  background-color: #ffffff;
   overflow: auto;
 
   ::ng-deep .mat-mdc-card-content,
   ::ng-deep .mat-mdc-card-content:first-child,
   ::ng-deep .mat-mdc-card-content:last-child {
-    padding: 0;
+    padding: 16px;
   }
 }
 
