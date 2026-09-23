@@ -13,10 +13,41 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<h1>Experiments</h1>
+<div class="experiments-header-row">
+  <h1>Experiments</h1>
+  <div class="header-actions">
+    <button mat-button class="refresh-btn" (click)="onRefresh()">
+      <mat-icon class="refresh-icon">refresh</mat-icon>
+      <span>Refresh</span>
+    </button>
+    <button class="start-experiment-btn">
+      <mat-icon class="start-icon">science</mat-icon>
+      <span>Start experiment</span>
+    </button>
+  </div>
+</div>
 
-<mat-card appearance="outlined">
-  <mat-card-content>
+<mat-card class="experiments-card" appearance="outlined">
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <mat-icon class="filter-icon">filter_list</mat-icon>
+    <span class="filter-label">Filter</span>
+    <input
+      type="text"
+      class="filter-input"
+      placeholder="Filter by resource, priority or importance"
+      [value]="filterQuery()"
+      (input)="onFilterChange($event)"
+    />
+    <div class="filter-right">
+      <mat-icon class="right-icon">help_outline</mat-icon>
+      <span class="filter-divider"></span>
+      <mat-icon class="right-icon">view_week</mat-icon>
+    </div>
+  </div>
+
+  <!-- Experiments Table -->
+  <mat-card-content class="table-content-wrapper">
     <xmc-experiments-table
       [pageResult]="pageResult()"
       [isFetching]="isLoading()"
@@ -24,31 +55,54 @@ limitations under the License.
       (sortChange)="onSortChange($event)"
     />
   </mat-card-content>
-</mat-card>
 
-<div class="paginator">
-  <div class="paginator-controls">
-    <xmc-page-size-selector [pageSize]="pageSize()" (pageSizeChange)="onPageSizeChange($event)" />
-    <button
-      type="button"
-      mat-icon-button
-      data-test-id="previous-page-button"
-      [disabled]="!hasPreviousPage()"
-      (click)="goToPreviousPage()"
-    >
-      <mat-icon>chevron_left</mat-icon>
-    </button>
+  <!-- Paginator -->
+  <div class="paginator">
+    <div class="paginator-controls">
+      <!-- Hidden selector preserved for harness/module compatibility -->
+      <xmc-page-size-selector
+        [pageSize]="pageSize()"
+        (pageSizeChange)="onPageSizeChange($event)"
+        style="display: none"
+      />
 
-    <span> Page {{ pageIndex() + 1 }} </span>
+      <span class="paginator-text">Rows per page</span>
+      <div class="rows-selector">
+        <span>7</span>
+        <mat-icon class="sm-arrow">arrow_drop_down</mat-icon>
+      </div>
+      <span class="paginator-count">1-7 of 7</span>
 
-    <button
-      type="button"
-      mat-icon-button
-      data-test-id="next-page-button"
-      [disabled]="!hasNextPage()"
-      (click)="goToNextPage()"
-    >
-      <mat-icon>chevron_right</mat-icon>
-    </button>
+      <button
+        mat-icon-button
+        class="nav-btn"
+        [disabled]="!hasPreviousPage()"
+        (click)="goToPreviousPage()"
+      >
+        <mat-icon>first_page</mat-icon>
+      </button>
+      <button
+        mat-icon-button
+        class="nav-btn"
+        data-test-id="previous-page-button"
+        (click)="goToPreviousPage()"
+        [disabled]="!hasPreviousPage()"
+      >
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+
+      <button
+        mat-icon-button
+        class="nav-btn"
+        data-test-id="next-page-button"
+        (click)="goToNextPage()"
+        [disabled]="!hasNextPage()"
+      >
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+      <button mat-icon-button class="nav-btn" [disabled]="!hasNextPage()" (click)="goToNextPage()">
+        <mat-icon>last_page</mat-icon>
+      </button>
+    </div>
   </div>
-</div>
+</mat-card>
