@@ -115,17 +115,18 @@ describe('format_visual_audit_summary', () => {
     it('runs end-to-end and writes outputs', () => {
       const manifestPath = path.join(tmpDir, 'manifest.json');
       const outputPath = path.join(tmpDir, 'out.txt');
-      fs.writeFileSync(manifestPath, JSON.stringify({ xid: '2026', captures: [{ id: '01', title: 'H', route: '/', filename: '1.png' }] }));
+      fs.writeFileSync(manifestPath, JSON.stringify({ xid: '2026', ui_base_url: 'https://override.xmc.dev', captures: [{ id: '01', title: 'H', route: '/', filename: '1.png' }] }));
 
       execFileSync(
         process.execPath,
         [
           path.join(__dirname, 'format_visual_audit_summary.js'),
-          '--manifest', manifestPath,
-          '--ui-url', 'https://override.xmc.dev',
-          '--github-output', outputPath,
+          manifestPath,
         ],
-        { encoding: 'utf8' }
+        {
+          encoding: 'utf8',
+          env: { ...process.env, GITHUB_OUTPUT: outputPath },
+        }
       );
 
       assert.match(fs.readFileSync(outputPath, 'utf8'), /xid=2026/);

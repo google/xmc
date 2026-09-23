@@ -79,29 +79,15 @@ function writeGitHubOutputs(options) {
 
 /** Main CLI execution entrypoint. */
 function run(argv = process.argv.slice(2)) {
-  let manifestPath = '';
-  let uiUrl = process.env.UI_URL || '';
-  let outputPath = process.env.GITHUB_OUTPUT || '';
-
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--manifest' && argv[i + 1]) manifestPath = argv[++i];
-    else if (a.startsWith('--manifest=')) manifestPath = a.slice(11);
-    else if (a === '--ui-url' && argv[i + 1]) uiUrl = argv[++i];
-    else if (a.startsWith('--ui-url=')) uiUrl = a.slice(9);
-    else if (a === '--github-output' && argv[i + 1]) outputPath = argv[++i];
-    else if (a.startsWith('--github-output=')) outputPath = a.slice(16);
-    else if (!a.startsWith('-') && !manifestPath) manifestPath = a;
-  }
-
+  const manifestPath = argv[0];
   if (!manifestPath) {
-    console.error('Usage: node format_visual_audit_summary.js <manifest.json> [--ui-url <url>]');
+    console.error('Usage: node format_visual_audit_summary.js <manifest.json>');
     process.exit(1);
   }
 
   const manifest = parseManifest(manifestPath);
-  if (outputPath) {
-    writeGitHubOutputs({ manifest, uiUrl, outputPath });
+  if (process.env.GITHUB_OUTPUT) {
+    writeGitHubOutputs({ manifest });
   } else {
     console.log(formatRoutesTable(manifest));
   }

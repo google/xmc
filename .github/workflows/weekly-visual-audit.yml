@@ -95,9 +95,7 @@ jobs:
             --output_dir="${GALLERY_DIR}" \
             --commit_sha="${GITHUB_SHA}"
 
-          node tools/nightly_tests/format_visual_audit_summary.js \
-            --manifest="${GALLERY_DIR}/manifest.json" \
-            --ui-url="${UI_URL}"
+          node tools/nightly_tests/format_visual_audit_summary.js "${GALLERY_DIR}/manifest.json"
 
       - name: 'Upload Visual Gallery Artifact'
         uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # actions/upload-artifact@v4 (v4.6.1)
