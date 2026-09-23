@@ -126,8 +126,17 @@ mat-card-content,
   font-size: 13px;
 }
 
+mat-card {
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  box-shadow: none;
+  background-color: #ffffff;
+}
+
 .experiment-tabs-section,
 .experiment-tabs-card {
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  box-shadow: none;
+
   ::ng-deep .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label {
     color: #1a73e8 !important;
   }
