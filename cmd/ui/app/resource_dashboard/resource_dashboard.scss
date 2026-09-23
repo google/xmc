@@ -18,42 +18,47 @@
 }
 
 .rod-container {
-  padding: 24px;
+  padding: 24px 32px;
   width: 100%;
   box-sizing: border-box;
   font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
-xmc-rod-subnav-tabs,
-xmc-smart-resource-finder {
+xmc-rod-subnav-tabs {
   display: block;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 xmc-smart-resource-finder {
   display: block;
   width: 100%;
+  margin-bottom: 20px;
 }
 
 .rod-split-container {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
+  background-color: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.05);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 53% 47%;
+  align-items: stretch;
   width: 100%;
 }
 
 .rod-main-content {
-  flex: 1 1 50%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  display: contents;
+
+  xmc-rod-queue-list {
+    display: contents;
+  }
 }
 
 .jobs-side-pane {
-  flex: 1 1 50%;
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
-  position: sticky;
-  top: 16px;
 }
 
 .resource-availability-container {

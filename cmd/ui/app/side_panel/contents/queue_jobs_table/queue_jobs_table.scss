@@ -19,14 +19,14 @@
 
 .jobs-in-queue-card {
   background: #ffffff;
-  border: 1px solid #dadce0;
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.12);
+  box-shadow: none;
 }
 
 .jobs-card-header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .jobs-card-title {
@@ -38,25 +38,50 @@
 
 .target-queue-name {
   font-size: 13px;
-  font-weight: 500;
-  color: #1a73e8;
-  background-color: #e8f0fe;
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-bottom: 8px;
+  font-weight: 400;
+  color: #5f6368;
+  background: none;
+  display: block;
+  padding: 0;
+  margin-bottom: 12px;
 }
 
 .jobs-card-subtitle {
   font-size: 13px;
   color: #5f6368;
-  line-height: 1.5;
+  line-height: 1.4;
   margin: 0;
 }
 
 .jobs-mat-table {
   width: 100%;
   border-collapse: collapse;
+
+  th.mat-mdc-header-cell {
+    border-bottom: 1px solid #dadce0;
+    padding: 10px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #202124;
+  }
+
+  td.mat-mdc-cell {
+    border-bottom: 1px solid #f1f3f4;
+    padding: 12px 8px;
+    font-size: 13px;
+    color: #3c4043;
+    vertical-align: middle;
+  }
+
+  .job-link,
+  .workunit-link {
+    color: #1a73e8;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .loading-container {
@@ -81,11 +106,12 @@
 
 .jobs-empty-state {
   text-align: center;
-  padding: 40px 0;
+  padding: 60px 20px;
 }
 
 .empty-caption {
   font-size: 14px;
-  color: #5f6368;
-  margin-top: 12px;
+  font-weight: 500;
+  color: #202124;
+  margin-top: 16px;
 }
