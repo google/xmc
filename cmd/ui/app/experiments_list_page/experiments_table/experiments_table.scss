@@ -26,6 +26,11 @@ xmc-resource-chip {
   background-color: var(--mat-sys-surface, #ffffff);
 }
 
+.mat-mdc-table {
+  background-color: transparent;
+  border-spacing: 1px;
+}
+
 th.mat-mdc-header-cell {
   font-size: 13px;
   font-weight: 600;
