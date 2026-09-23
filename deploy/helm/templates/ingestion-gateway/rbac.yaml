@@ -1,4 +1,4 @@
-{{- if and .Values.ingestionGatewayDeployment.enabled .Values.componentsDeployment.enabled -}}
+{{- if and .Values.componentsDeployment .Values.componentsDeployment.enabled -}}
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +34,7 @@ metadata:
     app.kubernetes.io/part-of: xmanager-cloud
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.ingestionGatewayDeployment.serviceAccountName | default "default" }}
+    name: {{ ((.Values.ingestionGatewayDeployment | default dict).serviceAccountName) | default "default" }}
     namespace: {{ .Release.Namespace | default "xmc" }}
 roleRef:
   kind: Role

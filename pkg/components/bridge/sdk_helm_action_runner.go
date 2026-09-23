@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"sync"
 
@@ -29,6 +30,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 
+	stable2026a "xmanager_cloud/deploy/profiles/stable-2026a"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -224,6 +226,23 @@ func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.C
 }
 
 func defaultComponentChart(name string) *chart.Chart {
+	compName := strings.TrimPrefix(name, "xmc-cmp-")
+	root := "components/" + compName
+	var files []*loader.BufferedFile
+	_ = fs.WalkDir(stable2026a.EmbeddedCharts, root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if data, readErr := stable2026a.EmbeddedCharts.ReadFile(p); readErr == nil {
+			files = append(files, &loader.BufferedFile{Name: strings.TrimPrefix(p, root+"/"), Data: data})
+		}
+		return nil
+	})
+	if len(files) > 0 {
+		if ch, err := loader.LoadFiles(files); err == nil {
+			return ch
+		}
+	}
 	return &chart.Chart{
 		Metadata: &chart.Metadata{
 			APIVersion: "v2",

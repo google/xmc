@@ -1,4 +1,5 @@
-{{- if .Values.ingestionGatewayDeployment.enabled -}}
+{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled (not (and .Values.componentsDeployment .Values.componentsDeployment.enabled)) (not .Values.ingestionGatewayDeployment.managedByComponent) -}}
+{{- $port := .Values.ingestionGatewayDeployment.port | default 8080 -}}
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +26,7 @@ spec:
   selector:
     app: ingestion-gateway
   ports:
-  - port: 8080
+  - port: {{ $port }}
     name: http-port
     targetPort: http-port
 {{- end }}
