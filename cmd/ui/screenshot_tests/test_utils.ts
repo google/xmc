@@ -747,6 +747,10 @@ const BASE_SCREENSHOT_STYLES = `
     margin: 0 !important;
     padding: 0 !important;
   }
+  .sidenav-container .mat-drawer-content,
+  .sidenav-container .mat-sidenav-content {
+    margin-left: 200px !important;
+  }
   .screenshot-harness-container {
     width: 100% !important;
     padding: 24px !important;
