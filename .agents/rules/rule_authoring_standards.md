@@ -18,24 +18,43 @@ Rungs are ordered by **enforcement strength**. Select the strongest applicable r
 
 | # | Control | Destination | Applies when |
 | :--- | :--- | :--- | :--- |
-| 1 | **Eliminate** | Product code or API fix, as a separate PR | An API gap or poor ergonomic *caused* the mistake |
+| 1 | **Eliminate** | Product code or API fix, as a separate PR | Anything under our control — API shape, type annotations, or call-site construction — contributed to the mistake |
 | 2 | **Automate** | Lint rule or CI gate | The invariant is mechanically checkable |
 | 3 | **Tool** | Helper script in `tools/` | A multi-step procedure needs automating |
 | 4 | **Route** | [`AGENTS.md`](../AGENTS.md) routing matrices, or rule relocation | The rule already existed but was never found |
 | 5 | **Document** | New prose rule in `.agents/rules/` or skill in `.agents/skills/` | A genuine, generalizable knowledge gap remains |
 | 6 | **Annotate** | Scoped suppression with a stated reason | A governed control exists and this file legitimately deviates |
-| 7 | **Discard** | No change | One-off, low ROI, or an external tool was simply wrong |
+| 7 | **Discard** | No change | The causal chain terminates outside our control, or the finding is one-off and low ROI |
 
 > [!IMPORTANT]
 > Prose rules are a **last-resort control**. Every rule permanently consumes the attention budget of
 > every future agent, whereas a lint rule costs nothing at steady state. Reaching rung 5 requires
 > explicitly recording why rungs 1–4 do not apply.
 
+### Causal Chain Requirement
+
+Before selecting rung 6 or rung 7, trace the chain from the observed symptom back to its origin and
+record where it terminates. Inspect **both** the definition site and the consumption site: a symbol
+can be perfectly well declared and still be unresolvable at the point of use because of an `Any`
+annotation, a dynamic attribute lookup, or a value obtained through a private field.
+
+Rung 7 is only valid when the chain terminates **outside** our control. A correct verdict on the
+surface claim does not license skipping this step — confirming that code behaves correctly says
+nothing about whether our code made it *look* incorrect.
+
 ### Non-Ladder Branch: External Tooling False Positives
 
-When an automated review bot flags code that is in fact correct, the root cause is the bot, not the
-codebase. Route to bot configuration or a reply on the review thread. Never encode a workaround for
-a tool's misunderstanding as a rule.
+When an automated review bot flags code that is in fact correct, two things must be established, not
+one:
+
+1. **The claim is false.** Verify against the source tree.
+2. **Why the tool was misled.** Apply the Causal Chain Requirement above. If anything under our
+   control made the code ambiguous to static analysis, that ambiguity is a **rung 1** finding in its
+   own right, even though the bot's claim was wrong.
+
+Only when the chain terminates outside our control does this route to bot configuration or a reply
+on the review thread. Never encode a workaround for a tool's misunderstanding as a rule — and note
+that a natural-language comment addressed to an automated reader is such a workaround, not a fix.
 
 ---
 
