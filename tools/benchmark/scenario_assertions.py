@@ -90,7 +90,13 @@ def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
         )
     if not target.is_file():
         return False, f"file absent, cannot match /{pattern}/"
-    text = target.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        raise HandledError(
+            f"failed to read target file '{target}': {e}",
+            "Check file permissions.",
+        ) from e
     try:
         matched = re.search(pattern, text, re.MULTILINE) is not None
     except re.error as e:
@@ -170,37 +176,45 @@ def evaluate_assertion(workspace: Path, assertion: Mapping[str, Any]) -> Asserti
     return AssertionOutcome(description=f"{kind} {relative_path}", passed=passed, detail=detail)
 
 
-def evaluate_scenario(scenario: str, spec: Mapping[str, Any]) -> ScenarioOutcome:
-    """Evaluates every assertion registered for one scenario."""
+def _validate_scenario_spec(
+    scenario: str, spec: Mapping[str, Any]
+) -> tuple[Path, list[Mapping[str, Any]]]:
+    """Validates the workspace directory and assertion list for one scenario."""
     if not isinstance(spec, Mapping):
         raise HandledError(
             f"scenario '{scenario}' spec must be a JSON object",
             "Ensure it contains 'workspace' and 'assertions' keys.",
         )
-    workspace = Path(str(spec.get("workspace", ".")))
+    raw_workspace = spec.get("workspace", ".")
+    if not isinstance(raw_workspace, str) or not raw_workspace:
+        raise HandledError(
+            f"workspace for scenario '{scenario}' must be a non-empty string",
+            "Point 'workspace' at the arm's worktree root.",
+        )
+    workspace = Path(raw_workspace)
     if not workspace.is_dir():
         raise HandledError(
             f"workspace for scenario '{scenario}' is not a directory: {workspace}",
             "Point 'workspace' at the arm's worktree root.",
         )
     raw_assertions = spec.get("assertions")
-    if raw_assertions is not None and not isinstance(raw_assertions, list):
+    if not isinstance(raw_assertions, list) or not raw_assertions:
         raise HandledError(
-            f"assertions for scenario '{scenario}' must be a list of objects",
-            "Check the format of the assertions field.",
-        )
-    assertions = raw_assertions or []
-    if not assertions:
-        raise HandledError(
-            f"scenario '{scenario}' registers no assertions",
+            f"scenario '{scenario}' must register a non-empty list of assertions",
             "A scenario that cannot fail measures nothing; register at least one predicate.",
         )
-    for idx, item in enumerate(assertions):
+    for idx, item in enumerate(raw_assertions):
         if not isinstance(item, Mapping):
             raise HandledError(
                 f"assertion at index {idx} in scenario '{scenario}' must be a JSON object",
                 "Check the format of your assertions list.",
             )
+    return workspace, raw_assertions
+
+
+def evaluate_scenario(scenario: str, spec: Mapping[str, Any]) -> ScenarioOutcome:
+    """Evaluates every assertion registered for one scenario."""
+    workspace, assertions = _validate_scenario_spec(scenario, spec)
     outcomes = tuple(evaluate_assertion(workspace, item) for item in assertions)
     return ScenarioOutcome(
         scenario=scenario,
@@ -261,7 +275,9 @@ def render_report(outcomes: Mapping[str, ScenarioOutcome], verdict: Verdict) -> 
             continue
         for item in outcome.assertions:
             mark = "✅" if item.passed else "❌"
-            lines.append(f"| {scenario} | `{item.description}` | {mark} | {item.detail} |")
+            desc = item.description.replace("|", r"\|")
+            detail = item.detail.replace("|", r"\|")
+            lines.append(f"| {scenario} | `{desc}` | {mark} | {detail} |")
     return "\n".join(lines) + "\n"
 
 

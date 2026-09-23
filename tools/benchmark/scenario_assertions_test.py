@@ -14,6 +14,7 @@
 
 """Unit tests for the scenario_assertions tool."""
 
+import argparse
 import json
 import tempfile
 import unittest
@@ -25,6 +26,7 @@ from tools.benchmark.scenario_assertions import (
     TRANSFER,
     ScenarioOutcome,
     Verdict,
+    check_scenario_assertions,
     derive_verdict,
     evaluate_assertion,
     evaluate_scenario,
@@ -160,6 +162,14 @@ class EvaluateScenarioTest(unittest.TestCase):
                     "assertions": [{"kind": "file_exists", "path": "a.py"}],
                 },
             )
+        with self.assertRaises(HandledError):
+            evaluate_scenario(
+                ORIGIN,
+                {
+                    "workspace": None,
+                    "assertions": [{"kind": "file_exists", "path": "a.py"}],
+                },
+            )
 
     def test_non_mapping_scenario_or_assertion_is_rejected(self):
         with self.assertRaises(HandledError):
@@ -237,7 +247,7 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("| ✅ | — | — |", report)
         self.assertIn("GENERALIZATION UNTESTED", report)
 
-    def test_assertion_detail_rows_are_rendered(self):
+    def test_assertion_detail_rows_are_rendered_and_pipes_escaped(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             (workspace / "a.py").write_text("ok\n", encoding="utf-8")
@@ -245,11 +255,13 @@ class RenderReportTest(unittest.TestCase):
                 ORIGIN,
                 {
                     "workspace": str(workspace),
-                    "assertions": [{"kind": "file_exists", "path": "a.py"}],
+                    "assertions": [
+                        {"kind": "file_contains", "path": "a.py", "pattern": r"ok|yes"},
+                    ],
                 },
             )
         report = render_report({ORIGIN: outcome}, Verdict.SHIP_ORIGIN_ONLY)
-        self.assertIn("| origin | `file_exists a.py` | ✅ | present |", report)
+        self.assertIn(r"| origin | `file_contains a.py` | ✅ | /ok\|yes/ matched |", report)
 
 
 class LoadAndEvaluateSpecTest(unittest.TestCase):
@@ -274,6 +286,20 @@ class LoadAndEvaluateSpecTest(unittest.TestCase):
         spec_path = self._write_spec({ORIGIN: scenario, TRANSFER: scenario, NEGATIVE: scenario})
         _, verdict = evaluate_spec(load_spec(spec_path))
         self.assertEqual(verdict, Verdict.SHIP)
+
+    def test_check_scenario_assertions_writes_output_report(self):
+        scenario = {
+            "workspace": str(self.workspace),
+            "assertions": [{"kind": "file_exists", "path": "a.py"}],
+        }
+        spec_path = self._write_spec({ORIGIN: scenario})
+        out_path = self.workspace / "report.md"
+        res = check_scenario_assertions(
+            argparse.Namespace(spec=str(spec_path), output=str(out_path))
+        )
+        self.assertEqual(res["verdict"], str(Verdict.SHIP_ORIGIN_ONLY))
+        self.assertTrue(out_path.is_file())
+        self.assertIn("Pre-Registered Scenario Verdict", out_path.read_text(encoding="utf-8"))
 
     def test_unknown_scenario_key_is_rejected(self):
         spec_path = self._write_spec({"orgin": {}})
