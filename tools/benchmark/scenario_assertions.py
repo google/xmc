@@ -185,7 +185,7 @@ def _validate_scenario_spec(
             f"scenario '{scenario}' spec must be a JSON object",
             "Ensure it contains 'workspace' and 'assertions' keys.",
         )
-    raw_workspace = spec.get("workspace", ".")
+    raw_workspace = spec.get("workspace")
     if not isinstance(raw_workspace, str) or not raw_workspace:
         raise HandledError(
             f"workspace for scenario '{scenario}' must be a non-empty string",
@@ -236,15 +236,21 @@ def derive_verdict(outcomes: Mapping[str, ScenarioOutcome]) -> Verdict:
 
     transfer = outcomes.get(TRANSFER)
     negative = outcomes.get(NEGATIVE)
+
+    transfer_failed = transfer is not None and not transfer.passed
+    negative_failed = negative is not None and not negative.passed
+
+    if transfer_failed and negative_failed:
+        return Verdict.WRONG_PREDICATE
+    if transfer_failed:
+        return Verdict.UNDER_GENERALIZED
+    if negative_failed:
+        return Verdict.OVER_GENERALIZED
+
     if transfer is None or negative is None:
         return Verdict.SHIP_ORIGIN_ONLY
-    if transfer.passed and negative.passed:
-        return Verdict.SHIP
-    if transfer.passed:
-        return Verdict.OVER_GENERALIZED
-    if negative.passed:
-        return Verdict.UNDER_GENERALIZED
-    return Verdict.WRONG_PREDICATE
+
+    return Verdict.SHIP
 
 
 def _status_mark(outcome: ScenarioOutcome | None) -> str:

@@ -171,6 +171,14 @@ class EvaluateScenarioTest(unittest.TestCase):
                 },
             )
 
+        with self.assertRaises(HandledError):
+            evaluate_scenario(
+                ORIGIN,
+                {
+                    "assertions": [{"kind": "file_exists", "path": "a.py"}],
+                },
+            )
+
     def test_non_mapping_scenario_or_assertion_is_rejected(self):
         with self.assertRaises(HandledError):
             evaluate_scenario(ORIGIN, "not-a-dict")  # type: ignore[arg-type]
@@ -232,6 +240,20 @@ class DeriveVerdictTest(unittest.TestCase):
     def test_origin_only_ships_with_an_explicit_caveat(self):
         outcomes = {ORIGIN: _outcome(ORIGIN, passed=True)}
         self.assertEqual(derive_verdict(outcomes), Verdict.SHIP_ORIGIN_ONLY)
+
+    def test_failed_transfer_with_missing_negative_is_under_generalized(self):
+        outcomes = {
+            ORIGIN: _outcome(ORIGIN, passed=True),
+            TRANSFER: _outcome(TRANSFER, passed=False),
+        }
+        self.assertEqual(derive_verdict(outcomes), Verdict.UNDER_GENERALIZED)
+
+    def test_failed_negative_with_missing_transfer_is_over_generalized(self):
+        outcomes = {
+            ORIGIN: _outcome(ORIGIN, passed=True),
+            NEGATIVE: _outcome(NEGATIVE, passed=False),
+        }
+        self.assertEqual(derive_verdict(outcomes), Verdict.OVER_GENERALIZED)
 
     def test_missing_origin_is_rejected(self):
         with self.assertRaises(HandledError):
