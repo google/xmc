@@ -25,7 +25,9 @@ function parseManifest(input) {
   if (typeof input !== 'string' || !input.trim()) {
     throw new Error('Manifest path or content cannot be empty.');
   }
-  const raw = fs.existsSync(input) ? fs.readFileSync(input, 'utf8') : input;
+  const trimmed = input.trim();
+  const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+  const raw = (!isJson && fs.existsSync(input)) ? fs.readFileSync(input, 'utf8') : input;
   try {
     return JSON.parse(raw);
   } catch (err) {
@@ -38,7 +40,7 @@ function formatRoutesTable(manifestOrCaptures) {
   const captures = Array.isArray(manifestOrCaptures)
     ? manifestOrCaptures
     : (manifestOrCaptures && manifestOrCaptures.captures) || [];
-  const esc = (val) => (val != null ? String(val).replace(/\|/g, '\\|') : '');
+  const esc = (val) => (val != null ? String(val).replace(/\r?\n/g, ' ').replace(/\|/g, '\\|') : '');
   const rows = captures.map(
     (c) => `| \`${esc(c.id)}\` | ${esc(c.title)} | \`${esc(c.route)}\` | \`screenshots/${esc(c.filename)}\` |`
   );

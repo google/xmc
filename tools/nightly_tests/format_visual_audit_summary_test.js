@@ -42,6 +42,22 @@ describe('format_visual_audit_summary', () => {
       assert.equal(formatter.parseManifest(file).xid, '3');
     });
 
+    it('does not check filesystem when input is a JSON string', () => {
+      let existsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (p) => {
+        existsCalled = true;
+        return originalExistsSync(p);
+      };
+      try {
+        const parsed = formatter.parseManifest('{"xid": "999"}');
+        assert.equal(parsed.xid, '999');
+        assert.equal(existsCalled, false);
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+    });
+
     it('throws on invalid or empty input', () => {
       assert.throws(() => formatter.parseManifest('{bad'), /Failed to parse manifest JSON/);
       assert.throws(() => formatter.parseManifest(''), /Manifest path or content cannot be empty/);
@@ -54,6 +70,21 @@ describe('format_visual_audit_summary', () => {
       const table = formatter.formatRoutesTable({ captures });
       assert.match(table, /\| `01` \| List \\\| Table \| `\/exp` \| `screenshots\/01\.png` \|/);
       assert.match(formatter.formatRoutesTable([]), /\| Route ID \| Page Title \| Route Path \| Screenshot \|/);
+    });
+
+    it('sanitizes newlines in table cells', () => {
+      const captures = [
+        {
+          id: '01',
+          title: 'Line 1\nLine 2\r\nLine 3',
+          route: '/path\nwith\nnewline',
+          filename: '01.png',
+        },
+      ];
+      const table = formatter.formatRoutesTable({ captures });
+      assert.match(table, /\| Line 1 Line 2 Line 3 \|/);
+      assert.match(table, /`\/path with newline`/);
+      assert.doesNotMatch(table, /\nLine 2/);
     });
   });
 
