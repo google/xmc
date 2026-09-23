@@ -86,7 +86,7 @@ func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawMani
 		}
 		if chartRoot := findChartRoot(path); chartRoot != "" {
 			var renderErr error
-			if data, renderErr = RenderChartTemplate(chartRoot, path, data); renderErr != nil {
+			if data, renderErr = RenderChartTemplate(chartRoot, path); renderErr != nil {
 				res.AddError(path, 1, "YAML_SYNTAX", fmt.Sprintf("failed to render chart template in %s: %v", path, renderErr))
 				return nil
 			}

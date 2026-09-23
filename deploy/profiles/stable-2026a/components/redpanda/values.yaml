@@ -1,0 +1,62 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Whether the Redpanda 3P Wrapper Component is enabled in the cluster catalog.
+# Disabled by default to preserve existing non-component deployments (enable_components: false).
+enabled: false
+
+# Target Kubernetes namespace where the Component CR and Redpanda resources reside.
+namespace: xmc
+
+# Admission guard preventing accidental deletion of the active Component CR when enabled.
+deletionProtection: true
+
+# Action taken on underlying resources when the Component CR is deleted ("Delete" or "Orphan").
+deletionPolicy: Delete
+
+# Coordinates of the upstream Redpanda Kubernetes Operator Custom Resource (clusters.redpanda.vectorized.io)
+# polled by the XMC GitOps Bridge Controller for generation sync and readiness status.
+wrapperRef:
+  # API group of the upstream Redpanda Operator CRD.
+  group: "redpanda.vectorized.io"
+  # API version of the upstream Redpanda Operator CRD.
+  version: "v1alpha1"
+  # Kubernetes Kind of the Redpanda Operator resource representing a Redpanda broker cluster.
+  kind: "Cluster"
+  # Metadata name of the target Redpanda Cluster CR instance in Kubernetes.
+  name: "redpanda"
+  # Namespace of the target Redpanda Cluster CR instance.
+  namespace: "xmc"
+  # JSONPath on the Redpanda Cluster CR used to verify controller reconciliation generation.
+  observedGenerationPath: "$.status.observedGeneration"
+  # JSONPath on the Redpanda Cluster CR evaluated for broker readiness.
+  readyConditionPath: "$.status.conditions[?(@.type=='Ready')].status"
+  # Expected string value at readyConditionPath indicating the Redpanda Cluster CR is healthy.
+  expectedReadyValue: "True"
+  # JSONPath extracting the primary internal broker advertised address from the Redpanda Cluster CR status.
+  endpointJsonPath: "$.status.nodes.internal[0]"
+
+# Connection and sizing parameters projected into the Component CR for downstream XMC services and workloads.
+parameters:
+  # Comma-separated internal Kubernetes DNS endpoints for Redpanda Kafka API brokers.
+  brokerEndpoints: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+  # Kafka protocol listener port exposed by the Redpanda broker service.
+  kafkaPort: 9092
+  # Default Kafka topic used by XMC metrics and event-streaming pipelines.
+  defaultTopic: "xmc-metrics"
+  # Persistent volume storage capacity per Redpanda broker node.
+  storageSize: "10Gi"
+
+# Optional list of upstream XMC Component names that must be Ready before Redpanda is reconciled.
+dependencies: []

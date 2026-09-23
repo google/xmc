@@ -17,8 +17,12 @@ package linter_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"gopkg.in/yaml.v3"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -74,7 +78,7 @@ upper: "MIXEDCASE"`,
 				t.Fatalf("failed to write template: %v", err)
 			}
 
-			got, err := linter.RenderChartTemplate(dir, tmplPath, []byte(tc.template))
+			got, err := linter.RenderChartTemplate(dir, tmplPath)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("RenderChartTemplate() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -85,7 +89,173 @@ upper: "MIXEDCASE"`,
 	}
 }
 
+func TestRedpandaBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
+	t.Parallel()
+
+	redpandaDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", "redpanda"))
+	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
+
+	res, err := linter.NewLinter(nil).ValidateDirectory(redpandaDir)
+	if err != nil {
+		t.Fatalf("ValidateDir(%q) unexpected error: %v", redpandaDir, err)
+	}
+	if !res.Valid {
+		t.Fatalf("ValidateDir(%q) failed with errors: %v", redpandaDir, res.Errors)
+	}
+
+	tmplPath := filepath.Join(redpandaDir, "templates", "component.yaml")
+	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath)
+	if err != nil {
+		t.Fatalf("RenderChartTemplate() failed: %v", err)
+	}
+
+	var got linter.ComponentManifest
+	if err := yaml.Unmarshal(rendered, &got); err != nil {
+		t.Fatalf("failed to unmarshal rendered Redpanda Component manifest: %v", err)
+	}
+
+	enabled := false
+	want := linter.ComponentManifest{
+		APIVersion: "xmc.dev/v1alpha1",
+		Kind:       "Component",
+		Metadata: linter.ObjectMetadata{
+			Name:      "redpanda",
+			Namespace: "xmc",
+			Labels: map[string]string{
+				"xmc.dev/profile":              "stable-2026a",
+				"app.kubernetes.io/name":       "redpanda",
+				"app.kubernetes.io/managed-by": "Helm",
+			},
+		},
+		Spec: linter.ComponentManifestSpec{
+			Enabled:            &enabled,
+			ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+			ComponentClass:     "event-stream",
+			Version:            "0.1.0",
+			ChartVersion:       "0.1.0",
+			DeletionProtection: true,
+			DeletionPolicy:     "Delete",
+			WrapperRef: &linter.ComponentWrapperRef{
+				CrdGroup:               "redpanda.vectorized.io",
+				CrdVersion:             "v1alpha1",
+				CrdKind:                "Cluster",
+				TargetName:             "redpanda",
+				TargetNamespace:        "xmc",
+				ObservedGenerationPath: "$.status.observedGeneration",
+				ReadyConditionPath:     "$.status.conditions[?(@.type=='Ready')].status",
+				ExpectedReadyValue:     "True",
+				EndpointJsonPath:       "$.status.nodes.internal[0]",
+			},
+			Parameters: map[string]string{
+				"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+				"kafkaPort":       "9092",
+				"defaultTopic":    "xmc-metrics",
+				"storageSize":     "10Gi",
+			},
+		},
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("rendered Redpanda Component manifest mismatch (-want +got):\n%s", diff)
+	}
+
+	validateManifestAgainstCRD(t, crdPath, &got)
+}
+
+type crdSchemaDoc struct {
+	Spec struct {
+		Group string `yaml:"group"`
+		Names struct {
+			Kind string `yaml:"kind"`
+		} `yaml:"names"`
+		Versions []struct {
+			Name   string `yaml:"name"`
+			Schema struct {
+				OpenAPIV3Schema struct {
+					Properties struct {
+						Spec struct {
+							Properties struct {
+								WrapperRef struct {
+									Properties struct {
+										ObservedGenerationPath struct {
+											Pattern string `yaml:"pattern"`
+										} `yaml:"observedGenerationPath"`
+										ReadyConditionPath struct {
+											Pattern string `yaml:"pattern"`
+										} `yaml:"readyConditionPath"`
+									} `yaml:"properties"`
+								} `yaml:"wrapperRef"`
+							} `yaml:"properties"`
+						} `yaml:"spec"`
+					} `yaml:"properties"`
+				} `yaml:"openAPIV3Schema"`
+			} `yaml:"schema"`
+		} `yaml:"versions"`
+	} `yaml:"spec"`
+}
+
+func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.ComponentManifest) {
+	t.Helper()
+	rawCRD, err := os.ReadFile(crdPath)
+	if err != nil {
+		t.Fatalf("failed to read CRD %s: %v", crdPath, err)
+	}
+	re := regexp.MustCompile(`(?s)\{\{.*?\}\}`)
+	cleaned := re.ReplaceAllString(string(rawCRD), "")
+
+	var crd crdSchemaDoc
+	if err := yaml.Unmarshal([]byte(cleaned), &crd); err != nil {
+		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
+	}
+
+	if len(crd.Spec.Versions) == 0 {
+		t.Fatalf("CRD has no versions defined")
+	}
+	version := crd.Spec.Versions[0]
+	wantAPIVersion := crd.Spec.Group + "/" + version.Name
+	if comp.APIVersion != wantAPIVersion || comp.Kind != crd.Spec.Names.Kind {
+		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
+	}
+
+	if comp.Spec.WrapperRef == nil {
+		t.Fatal("comp.Spec.WrapperRef is nil")
+	}
+
+	wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
+	obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
+	if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
+		t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())
+	}
+	readyRe := regexp.MustCompile(wrapperProps.ReadyConditionPath.Pattern)
+	if !readyRe.MatchString(comp.Spec.WrapperRef.ReadyConditionPath) {
+		t.Errorf("readyConditionPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ReadyConditionPath, readyRe.String())
+	}
+}
+
+func resolveRepoPath(t *testing.T, relPath string) string {
+	t.Helper()
+	candidates := []string{
+		relPath,
+		filepath.Join("..", "..", "..", relPath),
+	}
+	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
+		candidates = append(candidates,
+			filepath.Join(srcDir, "_main", relPath),
+			filepath.Join(srcDir, "xmanager_cloud", relPath),
+		)
+	}
+	for _, cand := range candidates {
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	t.Fatalf("unable to resolve repository path %q from candidates %v", relPath, candidates)
+	return ""
+}
+
 func TestChartTemplateFuncsAndHelpers(t *testing.T) {
+	t.Parallel()
+
 	chartDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
 		t.Fatalf("failed to create templates dir: %v", err)
@@ -118,7 +288,7 @@ spec:
 		t.Fatalf("failed to write values-component.yaml: %v", err)
 	}
 
-	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath, []byte(tmplContent))
+	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath)
 	if err != nil {
 		t.Fatalf("RenderChartTemplate(%s) returned error: %v", chartDir, err)
 	}
