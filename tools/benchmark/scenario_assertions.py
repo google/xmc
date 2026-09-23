@@ -48,6 +48,7 @@ class Verdict(enum.StrEnum):
     """Outcome of the three-scenario matrix."""
 
     SHIP = "SHIP"
+    SHIP_NO_NEGATIVE = "SHIP (NO NEGATIVE REGRESSION SCENARIO)"
     SHIP_ORIGIN_ONLY = "SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED)"
     OVER_GENERALIZED = "OVER-GENERALIZED"
     UNDER_GENERALIZED = "UNDER-GENERALIZED"
@@ -247,8 +248,10 @@ def derive_verdict(outcomes: Mapping[str, ScenarioOutcome]) -> Verdict:
     if negative_failed:
         return Verdict.OVER_GENERALIZED
 
-    if transfer is None or negative is None:
+    if transfer is None:
         return Verdict.SHIP_ORIGIN_ONLY
+    if negative is None:
+        return Verdict.SHIP_NO_NEGATIVE
 
     return Verdict.SHIP
 

@@ -241,6 +241,13 @@ class DeriveVerdictTest(unittest.TestCase):
         outcomes = {ORIGIN: _outcome(ORIGIN, passed=True)}
         self.assertEqual(derive_verdict(outcomes), Verdict.SHIP_ORIGIN_ONLY)
 
+    def test_passed_transfer_with_missing_negative_ships_without_negative_scenario(self):
+        outcomes = {
+            ORIGIN: _outcome(ORIGIN, passed=True),
+            TRANSFER: _outcome(TRANSFER, passed=True),
+        }
+        self.assertEqual(derive_verdict(outcomes), Verdict.SHIP_NO_NEGATIVE)
+
     def test_failed_transfer_with_missing_negative_is_under_generalized(self):
         outcomes = {
             ORIGIN: _outcome(ORIGIN, passed=True),
