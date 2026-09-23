@@ -11,15 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  inject,
-  OnDestroy,
-  OnInit,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -45,14 +37,7 @@ import { queryParamsToExperimentFilters } from './utils/query_params';
   templateUrl: './experiments_list_page.ng.html',
   styleUrl: './experiments_list_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    MatCardModule,
-    MatIconModule,
-    MatButtonModule,
-    ExperimentsTable,
-    PageSizeSelector,
-  ],
+  imports: [MatCardModule, MatIconModule, MatButtonModule, ExperimentsTable, PageSizeSelector],
   providers: [ExperimentsListPageStore],
 })
 export class ExperimentsListPage implements OnInit, OnDestroy {
@@ -72,17 +57,6 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
   readonly pageSize = this.componentStore.pageSize;
   readonly hasNextPage = this.componentStore.hasNextPage;
   readonly hasPreviousPage = this.componentStore.hasPreviousPage;
-
-  readonly filterQuery = signal('');
-
-  onFilterChange(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.filterQuery.set(val);
-  }
-
-  onRefresh() {
-    this.componentStore.fetchPage();
-  }
 
   ngOnInit() {
     this.subscriptions.add(
