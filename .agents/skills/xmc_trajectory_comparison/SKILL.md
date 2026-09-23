@@ -11,14 +11,15 @@ This skill provides an automated A/B benchmark workflow to evaluate proposed cha
 graph TD
     A[Skill / Rule Edits in Worktree] --> B[1. Extract Structured Git Diff]
     B --> C[2. Main Agent Semantic Reasoning: Prompt Synthesis & Risk Classification]
-    C --> D[3. User Confirmation & Teardown Plan Agreement]
+    C --> M["2b. Derive 3-Scenario Matrix from Evidence Sets (Origin / Transfer / Negative)"]
+    M --> D[3. User Confirmation & Teardown Plan Agreement]
     D -->|Approved| E1["Subagent Baseline: parent detached to baseline ref before spawn"]
     D -->|Approved| E2[Subagent Candidate: Workspace branch + modified worktree]
     E1 --> F1[Baseline Transcript Log & Outcome Artifacts]
     E2 --> F2[Candidate Transcript Log & Outcome Artifacts]
     F1 & F2 --> G[4. Run teardown_benchmark.py]
     G --> H[5. Run compare_trajectories.py --prompt ...]
-    H --> I[6. Dual-Pillar Evaluation: Telemetry, Relevance Gate & Verdict]
+    H --> I[6. Dual-Pillar Evaluation, Relevance Gate & 3-Scenario Verdict Matrix]
     I --> J[7. PR Integration & User Edit Gate]
 ```
 
@@ -59,6 +60,40 @@ The main agent parses the resulting JSON payload (`changed_files`, `added_lines`
 > output, and let the grading step check whether the prescribed behaviour appeared **unprompted**.
 > Reconstruct search and tool behaviour from the transcripts instead of asking arms to self-report it,
 > since a request to log searches is itself a nudge to search more.
+
+### Phase 1b: Derive the Scenario Matrix
+
+A single scenario drawn from the incident that motivated the change grades the candidate on its own
+training example. It can establish that the change works where it was written, and nothing else — it
+is blind to a predicate that is too narrow to reach the rest of its class, and blind to one broad
+enough to fire on code it should leave alone.
+
+Run three scenarios instead. They are sourced from the evidence sets that
+[Evidence-Based Boundary Derivation](../../rules/rule_authoring_standards.md#5-evidence-based-boundary-derivation)
+has already produced, so this costs no additional analysis:
+
+| Scenario | Drawn from | The candidate must… | A failure detects |
+| :--- | :--- | :--- | :--- |
+| **Origin** | the originating incident | remove the observed friction | the change is ineffective |
+| **Held-out transfer** | positive set, excluding the origin | behave the same way on a *different* member | **under-generalization** |
+| **Negative regression** | negative set | **not** fire, or exempt the file explicitly | **over-generalization** |
+
+- **Four arms, not six.** Origin needs baseline *and* candidate, to establish both that the friction
+  is real and that the change removes it. Transfer and negative are candidate-only: they are graded
+  against pre-registered expectations, so a baseline arm would add cost without adding information.
+- **Transfer is always available.** The two-positive minimum guarantees a held-out member exists.
+  Negative regression is mandatory whenever the negative set is non-empty; an empty negative set on a
+  non-trivial change is itself a finding worth surfacing, because a predicate that excludes nothing
+  was never falsified.
+- **Pre-register each pass predicate before launching.** State it as a mechanical assertion over the
+  resulting worktree or transcript — *`examples/xdash_dashboard/create_dashboard_test.py` MUST
+  exist* — never as a judgement call such as *"the agent should handle dashboards well"*. A predicate
+  written after reading the transcripts will be fitted to them.
+
+> [!NOTE]
+> A finding routed to a rung that needs no boundary has no evidence sets to draw on, and benchmarks
+> with the origin scenario alone. Record that explicitly in the report rather than leaving the two
+> missing scenarios unexplained.
 
 ### Phase 2: Risk Tier & Teardown Agreement
 If the task involves Tier 2 or Tier 3 side effects, present the teardown contract to the user before launching subagents:
@@ -124,10 +159,22 @@ The main agent reviews the output and populates the scorecard using the **Prompt
    - **If Irrelevant** (e.g. prompt was a documentation summary): Flag extra turns as 🔴 **Unnecessary / Over-Zealous Overhead**, and mark Functional Correctness as `N/A (Irrelevant)`.
 3. **Pillar 1: Trajectory Telemetry**: Evaluate turn deltas, tool usage, error steps, and provide qualitative LLM reasoning on metric increases.
 4. **Pillar 2: Outcome Quality Evaluation**: Side-by-side output previews & LLM-as-a-Judge Scorecard (Rule adherence, functional correctness, completeness).
-5. **🏆 Final Benchmark Verdict**:
-   - **`PASSED`**: Candidate improved output quality with reasonable, prompt-relevant turn efficiency.
-   - **`PASSED WITH RESERVATIONS (NEEDS EFFICIENCY TUNING)`**: Candidate obeyed rules and improved output quality, but exhibited over-zealous tool execution irrelevant to the prompt.
-   - **`REJECTED`**: Candidate caused regressions, error loops, or severe token bloat without improving output quality.
+5. **🏆 Final Benchmark Verdict**: derive it from the three scenarios rather than from an overall
+   impression. A `✅` means that scenario's **pre-registered** predicate held.
+
+   | Origin | Transfer | Negative | Verdict |
+   | :---: | :---: | :---: | :--- |
+   | ✅ | ✅ | ✅ | **SHIP** |
+   | ✅ | ✅ | ❌ | **OVER-GENERALIZED** — narrow the predicate, or add an explicit rung-6 exception for the negative member |
+   | ✅ | ❌ | ✅ | **UNDER-GENERALIZED** — widen the predicate and re-derive the boundary |
+   | ✅ | ❌ | ❌ | **WRONG PREDICATE** — return to boundary derivation; the scope is mis-shaped, not merely mis-sized |
+   | ❌ | — | — | **REJECTED** — ineffective at the origin, or the finding was misrouted on the control ladder |
+
+   Two qualifiers attach on top of the matrix:
+   - **`SHIP WITH RESERVATIONS (NEEDS EFFICIENCY TUNING)`** when the candidate obeyed the change but
+     ran tools irrelevant to the prompt, per the Relevance Gate above.
+   - A verdict is **void for every criterion named by leaked text** under the Phase 3 contamination
+     self-check, whatever the matrix says. Report the voided criteria instead of the verdict.
 
 Save the benchmark markdown snippet to `/tmp/benchmark_report_<branch_name>.md`.
 
