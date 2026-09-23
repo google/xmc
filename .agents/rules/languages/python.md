@@ -9,6 +9,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 - **PEP 8 Style Guide**: Strictly follow standard Python style guidelines (PEP 8) and standard library best practices.
 - **Standard Library Preference**: Prefer built-in Python standard library modules (`pathlib`, `argparse`, `dataclasses`, `enum`, `subprocess`, `typing`) over third-party dependencies or custom utility wrappers.
 - **Prefer Python over Shell**: Write Python scripts instead of complex Shell scripts for automation, operational hooks, and CLI tools whenever procedural logic, JSON/YAML parsing, or conditional execution is required.
+- **Client SDK Wrapper Encapsulation & Private Stub Access**: Encapsulate low-level RPC operations within high-level client wrapper classes. Do not leak internal transport details or bypass client abstractions by accessing private attributes (e.g. `stub._stub`). If a wrapper lacks a required method, prefer extending the wrapper class (e.g. `ExperimentStateGRpcApi`) with a first-class public method. When transitional code or example scripts temporarily mix high-level wrapper methods with raw RPC stub calls, provide concise inline comments clarifying the interface boundary so reviewers and automated tools do not misidentify wrapper methods.
 
 ## 2. Type Annotations & Documentation
 - **Public API Type Hints**: Enforce explicit type annotations (`typing`) on all public function signatures, class methods, module interfaces, and data structures.
@@ -16,8 +17,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 
 ## 3. Unit Testing & Bazel Execution Protocol
 - **Standard `unittest` Framework**: Standardize test suites using the Python standard library `unittest` module (with tests named via `_test.py` suffix alongside target source files).
-- **Example Launch Script Exception (`examples/*/launch.py`)**: Do **not** create `launch_test.py` unit test files for standalone example launch scripts under `examples/*/launch.py`. Verify example launch scripts via end-to-end execution against a live or local XMC environment.
-- **`ExperimentStateGRpcApi` Wrapper Encapsulation & Clarity in Examples**: Prefer extending `ExperimentStateGRpcApi` (`experiment_state_api.py`) with missing public wrapper methods over accessing `stub._stub` directly. When mixing existing `ExperimentStateGRpcApi` public wrapper methods (`stub.get_work_unit`, `stub.create_artifact`, `stub.list_artifacts`) with unwrapped gRPC stub calls (`stub._stub.GetArtifact`) in `examples/`, document the public wrapper methods with a brief inline comment so reviewers and automated bots do not misidentify them as missing methods.
+- **Testing Scope & Cohesion**: Adhere to the 1-to-1 file test cohesion rules defined in [Core Engineering Standards](../core_engineering.md#5-strict-testing-coverage--pr-granularity), including exemptions for standalone example scripts under `examples/`.
 - **Hermetic Testing**: Isolate tests from external environment side-effects (file system mutations, process invocations, network RPCs) using `unittest.mock.patch` to keep unit test suites fast, deterministic, and self-contained.
 - **Mandatory Bazel Test Execution**: Because Python packages in this repository rely on Bazel-generated Protobuf bindings (`api.protos...`), tests MUST be run using Bazel. ALWAYS execute unit tests via `./tools/run_affected_tests.py` or `bazel test <target>`. Do NOT attempt direct system `python3 -m unittest` or `pip install` invocations outside of Bazel.
 
