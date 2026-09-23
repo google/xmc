@@ -100,6 +100,16 @@ h1 {
   background: #ffffff;
 }
 
+mat-card.mat-mdc-card {
+  overflow: auto;
+
+  ::ng-deep .mat-mdc-card-content,
+  ::ng-deep .mat-mdc-card-content:first-child,
+  ::ng-deep .mat-mdc-card-content:last-child {
+    padding: 0;
+  }
+}
+
 .filter-bar {
   display: flex;
   align-items: center;
