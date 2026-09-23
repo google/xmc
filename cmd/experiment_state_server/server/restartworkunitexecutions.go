@@ -106,7 +106,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 				NewMessage:     newExecution.GetStatus().GetSystemMessage(),
 			})
 
-			if err := tx.StatusMessages.SaveStatusMessageHistory(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
+			if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
 				return fmt.Errorf("failed to save status message history: %v: %w", err, status.ErrInternal)
 			}
 
@@ -120,7 +120,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 			if newExecution.GetStatus().GetUpdateTime() != nil {
 				stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
 			}
-			if err := tx.StatusHistory.SaveWorkUnitStatusHistory(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
+			if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
 				return fmt.Errorf("failed to save work unit status history: %v: %w", err, status.ErrInternal)
 			}
 

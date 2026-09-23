@@ -62,6 +62,7 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
+// TODO(b/517479143): Inline into Repository.SaveWorkUnitStatusHistoryIfChanged once CreateWorkUnit and UpdateWorkUnitExecutions are moved out of Spanner.
 func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, t time.Time, tx *spanner.ReadWriteTransaction) {
 	if ctx == nil || ctx.Err() != nil {
 		return
@@ -112,8 +113,8 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
 	return &clone
 }
 
-// SaveWorkUnitStatusHistory buffers a work unit status history mutation using the bound read-write transaction.
-func (r *Repository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+// SaveWorkUnitStatusHistoryIfChanged buffers a work unit status history mutation if the state changed using the bound read-write transaction.
+func (r *Repository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	if r.tx == nil {
 		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}

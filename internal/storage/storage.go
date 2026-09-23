@@ -269,14 +269,14 @@ type ExperimentTxRepository interface {
 
 // StatusMessageTxRepository defines status message operations scoped to a read-write transaction.
 type StatusMessageTxRepository interface {
-	// SaveStatusMessageHistory records a status message history within the transaction.
-	SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
+	// SaveStatusMessageHistoryIfChanged records a status message history within the transaction if the message changed.
+	SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
 }
 
 // StatusHistoryTxRepository defines status history operations scoped to a read-write transaction.
 type StatusHistoryTxRepository interface {
-	// SaveWorkUnitStatusHistory records a work unit status history within the transaction.
-	SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
+	// SaveWorkUnitStatusHistoryIfChanged records a work unit status history within the transaction if the state changed.
+	SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
 }
 
 // Transaction holds the domain repositories scoped to a single read-write transaction.

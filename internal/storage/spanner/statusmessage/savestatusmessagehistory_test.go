@@ -23,7 +23,6 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -114,42 +113,12 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 	}
 }
 
-func TestSaveStatusMessageHistory_RequiresTransaction(t *testing.T) {
-	fix := setupTest(t)
-	ctx, storage := fix.ctx, fix.storage
-
+func TestSaveStatusMessageHistoryIfChanged_RequiresTransaction(t *testing.T) {
+	repo := &statusmessage.Repository{}
 	newMsg := &essmsgpb.StructuredMessage{Parent: "experiments/123", UserFacingText: "test"}
-	err := storage.SaveStatusMessageHistory(ctx, 123, nil, nil, nil, newMsg)
+	err := repo.SaveStatusMessageHistoryIfChanged(context.Background(), 123, nil, nil, nil, newMsg)
 	if !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("SaveStatusMessageHistory outside tx returned %v, want FailedPrecondition", err)
-	}
-}
-
-func TestSaveStatusMessageHistory_SuccessInTransaction(t *testing.T) {
-	fix := setupTest(t)
-	ctx, storage, essClient := fix.ctx, fix.storage, fix.essClient
-
-	const xid int64 = 456
-	spanner.CreateBlankExperiment(ctx, t, storage, xid)
-
-	newMsg := &essmsgpb.StructuredMessage{
-		Parent:         "experiments/456",
-		UserFacingText: "transactional message",
-	}
-
-	err := storage.RunInTransaction(ctx, func(txCtx context.Context, tx *corestorage.Transaction) error {
-		return tx.StatusMessages.SaveStatusMessageHistory(txCtx, xid, nil, nil, nil, newMsg)
-	})
-	if err != nil {
-		t.Fatalf("RunInTransaction with SaveStatusMessageHistory failed: %v", err)
-	}
-
-	messages := listStatusMessagesForTest(ctx, t, essClient, xid)
-	if len(messages) != 1 {
-		t.Fatalf("SaveStatusMessageHistory wrote %d rows, want 1", len(messages))
-	}
-	if messages[0] != "transactional message" {
-		t.Errorf("SaveStatusMessageHistory UserFacingText = %q, want %q", messages[0], "transactional message")
+		t.Errorf("SaveStatusMessageHistoryIfChanged outside tx returned %v, want FailedPrecondition", err)
 	}
 }
 

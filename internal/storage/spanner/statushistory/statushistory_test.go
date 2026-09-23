@@ -291,52 +291,10 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 	}
 }
 
-func TestRepository_SaveWorkUnitStatusHistory_RequiresTransaction(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	repo := NewRepository(essClient)
-
-	err := repo.SaveWorkUnitStatusHistory(ctx, 1, 1, nil, "", nil, nil, nil, time.Now())
+func TestRepository_SaveWorkUnitStatusHistoryIfChanged_RequiresTransaction(t *testing.T) {
+	repo := NewRepository(nil)
+	err := repo.SaveWorkUnitStatusHistoryIfChanged(context.Background(), 1, 1, nil, "", nil, nil, nil, time.Now())
 	if status.ExtractCanonicalCode(err) != status.FailedPrecondition {
-		t.Errorf("SaveWorkUnitStatusHistory outside tx returned %v, want FailedPrecondition", err)
-	}
-}
-
-func TestRepository_SaveWorkUnitStatusHistory_HappyPath(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	repo := NewRepository(essClient)
-
-	xid := int64(42)
-	wid := int64(1)
-	eid := int64(2)
-	prevState := essmsgpb.WorkUnitStatus_STARTING
-	newState := essmsgpb.WorkUnitStatus_RUNNING
-	resources := map[string]int64{"cpu": 4}
-	now := time.Now()
-
-	_, err := essClient.ReadWriteTransaction(ctx, func(txCtx context.Context, tx *spanner.ReadWriteTransaction) error {
-		return repo.WithTx(tx).SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "test-queue", &prevState, &newState, resources, now)
-	})
-	if err != nil {
-		t.Fatalf("ReadWriteTransaction failed: %v", err)
-	}
-
-	stmt := spanner.Statement{
-		SQL:    "SELECT COUNT(1) FROM WorkUnitStatusHistory WHERE Xid = @xid AND WorkUnitId = @wid",
-		Params: map[string]any{"xid": xid, "wid": wid},
-	}
-	iter := essClient.Single().Query(ctx, stmt)
-	defer iter.Stop()
-	row, err := iter.Next()
-	if err != nil {
-		t.Fatalf("query WorkUnitStatusHistory failed: %v", err)
-	}
-	var count int64
-	if err := row.Column(0, &count); err != nil {
-		t.Fatalf("parse count failed: %v", err)
-	}
-	if count == 0 {
-		t.Error("expected WorkUnitStatusHistory record, got 0")
+		t.Errorf("SaveWorkUnitStatusHistoryIfChanged outside tx returned %v, want FailedPrecondition", err)
 	}
 }

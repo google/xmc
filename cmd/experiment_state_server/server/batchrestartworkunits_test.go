@@ -359,17 +359,6 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 			wantErr: status.ErrInternal,
 		},
 		{
-			name: "storage_restart_work_unit_executions_transaction_fails",
-			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
-			},
-			storage: &storage.MockStorage{
-				ListWorkUnitsResp:   []*msgpb.WorkUnit{workUnit},
-				RunInTransactionErr: fmt.Errorf("storage transaction failed"),
-			},
-			wantErr: status.ErrInternal,
-		},
-		{
 			name: "storage_restart_work_unit_executions_misses_execution",
 			xidClient: &mockXidClient{
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},

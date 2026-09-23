@@ -71,44 +71,15 @@ type MockStorage struct {
 	UpdateWorkUnitOperationErr       error
 	UpdateWorkUnitOperationCalls     int
 	GotOperationUpdate               *OperationUpdate
+	ListStatusMessagesResp           []*essmsgpb.StatusMessage
+	ListStatusMessagesErr            error
 
-	RunInTransactionCalls             int
 	RunInTransactionErr               error
-	RunInTransactionFn                func(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
 	SaveWorkUnitExecutionErr          error
-	SavedExecutions                   []*essmsgpb.WorkUnitExecution
 	UpdateCurrentWorkUnitExecutionErr error
-	UpdatedCurrentExecutions          []*essmsgpb.WorkUnitExecution
 	SaveWorkUnitStatusHistoryErr      error
-	SavedWorkUnitStatusHistory        []WorkUnitStatusHistoryCall
 	SaveStatusMessageHistoryErr       error
-	SavedStatusMessages               []StatusMessageHistoryCall
 	UpdateExperimentStatusErr         error
-	SavedExperimentStatuses           []*essmsgpb.Experiment
-
-	ListStatusMessagesResp []*essmsgpb.StatusMessage
-	ListStatusMessagesErr  error
-}
-
-// WorkUnitStatusHistoryCall records arguments to SaveWorkUnitStatusHistory.
-type WorkUnitStatusHistoryCall struct {
-	XID       int64
-	WID       int64
-	EID       *int64
-	QueueName string
-	PrevState *essmsgpb.WorkUnitStatus_WorkUnitState
-	NewState  *essmsgpb.WorkUnitStatus_WorkUnitState
-	Resources map[string]int64
-	Timestamp time.Time
-}
-
-// StatusMessageHistoryCall records arguments to SaveStatusMessageHistory.
-type StatusMessageHistoryCall struct {
-	XID    int64
-	WID    *int64
-	EID    *int64
-	OldMsg *essmsgpb.StructuredMessage
-	NewMsg *essmsgpb.StructuredMessage
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -221,10 +192,6 @@ func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, u
 
 // RunInTransaction mocks running a function within a transaction context.
 func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error {
-	s.RunInTransactionCalls++
-	if s.RunInTransactionFn != nil {
-		return s.RunInTransactionFn(ctx, fn)
-	}
 	if s.RunInTransactionErr != nil {
 		return s.RunInTransactionErr
 	}
@@ -238,60 +205,26 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 
 // SaveWorkUnitExecution mocks saving a work unit execution.
 func (s *MockStorage) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
-	s.SavedExecutions = append(s.SavedExecutions, execution)
 	return s.SaveWorkUnitExecutionErr
 }
 
 // UpdateCurrentWorkUnitExecution mocks updating the current work unit execution.
 func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
-	s.UpdatedCurrentExecutions = append(s.UpdatedCurrentExecutions, execution)
 	return s.UpdateCurrentWorkUnitExecutionErr
 }
 
-// SaveWorkUnitStatusHistory mocks saving work unit status history.
-func (s *MockStorage) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
-	var eidVal *int64
-	if eid != nil {
-		v := *eid
-		eidVal = &v
-	}
-	s.SavedWorkUnitStatusHistory = append(s.SavedWorkUnitStatusHistory, WorkUnitStatusHistoryCall{
-		XID:       xid,
-		WID:       wid,
-		EID:       eidVal,
-		QueueName: queueName,
-		PrevState: prevState,
-		NewState:  newState,
-		Resources: resources,
-		Timestamp: timestamp,
-	})
+// SaveWorkUnitStatusHistoryIfChanged mocks saving work unit status history if changed.
+func (s *MockStorage) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	return s.SaveWorkUnitStatusHistoryErr
 }
 
-// SaveStatusMessageHistory mocks saving status message history.
-func (s *MockStorage) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
-	var widVal, eidVal *int64
-	if wid != nil {
-		v := *wid
-		widVal = &v
-	}
-	if eid != nil {
-		v := *eid
-		eidVal = &v
-	}
-	s.SavedStatusMessages = append(s.SavedStatusMessages, StatusMessageHistoryCall{
-		XID:    xid,
-		WID:    widVal,
-		EID:    eidVal,
-		OldMsg: oldMsg,
-		NewMsg: newMsg,
-	})
+// SaveStatusMessageHistoryIfChanged mocks saving status message history if changed.
+func (s *MockStorage) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	return s.SaveStatusMessageHistoryErr
 }
 
 // UpdateExperimentStatus mocks updating experiment status.
 func (s *MockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
-	s.SavedExperimentStatuses = append(s.SavedExperimentStatuses, exp)
 	return s.UpdateExperimentStatusErr
 }
 
