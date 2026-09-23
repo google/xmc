@@ -15,10 +15,14 @@ graph TD
     C --> D[3. Apply Pragmatism & Anti-Hallucination Filter]
     D -->|Smooth Trajectory / One-off Friction| F[Report: No Action Needed]
     D -->|Recurrent Friction Found| R[4. Root-Cause Routing: Select Control Rung]
-    R -->|Rungs 1-5: Actionable Control| E[Formulate High-ROI Proposals & Synthesize Scenario]
+    R -->|Rungs 1-4: Stronger Control| E[Formulate High-ROI Proposals & Synthesize Scenario]
+    R -->|Rung 5: Prose Rule Candidate| V[5. Evidence-Based Boundary Derivation]
     R -->|Rungs 6-7: Annotate / Discard| F
-    E & F --> G[5. Present Review Report & Await Approval]
-    G -->|Approved| H[6. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
+    V -->|Positive Set >= 2, Negative Set Clear| E
+    V -->|Fewer Than 2 Positives| F
+    V -->|Contradictory Evidence| Esc[Escalate Question to User]
+    E & F & Esc --> G[6. Present Review Report & Await Approval]
+    G -->|Approved| H[7. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
     G -->|Rejected / No Action| End[Workflow Complete]
     H --> End
 ```
@@ -115,7 +119,47 @@ to the bot.
 
 ---
 
-## 5. Formulate Report & Await Approval
+## 5. Evidence-Based Boundary Derivation
+
+Runs for any finding whose control needs a boundary — a rung-2 lint predicate as much as a rung-5 prose
+rule. Its purpose is to decide how broadly the control should apply, using enumerated files rather than
+the file that triggered the finding. Follow
+[Evidence-Based Boundary Derivation](../../rules/rule_authoring_standards.md#5-evidence-based-boundary-derivation).
+
+Delegate the two search halves to worker subagents. Their contract is to **enumerate files**, not to
+argue about wording — a critic given only rule text cannot falsify it and will tend to agree.
+
+| Subagent | Task | Must return |
+| :--- | :--- | :--- |
+| **Generalizer** | Climb from the incident toward the broadest defensible scope. Use `code_search` to find files the candidate rule would govern. | The positive set: concrete paths, at least two outside the originating incident |
+| **Falsifier** | Hunt counterexamples where the broadened rule would give wrong or harmful advice. Also scan `.agents/rules/` for an existing bullet that already covers this ground. | The negative set: concrete paths, plus any duplicate or conflicting rule found |
+
+Execution notes:
+
+- **Batch once per session** across all surviving findings. Do not spawn a subagent pair per finding.
+- **Delegate only when the search is large enough to pay for itself.** If the candidate population is
+  small and bounded — a handful of scoped `grep`/`find` passes — run the enumeration inline. The
+  requirement that binds regardless of who runs it is the complement-aware search: both directions
+  answered explicitly. Delegation is a context-budget tactic, not the control.
+- Both are **read-only research agents**; a light model is sufficient.
+- Require the generalizer to report what its search **excluded**, not only what it matched.
+  A one-sided confirmation search will clear the two-positive bar while leaving the predicate wrong.
+
+### Arbitration
+
+As the parent agent, combine the sets and choose the **narrowest predicate covering the whole
+positive set and excluding the whole negative set**. Then apply these gates:
+
+- **Fewer than two independent positives** → the finding is not generalizable. Demote to rung 6 if a
+  governing control exists, otherwise rung 7.
+- **Contradictory evidence** → do NOT synthesize a rule. Present the contradiction to the user as an
+  explicit question and record the finding as blocked pending their decision.
+- **A duplicate or conflicting rule already exists** → this is a rung-4 routing problem or a
+  merge-first amendment, not a new rule.
+
+---
+
+## 6. Formulate Report & Await Approval
 
 Structure findings into a clean report:
 
@@ -128,19 +172,21 @@ Structure findings into a clean report:
 
 ### 💡 Proposed Enhancements (If Applicable)
 
-| Rung | Component | Current Friction / Review Feedback | Proposed Fix / Enhancement | Why Not a Stronger Rung | Impact |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **2 Automate** | `pyproject.toml` | Reviewer caught a banned call pattern | Enable the corresponding lint code with a rationale comment | n/a — strongest applicable | Blocks the class at commit time |
-| **3 Tool** | `tools/...` | Repetitive manual parsing | Create python script `tools/parse_x.py` | Procedure, not a checkable invariant | Saves 3-5 turns |
-| **5 Document** | `.agents/rules/...` | Reviewer caught a convention gap | Amend the existing bullet in `.agents/rules/...` | Not mechanically checkable; no API fix available | Prevents PR feedback |
+| Rung | Component | Current Friction / Review Feedback | Proposed Fix / Enhancement | Why Not a Stronger Rung | Evidence | Impact |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **2 Automate** | `pyproject.toml` | Reviewer caught a banned call pattern | Enable the corresponding lint code with a rationale comment | n/a — strongest applicable | 42 violations / 3 ignore globs | Blocks the class at commit time |
+| **3 Tool** | `tools/...` | Repetitive manual parsing | Create python script `tools/parse_x.py` | Procedure, not a checkable invariant | n/a | Saves 3-5 turns |
+| **5 Document** | `.agents/rules/...` | Reviewer caught a convention gap | Amend the existing bullet in `.agents/rules/...` | Not mechanically checkable; no API fix available | +4 positive / −2 negative / 0 undecided | Prevents PR feedback |
 
-The `Why Not a Stronger Rung` column is mandatory for every rung-5 row.
+Two columns are mandatory for every rung-5 row: `Why Not a Stronger Rung`, and `Evidence` stating
+the size of the positive and negative sets. A rung-5 row with fewer than two positives outside the
+originating incident must not appear here — it belongs at rung 6 or 7.
 
 End by presenting the report in markdown with clickable file links and awaiting user feedback before taking any action.
 
 ---
 
-## 6. Validation Handshake & Draft PR Creation
+## 7. Validation Handshake & Draft PR Creation
 
 When the user approves candidate rule, skill, or tooling enhancements:
 
