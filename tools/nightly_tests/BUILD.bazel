@@ -21,13 +21,21 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "common.py",
     "common_test.py",
+    "gallery_template/index.html",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
     "ui_entities_validator.py",
     "ui_entities_validator_test.py",
+    "weekly_visual_snapshot.py",
+    "weekly_visual_snapshot_test.py",
     "xmc_entities_validator.py",
     "xmc_entities_validator_test.py",
 ])
+
+filegroup(
+    name = "gallery_template",
+    srcs = glob(["gallery_template/**"]),
+)
 
 py_library(
     name = "xmc_entities_validator_lib",
@@ -56,6 +64,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "weekly_visual_snapshot_lib",
+    srcs = ["weekly_visual_snapshot.py"],
+    data = [":gallery_template"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":ui_entities_validator_lib",
+        "@absl_py//absl/flags",
+    ],
+)
+
 py_binary(
     name = "simple_job_verify",
     srcs = ["simple_job_verify.py"],
@@ -73,6 +93,19 @@ py_binary(
     deps = [
         ":common",
         ":ui_entities_validator_lib",
+        "@absl_py//absl/flags",
+    ],
+)
+
+py_binary(
+    name = "weekly_visual_snapshot",
+    srcs = ["weekly_visual_snapshot.py"],
+    data = [":gallery_template"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":ui_entities_validator_lib",
+        ":weekly_visual_snapshot_lib",
         "@absl_py//absl/flags",
     ],
 )
@@ -102,4 +135,13 @@ py_test(
     srcs = ["ui_entities_validator_test.py"],
     imports = ["../.."],
     deps = [":ui_entities_validator_lib"],
+)
+
+py_test(
+    name = "weekly_visual_snapshot_test",
+    size = "small",
+    srcs = ["weekly_visual_snapshot_test.py"],
+    data = [":gallery_template"],
+    imports = ["../.."],
+    deps = [":weekly_visual_snapshot_lib"],
 )
