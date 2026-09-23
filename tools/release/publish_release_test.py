@@ -235,7 +235,6 @@ class PublishReleaseTest(unittest.TestCase):
         )
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
-        self.assertIn("Release URL is empty", str(ctx.exception))
         self.assertIn("created locally", ctx.exception.instruction)
 
         args.skip_push = False

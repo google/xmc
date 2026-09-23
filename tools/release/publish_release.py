@@ -111,6 +111,7 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
         tag_pushed = True
 
+    try:
         if shutil.which("gh"):
             release_url = publish_via_gh_cli(
                 tag,

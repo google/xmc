@@ -114,6 +114,10 @@ def publish_via_gh_cli(
         ) from e
 
 
+# TODO(b/398234123): call_github_api currently only inspects os.environ["GITHUB_TOKEN"].
+# Since mutating os.environ is process-global and not thread-safe, update call_github_api
+# to check GH_TOKEN natively or accept an explicit token: str | None parameter once
+# github_utils is promoted to //tools/common.
 @contextlib.contextmanager
 def _temporary_github_token() -> Iterator[None]:
     """Temporarily sets GITHUB_TOKEN from GH_TOKEN if GITHUB_TOKEN is unset or empty."""
@@ -163,7 +167,10 @@ def publish_via_rest_api(
             )
             if isinstance(resp, dict):
                 return resp.get("html_url", ""), resp.get("id")
-            return "", None
+            raise HandledError(
+                f"GitHub REST API returned unexpected response format: {type(resp).__name__}",
+                "Verify that the GitHub Releases endpoint returned a valid release JSON object.",
+            )
         except (GithubAuthError, GithubAPIError) as e:
             raise HandledError(
                 f"Failed to create GitHub release via REST API: {e}",

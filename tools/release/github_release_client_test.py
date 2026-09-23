@@ -155,6 +155,20 @@ class GithubReleaseClientTest(unittest.TestCase):
                 repo_dir=Path("."),
             )
 
+        mock_api.side_effect = None
+        mock_api.return_value = ["unexpected_list_not_dict"]
+        with self.assertRaises(HandledError) as ctx:
+            publish_via_rest_api(
+                "0.6.0",
+                "Release 0.6.0",
+                "# Notes",
+                draft=True,
+                prerelease=False,
+                target_commit="HEAD",
+                repo_dir=Path("."),
+            )
+        self.assertIn("unexpected response format: list", str(ctx.exception))
+
     @patch("tools.release.github_release_client.resolve_repo_owner_and_name")
     @patch("tools.release.github_release_client.call_github_api")
     @patch.dict(
