@@ -104,10 +104,15 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             "notes_file": str(notes_path),
         }
 
+    tag_created = False
     if not tag_exists_and_matches:
         create_git_tag(tag, target_commit, title, repo_dir, args.force)
+        tag_created = True
+
+    tag_pushed = False
     if not args.skip_push:
         push_git_tag(tag, repo_dir, args.force, remote=args.remote)
+        tag_pushed = True
 
     try:
         release_url = publish_via_gh_cli(
@@ -122,26 +127,25 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
             force=args.force,
             skip_push=args.skip_push,
         )
-    except HandledError as e:
-        if args.skip_push:
-            e.instruction = (
-                f"Note: The git tag '{tag}' was already created locally. "
-                f"You may need to delete it locally (e.g., `git tag -d {tag}`) "
-                f"before retrying, or run with `--force`.\n{e.instruction}"
+        if not release_url:
+            raise HandledError(
+                "Failed to publish release: Release URL is empty.",
+                "Check if the release was created successfully on GitHub.",
             )
-        else:
+    except HandledError as e:
+        if tag_pushed:
             e.instruction = (
-                f"Note: The git tag '{tag}' was already pushed to '{args.remote}'. "
+                f"Note: The git tag '{tag}' was pushed to '{args.remote}'. "
                 f"You may need to delete it locally and remotely (e.g., `git tag -d {tag} && git push {args.remote} :refs/tags/{tag}`) "
                 f"before retrying, or run with `--force`.\n{e.instruction}"
             )
+        elif tag_created:
+            e.instruction = (
+                f"Note: The git tag '{tag}' was created locally. "
+                f"You may need to delete it locally (e.g., `git tag -d {tag}`) "
+                f"before retrying, or run with `--force`.\n{e.instruction}"
+            )
         raise
-
-    if not release_url:
-        raise HandledError(
-            "Failed to publish release: Release URL is empty.",
-            "Check if the release was created successfully on GitHub.",
-        )
 
     return {
         "status": "success",

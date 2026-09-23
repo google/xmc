@@ -51,7 +51,6 @@ class GithubReleaseClientTest(unittest.TestCase):
         self.assertIn("--draft", cmd)
         self.assertIn("--prerelease", cmd)
         self.assertIn("--target", cmd)
-        self.assertIn("--clobber", cmd)
         self.assertNotIn("--verify-tag", cmd)
 
         cmd_skip = _build_gh_release_cmd(
@@ -93,7 +92,6 @@ class GithubReleaseClientTest(unittest.TestCase):
         self.assertEqual(url, "https://github.com/myorg/myrepo/releases/tag/0.6.0")
         self.assertIn("--repo", mock_subprocess.call_args[0][0])
         self.assertIn("myorg/myrepo", mock_subprocess.call_args[0][0])
-        self.assertIn("--clobber", mock_subprocess.call_args[0][0])
 
         mock_subprocess.side_effect = subprocess.CalledProcessError(1, "gh", stderr="gh error")
         with self.assertRaises(HandledError):

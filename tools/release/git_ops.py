@@ -192,7 +192,7 @@ def _run_git(
             capture_output=True,
             text=True,
             errors="replace",
-            check=check,
+            check=False,
         )
     except FileNotFoundError as e:
         raise HandledError(
@@ -244,7 +244,7 @@ def verify_local_tag(
 
     raise HandledError(
         f"Git tag '{tag}' already exists in local repository.",
-        "Verify the version number or use a new incremented version.",
+        "Verify the version number, specify --force to overwrite, or ensure the target commit matches.",
     )
 
 

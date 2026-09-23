@@ -80,13 +80,22 @@ class PublishReleaseTest(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
         self.assertIn("git tag -d 0.6.0", ctx.exception.instruction)
-        self.assertIn("already pushed", ctx.exception.instruction)
+        self.assertIn("pushed to", ctx.exception.instruction)
 
         mock_publish_gh.side_effect = HandledError("gh failed", "fix gh")
         args.skip_push = True
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
-        self.assertIn("already created locally", ctx.exception.instruction)
+        self.assertIn("created locally", ctx.exception.instruction)
+
+        # When tag already existed and skip_push is True, no git mutations occurred;
+        # deletion advice should NOT be appended.
+        mock_publish_gh.side_effect = HandledError("gh failed", "fix gh")
+        with patch("tools.release.publish_release.verify_local_tag", return_value=True):
+            with self.assertRaises(HandledError) as ctx:
+                publish_release(args)
+            self.assertNotIn("created locally", ctx.exception.instruction)
+            self.assertNotIn("pushed to", ctx.exception.instruction)
 
     @patch("tools.release.git_ops.get_git_remote_url")
     @patch("shutil.which")
@@ -224,6 +233,13 @@ class PublishReleaseTest(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             publish_release(args)
         self.assertIn("Release URL is empty", str(ctx.exception))
+        self.assertIn("created locally", ctx.exception.instruction)
+
+        args.skip_push = False
+        with self.assertRaises(HandledError) as ctx:
+            publish_release(args)
+        self.assertIn("Release URL is empty", str(ctx.exception))
+        self.assertIn("pushed to", ctx.exception.instruction)
 
     @patch("tools.release.git_ops.get_git_remote_url")
     @patch("subprocess.run")

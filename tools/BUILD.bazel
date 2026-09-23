@@ -495,7 +495,7 @@ alias(
     actual = "//tools/release:publish_release",
 )
 
-alias(
+test_suite(
     name = "publish_release_test",
-    actual = "//tools/release:publish_release_test",
+    tests = ["//tools/release:publish_release_test"],
 )
