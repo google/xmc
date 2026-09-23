@@ -47,6 +47,11 @@ DEFAULT_DEX_CLIENT_ID = "xmc-client"
 DEFAULT_DEX_CLIENT_SECRET = "xmc-client-secret"
 
 
+# TODO: Decouple virtualenv provisioning from test execution and make dependencies
+# parametrizable (e.g., via E2EConfig, requirements files, or a dedicated
+# EnvironmentProvisioner) instead of hardcoding a static global list here. Different
+# E2E test tiers (e.g., Tier 1 UI vs Tier 2 example workloads) may require distinct
+# dependency sets.
 class E2ETier(str, enum.Enum):
     """Execution tier determining virtualenv dependency set."""
 
