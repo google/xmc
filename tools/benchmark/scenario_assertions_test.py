@@ -279,18 +279,18 @@ class RenderReportTest(unittest.TestCase):
     def test_assertion_detail_rows_are_rendered_and_pipes_escaped(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            (workspace / "a.py").write_text("ok\n", encoding="utf-8")
+            (workspace / "a.py").write_text("ok\nyes\n", encoding="utf-8")
             outcome = evaluate_scenario(
                 ORIGIN,
                 {
                     "workspace": str(workspace),
                     "assertions": [
-                        {"kind": "file_contains", "path": "a.py", "pattern": r"ok|yes"},
+                        {"kind": "file_contains", "path": "a.py", "pattern": "ok\n|yes"},
                     ],
                 },
             )
         report = render_report({ORIGIN: outcome}, Verdict.SHIP_ORIGIN_ONLY)
-        self.assertIn(r"| origin | `file_contains a.py` | ✅ | /ok\|yes/ matched |", report)
+        self.assertIn(r"| origin | `file_contains a.py` | ✅ | /ok \|yes/ matched |", report)
 
 
 class LoadAndEvaluateSpecTest(unittest.TestCase):

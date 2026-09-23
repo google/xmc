@@ -284,8 +284,8 @@ def render_report(outcomes: Mapping[str, ScenarioOutcome], verdict: Verdict) -> 
             continue
         for item in outcome.assertions:
             mark = "✅" if item.passed else "❌"
-            desc = item.description.replace("|", r"\|")
-            detail = item.detail.replace("|", r"\|")
+            desc = item.description.replace("|", r"\|").replace("\n", " ")
+            detail = item.detail.replace("|", r"\|").replace("\n", " ")
             lines.append(f"| {scenario} | `{desc}` | {mark} | {detail} |")
     return "\n".join(lines) + "\n"
 
