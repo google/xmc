@@ -204,8 +204,10 @@ the full matrix.
 
 ### Step 2: Propose Trajectory Comparison Benchmark
 Propose running [XMC Trajectory Comparison](../xmc_trajectory_comparison/SKILL.md) to empirically validate the new rule before opening a remote PR:
-- **Three-scenario matrix** (when boundary derivation ran):
+- **Three-scenario matrix** (when boundary derivation ran with a non-empty negative set):
   > *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over three scenarios — origin `[file]`, held-out transfer `[file]`, negative regression `[file]` — drawn from the evidence sets above?"*
+- **Two-scenario matrix** (when boundary derivation ran but the negative set was empty):
+  > *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over two scenarios — origin `[file]`, held-out transfer `[file]` (no negative regression files found) — drawn from the evidence sets above?"*
 - **Origin scenario only** (when the control needed no boundary):
   > *"Candidate change drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over the origin scenario `[file]` (no boundary needed)?"*
 
