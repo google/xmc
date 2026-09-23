@@ -12,7 +12,7 @@ graph TD
     A[Skill / Rule Edits in Worktree] --> B[1. Extract Structured Git Diff]
     B --> C[2. Main Agent Semantic Reasoning: Prompt Synthesis & Risk Classification]
     C --> D[3. User Confirmation & Teardown Plan Agreement]
-    D -->|Approved| E1[Subagent Baseline: Workspace branch + git reset]
+    D -->|Approved| E1["Subagent Baseline: parent detached to baseline ref before spawn"]
     D -->|Approved| E2[Subagent Candidate: Workspace branch + modified worktree]
     E1 --> F1[Baseline Transcript Log & Outcome Artifacts]
     E2 --> F2[Candidate Transcript Log & Outcome Artifacts]
@@ -50,22 +50,53 @@ The main agent parses the resulting JSON payload (`changed_files`, `added_lines`
    - **Tier 2 (Reversible Remote Artifacts)**: Creates PRs, remote test branches, or draft comments.
    - **Tier 3 (Infrastructure / High-Cost)**: Provisions GKE clusters, GCP resources, or cloud deployments.
 
+> [!WARNING]
+> **Ask for the artefact, not the method.** Neither the scenario prompt nor its deliverable spec may
+> describe the behaviour the candidate change prescribes. Asking both arms to *"list every file the
+> rule should govern and every file it should not"* while the candidate adds positive/negative evidence
+> sets makes both arms produce those sets on instruction — the benchmark then measures
+> instruction-following, and the arms tie no matter what the rule does. Request the workflow's normal
+> output, and let the grading step check whether the prescribed behaviour appeared **unprompted**.
+> Reconstruct search and tool behaviour from the transcripts instead of asking arms to self-report it,
+> since a request to log searches is itself a nudge to search more.
+
 ### Phase 2: Risk Tier & Teardown Agreement
 If the task involves Tier 2 or Tier 3 side effects, present the teardown contract to the user before launching subagents:
 > *"Benchmark will test updates to `XMC Create PR`. Side Effects: Will create 2 temporary test PRs titled `[BENCHMARK TEST]` on remote. Post-benchmark cleanup will execute `gh pr close <PR_URL> --delete-branch`. Proceed with benchmark? (Y/n)"*
 
 ### Phase 3: Dual Concurrent Subagent Execution
-Invoke two worker subagents concurrently via `invoke_subagent`:
 
-1. **Baseline Subagent**:
-   - `Workspace`: `"branch"`
+> [!IMPORTANT]
+> **A subagent's injected rules must match its own disk state.** `.agents/` content is injected into a
+> subagent's system prompt at spawn time, sourced from the **parent** worktree. A `git reset` issued
+> *inside* the subagent changes its disk but not its already-injected prompt, so a baseline arm spawned
+> from a candidate parent silently receives a summary of the very change under test. Never rely on an
+> in-subagent reset to produce a clean baseline.
+
+1. **Baseline Subagent** — park the parent worktree on the baseline commit *before* spawning:
+
+   ```bash
+   git switch --detach <baseline_ref>   # parent worktree now matches the baseline
+   # → invoke_subagent for the baseline arm here, with Workspace: "branch"
+   git switch -                         # restore as soon as invoke_subagent returns
+   ```
+
+   - `Workspace`: `"branch"` — the arm's branch is cut from the detached parent, so it starts clean and needs no reset.
    - `Role`: `"Baseline Subagent"`
-   - `Prompt`: Run `git reset --hard HEAD` (or base branch checkout) as the first command to restore clean rules/skills, then execute the target test prompt.
-2. **Candidate Subagent**:
+   - `Prompt`: execute the target test prompt. Do **not** instruct a reset.
+2. **Candidate Subagent** — spawn after the parent is restored:
    - `Workspace`: `"branch"`
    - `Role`: `"Candidate Subagent"`
    - `Prompt`: Execute the target test prompt directly within the modified worktree context, adhering strictly to context-aware execution bounds (do NOT run unrequested test suites for read-only or document summary prompts).
 
+The two arms are spawned seconds apart but still execute concurrently. Verify the isolation held before
+trusting the results: `git -C <baseline_arm_worktree> log --oneline -n 1` must report the baseline ref.
+
+**Contamination self-check (MUST).** Instruct every arm to report, as its first action, whether the
+`.agents/AGENTS.md` text on disk matches the version pre-loaded into its system prompt, and to treat the
+on-disk file as authoritative if they differ. If an arm reports a mismatch, the run is void **for every
+criterion the leaked text names** — re-run that arm. Criteria the leaked text does not mention remain
+valid, so record which is which instead of discarding the whole run.
 
 ### Phase 4: Resource Teardown & Manifest Cleanup
 After both subagents complete, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
