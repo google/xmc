@@ -76,7 +76,7 @@ func (g *k8sComponentGetter) GetComponent(ctx context.Context, namespace, name s
 // ResolveRedpandaComponentConfig updates cfg with broker endpoints and default topic from the
 // redpanda Component CR when cfg.EnableComponents is true and the component is enabled.
 func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter ComponentGetter) error {
-	if cfg == nil || !cfg.EnableComponents || cfg.messageBusOrDefault() != MessageBusRedpanda {
+	if !shouldResolveRedpandaComponent(ctx, cfg) {
 		return nil
 	}
 	if getter == nil {
@@ -94,16 +94,7 @@ func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter Com
 		return fmt.Errorf("failed to get component %s/%s: %w", ns, redpandaComponentName, err)
 	}
 	if isRedpandaComponentDisabled(comp) {
-		var specEnabled bool
-		var statusState string
-		if comp != nil && comp.Object != nil {
-			specEnabled, _, _ = unstructured.NestedBool(comp.Object, "spec", "enabled")
-			statusState, _, _ = unstructured.NestedString(comp.Object, "status", "state")
-		}
-		logging.Info(ctx, "Redpanda Component CR is disabled; preserving static ingestion-gateway configuration",
-			"namespace", ns, "component", redpandaComponentName,
-			"spec_enabled", specEnabled, "status_state", statusState,
-			"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName)
+		logDisabledRedpandaComponent(ctx, cfg, ns, comp)
 		return nil
 	}
 
@@ -113,9 +104,46 @@ func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter Com
 	if err := cfg.Validate(); err != nil {
 		cfg.RedpandaBrokers = originalBrokers
 		cfg.TopicName = originalTopic
+		logging.Warn(ctx, "Validation failed after applying Redpanda Component CR overrides; restored static configuration",
+			"namespace", ns, "component", redpandaComponentName, "error", err,
+			"restored_brokers", cfg.RedpandaBrokers, "restored_topic", cfg.TopicName)
 		return err
 	}
+	logging.Info(ctx, "Successfully resolved and validated Redpanda configuration from Component CR",
+		"namespace", ns, "component", redpandaComponentName,
+		"brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
 	return nil
+}
+
+func shouldResolveRedpandaComponent(ctx context.Context, cfg *Config) bool {
+	if cfg == nil {
+		logging.Info(ctx, "Skipping Redpanda Component CR resolution: config is nil")
+		return false
+	}
+	if !cfg.EnableComponents {
+		logging.Info(ctx, "Skipping Redpanda Component CR resolution: enable_components is false",
+			"brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
+		return false
+	}
+	if bus := cfg.messageBusOrDefault(); bus != MessageBusRedpanda {
+		logging.Info(ctx, "Skipping Redpanda Component CR resolution: message bus is not redpanda",
+			"message_bus", bus)
+		return false
+	}
+	return true
+}
+
+func logDisabledRedpandaComponent(ctx context.Context, cfg *Config, ns string, comp *unstructured.Unstructured) {
+	var specEnabled bool
+	var statusState string
+	if comp != nil && comp.Object != nil {
+		specEnabled, _, _ = unstructured.NestedBool(comp.Object, "spec", "enabled")
+		statusState, _, _ = unstructured.NestedString(comp.Object, "status", "state")
+	}
+	logging.Info(ctx, "Redpanda Component CR is disabled; preserving static ingestion-gateway configuration",
+		"namespace", ns, "component", redpandaComponentName,
+		"spec_enabled", specEnabled, "status_state", statusState,
+		"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName)
 }
 
 func isRedpandaComponentDisabled(comp *unstructured.Unstructured) bool {
