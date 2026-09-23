@@ -13,6 +13,10 @@
 // limitations under the License.
 @use '@angular/material' as mat;
 
+xmc-tag {
+  margin-right: 4px;
+}
+
 th.mat-mdc-header-cell {
   font-size: 13px;
   font-weight: 600;
