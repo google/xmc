@@ -135,13 +135,61 @@ When a finding legitimately reaches rung 5:
   relevant document, per
   [Skills & Automation Guidelines](skills_and_automation.md#2-dry--kiss-in-skill--rule-design).
   Never duplicate rule text across files.
-- **Scope by evidence, not by incident**: a rule scoped to the single file that triggered it is
-  almost always wrong. Enumerate the files the rule governs and the files it must not govern before
-  fixing its wording.
+- **Scope by evidence, not by incident**: derive the rule's scope using
+  [Evidence-Based Boundary Derivation](#5-evidence-based-boundary-derivation) below. A rule scoped to
+  the single file that triggered it is almost always wrong.
 
 ---
 
-## 5. Rung 6: Documented Deviation Protocol
+## 5. Evidence-Based Boundary Derivation
+
+Applies whenever a control's boundary must be drawn — a rung-2 lint predicate as much as a rung-5 prose
+rule. An over-broad predicate fires on legitimate code and trains the suppression reflex; an over-narrow
+one silently misses the class it was written for. The scope MUST be derived from enumerated files, never
+from the file that happened to trigger it. Partition the evidence into three sets:
+
+| Set | Contents | Produced by |
+| :--- | :--- | :--- |
+| **Positive** | Files the rule must govern | Generalizer — broadens scope and proves reach |
+| **Negative** | Files the rule must *not* govern | Falsifier — hunts counterexamples |
+| **Undecided** | Files whose existing treatment contradicts itself | Either; forces escalation |
+
+The rule is then the **narrowest predicate that covers the whole positive set and excludes the whole
+negative set**.
+
+### Requirements
+
+- **Two independent positives minimum.** The positive set MUST contain at least two files outside the
+  originating incident. A finding that cannot clear this bar is not generalizable: route it to rung 6
+  if a governing control exists, otherwise rung 7.
+- **Complement-aware search (MUST).** Searching only for files matching the proposed rule will
+  confirm it and stop. Deliberately search the complement instead, and answer both questions
+  explicitly:
+  - Which files does the predicate **exclude that it arguably should cover**?
+  - Which files does it **include that it must not**?
+- **Contradictory evidence escalates.** When two comparable files receive opposite treatment, no
+  consistent rule exists to be learned. Surface the contradiction as a question to the user rather
+  than picking a side silently. Rules synthesized from contradictory evidence are exactly the ones
+  reviewers reject, because the reviewer knows the counterexample. Once resolved, each undecided file
+  moves into the positive or negative set, or becomes a rung-6 documented deviation.
+- **Prefer semantic predicates over path globs.** A glob is easy to write and easy to get wrong: it
+  tends to encode the path of the triggering file rather than the property that matters. If a glob is
+  used, verify it actually covers every member of the positive set.
+
+### Worked Example
+
+The `examples/` unit-test convention in
+[Core Engineering Standards](core_engineering.md#5-strict-testing-coverage--pr-granularity)
+illustrates the target shape. Scoped to `examples/*/launch.py` it would have covered only 12 of some
+25 comparable scripts and missed `examples/xdash_dashboard/create_dashboard.py`; widened to all of
+`examples/` it would have wrongly captured the legitimately tested
+`examples/chart_artifact_job/training_metrics.py`. The rule as written names both sides — the
+entrypoint, launch, and container workload scripts it exempts, and the shared helper modules it does
+not — so a reader can place a new file without guessing.
+
+---
+
+## 6. Rung 6: Documented Deviation Protocol
 
 Rung 6 covers a specific case: **a governing control exists, and this file legitimately departs from
 it.** It is not a home for findings that are merely too small to generalize — those are rung 7.
