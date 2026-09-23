@@ -165,9 +165,11 @@ The main agent reviews the output and populates the scorecard using the **Prompt
    | Origin | Transfer | Negative | Verdict |
    | :---: | :---: | :---: | :--- |
    | ✅ | ✅ | ✅ | **SHIP** |
+   | ✅ | ✅ | — | **SHIP (NO NEGATIVE REGRESSION SCENARIO)** — when the negative set was empty, but transfer passed |
    | ✅ | — | — | **SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED)** — when no boundary was needed (no evidence sets), or when transfer/negative was omitted |
    | ✅ | ✅ | ❌ | **OVER-GENERALIZED** — narrow the predicate, or add an explicit rung-6 exception for the negative member |
    | ✅ | ❌ | ✅ | **UNDER-GENERALIZED** — widen the predicate and re-derive the boundary |
+   | ✅ | ❌ | — | **UNDER-GENERALIZED** — widen the predicate and re-derive the boundary (negative set was empty) |
    | ✅ | ❌ | ❌ | **WRONG PREDICATE** — return to boundary derivation; the scope is mis-shaped, not merely mis-sized |
    | ❌ | — | — | **REJECTED** — ineffective at the origin, or the finding was misrouted on the control ladder |
 
