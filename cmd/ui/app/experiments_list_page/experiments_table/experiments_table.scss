@@ -23,11 +23,33 @@ xmc-resource-chip {
 .table-container {
   width: 100%;
   overflow: auto;
+  background-color: var(--mat-sys-surface, #ffffff);
 }
 
-td {
-  padding-top: $xsmall-margin;
-  padding-bottom: $xsmall-margin;
+.mat-mdc-table {
+  background-color: transparent;
+  border-spacing: 1px;
+}
+
+th.mat-mdc-header-cell {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mat-sys-on-surface, #202124);
+  background-color: var(--mat-sys-surface, #ffffff);
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  padding: 12px 16px;
+}
+
+td,
+td.mat-mdc-cell {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--mat-sys-on-surface, #202124);
+  border-bottom: 1px solid var(--mat-sys-surface-variant, #f1f3f4);
+}
+
+tr.mat-mdc-row:hover {
+  background-color: var(--mat-sys-surface-container-low, #f8f9fa);
 }
 
 .tags-container,
@@ -133,8 +155,13 @@ tr:active {
 
   .cell-link {
     display: block;
-    text-decoration: none;
-    color: var(--mat-sys-primary);
+    text-decoration: underline;
+    color: var(--mat-sys-primary, #1a73e8);
+    font-weight: 400;
+
+    &:hover {
+      filter: brightness(0.8);
+    }
   }
 }
 
