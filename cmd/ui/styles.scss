@@ -29,7 +29,8 @@ mat-card.mat-mdc-card,
 .mat-mdc-card {
   background-color: #ffffff;
   border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--xmc-border-color, #dadce0);
+  border: 1px solid var(--xmc-border-color, #dadce0);
+  box-shadow: none;
   overflow: auto;
 
   .mat-mdc-card-content,
