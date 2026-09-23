@@ -75,7 +75,6 @@ h1 {
   .experiment-summary-metadata {
     flex: 1 1 0;
     padding-right: 28px;
-    border-right: 1px solid var(--mat-sys-outline-variant, #dadce0);
     max-width: 480px;
   }
 
@@ -119,4 +118,11 @@ mat-card-title {
 mat-card-content {
   padding: 12px 20px;
   font-size: 13px;
+}
+
+.experiment-tabs-section,
+.experiment-tabs-card {
+  ::ng-deep .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label {
+    color: #1a73e8 !important;
+  }
 }
