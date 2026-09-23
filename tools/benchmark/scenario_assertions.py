@@ -73,7 +73,7 @@ class ScenarioOutcome:
     assertions: tuple[AssertionOutcome, ...]
 
 
-def _search_pattern(target: Path, pattern: str | None) -> tuple[bool, str]:
+def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
     """Reports whether a regex matches the target file's contents.
 
     Matching is multiline, so `^` and `$` anchor to source lines rather than to the whole file.
@@ -83,31 +83,42 @@ def _search_pattern(target: Path, pattern: str | None) -> tuple[bool, str]:
             f"assertion on '{target}' is missing the 'pattern' field",
             "file_contains and file_omits both require a regular expression.",
         )
+    if not isinstance(pattern, str):
+        raise HandledError(
+            f"assertion on '{target}' has an invalid 'pattern' field type: {type(pattern).__name__}",
+            "The pattern must be a string containing a regular expression.",
+        )
     if not target.is_file():
         return False, f"file absent, cannot match /{pattern}/"
     text = target.read_text(encoding="utf-8", errors="replace")
-    matched = re.search(pattern, text, re.MULTILINE) is not None
+    try:
+        matched = re.search(pattern, text, re.MULTILINE) is not None
+    except re.error as e:
+        raise HandledError(
+            f"invalid regular expression {pattern!r} on '{target}': {e}",
+            "Correct the regular expression pattern in your assertion spec.",
+        ) from e
     return matched, f"/{pattern}/ {'matched' if matched else 'not matched'}"
 
 
-def _file_exists(target: Path, _pattern: str | None) -> tuple[bool, str]:
+def _file_exists(target: Path, _pattern: Any) -> tuple[bool, str]:
     """Passes when the target file is present."""
     present = target.is_file()
     return present, "present" if present else "absent"
 
 
-def _file_absent(target: Path, _pattern: str | None) -> tuple[bool, str]:
+def _file_absent(target: Path, _pattern: Any) -> tuple[bool, str]:
     """Passes when the target file is not present."""
     present = target.is_file()
     return not present, "present" if present else "absent"
 
 
-def _file_contains(target: Path, pattern: str | None) -> tuple[bool, str]:
+def _file_contains(target: Path, pattern: Any) -> tuple[bool, str]:
     """Passes when the pattern matches the target file's contents."""
     return _search_pattern(target, pattern)
 
 
-def _file_omits(target: Path, pattern: str | None) -> tuple[bool, str]:
+def _file_omits(target: Path, pattern: Any) -> tuple[bool, str]:
     """Passes when the pattern does not match the target file's contents."""
     matched, detail = _search_pattern(target, pattern)
     return not matched, detail
@@ -121,6 +132,29 @@ _PREDICATES = {
 }
 
 
+def _resolve_workspace_path(workspace: Path, kind: str, relative_path: Any) -> Path:
+    """Resolves an assertion path and verifies it stays inside the scenario workspace."""
+    if not relative_path or not isinstance(relative_path, str):
+        raise HandledError(
+            f"assertion of kind '{kind}' is missing a string 'path' field",
+            "Every predicate names a file relative to the scenario workspace.",
+        )
+    path_obj = Path(relative_path)
+    if path_obj.is_absolute():
+        raise HandledError(
+            f"assertion path must be relative, got absolute path: {relative_path}",
+            "Specify the path relative to the scenario workspace.",
+        )
+    resolved_workspace = workspace.resolve()
+    resolved_target = (resolved_workspace / path_obj).resolve()
+    if not resolved_target.is_relative_to(resolved_workspace):
+        raise HandledError(
+            f"assertion path escapes scenario workspace: {relative_path}",
+            "Specify a relative path that remains inside the scenario workspace.",
+        )
+    return resolved_target
+
+
 def evaluate_assertion(workspace: Path, assertion: Mapping[str, Any]) -> AssertionOutcome:
     """Evaluates one pre-registered predicate against a scenario's workspace."""
     kind = str(assertion.get("kind", ""))
@@ -131,29 +165,42 @@ def evaluate_assertion(workspace: Path, assertion: Mapping[str, Any]) -> Asserti
             f"Use one of: {', '.join(sorted(_PREDICATES))}.",
         )
     relative_path = assertion.get("path")
-    if not relative_path:
-        raise HandledError(
-            f"assertion of kind '{kind}' is missing the 'path' field",
-            "Every predicate names a file relative to the scenario workspace.",
-        )
-    passed, detail = predicate(workspace / str(relative_path), assertion.get("pattern"))
+    target = _resolve_workspace_path(workspace, kind, relative_path)
+    passed, detail = predicate(target, assertion.get("pattern"))
     return AssertionOutcome(description=f"{kind} {relative_path}", passed=passed, detail=detail)
 
 
 def evaluate_scenario(scenario: str, spec: Mapping[str, Any]) -> ScenarioOutcome:
     """Evaluates every assertion registered for one scenario."""
+    if not isinstance(spec, Mapping):
+        raise HandledError(
+            f"scenario '{scenario}' spec must be a JSON object",
+            "Ensure it contains 'workspace' and 'assertions' keys.",
+        )
     workspace = Path(str(spec.get("workspace", ".")))
     if not workspace.is_dir():
         raise HandledError(
             f"workspace for scenario '{scenario}' is not a directory: {workspace}",
             "Point 'workspace' at the arm's worktree root.",
         )
-    assertions = spec.get("assertions") or []
+    raw_assertions = spec.get("assertions")
+    if raw_assertions is not None and not isinstance(raw_assertions, list):
+        raise HandledError(
+            f"assertions for scenario '{scenario}' must be a list of objects",
+            "Check the format of the assertions field.",
+        )
+    assertions = raw_assertions or []
     if not assertions:
         raise HandledError(
             f"scenario '{scenario}' registers no assertions",
             "A scenario that cannot fail measures nothing; register at least one predicate.",
         )
+    for idx, item in enumerate(assertions):
+        if not isinstance(item, Mapping):
+            raise HandledError(
+                f"assertion at index {idx} in scenario '{scenario}' must be a JSON object",
+                "Check the format of your assertions list.",
+            )
     outcomes = tuple(evaluate_assertion(workspace, item) for item in assertions)
     return ScenarioOutcome(
         scenario=scenario,
@@ -226,7 +273,14 @@ def load_spec(spec_path: Path) -> dict[str, Any]:
             "Pre-register the spec before launching the benchmark arms.",
         )
     try:
-        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        content = spec_path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise HandledError(
+            f"failed to read assertion spec '{spec_path}': {e}",
+            "Check file path permissions.",
+        ) from e
+    try:
+        spec = json.loads(content)
     except json.JSONDecodeError as e:
         raise HandledError(
             f"assertion spec is not valid JSON: {e}",

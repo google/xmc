@@ -97,6 +97,34 @@ class EvaluateAssertionTest(unittest.TestCase):
         with self.assertRaises(HandledError):
             evaluate_assertion(self.workspace, {"kind": "file_contains", "path": "present.py"})
 
+    def test_non_string_pattern_is_rejected(self):
+        with self.assertRaises(HandledError):
+            evaluate_assertion(
+                self.workspace,
+                {"kind": "file_contains", "path": "present.py", "pattern": 123},
+            )
+
+    def test_invalid_regex_pattern_is_rejected(self):
+        with self.assertRaises(HandledError):
+            evaluate_assertion(
+                self.workspace,
+                {"kind": "file_contains", "path": "present.py", "pattern": "[unclosed"},
+            )
+
+    def test_absolute_path_is_rejected(self):
+        with self.assertRaises(HandledError):
+            evaluate_assertion(
+                self.workspace,
+                {"kind": "file_exists", "path": "/etc/passwd"},
+            )
+
+    def test_parent_traversal_path_is_rejected(self):
+        with self.assertRaises(HandledError):
+            evaluate_assertion(
+                self.workspace,
+                {"kind": "file_exists", "path": "../outside.py"},
+            )
+
 
 class EvaluateScenarioTest(unittest.TestCase):
     """Covers scenario aggregation and its guard rails."""
@@ -131,6 +159,20 @@ class EvaluateScenarioTest(unittest.TestCase):
                     "workspace": str(self.workspace / "missing"),
                     "assertions": [{"kind": "file_exists", "path": "a.py"}],
                 },
+            )
+
+    def test_non_mapping_scenario_or_assertion_is_rejected(self):
+        with self.assertRaises(HandledError):
+            evaluate_scenario(ORIGIN, "not-a-dict")  # type: ignore[arg-type]
+        with self.assertRaises(HandledError):
+            evaluate_scenario(
+                ORIGIN,
+                {"workspace": str(self.workspace), "assertions": "not-a-list"},
+            )
+        with self.assertRaises(HandledError):
+            evaluate_scenario(
+                ORIGIN,
+                {"workspace": str(self.workspace), "assertions": ["not-an-object"]},
             )
 
 
