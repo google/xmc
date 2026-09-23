@@ -15,11 +15,11 @@ graph TD
     C --> D[3. Apply Pragmatism & Anti-Hallucination Filter]
     D -->|Smooth Trajectory / One-off Friction| F[Report: No Action Needed]
     D -->|Recurrent Friction Found| R[4. Root-Cause Routing: Select Control Rung]
-    R -->|Rungs 1-4: Stronger Control| E[Formulate High-ROI Proposals & Synthesize Scenario]
-    R -->|Rung 5: Prose Rule Candidate| V[5. Evidence-Based Boundary Derivation]
+    R -->|Rungs 1, 3, 4: Stronger Control| E[Formulate High-ROI Proposals & Synthesize Scenario]
+    R -->|Rung 2 or 5: Control Needs a Boundary| V[5. Evidence-Based Boundary Derivation]
     R -->|Rungs 6-7: Annotate / Discard| F
-    V -->|Positive Set >= 2, Negative Set Clear| E
-    V -->|Fewer Than 2 Positives| F
+    V -->|Positive Set >= 2 Outside Incident, Negative Set Clear| E
+    V -->|Fewer Than 2 Positives Outside Incident| F
     V -->|Contradictory Evidence| Esc[Escalate Question to User]
     E & F & Esc --> G[6. Present Review Report & Await Approval]
     G -->|Approved| H[7. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
