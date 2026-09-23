@@ -13,10 +13,12 @@ graph TD
     A -->|Minor Typo / Routine Zero-Rule Fix| Stop[Do NOT Trigger Reflection]
     B --> C[2. Perform 4-Pillar Trajectory Audit]
     C --> D[3. Apply Pragmatism & Anti-Hallucination Filter]
-    D -->|Recurrent Friction / Rule Gap Found| E[Formulate High-ROI Proposals & Synthesize Scenario]
     D -->|Smooth Trajectory / One-off Friction| F[Report: No Action Needed]
-    E & F --> G[4. Present Review Report & Await Approval]
-    G -->|Approved| H[5. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
+    D -->|Recurrent Friction Found| R[4. Root-Cause Routing: Select Control Rung]
+    R -->|Rungs 1-5: Actionable Control| E[Formulate High-ROI Proposals & Synthesize Scenario]
+    R -->|Rungs 6-7: Annotate / Discard| F
+    E & F --> G[5. Present Review Report & Await Approval]
+    G -->|Approved| H[6. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
     G -->|Rejected / No Action| End[Workflow Complete]
     H --> End
 ```
@@ -43,7 +45,9 @@ Run this skill when one of the following conditions is met:
 
 ## 2. 4-Pillar Trajectory Audit
 
-Evaluate session logs (`transcript.jsonl`) across four key dimensions:
+Evaluate session logs (`transcript.jsonl`) across four key dimensions. These pillars **detect
+friction only** — they do not determine the fix. Every surviving finding is assigned a destination
+in [Section 4: Root-Cause Routing](#4-root-cause-routing).
 
 ### Missing Transcript Fallback Protocol
 If `transcript.jsonl` for a conversation ID is unindexed or missing from local disk:
@@ -51,23 +55,19 @@ If `transcript.jsonl` for a conversation ID is unindexed or missing from local d
 2. **Audit Workspace Worktrees & Reflog**: Inspect active agent worktree locations (`git worktree list`) and check `git reflog --all`.
 3. **Execute Helper Inspection**: Run `python3 tools/inspect_session.py --conv_id <CONV_ID>` to parse available git metadata and task logs cleanly without unconstrained filesystem traversals.
 
-### Pillar 1: Tooling & Automation Gaps (Helper Scripts)
+### Pillar 1: Tooling & Automation Gaps
 - **Signal**: Did the agent write complex shell logic, custom python one-liners, or manual regex filtering directly inside commands or chat responses?
-- **Action**: Identify opportunities to extract procedural logic into testable Python scripts in `tools/` (per [skills_and_automation.md](../../rules/skills_and_automation.md#1-extracting-complex-logic-to-executable-python-scripts)).
 
-
-### Pillar 2: Rule & Guideline Gaps (`.agents/rules/`)
+### Pillar 2: Rule & Guideline Gaps
 - **Signal**: Did review comments or agent trajectory show wrong assumptions, path wandering, or style guideline violations?
-- **PR Review Comment Tracing**: When triggered following PR comment resolutions, trace each comment back to the missing guideline, convention, or structural invariant in `.agents/rules/`. Diagnose why the initial implementation was not created with higher quality.
-- **Action**: Formulate exact rule additions in `.agents/rules/` to prevent future missteps.
+- **PR Review Comment Tracing**: When triggered following PR comment resolutions, trace each comment back to the missing guideline, convention, or structural invariant. Diagnose why the initial implementation was not created with higher quality.
 
-### Pillar 3: Skill & Workflow Gaps (`.agents/skills/`)
+### Pillar 3: Skill & Workflow Gaps
 - **Signal**: Was the overall task a recurring engineering playbook that lacked step-by-step guidance?
-- **Action**: Propose a new skill definition (`SKILL.md`) outlining the standardized workflow.
 
 ### Pillar 4: Token & Subagent Efficiency
 - **Signal**: Did the agent read massive files unnecessarily, dump raw logs into prompt memory, or fail to delegate heavy search tasks to worker subagents?
-- **Action**: Recommend subagent delegation (e.g., `research-google` or `self`) or tool usage adjustments.
+- **Action**: Recommend subagent delegation (e.g., `research-google` or `self`) or tool usage adjustments. This pillar is advisory by nature and does not pass through the control ladder.
 
 ---
 
@@ -81,7 +81,34 @@ Before adding any item to the proposed enhancements list, pass it through these 
 
 ---
 
-## 4. Formulate Report & Await Approval
+## 4. Root-Cause Routing
+
+Each finding that survives the pragmatism filter MUST be assigned a destination before any fix is
+drafted. Apply the control ladder defined in
+[Rule Authoring Standards](../../rules/rule_authoring_standards.md#1-root-cause-routing-the-control-ladder):
+
+| Rung | Control | Destination |
+| :--- | :--- | :--- |
+| 1 | Eliminate | Product code or API fix (separate PR) |
+| 2 | Automate | Lint rule or CI gate |
+| 3 | Tool | Helper script in `tools/` |
+| 4 | Route | [`AGENTS.md`](../../AGENTS.md) routing matrices or rule relocation |
+| 5 | Document | New prose rule or skill |
+| 6 | Annotate | Scoped suppression with a stated reason |
+| 7 | Discard | No change |
+
+> [!IMPORTANT]
+> Apply the [Lint-First Test](../../rules/rule_authoring_standards.md#3-rung-2-the-lint-first-test):
+> if the finding is a mechanically checkable invariant, it MUST become a lint rule rather than prose.
+> Selecting rung 5 requires recording why rungs 1–4 do not apply.
+
+Findings originating from an automated review bot must first be checked for
+[false positives](../../rules/rule_authoring_standards.md#non-ladder-branch-external-tooling-false-positives);
+a bot's misunderstanding is never grounds for a rule.
+
+---
+
+## 5. Formulate Report & Await Approval
 
 Structure findings into a clean report:
 
@@ -94,16 +121,19 @@ Structure findings into a clean report:
 
 ### 💡 Proposed Enhancements (If Applicable)
 
-| Category | Component | Current Friction / Review Feedback | Proposed Fix / Enhancement | Impact |
-| :--- | :--- | :--- | :--- | :--- |
-| **Tool / Script** | `tools/...` | Repetitive manual parsing | Create python script `tools/parse_x.py` | Saves 3-5 turns |
-| **Rule** | `.agents/rules/...` | Reviewer caught missing style | Add rule to `.agents/rules/...` | Prevents PR feedback |
+| Rung | Component | Current Friction / Review Feedback | Proposed Fix / Enhancement | Why Not a Stronger Rung | Impact |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **2 Automate** | `pyproject.toml` | Reviewer caught a banned call pattern | Enable the corresponding lint code with a rationale comment | n/a — strongest applicable | Blocks the class at commit time |
+| **3 Tool** | `tools/...` | Repetitive manual parsing | Create python script `tools/parse_x.py` | Procedure, not a checkable invariant | Saves 3-5 turns |
+| **5 Document** | `.agents/rules/...` | Reviewer caught a convention gap | Amend the existing bullet in `.agents/rules/...` | Not mechanically checkable; no API fix available | Prevents PR feedback |
+
+The `Why Not a Stronger Rung` column is mandatory for every rung-5 row.
 
 End by presenting the report in markdown with clickable file links and awaiting user feedback before taking any action.
 
 ---
 
-## 5. Validation Handshake & Draft PR Creation
+## 6. Validation Handshake & Draft PR Creation
 
 When the user approves candidate rule, skill, or tooling enhancements:
 

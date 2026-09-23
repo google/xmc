@@ -82,6 +82,7 @@ function processUser(user: User | null) {
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Iterative Reflection Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) after major implementations, following PR review comment resolutions (to diagnose and codify missing guidelines/tools), or upon explicit user request. Validate candidate rule additions empirically using the [XMC Trajectory Comparison Skill](../skills/xmc_trajectory_comparison/SKILL.md). Do NOT trigger for routine minor typo fixes where no underlying guideline was violated.
+- **Route Findings Before Drafting Fixes**: Every reflection finding MUST be assigned a destination via the control ladder in [Rule Authoring Standards](rule_authoring_standards.md). Prose rules are a last-resort control: if an invariant is mechanically checkable it MUST become a lint rule instead.
 
 
 ## 7. System Attribute Immutability & Precedence

@@ -39,7 +39,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
-| Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
+| Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) & [Rule Authoring Standards](rules/rule_authoring_standards.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |
 
 
@@ -51,6 +51,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, high-fidelity test doubles, strict coverage, PR sizing thresholds, and post-implementation reflection rules.
 - 📐 [Architectural Contracts & Invariants](rules/architectural_contracts.md): Core platform invariants including the Non-Restarting JobSets Contract (`MaxRestarts: 0`, `PodSpec.RestartPolicy: Never` for primary containers), agent halt triggers, and WorkUnit execution lifecycle boundaries.
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
+- 🪜 [Rule Authoring Standards](rules/rule_authoring_standards.md): Root-cause routing via the seven-rung control ladder (Eliminate, Automate, Tool, Route, Document, Annotate, Discard), the mandatory Lint-First Test, the invariant-vs-procedure applicability router, the merge-first rule budget, and the documented deviation protocol.
 
 ### GitHub & PR Workflows
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR sizing gates, PR title & body formatting rules, mandatory assumptions disclosure in PR bodies, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
