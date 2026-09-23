@@ -165,6 +165,7 @@ The main agent reviews the output and populates the scorecard using the **Prompt
    | Origin | Transfer | Negative | Verdict |
    | :---: | :---: | :---: | :--- |
    | ✅ | ✅ | ✅ | **SHIP** |
+   | ✅ | — | — | **SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED)** — when no boundary was needed (no evidence sets), or when transfer/negative was omitted |
    | ✅ | ✅ | ❌ | **OVER-GENERALIZED** — narrow the predicate, or add an explicit rung-6 exception for the negative member |
    | ✅ | ❌ | ✅ | **UNDER-GENERALIZED** — widen the predicate and re-derive the boundary |
    | ✅ | ❌ | ❌ | **WRONG PREDICATE** — return to boundary derivation; the scope is mis-shaped, not merely mis-sized |
