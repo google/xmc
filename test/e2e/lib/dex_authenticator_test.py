@@ -54,6 +54,75 @@ class TestDexAuthenticator(unittest.TestCase):
             )
             self.assertGreaterEqual(mock_page.locator.call_count, 3)
 
+    def test_is_off_dex_identifies_dex_and_non_dex_urls(self):
+        cases = [
+            ("http://localhost:5556/dex/auth/local?back=&state=x", False),
+            ("http://localhost:5556/dex/approval?req=x", False),
+            ("http://localhost:8080/experiments", True),
+            ("http://localhost:8080/?error=forbidden&email=unauthorized%40xmc.local", True),
+            ("http://localhost:8080/?error=forbidden&email=dexter%40xmc.local", True),
+            ("http://localhost:8080/?error=permission_error", True),
+            ("http://localhost:8080/api/callback?code=a&state=b", True),
+        ]
+        for url, expected in cases:
+            with self.subTest(url=url):
+                self.assertEqual(self.auth._is_off_dex(url), expected)
+
+        same_host_auth = DexAuthenticator(
+            base_url="http://localhost:8080",
+            dex_url="http://localhost:8080/dex",
+        )
+        self.assertFalse(same_host_auth._is_off_dex("http://localhost:8080/dex/auth/local"))
+        self.assertTrue(same_host_auth._is_off_dex("http://localhost:8080/experiments"))
+
+    def test_credentials_wait_predicate_accepts_denial_redirect_and_approval(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_page = MagicMock()
+            mock_page.url = f"{DEFAULT_DEX_URL}/dex/auth/local"
+
+            self.auth._fill_and_submit_credentials(
+                page=mock_page,
+                screenshots_dir=Path(tmp_dir),
+                email="unauthorized@xmc.local",
+                password="password123",
+            )
+
+            predicate = mock_page.wait_for_url.call_args[0][0]
+            self.assertTrue(
+                predicate("http://localhost:8080/?error=forbidden&email=unauthorized%40xmc.local")
+            )
+            self.assertTrue(predicate("http://localhost:8080/experiments"))
+            self.assertTrue(predicate("http://localhost:5556/dex/approval?req=123"))
+            self.assertFalse(predicate("http://localhost:5556/dex/auth/local?state=abc"))
+
+    def test_credentials_wait_timeout_logs_warning_and_continues(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_page = MagicMock()
+            mock_page.url = f"{DEFAULT_DEX_URL}/dex/auth/local"
+            mock_page.wait_for_url.side_effect = TimeoutError("wait_for_url timed out")
+
+            with self.assertLogs("test.e2e.lib.dex_authenticator", level="WARNING") as cm:
+                self.auth._fill_and_submit_credentials(
+                    page=mock_page,
+                    screenshots_dir=Path(tmp_dir),
+                    email=DEFAULT_ADMIN_USER,
+                    password=DEFAULT_ADMIN_PASSWORD,
+                )
+            self.assertTrue(any("Stalled" in msg for msg in cm.output))
+
+    def test_wait_for_redirect_skips_when_already_off_dex(self):
+        mock_page = MagicMock()
+        mock_page.url = "http://localhost:8080/?error=forbidden"
+        self.auth.wait_for_redirect(mock_page)
+        mock_page.wait_for_url.assert_not_called()
+
+    def test_handle_consent_noop_when_approval_absent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_page = MagicMock()
+            mock_page.url = "http://localhost:8080/experiments"
+            self.auth._handle_consent_if_present(mock_page, Path(tmp_dir), DEFAULT_ADMIN_USER)
+            mock_page.locator.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

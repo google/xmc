@@ -20,7 +20,10 @@ import unittest
 from unittest.mock import patch
 
 from test.e2e.lib.config import (
+    E2E_UI_VENV_DEPENDENCIES,
+    E2E_WORKLOAD_VENV_DEPENDENCIES,
     E2EConfig,
+    E2ETier,
     parse_args,
     resolve_kind_binary,
 )
@@ -28,6 +31,31 @@ from test.e2e.lib.config import (
 
 class TestE2EConfig(unittest.TestCase):
     """Tests for E2EConfig initialization."""
+
+    def test_tier_venv_dependencies(self):
+        ui_cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+        )
+        self.assertEqual(ui_cfg.tier, E2ETier.UI)
+        self.assertEqual(ui_cfg.venv_dependencies, E2E_UI_VENV_DEPENDENCIES)
+        self.assertNotIn("xmanager", ui_cfg.venv_dependencies)
+
+        workload_cfg = E2EConfig(
+            project_id="test-proj",
+            spanner_instance="test-inst",
+            cluster_name="test-cluster",
+            kind_bin="kind",
+            workspace_root="/workspace",
+            screenshots_dir="/screenshots",
+            tier="workload",
+        )
+        self.assertEqual(workload_cfg.tier, E2ETier.WORKLOAD)
+        self.assertEqual(workload_cfg.venv_dependencies, E2E_WORKLOAD_VENV_DEPENDENCIES)
 
     def test_post_init_generates_unique_db_names_and_temp_dir(self):
         cfg = E2EConfig(

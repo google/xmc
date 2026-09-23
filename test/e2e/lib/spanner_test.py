@@ -284,6 +284,49 @@ class TestSpannerManager(unittest.TestCase):
         ]
         mock_run.assert_has_calls(expected_calls, any_order=True)
 
+    def test_prepare_e2e_ddl_file_appends_schema_migrations_table(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self.cfg.temp_dir = tmp_dir
+            src_ddl = f"{tmp_dir}/base-schema.sql"
+            with open(src_ddl, "w", encoding="utf-8") as f:
+                f.write("CREATE TABLE Experiments (Id INT64 NOT NULL) PRIMARY KEY(Id);")
+
+            combined_path = self.mgr._prepare_e2e_ddl_file("e2e-ess-123", src_ddl)
+            self.assertNotEqual(combined_path, src_ddl)
+            with open(combined_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("CREATE TABLE Experiments", content)
+            self.assertIn("CREATE TABLE SchemaMigrations", content)
+
+            # Second call on already combined file returns unchanged path
+            self.assertEqual(
+                self.mgr._prepare_e2e_ddl_file("e2e-ess-123", combined_path), combined_path
+            )
+
+    @patch("time.sleep")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_fails_fast_on_duplicate_name_error(self, mock_run, mock_sleep):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["migrations"],
+            stderr=b"rpc error: code = FailedPrecondition desc = Duplicate name in schema: SchemaMigrations",
+        )
+
+        with (
+            patch.object(
+                self.mgr,
+                "_resolve_migration_binary",
+                return_value="/workspace/bazel-bin/migrations",
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        self.assertEqual(mock_run.call_count, 1)
+        mock_sleep.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

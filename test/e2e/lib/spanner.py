@@ -62,6 +62,14 @@ def _is_retryable_spanner_error(err_str: str) -> bool:
     return any(marker in err_str for marker in retryable_markers)
 
 
+_SCHEMA_MIGRATIONS_DDL = (
+    "\n\nCREATE TABLE SchemaMigrations (\n"
+    "  Version INT64 NOT NULL,\n"
+    "  Dirty BOOL NOT NULL,\n"
+    ") PRIMARY KEY(Version);\n"
+)
+
+
 class SpannerManager:
     """Manages ephemeral Cloud Spanner databases and schema provisioning."""
 
@@ -202,11 +210,29 @@ class SpannerManager:
         logger.info("Building prerequisites %s with Bazel...", targets)
         run_cmd(["bazel", "build", *targets], cwd=self.cfg.workspace_root)
 
+    def _prepare_e2e_ddl_file(self, db_name: str, ddl_path: str) -> str:
+        """Creates a temporary DDL file appending SchemaMigrations for fast single-batch init."""
+        try:
+            with open(ddl_path, encoding="utf-8") as f:
+                schema_sql = f.read()
+        except OSError:
+            return ddl_path
+
+        if "CREATE TABLE SchemaMigrations" in schema_sql:
+            return ddl_path
+
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
+        combined_ddl_path = os.path.join(self.cfg.temp_dir, f"{db_name}-schema.sql")
+        with open(combined_ddl_path, "w", encoding="utf-8") as f:
+            f.write(schema_sql + _SCHEMA_MIGRATIONS_DDL)
+        return combined_ddl_path
+
     def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
         """Creates a single Spanner database with retries on RESOURCE_EXHAUSTED / 429."""
         ddl_path = (
             ddl_file if os.path.isabs(ddl_file) else os.path.join(self.cfg.workspace_root, ddl_file)
         )
+        effective_ddl_path = self._prepare_e2e_ddl_file(db_name, ddl_path)
         proto_desc_path = (
             proto_desc_file
             if os.path.isabs(proto_desc_file)
@@ -231,7 +257,7 @@ class SpannerManager:
                         db_name,
                         f"--instance={self.cfg.spanner_instance}",
                         f"--project={self.cfg.project_id}",
-                        f"--ddl-file={ddl_path}",
+                        f"--ddl-file={effective_ddl_path}",
                         f"--proto-descriptors-file={proto_desc_path}",
                     ],
                     capture_output=True,

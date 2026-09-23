@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import enum
 import logging
 import os
 import shutil
@@ -45,12 +46,25 @@ DEFAULT_DEX_URL = os.environ.get("XMC_DEX_URL", "http://localhost:5556")
 DEFAULT_DEX_CLIENT_ID = "xmc-client"
 DEFAULT_DEX_CLIENT_SECRET = "xmc-client-secret"
 
+
 # TODO: Decouple virtualenv provisioning from test execution and make dependencies
 # parametrizable (e.g., via E2EConfig, requirements files, or a dedicated
 # EnvironmentProvisioner) instead of hardcoding a static global list here. Different
 # E2E test tiers (e.g., Tier 1 UI vs Tier 2 example workloads) may require distinct
 # dependency sets.
-E2E_VENV_DEPENDENCIES: list[str] = [
+class E2ETier(str, enum.Enum):
+    """Execution tier determining virtualenv dependency set."""
+
+    UI = "ui"
+    WORKLOAD = "workload"
+
+
+E2E_UI_VENV_DEPENDENCIES: list[str] = [
+    "playwright",
+    "requests",
+]
+
+E2E_WORKLOAD_VENV_DEPENDENCIES: list[str] = [
     "playwright",
     "requests",
     "grpcio",
@@ -60,6 +74,9 @@ E2E_VENV_DEPENDENCIES: list[str] = [
     "google-auth",
     "xmanager",
 ]
+
+# Default Tier-1 UI dependency set
+E2E_VENV_DEPENDENCIES: list[str] = E2E_UI_VENV_DEPENDENCIES
 
 
 def resolve_kind_binary(explicit_bin: str | None = None) -> str:
@@ -95,11 +112,14 @@ class E2EConfig:
     keep_cluster: bool = False
     skip_build: bool = False
     test_script: str | None = None
+    tier: E2ETier = E2ETier.UI
     ess_db: str = ""
     xid_db: str = ""
     temp_dir: str = ""
 
     def __post_init__(self) -> None:
+        if isinstance(self.tier, str):
+            self.tier = E2ETier(self.tier)
         ts = int(time.time())
         suffix = uuid.uuid4().hex[:6]
         if not self.ess_db:
@@ -112,6 +132,12 @@ class E2EConfig:
     @property
     def kube_context(self) -> str:
         return f"kind-{self.cluster_name}"
+
+    @property
+    def venv_dependencies(self) -> list[str]:
+        if self.tier == E2ETier.WORKLOAD:
+            return list(E2E_WORKLOAD_VENV_DEPENDENCIES)
+        return list(E2E_UI_VENV_DEPENDENCIES)
 
 
 def parse_args(args: list[str] | None = None) -> E2EConfig:
@@ -181,6 +207,12 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         default=os.environ.get("XMC_E2E_TEST_SCRIPT"),
         help="Path to custom test script to execute inside the virtualenv (default: test/e2e/test_e2e_flow.py)",
     )
+    parser.add_argument(
+        "--tier",
+        choices=[t.value for t in E2ETier],
+        default=os.environ.get("XMC_E2E_TIER", E2ETier.UI.value),
+        help="E2E test tier determining dependency set ('ui' or 'workload', default: ui)",
+    )
 
     parsed = parser.parse_args(args)
     return E2EConfig(
@@ -194,4 +226,5 @@ def parse_args(args: list[str] | None = None) -> E2EConfig:
         keep_cluster=parsed.keep_cluster,
         skip_build=parsed.skip_build,
         test_script=parsed.test_script,
+        tier=E2ETier(parsed.tier),
     )

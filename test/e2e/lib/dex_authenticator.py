@@ -51,6 +51,14 @@ class DexAuthenticator:
         self.dex_url = dex_url
         self.dex_parsed = urllib.parse.urlparse(dex_url)
 
+    def _is_off_dex(self, url: str) -> bool:
+        """Reports whether the browser has navigated away from the Dex IdP host."""
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc != self.dex_parsed.netloc:
+            return True
+        dex_path = self.dex_parsed.path.rstrip("/")
+        return not parsed.path.startswith(dex_path) if dex_path else False
+
     def _navigate_to_landing_and_sign_in(
         self, page: Page | Any, screenshots_dir: Path, email: str
     ) -> None:
@@ -86,13 +94,19 @@ class DexAuthenticator:
         sign_in_btn.click()
 
         logger.info("Waiting for Dex auth page (current URL: %s)...", page.url)
+        started_at = time.monotonic()
         try:
             page.wait_for_url(
-                lambda u: urllib.parse.urlparse(u).netloc == self.dex_parsed.netloc or "dex" in u,
+                lambda u: not self._is_off_dex(u),
                 timeout=NAVIGATION_TIMEOUT_MS,
             )
         except Exception as e:
-            logger.debug("Optional wait for Dex URL passed or timed out: %s", e)
+            logger.warning(
+                "Stalled %.1fs waiting for Dex auth page (last URL: %s): %s",
+                time.monotonic() - started_at,
+                page.url,
+                e,
+            )
         logger.info("Current URL after login click: %s", page.url)
 
     def _select_connector_if_present(self, page: Page | Any) -> None:
@@ -132,13 +146,19 @@ class DexAuthenticator:
             "button:has-text('Log in'), button:has-text('Login'), button[type='submit']"
         ).first.click()
 
+        started_at = time.monotonic()
         try:
             page.wait_for_url(
-                lambda u: "/approval" in u or "callback" in u or "experiments" in u,
+                lambda u: "/approval" in u or self._is_off_dex(u),
                 timeout=NAVIGATION_TIMEOUT_MS,
             )
         except Exception as e:
-            logger.debug("Redirect wait finished or timed out: %s", e)
+            logger.warning(
+                "Stalled %.1fs waiting to leave the Dex login form (last URL: %s): %s",
+                time.monotonic() - started_at,
+                page.url,
+                e,
+            )
         logger.info("Current URL after credentials submission: %s", page.url)
 
     def _handle_consent_if_present(
@@ -155,9 +175,7 @@ class DexAuthenticator:
                 grant_btn.click(timeout=SHORT_TIMEOUT_MS)
                 logger.info("Clicked Dex grant access button.")
                 page.wait_for_url(
-                    lambda u: (
-                        urllib.parse.urlparse(u).netloc != self.dex_parsed.netloc and "dex" not in u
-                    ),
+                    self._is_off_dex,
                     timeout=DEFAULT_TIMEOUT_MS,
                 )
             except Exception as e:
@@ -165,14 +183,11 @@ class DexAuthenticator:
 
     def wait_for_redirect(self, page: Page | Any) -> None:
         """Waits for redirection from Dex IdP back to XMC dashboard."""
-        current_parsed = urllib.parse.urlparse(page.url)
-        if "dex" in page.url or current_parsed.netloc == self.dex_parsed.netloc:
+        if not self._is_off_dex(page.url):
             logger.info("Waiting for redirect from Dex back to XMC dashboard...")
             try:
                 page.wait_for_url(
-                    lambda u: (
-                        urllib.parse.urlparse(u).netloc != self.dex_parsed.netloc and "dex" not in u
-                    ),
+                    self._is_off_dex,
                     timeout=DEFAULT_TIMEOUT_MS,
                 )
             except Exception as e:

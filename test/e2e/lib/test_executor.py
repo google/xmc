@@ -22,7 +22,7 @@ import subprocess
 import sys
 
 from test.e2e.lib.command import run_cmd
-from test.e2e.lib.config import E2E_VENV_DEPENDENCIES, E2EConfig
+from test.e2e.lib.config import E2EConfig, E2ETier
 from test.e2e.lib.dev_token import fetch_dex_oidc_token
 
 logger = logging.getLogger("xmc_e2e_runner")
@@ -34,6 +34,20 @@ class PlaywrightTestExecutor:
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
         self.venv_dir = os.path.join(self.cfg.temp_dir, "venv_e2e")
+
+    def _ensure_xmanager_installed(self, target_python: str) -> None:
+        """Installs xmanager with xm_cloud into the target environment for workload tier."""
+        if self.cfg.tier != E2ETier.WORKLOAD:
+            return
+        install_script = os.path.join(
+            self.cfg.workspace_root, "deploy", "cli", "install_xmanager.py"
+        )
+        if os.path.exists(install_script):
+            try:
+                run_cmd([target_python, "-c", "import xmanager.xm_cloud"])
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                logger.info("Setting up xmanager with xm_cloud in %s...", self.venv_dir)
+                run_cmd([sys.executable, install_script, "--venv", self.venv_dir])
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies, or uses pre-baked environment."""
@@ -66,14 +80,24 @@ class PlaywrightTestExecutor:
                 import playwright  # noqa: F401
                 import requests  # noqa: F401
 
+                if self.cfg.tier == E2ETier.WORKLOAD:
+                    import absl  # noqa: F401
+                    import dotenv  # noqa: F401
+                    import google.auth  # noqa: F401
+                    import grpc  # noqa: F401
+                    import xmanager.xm_cloud  # noqa: F401
+
                 if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
                     logger.info(
                         "Using pre-baked Playwright environment at %s (0s setup).",
                         sys.executable,
                     )
                     return sys.executable
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "Pre-baked Python missing required packages (%s); falling back to virtualenv.",
+                    e,
+                )
 
         python_bin = sys.executable
         venv_python = os.path.join(self.venv_dir, "bin", "python")
@@ -86,7 +110,7 @@ class PlaywrightTestExecutor:
                     "install",
                     "--upgrade",
                     "pip",
-                    *E2E_VENV_DEPENDENCIES,
+                    *self.cfg.venv_dependencies,
                 ]
             )
             run_cmd(
@@ -97,16 +121,7 @@ class PlaywrightTestExecutor:
                 ]
             )
 
-        install_script = os.path.join(
-            self.cfg.workspace_root, "deploy", "cli", "install_xmanager.py"
-        )
-        if os.path.exists(install_script):
-            try:
-                run_cmd([venv_python, "-c", "import xmanager.xm_cloud"])
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                logger.info("Setting up xmanager with xm_cloud in %s...", self.venv_dir)
-                run_cmd([python_bin, install_script, "--venv", self.venv_dir])
-
+        self._ensure_xmanager_installed(venv_python)
         return venv_python
 
     def execute(self, test_script: str | None = None) -> None:

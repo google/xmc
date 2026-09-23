@@ -207,6 +207,45 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         self.assertEqual(kwargs["cwd"], "/workspace")
         self.assertEqual(kwargs["env"]["XMC_AUTH_TOKEN"], "mock.token")
 
+    @patch("os.path.exists", return_value=True)
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_ensure_xmanager_installed_runs_for_workload_tier_only(self, mock_run, mock_exists):
+        import subprocess
+
+        from test.e2e.lib.config import E2ETier
+
+        # UI tier should not invoke install_xmanager.py
+        self.executor._ensure_xmanager_installed("/mock/python")
+        mock_run.assert_not_called()
+
+        # WORKLOAD tier should probe import and invoke install_xmanager.py on failure
+        self.cfg.tier = E2ETier.WORKLOAD
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(returncode=1, cmd=["python", "-c"]),
+            None,
+        ]
+        self.executor._ensure_xmanager_installed("/mock/python")
+        self.assertEqual(mock_run.call_count, 2)
+
+    @patch("os.path.exists", return_value=False)
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_setup_venv_falls_back_to_venv_for_workload_tier_when_deps_missing(
+        self, mock_run, mock_exists
+    ):
+        from test.e2e.lib.config import E2ETier
+
+        self.cfg.tier = E2ETier.WORKLOAD
+        with (
+            patch.dict(os.environ, {"PLAYWRIGHT_BROWSERS_PATH": "/custom/browsers"}),
+            patch.dict(
+                "sys.modules",
+                {"playwright": MagicMock(), "requests": MagicMock(), "xmanager": None},
+            ),
+        ):
+            py_bin = self.executor.setup_venv()
+            expected_py = os.path.join(self.executor.venv_dir, "bin", "python")
+            self.assertEqual(py_bin, expected_py)
+
 
 if __name__ == "__main__":
     unittest.main()
