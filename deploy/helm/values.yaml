@@ -214,6 +214,39 @@ ui:
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
 
+# Per-container defaults and ceilings for the queue namespaces, applied as a
+# `LimitRange`.
+#
+# `ResourceSet` puts `cpu_resources` and `gpu_resources` in a `oneof`, so a job
+# asking for a GPU cannot also ask for CPU or memory. Its pod arrives with no
+# request for either, which makes it BestEffort, and the kubelet evicts
+# BestEffort pods first. `defaultRequest` supplies what the client could not
+# send. It reaches only containers naming no request of their own, and sets no
+# limit, so a job may still burst above it.
+#
+# `max` is not a promise that a container fits. Quota is a sum over the fleet,
+# so a container can be admitted against quota and still find no single node
+# with room. Set it to the capacity of the largest node the queue can reach,
+# which at least rejects what nothing could ever host. A deployment whose pools
+# differ in size can only state the larger.
+queues:
+  cpu:
+    limits:
+      defaultRequest:
+        cpu: "500m"
+        memory: "2Gi"
+      max:
+        cpu: "4"
+        memory: "16Gi"
+  gpu:
+    limits:
+      defaultRequest:
+        cpu: "2"
+        memory: "12Gi"
+      max:
+        cpu: "384"
+        memory: "1440Gi"
+
 # Pass configuration to Kueue sub-chart
 kueue:
   controllerManager:
