@@ -105,8 +105,11 @@ def capture_single_route(
 ) -> dict[str, Any]:
     """Navigates to a single canonical route and saves a full-page screenshot."""
     resolved_route = route_spec.route.format(xid=xid)
+    clean_base_url = str(session.ui_base_url or "").strip().rstrip("/")
+    clean_route = resolved_route if resolved_route.startswith("/") else f"/{resolved_route}"
+    session.ui_base_url = clean_base_url
     session.page.goto(
-        f"{session.ui_base_url}{resolved_route}", wait_until="networkidle", timeout=timeout_ms
+        f"{clean_base_url}{clean_route}", wait_until="networkidle", timeout=timeout_ms
     )
     session.settle_and_wait_fonts()
     if route_spec.tab:
@@ -118,7 +121,7 @@ def capture_single_route(
     return {
         "id": route_spec.id,
         "title": route_spec.title,
-        "route": resolved_route,
+        "route": clean_route,
         "filename": filename,
     }
 

@@ -87,6 +87,25 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         self.assertEqual(caps[1]["route"], "/experiments/42")
         session.switch_tab.assert_called_once_with("Work Units", timeout_ms=60000)
 
+    def test_capture_single_route_normalizes_trailing_slash_and_relative_route(self) -> None:
+        session = self._mock_session()
+        session.ui_base_url = "https://xmc.example.com///"
+        route_spec = weekly_visual_snapshot.GoldenRoute(
+            id="test_route",
+            title="Test Route",
+            route="experiments/{xid}",
+        )
+        cap = weekly_visual_snapshot.capture_single_route(
+            session, route_spec, xid=123, output_dir=self.out_dir
+        )
+        self.assertEqual(session.ui_base_url, "https://xmc.example.com")
+        self.assertEqual(cap["route"], "/experiments/123")
+        session.page.goto.assert_called_once_with(
+            "https://xmc.example.com/experiments/123",
+            wait_until="networkidle",
+            timeout=60000,
+        )
+
     def test_capture_all_routes_auto_discovers_or_skips_xid_routes(self) -> None:
         session = self._mock_session()
         with mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"):
