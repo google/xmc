@@ -23,6 +23,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -136,8 +137,8 @@ func TestSaveStatusMessageHistory_SuccessInTransaction(t *testing.T) {
 		UserFacingText: "transactional message",
 	}
 
-	err := storage.RunInTransaction(ctx, func(txCtx context.Context) error {
-		return storage.SaveStatusMessageHistory(txCtx, xid, nil, nil, nil, newMsg)
+	err := storage.RunInTransaction(ctx, func(txCtx context.Context, tx *corestorage.Transaction) error {
+		return tx.StatusMessages.SaveStatusMessageHistory(txCtx, xid, nil, nil, nil, newMsg)
 	})
 	if err != nil {
 		t.Fatalf("RunInTransaction with SaveStatusMessageHistory failed: %v", err)

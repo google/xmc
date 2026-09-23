@@ -16,6 +16,7 @@
 package spanner
 
 import (
+	"context"
 	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -26,7 +27,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/operation"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/storage/spanner/xid"
 )
@@ -43,7 +43,7 @@ var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using Google Cloud Spanner.
 type Storage struct {
-	*transaction.TransactionRunner
+	client *spanner.Client
 	*ExperimentRepository
 	*WorkUnitRepository
 	*ArtifactRepository
@@ -51,6 +51,24 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
+}
+
+// RunInTransaction executes the given function in a Spanner read-write transaction,
+// passing a Transaction struct with repositories bound to the Spanner transaction.
+func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
+	if s.client == nil {
+		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
+	}
+	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
+		tx := &storage.Transaction{
+			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
+			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
+			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
+			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
+		}
+		return fn(txCtx, tx)
+	})
+	return err
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -67,11 +85,6 @@ type StorageConfig struct {
 func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
-	}
-
-	txRunner, err := transaction.NewTransactionRunner(client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create transaction runner: %w", err)
 	}
 
 	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{
@@ -109,7 +122,7 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
 	return &Storage{
-		TransactionRunner:       txRunner,
+		client:                  client,
 		ExperimentRepository:    expRepo,
 		WorkUnitRepository:      wuRepo,
 		ArtifactRepository:      artifactRepo,

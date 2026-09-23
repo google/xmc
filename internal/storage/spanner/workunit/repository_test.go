@@ -22,6 +22,7 @@ import (
 	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
@@ -40,11 +41,11 @@ func TestRepository_ExecutionOperations_HappyPath(t *testing.T) {
 	wu := spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, wid)
 
 	now := time.Now()
-	err = storageClient.RunInTransaction(ctx, func(txCtx context.Context) error {
+	err = storageClient.RunInTransaction(ctx, func(txCtx context.Context, tx *corestorage.Transaction) error {
 		// 1. Insert archived execution
 		firstExec := wu.GetCurrentWorkUnitExecution()
 		firstExec.State = essmsgpb.WorkUnitExecution_INACTIVE
-		if err := storageClient.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
+		if err := tx.WorkUnits.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
 			return err
 		}
 
@@ -53,7 +54,7 @@ func TestRepository_ExecutionOperations_HappyPath(t *testing.T) {
 		newState := essmsgpb.WorkUnitStatus_RUNNING
 		resources := map[string]int64{"cpu": 2}
 		eid := int64(2)
-		if err := storageClient.SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "default-queue", &prevState, &newState, resources, now); err != nil {
+		if err := tx.StatusHistory.SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "default-queue", &prevState, &newState, resources, now); err != nil {
 			return err
 		}
 
@@ -65,7 +66,7 @@ func TestRepository_ExecutionOperations_HappyPath(t *testing.T) {
 				State: essmsgpb.WorkUnitStatus_RUNNING,
 			},
 		}
-		return storageClient.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
+		return tx.WorkUnits.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
 	})
 	if err != nil {
 		t.Fatalf("RunInTransaction failed: %v", err)

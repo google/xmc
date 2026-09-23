@@ -50,7 +50,6 @@ compat_go_library(
         "//internal/storage/spanner/schema/workunitschema",
         "//internal/storage/spanner/statushistory",
         "//internal/storage/spanner/statusmessage",
-        "//internal/storage/spanner/transaction",
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/state",
         "//internal/validator",

@@ -74,7 +74,7 @@ type MockStorage struct {
 
 	RunInTransactionCalls             int
 	RunInTransactionErr               error
-	RunInTransactionFn                func(ctx context.Context, fn func(ctx context.Context) error) error
+	RunInTransactionFn                func(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
 	SaveWorkUnitExecutionErr          error
 	SavedExecutions                   []*essmsgpb.WorkUnitExecution
 	UpdateCurrentWorkUnitExecutionErr error
@@ -220,7 +220,7 @@ func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, u
 }
 
 // RunInTransaction mocks running a function within a transaction context.
-func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error {
 	s.RunInTransactionCalls++
 	if s.RunInTransactionFn != nil {
 		return s.RunInTransactionFn(ctx, fn)
@@ -228,7 +228,12 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if s.RunInTransactionErr != nil {
 		return s.RunInTransactionErr
 	}
-	return fn(ctx)
+	return fn(ctx, &Transaction{
+		WorkUnits:      s,
+		Experiments:    s,
+		StatusMessages: s,
+		StatusHistory:  s,
+	})
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.

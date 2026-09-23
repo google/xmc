@@ -26,6 +26,7 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/proto",
+        "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
@@ -33,7 +34,6 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema/statusmessageschema",
-        "//internal/storage/spanner/transaction",
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",

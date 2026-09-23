@@ -25,7 +25,6 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/experiment"
-	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/query_generator/querytools"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
@@ -48,6 +47,7 @@ var _ storage.WorkUnitStore = (*Repository)(nil)
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {
 	client            *spanner.Client
+	tx                *spanner.ReadWriteTransaction
 	experimentRepo    ExperimentTxStore
 	workUnitsQueryGen querytools.QueryGenerator
 }
@@ -60,7 +60,7 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Reposito
 
 	workUnitsQueryGen, err := querytools.NewQueryGenerator(workunitschema.WorkUnitTables, nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create work units query generator: %w", err)
+		return nil, fmt.Errorf("failed to create WorkUnits query generator: %w", err)
 	}
 
 	return &Repository{
@@ -70,14 +70,20 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Reposito
 	}, nil
 }
 
-// SaveWorkUnitExecution saves a work unit execution using the active read-write transaction in context.
+// WithTx returns a shallow copy of the repository bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
+	clone := *r
+	clone.tx = tx
+	return &clone
+}
+
+// SaveWorkUnitExecution saves a work unit execution using the bound read-write transaction.
 func (r *Repository) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
 	if execution == nil {
 		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
 	}
-	tx, err := transaction.RequireReadWriteTransaction(ctx)
-	if err != nil {
-		return err
+	if r.tx == nil {
+		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}
 	if execution.Metadata == nil {
 		execution.Metadata = &essmsgpb.WorkUnitExecutionMetadata{}
@@ -95,17 +101,16 @@ func (r *Repository) SaveWorkUnitExecution(ctx context.Context, execution *essms
 	if err != nil {
 		return fmt.Errorf("failed to create mutation for work unit execution: %v: %w", err, status.ErrInternal)
 	}
-	return tx.BufferWrite([]*spanner.Mutation{mutation})
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }
 
-// UpdateCurrentWorkUnitExecution updates the current work unit execution using the active read-write transaction in context.
+// UpdateCurrentWorkUnitExecution updates the current work unit execution using the bound read-write transaction.
 func (r *Repository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
 	if execution == nil {
 		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
 	}
-	tx, err := transaction.RequireReadWriteTransaction(ctx)
-	if err != nil {
-		return err
+	if r.tx == nil {
+		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}
 	if execution.Metadata == nil {
 		execution.Metadata = &essmsgpb.WorkUnitExecutionMetadata{}
@@ -120,5 +125,5 @@ func (r *Repository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wi
 		execution.UpdateTime = execution.CreateTime
 	}
 	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
-	return tx.BufferWrite([]*spanner.Mutation{mutation})
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }

@@ -23,7 +23,6 @@ import (
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/transaction"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
@@ -307,10 +306,6 @@ func TestRepository_SaveWorkUnitStatusHistory_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	repo := NewRepository(essClient)
-	txRunner, err := transaction.NewTransactionRunner(essClient)
-	if err != nil {
-		t.Fatalf("NewTransactionRunner failed: %v", err)
-	}
 
 	xid := int64(42)
 	wid := int64(1)
@@ -320,11 +315,11 @@ func TestRepository_SaveWorkUnitStatusHistory_HappyPath(t *testing.T) {
 	resources := map[string]int64{"cpu": 4}
 	now := time.Now()
 
-	err = txRunner.RunInTransaction(ctx, func(txCtx context.Context) error {
-		return repo.SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "test-queue", &prevState, &newState, resources, now)
+	_, err := essClient.ReadWriteTransaction(ctx, func(txCtx context.Context, tx *spanner.ReadWriteTransaction) error {
+		return repo.WithTx(tx).SaveWorkUnitStatusHistory(txCtx, xid, wid, &eid, "test-queue", &prevState, &newState, resources, now)
 	})
 	if err != nil {
-		t.Fatalf("RunInTransaction failed: %v", err)
+		t.Fatalf("ReadWriteTransaction failed: %v", err)
 	}
 
 	stmt := spanner.Statement{

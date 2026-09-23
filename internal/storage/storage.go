@@ -118,9 +118,6 @@ type ExperimentStore interface {
 
 	// UpdateExperimentLaunchState updates the launch state of an experiment.
 	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
-
-	// SaveExperimentStatus saves the status of an experiment.
-	SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
 }
 
 // UpdatedExperiments contains the original and updated experiment protos.
@@ -165,22 +162,6 @@ type WorkUnitStore interface {
 	// executions, either the updated executions or the original executions if no update was
 	// done.
 	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
-
-	// SaveWorkUnitExecution saves a work unit execution.
-	SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error
-
-	// UpdateCurrentWorkUnitExecution updates the current work unit execution for a given work unit.
-	UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error
-}
-
-// -----------------------
-// StatusHistory Methods
-// -----------------------
-
-// StatusHistoryStore defines storage operations for status history and telemetry.
-type StatusHistoryStore interface {
-	// SaveWorkUnitStatusHistory saves a status history entry for a work unit.
-	SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -199,9 +180,6 @@ type StatusMessageStore interface {
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
 	// It uses cursor pagination.
 	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
-
-	// SaveStatusMessageHistory saves a status message history entry.
-	SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
 }
 
 // -----------------------
@@ -271,9 +249,47 @@ type XidEntryStore interface {
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
-// TransactionRunner executes an operation within a transaction context.
+// WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
+type WorkUnitTxRepository interface {
+	// FetchWorkUnit retrieves a work unit by its unique ID within the transaction.
+	FetchWorkUnit(ctx context.Context, xid, wid int64) (*essmsgpb.WorkUnit, error)
+	// SaveWorkUnitExecution saves a work unit execution within the transaction.
+	SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error
+	// UpdateCurrentWorkUnitExecution updates the current work unit execution within the transaction.
+	UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error
+}
+
+// ExperimentTxRepository defines experiment operations scoped to a read-write transaction.
+type ExperimentTxRepository interface {
+	// FetchExperiment retrieves an experiment by its unique ID within the transaction.
+	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
+	// SaveExperimentStatus updates the experiment status within the transaction.
+	SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
+}
+
+// StatusMessageTxRepository defines status message operations scoped to a read-write transaction.
+type StatusMessageTxRepository interface {
+	// SaveStatusMessageHistory records a status message history within the transaction.
+	SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
+}
+
+// StatusHistoryTxRepository defines status history operations scoped to a read-write transaction.
+type StatusHistoryTxRepository interface {
+	// SaveWorkUnitStatusHistory records a work unit status history within the transaction.
+	SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
+}
+
+// Transaction holds the domain repositories scoped to a single read-write transaction.
+type Transaction struct {
+	WorkUnits      WorkUnitTxRepository
+	Experiments    ExperimentTxRepository
+	StatusMessages StatusMessageTxRepository
+	StatusHistory  StatusHistoryTxRepository
+}
+
+// TransactionRunner executes an operation within a transactional scope.
 type TransactionRunner interface {
-	RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+	RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
 }
 
 // Storage defines the interface for all data persistence operations.
@@ -281,7 +297,6 @@ type Storage interface {
 	TransactionRunner
 	ExperimentStore
 	WorkUnitStore
-	StatusHistoryStore
 	StatusMessageStore
 	ArtifactStore
 	OperationStore

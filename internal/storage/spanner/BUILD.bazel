@@ -32,7 +32,6 @@ compat_go_library(
         "//internal/storage/spanner/operation",
         "//internal/storage/spanner/statushistory",
         "//internal/storage/spanner/statusmessage",
-        "//internal/storage/spanner/transaction",
         "//internal/storage/spanner/workunit",
         "//internal/storage/spanner/xid",
         "@com_google_cloud_go_spanner//:spanner",

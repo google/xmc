@@ -24,9 +24,9 @@ import (
 	"golang/protobuf/v2/encoding/prototext/prototext"
 	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
+	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/storage/spanner/transaction"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
@@ -135,11 +135,10 @@ func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.
 	return tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
 }
 
-// SaveExperimentStatus saves an experiment's status within an active read-write transaction in context.
+// SaveExperimentStatus saves an experiment's status using the bound read-write transaction.
 func (r *Repository) SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
-	tx, err := transaction.RequireReadWriteTransaction(ctx)
-	if err != nil {
-		return err
+	if r.tx == nil {
+		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}
-	return r.UpdateExperimentStatus(ctx, tx, exp)
+	return r.UpdateExperimentStatus(ctx, r.tx, exp)
 }

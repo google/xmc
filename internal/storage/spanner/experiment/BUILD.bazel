@@ -41,7 +41,6 @@ compat_go_library(
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema/experimentschema",
         "//internal/storage/spanner/statusmessage",
-        "//internal/storage/spanner/transaction",
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/state",
         "//internal/validator",

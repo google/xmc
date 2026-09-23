@@ -23,6 +23,7 @@ import (
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/state/state"
 	"xmanager_cloud/validator/validator"
@@ -41,14 +42,14 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 
 	var newExecutions map[int64]*essmsgpb.WorkUnitExecution
 	var executionDeltas []*state.WorkUnitStateDelta
-	err := h.storage.RunInTransaction(ctx, func(txCtx context.Context) error {
+	err := h.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		newExecutions = make(map[int64]*essmsgpb.WorkUnitExecution)
 		executionDeltas = make([]*state.WorkUnitStateDelta, 0)
 		now := time.Now()
 
 		for _, wid := range wids {
 			// 1. Read the WorkUnit row.
-			wu, err := h.storage.FetchWorkUnit(txCtx, xid, wid)
+			wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
 			if err != nil {
 				return fmt.Errorf("failed to fetch work unit: %v: %w", err, status.ErrInternal)
 			}
@@ -62,7 +63,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 			currentExecution.UpdateTime = timestamppb.New(now)
 
 			// 3. Archive the current execution.
-			if err := h.storage.SaveWorkUnitExecution(txCtx, currentExecution); err != nil {
+			if err := tx.WorkUnits.SaveWorkUnitExecution(ctx, currentExecution); err != nil {
 				return fmt.Errorf("failed to archive work unit execution: %v: %w", err, status.ErrInternal)
 			}
 
@@ -105,7 +106,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 				NewMessage:     newExecution.GetStatus().GetSystemMessage(),
 			})
 
-			if err := h.storage.SaveStatusMessageHistory(txCtx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
+			if err := tx.StatusMessages.SaveStatusMessageHistory(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
 				return fmt.Errorf("failed to save status message history: %v: %w", err, status.ErrInternal)
 			}
 
@@ -119,18 +120,18 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 			if newExecution.GetStatus().GetUpdateTime() != nil {
 				stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
 			}
-			if err := h.storage.SaveWorkUnitStatusHistory(txCtx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
+			if err := tx.StatusHistory.SaveWorkUnitStatusHistory(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
 				return fmt.Errorf("failed to save work unit status history: %v: %w", err, status.ErrInternal)
 			}
 
 			// 5. Write the new execution to storage.
-			if err := h.storage.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, newEID, newExecution); err != nil {
+			if err := tx.WorkUnits.UpdateCurrentWorkUnitExecution(ctx, xid, wid, newEID, newExecution); err != nil {
 				return fmt.Errorf("failed to update current work unit execution: %v: %w", err, status.ErrInternal)
 			}
 		}
 
 		// 6. Read the Experiment row.
-		exp, err := h.storage.FetchExperiment(txCtx, xid)
+		exp, err := tx.Experiments.FetchExperiment(ctx, xid)
 		if err != nil {
 			return fmt.Errorf("failed to fetch experiment: %w", err)
 		}
@@ -142,7 +143,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 		}
 
 		// 7. Update the denormalized status fields in the Experiment row.
-		exp, err = state.DenormalizeWorkUnitStatus(txCtx, exp, executionDeltas)
+		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
 		if err != nil {
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
@@ -151,8 +152,8 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)
-		if err := h.storage.SaveExperimentStatus(txCtx, exp); err != nil {
-			logging.Error(txCtx, "Failed to save experiment status", "experiment", exp, "error", err)
+		if err := tx.Experiments.SaveExperimentStatus(ctx, exp); err != nil {
+			logging.Error(ctx, "Failed to save experiment status", "experiment", exp, "error", err)
 			return fmt.Errorf("failed to save experiment status: %v: %w", err, status.ErrInternal)
 		}
 

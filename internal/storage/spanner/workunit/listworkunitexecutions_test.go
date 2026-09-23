@@ -22,6 +22,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
@@ -61,17 +62,17 @@ func TestListWorkUnitExecutions(t *testing.T) {
 	}
 
 	// Now archive the first execution and create a second execution using a transaction.
-	err = storage.RunInTransaction(ctx, func(txCtx context.Context) error {
+	err = storage.RunInTransaction(ctx, func(txCtx context.Context, tx *corestorage.Transaction) error {
 		firstExec := createdWu.CurrentWorkUnitExecution
 		firstExec.State = essmsgpb.WorkUnitExecution_INACTIVE
-		if err := storage.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
+		if err := tx.WorkUnits.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
 			return err
 		}
 		secondExec := &essmsgpb.WorkUnitExecution{
 			Name:  "experiments/123/workUnits/1/executions/2",
 			State: essmsgpb.WorkUnitExecution_ACTIVE,
 		}
-		return storage.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
+		return tx.WorkUnits.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
 	})
 	if err != nil {
 		t.Fatalf("archiving and creating second execution failed: %v", err)
