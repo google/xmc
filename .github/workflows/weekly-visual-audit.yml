@@ -1,0 +1,151 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Weekly Visual UI Audit & Pages Gallery'
+
+on:
+  schedule:
+    # Run every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Optional Target XMC Web UI base URL (defaults to https://xmc-nightly.<GCP_DOMAIN_NAME>)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages-weekly-visual-audit'
+  cancel-in-progress: false
+
+jobs:
+  capture-visual-gallery:
+    name: 'Capture Golden UI Routes & Upload Pages Artifact'
+    runs-on: 'arc-runner-set'
+    environment: xmc-nightly
+    timeout-minutes: 35
+    outputs:
+      xid: ${{ steps.capture.outputs.xid }}
+      ui_url: ${{ steps.capture.outputs.ui_url }}
+      routes_table: ${{ steps.capture.outputs.routes_table }}
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    env:
+      UI_URL: "${{ inputs.target_url || format('https://xmc-nightly.{0}', secrets.GCP_DOMAIN_NAME) }}"
+      IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
+      XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+      GALLERY_DIR: '/tmp/visual-gallery'
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
+        with:
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: 'Set up Python 3.13'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install Playwright and Dependencies'
+        run: |
+          python3 -m venv "${GITHUB_WORKSPACE}/.venv"
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py playwright==1.51.0
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
+
+      - name: 'Capture Golden UI Routes and Build Static Gallery'
+        id: capture
+        run: |
+          set -euo pipefail
+          TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email)"
+          echo "::add-mask::${TOKEN}"
+          export XMC_AUTH_TOKEN="${TOKEN}"
+          export PATH="${GITHUB_WORKSPACE}/.venv/bin:${PATH}"
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+          python3 -m tools.nightly_tests.weekly_visual_snapshot \
+            --ui_base_url="${UI_URL}" \
+            --output_dir="${GALLERY_DIR}" \
+            --commit_sha="${GITHUB_SHA}"
+
+          node tools/nightly_tests/format_visual_audit_summary.js \
+            --manifest="${GALLERY_DIR}/manifest.json" \
+            --ui-url="${UI_URL}"
+
+      - name: 'Upload Visual Gallery Artifact'
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # actions/upload-artifact@v4 (v4.6.1)
+        with:
+          name: 'weekly-visual-gallery'
+          path: '/tmp/visual-gallery'
+          retention-days: 30
+
+      - name: 'Upload Pages Artifact'
+        uses: 'actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa' # actions/upload-pages-artifact@v3 (v3.0.1)
+        with:
+          path: '/tmp/visual-gallery'
+
+  deploy-pages:
+    name: 'Deploy Gallery to GitHub Pages'
+    needs: capture-visual-gallery
+    runs-on: 'arc-runner-set'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: 'Deploy to GitHub Pages'
+        id: deployment
+        uses: 'actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e' # actions/deploy-pages@v4 (v4.0.5)
+        continue-on-error: true
+
+      - name: 'Publish Weekly Visual Audit Step Summary'
+        if: always()
+        env:
+          PAGE_URL: '${{ steps.deployment.outputs.page_url }}'
+          XID: '${{ needs.capture-visual-gallery.outputs.xid }}'
+          UI_URL: '${{ needs.capture-visual-gallery.outputs.ui_url }}'
+          ROUTES_TABLE: '${{ needs.capture-visual-gallery.outputs.routes_table }}'
+        run: |
+          cat <<EOF >> "${GITHUB_STEP_SUMMARY}"
+          ## 📸 Weekly Visual UI Gallery Summary
+
+          - **Actions Run Artifact**: \`weekly-visual-gallery\`
+          - **Live Interactive Gallery URL**: ${PAGE_URL:-N/A}
+          - **Audited Experiment XID**: \`${XID:-N/A}\`
+          - **Target UI Base URL**: \`${UI_URL:-N/A}\`
+
+          ${ROUTES_TABLE}
+          EOF

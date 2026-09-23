@@ -21,6 +21,8 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "common.py",
     "common_test.py",
+    "format_visual_audit_summary.js",
+    "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
