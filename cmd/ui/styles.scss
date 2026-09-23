@@ -16,6 +16,9 @@
 @use 'custom_colors' as *;
 
 html {
+  --mat-sys-surface: #ffffff;
+  --mat-sys-surface-container: #ffffff;
+  --mat-card-elevated-container-color: #ffffff;
   background-color: var(--mat-sys-surface, #ffffff);
   color: var(--mat-sys-on-surface, #202124);
 }
