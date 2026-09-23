@@ -17,33 +17,40 @@ $max-page-width: 1500px;
 
 :host {
   @include page-layout;
-  max-width: $max-page-width;
-  padding: $page-padding;
+  max-width: 100%;
+  padding: 24px 32px;
   margin: 0 auto;
+  box-sizing: border-box;
+  font-family: Roboto, sans-serif;
+  color: var(--mat-sys-on-surface, #202124);
+  gap: 20px;
 }
 
 h1 {
-  font-size: $font-size-large;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--mat-sys-on-surface, #202124);
+  margin: 0;
 }
 
 .experiment-title-container {
   display: flex;
   flex-direction: row;
   gap: $large-padding;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
 
   .xid-and-title {
     display: flex;
     flex-direction: row;
-    gap: $small-margin;
+    gap: 12px;
     align-items: center;
   }
 
   .priority-and-status-container {
     display: flex;
     flex-direction: row;
-    gap: $basic-margin;
+    gap: 12px;
     align-items: center;
   }
 
@@ -55,20 +62,25 @@ h1 {
   .actions-container {
     display: flex;
     flex-direction: row;
-    gap: $basic-margin;
+    gap: 12px;
     align-items: center;
   }
 }
 
 .experiment-summary-container {
   display: flex;
-  gap: $xlarge-padding;
+  gap: 28px;
   justify-content: space-between;
 
   .experiment-summary-metadata {
     flex: 1 1 0;
-    padding-right: $small-padding;
-    max-width: 400px;
+    padding-right: 28px;
+    max-width: 480px;
+    border-right: none;
+  }
+
+  mat-divider {
+    display: none;
   }
 
   .experiment-summary-notes {
@@ -77,12 +89,16 @@ h1 {
     p {
       white-space: pre-wrap;
       overflow-wrap: break-word;
+      font-size: 13px;
+      color: var(--mat-sys-on-surface-variant, #3c4043);
+      line-height: 1.5;
     }
   }
 }
 
 .secondary-title {
   @include summary-secondary-title;
+  margin-bottom: 12px;
 }
 
 .key-value-pair {
@@ -91,13 +107,37 @@ h1 {
 
 .url-button {
   margin-right: $small-margin;
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  border-radius: 6px;
+  color: var(--mat-sys-primary, #1a73e8);
+  font-size: 13px;
 }
 
-mat-card-title,
-mat-card-content {
-  padding: $small-padding;
+mat-card-title {
+  padding: 16px 20px 8px;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--mat-sys-on-surface, #202124);
 }
 
-mat-card-content {
-  font-size: $font-size-medium;
+mat-card-content,
+::ng-deep .mat-mdc-card-content {
+  padding: 16px;
+  font-size: 13px;
+}
+
+mat-card {
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  box-shadow: none;
+  background-color: #ffffff;
+}
+
+.experiment-tabs-section,
+.experiment-tabs-card {
+  border: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  box-shadow: none;
+
+  ::ng-deep .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label {
+    color: #1a73e8 !important;
+  }
 }
