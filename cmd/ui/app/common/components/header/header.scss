@@ -31,7 +31,7 @@ mat-toolbar {
   height: 48px;
   min-height: 48px;
   background-color: var(--mat-sys-surface, #f8f9fa);
-  border-bottom: 1px solid var(--mat-sys-outline, #dadce0);
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #dadce0);
   justify-content: space-between;
   gap: $header-gap;
   padding: 0 16px;
