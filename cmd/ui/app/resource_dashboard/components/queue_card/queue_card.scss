@@ -291,14 +291,18 @@
 }
 
 .cell-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
   font-size: 12px;
+  line-height: 1.4;
   color: #5f6368;
 }
 
 .help-tip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 2px;
   font-size: 14px;
   width: 14px;
   height: 14px;
