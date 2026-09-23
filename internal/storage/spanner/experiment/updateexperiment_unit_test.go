@@ -27,13 +27,13 @@ func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
-	err := r.UpdateExperimentStatus(ctx, nil, nil)
+	err := r.UpdateExperimentStatus(ctx, nil)
 	if err == nil || err.Error() != "experiment must not be nil" {
 		t.Errorf("UpdateExperimentStatus(nil exp) returned error: %v, want 'experiment must not be nil'", err)
 	}
 }
 
-func TestUpdateExperimentStatus_NilTransaction(t *testing.T) {
+func TestUpdateExperimentStatus_RequiresTransaction(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
@@ -41,9 +41,9 @@ func TestUpdateExperimentStatus_NilTransaction(t *testing.T) {
 		Name: "experiments/1001",
 	}
 
-	err := r.UpdateExperimentStatus(ctx, nil, exp)
-	if err == nil || err.Error() != "transaction must not be nil" {
-		t.Errorf("UpdateExperimentStatus(nil tx) returned error: %v, want 'transaction must not be nil'", err)
+	err := r.UpdateExperimentStatus(ctx, exp)
+	if !errors.Is(err, status.ErrFailedPrecondition) {
+		t.Errorf("UpdateExperimentStatus outside tx returned error: %v, want FailedPrecondition", err)
 	}
 }
 
@@ -68,19 +68,5 @@ func TestUpdateExperimentResources_NilTransaction(t *testing.T) {
 	err := r.UpdateExperimentResources(ctx, nil, exp)
 	if err == nil || err.Error() != "transaction must not be nil" {
 		t.Errorf("UpdateExperimentResources(nil tx) returned error: %v, want 'transaction must not be nil'", err)
-	}
-}
-
-func TestSaveExperimentStatus_RequiresTransaction(t *testing.T) {
-	ctx := context.Background()
-	r := &Repository{}
-
-	exp := &essmsgpb.Experiment{
-		Name: "experiments/1001",
-	}
-
-	err := r.SaveExperimentStatus(ctx, exp)
-	if !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("SaveExperimentStatus outside tx returned error: %v, want FailedPrecondition", err)
 	}
 }

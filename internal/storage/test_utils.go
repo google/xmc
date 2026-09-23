@@ -83,7 +83,7 @@ type MockStorage struct {
 	SavedWorkUnitStatusHistory        []WorkUnitStatusHistoryCall
 	SaveStatusMessageHistoryErr       error
 	SavedStatusMessages               []StatusMessageHistoryCall
-	SaveExperimentStatusErr           error
+	UpdateExperimentStatusErr         error
 	SavedExperimentStatuses           []*essmsgpb.Experiment
 
 	ListStatusMessagesResp []*essmsgpb.StatusMessage
@@ -289,10 +289,10 @@ func (s *MockStorage) SaveStatusMessageHistory(ctx context.Context, xid int64, w
 	return s.SaveStatusMessageHistoryErr
 }
 
-// SaveExperimentStatus mocks saving experiment status.
-func (s *MockStorage) SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
+// UpdateExperimentStatus mocks updating experiment status.
+func (s *MockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
 	s.SavedExperimentStatuses = append(s.SavedExperimentStatuses, exp)
-	return s.SaveExperimentStatusErr
+	return s.UpdateExperimentStatusErr
 }
 
 // ListWorkUnits mocks listing work units.

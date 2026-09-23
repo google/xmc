@@ -152,9 +152,9 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)
-		if err := tx.Experiments.SaveExperimentStatus(ctx, exp); err != nil {
-			logging.Error(ctx, "Failed to save experiment status", "experiment", exp, "error", err)
-			return fmt.Errorf("failed to save experiment status: %v: %w", err, status.ErrInternal)
+		if err := tx.Experiments.UpdateExperimentStatus(ctx, exp); err != nil {
+			logging.Error(ctx, "Failed to update experiment status", "experiment", exp, "error", err)
+			return fmt.Errorf("failed to update experiment status: %v: %w", err, status.ErrInternal)
 		}
 
 		return nil

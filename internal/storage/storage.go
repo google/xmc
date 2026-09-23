@@ -263,8 +263,8 @@ type WorkUnitTxRepository interface {
 type ExperimentTxRepository interface {
 	// FetchExperiment retrieves an experiment by its unique ID within the transaction.
 	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
-	// SaveExperimentStatus updates the experiment status within the transaction.
-	SaveExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
+	// UpdateExperimentStatus updates the experiment status within the transaction.
+	UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
 }
 
 // StatusMessageTxRepository defines status message operations scoped to a read-write transaction.

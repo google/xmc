@@ -36,9 +36,11 @@ type spannerTransaction interface {
 }
 
 // ExperimentTxStore defines transactional experiment operations required by WorkUnit repository.
+// TODO(b/517479143): Remove ExperimentTxStore and the experimentRepo dependency from WorkUnit
+// repository once CreateWorkUnit and UpdateWorkUnitExecutions orchestration are moved out of Spanner.
 type ExperimentTxStore interface {
 	FetchExperimentTransaction(ctx context.Context, xid int64, tx experiment.SpannerTransaction) (*essmsgpb.Experiment, error)
-	UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
+	WithTx(tx *spanner.ReadWriteTransaction) *experiment.Repository
 	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
 }
 
