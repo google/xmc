@@ -64,7 +64,7 @@ limitations under the License.
     let manifest = JSON.parse(document.getElementById('embedded-manifest').textContent);
     let currentCapture = null;
     function renderSidebar() {
-      document.getElementById('meta-info').textContent = `XID: ${manifest.xid} | Commit: ${manifest.commit_sha} | UI: ${manifest.ui_base_url} | Generated: ${manifest.generated_at}`;
+      document.getElementById('meta-info').textContent = `XID: ${manifest.xid} | Commit: ${manifest.commit_sha} | Generated: ${manifest.generated_at}`;
       const list = document.getElementById('route-list');
       list.replaceChildren();
       (manifest.captures || []).forEach((cap, idx) => {
