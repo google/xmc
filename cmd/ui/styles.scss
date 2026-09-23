@@ -57,6 +57,11 @@ xmc-tag {
   margin-right: 4px;
 }
 
+.mdc-text-field--outlined .mat-mdc-form-field-infix,
+.mdc-text-field--no-label .mat-mdc-form-field-infix {
+  align-self: center;
+}
+
 @keyframes shimmer-loading {
   0% {
     background-position: -100px;
