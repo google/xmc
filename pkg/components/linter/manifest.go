@@ -84,6 +84,7 @@ type ComponentManifestSpec struct {
 	ComponentClass     string                   `yaml:"componentClass,omitempty" json:"componentClass,omitempty"`
 	Version            string                   `yaml:"version,omitempty" json:"version,omitempty"`
 	ChartVersion       string                   `yaml:"chartVersion,omitempty" json:"chartVersion,omitempty"`
+	ImageTag           string                   `yaml:"imageTag,omitempty" json:"imageTag,omitempty"`
 	DeletionPolicy     string                   `yaml:"deletionPolicy,omitempty" json:"deletionPolicy,omitempty"`
 	DeletionProtection bool                     `yaml:"deletionProtection,omitempty" json:"deletionProtection,omitempty"`
 	WrapperRef         *ComponentWrapperRef     `yaml:"wrapperRef,omitempty" json:"wrapperRef,omitempty"`
