@@ -50,6 +50,10 @@ mat-card.mat-mdc-card,
   color: #1a73e8 !important;
 }
 
+xmc-tag {
+  margin-right: 4px;
+}
+
 @keyframes shimmer-loading {
   0% {
     background-position: -100px;
