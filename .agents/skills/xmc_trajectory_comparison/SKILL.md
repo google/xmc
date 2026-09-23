@@ -11,8 +11,12 @@ This skill provides an automated A/B benchmark workflow to evaluate proposed cha
 graph TD
     A[Skill / Rule Edits in Worktree] --> B[1. Extract Structured Git Diff]
     B --> C[2. Main Agent Semantic Reasoning: Prompt Synthesis & Risk Classification]
+<<<<<<< HEAD
     C --> M["2b. Derive 3-Scenario Matrix from Evidence Sets (Origin / Transfer / Negative)"]
     M --> D[3. User Confirmation & Teardown Plan Agreement]
+=======
+    C --> D[3. User Confirmation & Teardown Plan Agreement]
+>>>>>>> fix/benchmark-baseline-rule-injection
     D -->|Approved| E1["Subagent Baseline: parent detached to baseline ref before spawn"]
     D -->|Approved| E2[Subagent Candidate: Workspace branch + modified worktree]
     E1 --> F1[Baseline Transcript Log & Outcome Artifacts]
@@ -37,10 +41,10 @@ Run this skill when:
 ## 2. Execution Workflow
 
 ### Phase 1: Structured Diff Extraction & Agent Synthesis
-Run `tools/benchmark/analyze_diff_and_synthesize.py` to extract structured git diff data:
+Commit candidate edits to the candidate branch so child worktrees created by `Workspace: "branch"` (`git worktree add`) receive the committed state, then run `tools/benchmark/analyze_diff_and_synthesize.py` against `<baseline_ref>`:
 
 ```bash
-python3 tools/benchmark/analyze_diff_and_synthesize.py --target-dir .agents
+python3 tools/benchmark/analyze_diff_and_synthesize.py --target-dir .agents --diff-spec <baseline_ref>
 ```
 
 The main agent parses the resulting JSON payload (`changed_files`, `added_lines`, `removed_lines`, `category`) and performs semantic reasoning to:
@@ -108,34 +112,36 @@ If the task involves Tier 2 or Tier 3 side effects, present the teardown contrac
 > from a candidate parent silently receives a summary of the very change under test. Never rely on an
 > in-subagent reset to produce a clean baseline.
 
-1. **Baseline Subagent** — park the parent worktree on the baseline commit *before* spawning. The
-   working tree MUST be clean first: `git switch --detach` carries uncommitted changes across, so
-   unstaged candidate edits would ride into the baseline arm — the very leak this procedure exists to
-   prevent. Commit them to the candidate branch, or stash them, before detaching.
+1. **Baseline Subagent** — commit all candidate edits to the candidate branch first, then park the parent
+   worktree on `<baseline_ref>` *before* spawning. Never stash or leave edits uncommitted: `Workspace: "branch"`
+   runs `git worktree add`, which only checks out the **committed** `HEAD` into the child worktree (so
+   stashed or unstaged edits would be absent from the Candidate arm), while `git switch --detach` carries
+   dirty working-tree files into the Baseline arm.
 
    ```bash
-   test -z "$(git status --porcelain)" || { echo "dirty tree: commit or stash first"; exit 1; }
+   test -z "$(git status --porcelain)" || { echo "dirty tree: commit candidate edits first"; exit 1; }
    git switch --detach <baseline_ref>   # parent worktree now matches the baseline
    # → invoke_subagent for the baseline arm here, with Workspace: "branch"
-   git switch -                         # restore as soon as invoke_subagent returns
+   git switch -                         # restore candidate branch as soon as invoke_subagent returns
    ```
 
    - `Workspace`: `"branch"` — the arm's branch is cut from the detached parent, so it starts clean and needs no reset.
    - `Role`: `"Baseline Subagent"`
-   - `Prompt`: execute the target test prompt. Do **not** instruct a reset.
-2. **Candidate Subagent** — spawn after the parent is restored:
+   - `Prompt`: execute the target test prompt. Do **not** instruct a reset or a Turn-1 `.agents/` self-check.
+2. **Candidate Subagent** — spawn after the parent is restored to the committed candidate branch:
    - `Workspace`: `"branch"`
    - `Role`: `"Candidate Subagent"`
    - `Prompt`: Execute the target test prompt directly within the modified worktree context, adhering strictly to context-aware execution bounds (do NOT run unrequested test suites for read-only or document summary prompts).
 
-The two arms are spawned seconds apart but still execute concurrently. Verify the isolation held before
-trusting the results: `git -C <baseline_arm_worktree> log --oneline -n 1` must report the baseline ref.
-
-**Contamination self-check (MUST).** Instruct every arm to report, as its first action, whether the
-`.agents/AGENTS.md` text on disk matches the version pre-loaded into its system prompt, and to treat the
-on-disk file as authoritative if they differ. If an arm reports a mismatch, the run is void **for every
-criterion the leaked text names** — re-run that arm. Criteria the leaked text does not mention remain
-valid, so record which is which instead of discarding the whole run.
+**Orchestrator isolation verification (MUST).** The two arms are spawned seconds apart and execute
+concurrently. Before trusting the results, verify from the orchestrator that each child worktree sits at
+its intended ref (`git -C <baseline_arm_worktree> rev-parse HEAD` must match `<baseline_ref>`, and
+`git -C <candidate_arm_worktree> rev-parse HEAD` must match `<candidate_ref>`) and inspect transcripts
+post-hoc rather than asking subagents to read `.agents/AGENTS.md` on Turn 1 (which only checks a single
+file and inflates turn/token telemetry in `compare_trajectories.py`). Because LLM trajectories are
+autoregressive and `compare_trajectories.py` evaluates whole-transcript metrics (`turns`, `est_tokens`),
+if contamination is ever detected, discard and re-run the entire affected arm rather than salvaging
+individual criteria.
 
 ### Phase 4: Resource Teardown & Manifest Cleanup
 After both subagents complete, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
