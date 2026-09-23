@@ -297,12 +297,16 @@
   color: #5f6368;
 }
 
+.nowrap-tail {
+  white-space: nowrap;
+}
+
 .help-tip-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   vertical-align: middle;
-  margin-left: 2px;
+  margin-left: 3px;
   font-size: 14px;
   width: 14px;
   height: 14px;
