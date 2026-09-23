@@ -51,7 +51,7 @@ The main agent parses the resulting JSON payload (`changed_files`, `added_lines`
    - **Tier 3 (Infrastructure / High-Cost)**: Provisions GKE clusters, GCP resources, or cloud deployments.
 
 > [!WARNING]
-> **Ask for the artefact, not the method.** Neither the scenario prompt nor its deliverable spec may
+> **Ask for the artifact, not the method.** Neither the scenario prompt nor its deliverable spec may
 > describe the behaviour the candidate change prescribes. Asking both arms to *"list every file the
 > rule should govern and every file it should not"* while the candidate adds positive/negative evidence
 > sets makes both arms produce those sets on instruction — the benchmark then measures
@@ -73,9 +73,13 @@ If the task involves Tier 2 or Tier 3 side effects, present the teardown contrac
 > from a candidate parent silently receives a summary of the very change under test. Never rely on an
 > in-subagent reset to produce a clean baseline.
 
-1. **Baseline Subagent** — park the parent worktree on the baseline commit *before* spawning:
+1. **Baseline Subagent** — park the parent worktree on the baseline commit *before* spawning. The
+   working tree MUST be clean first: `git switch --detach` carries uncommitted changes across, so
+   unstaged candidate edits would ride into the baseline arm — the very leak this procedure exists to
+   prevent. Commit them to the candidate branch, or stash them, before detaching.
 
    ```bash
+   test -z "$(git status --porcelain)" || { echo "dirty tree: commit or stash first"; exit 1; }
    git switch --detach <baseline_ref>   # parent worktree now matches the baseline
    # → invoke_subagent for the baseline arm here, with Workspace: "branch"
    git switch -                         # restore as soon as invoke_subagent returns
