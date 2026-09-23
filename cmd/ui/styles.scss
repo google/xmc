@@ -16,13 +16,42 @@
 @use 'custom_colors' as *;
 
 html {
-  background-color: var(--mat-sys-surface, #f8f9fa);
+  background-color: var(--mat-sys-surface, #ffffff);
   color: var(--mat-sys-on-surface, #202124);
 }
 
 body {
   font-family: 'Google Sans', sans-serif;
   margin: 0;
+}
+
+mat-card.mat-mdc-card,
+.mat-mdc-card {
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 1px solid var(--xmc-border-color, #dadce0);
+  box-shadow: none;
+  overflow: auto;
+
+  .mat-mdc-card-content,
+  .mat-mdc-card-content:first-child,
+  .mat-mdc-card-content:last-child {
+    padding: 16px;
+  }
+}
+
+.mat-mdc-table {
+  background-color: transparent;
+  border-spacing: 1px;
+}
+
+.experiment-tabs-section .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label,
+.experiment-tabs-card .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label {
+  color: #1a73e8 !important;
+}
+
+xmc-tag {
+  margin-right: 4px;
 }
 
 @keyframes shimmer-loading {

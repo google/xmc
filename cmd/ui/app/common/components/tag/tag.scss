@@ -17,9 +17,11 @@
   @include mat.chips-overrides(
     (
       container-height: 20px,
+      container-shape-radius: 4px,
       label-text-size: 12px,
+      label-text-color: var(--xmc-tag-text-color, #ffffff),
       elevated-container-color: var(--xmc-tag-container-color),
-      outline-color: var(--mat-sys-background),
+      outline-color: transparent,
     )
   );
   text-decoration: none;
