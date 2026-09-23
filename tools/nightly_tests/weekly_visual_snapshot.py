@@ -151,10 +151,11 @@ def build_manifest(
 ) -> dict[str, Any]:
     """Constructs the structured manifest dictionary for the static visual gallery."""
     ts = generated_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+    clean_ui_url = str(ui_base_url or "").strip().rstrip("/")
     return {
         "generated_at": ts,
         "commit_sha": commit_sha or "unknown",
-        "ui_base_url": ui_base_url.rstrip("/"),
+        "ui_base_url": clean_ui_url,
         "xid": str(xid),
         "captures": [dict(c) for c in captures],
     }
@@ -168,7 +169,7 @@ def write_gallery_artifacts(output_dir: str, manifest: Mapping[str, Any]) -> tup
     manifest_json = json.dumps(dict(manifest), indent=2)
     with open(manifest_path, "w", encoding="utf-8") as f_man:
         f_man.write(manifest_json + "\n")
-    safe_embedded_json = manifest_json.replace("</", "<\\/")
+    safe_embedded_json = manifest_json.replace("</", "\\u003c/")
     html_content = load_gallery_template().replace("__MANIFEST_JSON__", safe_embedded_json)
     with open(index_path, "w", encoding="utf-8") as f_html:
         f_html.write(html_content)
@@ -185,10 +186,11 @@ def run_visual_snapshot(
 ) -> dict[str, Any]:
     """Executes the end-to-end weekly visual UI screenshot capture and gallery build."""
     os.environ.setdefault("XMC_USER_EMAIL", "test@example.com")
+    clean_ui_url = str(ui_base_url or "").strip().rstrip("/")
     resolved_sha = commit_sha or os.environ.get("GITHUB_SHA", "local")
     clean_xid = common.parse_xid(str(xid) if xid is not None else "", required=False)
     with ui_entities_validator.XMCUIBrowserSession(
-        ui_base_url=ui_base_url,
+        ui_base_url=clean_ui_url,
         auth_token=auth_token,
         headless=headless,
         screenshots_dir=os.path.join(output_dir, "screenshots"),
@@ -202,7 +204,7 @@ def run_visual_snapshot(
         ),
         "",
     )
-    manifest = build_manifest(ui_base_url, resolved_xid, resolved_sha, captures)
+    manifest = build_manifest(clean_ui_url, resolved_xid, resolved_sha, captures)
     write_gallery_artifacts(output_dir, manifest)
     return manifest
 
@@ -210,9 +212,11 @@ def run_visual_snapshot(
 def main(argv: Sequence[str]) -> None:
     """CLI entrypoint for weekly_visual_snapshot."""
     common.validate_argv(argv)
+    raw_ui_url = common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url()
+    clean_ui_url = str(raw_ui_url or "").strip().rstrip("/")
     with common.handle_verification_errors():
         run_visual_snapshot(
-            ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
+            ui_base_url=clean_ui_url,
             xid=common.parse_xid(common.get_flag(FLAGS, "xid"), required=False),
             output_dir=common.get_flag(FLAGS, "output_dir", "/tmp/visual-gallery"),
             commit_sha=common.get_flag(FLAGS, "commit_sha"),

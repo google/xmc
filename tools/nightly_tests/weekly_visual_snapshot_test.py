@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import types
 import unittest
@@ -103,11 +104,23 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         )
 
     def test_build_manifest_and_write_gallery_artifacts(self) -> None:
-        captures = [{"id": "01", "title": "T </script>", "route": "/exp", "filename": "01.png"}]
+        captures = [
+            {
+                "id": "01",
+                "title": "T </script><script>alert(1)</script>",
+                "route": "/exp",
+                "filename": "01.png",
+            }
+        ]
         manifest = weekly_visual_snapshot.build_manifest(
-            "https://xmc.example.com/", 99, "abc1234", captures, generated_at="2026-09-23T00:00:00Z"
+            "https://xmc.example.com///",
+            99,
+            "abc1234",
+            captures,
+            generated_at="2026-09-23T00:00:00Z",
         )
         self.assertEqual(manifest["commit_sha"], "abc1234")
+        self.assertEqual(manifest["ui_base_url"], "https://xmc.example.com")
         self.assertEqual(manifest["captures"], captures)
 
         man_path, html_path = weekly_visual_snapshot.write_gallery_artifacts(self.out_dir, manifest)
@@ -116,7 +129,53 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             html = f_h.read()
         self.assertEqual(loaded["commit_sha"], "abc1234")
         self.assertIn("XMC Weekly Visual UI Gallery", html)
-        self.assertIn("T <\\/script>", html)
+        self.assertIn(r"T \u003c/script>", html)
+        self.assertNotIn("</script><script>", html)
+
+        # Verify embedded JSON safely unescapes via standard JSON parsing
+        script_match = re.search(
+            r'<script id="embedded-manifest"[^>]*>(.*?)</script>', html, re.DOTALL
+        )
+        self.assertIsNotNone(script_match)
+        embedded_json = json.loads(script_match.group(1))
+        self.assertEqual(
+            embedded_json["captures"][0]["title"], "T </script><script>alert(1)</script>"
+        )
+
+    def test_run_visual_snapshot_normalizes_trailing_slash(self) -> None:
+        session = self._mock_session()
+        with (
+            mock.patch.object(
+                weekly_visual_snapshot.ui_entities_validator,
+                "XMCUIBrowserSession",
+            ) as mock_session_cls,
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="55"),
+        ):
+
+            def create_session(**kwargs):
+                session.ui_base_url = kwargs.get("ui_base_url", "")
+                return session
+
+            mock_session_cls.side_effect = create_session
+            manifest = weekly_visual_snapshot.run_visual_snapshot(
+                ui_base_url="https://xmc.example.com///",
+                xid=55,
+                output_dir=self.out_dir,
+                commit_sha="sha999",
+            )
+        mock_session_cls.assert_called_once_with(
+            ui_base_url="https://xmc.example.com",
+            auth_token=None,
+            headless=True,
+            screenshots_dir=os.path.join(self.out_dir, "screenshots"),
+        )
+        self.assertEqual(manifest["ui_base_url"], "https://xmc.example.com")
+        goto_calls = session.page.goto.call_args_list
+        self.assertTrue(goto_calls)
+        for call_args in goto_calls:
+            target_url = call_args[0][0]
+            self.assertTrue(target_url.startswith("https://xmc.example.com/"))
+            self.assertFalse(target_url.startswith("https://xmc.example.com//"))
 
     def test_run_visual_snapshot_and_main(self) -> None:
         mock_session = self._mock_session()
