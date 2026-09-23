@@ -25,6 +25,11 @@ body {
   margin: 0;
 }
 
+button,
+.mat-mdc-button-base {
+  font-family: 'Google Sans', sans-serif;
+}
+
 mat-card.mat-mdc-card,
 .mat-mdc-card {
   background-color: #ffffff;
