@@ -14,7 +14,7 @@
 
 # values.yaml - Configuration for ClickHouse Helm Chart on GKE
 # Used to support metrics system testing in XManager on Cloud (XMC).
-# Chart Reference: https://github.com/ClickHouse/charts/blob/main/charts/clickhouse/values.yaml
+# Chart Reference: https://github.com/ClickHouse/ClickStack-helm-charts
 
 replicaCount: 1
 
