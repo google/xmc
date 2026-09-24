@@ -114,7 +114,7 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		return true, "Component healthy"
 	}
 	if spec.GetWrapperRef() == nil {
-		endpoint := resolveEndpointFromParams(spec.GetParameters())
+		endpoint := resolveProbeEndpoint(spec.GetParameters())
 		if endpoint == "" {
 			return false, "no wrapperRef or connection endpoint parameters configured"
 		}
@@ -824,7 +824,7 @@ func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
 	if in.Spec == nil || in.Spec.GetWrapperRef() != nil {
 		return ""
 	}
-	return resolveEndpointFromParams(in.Spec.GetParameters())
+	return resolveProbeEndpoint(in.Spec.GetParameters())
 }
 
 func firstNonEmptyToken(val string) string {
@@ -839,11 +839,21 @@ func firstNonEmptyToken(val string) string {
 	return ""
 }
 
-func resolveEndpointFromParams(params map[string]string) string {
+func resolveProbeEndpoint(params map[string]string) string {
 	if len(params) == 0 {
 		return ""
 	}
-	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints"} {
+	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
+		return ep
+	}
+	return resolveConnectionEndpoint(params)
+}
+
+func resolveConnectionEndpoint(params map[string]string) string {
+	if len(params) == 0 {
+		return ""
+	}
+	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints"} {
 		if first := firstNonEmptyToken(params[k]); first != "" {
 			return first
 		}
@@ -859,7 +869,7 @@ func formatHostEndpoint(host string, params map[string]string) string {
 	if strings.Count(host, ":") == 1 || (strings.HasPrefix(host, "[") && strings.Contains(host, "]:")) {
 		return host
 	}
-	for _, pk := range []string{"httpPort", "nativePort", "kafkaPort", "port"} {
+	for _, pk := range []string{"nativePort", "kafkaPort", "port", "httpPort"} {
 		port := strings.TrimSpace(params[pk])
 		if port == "" {
 			continue
@@ -934,18 +944,22 @@ func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in Reconcil
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
 // It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
-func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, endpoint string) (*ReconcileResult, error) {
-	if ok, reason, msg := r.verifyEndpointHealth(ctx, endpoint); !ok {
+func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, probeEndpoint string) (*ReconcileResult, error) {
+	if ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint); !ok {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
 	}
+	connEndpoint := probeEndpoint
 	var secretName string
 	if in.Spec != nil && in.Spec.GetParameters() != nil {
+		if ce := resolveConnectionEndpoint(in.Spec.GetParameters()); ce != "" {
+			connEndpoint = ce
+		}
 		secretName = in.Spec.GetParameters()["secretName"]
 	}
 	resStatus := &ResourceStatus{
 		Found:            true,
 		Ready:            true,
-		Endpoint:         endpoint,
+		Endpoint:         connEndpoint,
 		ConnectionSecret: secretName,
 		Message:          "Static endpoint is reachable and healthy",
 	}

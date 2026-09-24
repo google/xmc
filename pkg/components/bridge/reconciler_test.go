@@ -2127,4 +2127,16 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 			}
 		})
 	}
+	params := map[string]string{
+		"host":                "clickhouse.xmc-metrics.svc.cluster.local",
+		"nativePort":          "9000",
+		"httpPort":            "8123",
+		"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
+	}
+	if got := resolveProbeEndpoint(params); got != "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping" {
+		t.Errorf("resolveProbeEndpoint() = %q, want healthCheckEndpoint", got)
+	}
+	if got := resolveConnectionEndpoint(params); got != "clickhouse.xmc-metrics.svc.cluster.local:9000" {
+		t.Errorf("resolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
+	}
 }
