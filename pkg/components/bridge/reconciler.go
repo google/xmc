@@ -114,18 +114,7 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		return true, "Component healthy"
 	}
 	if spec.GetWrapperRef() == nil {
-		endpoint := resolveProbeEndpoint(spec.GetParameters())
-		if endpoint == "" {
-			return false, "no wrapperRef or connection endpoint parameters configured"
-		}
-		ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
-		if !ok {
-			return false, probeMsg
-		}
-		if probeMsg != "" {
-			return true, probeMsg
-		}
-		return true, "Component healthy"
+		return p.probeOperatorlessHealth(ctx, spec)
 	}
 	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
 	if p.detector == nil {
@@ -150,6 +139,24 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		return true, probeMsg
 	}
 	return true, res.Message
+}
+
+func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
+	endpoint := resolveProbeEndpoint(spec.GetParameters())
+	if endpoint == "" {
+		return false, "no wrapperRef or connection endpoint parameters configured"
+	}
+	ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
+	if !ok {
+		if probeMsg == "" {
+			return false, "health probe failed"
+		}
+		return false, probeMsg
+	}
+	if probeMsg != "" {
+		return true, probeMsg
+	}
+	return true, "Component healthy"
 }
 
 func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
