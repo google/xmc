@@ -131,19 +131,24 @@ func stageChartFile(t *testing.T, srcPath, dstPath string) {
 func stageChartWithValues(t *testing.T, srcDir, customValues string) string {
 	t.Helper()
 	chartDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
-		t.Fatalf("failed to create temp templates dir: %v", err)
-	}
 	stageChartFile(t, filepath.Join(srcDir, "Chart.yaml"), filepath.Join(chartDir, "Chart.yaml"))
-	entries, err := os.ReadDir(filepath.Join(srcDir, "templates"))
-	if err != nil {
-		t.Fatalf("failed to read templates dir: %v", err)
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			name := entry.Name()
-			stageChartFile(t, filepath.Join(srcDir, "templates", name), filepath.Join(chartDir, "templates", name))
+	err := filepath.WalkDir(filepath.Join(srcDir, "templates"), func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
+		rel, err := filepath.Rel(filepath.Join(srcDir, "templates"), path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(chartDir, "templates", rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		stageChartFile(t, path, dst)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to copy templates: %v", err)
 	}
 	writeTestManifest(t, chartDir, "values.yaml", customValues)
 	return chartDir
@@ -286,6 +291,7 @@ parameters:
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			chartDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", tc.component))

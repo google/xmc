@@ -16,7 +16,7 @@ apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: "clickhouse"
-  namespace: {{ .Values.namespace | default "xmc" | quote }}
+  namespace: {{ .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) | quote }}
   labels:
     xmc.dev/profile: "stable-2026a"
     app.kubernetes.io/name: "clickhouse"
