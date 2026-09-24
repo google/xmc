@@ -177,13 +177,39 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 
 	var publishErr error
 	for _, task := range batch {
+		if task == nil {
+			publishErr = errors.New("encountered nil task in batch")
+			break
+		}
+		if task.WorkUnit == nil || task.WorkUnit.GetCurrentWorkUnitExecution() == nil {
+			publishErr = fmt.Errorf("task %s missing required parent work unit or execution", task.TaskID)
+			break
+		}
+
 		taskCtx := ctx
 		if task.TraceID != "" {
 			taskCtx = logging.InjectOperation(ctx, task.TraceID)
 		}
-		// TODO(pausescheduling): Fetch live WorkUnit from storage for filtering and payload reconstruction.
+
+		if skip, reason := ShouldSkipTask(task); skip {
+			logging.Info(taskCtx, "Skipping obsolete or terminal paused task during resumption replay",
+				"task_id", task.TaskID,
+				"xid", task.XID,
+				"wid", task.WID,
+				"reason", string(reason))
+			resolutions = append(resolutions, pausedtask.TaskResolution{
+				XID:              task.XID,
+				WID:              task.WID,
+				TaskID:           task.TaskID,
+				ResolutionStatus: pausedtask.ResolutionStatusSkipped,
+				ResumptionRunID:  runID,
+				ProcessedTime:    now,
+			})
+			continue
+		}
+
 		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
-		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, nil, task.Action, task.OperationName); err != nil {
+		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
 			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 			break
 		}

@@ -25,6 +25,7 @@ compat_go_library(
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/pausedtask",
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
         "//internal/compat/proto",
         "//internal/compat/status",
@@ -37,6 +38,7 @@ compat_go_test(
     srcs = ["fake_test.go"],
     embed = [":pausedtask"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
         "//internal/compat/cmp",
         "//internal/compat/proto",

@@ -17,9 +17,13 @@ package resumption
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"golang/cmp/cmp"
+	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
@@ -106,6 +110,28 @@ func (r *errPauseStateRepo) Set(ctx context.Context, state *pausestate.PauseSche
 	return nil
 }
 
+func testValidTask(wid int64, taskID string, priority int64, createTime time.Time) *pausedtask.PausedTask {
+	return &pausedtask.PausedTask{
+		XID:        1,
+		WID:        wid,
+		TaskID:     taskID,
+		Target:     fmt.Sprintf("experiments/1/workUnits/%d/executions/1", wid),
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		Priority:   priority,
+		CreateTime: createTime,
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:     fmt.Sprintf("experiments/1/workUnits/%d", wid),
+			Priority: essmsgpb.Priority_NORMAL,
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: fmt.Sprintf("experiments/1/workUnits/%d/executions/1", wid),
+				Status: &essmsgpb.WorkUnitStatus{
+					State: essmsgpb.WorkUnitStatus_RUNNING,
+				},
+			},
+		},
+	}
+}
+
 func TestResumptionWorker_Registration(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -178,13 +204,35 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 	taskRepo := pausedtask.NewFake()
 	publisher := &mockPublisher{}
 
+	wu1 := &essmsgpb.WorkUnit{
+		Name:     "experiments/1/workUnits/1",
+		Priority: essmsgpb.Priority_NORMAL,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1/workUnits/1/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+	wu2 := &essmsgpb.WorkUnit{
+		Name:     "experiments/1/workUnits/2",
+		Priority: essmsgpb.Priority_NORMAL,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1/workUnits/2/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+
 	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
 		XID:           1,
 		WID:           1,
 		TaskID:        "task-1",
 		TraceID:       "trace-op-1",
-		Target:        "target-1",
+		Target:        "experiments/1/workUnits/1/executions/1",
 		Action:        &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		WorkUnit:      wu1,
 		OperationName: "op-create",
 		Priority:      100,
 	})
@@ -193,8 +241,9 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		WID:           2,
 		TaskID:        "task-2",
 		TraceID:       "trace-op-2",
-		Target:        "target-2",
+		Target:        "experiments/1/workUnits/2/executions/1",
 		Action:        &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Delete{Delete: &actuatortaskpb.DeleteAction{}}},
+		WorkUnit:      wu2,
 		OperationName: "op-delete",
 		Priority:      90,
 	})
@@ -207,14 +256,20 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 	if len(publisher.calls) != 2 {
 		t.Fatalf("expected 2 publisher calls, got %d", len(publisher.calls))
 	}
-	if publisher.calls[0].Target != "target-1" || publisher.calls[0].OperationName != "op-create" {
+	if publisher.calls[0].Target != "experiments/1/workUnits/1/executions/1" || publisher.calls[0].OperationName != "op-create" {
 		t.Errorf("call 0 mismatch: %+v", publisher.calls[0])
+	}
+	if diff := cmp.Diff(wu1, publisher.calls[0].WorkUnit, protocmp.Transform()); diff != "" {
+		t.Errorf("call 0 WorkUnit mismatch (-want +got):\n%s", diff)
 	}
 	if opID, ok := logging.OperationID(publisher.calls[0].Ctx); !ok || opID != "trace-op-1" {
 		t.Errorf("call 0 trace ID = %q (ok=%v), want trace-op-1", opID, ok)
 	}
-	if publisher.calls[1].Target != "target-2" || publisher.calls[1].OperationName != "op-delete" {
+	if publisher.calls[1].Target != "experiments/1/workUnits/2/executions/1" || publisher.calls[1].OperationName != "op-delete" {
 		t.Errorf("call 1 mismatch: %+v", publisher.calls[1])
+	}
+	if diff := cmp.Diff(wu2, publisher.calls[1].WorkUnit, protocmp.Transform()); diff != "" {
+		t.Errorf("call 1 WorkUnit mismatch (-want +got):\n%s", diff)
 	}
 	if opID, ok := logging.OperationID(publisher.calls[1].Ctx); !ok || opID != "trace-op-2" {
 		t.Errorf("call 1 trace ID = %q (ok=%v), want trace-op-2", opID, ok)
@@ -233,6 +288,161 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 	}
 }
 
+func TestResumptionWorker_Filtering(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		SchedulingPaused: false,
+		ResumptionRunID:  "run-filter",
+	})
+	taskRepo := pausedtask.NewFake()
+	publisher := &mockPublisher{}
+
+	wuValid := &essmsgpb.WorkUnit{
+		Name:     "experiments/1/workUnits/5",
+		Priority: essmsgpb.Priority_NORMAL,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1/workUnits/5/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+
+	// Task 1: Rule 1 - Newer ExecutionId exists on WorkUnit.
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:      1,
+		WID:      1,
+		TaskID:   "task-rule1-stale-exec",
+		Target:   "experiments/1/workUnits/1/executions/1",
+		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		Priority: int64(essmsgpb.Priority_NORMAL),
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:     "experiments/1/workUnits/1",
+			Priority: essmsgpb.Priority_NORMAL,
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: "experiments/1/workUnits/1/executions/2",
+				Status: &essmsgpb.WorkUnitStatus{
+					State: essmsgpb.WorkUnitStatus_RUNNING,
+				},
+			},
+		},
+	})
+
+	// Task 2: Rule 2 - Stale UpdateAction while WorkUnit is in SCHEDULING_PAUSED state.
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:      1,
+		WID:      2,
+		TaskID:   "task-rule2-update-paused",
+		Target:   "experiments/1/workUnits/2/executions/1",
+		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+		Priority: int64(essmsgpb.Priority_NORMAL),
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:     "experiments/1/workUnits/2",
+			Priority: essmsgpb.Priority_NORMAL,
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: "experiments/1/workUnits/2/executions/1",
+				Status: &essmsgpb.WorkUnitStatus{
+					State: essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED,
+				},
+			},
+		},
+	})
+
+	// Task 3: Rule 3 - Stale UpdateAction where task priority does not match WorkUnit priority.
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:      1,
+		WID:      3,
+		TaskID:   "task-rule3-priority-mismatch",
+		Target:   "experiments/1/workUnits/3/executions/1",
+		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+		Priority: int64(essmsgpb.Priority_LOW),
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:     "experiments/1/workUnits/3",
+			Priority: essmsgpb.Priority_HIGH,
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: "experiments/1/workUnits/3/executions/1",
+				Status: &essmsgpb.WorkUnitStatus{
+					State: essmsgpb.WorkUnitStatus_RUNNING,
+				},
+			},
+		},
+	})
+
+	// Task 4: Rule 4 - Terminal WorkUnit execution state (STOPPED).
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:      1,
+		WID:      4,
+		TaskID:   "task-rule4-terminal-stopped",
+		Target:   "experiments/1/workUnits/4/executions/1",
+		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		Priority: int64(essmsgpb.Priority_NORMAL),
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:     "experiments/1/workUnits/4",
+			Priority: essmsgpb.Priority_NORMAL,
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: "experiments/1/workUnits/4/executions/1",
+				Status: &essmsgpb.WorkUnitStatus{
+					State: essmsgpb.WorkUnitStatus_STOPPED,
+				},
+			},
+		},
+	})
+
+	// Task 5: Valid task that should be replayed.
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:           1,
+		WID:           5,
+		TaskID:        "task-valid-replay",
+		Target:        "experiments/1/workUnits/5/executions/1",
+		Action:        &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		OperationName: "op-create-5",
+		Priority:      int64(essmsgpb.Priority_NORMAL),
+		WorkUnit:      wuValid,
+	})
+
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-filter", BatchSize: 10}); err != nil {
+		t.Fatalf("StartResumption() unexpected error: %v", err)
+	}
+
+	if len(publisher.calls) != 1 {
+		t.Fatalf("expected 1 publisher call, got %d", len(publisher.calls))
+	}
+	if publisher.calls[0].Target != "experiments/1/workUnits/5/executions/1" {
+		t.Errorf("publisher call target = %q, want %q", publisher.calls[0].Target, "experiments/1/workUnits/5/executions/1")
+	}
+	if diff := cmp.Diff(wuValid, publisher.calls[0].WorkUnit, protocmp.Transform()); diff != "" {
+		t.Errorf("publisher call WorkUnit mismatch (-want +got):\n%s", diff)
+	}
+
+	pending, _ := taskRepo.ListPending(ctx, 0)
+	if len(pending) != 0 {
+		t.Errorf("expected 0 pending tasks remaining, got %d", len(pending))
+	}
+
+	allTasks, _ := taskRepo.List(ctx)
+	statusByTaskID := make(map[string]pausedtask.ResolutionStatus, len(allTasks))
+	for _, task := range allTasks {
+		if task.ProcessedTime == nil || task.ResumptionRunID != "run-filter" {
+			t.Errorf("task %s not properly marked processed: %+v", task.TaskID, task)
+		}
+		statusByTaskID[task.TaskID] = task.ResolutionStatus
+	}
+
+	wantStatuses := map[string]pausedtask.ResolutionStatus{
+		"task-rule1-stale-exec":        pausedtask.ResolutionStatusSkipped,
+		"task-rule2-update-paused":     pausedtask.ResolutionStatusSkipped,
+		"task-rule3-priority-mismatch": pausedtask.ResolutionStatusSkipped,
+		"task-rule4-terminal-stopped":  pausedtask.ResolutionStatusSkipped,
+		"task-valid-replay":            pausedtask.ResolutionStatusReplayed,
+	}
+
+	if diff := cmp.Diff(wantStatuses, statusByTaskID); diff != "" {
+		t.Errorf("resolution statuses mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestResumptionWorker_MultipleBatches(t *testing.T) {
 	ctx := context.Background()
 	pauseRepo := pausestate.NewFake()
@@ -241,15 +451,12 @@ func TestResumptionWorker_MultipleBatches(t *testing.T) {
 	publisher := &mockPublisher{}
 
 	for i := 1; i <= 5; i++ {
-		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
-			XID:        1,
-			WID:        int64(i),
-			TaskID:     "task-" + string(rune('0'+i)),
-			Target:     "target-1",
-			Action:     &actuatortaskpb.Action{},
-			Priority:   int64(i * 10),
-			CreateTime: time.Now().Add(time.Duration(i) * time.Minute),
-		})
+		_ = taskRepo.Create(ctx, testValidTask(
+			int64(i),
+			fmt.Sprintf("task-%d", i),
+			int64(i*10),
+			time.Now().Add(time.Duration(i)*time.Minute),
+		))
 	}
 
 	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
@@ -299,12 +506,7 @@ func TestResumptionWorker_Errors(t *testing.T) {
 			pauseRepo := &errPauseStateRepo{Fake: basePauseRepo, getErr: tt.getErr, setErr: tt.setErr}
 
 			baseTaskRepo := pausedtask.NewFake()
-			_ = baseTaskRepo.Create(context.Background(), &pausedtask.PausedTask{
-				XID:    1,
-				WID:    1,
-				TaskID: "task-1",
-				Action: &actuatortaskpb.Action{},
-			})
+			_ = baseTaskRepo.Create(context.Background(), testValidTask(1, "task-1", 100, time.Now()))
 			taskRepo := &errPausedTaskRepo{Fake: baseTaskRepo, listPendingErr: tt.listErr, markProcessedErr: tt.markErr}
 			publisher := &mockPublisher{err: tt.publishErr}
 
@@ -324,12 +526,7 @@ func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 
 	taskRepo := pausedtask.NewFake()
 	for i := 1; i <= 2; i++ {
-		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
-			XID:    1,
-			WID:    int64(i),
-			TaskID: "task-" + string(rune('0'+i)),
-			Action: &actuatortaskpb.Action{},
-		})
+		_ = taskRepo.Create(ctx, testValidTask(int64(i), fmt.Sprintf("task-%d", i), 100, time.Now()))
 	}
 
 	publishErr := errors.New("redis publish failure")
@@ -383,12 +580,7 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 
 			baseTaskRepo := pausedtask.NewFake()
 			for i := 1; i <= 4; i++ {
-				_ = baseTaskRepo.Create(ctx, &pausedtask.PausedTask{
-					XID:    1,
-					WID:    int64(i),
-					TaskID: "task-" + string(rune('0'+i)),
-					Action: &actuatortaskpb.Action{},
-				})
+				_ = baseTaskRepo.Create(ctx, testValidTask(int64(i), fmt.Sprintf("task-%d", i), 100, time.Now()))
 			}
 
 			taskRepo := &errPausedTaskRepo{
@@ -413,5 +605,49 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 				t.Errorf("expected 2 remaining pending tasks, got %d", len(pending))
 			}
 		})
+	}
+}
+
+func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-invalid"})
+
+	taskRepo := pausedtask.NewFake()
+	// Task 1: Valid task
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+	// Task 2: Corrupted task (missing WorkUnit)
+	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		XID:      1,
+		WID:      2,
+		TaskID:   "task-corrupt",
+		Target:   "experiments/1/workUnits/2/executions/1",
+		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		WorkUnit: nil,
+	})
+
+	publisher := &mockPublisher{}
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+
+	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-invalid", BatchSize: 10})
+	if err == nil {
+		t.Fatalf("StartResumption() expected error for missing WorkUnit, got nil")
+	}
+	if !strings.Contains(err.Error(), "task task-corrupt missing required parent work unit or execution") {
+		t.Errorf("StartResumption() error = %v, want substring %q", err, "task task-corrupt missing required parent work unit or execution")
+	}
+
+	// Task 1 was valid and published before the corrupt task halted the batch.
+	if len(publisher.calls) != 1 || publisher.calls[0].Target != "experiments/1/workUnits/1/executions/1" {
+		t.Errorf("expected task-1 to be published before failure, got %d calls", len(publisher.calls))
+	}
+
+	// Task 1 should be marked processed, but the corrupt task-corrupt must remain pending.
+	pending, err := taskRepo.ListPending(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListPending() error: %v", err)
+	}
+	if len(pending) != 1 || pending[0].TaskID != "task-corrupt" {
+		t.Fatalf("expected task-corrupt to remain pending in Spanner, got %+v", pending)
 	}
 }
