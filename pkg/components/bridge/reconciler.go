@@ -118,9 +118,11 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		if endpoint == "" {
 			return false, "no wrapperRef or connection endpoint parameters configured"
 		}
-		if ok, probeMsg := p.probe3PEndpoint(ctx, endpoint); !ok {
+		ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
+		if !ok {
 			return false, probeMsg
-		} else if probeMsg != "" {
+		}
+		if probeMsg != "" {
 			return true, probeMsg
 		}
 		return true, "Component healthy"
@@ -816,13 +818,25 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 }
 
 func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
-	if in.WrapperOpts.EndpointJSONPath != "" {
+	if in.WrapperOpts.EndpointJSONPath != "" && !strings.HasPrefix(in.WrapperOpts.EndpointJSONPath, "$") {
 		return in.WrapperOpts.EndpointJSONPath
 	}
-	if in.Spec == nil {
+	if in.Spec == nil || in.Spec.GetWrapperRef() != nil {
 		return ""
 	}
 	return resolveEndpointFromParams(in.Spec.GetParameters())
+}
+
+func firstNonEmptyToken(val string) string {
+	if val == "" {
+		return ""
+	}
+	for _, part := range strings.Split(val, ",") {
+		if first := strings.TrimSpace(part); first != "" {
+			return first
+		}
+	}
+	return ""
 }
 
 func resolveEndpointFromParams(params map[string]string) string {
@@ -830,15 +844,16 @@ func resolveEndpointFromParams(params map[string]string) string {
 		return ""
 	}
 	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints"} {
-		for _, part := range strings.Split(params[k], ",") {
-			if first := strings.TrimSpace(part); first != "" {
-				return first
-			}
+		if first := firstNonEmptyToken(params[k]); first != "" {
+			return first
 		}
 	}
-	if host := strings.TrimSpace(params["host"]); host != "" {
+	if host := firstNonEmptyToken(params["host"]); host != "" {
 		for _, pk := range []string{"httpPort", "nativePort", "kafkaPort", "port"} {
 			if port := strings.TrimSpace(params[pk]); port != "" {
+				if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+					return fmt.Sprintf("[%s]:%s", host, port)
+				}
 				return fmt.Sprintf("%s:%s", host, port)
 			}
 		}

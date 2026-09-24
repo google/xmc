@@ -122,8 +122,15 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 }
 
 func has3PEndpointParameters(params map[string]string) bool {
+	if len(params) == 0 {
+		return false
+	}
 	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints", "host"} {
-		for _, part := range strings.Split(params[k], ",") {
+		val, ok := params[k]
+		if !ok || val == "" {
+			continue
+		}
+		for _, part := range strings.Split(val, ",") {
 			if strings.TrimSpace(part) != "" {
 				return true
 			}

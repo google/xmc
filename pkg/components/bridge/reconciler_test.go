@@ -2053,3 +2053,58 @@ func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *te
 		t.Error("expected Delete1PComponent to be called when deactivating previously Ready component after controller restart")
 	}
 }
+
+func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ReconcileComponentInput
+		want string
+	}{
+		{
+			name: "JSONPath EndpointJSONPath is ignored when wrapperRef is nil",
+			in: ReconcileComponentInput{
+				WrapperOpts: WrapperRef{EndpointJSONPath: "$.status.endpoint"},
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"endpoint": "http://clickhouse:8123"},
+				},
+			},
+			want: "http://clickhouse:8123",
+		},
+		{
+			name: "Static EndpointJSONPath override is returned",
+			in: ReconcileComponentInput{
+				WrapperOpts: WrapperRef{EndpointJSONPath: "http://static:8123"},
+			},
+			want: "http://static:8123",
+		},
+		{
+			name: "Non-nil WrapperRef does not fall through to parameters",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					WrapperRef: &componentspb.WrapperRef{CrdKind: "ClickHouseInstallation"},
+					Parameters: map[string]string{"host": "clickhouse", "httpPort": "8123"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "IPv6 host is bracketed when combined with port",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": " , 2001:db8::1 , ::1 ", "httpPort": "8123"},
+				},
+			},
+			want: "[2001:db8::1]:8123",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveOperatorlessEndpoint(tc.in); got != tc.want {
+				t.Errorf("resolveOperatorlessEndpoint() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
