@@ -99,7 +99,9 @@ func validateLifecycleControl(ctrl *ComponentLifecycleCtrl, filePath string, lin
 
 func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *ValidationResult) {
 	if c.Spec.WrapperRef == nil {
-		res.AddError(c.FilePath, line, "MISSING_WRAPPER_REF", "spec.wrapperRef is required for 3P wrapper components")
+		if !has3PEndpointParameters(c.Spec.Parameters) {
+			res.AddError(c.FilePath, line, "MISSING_WRAPPER_REF", "spec.wrapperRef or connection endpoint parameters in spec.parameters are required for 3P wrapper components")
+		}
 		return
 	}
 	w := c.Spec.WrapperRef
@@ -117,6 +119,15 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 	}
 	validateWrapperStatusPath(c.FilePath, line, "observedGenerationPath", w.ObservedGenerationPath, res)
 	validateWrapperStatusPath(c.FilePath, line, "readyConditionPath", w.ReadyConditionPath, res)
+}
+
+func has3PEndpointParameters(params map[string]string) bool {
+	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints", "host"} {
+		if strings.TrimSpace(params[k]) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateWrapperStatusPath(filePath string, line int, fieldName, val string, res *ValidationResult) {

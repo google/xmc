@@ -276,6 +276,25 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name:   "active operatorless 3P with endpoint and secret in parameters",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1,
+				Spec: &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{
+						"host":                "clickhouse.xmc-metrics.svc.cluster.local",
+						"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
+						"secretName":          "clickhouse-secret",
+					},
+				},
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
+		},
+		{
 			name: "active 3P with coordinate injection",
 			cms:  &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{

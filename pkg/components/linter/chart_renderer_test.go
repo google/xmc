@@ -135,17 +135,6 @@ func TestRedpandaBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 			ChartVersion:       "0.1.0",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
-			WrapperRef: &linter.ComponentWrapperRef{
-				CrdGroup:               "redpanda.vectorized.io",
-				CrdVersion:             "v1alpha1",
-				CrdKind:                "Cluster",
-				TargetName:             "redpanda",
-				TargetNamespace:        "xmc",
-				ObservedGenerationPath: "$.status.observedGeneration",
-				ReadyConditionPath:     "$.status.conditions[?(@.type=='Ready')].status",
-				ExpectedReadyValue:     "True",
-				EndpointJsonPath:       "$.status.nodes.internal[0]",
-			},
 			Parameters: map[string]string{
 				"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
 				"kafkaPort":       "9092",
@@ -217,18 +206,16 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
 	}
 
-	if comp.Spec.WrapperRef == nil {
-		t.Fatal("comp.Spec.WrapperRef is nil")
-	}
-
-	wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
-	obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
-	if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
-		t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())
-	}
-	readyRe := regexp.MustCompile(wrapperProps.ReadyConditionPath.Pattern)
-	if !readyRe.MatchString(comp.Spec.WrapperRef.ReadyConditionPath) {
-		t.Errorf("readyConditionPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ReadyConditionPath, readyRe.String())
+	if comp.Spec.WrapperRef != nil {
+		wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
+		obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
+		if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
+			t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())
+		}
+		readyRe := regexp.MustCompile(wrapperProps.ReadyConditionPath.Pattern)
+		if !readyRe.MatchString(comp.Spec.WrapperRef.ReadyConditionPath) {
+			t.Errorf("readyConditionPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ReadyConditionPath, readyRe.String())
+		}
 	}
 }
 

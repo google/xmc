@@ -110,7 +110,15 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 	if spec == nil {
 		return false, "spec is nil"
 	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetWrapperRef() == nil {
+	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		return true, "Component healthy"
+	}
+	if spec.GetWrapperRef() == nil {
+		if ok, probeMsg := p.probe3PEndpoint(ctx, resolveEndpointFromParams(spec.GetParameters())); !ok {
+			return false, probeMsg
+		} else if probeMsg != "" {
+			return true, probeMsg
+		}
 		return true, "Component healthy"
 	}
 	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
@@ -794,13 +802,43 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
 		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
 	}
-	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath == "" {
+	if ref.Name == "" && resolveOperatorlessEndpoint(in) == "" {
 		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
 	}
 	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
 		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
 	}
 	return ref, "", ""
+}
+
+func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
+	if in.WrapperOpts.EndpointJSONPath != "" {
+		return in.WrapperOpts.EndpointJSONPath
+	}
+	if in.Spec == nil {
+		return ""
+	}
+	return resolveEndpointFromParams(in.Spec.GetParameters())
+}
+
+func resolveEndpointFromParams(params map[string]string) string {
+	if len(params) == 0 {
+		return ""
+	}
+	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints"} {
+		if v := strings.TrimSpace(params[k]); v != "" {
+			return strings.TrimSpace(strings.Split(v, ",")[0])
+		}
+	}
+	if host := strings.TrimSpace(params["host"]); host != "" {
+		for _, pk := range []string{"httpPort", "nativePort", "kafkaPort", "port"} {
+			if port := strings.TrimSpace(params[pk]); port != "" {
+				return fmt.Sprintf("%s:%s", host, port)
+			}
+		}
+		return host
+	}
+	return ""
 }
 
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
@@ -813,8 +851,10 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	if unreadyReason != "" {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
 	}
-	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath != "" {
-		return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, in.WrapperOpts.EndpointJSONPath)
+	if ref.Name == "" {
+		if endpoint := resolveOperatorlessEndpoint(in); endpoint != "" {
+			return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, endpoint)
+		}
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
@@ -867,11 +907,16 @@ func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in Reconc
 	if ok, reason, msg := r.verifyEndpointHealth(ctx, endpoint); !ok {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
 	}
+	var secretName string
+	if in.Spec != nil && in.Spec.GetParameters() != nil {
+		secretName = in.Spec.GetParameters()["secretName"]
+	}
 	resStatus := &ResourceStatus{
-		Found:    true,
-		Ready:    true,
-		Endpoint: endpoint,
-		Message:  "Static endpoint is reachable and healthy",
+		Found:            true,
+		Ready:            true,
+		Endpoint:         endpoint,
+		ConnectionSecret: secretName,
+		Message:          "Static endpoint is reachable and healthy",
 	}
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
 }
