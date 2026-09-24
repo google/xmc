@@ -30,8 +30,8 @@ deletionPolicy: Delete
 parameters:
   # ClickHouse server hostname or Kubernetes service FQDN (maps to CLICKHOUSE_HOST).
   host: "clickhouse.xmc-metrics.svc.cluster.local"
-  # Comma-separated internal Kubernetes DNS endpoints for ClickHouse native protocol clients.
-  clusterEndpoints: "clickhouse.xmc-metrics.svc.cluster.local:9000"
+  # Comma-separated internal Kubernetes DNS endpoints for ClickHouse native protocol clients. If omitted, it is dynamically constructed from host and nativePort.
+  clusterEndpoints: ""
   # ClickHouse native TCP protocol port exposed by the ClickHouse service (maps to CLICKHOUSE_PORT).
   nativePort: 9000
   # ClickHouse HTTP API listener port exposed by the ClickHouse service (used for HTTP queries and /ping health probes).
@@ -44,8 +44,8 @@ parameters:
   secretName: "clickhouse-secret"
   # Key within secretName containing the ClickHouse password.
   secretPasswordKey: "clickhouse-password"
-  # HTTP health check endpoint used to probe ClickHouse readiness.
-  healthCheckEndpoint: "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping"
+  # HTTP health check endpoint used to probe ClickHouse readiness. If omitted, it is dynamically constructed from host and httpPort.
+  healthCheckEndpoint: ""
   # Persistent volume storage capacity per ClickHouse replica node.
   storageSize: "10Gi"
 

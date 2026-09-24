@@ -30,16 +30,19 @@ spec:
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- $params := .Values.parameters | default dict }}
+  {{- $host := $params.host | default "clickhouse.xmc-metrics.svc.cluster.local" }}
+  {{- $nativePort := $params.nativePort | default 9000 | toString }}
+  {{- $httpPort := $params.httpPort | default 8123 | toString }}
   parameters:
-    host: {{ $params.host | default "clickhouse.xmc-metrics.svc.cluster.local" | quote }}
-    clusterEndpoints: {{ $params.clusterEndpoints | default "clickhouse.xmc-metrics.svc.cluster.local:9000" | quote }}
-    nativePort: {{ $params.nativePort | default 9000 | toString | quote }}
-    httpPort: {{ $params.httpPort | default 8123 | toString | quote }}
+    host: {{ $host | quote }}
+    clusterEndpoints: {{ $params.clusterEndpoints | default (printf "%s:%s" $host $nativePort) | quote }}
+    nativePort: {{ $nativePort | quote }}
+    httpPort: {{ $httpPort | quote }}
     defaultDatabase: {{ $params.defaultDatabase | default "default" | quote }}
     user: {{ $params.user | default "default" | quote }}
     secretName: {{ $params.secretName | default "clickhouse-secret" | quote }}
     secretPasswordKey: {{ $params.secretPasswordKey | default "clickhouse-password" | quote }}
-    healthCheckEndpoint: {{ $params.healthCheckEndpoint | default "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping" | quote }}
+    healthCheckEndpoint: {{ $params.healthCheckEndpoint | default (printf "http://%s:%s/ping" $host $httpPort) | quote }}
     storageSize: {{ $params.storageSize | default "10Gi" | quote }}
   {{- if .Values.dependencies }}
   dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
