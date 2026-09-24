@@ -18,6 +18,10 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
 
 - Ensure `gh` CLI is installed and authenticated (`gh auth status`).
 - Ensure working directory is the root of the XMC repository (can be executed from any branch or git worktree).
+- Fetch the latest remote tracking refs and tags to ensure local tooling has the latest commits and tags from `main` without needing to check out or switch branches:
+  ```bash
+  git fetch origin main --tags
+  ```
 - Ensure Python dependencies and `PYTHONPATH=.` are configured when running helper tools.
 
 ---
@@ -136,9 +140,13 @@ gh workflow run nightly-visual-snapshot.yml --ref main
 Execute the release metadata extraction tooling per [xmc_generate_release_notes](../xmc_generate_release_notes/SKILL.md):
 
 1. **Extract Structured Release Metadata**:
+   Determine the previous semantic version tag (excluding nightly tags) and extract metadata targeting `origin/main`:
    ```bash
+   BASE_TAG=$(git describe --tags --abbrev=0 --match='[0-9]*.[0-9]*.[0-9]*' origin/main^ 2>/dev/null || git describe --tags --abbrev=0 --match='v[0-9]*.[0-9]*.[0-9]*' origin/main^)
+
    PYTHONPATH=. python3 tools/release/extract_release_metadata.py \
-     --target-ref HEAD \
+     --base-ref "${BASE_TAG}" \
+     --target-ref origin/main \
      --output /tmp/release_metadata.json
    ```
 2. **Read Metadata & Synthesize Notes**:
@@ -174,9 +182,10 @@ Execute the release metadata extraction tooling per [xmc_generate_release_notes]
 > [!CAUTION]
 > **Mandatory User Confirmation Gate**: Only proceed after the user explicitly types an affirmative confirmation (e.g., "approve release", "publish release").
 
-1. Execute `publish_release.py` with `--draft` to create the annotated git tag, push it to `origin`, and create a draft release on GitHub:
+1. Execute `publish_release.py` targeting `origin/main` with `--draft` to create the annotated git tag, push it to `origin`, and create a draft release on GitHub:
    ```bash
    PYTHONPATH=. python3 tools/release/publish_release.py \
+     --target-commit origin/main \
      --tag <version> \
      --notes-file /tmp/release_notes_v<version>.md \
      --draft
