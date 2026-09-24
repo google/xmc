@@ -260,7 +260,7 @@ def _resolve_enabled_services(
         getattr(args, "rod_deployment_enabled", None) if args else None,
         os.environ.get("ROD_DEPLOYMENT_ENABLED"),
         yaml_vars.get("rod_deployment_enabled"),
-        default=False,
+        default=True,
     )
     if rod_enabled and "rod_data_provider" not in services:
         services.append("rod_data_provider")
@@ -272,7 +272,7 @@ def _resolve_enabled_services(
             "enable_health_service",
             yaml_vars.get("health_service_deployment_enabled"),
         ),
-        default=False,
+        default=True,
     )
     if enable_health and "health_service" not in services:
         services.append("health_service")
