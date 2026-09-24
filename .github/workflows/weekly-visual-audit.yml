@@ -19,12 +19,6 @@ on:
     # Run every Monday at 06:00 UTC
     - cron: '0 6 * * 1'
   workflow_dispatch:
-    inputs:
-      target_url:
-        description: 'Optional Target XMC Web UI base URL (defaults to https://xmc-nightly.<GCP_DOMAIN_NAME>)'
-        required: false
-        default: ''
-        type: string
 
 permissions:
   contents: read
@@ -52,7 +46,7 @@ jobs:
       id-token: write
 
     env:
-      UI_URL: "${{ inputs.target_url || format('https://xmc-nightly.{0}', secrets.GCP_DOMAIN_NAME) }}"
+      UI_URL: "${{ format('https://xmc-nightly.{0}', secrets.GCP_DOMAIN_NAME) }}"
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
       GALLERY_DIR: '/tmp/visual-gallery'
