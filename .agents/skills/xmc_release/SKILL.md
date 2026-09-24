@@ -17,11 +17,8 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
 ## Prerequisites & Tools
 
 - Ensure `gh` CLI is installed and authenticated (`gh auth status`).
-- Ensure working directory is the root of the XMC repository.
-- Ensure local `main` branch is up to date with `origin/main`:
-  ```bash
-  git fetch origin main && git checkout main && git pull origin main
-  ```
+- Ensure working directory is the root of the XMC repository (can be executed from any branch or git worktree).
+- Ensure Python dependencies and `PYTHONPATH=.` are configured when running helper tools.
 
 ---
 
@@ -140,7 +137,7 @@ Execute the release metadata extraction tooling per [xmc_generate_release_notes]
 
 1. **Extract Structured Release Metadata**:
    ```bash
-   python3 tools/release/extract_release_metadata.py \
+   PYTHONPATH=. python3 tools/release/extract_release_metadata.py \
      --target-ref HEAD \
      --output /tmp/release_metadata.json
    ```
@@ -179,7 +176,7 @@ Execute the release metadata extraction tooling per [xmc_generate_release_notes]
 
 1. Execute `publish_release.py` with `--draft` to create the annotated git tag, push it to `origin`, and create a draft release on GitHub:
    ```bash
-   python3 tools/release/publish_release.py \
+   PYTHONPATH=. python3 tools/release/publish_release.py \
      --tag <version> \
      --notes-file /tmp/release_notes_v<version>.md \
      --draft
