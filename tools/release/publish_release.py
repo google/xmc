@@ -27,7 +27,10 @@ from tools.release.git_ops import (
     verify_local_tag,
     verify_remote_tag,
 )
-from tools.release.github_release_client import publish_via_gh_cli
+from tools.release.github_release_client import (
+    publish_via_gh_cli,
+    publish_via_rest_api,
+)
 from tools.release.models import PublishReleaseResult
 
 
@@ -55,8 +58,8 @@ def read_notes_file(notes_path: Path) -> str:
     return notes_content
 
 
-def _validate_preflight(args: argparse.Namespace) -> tuple[str, Path, Path]:
-    """Validates CLI inputs, files, and environment dependencies before git mutations."""
+def _validate_preflight(args: argparse.Namespace) -> tuple[str, Path, Path, str]:
+    """Validates CLI inputs and files before git mutations."""
     tag = args.tag.strip()
     if not tag or tag.startswith("-"):
         raise HandledError(
@@ -72,19 +75,13 @@ def _validate_preflight(args: argparse.Namespace) -> tuple[str, Path, Path]:
         )
 
     notes_path = Path(args.notes_file).resolve()
-    read_notes_file(notes_path)
-
-    if not getattr(args, "dry_run", False) and not shutil.which("gh"):
-        raise HandledError(
-            "GitHub CLI ('gh') is not installed or not in PATH.",
-            "Install GitHub CLI (gh) or authenticate with 'gh auth login'.",
-        )
-    return tag, repo_dir, notes_path
+    notes_content = read_notes_file(notes_path)
+    return tag, repo_dir, notes_path, notes_content
 
 
 def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
     """Creates an annotated git tag and publishes a GitHub Release."""
-    tag, repo_dir, notes_path = _validate_preflight(args)
+    tag, repo_dir, notes_path, notes_content = _validate_preflight(args)
     title = args.title or f"Release {tag}"
     target_commit = resolve_target_commit(args.target_commit or "HEAD", repo_dir)
 
@@ -115,18 +112,31 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
         tag_pushed = True
 
     try:
-        release_url = publish_via_gh_cli(
-            tag,
-            title,
-            notes_path,
-            args.draft,
-            args.prerelease,
-            target_commit,
-            repo_dir,
-            remote=args.remote,
-            force=args.force,
-            skip_push=args.skip_push,
-        )
+        if shutil.which("gh"):
+            release_url = publish_via_gh_cli(
+                tag,
+                title,
+                notes_path,
+                args.draft,
+                args.prerelease,
+                target_commit,
+                repo_dir,
+                remote=args.remote,
+                force=args.force,
+                skip_push=args.skip_push,
+            )
+            release_id = None
+        else:
+            release_url, release_id = publish_via_rest_api(
+                tag,
+                title,
+                notes_content,
+                args.draft,
+                args.prerelease,
+                target_commit,
+                repo_dir,
+                remote=args.remote,
+            )
         if not release_url:
             raise HandledError(
                 "Failed to publish release: Release URL is empty.",
@@ -152,7 +162,7 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
         "tag": tag,
         "title": title,
         "release_url": release_url,
-        "release_id": None,
+        "release_id": release_id,
         "is_draft": bool(args.draft),
         "notes_file": str(notes_path),
     }

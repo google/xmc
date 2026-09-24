@@ -155,6 +155,7 @@ py_library(
     deps = [
         ":git_ops_lib",
         "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
     ],
 )
 
@@ -166,6 +167,7 @@ py_test(
         ":git_ops_lib",
         ":github_release_client_lib",
         "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
     ],
 )
 
@@ -201,5 +203,6 @@ py_test(
         ":models_lib",
         ":publish_release_lib",
         "//tools/common:tool_utils",
+        "//tools/pr_review:github_utils",
     ],
 )
