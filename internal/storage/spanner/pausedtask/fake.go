@@ -25,6 +25,7 @@ import (
 	"golang/uuid/uuid"
 	"task/go/status"
 
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
@@ -45,6 +46,9 @@ func cloneTask(task *PausedTask) *PausedTask {
 	cp := *task
 	if task.Action != nil {
 		cp.Action = proto.Clone(task.Action).(*actuatortaskpb.Action)
+	}
+	if task.WorkUnit != nil {
+		cp.WorkUnit = proto.Clone(task.WorkUnit).(*essmsgpb.WorkUnit)
 	}
 	if task.ProcessedTime != nil {
 		pt := *task.ProcessedTime

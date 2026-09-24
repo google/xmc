@@ -20,6 +20,7 @@ compat_go_library(
     name = "resumption",
     srcs = [
         "consumer.go",
+        "filter.go",
         "handler.go",
         "payload.go",
         "worker.go",
@@ -34,6 +35,7 @@ compat_go_library(
         "//internal/storage/spanner/pausedtask",
         "//internal/storage/spanner/pausestate",
         "//internal/task_queue_redis/redisclient",
+        "//internal/validator",
     ],
 )
 
@@ -41,6 +43,7 @@ compat_go_test(
     name = "resumption_test",
     srcs = [
         "consumer_test.go",
+        "filter_test.go",
         "handler_test.go",
         "payload_test.go",
         "worker_test.go",
