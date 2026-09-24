@@ -114,7 +114,11 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		return true, "Component healthy"
 	}
 	if spec.GetWrapperRef() == nil {
-		if ok, probeMsg := p.probe3PEndpoint(ctx, resolveEndpointFromParams(spec.GetParameters())); !ok {
+		endpoint := resolveEndpointFromParams(spec.GetParameters())
+		if endpoint == "" {
+			return false, "no wrapperRef or connection endpoint parameters configured"
+		}
+		if ok, probeMsg := p.probe3PEndpoint(ctx, endpoint); !ok {
 			return false, probeMsg
 		} else if probeMsg != "" {
 			return true, probeMsg
@@ -826,8 +830,10 @@ func resolveEndpointFromParams(params map[string]string) string {
 		return ""
 	}
 	for _, k := range []string{"healthCheckEndpoint", "endpoint", "clusterEndpoints", "brokerEndpoints"} {
-		if v := strings.TrimSpace(params[k]); v != "" {
-			return strings.TrimSpace(strings.Split(v, ",")[0])
+		for _, part := range strings.Split(params[k], ",") {
+			if first := strings.TrimSpace(part); first != "" {
+				return first
+			}
 		}
 	}
 	if host := strings.TrimSpace(params["host"]); host != "" {

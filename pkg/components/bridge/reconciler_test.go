@@ -1670,6 +1670,26 @@ func TestBridgeProber(t *testing.T) {
 	if ok, msg := bpWithNilResult.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "health prober returned nil result" {
 		t.Errorf("expected false for nil result from prober: ok=%v, msg=%s", ok, msg)
 	}
+
+	// ProbeHealth for 3P without wrapperRef and without endpoint parameters must fail
+	spec3PEmpty := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+	}
+	if ok, msg := bp.ProbeHealth(ctx, spec3PEmpty, "xmc"); ok || msg != "no wrapperRef or connection endpoint parameters configured" {
+		t.Errorf("expected false for 3P without wrapperRef or endpoint parameters: ok=%v, msg=%s", ok, msg)
+	}
+
+	// ProbeHealth for 3P without wrapperRef with comma-prefixed / fallback endpoint parameters
+	spec3PParams := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		Parameters: map[string]string{
+			"healthCheckEndpoint": " , ",
+			"clusterEndpoints":    " , http://my-crd.xmc:8080 , ",
+		},
+	}
+	if ok, msg := bp.ProbeHealth(ctx, spec3PParams, "xmc"); !ok || msg != "HTTP 200" {
+		t.Errorf("expected true for 3P with endpoint parameters: ok=%v, msg=%s", ok, msg)
+	}
 }
 
 func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
