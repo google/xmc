@@ -848,18 +848,28 @@ func resolveEndpointFromParams(params map[string]string) string {
 			return first
 		}
 	}
-	if host := firstNonEmptyToken(params["host"]); host != "" {
-		for _, pk := range []string{"httpPort", "nativePort", "kafkaPort", "port"} {
-			if port := strings.TrimSpace(params[pk]); port != "" {
-				if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-					return fmt.Sprintf("[%s]:%s", host, port)
-				}
-				return fmt.Sprintf("%s:%s", host, port)
-			}
-		}
+	host := firstNonEmptyToken(params["host"])
+	if host == "" {
+		return ""
+	}
+	return formatHostEndpoint(host, params)
+}
+
+func formatHostEndpoint(host string, params map[string]string) string {
+	if strings.Count(host, ":") == 1 || (strings.HasPrefix(host, "[") && strings.Contains(host, "]:")) {
 		return host
 	}
-	return ""
+	for _, pk := range []string{"httpPort", "nativePort", "kafkaPort", "port"} {
+		port := strings.TrimSpace(params[pk])
+		if port == "" {
+			continue
+		}
+		if strings.Count(host, ":") > 1 && !strings.HasPrefix(host, "[") {
+			return fmt.Sprintf("[%s]:%s", host, port)
+		}
+		return fmt.Sprintf("%s:%s", host, port)
+	}
+	return host
 }
 
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,

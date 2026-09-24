@@ -2099,6 +2099,26 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 			},
 			want: "[2001:db8::1]:8123",
 		},
+		{
+			name: "host already containing port is returned directly",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": "my-service:8080", "httpPort": "8123"},
+				},
+			},
+			want: "my-service:8080",
+		},
+		{
+			name: "bracketed IPv6 host with port is returned directly",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": "[2001:db8::1]:8080", "httpPort": "8123"},
+				},
+			},
+			want: "[2001:db8::1]:8080",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
