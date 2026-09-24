@@ -128,6 +128,40 @@ func stageChartFile(t *testing.T, srcPath, dstPath string) {
 	}
 }
 
+func mergeValuesMap(dst, src map[string]any) {
+	for k, v := range src {
+		srcMap, srcOk := v.(map[string]any)
+		dstMap, dstOk := dst[k].(map[string]any)
+		if srcOk && dstOk {
+			mergeValuesMap(dstMap, srcMap)
+			continue
+		}
+		dst[k] = v
+	}
+}
+
+func stageMergedChartValues(t *testing.T, srcDir, chartDir, customValues string) {
+	t.Helper()
+	baseBytes, err := os.ReadFile(filepath.Join(srcDir, "values.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read base values.yaml: %v", err)
+	}
+	baseMap := make(map[string]any)
+	if err := yaml.Unmarshal(baseBytes, &baseMap); err != nil {
+		t.Fatalf("failed to unmarshal base values.yaml: %v", err)
+	}
+	customMap := make(map[string]any)
+	if err := yaml.Unmarshal([]byte(customValues), &customMap); err != nil {
+		t.Fatalf("failed to unmarshal customValues: %v", err)
+	}
+	mergeValuesMap(baseMap, customMap)
+	mergedBytes, err := yaml.Marshal(baseMap)
+	if err != nil {
+		t.Fatalf("failed to marshal merged values.yaml: %v", err)
+	}
+	writeTestManifest(t, chartDir, "values.yaml", string(mergedBytes))
+}
+
 func stageChartWithValues(t *testing.T, srcDir, customValues string) string {
 	t.Helper()
 	chartDir := t.TempDir()
@@ -150,7 +184,7 @@ func stageChartWithValues(t *testing.T, srcDir, customValues string) string {
 	if err != nil {
 		t.Fatalf("failed to copy templates: %v", err)
 	}
-	writeTestManifest(t, chartDir, "values.yaml", customValues)
+	stageMergedChartValues(t, srcDir, chartDir, customValues)
 	return chartDir
 }
 
@@ -243,14 +277,11 @@ deletionProtection: false
 deletionPolicy: Orphan
 parameters:
   host: "clickhouse-custom.xmc-metrics.svc.cluster.local"
-  clusterEndpoints: "clickhouse-custom.xmc-metrics.svc.cluster.local:9440"
   nativePort: 9440
   httpPort: 8443
   defaultDatabase: "analytics"
   user: "xmc_reader"
   secretName: "clickhouse-custom-secret"
-  secretPasswordKey: "password"
-  healthCheckEndpoint: "https://clickhouse-custom.xmc-metrics.svc.cluster.local:8443/ping"
   storageSize: "100Gi"
 `,
 			want: linter.ComponentManifest{
@@ -281,8 +312,8 @@ parameters:
 						"defaultDatabase":     "analytics",
 						"user":                "xmc_reader",
 						"secretName":          "clickhouse-custom-secret",
-						"secretPasswordKey":   "password",
-						"healthCheckEndpoint": "https://clickhouse-custom.xmc-metrics.svc.cluster.local:8443/ping",
+						"secretPasswordKey":   "clickhouse-password",
+						"healthCheckEndpoint": "http://clickhouse-custom.xmc-metrics.svc.cluster.local:8443/ping",
 						"storageSize":         "100Gi",
 					},
 				},
