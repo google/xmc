@@ -19,6 +19,9 @@ on:
     # Run every Monday at 06:00 UTC
     - cron: '0 6 * * 1'
   workflow_dispatch:
+  push:
+    branches:
+      - 'feat/weekly-visual-audit-workflow'
 
 permissions:
   contents: read
