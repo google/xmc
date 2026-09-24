@@ -41,7 +41,7 @@ kubectl config set-context --current --namespace=xmc-metrics
 
 #### Option A: Public Helm Repositories (Requires Direct Internet Access)
 
-Add the official ClickHouse ClickStack Helm repository:
+Add the official ClickStack Helm repository:
 
 ```bash
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
@@ -60,8 +60,8 @@ To pull and mirror the chart to your project's Artifact Registry:
 gcloud auth configure-docker us-central1-docker.pkg.dev
 
 # 2. Pull chart and push to OCI registry
-helm pull clickstack/clickstack
-helm push clickstack-*.tgz oci://us-central1-docker.pkg.dev/[PROJECT_ID]/[REPO_NAME]
+helm pull clickhouse/clickhouse --version 3.4.0
+helm push clickhouse-3.4.0.tgz oci://us-central1-docker.pkg.dev/[PROJECT_ID]/[REPO_NAME]
 ```
 
 ### 4. Customize Configuration (`values.yaml`)
@@ -75,17 +75,18 @@ Review and adjust `deploy/addons/metrics/clickhouse/values.yaml` as needed for y
 
 ### 5. Deploy ClickHouse
 
-Deploy ClickHouse server (`24.3`) using Helm with the ClickStack chart:
+Deploy ClickHouse using Helm with the provided `values.yaml`:
 
 ```bash
+# get chart
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
 helm repo update
 
-# Install ClickStack Helm chart
-helm install my-clickstack clickstack/clickstack \
-    --namespace xmc-metrics \
-    --create-namespace \
-    -f values.yaml
+# install operators
+helm install clickstack-operators clickstack/clickstack-operators --namespace xmc-metrics --create-namespace -f values.yaml 
+
+# install clickhouse
+helm install my-clickstack clickstack/clickstack
 ```
 
 ### 6. Initialize Metrics Schema
@@ -93,7 +94,7 @@ helm install my-clickstack clickstack/clickstack \
 Initialize the physical metrics tables, Kafka queue consumer table, and materialized view using the schema definition in [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql):
 
 ```bash
-kubectl exec -i -n xmc-metrics my-clickstack-clickhouse-0 -- clickhouse-client < deploy/clickhouse/schema.sql
+kubectl exec -i -n xmc-metrics statefulset/my-clickstack-clickhouse-clickhouse-0-0 -- clickhouse-client < deploy/clickhouse/schema.sql
 ```
 
 ---
@@ -114,7 +115,7 @@ kubectl get svc -n xmc-metrics
 Forward HTTP (`8123`) and TCP (`9000`) ports to your local workstation:
 
 ```bash
-kubectl port-forward -n xmc-metrics svc/my-clickstack-clickhouse 8123:8123 9000:9000
+kubectl port-forward -n xmc-metrics svc/clickhouse 8123:8123 9000:9000
 ```
 
 Verify server health using `curl`:
@@ -138,17 +139,17 @@ In-cluster services get these variables from the chart. Set `metrics.enabled` to
 metrics:
   enabled: true
   clickhouse:
-    host: "my-clickstack-clickhouse.xmc-metrics.svc.cluster.local"
+    host: "clickhouse.xmc-metrics.svc.cluster.local"
     port: "9000"
     database: "default"
     user: "default"
     password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
 ```
 
-Read the addon-generated password to populate `metrics.clickhouse.password` (if authentication is enabled):
+Read the addon-generated password to populate `metrics.clickhouse.password`:
 
 ```bash
-kubectl get secret my-clickstack-clickhouse -n xmc-metrics -o jsonpath="{.data.admin-password}" | base64 --decode
+kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode
 ```
 
 ##### Sourcing the password from Secret Manager
@@ -183,13 +184,13 @@ export CLICKHOUSE_HOST="127.0.0.1"
 export CLICKHOUSE_PORT="9000"
 export CLICKHOUSE_DATABASE="default"
 export CLICKHOUSE_USER="default"
-export CLICKHOUSE_PASSWORD=$(kubectl get secret my-clickstack-clickhouse -n xmc-metrics -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 --decode || echo "")
+export CLICKHOUSE_PASSWORD=$(kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode)
 ```
 
 Or connect via DSN, which takes precedence over the individual variables:
 
 ```bash
-export CLICKHOUSE_DSN="clickhouse://default:@my-clickstack-clickhouse.xmc-metrics.svc.cluster.local:9000/default"
+export CLICKHOUSE_DSN="clickhouse://default:@clickhouse.xmc-metrics.svc.cluster.local:9000/default"
 ```
 
 ---
@@ -200,8 +201,8 @@ To remove the ClickHouse release and delete persistent volumes:
 
 ```bash
 # Uninstall Helm release
-helm uninstall my-clickstack -n xmc-metrics
+helm uninstall clickhouse -n xmc-metrics
 
 # Remove PersistentVolumeClaims
-kubectl delete pvc -l app.kubernetes.io/instance=my-clickstack -n xmc-metrics
+kubectl delete pvc -l app.kubernetes.io/instance=clickhouse -n xmc-metrics
 ```
