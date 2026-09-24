@@ -17,7 +17,7 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
 ## Prerequisites & Tools
 
 - Ensure `gh` CLI is installed and authenticated (`gh auth status`).
-- Ensure working directory is the root of the XMC repository (`~/Documents/XMC`).
+- Ensure working directory is the root of the XMC repository.
 - Ensure local `main` branch is up to date with `origin/main`:
   ```bash
   git fetch origin main && git checkout main && git pull origin main
@@ -33,8 +33,9 @@ Trigger the nightly build and deployment workflow using GitHub Actions:
 gh workflow run nightly-build.yml --ref main
 ```
 
-1. Retrieve the newly triggered workflow run ID:
+1. Retrieve the newly triggered workflow run ID (allow a short buffer for GitHub to register the run):
    ```bash
+   sleep 5
    RUN_ID=$(gh run list --workflow=nightly-build.yml --limit 1 --json databaseId --jq '.[0].databaseId')
    echo "Triggered nightly build run ID: ${RUN_ID}"
    ```
@@ -75,8 +76,9 @@ Trigger the nightly examples E2E test suite against the freshly deployed nightly
 gh workflow run nightly-examples-e2e.yml --ref main
 ```
 
-1. Retrieve the E2E workflow run ID:
+1. Retrieve the E2E workflow run ID (allow a short buffer for GitHub to register the run):
    ```bash
+   sleep 5
    E2E_RUN_ID=$(gh run list --workflow=nightly-examples-e2e.yml --limit 1 --json databaseId --jq '.[0].databaseId')
    echo "Triggered E2E test suite run ID: ${E2E_RUN_ID}"
    ```
@@ -111,8 +113,9 @@ Generate the visual snapshot gallery verifying golden UI routes on the nightly d
 gh workflow run nightly-visual-snapshot.yml --ref main
 ```
 
-1. Retrieve the visual snapshot run ID:
+1. Retrieve the visual snapshot run ID (allow a short buffer for GitHub to register the run):
    ```bash
+   sleep 5
    VISUAL_RUN_ID=$(gh run list --workflow=nightly-visual-snapshot.yml --limit 1 --json databaseId --jq '.[0].databaseId')
    echo "Triggered visual snapshot run ID: ${VISUAL_RUN_ID}"
    ```
