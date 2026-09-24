@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: 'Weekly Visual UI Audit & Pages Gallery'
+name: 'nightly-visual-snapshot'
 
 on:
   schedule:
@@ -26,7 +26,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: 'pages-weekly-visual-audit'
+  group: 'pages-nightly-visual-snapshot'
   cancel-in-progress: false
 
 jobs:
