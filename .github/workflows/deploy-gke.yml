@@ -333,17 +333,11 @@ jobs:
         run: |
           gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
           kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace xmc --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap clickhouse-format-schemas \
-            --from-file=metrics.proto=api/protos/metrics/metrics.proto \
-            -n xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f deploy/addons/metrics/manifests/metrics-addons.yaml
           kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
           kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
           kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
           kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
-          kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=120s || true
-          kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=120s || true
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}
