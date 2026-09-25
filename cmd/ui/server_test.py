@@ -146,8 +146,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "defaults",
                 "environ": {},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -156,7 +156,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "environ": {"XMC_ADMIN_PANEL_ENABLED": "true"},
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -165,7 +165,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -173,7 +173,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "resource_dashboard_true",
                 "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
@@ -182,7 +182,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "resource_dashboard_false",
                 "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "false"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
@@ -191,8 +191,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "performance_dashboard_true",
                 "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -200,8 +200,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "performance_dashboard_false",
                 "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -209,8 +209,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "non_prod_auth_true",
                 "environ": {"XMC_NON_PROD_AUTH": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -218,8 +218,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "non_prod_auth_numeric_1",
                 "environ": {"XMC_NON_PROD_AUTH": "1"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -227,8 +227,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "non_prod_auth_yes",
                 "environ": {"XMC_NON_PROD_AUTH": "yes"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -236,8 +236,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "show_safety_warning_true",
                 "environ": {"SHOW_SAFETY_WARNING": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -245,8 +245,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "pause_scheduling_enabled_true",
                 "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
                 ),
             },
@@ -254,8 +254,8 @@ class SPAHandlerTest(unittest.TestCase):
                 "testcase_name": "pause_scheduling_enabled_false",
                 "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "false"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },

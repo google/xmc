@@ -56,12 +56,15 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist.
 - [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
 
-### 4. `tools/benchmark/` (Skills & Rules Benchmark Suite)
-Harness for testing and evaluating skill/rule modifications:
-- [`compare_trajectories.py`](benchmark/compare_trajectories.py): Parses and compares subagent `transcript.jsonl` trajectories (turns, tokens, tool calls, outcomes).
+### 4. [`tools/benchmark/`](benchmark/README.md) (Skills & Rules Benchmark Suite)
+Harness for testing and evaluating skill/rule modifications (see [`tools/benchmark/README.md`](benchmark/README.md)):
+- [`scenario_assertions.py`](benchmark/scenario_assertions.py): Evaluates pre-registered file and regex assertions (`file_exists`, `file_absent`, `file_contains`, `file_omits`) across `origin`, `transfer`, and `negative` scenarios and derives the deterministic 7-state benchmark verdict matrix.
+- [`compare_trajectories.py`](benchmark/compare_trajectories.py): Parses and compares subagent `transcript.jsonl` trajectories (turns, tokens, tool calls, outcomes) and embeds the machine-derived [`scenario_assertions.py`](benchmark/scenario_assertions.py) verdict report via `--assertions`.
+- [`teardown_benchmark.py`](benchmark/teardown_benchmark.py): Cleans up benchmark subagent processes and temporary Git worktrees.
 - [`analyze_diff_and_synthesize.py`](benchmark/analyze_diff_and_synthesize.py): Extracts structured git diffs and categorized changes across `.agents/`.
 - [`extract_telemetry.py`](benchmark/extract_telemetry.py): Extracts usage telemetry embedded in GitHub PR comments.
 - [`resolve_test_scope.py`](benchmark/resolve_test_scope.py): Resolves affected Bazel test scopes from git diffs for CI optimization.
+
 ### 5. `tools/components/` (Component Manifest Linting & Profile Discovery)
 Harness for automated validation and discovery of XMC component profiles:
 - [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `component-linter` with consolidated text/JSON reporting.

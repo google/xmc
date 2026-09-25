@@ -93,6 +93,12 @@ vars:
   # Enable Foundational Component Controllers
   enable_components: false
 
+  # Enable Resource Optimization & Diagnostics (ROD) Data Provider
+  rod_deployment_enabled: true
+
+  # Enable Health Service (backs the Admin Panel)
+  health_service_deployment_enabled: true
+
   # Feature flag to allow pausing workload scheduling
   pause_scheduling_enabled: false
 

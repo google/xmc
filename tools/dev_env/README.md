@@ -333,7 +333,7 @@ To adapt the production XMC Helm chart for local development, `values-local.yaml
 1. **Base Values**: Loaded from `deploy/helm/values-local.yaml`.
 2. **Spanner Configuration**: Local Spanner instance, databases (`ess_database`, `xid_database`), and emulator endpoints.
 3. **Container Images**: Local image repositories and image tags (`local-dev`) side-loaded via KinD.
-4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `enable_components`, `rod_deployment_enabled`).
+4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `enable_components`, `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
 
 ### Deployment & Rollout Monitoring
 `HelmDeployer.deploy()` applies the Helm release (`xmc`) and invokes `wait_for_rollouts()`:
@@ -378,11 +378,13 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 
 | Feature Flag in YAML | Enabled Microservice Target | Default |
 | :--- | :--- | :--- |
-| `enable_metrics: true` | `ingestion_gateway` | `true` |
+| `enable_metrics: true` | `ingestion_gateway` | `false` |
 | `enable_components: true` | `components` | `false` |
-| `rod_deployment_enabled: true` | `rod_data_provider` | `false` |
+| `rod_deployment_enabled: true` | `rod_data_provider` | `true` |
+| `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
+| `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |
 
-*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `dashboard_service`, `health_service`) are enabled by default.
+*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`) are always enabled.
 
 ### Dynamic Resource Naming Rules
 
