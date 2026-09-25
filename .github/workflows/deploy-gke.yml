@@ -332,11 +332,17 @@ jobs:
         if: ${{ inputs.enable_metrics == true }}
         run: |
           gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
+          # 1. Ensure the dedicated xmc-metrics namespace exists for analytical storage infrastructure.
           kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+          # 2. Deploy lightweight metrics addons (inlined Protobuf format schema ConfigMap, Redpanda, and ClickHouse).
           kubectl apply -f deploy/addons/metrics/manifests/metrics-addons.yaml
+          # 3. Block until Redpanda finishes starting so the message broker is ready to accept topic creation and ingester connections.
           kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
+          # 4. Initialize the target Kafka topic ('xmc-metrics') partitioned across workers before Ingestion Gateway publishes metrics.
           kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
+          # 5. Block until ClickHouse server is healthy and listening on ports 8123 (HTTP) and 9000 (native TCP).
           kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
+          # 6. Apply schema.sql to initialize xmc_metrics MergeTree table, xmc_metrics_queue Kafka engine table, and xmc_metrics_mv materialized view.
           kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
 
       - name: 'Run Environment Health Verification'
