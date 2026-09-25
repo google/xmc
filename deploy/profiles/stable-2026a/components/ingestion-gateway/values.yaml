@@ -8,7 +8,7 @@ image: { repository: "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway", tag: "l
 imageTag: ""
 deletionProtection: true
 deletionPolicy: "Delete"
-dependencies: ["redpanda"]
+dependencies: ["redpanda", "clickhouse"]
 parameters:
   port: 8080
   redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"

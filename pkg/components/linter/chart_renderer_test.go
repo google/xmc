@@ -528,6 +528,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
 				{Name: "redpanda"},
+				{Name: "clickhouse"},
 			},
 			Parameters: map[string]string{
 				"port":            "8080",
@@ -645,45 +646,45 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to render enabled ingestion-gateway: %v", err)
 	}
-	rpDisabledRendered, err := renderChartWithValues(
-		filepath.Join(profileDir, "components", "redpanda"),
-		"redpanda",
-		map[string]any{"enabled": false},
-	)
-	if err != nil {
-		t.Fatalf("failed to render disabled redpanda: %v", err)
-	}
-	rpEnabledRendered, err := renderChartWithValues(
-		filepath.Join(profileDir, "components", "redpanda"),
-		"redpanda",
-		map[string]any{"enabled": true},
-	)
-	if err != nil {
-		t.Fatalf("failed to render enabled redpanda: %v", err)
-	}
 
-	disabledDir := t.TempDir()
-	writeTestManifest(t, disabledDir, "ingestion-gateway.yaml", igRendered["ingestion-gateway/templates/component.yaml"])
-	writeTestManifest(t, disabledDir, "redpanda.yaml", rpDisabledRendered["redpanda/templates/component.yaml"])
-	disabledRes, err := linter.NewLinter(rules).ValidateDirectory(disabledDir)
-	if err != nil {
-		t.Fatalf("ValidateDirectory(disabled redpanda) error: %v", err)
+	tests := []struct {
+		name       string
+		redpanda   bool
+		clickhouse bool
+		wantValid  bool
+	}{
+		{name: "both dependencies enabled", redpanda: true, clickhouse: true, wantValid: true},
+		{name: "redpanda disabled", redpanda: false, clickhouse: true},
+		{name: "clickhouse disabled", redpanda: true, clickhouse: false},
 	}
-	if disabledRes.Valid {
-		t.Errorf("expected invalid result when ingestion-gateway is enabled and redpanda is disabled")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTestManifest(t, dir, "ingestion-gateway.yaml", igRendered["ingestion-gateway/templates/component.yaml"])
+			writeTestManifest(t, dir, "redpanda.yaml", renderProfileComponent(t, profileDir, "redpanda", tt.redpanda))
+			writeTestManifest(t, dir, "clickhouse.yaml", renderProfileComponent(t, profileDir, "clickhouse", tt.clickhouse))
+			got, err := linter.NewLinter(rules).ValidateDirectory(dir)
+			if err != nil {
+				t.Fatalf("ValidateDirectory() error: %v", err)
+			}
+			if got.Valid != tt.wantValid {
+				t.Fatalf("ValidateDirectory() valid = %v, want %v (errors: %+v)", got.Valid, tt.wantValid, got.Errors)
+			}
+			if !tt.wantValid {
+				assertDiagnosticRule(t, got, "DISABLED_DEPENDENCY")
+			}
+		})
 	}
-	assertDiagnosticRule(t, disabledRes, "DISABLED_DEPENDENCY")
+}
 
-	enabledDir := t.TempDir()
-	writeTestManifest(t, enabledDir, "ingestion-gateway.yaml", igRendered["ingestion-gateway/templates/component.yaml"])
-	writeTestManifest(t, enabledDir, "redpanda.yaml", rpEnabledRendered["redpanda/templates/component.yaml"])
-	enabledRes, err := linter.NewLinter(rules).ValidateDirectory(enabledDir)
+// renderProfileComponent renders a stable-2026a component's Component CR with the given enabled flag.
+func renderProfileComponent(t *testing.T, profileDir, name string, enabled bool) string {
+	t.Helper()
+	rendered, err := renderChartWithValues(filepath.Join(profileDir, "components", name), name, map[string]any{"enabled": enabled})
 	if err != nil {
-		t.Fatalf("ValidateDirectory(both enabled) error: %v", err)
+		t.Fatalf("failed to render %s (enabled=%v): %v", name, enabled, err)
 	}
-	if !enabledRes.Valid {
-		t.Errorf("expected valid DAG when both ingestion-gateway and redpanda are enabled, got errors: %+v", enabledRes.Errors)
-	}
+	return rendered[name+"/templates/component.yaml"]
 }
 
 func renderChartWithValues(chartRoot, releaseName string, overrides map[string]any) (map[string]string, error) {
