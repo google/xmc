@@ -43,3 +43,6 @@ vars:
 
   # Feature flag: Enable ROD data provider service (rod_data_provider).
   rod_deployment_enabled: false
+
+  # Feature flag: Enable Health Service backing the Admin Panel (health_service).
+  health_service_deployment_enabled: false

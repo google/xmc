@@ -78,6 +78,8 @@ def parse_xid(raw_xid: str | None, required: bool = True) -> str:
             raise ValueError("Experiment XID (--xid) is required.")
         return ""
     xid = str(raw_xid).strip()
+    if xid.startswith("/"):
+        xid = xid.lstrip("/")
     if xid.startswith("experiments/"):
         xid = xid.split("/")[-1]
     elif xid.startswith("dashboards/"):

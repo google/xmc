@@ -62,9 +62,13 @@ class CommonTest(unittest.TestCase):
 
         # Resource name format experiments/<id> and dashboards/<slug>
         self.assertEqual(common.parse_xid("experiments/42"), "42")
+        self.assertEqual(common.parse_xid("/experiments/42"), "42")
         self.assertEqual(common.parse_xid("experiments/test-exp-99"), "test-exp-99")
+        self.assertEqual(common.parse_xid("/experiments/test-exp-99"), "test-exp-99")
         self.assertEqual(common.parse_xid("dashboards/my_slug"), "my_slug")
+        self.assertEqual(common.parse_xid("/dashboards/my_slug"), "my_slug")
         self.assertEqual(common.parse_xid("dashboards/test-dashboard-123"), "test-dashboard-123")
+        self.assertEqual(common.parse_xid("/dashboards/test-dashboard-123"), "test-dashboard-123")
 
         # Empty / None when required=True raises ValueError
         with self.assertRaises(ValueError) as ctx:

@@ -484,3 +484,18 @@ alias(
     name = "extract_release_metadata_test",
     actual = "//tools/release:extract_release_metadata_test",
 )
+
+alias(
+    name = "publish_release_lib",
+    actual = "//tools/release:publish_release_lib",
+)
+
+alias(
+    name = "publish_release",
+    actual = "//tools/release:publish_release",
+)
+
+test_suite(
+    name = "publish_release_test",
+    tests = ["//tools/release:publish_release_test"],
+)
