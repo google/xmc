@@ -25,6 +25,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/storage"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -35,12 +36,6 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
-	}
-
-	handler := &WorkUnitHandler{
-		baseHandler: baseHandler{
-			storage: storageClient,
-		},
 	}
 
 	xid := int64(123)
@@ -63,7 +58,7 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		t.Errorf("Initial experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
-	restartedWLEs, err := handler.restartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	restartedWLEs, err := restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
 	if err != nil {
 		t.Fatalf("restartWorkUnitExecutions failed: %v", err)
 	}
@@ -142,18 +137,49 @@ func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	handler := &WorkUnitHandler{
-		baseHandler: baseHandler{
-			storage: storageClient,
-		},
-	}
-
 	xid := int64(456)
 	wids := []int64{1}
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
-	_, err = handler.restartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	_, err = restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
 	if status.ExtractCanonicalCode(err) != status.Internal {
 		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
+	}
+}
+
+func TestRestartWorkUnitExecutions_RetryIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		RunInTransactionAttempts: 2,
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name: "experiments/123/workUnits/1",
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name:   "experiments/123/workUnits/1/executions/1",
+				Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_FAILED},
+			},
+		},
+		Experiment: &essmsgpb.Experiment{
+			Name: "experiments/123",
+			Status: &essmsgpb.ExperimentStatus{
+				ChildStateCounts: []*essmsgpb.ExperimentStatus_StateCount{
+					{State: essmsgpb.WorkUnitStatus_FAILED, Count: 1},
+				},
+			},
+		},
+	}
+
+	got, err := restartWorkUnitExecutions(ctx, mockStorage, "test@example.com", 123, []int64{1})
+	if err != nil {
+		t.Fatalf("restartWorkUnitExecutions failed: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Errorf("restartWorkUnitExecutions returned %d executions, want 1", len(got))
+	}
+	if gotCount := spanner.ChildStateCountInState(t, mockStorage.UpdatedExperiment, essmsgpb.WorkUnitStatus_RESTARTING); gotCount != 1 {
+		t.Errorf("RESTARTING count after retried transaction = %d, want 1", gotCount)
+	}
+	if gotCount := spanner.ChildStateCountInState(t, mockStorage.UpdatedExperiment, essmsgpb.WorkUnitStatus_FAILED); gotCount != 0 {
+		t.Errorf("FAILED count after retried transaction = %d, want 0", gotCount)
 	}
 }

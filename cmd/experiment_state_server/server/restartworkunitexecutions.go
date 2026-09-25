@@ -33,16 +33,17 @@ import (
 // generates a new current work unit execution in the RESTARTING state. It returns a map of
 // work unit IDs to the newly created work unit executions.
 //
-// TODO(storage): Refactor restartWorkUnitExecutions to reduce cyclomatic complexity.
+// TODO(b/517479143): Reduce cyclomatic complexity by extracting the per-work-unit restart steps
+// and the experiment status update into helpers, then drop the nolint below.
 //
 //nolint:gocyclo
-func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+func restartWorkUnitExecutions(ctx context.Context, txRunner storage.TransactionRunner, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Restarting work unit executions", "wids", wids)
 
 	var newExecutions map[int64]*essmsgpb.WorkUnitExecution
 	var executionDeltas []*state.WorkUnitStateDelta
-	err := h.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	err := txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		newExecutions = make(map[int64]*essmsgpb.WorkUnitExecution)
 		executionDeltas = make([]*state.WorkUnitStateDelta, 0)
 		now := time.Now()
@@ -57,7 +58,7 @@ func (h *WorkUnitHandler) restartWorkUnitExecutions(ctx context.Context, request
 			// 2. Set the execution state to INACTIVE.
 			currentExecution := wu.GetCurrentWorkUnitExecution()
 			if currentExecution == nil {
-				return fmt.Errorf("work unit %d has no current execution: %w", wid, status.ErrInvalidArgument)
+				return fmt.Errorf("work unit %d has no current execution: %w", wid, status.ErrInternal)
 			}
 			currentExecution.State = essmsgpb.WorkUnitExecution_INACTIVE
 			currentExecution.UpdateTime = timestamppb.New(now)

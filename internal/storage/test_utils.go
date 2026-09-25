@@ -74,12 +74,12 @@ type MockStorage struct {
 	ListStatusMessagesResp           []*essmsgpb.StatusMessage
 	ListStatusMessagesErr            error
 
-	RunInTransactionErr               error
-	SaveWorkUnitExecutionErr          error
-	UpdateCurrentWorkUnitExecutionErr error
-	SaveWorkUnitStatusHistoryErr      error
-	SaveStatusMessageHistoryErr       error
-	UpdateExperimentStatusErr         error
+	RunInTransactionErr error
+	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
+	// Spanner re-running the closure after an abort. Values below 2 invoke fn once.
+	RunInTransactionAttempts int
+	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
+	UpdatedExperiment *essmsgpb.Experiment
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -109,7 +109,7 @@ func (s *MockStorage) ListXidEntries(ctx context.Context, pageSize int32, pageTo
 
 // FetchExperiment mocks experiment fetching.
 func (s *MockStorage) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
-	return s.Experiment, s.FetchExperimentErr
+	return proto.Clone(s.Experiment).(*essmsgpb.Experiment), s.FetchExperimentErr
 }
 
 // FetchExperimentStatus mocks experiment status fetching.
@@ -117,9 +117,9 @@ func (s *MockStorage) FetchExperimentStatus(ctx context.Context, xid int64) (*es
 	return s.ExperimentStatus, s.FetchExperimentStatusErr
 }
 
-// FetchWorkUnit mocks work unit fetching.
+// FetchWorkUnit mocks work unit fetching. Like real storage, it returns a fresh copy on every call.
 func (s *MockStorage) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
-	return s.WorkUnit, s.FetchWorkUnitErr
+	return proto.Clone(s.WorkUnit).(*essmsgpb.WorkUnit), s.FetchWorkUnitErr
 }
 
 // FetchCurrentWorkUnitExecution mocks current work unit execution fetching.
@@ -195,42 +195,56 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if s.RunInTransactionErr != nil {
 		return s.RunInTransactionErr
 	}
-	return fn(ctx, &Transaction{
+	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
 		StatusMessages: s,
 		StatusHistory:  s,
-	})
+	}
+	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
+		if err := fn(ctx, tx); err != nil {
+			return err
+		}
+	}
+	return fn(ctx, tx)
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.
 func (s *MockStorage) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
-	return s.SaveWorkUnitExecutionErr
+	return nil
 }
 
 // UpdateCurrentWorkUnitExecution mocks updating the current work unit execution.
 func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
-	return s.UpdateCurrentWorkUnitExecutionErr
+	return nil
 }
 
 // SaveWorkUnitStatusHistoryIfChanged mocks saving work unit status history if changed.
 func (s *MockStorage) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
-	return s.SaveWorkUnitStatusHistoryErr
+	return nil
 }
 
 // SaveStatusMessageHistoryIfChanged mocks saving status message history if changed.
 func (s *MockStorage) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
-	return s.SaveStatusMessageHistoryErr
+	return nil
 }
 
-// UpdateExperimentStatus mocks updating experiment status.
+// UpdateExperimentStatus mocks updating experiment status and records the experiment.
 func (s *MockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
-	return s.UpdateExperimentStatusErr
+	s.UpdatedExperiment = exp
+	return nil
 }
 
-// ListWorkUnits mocks listing work units.
+// ListWorkUnits mocks listing work units. Like real storage, it returns fresh copies on every call.
 func (s *MockStorage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
-	return s.ListWorkUnitsResp, s.NextPageToken, s.ListWorkUnitsErr
+	if s.ListWorkUnitsResp == nil {
+		return nil, s.NextPageToken, s.ListWorkUnitsErr
+	}
+	workUnits := make([]*essmsgpb.WorkUnit, len(s.ListWorkUnitsResp))
+	for i, wu := range s.ListWorkUnitsResp {
+		workUnits[i] = proto.Clone(wu).(*essmsgpb.WorkUnit)
+	}
+	return workUnits, s.NextPageToken, s.ListWorkUnitsErr
 }
 
 // UpdateExperimentLaunchState mocks updating experiment launch state.

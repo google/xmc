@@ -31,6 +31,8 @@ import (
 )
 
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation in the bound Spanner transaction if the message changed.
+// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
+// delegated helper; return them once it is inlined here.
 func (r *Repository) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	if r.tx == nil {
 		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)

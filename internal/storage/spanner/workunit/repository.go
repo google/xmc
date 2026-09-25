@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
@@ -87,18 +86,6 @@ func (r *Repository) SaveWorkUnitExecution(ctx context.Context, execution *essms
 	if r.tx == nil {
 		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}
-	if execution.Metadata == nil {
-		execution.Metadata = &essmsgpb.WorkUnitExecutionMetadata{}
-	}
-	if execution.Status == nil {
-		execution.Status = &essmsgpb.WorkUnitStatus{}
-	}
-	if execution.CreateTime == nil {
-		execution.CreateTime = timestamppb.Now()
-	}
-	if execution.UpdateTime == nil {
-		execution.UpdateTime = execution.CreateTime
-	}
 	mutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(execution)
 	if err != nil {
 		return fmt.Errorf("failed to create mutation for work unit execution: %v: %w", err, status.ErrInternal)
@@ -113,18 +100,6 @@ func (r *Repository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wi
 	}
 	if r.tx == nil {
 		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
-	}
-	if execution.Metadata == nil {
-		execution.Metadata = &essmsgpb.WorkUnitExecutionMetadata{}
-	}
-	if execution.Status == nil {
-		execution.Status = &essmsgpb.WorkUnitStatus{}
-	}
-	if execution.CreateTime == nil {
-		execution.CreateTime = timestamppb.Now()
-	}
-	if execution.UpdateTime == nil {
-		execution.UpdateTime = execution.CreateTime
 	}
 	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
 	return r.tx.BufferWrite([]*spanner.Mutation{mutation})

@@ -65,7 +65,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 
 	// 5. Restart the work unit execution.
-	restartedExecutions, err := h.restartWorkUnitExecutions(ctx, email, xid, []int64{wid})
+	restartedExecutions, err := restartWorkUnitExecutions(ctx, h.storage, email, xid, []int64{wid})
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
 		return nil, fmt.Errorf("failed to restart work unit executions: %w (%v)", status.ErrInternal, err)

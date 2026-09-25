@@ -287,7 +287,11 @@ type Transaction struct {
 	StatusHistory  StatusHistoryTxRepository
 }
 
-// TransactionRunner executes an operation within a transactional scope.
+// TransactionRunner executes an operation within a read-write transaction.
+//
+// Because the underlying storage engine may abort and re-run fn on lock contention,
+// fn MUST be idempotent and re-initialize any local state or slices on each invocation.
+// The provided *Transaction is valid only for the duration of fn and must not be retained.
 type TransactionRunner interface {
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
 }

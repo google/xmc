@@ -114,6 +114,8 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers a work unit status history mutation if the state changed using the bound read-write transaction.
+// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
+// delegated helper; return them once it is inlined here.
 func (r *Repository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	if r.tx == nil {
 		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
