@@ -205,7 +205,7 @@ def install_dependencies(venv_python: Path) -> None:
         "grpcio",
         "grpcio-tools",
         "google-auth",
-        "googleapis-common-protos",
+        "googleapis-common-protos<1.75.4",
         "requests",
         "python-dotenv",
     ]
