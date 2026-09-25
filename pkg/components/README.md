@@ -94,6 +94,7 @@ Components cannot be deactivated or deleted arbitrarily if other active componen
 #### GitOps Bridge Enforcement
 The xmc-bridge enforces dependency ordering for Component CRs (see [bridge README](bridge/README.md#state-machine--lifecycle)):
 - **Activation**: the bridge always registers an enabled Component's intent (including its dependency edges) with CMS first, then gates actuation. A not-yet-actuated Component whose `spec.dependencies` are missing, disabled, deleting, or not `Ready` at their current generation is held in `COMPONENT_STATE_PENDING_RECONCILIATION` (reason `DependenciesNotReady`). An already-running Component is never torn down during a dependency blip; it reports `DependenciesReady=False` and its Helm upgrades are held (a held upgrade to a new generation reports `Ready=False` reason `HelmUpgradePending`). Dependency cycles report `DependencyCycle`.
+- **Deactivation**: setting `spec.enabled: false` calls `PrepareDeactivation` (blocking mode, `force = false`) before tearing down workloads. While active dependents (including gated but registered ones) exist the workload keeps running and the CR reports `DeactivationBlocked` (re-checked at most every 30s); otherwise the bridge deletes the workload and calls `CompleteDeactivation`, reporting `DeactivationIncomplete` and retrying if the handshake fails after teardown. The bridge does not wait for the recommended drain duration.
 
 #### Draining Timeout Calculation
 - `CalculateDrainTimeout(rec *ComponentRecord, cascaded []*ComponentRecord, reqTimeout *durationpb.Duration) time.Duration`

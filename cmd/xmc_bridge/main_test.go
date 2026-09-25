@@ -73,6 +73,10 @@ func (m *mockCMS) CompleteDeactivation(ctx context.Context, in *componentspb.Com
 	return &componentspb.CompleteDeactivationResponse{}, nil
 }
 
+func (m *mockCMS) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
+	return &componentspb.PrepareDeactivationResponse{}, nil
+}
+
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
 		name        string

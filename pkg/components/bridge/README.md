@@ -39,7 +39,11 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
      - For 1P components, synthesizes Helm variable overrides and delegates release updates to `HelmManager`.
      - For 3P wrapper components, queries `StatusDetector` to evaluate dynamic CR health and updates observed status.
      - Transitions to `COMPONENT_STATE_ENABLED` upon success.
-   - **Disabled (`spec.enabled: false`)**: Deactivates 1P Helm variable overrides and transitions CMS state to `COMPONENT_STATE_DISABLED`.
+   - **Disabled (`spec.enabled: false`)**: Gated by CMS deactivation safety:
+     1. `PrepareDeactivation` (skipped once the CR already reports `Ready` reason `ComponentDisabled` at the current generation). If CMS returns `FailedPrecondition` because enabled components still depend on this one, the workload keeps running, `DeactivationBlocked=True` and `Ready=False`/`Degraded=False` reason `DeactivationBlocked` name the active dependents, and the pass returns without error. While blocked, CMS is re-checked at most every 30s (the `DeactivationBlocked` `lastTransitionTime` records the last check). `NotFound` (never registered) proceeds without the handshake.
+     2. Deletes the 1P Helm workload.
+     3. `CompleteDeactivation` finalizes the CMS handshake (`DISABLING` → `DISABLED`), then `UpdateObservedGeneration` reports `COMPONENT_STATE_DISABLED`. CMS RPC failures before teardown report reason `CMSDeactivationFailed` (`Degraded=True`).
+     4. If the handshake fails after the workload was deleted (or a later `PrepareDeactivation` is blocked or fails), `Ready=False`/`Degraded=True` reason `DeactivationIncomplete` is reported and the whole handshake is retried on the next pass (deletion is idempotent).
 
 ---
 
@@ -50,9 +54,10 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
+| `DeactivationBlocked` | `True` | `spec.enabled: false` blocked because enabled components depend on this one; the workload keeps running. |
 | `DependenciesReady` | `True` / `False` | Informational, on actuated enabled components with `spec.dependencies`. `False` means Helm upgrades are held (see `HelmUpgradePending`). |
 
-The bridge writes the full conditions list with server-side apply on every pass, so `DependenciesReady` is replaced wholesale and is absent whenever it does not apply (e.g. while a component is gated or disabled).
+The bridge writes the full conditions list with server-side apply on every pass, so `DeactivationBlocked` and `DependenciesReady` are replaced wholesale and are absent whenever they do not apply (e.g. `DependenciesReady` is dropped while a component is gated or disabled).
 
 Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIATION`). CMS receives the same coarse `Ready=False` status message as other unready paths; the details live on the CR conditions:
 
@@ -61,6 +66,8 @@ Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIAT
 | `DependenciesNotReady` | `False` | A not-yet-actuated enabled component waits on missing, disabled, deleting, unready, stale, degraded, or CMS-unregistered `spec.dependencies`. |
 | `DependencyCycle` | `True` | The component is on a `spec.dependencies` cycle; the message names the cycle path. |
 | `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
+| `DeactivationBlocked` | `False` | CMS `PrepareDeactivation` rejected disabling the component because it has active dependents. |
+| `DeactivationIncomplete` | `True` | The workload was deleted but the CMS deactivation handshake has not completed; retried every pass. |
 
 ---
 
