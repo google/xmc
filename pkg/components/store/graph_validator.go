@@ -26,6 +26,11 @@ import (
 	"xmanager_cloud/pkg/components/naming"
 )
 
+// DependencyNotFoundMessagePrefix starts the FailedPrecondition message returned when a component
+// declares a dependency that is not registered. The GitOps bridge matches codes.FailedPrecondition
+// plus this prefix to report "waiting on dependencies" instead of an error, so keep it stable.
+const DependencyNotFoundMessagePrefix = "dependency not found:"
+
 // DependencyGraph represents an adjacency mapping of component names to their dependencies or dependents.
 type DependencyGraph = graph.DependencyGraph
 
@@ -153,7 +158,7 @@ func resolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName str
 	for _, dep := range deps {
 		depRec, ok := catalog[dep]
 		if !ok || depRec == nil || isDeletedRecord(depRec) {
-			return nil, status.Errorf(codes.FailedPrecondition, "dependency not found: component %q depends on %q, which is not registered", canonicalName, dep)
+			return nil, status.Errorf(codes.FailedPrecondition, DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep)
 		}
 		depIDs[dep] = depRec.ComponentID
 	}
