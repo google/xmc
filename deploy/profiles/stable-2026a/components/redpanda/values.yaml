@@ -25,28 +25,6 @@ deletionProtection: true
 # Action taken on underlying resources when the Component CR is deleted ("Delete" or "Orphan").
 deletionPolicy: Delete
 
-# Coordinates of the upstream Redpanda Kubernetes Operator Custom Resource (clusters.redpanda.vectorized.io)
-# polled by the XMC GitOps Bridge Controller for generation sync and readiness status.
-wrapperRef:
-  # API group of the upstream Redpanda Operator CRD.
-  group: "redpanda.vectorized.io"
-  # API version of the upstream Redpanda Operator CRD.
-  version: "v1alpha1"
-  # Kubernetes Kind of the Redpanda Operator resource representing a Redpanda broker cluster.
-  kind: "Cluster"
-  # Metadata name of the target Redpanda Cluster CR instance in Kubernetes.
-  name: "redpanda"
-  # Namespace of the target Redpanda Cluster CR instance.
-  namespace: "xmc"
-  # JSONPath on the Redpanda Cluster CR used to verify controller reconciliation generation.
-  observedGenerationPath: "$.status.observedGeneration"
-  # JSONPath on the Redpanda Cluster CR evaluated for broker readiness.
-  readyConditionPath: "$.status.conditions[?(@.type=='Ready')].status"
-  # Expected string value at readyConditionPath indicating the Redpanda Cluster CR is healthy.
-  expectedReadyValue: "True"
-  # JSONPath extracting the primary internal broker advertised address from the Redpanda Cluster CR status.
-  endpointJsonPath: "$.status.nodes.internal[0]"
-
 # Connection and sizing parameters projected into the Component CR for downstream XMC services and workloads.
 parameters:
   # Comma-separated internal Kubernetes DNS endpoints for Redpanda Kafka API brokers.

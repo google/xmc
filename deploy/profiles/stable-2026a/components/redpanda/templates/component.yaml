@@ -29,20 +29,6 @@ spec:
   chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
-  {{- $wrapper := .Values.wrapperRef | default dict }}
-  wrapperRef:
-    group: {{ $wrapper.group | default "redpanda.vectorized.io" | quote }}
-    version: {{ $wrapper.version | default "v1alpha1" | quote }}
-    kind: {{ $wrapper.kind | default "Cluster" | quote }}
-    name: {{ $wrapper.name | default "redpanda" | quote }}
-    namespace: {{ $wrapper.namespace | default .Values.namespace | default "xmc" | quote }}
-    observedGenerationPath: {{ $wrapper.observedGenerationPath | default "$.status.observedGeneration" | quote }}
-    readyConditionPath: {{ $wrapper.readyConditionPath | default "$.status.conditions[?(@.type=='Ready')].status" | quote }}
-    expectedReadyValue: {{ $wrapper.expectedReadyValue | default "True" | quote }}
-    endpointJsonPath: {{ $wrapper.endpointJsonPath | default "$.status.nodes.internal[0]" | quote }}
-    {{- if $wrapper.connectionSecretJsonPath }}
-    connectionSecretJsonPath: {{ $wrapper.connectionSecretJsonPath | quote }}
-    {{- end }}
   {{- $params := .Values.parameters | default dict }}
   parameters:
     brokerEndpoints: {{ $params.brokerEndpoints | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" | quote }}

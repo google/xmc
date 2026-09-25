@@ -216,6 +216,24 @@ spec:
 			wantValid: true,
 		},
 		{
+			name:  "3P wrapper without wrapperRef but with connection parameters",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: clickhouse
+spec:
+  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
+  parameters:
+    host: "clickhouse.xmc-metrics.svc.cluster.local"
+    healthCheckEndpoint: "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping"
+`,
+			},
+			wantValid: true,
+		},
+		{
 			name:  "negative drain timeout rejected",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
