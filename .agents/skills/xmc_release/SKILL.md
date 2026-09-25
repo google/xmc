@@ -183,32 +183,9 @@ echo "Triggered visual snapshot run ID: ${VISUAL_RUN_ID}"
 
 ## Phase 5: Generate Release Notes via `xmc_generate_release_notes`
 
-Execute the release metadata extraction tooling per [xmc_generate_release_notes](../xmc_generate_release_notes/SKILL.md):
+Follow the instructions in [xmc_generate_release_notes](../xmc_generate_release_notes/SKILL.md) to extract release metadata, synthesize audience-segmented notes across the 4-section layout, and draft the release notes at `/tmp/release_notes_v<version>.md`.
 
-1. **Extract Structured Release Metadata**:
-   Determine the previous semantic version tag (excluding nightly tags) and extract metadata targeting `origin/main`:
-   ```bash
-   BASE_TAG=$(git describe --tags --abbrev=0 --match='[0-9]*.[0-9]*.[0-9]*' origin/main^ 2>/dev/null || git describe --tags --abbrev=0 --match='v[0-9]*.[0-9]*.[0-9]*' origin/main^)
-
-   PYTHONPATH=. python3 tools/release/extract_release_metadata.py \
-     --base-ref "${BASE_TAG}" \
-     --target-ref origin/main \
-     --output /tmp/release_metadata.json
-   ```
-2. **Read Metadata & Synthesize Notes**:
-   Parse `/tmp/release_metadata.json` to inspect:
-   - `recommended_version`: base version, recommended version, bump type (`major`, `minor`, `patch`), and technical rationale.
-   - `flag_transitions`: feature flag flips or promotions to default `true`.
-   - `gated_subsystems_status`: active vs preview features.
-   - `raw_commits`: commits grouped by conventional commit types and PR numbers.
-3. **Draft the 4-Section Release Notes File**:
-   Draft the release notes at `/tmp/release_notes_v<version>.md` strictly adhering to the 4-section layout:
-   - **Section 1: Public Changes (Available Out-of-the-Box)** (Promotions, new features, bug fixes).
-   - **Section 2: Production-Ready Features Behind Feature Flags** (Approved preview features with activation instructions).
-   - **Section 3: In-Development / Experimental Features Behind Flags** (Experimental toggles).
-   - **Section 4: Operational, Infrastructure & Engineering Velocity** (CI, tooling, refactors).
-4. **Present Proposal to User**:
-   Present the proposed version increment, rationale, and full draft release notes in chat for review.
+Present the proposed version increment, rationale, and draft release notes to the user for review.
 
 ---
 
