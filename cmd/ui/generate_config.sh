@@ -30,8 +30,8 @@ get_bool_env() {
 # Set default values if not specified
 API_URL="${XMC_API_URL:-https://api.example.com/v1}"
 REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
-ADMIN_PANEL=$(get_bool_env "$XMC_ADMIN_PANEL_ENABLED" false)
-RESOURCE_DASHBOARD=$(get_bool_env "$XMC_RESOURCE_DASHBOARD_ENABLED" false)
+ADMIN_PANEL=$(get_bool_env "$XMC_ADMIN_PANEL_ENABLED" true)
+RESOURCE_DASHBOARD=$(get_bool_env "$XMC_RESOURCE_DASHBOARD_ENABLED" true)
 PERFORMANCE_DASHBOARD=$(get_bool_env "$XMC_PERFORMANCE_DASHBOARD_ENABLED" false)
 NON_PROD_AUTH="false"
 if [ "$(get_bool_env "$XMC_NON_PROD_AUTH" false)" = "true" ] || [ "$(get_bool_env "$SHOW_SAFETY_WARNING" false)" = "true" ]; then
