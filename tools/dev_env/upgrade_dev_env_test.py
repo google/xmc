@@ -320,7 +320,14 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 11)
 
     def _restart_cmd(self, deployment: str) -> list[str]:
-        return ["kubectl", "rollout", "restart", f"deployment/{deployment}", "-n", "xmc"]
+        return [
+            "kubectl",
+            "rollout",
+            "restart",
+            f"deployment/{deployment}",
+            "-n",
+            self.config.namespace,
+        ]
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")

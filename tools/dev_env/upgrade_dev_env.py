@@ -402,8 +402,10 @@ def step_restart(config: UpgradeConfig) -> None:
     )
     # Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
     # resolve_deployment_name when their feature flag leaves them undeployed.
-    # xmc-bridge goes first: it may own component releases (e.g. the
-    # ingestion-gateway workload), so it should run the new image before they roll.
+    # xmc-bridge is triggered first because it may own component releases (e.g.
+    # the ingestion-gateway workload). `rollout restart` is asynchronous, so the
+    # rollouts overlap; the bridge re-reconciles its releases once its new pod
+    # is up, so no rollout ordering is required.
     services = [
         "xmc-bridge",
         "actuator",
