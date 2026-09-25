@@ -14,7 +14,7 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
 - **Idempotency & Recent Run Check**: If resuming an interrupted release or if `main` has already been deployed and tested today, check for existing successful workflow runs targeting the current `origin/main` commit before re-triggering using `--find-existing`:
   ```bash
   TARGET_SHA=$(git rev-parse origin/main)
-  STATE_FILE="${ANTIGRAVITY_CONVERSATION_DIR:-/tmp}/release_state.json"
+  STATE_FILE="${ARTIFACT_DIR:-/tmp}/release_state.json"
 
   PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
     --workflow nightly-build.yml \
@@ -23,7 +23,7 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
     --state-file "${STATE_FILE}"
   ```
 - **Direct Entry**: If deployment and E2E tests have already succeeded for the target `TARGET_SHA` commit, the agent may proceed directly to Phase 4 or Phase 5.
-- **Post-Review Resumption**: When resuming after the user approval gate, proceed with executing the publishing step in Phase 5 using the release notes at `<appDataDir>/brain/<conversation-id>/release_notes_v<version>.md` (or `/tmp/release_notes_v<version>.md`) without re-running earlier phases.
+- **Post-Review Resumption**: When resuming after the user approval gate, proceed with executing the publishing step in Phase 5 using the release notes at `"${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"` without re-running earlier phases.
 
 > [!CAUTION]
 > **STRICT INVARIANT: RELEASE CONFIRMATION GATES & SAFEGUARDS**
@@ -41,10 +41,10 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
   git fetch origin main --tags
   ```
 - **Initialize & Persist Release Target SHA**:
-  Resolve the target commit from `origin/main` and initialize state tracking (persisted to `<appDataDir>/brain/<conversation-id>/release_state.json` or `/tmp/release_state.json`):
+  Resolve the target commit from `origin/main` and initialize state tracking (persisted to `"${ARTIFACT_DIR:-/tmp}/release_state.json"`):
   ```bash
   TARGET_SHA=$(git rev-parse origin/main)
-  STATE_FILE="${ANTIGRAVITY_CONVERSATION_DIR:-/tmp}/release_state.json"
+  STATE_FILE="${ARTIFACT_DIR:-/tmp}/release_state.json"
   echo "{\"target_sha\": \"${TARGET_SHA}\"}" > "${STATE_FILE}"
   ```
 - Helper tools are executed via Python with `PYTHONPATH=.` configured.
@@ -101,6 +101,8 @@ DEPLOY_RUN_URL=$(echo "${DEPLOY_RESPONSE}" | jq -r '.result.url // empty')
 - **If successful**:
   Notify the user:
   > *"Nightly deployment succeeded (`<DEPLOY_RUN_URL>`). Proceeding to E2E test suite..."*
+  
+  The successful completion of the deployment workflow on `main` serves as the prerequisite gate verifying that the nightly environment is updated before triggering E2E tests in Phase 3. Proceed to Phase 3.
 
 ---
 
@@ -187,9 +189,9 @@ Delegate the end-to-end release documentation, interactive user review, and publ
        --base-ref <base_tag> \
        --target-ref "${TARGET_SHA}" \
        --approved-flags rod_deployment_enabled rodDeployment.enabled enable_metrics metrics.enabled \
-       --output /tmp/release_metadata.json
+       --output "${ARTIFACT_DIR:-/tmp}/release_metadata.json"
    ```
-   Follow [Semantic Commit Classification](../xmc_generate_release_notes/SKILL.md#3-semantic-commit-classification--section-routing-agent-reasoning) and [Semantic Synthesis & Narrative Formatting](../xmc_generate_release_notes/SKILL.md#4-semantic-synthesis--narrative-formatting) to draft the release notes at `/tmp/release_notes_v<version>.md` (or `<appDataDir>/brain/<conversation-id>/release_notes_v<version>.md`).
+   Follow [Semantic Commit Classification](../xmc_generate_release_notes/SKILL.md#3-semantic-commit-classification--section-routing-agent-reasoning) and [Semantic Synthesis & Narrative Formatting](../xmc_generate_release_notes/SKILL.md#4-semantic-synthesis--narrative-formatting) to draft the release notes at `"${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"`.
 
 2. **Interactive Review**:
    Follow [Draft Generation & Interactive Review Gate](../xmc_generate_release_notes/SKILL.md#5-draft-generation--interactive-review-gate) to present the proposed version increment and draft notes to the user, refining content iteratively based on feedback.
