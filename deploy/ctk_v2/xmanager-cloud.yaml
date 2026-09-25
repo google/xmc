@@ -69,6 +69,9 @@ vars:
   clickhouse_user: "default"
   clickhouse_password: ""
   enable_components: false
+  # When true (requires enable_components), the Ingestion Gateway workload is actuated by the
+  # ingestion-gateway 1P Component release instead of the umbrella chart.
+  ingestion_gateway_managed_by_component: false
   health_service_deployment_enabled: true
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
@@ -509,6 +512,9 @@ deployment_groups:
         value: $(vars.clickhouse_password)
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.enable_metrics)
+        type: auto
+      - name: ingestionGatewayDeployment.managedByComponent
+        value: $(vars.ingestion_gateway_managed_by_component)
         type: auto
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
