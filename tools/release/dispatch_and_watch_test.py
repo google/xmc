@@ -208,6 +208,69 @@ class DispatchAndWatchTest(unittest.TestCase):
         res = dispatch_and_watch(p)
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/gallery/")
 
+        # 3. Extracted from job environment URL
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{"databaseId": 503, "headSha": "sha", "url": "run_url"}]),
+            ),  # list
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "conclusion": "success",
+                        "jobs": [
+                            {
+                                "name": "Deploy Gallery to GitHub Pages",
+                                "environment": {"url": "https://google.github.io/xmc/env-gallery/"},
+                            }
+                        ],
+                    }
+                ),
+            ),  # view
+        ]
+        res = dispatch_and_watch(p)
+        self.assertEqual(res["page_url"], "https://google.github.io/xmc/env-gallery/")
+
+        # 4. Extracted from serialized JSON string step outputs
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{"databaseId": 504, "headSha": "sha", "url": "run_url"}]),
+            ),  # list
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "conclusion": "success",
+                        "jobs": [
+                            {
+                                "name": "Deploy",
+                                "steps": [
+                                    {
+                                        "name": "deploy",
+                                        "outputs": json.dumps(
+                                            {"page_url": "https://google.github.io/xmc/str-out/"}
+                                        ),
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+            ),  # view
+        ]
+        res = dispatch_and_watch(p)
+        self.assertEqual(res["page_url"], "https://google.github.io/xmc/str-out/")
+
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.subprocess.run")
     def test_state_file_updates(self, mock_run, mock_which):
@@ -312,6 +375,70 @@ class DispatchAndWatchTest(unittest.TestCase):
             self.assertEqual(state["target_sha"], "sha603")
             self.assertEqual(state["last_run_id"], 603)
             self.assertEqual(state["conclusion"], "success")
+
+            # Test failure outcome persistence
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps([{"databaseId": 604, "headSha": "sha604", "url": "run_url"}]),
+                ),  # list
+                subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps({"conclusion": "failure", "jobs": []}),
+                ),  # view
+            ]
+            p = create_parser().parse_args(
+                [
+                    "--workflow",
+                    "build.yml",
+                    "--target-sha",
+                    "sha604",
+                    "--state-file",
+                    str(state_path),
+                ]
+            )
+            res = dispatch_and_watch(p)
+            self.assertEqual(res["conclusion"], "failure")
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["target_sha"], "sha604")
+            self.assertEqual(state["last_run_id"], 604)
+            self.assertEqual(state["conclusion"], "failure")
+
+            # Test cancelled outcome persistence
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps([{"databaseId": 605, "headSha": "sha605", "url": "run_url"}]),
+                ),  # list
+                subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps({"conclusion": "cancelled", "jobs": []}),
+                ),  # view
+            ]
+            p = create_parser().parse_args(
+                [
+                    "--workflow",
+                    "build.yml",
+                    "--target-sha",
+                    "sha605",
+                    "--state-file",
+                    str(state_path),
+                ]
+            )
+            res = dispatch_and_watch(p)
+            self.assertEqual(res["conclusion"], "cancelled")
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["target_sha"], "sha605")
+            self.assertEqual(state["last_run_id"], 605)
+            self.assertEqual(state["conclusion"], "cancelled")
 
 
 if __name__ == "__main__":

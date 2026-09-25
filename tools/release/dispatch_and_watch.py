@@ -73,6 +73,13 @@ def _extract_page_url(view_data: dict[str, Any]) -> str:
             if step.get("pageUrl"):
                 return str(step["pageUrl"])
             outputs = step.get("outputs") or step.get("output")
+            if isinstance(outputs, str) and outputs.strip().startswith("{"):
+                try:
+                    loaded_out = json.loads(outputs)
+                    if isinstance(loaded_out, dict):
+                        outputs = loaded_out
+                except (json.JSONDecodeError, OSError):
+                    pass
             if isinstance(outputs, dict):
                 if outputs.get("page_url"):
                     return str(outputs["page_url"])
@@ -102,7 +109,7 @@ def _update_state_file(
             state = {}
     state.update(
         {
-            "target_sha": target_sha or run_sha,
+            "target_sha": target_sha or run_sha or state.get("target_sha", ""),
             "last_run_id": run_id,
             "conclusion": conclusion,
         }
@@ -133,7 +140,13 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
         ]
         res = _run_gh(cmd, repo_dir)
         if res.returncode == 0 and res.stdout.strip():
-            for run in json.loads(res.stdout):
+            try:
+                existing_runs = json.loads(res.stdout)
+                if not isinstance(existing_runs, list):
+                    existing_runs = []
+            except json.JSONDecodeError:
+                existing_runs = []
+            for run in existing_runs:
                 if not target_sha or run.get("headSha", "").startswith(target_sha):
                     run_id = int(run["databaseId"])
                     run_sha = run.get("headSha", "")
@@ -179,7 +192,12 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             time.sleep(args.poll_interval)
         res = _run_gh(list_cmd, repo_dir)
         if res.returncode == 0 and res.stdout.strip():
-            runs = json.loads(res.stdout)
+            try:
+                runs = json.loads(res.stdout)
+                if not isinstance(runs, list):
+                    runs = []
+            except json.JSONDecodeError:
+                runs = []
             for r in runs:
                 r_sha = r.get("headSha", "")
                 r_created = r.get("createdAt", "")
@@ -221,9 +239,14 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     # 5. Watch to completion via `gh run watch`
     res = _run_gh(["run", "watch", str(run_id), "--exit-status"], repo_dir)
     view_res = _run_gh(["run", "view", str(run_id), "--json=conclusion,jobs"], repo_dir)
-    view_data = (
-        json.loads(view_res.stdout) if view_res.returncode == 0 and view_res.stdout.strip() else {}
-    )
+    view_data: dict[str, Any] = {}
+    if view_res.returncode == 0 and view_res.stdout.strip():
+        try:
+            loaded_view = json.loads(view_res.stdout)
+            if isinstance(loaded_view, dict):
+                view_data = loaded_view
+        except json.JSONDecodeError:
+            view_data = {}
     conclusion = view_data.get("conclusion") or ("success" if res.returncode == 0 else "failure")
     page_url = _extract_page_url(view_data)
 

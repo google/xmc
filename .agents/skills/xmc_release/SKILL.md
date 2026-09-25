@@ -24,6 +24,7 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
   ```
 - **Direct Entry**: If deployment and E2E tests have already succeeded for the target `TARGET_SHA` commit, the agent may proceed directly to Phase 4 or Phase 5. Load `TARGET_SHA` from `"${STATE_FILE}"` if unset:
   ```bash
+  STATE_FILE="${STATE_FILE:-${ARTIFACT_DIR:-/tmp}/release_state.json}"
   if [[ -z "${TARGET_SHA:-}" && -f "${STATE_FILE}" ]]; then
     TARGET_SHA=$(jq -r '.target_sha' "${STATE_FILE}")
   fi
