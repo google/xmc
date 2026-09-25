@@ -599,8 +599,8 @@ func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
 // check, restarting the recheck interval. Ready keeps DeactivationIncomplete if the workload is gone.
 func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
-	if checked {
-		findCondition(res.Conditions, ConditionTypeDeactivationBlocked).LastTransitionTime = time.Now().UTC()
+	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
+		cond.LastTransitionTime = time.Now().UTC()
 	}
 	if wasTornDown(in) {
 		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
