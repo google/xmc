@@ -179,23 +179,11 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 1. **Wait for Explicit User Approval**:
    Confirm that the user has explicitly approved both the **version number** and the **release notes content**.
 2. **Publish Release as GitHub Draft (Post-Approval Only)**:
-   Execute the release publishing tool with `--draft` and `--target-commit origin/main` to create the annotated git tag, push to origin, and create a draft release visible on GitHub Releases:
+   Execute the release publishing tool with `--draft` to create the annotated git tag, push to origin, and create a draft release visible on GitHub Releases:
    ```bash
-   PYTHONPATH=. python3 ./tools/release/publish_release.py \
-     --target-commit origin/main \
-     --tag <version> \
-     --notes-file <path_to_markdown_file> \
-     --draft
+   python3 ./tools/release/publish_release.py --tag <version> --notes-file <path_to_markdown_file> --draft
    ```
-   Check tool exit code (0 for success, 1 for handled input error) and parse the JSON payload from stdout (`result.release_url` and `result.tag`).
    > [!NOTE]
    > Publishing as a draft gives the team a collaborative proofreading window (e.g. 1–2 hours) on GitHub Releases to review the changelog and propose adjustments before manually publishing it to the public. Omit `--draft` only if the user explicitly instructs to publish publicly immediately.
 3. **Confirm Publication**:
    Provide the user with the generated GitHub Release URL and confirm that the git tag was successfully pushed.
-4. **Draft Release Promotion (Optional Follow-up)**:
-   Once the user proofreads the draft release on GitHub and explicitly approves promotion to public:
-   ```bash
-   gh release edit <version> --draft=false
-   ```
-   Notify the user:
-   > *"🚀 **Draft release promoted to public**: `https://github.com/google/xmc/releases/tag/<version>`"*
