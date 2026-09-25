@@ -400,16 +400,20 @@ def step_restart(config: UpgradeConfig) -> None:
         "Triggering rolling restart across XMC service deployments to run newly"
         " pushed container images..."
     )
+    # Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
+    # resolve_deployment_name when their feature flag leaves them undeployed.
     services = [
         "actuator",
         "dashboard-service",
         "experiment-state-server",
         "health-service",
+        "ingestion-gateway",
         "log-monitor",
         "reconciler",
         "rod-data-provider",
         "ui",
         "xid-service",
+        "xmc-bridge",
     ]
 
     for service in services:
