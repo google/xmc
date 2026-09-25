@@ -129,6 +129,7 @@ var (
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
+				Nullable:     true,
 			},
 			artifactIDTableField: {
 				Name:         artifactIDTableField,

@@ -105,6 +105,7 @@ compat_go_test(
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/spanner/workunit",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",

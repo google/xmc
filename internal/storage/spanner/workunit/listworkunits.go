@@ -113,8 +113,9 @@ func ExtractWorkUnitCursor(wu *essmsgpb.WorkUnit) (map[string]any, error) {
 	}
 
 	cursor := map[string]any{
-		"xid":          xid,
-		"work_unit_id": wid,
+		"xid":              xid,
+		"bit_reversed_xid": spannerutils.ReverseBits(xid),
+		"work_unit_id":     wid,
 	}
 
 	if wu.CreateTime != nil {

@@ -142,6 +142,22 @@ func TestSearchExperiments_HappyPath(t *testing.T) {
 	if diff := cmp.Diff(exps[2], resp2.GetExperiments()[0], cmpOpts...); diff != "" {
 		t.Errorf("SearchExperiments() page 2 experiment 1 returned unexpected diff (-want +got):\n%s", diff)
 	}
+
+	// Verify multi-page pagination with default order_by ("") and no filter ("") (b/564895895).
+	defaultPage1, err := server.ListExperiments(ctx, &apipb.ListExperimentsRequest{PageSize: 2})
+	if err != nil {
+		t.Fatalf("ListExperiments() page 1 with default order_by failed: %v", err)
+	}
+	if len(defaultPage1.GetExperiments()) != 2 || defaultPage1.GetNextPageToken() == "" {
+		t.Fatalf("ListExperiments() page 1 with default order_by returned %d experiments and token %q, want 2 and non-empty token", len(defaultPage1.GetExperiments()), defaultPage1.GetNextPageToken())
+	}
+	defaultPage2, err := server.ListExperiments(ctx, &apipb.ListExperimentsRequest{PageSize: 2, PageToken: defaultPage1.GetNextPageToken()})
+	if err != nil {
+		t.Fatalf("ListExperiments() page 2 with default order_by failed: %v", err)
+	}
+	if len(defaultPage2.GetExperiments()) != 1 || defaultPage2.GetNextPageToken() != "" {
+		t.Fatalf("ListExperiments() page 2 with default order_by returned %d experiments and token %q, want 1 and empty token", len(defaultPage2.GetExperiments()), defaultPage2.GetNextPageToken())
+	}
 }
 
 func TestListExperiments_BadPaths(t *testing.T) {

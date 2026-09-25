@@ -15,6 +15,7 @@ go_library(
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/querytools",
+        "//internal/storage/spanner/utils:spannerutils",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )
@@ -31,6 +32,7 @@ go_test(
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/query_generator/querytools",
+        "//internal/storage/spanner/utils:spannerutils",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )

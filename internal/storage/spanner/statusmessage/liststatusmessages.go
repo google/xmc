@@ -105,6 +105,7 @@ func ExtractStatusMessageCursor(msg *essmsgpb.StatusMessage) (map[string]any, er
 
 	cursor := map[string]any{
 		"bit_reversed_xid": spannerutils.ReverseBits(xid),
+		"work_unit_id":     nil,
 		"message_id":       messageID,
 		"create_time":      msg.GetContent().GetCreateTime().AsTime(),
 	}

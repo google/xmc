@@ -19,9 +19,11 @@ package querytools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"api/filter/go/filtervisitor"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -150,6 +152,8 @@ type Member struct {
 	// only works with string type Spanner columns. I.e., in the example above, field1 in the Spanner
 	// query must be a string type.
 	DisjunctionOptimizable bool
+	// Nullable indicates whether the underlying Spanner column can be NULL.
+	Nullable bool
 }
 
 // MemberMap takes a query and a map of name=>Member and produces a MemberFunc
@@ -642,6 +646,9 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
+		if len(ptFields) > 0 {
+			return nil, nil, nil, status.Errorf(status.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
+		}
 		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
 	}
 
@@ -756,7 +763,9 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 			return nil, nil, nil, status.Errorf(status.FailedPrecondition, "selected from table %q cannot satisfy filter %+v", fromTable.Name, f)
 		}
 		filters[string(f)] = m
-		unr.seen[m.UnnestClause] = true
+		if !emptyExpression(baseFilterExp) {
+			unr.seen[m.UnnestClause] = true
+		}
 	}
 	for n, f := range userFilters {
 		m, ok := fromTable.Fields[f]
@@ -875,14 +884,19 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	// Get all the WHERE clauses in UNNEST conditions.
 	var unnestWheres []safesql.TrustedSQLString
 	for unnest := range unr.seen {
-		if unnest != nil {
+		if unnest != nil && unnest.Where != safesql.New("") {
 			unnestWheres = append(unnestWheres, unnest.Where)
 		}
 	}
 
-	// Add the WHERE clause, if there are any to add in the base or user filter, page token fields,
-	// or unnest clauses.
-	if !emptyExpression(baseFilterExp) || !emptyExpression(userFilterExp) || len(ptFields) > 0 || len(unnestWheres) > 0 {
+	orderedPtFields, err := resolveOrderedPageTokenFields(pageTokenFields, orderByFields, userOrderBy, equalityFilters, ptFields)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	hasBaseFilter := !emptyExpression(baseFilterExp)
+	hasUserFilter := !emptyExpression(userFilterExp)
+	if hasBaseFilter || hasUserFilter || len(orderedPtFields) > 0 || len(unnestWheres) > 0 {
 		query.SQL = query.SQL + " WHERE "
 	}
 
@@ -898,15 +912,15 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	// Add base filters.
-	if !emptyExpression(baseFilterExp) {
+	if hasBaseFilter {
 		err := qf.AppendFilters(baseFilterExp)
 		if err != nil {
 			return nil, nil, nil, status.Errorf(status.InvalidArgument, "error processing base filter expression: %v", err)
 		}
 	}
 	// Add user filters.
-	if !emptyExpression(userFilterExp) {
-		if baseFilterExp != nil {
+	if hasUserFilter {
+		if hasBaseFilter {
 			query.SQL = query.SQL + " AND "
 		}
 		err := qf.AppendFilters(userFilterExp)
@@ -916,16 +930,8 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	// Add page token filters.
-	var orderedPtFields []UserOrderedIndex
-	for _, ob := range orderByFields {
-		if _, ok := ptFields[ob.TableField]; ok {
-			orderedPtFields = append(orderedPtFields, ob)
-		}
-	}
 	if len(orderedPtFields) != 0 {
-		// In the unlikely case that we have no filters at all, this
-		// could be the beginning of the WHERE clause.
-		if !emptyExpression(baseFilterExp) || !emptyExpression(userFilterExp) {
+		if hasBaseFilter || hasUserFilter {
 			query.SQL = query.SQL + " AND "
 		}
 		query.SQL = query.SQL + "("
@@ -968,6 +974,35 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	return query, tfToIdx, &unr, nil
 }
 
+// resolveOrderedPageTokenFields maps active pageTokenFields (or orderByFields if all are equality-filtered)
+// against the provided cursor map ptFields, failing if any userOrderBy field or all sort fields are missing.
+func resolveOrderedPageTokenFields(pageTokenFields, orderByFields, userOrderBy []UserOrderedIndex, equalityFilters map[TableField]bool, ptFields map[TableField]any) ([]UserOrderedIndex, error) {
+	if len(ptFields) == 0 {
+		return nil, nil
+	}
+	for _, uob := range userOrderBy {
+		if !equalityFilters[uob.TableField] {
+			if _, ok := ptFields[uob.TableField]; !ok {
+				return nil, status.Errorf(status.InvalidArgument, "page token is missing required sort field %q", uob.TableField)
+			}
+		}
+	}
+	requiredFields := pageTokenFields
+	if len(requiredFields) == 0 {
+		requiredFields = orderByFields
+	}
+	var orderedPtFields []UserOrderedIndex
+	for _, ob := range requiredFields {
+		if _, ok := ptFields[ob.TableField]; ok {
+			orderedPtFields = append(orderedPtFields, ob)
+		}
+	}
+	if len(orderedPtFields) == 0 {
+		return nil, status.Errorf(status.InvalidArgument, "page token does not match any active ORDER BY fields")
+	}
+	return orderedPtFields, nil
+}
+
 // LastFromTable returns the table that was last selected from. This is filled in after calling
 // GenerateQuery(). This is generally to be used for logging or metric purposes by the client.
 func (q *queryGen) LastFromTable() TableName {
@@ -975,51 +1010,133 @@ func (q *queryGen) LastFromTable() TableName {
 }
 
 // appendPageTokenFields adds WHERE conditions to query to enforce pagination conditions for
-// orderedFields, having the values found in fieldToValue. It recurses to handle multiple page token
-// fields; for example if we have indices A,B and the last page token was A=5,B=2 then we continue
-// with (A=5 AND B>2) OR (A>5).
+// orderedFields, having the values found in fieldToValue.
 func (q *queryGen) appendPageTokenFields(fromTable TableView, fieldToValue map[TableField]any, orderedFields []UserOrderedIndex, query *spanner.Statement) error {
 	if len(orderedFields) == 0 {
 		return nil
 	}
 	query.SQL = query.SQL + "("
-	for i, orderedField := range orderedFields {
+	for i := range orderedFields {
 		if i > 0 {
 			query.SQL = query.SQL + " AND "
 		}
-		v, ok := fieldToValue[orderedField.TableField]
-		if !ok {
-			return status.Errorf(status.FailedPrecondition, "unable to find value for field %q in map %+v", orderedField.TableField, fieldToValue)
+		if err := appendCursorFieldComparison(fromTable, fieldToValue, orderedFields, i, query); err != nil {
+			return err
 		}
-		f, ok := fromTable.Fields[orderedField.TableField]
-		if !ok {
-			return status.Errorf(status.FailedPrecondition, "unable to find field %q in map %+v", orderedField.TableField, fromTable.Fields)
-		}
-		query.SQL = query.SQL + f.QueryLiteral.String()
-		if i == len(orderedFields)-1 {
-			if orderedField.SortOrder == Desc {
-				query.SQL = query.SQL + " < "
-			} else {
-				query.SQL = query.SQL + " > "
-			}
-		} else {
-			query.SQL = query.SQL + " = "
-		}
-
-		query.SQL = query.SQL + "@val"
-		query.SQL = query.SQL + strconv.Itoa(len(orderedFields))
-		query.SQL = query.SQL + strconv.Itoa(i)
-
-		if query.Params == nil {
-			query.Params = make(map[string]any)
-		}
-		query.Params[fmt.Sprintf("val%v%v", len(orderedFields), i)] = v
 	}
 	query.SQL = query.SQL + ")"
-	if len(orderedFields) > 1 {
+	nextPrefix := nextPageTokenPrefix(fromTable, orderedFields)
+	if len(nextPrefix) > 0 {
 		query.SQL = query.SQL + " OR "
+		return q.appendPageTokenFields(fromTable, fieldToValue, nextPrefix, query)
 	}
-	return q.appendPageTokenFields(fromTable, fieldToValue, orderedFields[:len(orderedFields)-1], query)
+	return nil
+}
+
+// nextPageTokenPrefix returns the largest prefix of orderedFields ending in a field with a distinct value,
+// skipping trailing fields that are not Nullable and therefore cannot match two distinct rows when equal.
+func nextPageTokenPrefix(fromTable TableView, orderedFields []UserOrderedIndex) []UserOrderedIndex {
+	if len(orderedFields) <= 1 {
+		return nil
+	}
+	return orderedFields[:len(orderedFields)-1]
+}
+
+// appendCursorFieldComparison appends a single column comparison (or NULL predicate) for cursor pagination.
+func appendCursorFieldComparison(fromTable TableView, fieldToValue map[TableField]any, orderedFields []UserOrderedIndex, idx int, query *spanner.Statement) error {
+	orderedField := orderedFields[idx]
+	v, ok := fieldToValue[orderedField.TableField]
+	if !ok {
+		return status.Errorf(status.FailedPrecondition, "unable to find value for field %q in map %+v", orderedField.TableField, fieldToValue)
+	}
+	f, ok := fromTable.Fields[orderedField.TableField]
+	if !ok {
+		return status.Errorf(status.FailedPrecondition, "unable to find field %q in map %+v", orderedField.TableField, fromTable.Fields)
+	}
+	isLast := idx == len(orderedFields)-1
+	if v == nil {
+		appendNullCursorComparison(f, orderedField.SortOrder, isLast, query)
+		return nil
+	}
+	paramName := fmt.Sprintf("val%v%v", len(orderedFields), idx)
+	coercedVal, err := coerceCursorValue(f.Type, v)
+	if err != nil {
+		return err
+	}
+	if query.Params == nil {
+		query.Params = make(map[string]any)
+	}
+	query.Params[paramName] = coercedVal
+	if !isLast {
+		query.SQL = query.SQL + f.QueryLiteral.String() + " = @" + paramName
+		return nil
+	}
+	if orderedField.SortOrder == Desc {
+		if f.Nullable {
+			query.SQL = query.SQL + "(" + f.QueryLiteral.String() + " < @" + paramName + " OR " + f.QueryLiteral.String() + " IS NULL)"
+			return nil
+		}
+		query.SQL = query.SQL + f.QueryLiteral.String() + " < @" + paramName
+		return nil
+	}
+	query.SQL = query.SQL + f.QueryLiteral.String() + " > @" + paramName
+	return nil
+}
+
+// appendNullCursorComparison appends the SQL comparison when the cursor value for a nullable field is nil.
+// In Spanner SQL, NULLs sort first in ASC order and last in DESC order.
+func appendNullCursorComparison(f Member, sortOrder SortOrder, isLast bool, query *spanner.Statement) {
+	if !isLast {
+		query.SQL = query.SQL + f.QueryLiteral.String() + " IS NULL"
+		return
+	}
+	if sortOrder == Desc {
+		query.SQL = query.SQL + "FALSE"
+		return
+	}
+	query.SQL = query.SQL + f.QueryLiteral.String() + " IS NOT NULL"
+}
+
+// coerceCursorValue converts JSON-unmarshaled cursor values (e.g. RFC3339 strings for Timestamp, numeric strings/json.Number for Integer)
+// into native Go types expected by the Cloud Spanner driver.
+func coerceCursorValue(fieldType filtervisitor.PrimType, v any) (any, error) {
+	if fieldType == filtervisitor.Timestamp {
+		if s, ok := v.(string); ok {
+			t, err := time.Parse(time.RFC3339Nano, s)
+			if err != nil {
+				return nil, status.Errorf(status.InvalidArgument, "invalid timestamp cursor value %q: %v", s, err)
+			}
+			return t, nil
+		}
+	}
+	if fieldType == filtervisitor.Integer {
+		return coerceIntegerCursorValue(v)
+	}
+	return v, nil
+}
+
+// coerceIntegerCursorValue converts int, json.Number, or base-10 string cursor values into int64.
+func coerceIntegerCursorValue(v any) (any, error) {
+	switch val := v.(type) {
+	case int64:
+		return val, nil
+	case int:
+		return int64(val), nil
+	case json.Number:
+		i, err := val.Int64()
+		if err != nil {
+			return nil, status.Errorf(status.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
+		}
+		return i, nil
+	case string:
+		i, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return nil, status.Errorf(status.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
+		}
+		return i, nil
+	default:
+		return v, nil
+	}
 }
 
 // candidateTable contains heuristics on a table that is used to help determine whether it is the
