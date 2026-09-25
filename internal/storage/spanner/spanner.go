@@ -39,6 +39,11 @@ type StatusMessageRepository = statusmessage.Repository
 type OperationRepository = operation.Repository
 type StatusHistoryRepository = statushistory.Repository
 
+type ExperimentTxRepository = experiment.TxRepository
+type WorkUnitTxRepository = workunit.TxRepository
+type StatusMessageTxRepository = statusmessage.TxRepository
+type StatusHistoryTxRepository = statushistory.TxRepository
+
 var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using Google Cloud Spanner.

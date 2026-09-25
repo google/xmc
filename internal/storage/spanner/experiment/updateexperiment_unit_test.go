@@ -16,34 +16,18 @@ package experiment
 
 import (
 	"context"
-	"errors"
 	"testing"
 
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 	ctx := context.Background()
-	r := &Repository{}
+	r := &TxRepository{}
 
 	err := r.UpdateExperimentStatus(ctx, nil)
 	if err == nil || err.Error() != "experiment must not be nil" {
 		t.Errorf("UpdateExperimentStatus(nil exp) returned error: %v, want 'experiment must not be nil'", err)
-	}
-}
-
-func TestUpdateExperimentStatus_RequiresTransaction(t *testing.T) {
-	ctx := context.Background()
-	r := &Repository{}
-
-	exp := &essmsgpb.Experiment{
-		Name: "experiments/1001",
-	}
-
-	err := r.UpdateExperimentStatus(ctx, exp)
-	if !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("UpdateExperimentStatus outside tx returned error: %v, want FailedPrecondition", err)
 	}
 }
 

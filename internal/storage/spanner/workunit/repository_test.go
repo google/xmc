@@ -20,34 +20,23 @@ import (
 	"testing"
 
 	"task/go/status"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
-func TestRepository_SaveWorkUnitExecution_ValidationAndPreconditions(t *testing.T) {
+func TestTxRepository_SaveWorkUnitExecution_NilExecution(t *testing.T) {
 	ctx := context.Background()
-	repo := &workunit.Repository{}
+	repo := &workunit.TxRepository{}
 
 	if err := repo.SaveWorkUnitExecution(ctx, nil); !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("SaveWorkUnitExecution(nil) returned %v, want %v", err, status.ErrInvalidArgument)
 	}
-
-	exec := &essmsgpb.WorkUnitExecution{Name: "experiments/1/workUnits/1/executions/1"}
-	if err := repo.SaveWorkUnitExecution(ctx, exec); !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("SaveWorkUnitExecution outside transaction returned %v, want %v", err, status.ErrFailedPrecondition)
-	}
 }
 
-func TestRepository_UpdateCurrentWorkUnitExecution_ValidationAndPreconditions(t *testing.T) {
+func TestTxRepository_UpdateCurrentWorkUnitExecution_NilExecution(t *testing.T) {
 	ctx := context.Background()
-	repo := &workunit.Repository{}
+	repo := &workunit.TxRepository{}
 
 	if err := repo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, nil); !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateCurrentWorkUnitExecution(nil) returned %v, want %v", err, status.ErrInvalidArgument)
-	}
-
-	exec := &essmsgpb.WorkUnitExecution{Name: "experiments/1/workUnits/1/executions/1"}
-	if err := repo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, exec); !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("UpdateCurrentWorkUnitExecution outside transaction returned %v, want %v", err, status.ErrFailedPrecondition)
 	}
 }

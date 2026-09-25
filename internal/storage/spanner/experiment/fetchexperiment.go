@@ -29,14 +29,8 @@ import (
 )
 
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID.
-// When bound to a read-write transaction, the read is served from that transaction and component
-// drift evaluation is intentionally skipped to keep the transaction's read set minimal.
-// When unbound, the read uses a separate read-only transaction outside of any caller transaction.
 func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	if r.tx != nil {
-		return r.FetchExperimentTransaction(ctx, xid, r.tx)
-	}
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 	exp, err := r.FetchExperimentTransaction(ctx, xid, txn)
@@ -49,6 +43,12 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
 	}
 	return exp, nil
+}
+
+// FetchExperiment retrieves a single Experiment from storage by its unique numerical ID within the bound read-write transaction.
+func (r *TxRepository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
+	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
+	return r.FetchExperimentTransaction(ctx, xid, r.tx)
 }
 
 // FetchExperimentTransaction retrieves a single Experiment from storage by its unique

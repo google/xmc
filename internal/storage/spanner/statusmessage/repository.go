@@ -30,8 +30,13 @@ var _ storage.StatusMessageStore = (*Repository)(nil)
 // Repository manages persistence for status message entities in Cloud Spanner.
 type Repository struct {
 	client                 *spanner.Client
-	tx                     *spanner.ReadWriteTransaction
 	statusMessagesQueryGen querytools.QueryGenerator
+}
+
+// TxRepository manages transactional persistence for status message entities in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
 }
 
 // NewRepository creates a new StatusMessage repository instance with initialized query generator.
@@ -51,9 +56,10 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 	}, nil
 }
 
-// WithTx returns a shallow copy of the repository bound to the given read-write transaction.
-func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
-	clone := *r
-	clone.tx = tx
-	return &clone
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }

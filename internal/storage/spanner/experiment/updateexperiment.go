@@ -24,7 +24,6 @@ import (
 	"golang/protobuf/v2/encoding/prototext/prototext"
 	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
@@ -104,12 +103,9 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 }
 
 // UpdateExperimentStatus buffers a mutation to update an Experiment's status in Spanner using the bound read-write transaction.
-func (r *Repository) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
+func (r *TxRepository) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
 	if exp == nil {
 		return fmt.Errorf("experiment must not be nil")
-	}
-	if r.tx == nil {
-		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
 	}
 	expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
 	if err != nil {

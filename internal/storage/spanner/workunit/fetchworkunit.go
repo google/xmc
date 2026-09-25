@@ -31,10 +31,13 @@ import (
 // FetchWorkUnit retrieves a single WorkUnit from storage by its unique XID and WID.
 func (r *Repository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
-	if r.tx != nil {
-		return r.FetchWorkUnitTransaction(ctx, xid, wid, r.tx)
-	}
 	return r.FetchWorkUnitTransaction(ctx, xid, wid, r.client.Single())
+}
+
+// FetchWorkUnit retrieves a single WorkUnit from storage by its unique XID and WID within the bound read-write transaction.
+func (r *TxRepository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
+	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
+	return r.FetchWorkUnitTransaction(ctx, xid, wid, r.tx)
 }
 
 // FetchWorkUnitTransaction retrieves a single WorkUnit from storage by its unique XID and WID in a transaction.

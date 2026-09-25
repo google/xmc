@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
@@ -288,13 +287,5 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			}
 			compareQueueMetricRows(t, got, tt.want)
 		})
-	}
-}
-
-func TestRepository_SaveWorkUnitStatusHistoryIfChanged_RequiresTransaction(t *testing.T) {
-	repo := NewRepository(nil)
-	err := repo.SaveWorkUnitStatusHistoryIfChanged(context.Background(), 1, 1, nil, "", nil, nil, nil, time.Now())
-	if status.ExtractCanonicalCode(err) != status.FailedPrecondition {
-		t.Errorf("SaveWorkUnitStatusHistoryIfChanged outside tx returned %v, want FailedPrecondition", err)
 	}
 }

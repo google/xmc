@@ -37,10 +37,15 @@ type SpannerTransaction interface {
 // Repository manages persistence for experiment entities in Cloud Spanner.
 type Repository struct {
 	client              *spanner.Client
-	tx                  *spanner.ReadWriteTransaction
 	experimentsQueryGen querytools.QueryGenerator
 	enableComponents    bool
 	driftCache          *driftCache
+}
+
+// TxRepository manages transactional persistence for experiment entities in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
 }
 
 // RepositoryConfig configures optional settings for Repository.
@@ -67,9 +72,10 @@ func NewRepository(client *spanner.Client, cfg RepositoryConfig) (*Repository, e
 	}, nil
 }
 
-// WithTx returns a shallow copy of the repository bound to the given read-write transaction.
-func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
-	clone := *r
-	clone.tx = tx
-	return &clone
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }

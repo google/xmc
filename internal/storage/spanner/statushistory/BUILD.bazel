@@ -23,7 +23,6 @@ compat_go_library(
         "//api/protos/experiment:messages_go_proto",
         "//internal/common/resourceaccumulator",
         "//internal/common/tputopology",
-        "//internal/compat/status",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage/spanner/data:spannerdata",
@@ -38,7 +37,6 @@ compat_go_test(
     embed = [":statushistory"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/status",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",

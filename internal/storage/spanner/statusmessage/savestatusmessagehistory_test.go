@@ -16,12 +16,10 @@ package statusmessage_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	cloudspanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
@@ -110,15 +108,6 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
 		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when messages are equal with different timestamps, want 0", len(messages))
-	}
-}
-
-func TestSaveStatusMessageHistoryIfChanged_RequiresTransaction(t *testing.T) {
-	repo := &statusmessage.Repository{}
-	newMsg := &essmsgpb.StructuredMessage{Parent: "experiments/123", UserFacingText: "test"}
-	err := repo.SaveStatusMessageHistoryIfChanged(context.Background(), 123, nil, nil, nil, newMsg)
-	if !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("SaveStatusMessageHistoryIfChanged outside tx returned %v, want FailedPrecondition", err)
 	}
 }
 

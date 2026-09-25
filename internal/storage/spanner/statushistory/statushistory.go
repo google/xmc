@@ -23,7 +23,6 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"google.golang.org/api/iterator"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -98,7 +97,12 @@ func generateHistoryID() int64 {
 // Repository handles Spanner operations for status history and velocity metrics.
 type Repository struct {
 	client *spanner.Client
-	tx     *spanner.ReadWriteTransaction
+}
+
+// TxRepository manages transactional persistence for status history in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
 }
 
 // NewRepository initializes a new statushistory Repository.
@@ -106,20 +110,18 @@ func NewRepository(client *spanner.Client) *Repository {
 	return &Repository{client: client}
 }
 
-// WithTx returns a shallow copy of the repository bound to the given read-write transaction.
-func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *Repository {
-	clone := *r
-	clone.tx = tx
-	return &clone
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers a work unit status history mutation if the state changed using the bound read-write transaction.
 // TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
 // delegated helper; return them once it is inlined here.
-func (r *Repository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
-	if r.tx == nil {
-		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
-	}
+func (r *TxRepository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, eid, queueName, prevState, newState, resources, timestamp, r.tx)
 	return nil
 }

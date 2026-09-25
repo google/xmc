@@ -23,7 +23,6 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/protobuf/v2/proto/proto"
-	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
@@ -33,10 +32,7 @@ import (
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation in the bound Spanner transaction if the message changed.
 // TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
 // delegated helper; return them once it is inlined here.
-func (r *Repository) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
-	if r.tx == nil {
-		return fmt.Errorf("missing active read-write transaction: %w", status.ErrFailedPrecondition)
-	}
+func (r *TxRepository) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	SaveStatusMessageHistoryIfChanged(ctx, xid, wid, eid, oldMsg, newMsg, r.tx)
 	return nil
 }
