@@ -1025,21 +1025,11 @@ func (q *queryGen) appendPageTokenFields(fromTable TableView, fieldToValue map[T
 		}
 	}
 	query.SQL = query.SQL + ")"
-	nextPrefix := nextPageTokenPrefix(fromTable, orderedFields)
-	if len(nextPrefix) > 0 {
+	if len(orderedFields) > 1 {
 		query.SQL = query.SQL + " OR "
-		return q.appendPageTokenFields(fromTable, fieldToValue, nextPrefix, query)
+		return q.appendPageTokenFields(fromTable, fieldToValue, orderedFields[:len(orderedFields)-1], query)
 	}
 	return nil
-}
-
-// nextPageTokenPrefix returns the largest prefix of orderedFields ending in a field with a distinct value,
-// skipping trailing fields that are not Nullable and therefore cannot match two distinct rows when equal.
-func nextPageTokenPrefix(fromTable TableView, orderedFields []UserOrderedIndex) []UserOrderedIndex {
-	if len(orderedFields) <= 1 {
-		return nil
-	}
-	return orderedFields[:len(orderedFields)-1]
 }
 
 // appendCursorFieldComparison appends a single column comparison (or NULL predicate) for cursor pagination.

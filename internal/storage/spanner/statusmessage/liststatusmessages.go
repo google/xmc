@@ -102,17 +102,21 @@ func ExtractStatusMessageCursor(msg *essmsgpb.StatusMessage) (map[string]any, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate status message name %q: %w", msg.GetName(), err)
 	}
+	if wid == 0 && msg.GetContent().GetParent() != "" {
+		if _, parentWID, err := validator.ValidateStatusMessageParent(msg.GetContent().GetParent()); err == nil {
+			wid = parentWID
+		}
+	}
 
-	cursor := map[string]any{
+	var workUnitID any
+	if wid != 0 {
+		workUnitID = wid
+	}
+
+	return map[string]any{
 		"bit_reversed_xid": spannerutils.ReverseBits(xid),
-		"work_unit_id":     nil,
+		"work_unit_id":     workUnitID,
 		"message_id":       messageID,
 		"create_time":      msg.GetContent().GetCreateTime().AsTime(),
-	}
-
-	if wid != 0 {
-		cursor["work_unit_id"] = wid
-	}
-
-	return cursor, nil
+	}, nil
 }
