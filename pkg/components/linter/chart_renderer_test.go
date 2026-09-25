@@ -547,6 +547,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)
+	verifyNetworkPolicyParity(t, helmDir, igDir)
 }
 
 func verifySubChartOverridesAndGuards(t *testing.T, igDir string) {
@@ -650,13 +651,54 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		if err != nil {
 			t.Fatalf("%s: renderChartWithValues(umbrella) failed: %v", tt.name, err)
 		}
-		for _, f := range []string{"deployment.yaml", "service.yaml", "hpa.yaml"} {
-			if got := strings.Contains(rendered["xmanager-cloud/templates/ingestion-gateway/"+f], "kind:"); got != tt.wantGateway {
+		for _, f := range []string{"ingestion-gateway/deployment.yaml", "ingestion-gateway/service.yaml", "ingestion-gateway/hpa.yaml", "network-policies.yaml"} {
+			if got := strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:"); got != tt.wantGateway {
 				t.Errorf("%s: umbrella %s rendered = %v, want %v", tt.name, f, got, tt.wantGateway)
 			}
 		}
-		if !strings.Contains(rendered["xmanager-cloud/templates/network-policies.yaml"], "app: ingestion-gateway") {
-			t.Errorf("%s: expected the umbrella NetworkPolicy to keep selecting app=ingestion-gateway", tt.name)
+	}
+}
+
+// verifyNetworkPolicyParity checks the component release ships the same gateway NetworkPolicy
+// rules as the umbrella chart, so traffic rules don't change with enable_components.
+func verifyNetworkPolicyParity(t *testing.T, helmDir, igDir string) {
+	t.Helper()
+
+	umbrella, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
+		"ingestionGatewayDeployment": map[string]any{"enabled": true},
+	})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(umbrella) failed: %v", err)
+	}
+	component, err := renderChartWithValues(igDir, "xmc-cmp-ingestion-gateway", map[string]any{
+		"ingestionGatewayDeployment": map[string]any{"enabled": true},
+	})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(xmc-cmp-ingestion-gateway) failed: %v", err)
+	}
+	want := manifestSpecByKind(t, umbrella["xmanager-cloud/templates/network-policies.yaml"], "NetworkPolicy")
+	got := manifestSpecByKind(t, component["ingestion-gateway/templates/deployment.yaml"], "NetworkPolicy")
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("component NetworkPolicy spec differs from umbrella (-umbrella +component):\n%s", diff)
+	}
+}
+
+// manifestSpecByKind returns the spec of the first document of the given kind in manifest.
+func manifestSpecByKind(t *testing.T, manifest, kind string) map[string]any {
+	t.Helper()
+	dec := yaml.NewDecoder(strings.NewReader(manifest))
+	for {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			t.Fatalf("no %s document found in manifest:\n%s", kind, manifest)
+		}
+		if err != nil {
+			t.Fatalf("yaml decode failed: %v", err)
+		}
+		if doc["kind"] == kind {
+			spec, _ := doc["spec"].(map[string]any)
+			return spec
 		}
 	}
 }

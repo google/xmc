@@ -53,6 +53,6 @@ The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that 
 | `enable_components` (`componentsDeployment.enabled`) | Gateway workload owner |
 | :---: | :--- |
 | `false` | Umbrella chart, when `enable_metrics` (`ingestionGatewayDeployment.enabled`) is `true` (unchanged legacy behavior). |
-| `true` | Only this chart: the gateway is optional and runs once this chart is installed with `enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC. |
+| `true` | Only this chart: the gateway is optional and runs once this chart is installed with `enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC/NetworkPolicy. |
 
-The umbrella `NetworkPolicy` (selecting `app=ingestion-gateway`) keeps applying whenever `enable_metrics=true`, so it also covers the component's pods.
+The gateway `NetworkPolicy` follows the same ownership. With `enable_components=true`, it ships in the `xmc-cmp-ingestion-gateway` release regardless of `enable_metrics`. A test keeps its rules identical to the umbrella policy.
