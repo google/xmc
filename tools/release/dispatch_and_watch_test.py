@@ -16,7 +16,9 @@
 
 import json
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from tools.common.tool_utils import HandledError
@@ -65,6 +67,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         res = dispatch_and_watch(p)
         self.assertEqual(res["run_id"], 101)
         self.assertEqual(res["conclusion"], "success")
+        self.assertEqual(res["page_url"], "")
         self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
@@ -88,6 +91,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         res = dispatch_and_watch(p)
         self.assertEqual(res["run_id"], 202)
         self.assertEqual(res["conclusion"], "success")
+        self.assertEqual(res["page_url"], "")
         self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
@@ -113,6 +117,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "expected_sha"])
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "sha_mismatch")
+        self.assertEqual(res["page_url"], "")
         self.assertEqual(res["_exit_code"], EXIT_SHA_MISMATCH)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
@@ -135,7 +140,178 @@ class DispatchAndWatchTest(unittest.TestCase):
         p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "sha"])
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "cancelled")
+        self.assertEqual(res["page_url"], "")
         self.assertEqual(res["_exit_code"], EXIT_CANCELLED)
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    def test_page_url_extraction(self, mock_run, mock_which):
+        # 1. Direct page_url in view_data
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{"databaseId": 501, "headSha": "sha", "url": "run_url"}]),
+            ),  # list
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "conclusion": "success",
+                        "page_url": "https://google.github.io/xmc/",
+                        "jobs": [],
+                    }
+                ),
+            ),  # view
+        ]
+        p = create_parser().parse_args(
+            ["--workflow", "nightly-visual-snapshot.yml", "--target-sha", "sha"]
+        )
+        res = dispatch_and_watch(p)
+        self.assertEqual(res["page_url"], "https://google.github.io/xmc/")
+
+        # 2. Extracted from jobs step outputs
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps([{"databaseId": 502, "headSha": "sha", "url": "run_url"}]),
+            ),  # list
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "conclusion": "success",
+                        "jobs": [
+                            {
+                                "name": "Deploy to GitHub Pages",
+                                "steps": [
+                                    {
+                                        "name": "deploy",
+                                        "outputs": {
+                                            "page_url": "https://google.github.io/xmc/gallery/"
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+            ),  # view
+        ]
+        res = dispatch_and_watch(p)
+        self.assertEqual(res["page_url"], "https://google.github.io/xmc/gallery/")
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    def test_state_file_updates(self, mock_run, mock_which):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "release_state.json"
+            # Pre-populate state file with existing field
+            state_path.write_text(json.dumps({"existing_key": "val"}), encoding="utf-8")
+
+            # Test successful watched run
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps([{"databaseId": 601, "headSha": "sha601", "url": "run_url"}]),
+                ),  # list
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps({"conclusion": "success", "jobs": []}),
+                ),  # view
+            ]
+            p = create_parser().parse_args(
+                [
+                    "--workflow",
+                    "build.yml",
+                    "--target-sha",
+                    "sha601",
+                    "--state-file",
+                    str(state_path),
+                ]
+            )
+            res = dispatch_and_watch(p)
+            self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
+
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["existing_key"], "val")
+            self.assertEqual(state["target_sha"], "sha601")
+            self.assertEqual(state["last_run_id"], 601)
+            self.assertEqual(state["conclusion"], "success")
+
+            # Test sha_mismatch outcome
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {
+                                "databaseId": 602,
+                                "headSha": "other_sha",
+                                "url": "run_url",
+                                "createdAt": "2099-01-01T00:00:00Z",
+                            }
+                        ]
+                    ),
+                ),  # list
+            ]
+            p = create_parser().parse_args(
+                [
+                    "--workflow",
+                    "build.yml",
+                    "--target-sha",
+                    "expected_sha",
+                    "--state-file",
+                    str(state_path),
+                ]
+            )
+            res = dispatch_and_watch(p)
+            self.assertEqual(res["_exit_code"], EXIT_SHA_MISMATCH)
+
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["target_sha"], "expected_sha")
+            self.assertEqual(state["last_run_id"], 602)
+            self.assertEqual(state["conclusion"], "sha_mismatch")
+
+            # Test find_existing outcome
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps([{"databaseId": 603, "headSha": "sha603", "url": "run_url"}]),
+                ),
+            ]
+            p = create_parser().parse_args(
+                [
+                    "--workflow",
+                    "build.yml",
+                    "--find-existing",
+                    "--target-sha",
+                    "sha603",
+                    "--state-file",
+                    str(state_path),
+                ]
+            )
+            res = dispatch_and_watch(p)
+            self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
+
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["target_sha"], "sha603")
+            self.assertEqual(state["last_run_id"], 603)
+            self.assertEqual(state["conclusion"], "success")
 
 
 if __name__ == "__main__":

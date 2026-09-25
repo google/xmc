@@ -22,7 +22,12 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
     --find-existing \
     --state-file "${STATE_FILE}"
   ```
-- **Direct Entry**: If deployment and E2E tests have already succeeded for the target `TARGET_SHA` commit, the agent may proceed directly to Phase 4 or Phase 5.
+- **Direct Entry**: If deployment and E2E tests have already succeeded for the target `TARGET_SHA` commit, the agent may proceed directly to Phase 4 or Phase 5. Load `TARGET_SHA` from `"${STATE_FILE}"` if unset:
+  ```bash
+  if [[ -z "${TARGET_SHA:-}" && -f "${STATE_FILE}" ]]; then
+    TARGET_SHA=$(jq -r '.target_sha' "${STATE_FILE}")
+  fi
+  ```
 - **Post-Review Resumption**: When resuming after the user approval gate, proceed with executing the publishing step in Phase 5 using the release notes at `"${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"` without re-running earlier phases.
 
 > [!CAUTION]

@@ -46,6 +46,74 @@ def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.Complet
     )
 
 
+def _extract_page_url(view_data: dict[str, Any]) -> str:
+    """Extracts GitHub Pages URL from run view data or jobs step outputs if available."""
+    if not view_data or not isinstance(view_data, dict):
+        return ""
+    if view_data.get("page_url"):
+        return str(view_data["page_url"])
+    if view_data.get("pageUrl"):
+        return str(view_data["pageUrl"])
+
+    for job in view_data.get("jobs", []):
+        if not isinstance(job, dict):
+            continue
+        if job.get("page_url"):
+            return str(job["page_url"])
+        if job.get("pageUrl"):
+            return str(job["pageUrl"])
+        env = job.get("environment")
+        if isinstance(env, dict) and env.get("url"):
+            return str(env["url"])
+        for step in job.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            if step.get("page_url"):
+                return str(step["page_url"])
+            if step.get("pageUrl"):
+                return str(step["pageUrl"])
+            outputs = step.get("outputs") or step.get("output")
+            if isinstance(outputs, dict):
+                if outputs.get("page_url"):
+                    return str(outputs["page_url"])
+                if outputs.get("pageUrl"):
+                    return str(outputs["pageUrl"])
+    return ""
+
+
+def _update_state_file(
+    state_file_path: str | None,
+    target_sha: str,
+    run_sha: str,
+    run_id: int,
+    conclusion: str,
+) -> None:
+    """Updates and persists release state to state_file if provided."""
+    if not state_file_path:
+        return
+    p = Path(state_file_path)
+    state: dict[str, Any] = {}
+    if p.is_file():
+        try:
+            loaded = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                state = loaded
+        except (json.JSONDecodeError, OSError):
+            state = {}
+    state.update(
+        {
+            "target_sha": target_sha or run_sha,
+            "last_run_id": run_id,
+            "conclusion": conclusion,
+        }
+    )
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
     workflow, ref = args.workflow, getattr(args, "ref", "main") or "main"
@@ -67,12 +135,22 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
         if res.returncode == 0 and res.stdout.strip():
             for run in json.loads(res.stdout):
                 if not target_sha or run.get("headSha", "").startswith(target_sha):
+                    run_id = int(run["databaseId"])
+                    run_sha = run.get("headSha", "")
+                    _update_state_file(
+                        getattr(args, "state_file", None),
+                        target_sha=target_sha,
+                        run_sha=run_sha,
+                        run_id=run_id,
+                        conclusion="success",
+                    )
                     return {
-                        "run_id": run["databaseId"],
+                        "run_id": run_id,
                         "url": run.get("url", ""),
-                        "head_sha": run.get("headSha", ""),
+                        "head_sha": run_sha,
                         "conclusion": "success",
                         "failed_jobs": [],
+                        "page_url": "",
                         "_exit_code": EXIT_SUCCESS,
                     }
 
@@ -123,12 +201,20 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
 
     # 4. Strict commit SHA verification
     if target_sha and not run_sha.startswith(target_sha):
+        _update_state_file(
+            getattr(args, "state_file", None),
+            target_sha=target_sha,
+            run_sha=run_sha,
+            run_id=run_id,
+            conclusion="sha_mismatch",
+        )
         return {
             "run_id": run_id,
             "url": run_url,
             "head_sha": run_sha,
             "conclusion": "sha_mismatch",
             "failed_jobs": [],
+            "page_url": "",
             "_exit_code": EXIT_SHA_MISMATCH,
         }
 
@@ -139,12 +225,21 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
         json.loads(view_res.stdout) if view_res.returncode == 0 and view_res.stdout.strip() else {}
     )
     conclusion = view_data.get("conclusion") or ("success" if res.returncode == 0 else "failure")
+    page_url = _extract_page_url(view_data)
 
     failed_jobs = [
         {"name": j.get("name", ""), "conclusion": j.get("conclusion", "")}
         for j in view_data.get("jobs", [])
         if j.get("conclusion") == "failure"
     ]
+
+    _update_state_file(
+        getattr(args, "state_file", None),
+        target_sha=target_sha,
+        run_sha=run_sha,
+        run_id=run_id,
+        conclusion=conclusion,
+    )
 
     exit_code = (
         EXIT_SUCCESS
@@ -157,6 +252,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
         "head_sha": run_sha,
         "conclusion": conclusion,
         "failed_jobs": failed_jobs,
+        "page_url": page_url,
         "_exit_code": exit_code,
     }
 
@@ -174,7 +270,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reuse existing successful run.",
     )
-    p.add_argument("--state-file", help="Path to JSON state file (ignored).")
+    p.add_argument("--state-file", help="Path to JSON state file.")
     p.add_argument("--poll-interval", type=float, default=5.0, help="Poll interval.")
     p.add_argument("--poll-attempts", type=int, default=12, help="Max poll attempts.")
     p.add_argument("--repo-dir", default=".", help="Repository root.")
