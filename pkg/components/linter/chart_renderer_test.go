@@ -16,6 +16,7 @@ package linter_test
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -590,6 +591,30 @@ func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
 	}
 	if !strings.Contains(bridgeDep, `image: "custom.registry.io/ig:custom-tag"`) {
 		t.Errorf("expected explicit parameters[image] to take precedence, got:\n%s", bridgeDep)
+	}
+	assertWellFormedManifests(t, bridgeDep)
+}
+
+// assertWellFormedManifests fails if any rendered YAML document lacks apiVersion or kind, which
+// Kubernetes rejects at install time (e.g. a template chomping the newline before apiVersion).
+func assertWellFormedManifests(t *testing.T, manifest string) {
+	t.Helper()
+	dec := yaml.NewDecoder(strings.NewReader(manifest))
+	for i := 0; ; i++ {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			t.Fatalf("yaml document %d failed to decode: %v", i, err)
+		}
+		if doc == nil {
+			continue
+		}
+		if doc["apiVersion"] == nil || doc["kind"] == nil {
+			t.Errorf("yaml document %d missing apiVersion or kind: apiVersion=%v kind=%v", i, doc["apiVersion"], doc["kind"])
+		}
 	}
 }
 

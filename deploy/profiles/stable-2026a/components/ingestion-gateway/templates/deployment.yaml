@@ -22,7 +22,7 @@
 {{- $useTls := and $tls.enabled $tls.secretName -}}
 {{- $managedBy := .Release.Service | default "Helm" | quote -}}
 {{- $saName := $ig.serviceAccountName | default .Values.serviceAccountName | default "default" -}}
-{{- $ns := .Values.namespace | default .Release.Namespace | default "xmc" -}}
+{{- $ns := .Values.namespace | default .Release.Namespace | default "xmc" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
