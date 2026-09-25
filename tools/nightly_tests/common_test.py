@@ -118,10 +118,24 @@ class CommonTest(unittest.TestCase):
         with mock.patch.object(common, "get_flag", return_value=5):
             self.assertEqual(common.resolve_expected_work_units(3), 5)
 
+        # Non-positive flag values fallback to env var or default
+        with mock.patch.object(common, "get_flag", return_value=0):
+            self.assertEqual(common.resolve_expected_work_units(3), 3)
+
+        with mock.patch.object(common, "get_flag", return_value=-5):
+            self.assertEqual(common.resolve_expected_work_units(3), 3)
+
         # Fallback to NUM_WORK_UNITS env var when flag is None
         with mock.patch.object(common, "get_flag", return_value=None):
             with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "2"}):
                 self.assertEqual(common.resolve_expected_work_units(3), 2)
+
+            # Non-positive env var values fallback to default
+            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "0"}):
+                self.assertEqual(common.resolve_expected_work_units(3), 3)
+
+            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "-5"}):
+                self.assertEqual(common.resolve_expected_work_units(3), 3)
 
             # Fallback to default when env var is invalid or unset
             with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "invalid"}):

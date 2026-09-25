@@ -109,13 +109,17 @@ def resolve_expected_work_units(default: int = 3) -> int:
     flag_val = get_flag(FLAGS, "expected_work_units", None)
     if flag_val is not None:
         try:
-            return int(flag_val)
+            val = int(flag_val)
+            if val > 0:
+                return val
         except (ValueError, TypeError):
             pass
     env_val = os.environ.get("NUM_WORK_UNITS")
     if env_val:
         try:
-            return int(env_val)
+            val = int(env_val)
+            if val > 0:
+                return val
         except (ValueError, TypeError):
             pass
     return default
