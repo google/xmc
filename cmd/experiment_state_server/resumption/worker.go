@@ -28,6 +28,16 @@ import (
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
+const (
+	// defaultThrottlePauseDuration is the pause interval when downstream queue backlog exceeds threshold.
+	defaultThrottlePauseDuration = 10 * time.Second
+)
+
+// BacklogChecker defines the contract for checking downstream task queue backlog.
+type BacklogChecker interface {
+	CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error)
+}
+
 // PayloadPublisher defines the interface for enqueuing actuation tasks.
 type PayloadPublisher interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
@@ -40,9 +50,11 @@ type Worker interface {
 
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
-	pauseStateRepo pausestate.Repository
-	pausedTaskRepo pausedtask.Repository
-	publisher      PayloadPublisher
+	pauseStateRepo        pausestate.Repository
+	pausedTaskRepo        pausedtask.Repository
+	publisher             PayloadPublisher
+	backlogChecker        BacklogChecker
+	throttlePauseDuration time.Duration
 }
 
 // NewResumptionWorker creates a new ResumptionWorker with required dependencies.
@@ -50,11 +62,14 @@ func NewResumptionWorker(
 	pauseStateRepo pausestate.Repository,
 	pausedTaskRepo pausedtask.Repository,
 	publisher PayloadPublisher,
+	backlogChecker BacklogChecker,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
-		pauseStateRepo: pauseStateRepo,
-		pausedTaskRepo: pausedTaskRepo,
-		publisher:      publisher,
+		pauseStateRepo:        pauseStateRepo,
+		pausedTaskRepo:        pausedTaskRepo,
+		publisher:             publisher,
+		backlogChecker:        backlogChecker,
+		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
 
@@ -122,7 +137,13 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return nil
 		}
 
-		// TODO(pausescheduling): Check downstream Redis backlog against req.MaxBacklogThreshold before fetching next batch.
+		throttled, err := w.throttleIfBusy(ctx, req)
+		if err != nil {
+			return err
+		}
+		if throttled {
+			continue
+		}
 
 		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
 		if err != nil {
@@ -141,6 +162,46 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 
 		// TODO(pausescheduling): Extend message lease via heartbeat during batch processing.
 	}
+}
+
+func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (bool, error) {
+	if w.backlogChecker == nil {
+		return false, nil
+	}
+
+	maxThreshold := req.MaxBacklogThreshold
+	if maxThreshold <= 0 {
+		maxThreshold = defaultMaxBacklog
+	}
+
+	backlog, err := w.backlogChecker.CalculateBacklog(ctx, maxThreshold)
+	if err != nil {
+		return false, fmt.Errorf("failed to calculate task queue backlog: %w", err)
+	}
+
+	if backlog < int64(maxThreshold) {
+		return false, nil
+	}
+
+	logging.Info(ctx, "Tasks queue backlog exceeded threshold; pausing replay",
+		"backlog", backlog,
+		"max_backlog_threshold", maxThreshold,
+		"resumption_run_id", req.ResumptionRunID)
+
+	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
+
+	pauseDuration := w.throttlePauseDuration
+	if pauseDuration <= 0 {
+		pauseDuration = defaultThrottlePauseDuration
+	}
+
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-time.After(pauseDuration):
+	}
+
+	return true, nil
 }
 
 func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {

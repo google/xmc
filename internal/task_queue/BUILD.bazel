@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "client",
     srcs = [
+        "backlog.go",
         "client.go",
         "test_utils.go",
     ],
@@ -30,6 +31,7 @@ go_library(
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
         "@com_github_google_uuid//:uuid",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@org_golang_google_api//iamcredentials/v1:iamcredentials",
         "@org_golang_google_api//option",
@@ -43,15 +45,20 @@ go_library(
 
 go_test(
     name = "task_queue_test",
-    srcs = ["client_test.go"],
+    srcs = [
+        "backlog_test.go",
+        "client_test.go",
+    ],
     embed = [":task_queue"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
         "//internal/common/interfaces",
+        "//internal/kubernetes/common/constants",
         "//internal/security/securitytest",
         "//internal/task_queue_redis/redisclient",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
@@ -62,6 +69,7 @@ go_test(
 go_library(
     name = "task_queue",
     srcs = [
+        "backlog.go",
         "client.go",
         "test_utils.go",
     ],
@@ -75,6 +83,7 @@ go_library(
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
         "@com_github_google_uuid//:uuid",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@org_golang_google_api//iamcredentials/v1:iamcredentials",
         "@org_golang_google_api//option",

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,7 +177,7 @@ func TestResumptionWorker_Registration(t *testing.T) {
 			_ = pauseRepo.Set(ctx, tt.initialState)
 			taskRepo := pausedtask.NewFake()
 			publisher := &mockPublisher{}
-			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 
 			if err := worker.StartResumption(ctx, Request{ResumptionRunID: tt.triggerRunID}); err != nil {
 				t.Fatalf("StartResumption() unexpected error: %v", err)
@@ -248,7 +249,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		Priority:      90,
 	})
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -401,7 +402,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 		WorkUnit:      wuValid,
 	})
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-filter", BatchSize: 10}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -459,7 +460,7 @@ func TestResumptionWorker_MultipleBatches(t *testing.T) {
 		))
 	}
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-multi", BatchSize: 2}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -510,7 +511,7 @@ func TestResumptionWorker_Errors(t *testing.T) {
 			taskRepo := &errPausedTaskRepo{Fake: baseTaskRepo, listPendingErr: tt.listErr, markProcessedErr: tt.markErr}
 			publisher := &mockPublisher{err: tt.publishErr}
 
-			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 			err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("StartResumption() error = %v, want %v", err, tt.wantErr)
@@ -531,7 +532,7 @@ func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 
 	publishErr := errors.New("redis publish failure")
 	publisher := &mockPublisher{err: publishErr, failAfter: 1}
-	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 
 	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10})
 	if !errors.Is(err, publishErr) {
@@ -592,7 +593,7 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 				},
 			}
 			publisher := &mockPublisher{}
-			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+			worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 
 			if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 2}); err != nil {
 				t.Fatalf("StartResumption() unexpected error: %v", err)
@@ -627,7 +628,7 @@ func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
 	})
 
 	publisher := &mockPublisher{}
-	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, publisher, nil)
 
 	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-invalid", BatchSize: 10})
 	if err == nil {
@@ -649,5 +650,266 @@ func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
 	}
 	if len(pending) != 1 || pending[0].TaskID != "task-corrupt" {
 		t.Fatalf("expected task-corrupt to remain pending in Spanner, got %+v", pending)
+	}
+}
+
+type mockBacklogCalculator struct {
+	mu            sync.Mutex
+	backlogValues []int64
+	calculateErr  error
+	calls         int
+	recordedMax   int
+	onCalculate   func()
+}
+
+func (m *mockBacklogCalculator) CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	m.recordedMax = maxThreshold
+
+	if m.onCalculate != nil {
+		m.onCalculate()
+	}
+	if m.calculateErr != nil {
+		return 0, m.calculateErr
+	}
+	if len(m.backlogValues) == 0 {
+		return 0, nil
+	}
+	val := m.backlogValues[0]
+	if len(m.backlogValues) > 1 {
+		m.backlogValues = m.backlogValues[1:]
+	}
+	return val, nil
+}
+
+func TestResumptionWorker_BacklogThrottling(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-throttle"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	publisher := &mockPublisher{}
+	backlogCalc := &mockBacklogCalculator{
+		backlogValues: []int64{10, 2}, // First check: busy (10 >= 5), second check: cleared (2 < 5).
+	}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Millisecond
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-throttle",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if err != nil {
+		t.Fatalf("StartResumption() unexpected error: %v", err)
+	}
+
+	if backlogCalc.calls != 3 {
+		t.Errorf("backlogCalc.calls = %d, want 3 (2 for batch 1, 1 for subsequent batch check)", backlogCalc.calls)
+	}
+	if backlogCalc.recordedMax != 5 {
+		t.Errorf("recordedMax = %d, want 5", backlogCalc.recordedMax)
+	}
+	if len(publisher.calls) != 1 {
+		t.Errorf("expected 1 task published after throttling resolved, got %d", len(publisher.calls))
+	}
+}
+
+func TestResumptionWorker_BacklogUnderThreshold(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-unthrottled"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	publisher := &mockPublisher{}
+	backlogCalc := &mockBacklogCalculator{
+		backlogValues: []int64{2}, // 2 < 5: not busy.
+	}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Millisecond
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-unthrottled",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if err != nil {
+		t.Fatalf("StartResumption() unexpected error: %v", err)
+	}
+
+	if backlogCalc.calls != 2 {
+		t.Errorf("backlogCalc.calls = %d, want 2 (1 for batch 1, 1 for subsequent batch check)", backlogCalc.calls)
+	}
+	if len(publisher.calls) != 1 {
+		t.Errorf("expected 1 task published, got %d", len(publisher.calls))
+	}
+}
+
+func TestResumptionWorker_BacklogThrottling_CalculatorError(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-calc-err"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	calcErr := errors.New("redis connection refused")
+	backlogCalc := &mockBacklogCalculator{calculateErr: calcErr}
+	publisher := &mockPublisher{}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Millisecond
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-calc-err",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if !errors.Is(err, calcErr) {
+		t.Fatalf("StartResumption() error = %v, want %v", err, calcErr)
+	}
+	if len(publisher.calls) != 0 {
+		t.Errorf("expected 0 published tasks on error, got %d", len(publisher.calls))
+	}
+}
+
+func TestResumptionWorker_BacklogThrottling_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-cancel"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	backlogCalc := &mockBacklogCalculator{
+		backlogValues: []int64{10},
+		onCalculate: func() {
+			cancel()
+		},
+	}
+	publisher := &mockPublisher{}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Hour
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-cancel",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("StartResumption() error = %v, want %v", err, context.Canceled)
+	}
+	if len(publisher.calls) != 0 {
+		t.Errorf("expected 0 published tasks on context cancellation, got %d", len(publisher.calls))
+	}
+}
+
+func TestResumptionWorker_BacklogThrottling_SchedulingRepaused(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-repause"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	backlogCalc := &mockBacklogCalculator{
+		backlogValues: []int64{10},
+		onCalculate: func() {
+			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+				SchedulingPaused: true,
+				ResumptionRunID:  "run-repause",
+			})
+		},
+	}
+	publisher := &mockPublisher{}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Millisecond
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-repause",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if err != nil {
+		t.Fatalf("StartResumption() unexpected error: %v", err)
+	}
+	if len(publisher.calls) != 0 {
+		t.Errorf("expected 0 published tasks when re-paused, got %d", len(publisher.calls))
+	}
+}
+
+func TestResumptionWorker_BacklogThrottling_WorkerFenced(t *testing.T) {
+	ctx := context.Background()
+	pauseRepo := pausestate.NewFake()
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-fence"})
+
+	taskRepo := pausedtask.NewFake()
+	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+
+	backlogCalc := &mockBacklogCalculator{
+		backlogValues: []int64{10},
+		onCalculate: func() {
+			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+				SchedulingPaused:   false,
+				ResumptionRunID:    "run-fence",
+				ResumptionWorkerID: "worker-fenced-other",
+			})
+		},
+	}
+	publisher := &mockPublisher{}
+
+	worker := NewResumptionWorker(
+		pauseRepo,
+		taskRepo,
+		publisher,
+		backlogCalc,
+	)
+	worker.throttlePauseDuration = time.Millisecond
+
+	err := worker.StartResumption(ctx, Request{
+		ResumptionRunID:     "run-fence",
+		BatchSize:           10,
+		MaxBacklogThreshold: 5,
+	})
+	if err != nil {
+		t.Fatalf("StartResumption() unexpected error: %v", err)
+	}
+	if len(publisher.calls) != 0 {
+		t.Errorf("expected 0 published tasks when fenced, got %d", len(publisher.calls))
 	}
 }
