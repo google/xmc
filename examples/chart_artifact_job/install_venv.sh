@@ -31,7 +31,7 @@ bazel build //api/protos/dashboard:dashboard_messages_py_proto //api/protos/dash
 
 echo "--> [3/5] Installing grpcio and runtime dependencies..."
 "${PIP_BIN}" install --upgrade pip
-"${PIP_BIN}" install absl-py python-dotenv grpcio protobuf "googleapis-common-protos<1.75.4"
+"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
 # sysconfig.get_path('purelib') resolves against the running interpreter, which is the
 # venv's; site.getsitepackages() can report the base prefix instead.
