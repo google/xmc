@@ -1,33 +1,22 @@
+{{- /* With components enabled, the ingestion-gateway component chart owns the gateway. */ -}}
+{{- if and .Values.ingestionGatewayDeployment.enabled (not .Values.componentsDeployment.enabled) -}}
+{{- $sasl := .Values.ingestionGatewayDeployment.sasl | default dict -}}
+{{- $tls := .Values.ingestionGatewayDeployment.tls | default dict -}}
+{{- $useSasl := and $sasl.enabled $sasl.secretName -}}
+{{- $useTls := and $tls.enabled $tls.secretName -}}
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled (not .Values.ingestionGatewayDeployment.managedByComponent) -}}
-{{- $sasl := .Values.ingestionGatewayDeployment.sasl | default dict -}}
-{{- $tls := .Values.ingestionGatewayDeployment.tls | default dict -}}
-{{- $useSasl := and $sasl.enabled $sasl.secretName -}}
-{{- $useTls := and $tls.enabled $tls.secretName -}}
-{{- $port := .Values.ingestionGatewayDeployment.port | default 8080 -}}
-{{- $global := .Values.global | default dict -}}
-{{- $globalTag := $global.imageTag | default "" -}}
-{{- $igImg := (.Values.ingestionGatewayDeployment.image | default "" | toString) -}}
-{{- $baseStr := (.Values.ingestion_gateway_custom_image | default "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway" | toString) -}}
-{{- $resolvedImage := $baseStr -}}
-{{- if $igImg -}}
-  {{- $resolvedImage = ternary (printf "%s:%s" $igImg $globalTag) $igImg (and (ne $globalTag "") (not (regexMatch ":[^:/]+$" $igImg)) (not (contains "@sha256:" $igImg))) -}}
-{{- else if and $globalTag (not (contains "@sha256:" $baseStr)) -}}
-  {{- $resolvedImage = printf "%s:%s" (regexReplaceAll ":[^:/]+$" $baseStr "") $globalTag -}}
-{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,9 +35,6 @@ spec:
         app: ingestion-gateway
     spec:
       serviceAccountName: {{ .Values.ingestionGatewayDeployment.serviceAccountName | default "default" }}
-      {{- if .Values.ingestionGatewayDeployment.terminationGracePeriodSeconds }}
-      terminationGracePeriodSeconds: {{ .Values.ingestionGatewayDeployment.terminationGracePeriodSeconds }}
-      {{- end }}
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -67,7 +53,7 @@ spec:
       {{- end }}
       containers:
       - name: ingestion-gateway
-        image: {{ $resolvedImage | quote }}
+        image: {{ .Values.ingestion_gateway_custom_image | quote }}
         imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
@@ -92,10 +78,10 @@ spec:
         {{- end }}
         {{- end }}
         ports:
-        - containerPort: {{ $port }}
+        - containerPort: 8080
           name: http-port
         args:
-        - "-port={{ $port }}"
+        - "-port=8080"
         - "-enable_components={{ .Values.componentsDeployment.enabled | default false }}"
         - "-components_namespace={{ .Release.Namespace | default "xmc" }}"
         - "-redpanda_brokers={{ .Values.ingestionGatewayDeployment.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
@@ -116,13 +102,13 @@ spec:
         readinessProbe:
           httpGet:
             path: /readyz
-            port: {{ $port }}
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /healthz
-            port: {{ $port }}
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
         {{- if .Values.ingestionGatewayDeployment.resources }}

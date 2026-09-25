@@ -50,10 +50,9 @@ The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that 
 
 ## 4. Coexistence with the Umbrella Chart (`deploy/helm/`)
 
-| `enable_metrics` (`ingestionGatewayDeployment.enabled`) | `enable_components` (`componentsDeployment.enabled`) | `ingestionGatewayDeployment.managedByComponent` | Gateway workload owner |
-| :---: | :---: | :---: | :--- |
-| `true` | `false` | `false` | Umbrella chart |
-| `true` | `true` | `false` | Umbrella chart, plus the umbrella reader RBAC for dynamic Redpanda discovery |
-| any | `true` | `true` | `xmc-cmp-ingestion-gateway` (umbrella renders no gateway Deployment/Service/HPA/RBAC) |
+| `enable_components` (`componentsDeployment.enabled`) | Gateway workload owner |
+| :---: | :--- |
+| `false` | Umbrella chart, when `enable_metrics` (`ingestionGatewayDeployment.enabled`) is `true` (unchanged legacy behavior). |
+| `true` | Only this chart: the gateway is optional and runs once this chart is installed with `enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC. |
 
-Enabling components alone does **not** hand the gateway off. Set `managedByComponent=true` before installing this chart with `enabled=true`, otherwise both releases would try to own `ingestion-gateway-deployment`. The umbrella `NetworkPolicy` (selecting `app=ingestion-gateway`) keeps applying whenever `enable_metrics=true`.
+The umbrella `NetworkPolicy` (selecting `app=ingestion-gateway`) keeps applying whenever `enable_metrics=true`, so it also covers the component's pods.

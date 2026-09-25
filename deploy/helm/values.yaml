@@ -25,8 +25,6 @@ xmcUrl: ""
 taskSignatureTtlSeconds: 86400
 isDevEnvironment: false
 imageTag: latest
-global:
-  imageTag: ""
 xid_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xid-service-dev:latest"
 actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:latest"
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
@@ -76,13 +74,10 @@ metrics:
     password: ""
 
 ingestionGatewayDeployment:
+  # Deploys the gateway from this chart only while componentsDeployment.enabled is false. With
+  # components enabled, the gateway is optional and installed via the stable-2026a
+  # ingestion-gateway component chart (actuated by xmc-bridge).
   enabled: false
-  # Set true when the workload (Deployment/Service/HPA/reader RBAC) is owned by the 1P
-  # ingestion-gateway component release (xmc-cmp-ingestion-gateway) actuated by xmc-bridge.
-  # enable_components alone does not hand off; the legacy umbrella gateway keeps running.
-  managedByComponent: false
-  port: 8080
-  image: ""
   hpa:
     minReplicas: 3
     maxReplicas: 10

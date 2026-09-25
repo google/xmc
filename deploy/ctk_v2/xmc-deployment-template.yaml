@@ -93,10 +93,6 @@ vars:
   # Enable Foundational Component Controllers
   enable_components: false
 
-  # Hand the Ingestion Gateway workload off from the umbrella chart to the ingestion-gateway
-  # 1P Component release (requires enable_components: true).
-  ingestion_gateway_managed_by_component: false
-
   # Enable Resource Optimization & Diagnostics (ROD) Data Provider
   rod_deployment_enabled: true
 

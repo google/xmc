@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled }}
+{{- if .Values.ingestionGatewayDeployment.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -33,7 +33,7 @@ spec:
               xmc.google.com/metrics-client: "true"
       ports:
         - protocol: TCP
-          port: {{ ((.Values.ingestionGatewayDeployment | default dict).port) | default 8080 }}
+          port: 8080
   egress:
     - ports:
         - protocol: UDP

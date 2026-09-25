@@ -1,4 +1,4 @@
-{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled (not .Values.ingestionGatewayDeployment.managedByComponent) .Values.ingestionGatewayDeployment.hpa -}}
+{{- if and .Values.ingestionGatewayDeployment.enabled (not .Values.componentsDeployment.enabled) .Values.ingestionGatewayDeployment.hpa -}}
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
