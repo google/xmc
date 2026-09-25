@@ -390,6 +390,8 @@ func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentIn
 // dependencyNotRegisteredMessage returns the CMS status message if err (possibly wrapped) is the
 // store's FailedPrecondition for an unregistered dependency, or "" otherwise.
 func dependencyNotRegisteredMessage(err error) string {
+	// Not status.FromError: for wrapped errors it replaces the message with the full err.Error(),
+	// which would defeat the prefix match below.
 	var se interface{ GRPCStatus() *status.Status }
 	if !errors.As(err, &se) {
 		return ""
@@ -553,7 +555,11 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusTrue, in.Generation, "AllDependenciesReady", "All dependencies are ready")
 		return
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusFalse, in.Generation, ReasonDependenciesNotReady, waitMsg+"; Helm upgrades are held, running workload is left in place")
+	held := "; running workload is left in place"
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		held = "; Helm upgrades are held, running workload is left in place"
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusFalse, in.Generation, ReasonDependenciesNotReady, waitMsg+held)
 }
 
 // reportGated holds the component in PENDING_RECONCILIATION with Ready=False without touching workloads.

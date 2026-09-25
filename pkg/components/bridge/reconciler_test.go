@@ -2746,3 +2746,25 @@ func TestDependencyNotRegisteredMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDependenciesReadyConditionMessage(t *testing.T) {
+	const waitMsg = "waiting on dependencies: redpanda (not ready)"
+	tests := []struct {
+		name     string
+		compType componentspb.ComponentType
+		want     string
+	}{
+		{name: "1P mentions held Helm upgrades", compType: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, want: waitMsg + "; Helm upgrades are held, running workload is left in place"},
+		{name: "3P wrapper omits Helm", compType: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, want: waitMsg + "; running workload is left in place"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := &ReconcileResult{}
+			setDependenciesReadyCondition(res, ReconcileComponentInput{Generation: 1, Spec: &componentspb.ComponentSpec{Type: tt.compType}}, waitMsg)
+			c := findCondition(res.Conditions, ConditionTypeDependenciesReady)
+			if c == nil || c.Status != ConditionStatusFalse || c.Message != tt.want {
+				t.Errorf("setDependenciesReadyCondition() condition = %+v, want status %q message %q", c, ConditionStatusFalse, tt.want)
+			}
+		})
+	}
+}

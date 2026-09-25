@@ -54,8 +54,8 @@ func NewDependencySnapshot(items []unstructured.Unstructured) *DependencySnapsho
 	depGraph := make(graph.DependencyGraph, len(items))
 	for i := range items {
 		name := naming.CanonicalComponentName(items[i].GetName())
-		reasons[name] = componentUnreadyReason(&items[i])
-		spec, _, _ := ParseSpecFromUnstructured(items[i].Object["spec"])
+		spec, _, enabled := ParseSpecFromUnstructured(items[i].Object["spec"])
+		reasons[name] = componentUnreadyReason(&items[i], enabled)
 		depGraph[name] = slices.DeleteFunc(spec.GetDependencies(), func(dep string) bool { return dep == name })
 	}
 	return &DependencySnapshot{unreadyReasons: reasons, cycles: findCycleMembers(depGraph)}
@@ -90,13 +90,14 @@ func (s *DependencySnapshot) DependencyCycle(_ context.Context, name string) str
 	return s.cycles[naming.CanonicalComponentName(name)]
 }
 
-// componentUnreadyReason returns "" if obj is enabled, not being deleted, Ready=True at its
-// current metadata.generation and not Degraded; otherwise it returns the first failing reason.
-func componentUnreadyReason(obj *unstructured.Unstructured) string {
+// componentUnreadyReason returns "" if obj is enabled (as pre-parsed from its spec), not being
+// deleted, Ready=True at its current metadata.generation and not Degraded; otherwise it returns
+// the first failing reason.
+func componentUnreadyReason(obj *unstructured.Unstructured, enabled bool) string {
 	if obj.GetDeletionTimestamp() != nil {
 		return "being deleted"
 	}
-	if _, _, enabled := ParseSpecFromUnstructured(obj.Object["spec"]); !enabled {
+	if !enabled {
 		return "disabled"
 	}
 	conds := ParseConditionsFromUnstructured(obj.Object["status"])
