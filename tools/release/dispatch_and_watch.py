@@ -19,6 +19,7 @@ import json
 import shutil
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
                     }
 
     # 2. Dispatch workflow run
+    dispatched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     res = _run_gh(["workflow", "run", workflow, "--ref", ref], repo_dir)
     if res.returncode != 0:
         raise HandledError(
@@ -83,7 +85,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             "Verify workflow name and GitHub permissions.",
         )
 
-    # 3. Poll for registered workflow run
+    # 3. Poll for registered workflow run matching target_sha or created after dispatch
     list_cmd = [
         "run",
         "list",
@@ -100,8 +102,13 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
         res = _run_gh(list_cmd, repo_dir)
         if res.returncode == 0 and res.stdout.strip():
             runs = json.loads(res.stdout)
-            if runs:
-                run_data = runs[0]
+            for r in runs:
+                r_sha = r.get("headSha", "")
+                r_created = r.get("createdAt", "")
+                if (target_sha and r_sha.startswith(target_sha)) or (r_created >= dispatched_at):
+                    run_data = r
+                    break
+            if run_data:
                 break
 
     if not run_data:

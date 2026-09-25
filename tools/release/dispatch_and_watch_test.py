@@ -98,7 +98,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 303, "headSha": "wrong_sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 303,
+                            "headSha": "wrong_sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
         ]
         p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "expected_sha"])
