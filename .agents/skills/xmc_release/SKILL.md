@@ -5,7 +5,7 @@ description: Orchestrates an end-to-end XMC release workflow — deploying the l
 
 # XMC Release Orchestration Playbook
 
-This skill guides an agent through preparing, validating, and publishing an XMC release across 7 sequential phases.
+This skill guides an agent through preparing, validating, and publishing an XMC release across 5 sequential phases.
 
 > [!IMPORTANT]
 > All execution steps in this skill MUST strictly adhere to the policy rules defined in [Core Engineering Standards](../../rules/core_engineering.md) and [Skills & Automation Guidelines](../../rules/skills_and_automation.md).
@@ -17,7 +17,7 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
   gh run list --workflow=nightly-examples-e2e.yml --branch=main --status=success --limit 1
   ```
 - **Direct Entry**: If deployment and E2E tests have already succeeded for the target `origin/main` commit, the agent may proceed directly to Phase 4 or Phase 5.
-- **Post-Review Resumption**: When resuming after the Phase 6 user approval gate, proceed directly to Phase 7 using the existing `/tmp/release_notes_v<version>.md` without re-running earlier phases.
+- **Post-Review Resumption**: When resuming after the user approval gate, proceed with executing the publishing step in Phase 5 using the approved `/tmp/release_notes_v<version>.md` without re-running earlier phases.
 
 > [!CAUTION]
 > **STRICT INVARIANT: RELEASE CONFIRMATION GATES & SAFEGUARDS**
@@ -179,51 +179,15 @@ echo "Triggered visual snapshot run ID: ${VISUAL_RUN_ID}"
    > - **Run URL**: `https://github.com/google/xmc/actions/runs/<VISUAL_RUN_ID>`
    > - **Interactive Gallery Link**: `https://google.github.io/xmc/` (or the direct URL outputted by `deploy-pages`)
 
----
+## Phase 5: Generate Notes, Review, and Publish Release
 
-## Phase 5: Generate Release Notes via `xmc_generate_release_notes`
+Delegate the end-to-end release documentation, interactive user review, and publishing workflow to [xmc_generate_release_notes](../xmc_generate_release_notes/SKILL.md):
 
-Follow the instructions in [xmc_generate_release_notes](../xmc_generate_release_notes/SKILL.md) to extract release metadata, synthesize audience-segmented notes across the 4-section layout, and draft the release notes at `/tmp/release_notes_v<version>.md`.
-
-Present the proposed version increment, rationale, and draft release notes to the user for review.
-
----
-
-## Phase 6: Iterative Review with User
-
-1. Pause execution and solicit user feedback on:
-   - Version number recommendation.
-   - Content and categorization of release notes.
-   - Any missing highlights or manual additions.
-2. If adjustments are requested, update `/tmp/release_notes_v<version>.md` accordingly using `replace_file_content` or `write_to_file`.
-3. Repeat until the user explicitly confirms and approves the final version and content.
-
----
-
-## Phase 7: Publish Release
-
-> [!CAUTION]
-> **Mandatory User Confirmation Gate**: Only proceed after the user explicitly types an affirmative confirmation (e.g., "approve release", "publish release").
-
-1. Execute `publish_release.py` targeting `origin/main` with `--draft` to create the annotated git tag, push it to `origin`, and create a draft release on GitHub:
-   ```bash
-   PYTHONPATH=. python3 tools/release/publish_release.py \
-     --target-commit origin/main \
-     --tag <version> \
-     --notes-file /tmp/release_notes_v<version>.md \
-     --draft
-   ```
-   Check tool exit code (0 for success, 1 for handled input error) and parse the JSON payload from stdout (`result.release_url` and `result.tag`).
-   *(Note: `--draft` is used by default to provide a collaborative proofreading window on GitHub Releases before final public broadcast, unless the user explicitly requested immediate public publication).*
-2. Confirm publication to the user:
-   > *"🚀 **Release Published Successfully!**"*
-   > - **Tag**: `<version>`
-   > - **GitHub Release Link**: `https://github.com/google/xmc/releases/tag/<version>`
-
-3. **Draft Release Promotion (Follow-up)**:
-   Once the user proofreads the draft release on GitHub and explicitly approves promotion to public:
+1. **Extract Metadata & Synthesize Notes**: Follow Section 1–4 of `xmc_generate_release_notes` to extract commit metadata targeting `origin/main` and draft `/tmp/release_notes_v<version>.md`.
+2. **Interactive Review**: Follow Section 5 of `xmc_generate_release_notes` to present the proposed version increment and draft notes to the user, refining content iteratively based on feedback.
+3. **Publishing Confirmation Gate**: Follow Section 6 of `xmc_generate_release_notes` to enforce the mandatory confirmation gate before executing `publish_release.py` targeting `origin/main` with `--draft`.
+4. **Draft Release Promotion (Optional Follow-up)**: Once the user proofreads the draft release on GitHub and explicitly approves promotion to public:
    ```bash
    gh release edit <version> --draft=false
    ```
-   Notify the user:
-   > *"🚀 **Draft release promoted to public**: `https://github.com/google/xmc/releases/tag/<version>`"*
+
