@@ -34,7 +34,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | `parameters.redpandaBrokers` | `"redpanda-0.redpanda.xmc.svc.cluster.local:9092"` | `-redpanda_brokers` | Static fallback Kafka broker addresses when dynamic discovery from `Component/redpanda` is inactive. |
 | `parameters.topicName` | `"xmc-metrics"` | `-topic_name` | Default Kafka topic for ingested telemetry and experiment metrics. |
 | `parameters.minPartitions` | `128` (`"128"`) | `-min_partitions` | Minimum partition count when auto-creating the Kafka topic. |
-| `parameters.minReplicas` | `3` (`"3"`) | `-min_replicas` | Minimum replication factor for the Kafka topic. |
+| `parameters.minReplicas` | `1` (`"1"`) | `-min_replicas` | Minimum replication factor for the Kafka topic (matches the umbrella chart default). |
 
 ---
 

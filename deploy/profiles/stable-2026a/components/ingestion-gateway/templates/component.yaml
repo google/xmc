@@ -37,7 +37,7 @@ spec:
     redpandaBrokers: {{ ($ig.redpandaBrokers | default $params.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092") | toString | quote }}
     topicName: {{ ($ig.topicName | default $params.topicName | default "xmc-metrics") | toString | quote }}
     minPartitions: {{ ($ig.minPartitions | default $params.minPartitions | default 128) | toString | quote }}
-    minReplicas: {{ ($ig.minReplicas | default $params.minReplicas | default 3) | toString | quote }}
+    minReplicas: {{ ($ig.minReplicas | default $params.minReplicas | default 1) | toString | quote }}
     {{- range $k, $v := $params }}
     {{- if not (has $k (list "port" "redpandaBrokers" "topicName" "minPartitions" "minReplicas")) }}
     {{ $k }}: {{ $v | toString | quote }}

@@ -535,7 +535,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 				"redpandaBrokers": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
 				"topicName":       "xmc-metrics",
 				"minPartitions":   "128",
-				"minReplicas":     "3",
+				"minReplicas":     "1",
 			},
 		},
 	}

@@ -100,7 +100,7 @@ spec:
         - "-redpanda_brokers={{ $ig.redpandaBrokers | default $params.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
         - "-topic_name={{ $ig.topicName | default $params.topicName | default "xmc-metrics" }}"
         - "-min_partitions={{ $ig.minPartitions | default $params.minPartitions | default 128 }}"
-        - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 3 }}"
+        - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 1 }}"
         - "-project_id={{ $ig.projectId | default .Values.projectId }}"
         {{- if $sasl }}
         - "-sasl_enabled={{ $sasl.enabled | default false }}"
