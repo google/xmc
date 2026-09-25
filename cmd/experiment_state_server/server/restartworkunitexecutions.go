@@ -49,6 +49,8 @@ func restartWorkUnitExecutions(ctx context.Context, txRunner storage.Transaction
 		now := time.Now()
 
 		for _, wid := range wids {
+			logging.Debug(ctx, "Processing work unit restart", "wid", wid)
+
 			// 1. Read the WorkUnit row.
 			wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
 			if err != nil {
@@ -97,6 +99,7 @@ func restartWorkUnitExecutions(ctx context.Context, txRunner storage.Transaction
 				CreateTime: timestamppb.New(now),
 				UpdateTime: timestamppb.New(now),
 			}
+			logging.Debug(ctx, "Archiving active execution and generating new execution", "wid", wid, "prevEID", eid, "newEID", newEID)
 			newExecutions[wid] = newExecution
 
 			// 4.2. Add the new execution to the execution deltas to update the experiment status.
@@ -154,9 +157,9 @@ func restartWorkUnitExecutions(ctx context.Context, txRunner storage.Transaction
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)
 		if err := tx.Experiments.UpdateExperimentStatus(ctx, exp); err != nil {
-			logging.Error(ctx, "Failed to update experiment status", "experiment", exp, "error", err)
 			return fmt.Errorf("failed to update experiment status: %v: %w", err, status.ErrInternal)
 		}
+		logging.Debug(ctx, "Updated experiment status with restarted execution counts", "restartedCount", len(newExecutions))
 
 		return nil
 	})
