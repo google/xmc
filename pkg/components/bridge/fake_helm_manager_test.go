@@ -196,3 +196,25 @@ func TestFakeHelmManager_GetAppliedValues_CloneIsolation(t *testing.T) {
 		t.Errorf("expected internal timeout to remain 30, got %v", freshDepMap["config"])
 	}
 }
+
+func TestFakeHelmManager_ComponentHealth(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	tests := []struct {
+		name        string
+		mgr         *FakeHelmManager
+		wantHealthy bool
+		wantReason  string
+	}{
+		{name: "defaults to healthy", mgr: NewFakeHelmManager(), wantHealthy: true, wantReason: reasonComponentHealthy},
+		{name: "unhealthy reason injected", mgr: &FakeHelmManager{UnhealthyReason: reasonHelmReleaseNotFound}, wantReason: reasonHelmReleaseNotFound},
+		{name: "nil manager", mgr: nil, wantReason: reasonHelmRunnerUninitialized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			healthy, reason, _ := tt.mgr.ComponentHealth(context.Background(), ref)
+			if healthy != tt.wantHealthy || reason != tt.wantReason {
+				t.Errorf("ComponentHealth() = (%v, %q), want (%v, %q)", healthy, reason, tt.wantHealthy, tt.wantReason)
+			}
+		})
+	}
+}

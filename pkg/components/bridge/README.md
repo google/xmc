@@ -97,7 +97,8 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `RecordActuation(ref ComponentRef, generation int64)`
   - `HydrateFromCluster(ctx context.Context) error`
   - `HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error`
-- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection.
+  - `ComponentHealth(ctx context.Context, ref ComponentRef) (healthy bool, reason, message string)`
+- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection (`EnsureErr`, `DeleteErr`, and `UnhealthyReason` for `ComponentHealth`, which defaults to healthy).
 
 ---
 
@@ -118,6 +119,20 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **Cold-Start State Hydration (`HydrateFromCluster` & `HydrateComponentState`)**:
   - `HydrateFromCluster(ctx)` inspects the `xmc-component-values` ConfigMap in the target namespace on controller startup and restores `activeState` for all previously enabled components.
   - `HydrateComponentState(ctx, ref, observedGeneration, crReady)` lazily reconciles in-memory `activeState` and `actuatedGenerations` from the `xmc-component-values` ConfigMap and the `Component` CR's `.status` (`observedGeneration` and `Ready=True` condition). This prevents redundant Helm release revision increments on cold start and ensures post-restart deactivation (`spec.enabled: false`) properly triggers `Delete1PComponent`.
+  - **Release Verification**: Because the values ConfigMap is persisted *before* the (asynchronous) Helm upgrade runs, neither the ConfigMap nor a `Ready=True` condition alone proves that the release exists. When hydration would record a new actuation (`crReady && observedGeneration > 0` with no actuation recorded yet), `HydrateComponentState` first calls `HelmActionRunner.Status` (outside the state mutex). If the release is missing, not `deployed`, or the status query fails, the CR is not trusted: the component is marked inactive and not actuated, so the next `Ensure1PComponent` re-installs it. A deployed release keeps the original guarantee (CR trusted, no revision bump). The deactivation path (`observedGeneration == 0`) is unchanged and performs no release lookup.
+- **1P Component Health (`ComponentHealth`)**:
+  - `evaluateHealth` in `reconciler.go` derives 1P health from `HelmManager.ComponentHealth` whenever a `HelmManager` is configured (the `BridgeProber` fallback, which reports non-3P components as healthy, is used only without a `HelmManager`).
+  - Checks are evaluated in order; the first failure sets `Ready=False`, `Degraded=True`, and state `COMPONENT_STATE_PENDING_RECONCILIATION`, with the reason below on both conditions:
+
+    | Reason | Meaning |
+    | :--- | :--- |
+    | `InvalidComponentRef` | The component reference is missing a name or namespace. |
+    | `HelmUpgradeFailed` | The last (sync or async) Helm upgrade for the component failed. |
+    | `HelmRunnerUninitialized` | No `HelmActionRunner` is configured, so release state cannot be verified. |
+    | `HelmReleaseNotFound` | The `xmc-cmp-<name>` release does not exist. |
+    | `HelmStatusUnavailable` | The Helm status query failed (e.g. API server unreachable). |
+    | `HelmReleaseNotReady` | The latest release revision is not `deployed` (e.g. `pending-install`, `failed`). |
+    | `ComponentHealthy` | The release is `deployed` and no upgrade error is pending (`Ready=True`, state `COMPONENT_STATE_ENABLED`). |
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
   - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
@@ -129,7 +144,7 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and uninstalls the release.
   - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
-  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`), allowing in-process Helm release upgrades and uninstalls without CLI child processes.
+  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`, `Status`), allowing in-process Helm release upgrades, uninstalls, and read-only release status queries without CLI child processes. `Status` reports missing releases as errors matching `driver.ErrReleaseNotFound`.
   - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Resolves per-component chart paths via `WithRunnerChartPathResolver` and caches loaded `*chart.Chart` instances by path (`chartCache`) to avoid repeated disk I/O. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
 - **Context-Aware Upgrade Lock**:
   - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.

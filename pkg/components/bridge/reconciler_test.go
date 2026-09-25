@@ -130,6 +130,8 @@ type mockHelm struct {
 	lastRef                         ComponentRef
 	lastOpts                        HelmComponentOptions
 	actuatedGenerations             map[string]int64
+	// unhealthyReason, when non-empty, makes ComponentHealth report unhealthy with this reason. Defaults to healthy.
+	unhealthyReason string
 }
 
 func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
@@ -223,6 +225,13 @@ func (m *mockHelm) HydrateComponentState(ctx context.Context, ref ComponentRef, 
 	return nil
 }
 
+func (m *mockHelm) ComponentHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
+	if m.unhealthyReason != "" {
+		return false, m.unhealthyReason, "mock Helm release unhealthy"
+	}
+	return true, reasonComponentHealthy, "mock Helm release deployed"
+}
+
 func TestNewReconciler(t *testing.T) {
 	if _, err := NewReconciler(nil, nil, nil); err == nil {
 		t.Fatal("expected error on nil CMS client")
@@ -265,6 +274,8 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		wantState     componentspb.ComponentState
 		wantAddFin    bool
 		wantRemoveFin bool
+		// wantHealth, when set, asserts the Ready/Degraded condition statuses and shared reason.
+		wantHealth *healthConditions
 	}{
 		{
 			name: "active 3P with finalizer addition",
@@ -404,6 +415,52 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		},
+		{
+			name:   "active 1P reports healthy from deployed Helm release regardless of prober",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: false, msg: "prober must not be consulted for 1P"},
+			helm:   &mockHelm{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: reasonComponentHealthy},
+		},
+		{
+			name:   "active 1P with missing Helm release is unhealthy even if prober is healthy",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: true},
+			helm:   &mockHelm{unhealthyReason: reasonHelmReleaseNotFound},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: reasonHelmReleaseNotFound},
+		},
+		{
+			name: "active 1P with failed async Helm upgrade is unhealthy",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: reasonHelmUpgradeFailed},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: reasonHelmUpgradeFailed},
+		},
+		{
+			name:   "active 1P without HelmManager falls back to prober",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: false, msg: "probe failed"},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: "HealthProbeFailed"},
 		},
 		{
 			name: "deletion blocked by protection",
@@ -762,8 +819,33 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				assertConditionStatus(t, res.Conditions, ConditionTypeDeletionBlocked, ConditionStatusTrue)
 			}
 			verify3PStatusDetectorAssertions(t, tt.name, tt.cms, tt.in.Generation, res, err)
+			if tt.wantHealth != nil {
+				if diff := cmp.Diff(*tt.wantHealth, extractHealthConditions(res.Conditions)); diff != "" {
+					t.Errorf("health conditions mismatch (-want +got):\n%s", diff)
+				}
+			}
 		})
 	}
+}
+
+// healthConditions captures the Ready/Degraded condition statuses and the Ready reason set by evaluateHealth.
+type healthConditions struct {
+	ReadyStatus    string
+	DegradedStatus string
+	Reason         string
+}
+
+func extractHealthConditions(conds []Condition) healthConditions {
+	var got healthConditions
+	for _, c := range conds {
+		switch c.Type {
+		case ConditionTypeReady:
+			got.ReadyStatus, got.Reason = c.Status, c.Reason
+		case ConditionTypeDegraded:
+			got.DegradedStatus = c.Status
+		}
+	}
+	return got
 }
 
 func assertCoordinateEnvVars(t *testing.T, access *AccessStatus) {

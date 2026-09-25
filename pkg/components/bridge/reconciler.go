@@ -106,6 +106,8 @@ func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Du
 
 // ProbeHealth evaluates whether a component is healthy based on its spec and default namespace.
 // For 3P wrappers, it queries the status detector and verifies endpoint health via active probing.
+// Non-3P components are reported healthy; the Reconciler only relies on this for 1P components when no
+// HelmManager is configured, otherwise 1P health comes from HelmManager.ComponentHealth.
 func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
 	if spec == nil {
 		return false, "spec is nil"
@@ -496,21 +498,17 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 // conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
 // Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	isHealthy, healthMsg := true, "Component is active"
-	if r.prober != nil {
-		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
-	}
+	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
 
-	readyStatus, readyReason, degradedStatus, degradedReason := ConditionStatusFalse, "HealthProbeFailed", ConditionStatusTrue, "HealthProbeFailed"
+	readyStatus, degradedStatus := ConditionStatusFalse, ConditionStatusTrue
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	if isHealthy {
-		readyStatus, readyReason, degradedStatus, degradedReason = ConditionStatusTrue, "ComponentHealthy", ConditionStatusFalse, "ComponentHealthy"
+		readyStatus, degradedStatus = ConditionStatusTrue, ConditionStatusFalse
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
-	} else {
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, readyReason, healthMsg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, degradedReason, healthMsg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, reason, healthMsg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, reason, healthMsg)
 
 	if shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
@@ -518,8 +516,24 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 		}
 		resetReadyTransitionTime(res.Conditions)
 	}
-	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
+	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
 	return res, nil
+}
+
+// probeComponentHealth returns the health verdict, condition reason, and message for an enabled component.
+// 1P components managed by a HelmManager report their real Helm release state; others fall back to the prober.
+func (r *Reconciler) probeComponentHealth(ctx context.Context, in ReconcileComponentInput) (bool, string, string) {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager != nil {
+		return r.helmManager.ComponentHealth(ctx, resolveComponentRef(in))
+	}
+	if r.prober == nil {
+		return true, reasonComponentHealthy, "Component is active"
+	}
+	healthy, msg := r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
+	if !healthy {
+		return false, "HealthProbeFailed", msg
+	}
+	return true, reasonComponentHealthy, msg
 }
 
 // Reconcile is the top-level reconciler entrypoint for an unstructured Kubernetes Component custom resource.

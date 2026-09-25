@@ -32,10 +32,12 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// HelmActionRunner abstracts the execution of Helm release upgrades and uninstalls via the Helm Go SDK or test doubles.
+// HelmActionRunner abstracts the execution of Helm release upgrades, uninstalls, and status queries via the Helm Go SDK or test doubles.
 type HelmActionRunner interface {
 	Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error)
 	Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error)
+	// Status returns the latest recorded revision of the release. Missing releases yield an error matching driver.ErrReleaseNotFound.
+	Status(ctx context.Context, releaseName, namespace string) (*release.Release, error)
 }
 
 // SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
@@ -48,6 +50,8 @@ type SDKHelmActionRunner struct {
 	chartCache        map[string]*chart.Chart
 	mu                sync.RWMutex
 }
+
+var _ HelmActionRunner = (*SDKHelmActionRunner)(nil)
 
 // SDKRunnerOption configures an SDKHelmActionRunner.
 type SDKRunnerOption func(*SDKHelmActionRunner)
@@ -91,14 +95,9 @@ func NewSDKHelmActionRunner(getter genericclioptions.RESTClientGetter, opts ...S
 
 // Upgrade executes an upgrade action on the Helm release using the Helm Go SDK.
 func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
-	if r == nil || r.restClientGetter == nil {
-		return nil, errors.New("helm action runner or restClientGetter is uninitialized")
-	}
-	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(r.restClientGetter, namespace, r.helmDriver, func(format string, v ...interface{}) {
-		logging.Debug(ctx, fmt.Sprintf(format, v...))
-	}); err != nil {
-		return nil, fmt.Errorf("failed to initialize Helm action configuration: %w", err)
+	actionConfig, err := r.newActionConfig(ctx, namespace)
+	if err != nil {
+		return nil, err
 	}
 
 	targetChart, err := r.resolveChart(releaseName, chartObj)
@@ -130,6 +129,35 @@ func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespac
 
 // Uninstall uninstalls a Helm release using the Helm Go SDK action engine.
 func (r *SDKHelmActionRunner) Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error) {
+	actionConfig, err := r.newActionConfig(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	uninstall := action.NewUninstall(actionConfig)
+	rel, err := uninstall.Run(releaseName)
+	if err != nil {
+		return nil, fmt.Errorf("helm uninstall failed for release %q in namespace %q: %w", releaseName, namespace, err)
+	}
+	return rel, nil
+}
+
+// Status returns the latest recorded revision of a Helm release using the Helm Go SDK action engine.
+func (r *SDKHelmActionRunner) Status(ctx context.Context, releaseName, namespace string) (*release.Release, error) {
+	actionConfig, err := r.newActionConfig(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	rel, err := action.NewStatus(actionConfig).Run(releaseName)
+	if err != nil {
+		return nil, fmt.Errorf("helm status failed for release %q in namespace %q: %w", releaseName, namespace, err)
+	}
+	return rel, nil
+}
+
+// newActionConfig initializes a Helm action configuration scoped to namespace using the runner's storage driver.
+func (r *SDKHelmActionRunner) newActionConfig(ctx context.Context, namespace string) (*action.Configuration, error) {
 	if r == nil || r.restClientGetter == nil {
 		return nil, errors.New("helm action runner or restClientGetter is uninitialized")
 	}
@@ -139,13 +167,7 @@ func (r *SDKHelmActionRunner) Uninstall(ctx context.Context, releaseName, namesp
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize Helm action configuration: %w", err)
 	}
-
-	uninstall := action.NewUninstall(actionConfig)
-	rel, err := uninstall.Run(releaseName)
-	if err != nil {
-		return nil, fmt.Errorf("helm uninstall failed for release %q in namespace %q: %w", releaseName, namespace, err)
-	}
-	return rel, nil
+	return actionConfig, nil
 }
 
 func (r *SDKHelmActionRunner) resolveTargetChartPath(releaseName string) string {

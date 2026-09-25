@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,11 +28,13 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
@@ -491,6 +494,13 @@ type mockHelmActionRunner struct {
 	lastUninstall   string
 	lastUninstallNS string
 	panicOnUpgrade  bool
+	// installed tracks releases (keyed by namespace/release) created by successful Upgrade calls and removed by Uninstall.
+	installed map[string]bool
+	// statusErr, when set, is returned by Status for every release.
+	statusErr error
+	// releaseStatus overrides the reported status of installed releases (defaults to release.StatusDeployed).
+	releaseStatus release.Status
+	statusCalls   int
 }
 
 func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
@@ -507,6 +517,10 @@ func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespa
 	if m.upgradeErr != nil {
 		return nil, m.upgradeErr
 	}
+	if m.installed == nil {
+		m.installed = make(map[string]bool)
+	}
+	m.installed[componentKey(namespace, releaseName)] = true
 	return &release.Release{Name: releaseName, Namespace: namespace}, nil
 }
 
@@ -519,7 +533,25 @@ func (m *mockHelmActionRunner) Uninstall(ctx context.Context, releaseName, names
 	if m.uninstallErr != nil {
 		return nil, m.uninstallErr
 	}
+	delete(m.installed, componentKey(namespace, releaseName))
 	return &release.UninstallReleaseResponse{Release: &release.Release{Name: releaseName, Namespace: namespace}}, nil
+}
+
+func (m *mockHelmActionRunner) Status(ctx context.Context, releaseName, namespace string) (*release.Release, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.statusCalls++
+	if m.statusErr != nil {
+		return nil, m.statusErr
+	}
+	if !m.installed[componentKey(namespace, releaseName)] {
+		return nil, fmt.Errorf("mock status: %w", driver.ErrReleaseNotFound)
+	}
+	status := release.StatusDeployed
+	if m.releaseStatus != "" {
+		status = m.releaseStatus
+	}
+	return &release.Release{Name: releaseName, Namespace: namespace, Info: &release.Info{Status: status}}, nil
 }
 
 func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
@@ -1458,5 +1490,152 @@ func TestK8sHelmManager_ColdStartHydration(t *testing.T) {
 	}
 	if !mgr2.IsComponentActuated(ref, 3) {
 		t.Fatal("expected ingestion-gateway to be marked actuated at generation 3 after HydrateComponentState")
+	}
+}
+
+func TestK8sHelmManager_ComponentHealth(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	releaseKey := componentKey(ref.Namespace, ComponentReleaseName(ref.Name))
+	type health struct {
+		Healthy bool
+		Reason  string
+	}
+	tests := []struct {
+		name          string
+		ref           ComponentRef
+		noRunner      bool
+		installed     bool
+		releaseStatus release.Status
+		statusErr     error
+		upgradeErr    error
+		want          health
+	}{
+		{name: "deployed release is healthy", ref: ref, installed: true, want: health{true, reasonComponentHealthy}},
+		{name: "last upgrade failed", ref: ref, installed: true, upgradeErr: errors.New("image pull failed"), want: health{false, reasonHelmUpgradeFailed}},
+		{name: "release not found", ref: ref, want: health{false, reasonHelmReleaseNotFound}},
+		{name: "release pending install", ref: ref, installed: true, releaseStatus: release.StatusPendingInstall, want: health{false, reasonHelmReleaseNotReady}},
+		{name: "release failed", ref: ref, installed: true, releaseStatus: release.StatusFailed, want: health{false, reasonHelmReleaseNotReady}},
+		{name: "status query error", ref: ref, statusErr: errors.New("connection refused"), want: health{false, reasonHelmStatusUnavailable}},
+		{name: "runner uninitialized", ref: ref, noRunner: true, want: health{false, reasonHelmRunnerUninitialized}},
+		{name: "upgrade error takes precedence over missing runner", ref: ref, noRunner: true, upgradeErr: errors.New("helm action runner is uninitialized"), want: health{false, reasonHelmUpgradeFailed}},
+		{name: "empty namespace", ref: ComponentRef{Name: "ingestion-gateway"}, want: health{false, reasonInvalidComponentRef}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &mockHelmActionRunner{installed: map[string]bool{releaseKey: tt.installed}, releaseStatus: tt.releaseStatus, statusErr: tt.statusErr}
+			opts := []HelmManagerOption{WithSyncExecution(true)}
+			if !tt.noRunner {
+				opts = append(opts, WithActionRunner(runner))
+			}
+			mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", opts...)
+			defer mgr.Close()
+			mgr.setUpgradeErr(ref, tt.upgradeErr)
+
+			healthy, reason, msg := mgr.ComponentHealth(context.Background(), tt.ref)
+			if diff := cmp.Diff(tt.want, health{healthy, reason}); diff != "" {
+				t.Errorf("ComponentHealth() mismatch (-want +got):\n%s\nmessage: %s", diff, msg)
+			}
+			if msg == "" {
+				t.Error("ComponentHealth() returned empty message")
+			}
+		})
+	}
+
+	var nilMgr *K8sHelmManager
+	if healthy, reason, _ := nilMgr.ComponentHealth(context.Background(), ref); healthy || reason != reasonHelmRunnerUninitialized {
+		t.Errorf("nil manager ComponentHealth() = (%v, %q), want (false, %q)", healthy, reason, reasonHelmRunnerUninitialized)
+	}
+}
+
+// TestK8sHelmManager_ColdStartHydration_VerifiesRelease covers the cold-start case where the values ConfigMap and a
+// Ready=True CR survive a restart, but the component's Helm release was never successfully installed.
+func TestK8sHelmManager_ColdStartHydration_VerifiesRelease(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true, ImageTag: "v1.0.0"}
+	type result struct {
+		Active           bool
+		Actuated         bool
+		StatusCalls      int
+		UpgradeTriggered bool
+	}
+	tests := []struct {
+		name               string
+		initialUpgradeErr  error
+		releaseStatus      release.Status
+		statusErr          error
+		observedGeneration int64
+		crReady            bool
+		want               result
+	}{
+		{
+			name:               "deployed release trusts Ready CR without re-upgrade",
+			observedGeneration: 3, crReady: true,
+			want: result{Active: true, Actuated: true, StatusCalls: 1},
+		},
+		{
+			name:               "missing release is not trusted and next Ensure installs it",
+			initialUpgradeErr:  errors.New("install failed"),
+			observedGeneration: 3, crReady: true,
+			want: result{StatusCalls: 1, UpgradeTriggered: true},
+		},
+		{
+			name:               "failed release is not trusted",
+			releaseStatus:      release.StatusFailed,
+			observedGeneration: 3, crReady: true,
+			want: result{StatusCalls: 1, UpgradeTriggered: true},
+		},
+		{
+			name:               "status error is not trusted",
+			statusErr:          errors.New("connection refused"),
+			observedGeneration: 3, crReady: true,
+			want: result{StatusCalls: 1, UpgradeTriggered: true},
+		},
+		{
+			name:               "unready CR skips release verification",
+			observedGeneration: 3, crReady: false,
+			want: result{UpgradeTriggered: true},
+		},
+		{
+			name:               "deactivation hydration skips release verification",
+			observedGeneration: 0, crReady: true,
+			want: result{Active: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := fake.NewClientset()
+			runner := &mockHelmActionRunner{upgradeErr: tt.initialUpgradeErr}
+
+			// Simulate the pre-restart controller persisting values (and possibly failing the install).
+			mgr1 := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+			_ = mgr1.Ensure1PComponent(ctx, ref, opts)
+			_ = mgr1.Close()
+
+			runner.mu.Lock()
+			runner.upgradeErr, runner.releaseStatus, runner.statusErr = nil, tt.releaseStatus, tt.statusErr
+			runner.statusCalls = 0
+			upgradesBefore := runner.upgradeCalls
+			runner.mu.Unlock()
+
+			mgr2 := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+			defer mgr2.Close()
+			if err := mgr2.HydrateComponentState(ctx, ref, tt.observedGeneration, tt.crReady); err != nil {
+				t.Fatalf("HydrateComponentState failed: %v", err)
+			}
+			// Actuation is always checked at the CR's current generation (3), independent of the hydrated observedGeneration.
+			got := result{Active: mgr2.IsComponentActive(ref), Actuated: mgr2.IsComponentActuated(ref, 3)}
+			if err := mgr2.Ensure1PComponent(ctx, ref, opts); err != nil {
+				t.Fatalf("Ensure1PComponent failed: %v", err)
+			}
+			runner.mu.Lock()
+			got.StatusCalls = runner.statusCalls
+			got.UpgradeTriggered = runner.upgradeCalls > upgradesBefore
+			runner.mu.Unlock()
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("cold-start hydration mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
