@@ -367,7 +367,10 @@ func verifyStatusUpdate(t *testing.T, updater *mockStatusUpdater, expectedTarget
 	if up.WorkUnitExecution.GetStatus().GetState() != essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED {
 		t.Errorf("status state mismatch: got %v, want SCHEDULING_PAUSED", up.WorkUnitExecution.GetStatus().GetState())
 	}
-	expectedMask := []string{"status.state", "status.state_update_time"}
+	if up.WorkUnitExecution.GetStatus().GetStateUpdateTime() == nil {
+		t.Errorf("status state_update_time must be set when updating status.state")
+	}
+	expectedMask := []string{"status.state"}
 	if diff := cmp.Diff(expectedMask, up.UpdateMask.GetPaths()); diff != "" {
 		t.Errorf("update mask paths mismatch (-want +got):\n%s", diff)
 	}
