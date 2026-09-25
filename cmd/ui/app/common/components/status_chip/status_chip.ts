@@ -24,6 +24,7 @@ export enum StatusOption {
   STARTING = 'Starting',
   DESCHEDULING = 'Descheduling',
   SCHEDULING = 'Scheduling',
+  SCHEDULING_PAUSED = 'Scheduling Paused',
   NOT_RUNNING = 'Not Running',
   RESTARTING = 'Restarting',
   INITIALIZING = 'Initializing',

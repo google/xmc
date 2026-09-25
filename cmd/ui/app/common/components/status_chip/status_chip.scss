@@ -61,6 +61,15 @@ mat-chip {
   );
 }
 
+.orange {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--xmc-chip-orange-container-color),
+      label-text-color: var(--xmc-chip-orange-text-color),
+    )
+  );
+}
+
 .black {
   @include mat.chips-overrides(
     (

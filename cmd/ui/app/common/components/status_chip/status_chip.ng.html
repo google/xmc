@@ -25,6 +25,7 @@ limitations under the License.
     status() === StatusOption.RESTARTING
   "
   [class.grey]="status() === StatusOption.DESCHEDULING || status() === StatusOption.SCHEDULING"
+  [class.orange]="status() === StatusOption.SCHEDULING_PAUSED"
   [class.black]="status() === StatusOption.STOPPING || status() === StatusOption.STOPPED"
 >
   {{ replicas() }} {{ status() }}

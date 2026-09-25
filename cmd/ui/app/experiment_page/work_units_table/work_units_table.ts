@@ -189,6 +189,8 @@ export class WorkUnitsTable implements OnInit {
         return StatusOption.DESCHEDULING;
       case 'SCHEDULING':
         return StatusOption.SCHEDULING;
+      case 'SCHEDULING_PAUSED':
+        return StatusOption.SCHEDULING_PAUSED;
       default:
         return StatusOption.UNKNOWN;
     }

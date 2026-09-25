@@ -71,6 +71,10 @@
   background-color: $status-paused;
 }
 
+.SCHEDULING_PAUSED {
+  background-color: $status-scheduling-paused;
+}
+
 .RUNNING {
   background-color: $status-running;
 }
