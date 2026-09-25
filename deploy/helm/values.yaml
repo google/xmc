@@ -77,7 +77,9 @@ metrics:
 
 ingestionGatewayDeployment:
   enabled: false
-  # Set true when workload is actuated by the 1P ingestion-gateway component sub-chart via xmc-bridge.
+  # Set true when the workload (Deployment/Service/HPA/reader RBAC) is owned by the 1P
+  # ingestion-gateway component release (xmc-cmp-ingestion-gateway) actuated by xmc-bridge.
+  # enable_components alone does not hand off; the legacy umbrella gateway keeps running.
   managedByComponent: false
   port: 8080
   image: ""

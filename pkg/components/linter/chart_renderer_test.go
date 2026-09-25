@@ -644,18 +644,29 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		t.Errorf("expected global.imageTag v2.0.0 on tagless custom image in umbrella deployment.yaml, got:\n%s", umbrellaLegacy["xmanager-cloud/templates/ingestion-gateway/deployment.yaml"])
 	}
 
-	umbrellaComponentMode, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
+	legacyWithComponents, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
+		"componentsDeployment":       map[string]any{"enabled": true},
+		"ingestionGatewayDeployment": map[string]any{"enabled": true},
+	})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(umbrella legacy+components) failed: %v", err)
+	}
+	if !strings.Contains(legacyWithComponents["xmanager-cloud/templates/ingestion-gateway/deployment.yaml"], "kind: Deployment") ||
+		!strings.Contains(legacyWithComponents["xmanager-cloud/templates/ingestion-gateway/rbac.yaml"], "ingestion-gateway-components-reader") {
+		t.Errorf("expected enable_metrics+enable_components to keep umbrella gateway Deployment and reader RBAC")
+	}
+
+	componentManaged, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
 		"componentsDeployment":       map[string]any{"enabled": true},
 		"ingestionGatewayDeployment": map[string]any{"enabled": true, "managedByComponent": true},
 	})
 	if err != nil {
-		t.Fatalf("renderChartWithValues(umbrella component mode) failed: %v", err)
+		t.Fatalf("renderChartWithValues(umbrella component-managed) failed: %v", err)
 	}
-	if strings.Contains(umbrellaComponentMode["xmanager-cloud/templates/ingestion-gateway/deployment.yaml"], "kind: Deployment") {
-		t.Errorf("expected umbrella deployment.yaml to be suppressed when componentsDeployment.enabled=true")
-	}
-	if !strings.Contains(umbrellaComponentMode["xmanager-cloud/templates/ingestion-gateway/rbac.yaml"], "ingestion-gateway-components-reader") {
-		t.Errorf("expected umbrella rbac.yaml to render when componentsDeployment.enabled=true")
+	for _, f := range []string{"deployment.yaml", "service.yaml", "hpa.yaml", "rbac.yaml"} {
+		if strings.Contains(componentManaged["xmanager-cloud/templates/ingestion-gateway/"+f], "kind:") {
+			t.Errorf("expected umbrella %s to be suppressed when managedByComponent=true", f)
+		}
 	}
 	if _, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{"global": nil, "ingestionGatewayDeployment": nil}); err != nil {
 		t.Fatalf("renderChartWithValues(umbrella nil values) failed: %v", err)

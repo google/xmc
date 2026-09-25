@@ -1,4 +1,4 @@
-{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled (not (and .Values.componentsDeployment .Values.componentsDeployment.enabled)) (not .Values.ingestionGatewayDeployment.managedByComponent) -}}
+{{- if and .Values.ingestionGatewayDeployment .Values.ingestionGatewayDeployment.enabled (not .Values.ingestionGatewayDeployment.managedByComponent) -}}
 {{- $port := .Values.ingestionGatewayDeployment.port | default 8080 -}}
 # Copyright 2026 Google LLC
 #
