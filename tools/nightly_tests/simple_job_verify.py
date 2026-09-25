@@ -182,7 +182,7 @@ def main(argv: Sequence[str]) -> None:
     common.validate_argv(argv)
     xid = common.parse_xid(getattr(FLAGS, "xid", None))
     expected_queue = common.get_flag(FLAGS, "expected_queue", DEFAULT_QUEUE)
-    expected_work_units = common.get_flag(FLAGS, "expected_work_units", DEFAULT_WORK_UNITS)
+    expected_work_units = common.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     timeout_sec = common.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
     ui_base_url = common.resolve_ui_base_url()
     expected_workers = (

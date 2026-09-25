@@ -97,6 +97,30 @@ def resolve_ui_base_url() -> str:
     return xmc_entities_validator.resolve_ui_base_url()
 
 
+def resolve_expected_work_units(default: int = 3) -> int:
+    """Resolves expected work units count from flag, NUM_WORK_UNITS env var, or default.
+
+    Args:
+        default: Fallback count if neither the flag nor the env var is set.
+
+    Returns:
+        The resolved integer number of work units.
+    """
+    flag_val = get_flag(FLAGS, "expected_work_units", None)
+    if flag_val is not None:
+        try:
+            return int(flag_val)
+        except (ValueError, TypeError):
+            pass
+    env_val = os.environ.get("NUM_WORK_UNITS")
+    if env_val:
+        try:
+            return int(env_val)
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
 @contextlib.contextmanager
 def ess_channel_context(endpoint: str | None = None) -> Iterator[tuple[Any, Any]]:
     """Context manager for authenticated ESS gRPC channel and stub lifecycle."""

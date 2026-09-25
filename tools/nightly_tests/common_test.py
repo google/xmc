@@ -113,6 +113,23 @@ class CommonTest(unittest.TestCase):
             self.assertEqual(result, "https://xmc-ui.example.com")
             mock_resolve.assert_called_once()
 
+    def test_resolve_expected_work_units(self) -> None:
+        # Flag takes highest precedence
+        with mock.patch.object(common, "get_flag", return_value=5):
+            self.assertEqual(common.resolve_expected_work_units(3), 5)
+
+        # Fallback to NUM_WORK_UNITS env var when flag is None
+        with mock.patch.object(common, "get_flag", return_value=None):
+            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "2"}):
+                self.assertEqual(common.resolve_expected_work_units(3), 2)
+
+            # Fallback to default when env var is invalid or unset
+            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "invalid"}):
+                self.assertEqual(common.resolve_expected_work_units(3), 3)
+
+            with mock.patch.dict("os.environ", {}, clear=True):
+                self.assertEqual(common.resolve_expected_work_units(3), 3)
+
     def test_ess_channel_context(self) -> None:
         mock_stub = mock.MagicMock()
         mock_channel = mock.MagicMock()
