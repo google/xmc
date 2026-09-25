@@ -585,15 +585,23 @@ func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
 		t.Errorf("expected component.yaml to be suppressed for xmc-cmp- release")
 	}
 	bridgeDep := bridgeMap["ingestion-gateway/templates/deployment.yaml"]
-	for _, want := range []string{"kind: Deployment", "kind: Service", "kind: HorizontalPodAutoscaler", "kind: Role", "kind: RoleBinding", "name: ingestion-gateway-components-reader"} {
+	for _, want := range []string{"kind: Deployment", "kind: Service", "kind: HorizontalPodAutoscaler", "kind: Role", "kind: RoleBinding", "name: ingestion-gateway-components-reader", "kind: NetworkPolicy", "name: ingestion-gateway-network-policy"} {
 		if !strings.Contains(bridgeDep, want) {
-			t.Errorf("expected %q in deployment.yaml for xmc-cmp- release (component self-provisions workload and reader RBAC)", want)
+			t.Errorf("expected %q in deployment.yaml for xmc-cmp- release (component self-provisions workload, reader RBAC and NetworkPolicy)", want)
 		}
 	}
 	if !strings.Contains(bridgeDep, `image: "custom.registry.io/ig:custom-tag"`) {
 		t.Errorf("expected explicit parameters[image] to take precedence, got:\n%s", bridgeDep)
 	}
 	assertWellFormedManifests(t, bridgeDep)
+
+	crOnlyMap, err := renderChartWithValues(igDir, "ingestion-gateway", map[string]any{"enabled": true})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(ingestion-gateway, CR only) failed: %v", err)
+	}
+	if crOnly := crOnlyMap["ingestion-gateway/templates/deployment.yaml"]; strings.Contains(crOnly, "kind: ") {
+		t.Errorf("expected no workload or NetworkPolicy when only the Component CR is declared, got:\n%s", crOnly)
+	}
 }
 
 // assertWellFormedManifests fails if any rendered YAML document lacks apiVersion or kind, which

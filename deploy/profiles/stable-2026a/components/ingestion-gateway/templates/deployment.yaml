@@ -200,4 +200,46 @@ roleRef:
   kind: Role
   name: ingestion-gateway-components-reader
   apiGroup: rbac.authorization.k8s.io
+---
+# Mirrors the umbrella policy in deploy/helm/templates/network-policies.yaml (used when
+# enable_components is false); keep the rules in sync.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingestion-gateway-network-policy
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              xmc.google.com/metrics-client: "true"
+      ports:
+        - protocol: TCP
+          port: {{ $port }}
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9644
 {{- end }}

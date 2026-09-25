@@ -41,7 +41,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 ## 3. Actuation Lifecycle
 
 1. **Declare intent**: `helm install ingestion-gateway deploy/profiles/stable-2026a/components/ingestion-gateway --set enabled=true` renders only the `Component/ingestion-gateway` CR (`deployWorkload=false`).
-2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart with `ingestionGatewayDeployment.enabled=true`, rendering the `Deployment`, `Service`, `HPA`, and the `ingestion-gateway-components-reader` `Role`/`RoleBinding`.
-3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`, which removes the workload together with its RBAC.
+2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart with `ingestionGatewayDeployment.enabled=true`. The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`. The policy's rules mirror the umbrella policy used when `enable_components=false`.
+3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`. This removes the workload together with its RBAC and NetworkPolicy.
 
 The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that the `RoleBinding` subject always matches the `Deployment` `serviceAccountName`. [`templates/component.yaml`](templates/component.yaml) is skipped for `xmc-cmp-*` releases because the `Component` CR is owned by the user's release, not by `xmc-bridge`.
