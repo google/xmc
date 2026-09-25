@@ -407,11 +407,10 @@ def step_restart(config: UpgradeConfig) -> None:
         "health-service",
         "log-monitor",
         "reconciler",
+        "rod-data-provider",
         "ui",
         "xid-service",
     ]
-    if config.rod_deployment_enabled:
-        services.append("rod-data-provider")
 
     for service in services:
         resolved_name = resolve_deployment_name(service, config.namespace)
