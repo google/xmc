@@ -113,7 +113,7 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
-	if err := validateDependencyNames(specToSet.GetDependencies()); err != nil {
+	if err := validateDependencyNames(canonicalName, specToSet.GetDependencies()); err != nil {
 		return nil, err
 	}
 	if req.GetValidateOnly() {
@@ -140,11 +140,16 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 }
 
 // validateDependencyNames rejects structured spec.dependencies entries that are not valid
-// component names, so a typo cannot silently drop a dependency edge from the graph.
-func validateDependencyNames(deps []string) error {
+// component names or that reference the component itself, so a typo cannot silently drop a
+// dependency edge from the graph and a self-reference cannot block readiness forever.
+func validateDependencyNames(canonicalName string, deps []string) error {
 	for _, dep := range deps {
-		if !naming.IsValidComponentName(naming.CanonicalComponentName(dep)) {
+		canonicalDep := naming.CanonicalComponentName(dep)
+		if !naming.IsValidComponentName(canonicalDep) {
 			return status.Errorf(codes.InvalidArgument, "invalid dependency name %q: must be a DNS-1123 component name", dep)
+		}
+		if canonicalDep == canonicalName {
+			return status.Errorf(codes.InvalidArgument, "component %q cannot depend on itself", canonicalName)
 		}
 	}
 	return nil

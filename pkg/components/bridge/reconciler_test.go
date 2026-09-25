@@ -1047,6 +1047,27 @@ func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {
 	}
 }
 
+func TestDropSelfDependency(t *testing.T) {
+	tests := []struct {
+		name string
+		deps []string
+		want []string
+	}{
+		{name: "nil", deps: nil, want: nil},
+		{name: "no self reference", deps: []string{"redpanda", "auth"}, want: []string{"redpanda", "auth"}},
+		{name: "self reference dropped", deps: []string{"redpanda", "ingestion-gateway", "auth"}, want: []string{"redpanda", "auth"}},
+		{name: "only self reference", deps: []string{"ingestion-gateway"}, want: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dropSelfDependency(context.Background(), tc.deps, "ingestion-gateway")
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("dropSelfDependency() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestParseParameters(t *testing.T) {
 	tests := []struct {
 		name string

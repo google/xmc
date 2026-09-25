@@ -291,6 +291,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
+	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
 	if in.IsDeleting {
@@ -592,6 +593,20 @@ func parseDependencies(m map[string]any) []string {
 		}
 		seen[name] = true
 		res = append(res, name)
+	}
+	return res
+}
+
+// dropSelfDependency removes references to canonicalName from canonical deps, logging a warning when found,
+// because a component that depends on itself could never become ready.
+func dropSelfDependency(ctx context.Context, deps []string, canonicalName string) []string {
+	var res []string
+	for _, dep := range deps {
+		if dep == canonicalName {
+			logging.Warn(ctx, "Ignoring self-dependency in component spec", "name", canonicalName)
+			continue
+		}
+		res = append(res, dep)
 	}
 	return res
 }

@@ -46,7 +46,9 @@ Components specify explicit dependencies on other components via:
 - **Spec Descriptions**: Annotated tags such as `@depends-on: comp-a, comp-b`
 - **Labels**: Structured labels like `xmc.dev/dependency.<name>=<version>`
 
-All sources are merged into a single canonical, deduplicated, sorted set that is persisted as the component's dependency edges (Spanner `ComponentDependencies`) and drives cycle detection, deactivation safety, and deletion safety. On Spanner, every dependency must already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` naming the missing dependency. CMS rejects invalid (non DNS-1123) names in `ComponentSpec.dependencies` with `InvalidArgument`.
+All sources are merged into a single canonical, deduplicated, sorted set that is persisted as the component's dependency edges (Spanner `ComponentDependencies`) and drives cycle detection, deactivation safety, and deletion safety. CMS rejects invalid (non DNS-1123) names and self-references in `ComponentSpec.dependencies` with `InvalidArgument`; the bridge additionally drops self-references (with a warning) before calling CMS.
+
+**Unregistered dependencies & rollout ordering**: `SpannerStore` (production) requires every dependency to already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` naming the missing dependency (e.g. `component "ingestion-gateway" depends on "redpanda", which is not registered`). If the bridge reconciles a dependent before its dependency, the dependent reports `IntentApplicationFailed` and is retried until the dependency's intent is registered. `MemoryStore` (dev/test only) does **not** reject unregistered dependencies; it records the edge as-is.
 
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
