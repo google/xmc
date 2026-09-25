@@ -240,6 +240,88 @@ func TestController_RunReconcilePass(t *testing.T) {
 	}
 }
 
+// passOutcome is the observable status of a Component after a reconcile pass.
+type passOutcome struct {
+	State       any
+	ReadyReason string
+}
+
+func TestController_RunReconcilePass_GatesOnDependencySnapshot(t *testing.T) {
+	component := func(name string, spec map[string]any) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
+			"metadata":   map[string]any{"name": name, "namespace": "xmc", "generation": int64(1)},
+			"spec":       spec,
+		}}
+	}
+	tests := []struct {
+		name       string
+		items      []*unstructured.Unstructured
+		wantState  string
+		wantReason string
+	}{
+		{
+			name:       "missing dependency gates activation",
+			items:      []*unstructured.Unstructured{component("ingestion-gateway", map[string]any{"enabled": true, "dependencies": []any{"redpanda"}})},
+			wantState:  "COMPONENT_STATE_PENDING_RECONCILIATION",
+			wantReason: bridge.ReasonDependenciesNotReady,
+		},
+		{
+			name: "disabled dependency gates activation",
+			items: []*unstructured.Unstructured{
+				component("ingestion-gateway", map[string]any{"enabled": true, "dependencies": []any{"redpanda"}}),
+				component("redpanda", map[string]any{"enabled": false}),
+			},
+			wantState:  "COMPONENT_STATE_PENDING_RECONCILIATION",
+			wantReason: bridge.ReasonDependenciesNotReady,
+		},
+		{
+			name:       "no dependencies activates",
+			items:      []*unstructured.Unstructured{component("ingestion-gateway", map[string]any{"enabled": true})},
+			wantState:  "COMPONENT_STATE_ENABLED",
+			wantReason: bridge.ReasonComponentHealthy,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			fakeDynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+				componentGVR: "ComponentList",
+			})
+			attachSSAPatchReactor(fakeDynamic)
+			for _, item := range tt.items {
+				if _, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Create(ctx, item, metav1.CreateOptions{}); err != nil {
+					t.Fatalf("failed to create %s: %v", item.GetName(), err)
+				}
+			}
+			r, err := bridge.NewReconciler(&mockCMS{}, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create reconciler: %v", err)
+			}
+			if err := NewController(fakeDynamic, r, "xmc", time.Second, time.Second).RunReconcilePass(ctx); err != nil {
+				t.Fatalf("RunReconcilePass failed: %v", err)
+			}
+			updated, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Get(ctx, "ingestion-gateway", metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("failed to fetch ingestion-gateway: %v", err)
+			}
+			conds := bridge.ParseConditionsFromUnstructured(updated.Object["status"])
+			var gotReason string
+			for _, c := range conds {
+				if c.Type == bridge.ConditionTypeReady {
+					gotReason = c.Reason
+				}
+			}
+			status, _ := updated.Object["status"].(map[string]any)
+			got := passOutcome{State: status["state"], ReadyReason: gotReason}
+			if want := (passOutcome{State: tt.wantState, ReadyReason: tt.wantReason}); got != want {
+				t.Errorf("ingestion-gateway outcome = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
 func TestBuildStatus(t *testing.T) {
 	res := &bridge.ReconcileResult{
 		ObservedGeneration: 5,
@@ -486,5 +568,5 @@ func TestController_ReconcileItem(t *testing.T) {
 	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
 
 	// Should safely reconcile without panicking
-	ctrl.reconcileItem(ctx, item)
+	ctrl.reconcileItem(ctx, item, nil)
 }

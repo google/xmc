@@ -20,6 +20,7 @@ go_library(
     name = "bridge",
     srcs = [
         "coordinates.go",
+        "dependency_readiness.go",
         "fake_health_prober.go",
         "fake_helm_manager.go",
         "fake_status_detector.go",
@@ -35,6 +36,7 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
+        "//pkg/components/graph",
         "//pkg/components/naming",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -63,6 +65,7 @@ go_test(
     name = "bridge_test",
     srcs = [
         "coordinates_test.go",
+        "dependency_readiness_test.go",
         "fake_helm_manager_test.go",
         "fake_status_detector_test.go",
         "health_prober_test.go",

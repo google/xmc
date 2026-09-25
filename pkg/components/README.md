@@ -48,7 +48,7 @@ Components specify explicit dependencies on other components via:
 
 All sources are merged into a single canonical, deduplicated, sorted set that is persisted as the component's dependency edges (Spanner `ComponentDependencies`) and drives cycle detection, deactivation safety, and deletion safety. CMS rejects invalid (non DNS-1123) names and self-references in `ComponentSpec.dependencies` with `InvalidArgument`; the bridge additionally drops self-references (with a warning) before calling CMS.
 
-**Unregistered dependencies & rollout ordering**: `SpannerStore` (production) requires every dependency to already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` naming the missing dependency (e.g. `component "ingestion-gateway" depends on "redpanda", which is not registered`). If the bridge reconciles a dependent before its dependency, the dependent reports `IntentApplicationFailed` and is retried until the dependency's intent is registered. `MemoryStore` (dev/test only) does **not** reject unregistered dependencies; it records the edge as-is.
+**Unregistered dependencies & rollout ordering**: `SpannerStore` (production) requires every dependency to already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` and a message starting with `store.DependencyNotFoundMessagePrefix` (e.g. `dependency not found: component "ingestion-gateway" depends on "redpanda", which is not registered`). If the bridge reconciles a dependent before its dependency, the dependent reports `DependenciesNotReady` (not an error) and retries its intent every pass until the dependency is registered. `MemoryStore` (dev/test only) does **not** reject unregistered dependencies; it records the edge as-is.
 
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
@@ -90,6 +90,10 @@ Components cannot be deactivated or deleted arbitrarily if other active componen
 - `EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, defaultDrain time.Duration) (*PrepareDeactivationResult, error)`
   - **Blocking Mode (`requestCascade = false`)**: If non-deleted, non-disabled dependents exist, deactivation is blocked with `ErrHasActiveDependents` (`codes.FailedPrecondition`) and returns the list of blocking dependents.
   - **Cascading Mode (`requestCascade = true`)**: Identifies all active transitive dependents in reverse topological order, transitioning both the target and its dependents to `COMPONENT_STATE_DISABLING`.
+
+#### GitOps Bridge Enforcement
+The xmc-bridge enforces dependency ordering for Component CRs (see [bridge README](bridge/README.md#state-machine--lifecycle)):
+- **Activation**: the bridge always registers an enabled Component's intent (including its dependency edges) with CMS first, then gates actuation. A not-yet-actuated Component whose `spec.dependencies` are missing, disabled, deleting, or not `Ready` at their current generation is held in `COMPONENT_STATE_PENDING_RECONCILIATION` (reason `DependenciesNotReady`). An already-running Component is never torn down during a dependency blip; it reports `DependenciesReady=False` and its Helm upgrades are held (a held upgrade to a new generation reports `Ready=False` reason `HelmUpgradePending`). Dependency cycles report `DependencyCycle`.
 
 #### Draining Timeout Calculation
 - `CalculateDrainTimeout(rec *ComponentRecord, cascaded []*ComponentRecord, reqTimeout *durationpb.Duration) time.Duration`

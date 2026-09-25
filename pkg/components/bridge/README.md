@@ -24,9 +24,17 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 1. **Deletion Evaluation & Finalizer Gating**:
    - If `metadata.deletionTimestamp` is present and `spec.deletionProtection: true`, emit `ConditionTypeDeletionBlocked` (`True`) and prevent deletion.
    - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
-2. **Intent Synchronization**:
-   - Propagate desired spec to CMS via `SetComponentIntent`, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`.
-3. **Enablement & Workload Actuation**:
+2. **Intent Registration** (enabled components):
+   - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`. Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
+   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (Spanner store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
+3. **Dependency Activation Gate** (`spec.enabled: true` with `spec.dependencies`, all component types):
+   - `cmd/xmc_bridge` builds a `DependencySnapshot` (`dependency_readiness.go`) once per reconcile pass from the listed Component CRs and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
+   - A component on a multi-node `spec.dependencies` cycle (self-references are dropped) reports `Ready=False`/`Degraded=True` reason `DependencyCycle` with the cycle path (e.g. `dependency cycle detected: ingestion -> redpanda -> ingestion`); intent is not sent.
+   - **Not yet actuated** (no active 1P release, no `DependenciesReady` condition, and `Ready` not `True`): while any dependency is not ready, the component stays `COMPONENT_STATE_PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` reason `DependenciesNotReady` and a message such as `waiting on dependencies: redpanda (disabled), foo (not found)`. No workload is created. The next poll retries without logging an error.
+   - **Already actuated**: a dependency blip never tears the workload down. The informational `DependenciesReady` condition turns `False` (reason `DependenciesNotReady`) and pending Helm installs/upgrades are held until every dependency is ready again. With nothing to upgrade, `Ready` stays health-derived. When an upgrade to a new generation is held, the component reports `PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` (reason `HelmUpgradePending`) so the new generation is never reported as ready before it is applied.
+   - A chain of N dependent components settles over up to N passes (one poll interval each), because each pass evaluates readiness from a snapshot taken at the start of the pass.
+   - `Reconcile` (no resolver) does not gate activation on the snapshot; CMS unregistered-dependency rejections still gate.
+4. **Enablement & Workload Actuation**:
    - **Enabled (`spec.enabled: true`)**:
      - For 1P components, synthesizes Helm variable overrides and delegates release updates to `HelmManager`.
      - For 3P wrapper components, queries `StatusDetector` to evaluate dynamic CR health and updates observed status.
@@ -42,6 +50,17 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
+| `DependenciesReady` | `True` / `False` | Informational, on actuated enabled components with `spec.dependencies`. `False` means Helm upgrades are held (see `HelmUpgradePending`). |
+
+The bridge writes the full conditions list with server-side apply on every pass, so `DependenciesReady` is replaced wholesale and is absent whenever it does not apply (e.g. while a component is gated or disabled).
+
+Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIATION`). CMS receives the same coarse `Ready=False` status message as other unready paths; the details live on the CR conditions:
+
+| Reason | Degraded | Meaning |
+| :--- | :--- | :--- |
+| `DependenciesNotReady` | `False` | A not-yet-actuated enabled component waits on missing, disabled, deleting, unready, stale, degraded, or CMS-unregistered `spec.dependencies`. |
+| `DependencyCycle` | `True` | The component is on a `spec.dependencies` cycle; the message names the cycle path. |
+| `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
 
 ---
 

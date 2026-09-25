@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,15 +33,18 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 type mockCMS struct {
 	setErr, delErr, obsErr error
 	state                  componentspb.ComponentState
 	lastObsReq             *componentspb.UpdateObservedGenerationRequest
+	setCalls               int
 }
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
+	m.setCalls++
 	if m.setErr != nil {
 		return nil, m.setErr
 	}
@@ -1457,7 +1461,7 @@ func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 	}
 
 	res := &ReconcileResult{}
-	if err := r.ensure1PComponent(ctx, in, res); err != nil {
+	if _, err := r.ensure1PComponent(ctx, in, res, false); err != nil {
 		t.Fatalf("ensure1PComponent failed: %v", err)
 	}
 
@@ -2431,5 +2435,314 @@ func TestPreserveHealthConditions_ReplacesExistingEntries(t *testing.T) {
 	}
 	if diff := cmp.Diff([]Condition{ready, degraded}, res.Conditions); diff != "" {
 		t.Errorf("preserveHealthConditions() conditions mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// gateOutcome summarizes the observable effects of a reconciliation pass for gating tests.
+type gateOutcome struct {
+	State             componentspb.ComponentState
+	ReadyStatus       string
+	ReadyReason       string
+	DegradedStatus    string
+	DependenciesReady string
+	SetCalls          int
+	EnsureCalls       int
+}
+
+func summarizeGate(res *ReconcileResult, cms *mockCMS, helm *mockHelm) gateOutcome {
+	got := gateOutcome{State: res.State, SetCalls: cms.setCalls, EnsureCalls: helm.ensureCalls}
+	if c := findCondition(res.Conditions, ConditionTypeReady); c != nil {
+		got.ReadyStatus, got.ReadyReason = c.Status, c.Reason
+	}
+	if c := findCondition(res.Conditions, ConditionTypeDegraded); c != nil {
+		got.DegradedStatus = c.Status
+	}
+	if c := findCondition(res.Conditions, ConditionTypeDependenciesReady); c != nil {
+		got.DependenciesReady = c.Status
+	}
+	return got
+}
+
+// checkReadyMessage fails the test if want is non-empty and differs from the Ready message.
+func checkReadyMessage(t *testing.T, res *ReconcileResult, want string) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	if c := findCondition(res.Conditions, ConditionTypeReady); c == nil || c.Message != want {
+		t.Errorf("Ready condition = %+v, want message %q", c, want)
+	}
+}
+
+func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
+	spec1P := func(deps ...string) *componentspb.ComponentSpec {
+		return &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: deps}
+	}
+	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Dependencies: []string{"redpanda"}}
+	snapshot := func(items ...unstructured.Unstructured) DependencyReadiness { return NewDependencySnapshot(items) }
+	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ingestion" depends on "redpanda", which is not registered`)
+	// Intent is registered with CMS even while activation is gated.
+	gated := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDependenciesNotReady, DegradedStatus: ConditionStatusFalse,
+		SetCalls: 1,
+	}
+	actuated := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+		DependenciesReady: ConditionStatusTrue, SetCalls: 1, EnsureCalls: 1,
+	}
+	withoutDepsCondition := func(o gateOutcome) gateOutcome { o.DependenciesReady = ""; return o }
+	// running is a release actuated at gen that passed the gate; the CR is at generation 2.
+	running := func(gen int64) *mockHelm {
+		return &mockHelm{active: true, actuatedGenerations: map[string]int64{"xmc/ingestion": gen}}
+	}
+	runningConds := func(gen int64) []Condition {
+		return []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: gen, Reason: ReasonComponentHealthy},
+			{Type: ConditionTypeDependenciesReady, Status: ConditionStatusTrue, ObservedGeneration: gen, Reason: "AllDependenciesReady"},
+		}
+	}
+	// upgradeHeld keeps the running workload but holds the Helm upgrade to the new generation.
+	upgradeHeld := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonHelmUpgradePending, DegradedStatus: ConditionStatusFalse,
+		DependenciesReady: ConditionStatusFalse, SetCalls: 1,
+	}
+	// keptReady has nothing to upgrade, so Ready stays health-derived while dependencies are unready.
+	keptReady := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+		ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+		DependenciesReady: ConditionStatusFalse, SetCalls: 1,
+	}
+	tests := []struct {
+		name     string
+		cms      *mockCMS
+		helm     *mockHelm
+		spec     *componentspb.ComponentSpec
+		deps     DependencyReadiness
+		existing []Condition
+		want     gateOutcome
+		wantMsg  string
+		wantErr  bool
+	}{
+		{name: "all dependencies ready actuates", spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)), want: actuated},
+		{name: "nil resolver disables gating", spec: spec1P("redpanda"), deps: nil, want: withoutDepsCondition(actuated)},
+		{name: "no dependencies declared", spec: spec1P(), deps: snapshot(), want: withoutDepsCondition(actuated)},
+		{name: "dependency missing", spec: spec1P("redpanda"), deps: snapshot(), want: gated, wantMsg: "waiting on dependencies: redpanda (not found)"},
+		{
+			name:    "dependency disabled",
+			spec:    spec1P("redpanda"),
+			deps:    snapshot(readyComponent("redpanda", func(u *unstructured.Unstructured) { u.Object["spec"] = map[string]any{"enabled": false} })),
+			want:    gated,
+			wantMsg: "waiting on dependencies: redpanda (disabled)",
+		},
+		{
+			name:    "dependency Ready=False",
+			spec:    spec1P("redpanda"),
+			deps:    snapshot(readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 0, "status", ConditionStatusFalse) })),
+			want:    gated,
+			wantMsg: "waiting on dependencies: redpanda (not ready)",
+		},
+		{
+			name:    "dependency Ready at stale generation",
+			spec:    spec1P("redpanda"),
+			deps:    snapshot(readyComponent("redpanda", func(u *unstructured.Unstructured) { u.SetGeneration(3) })),
+			want:    gated,
+			wantMsg: "waiting on dependencies: redpanda (not ready at current generation)",
+		},
+		{
+			name:    "dependency Degraded",
+			spec:    spec1P("redpanda"),
+			deps:    snapshot(readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 1, "status", ConditionStatusTrue) })),
+			want:    gated,
+			wantMsg: "waiting on dependencies: redpanda (degraded)",
+		},
+		{
+			name: "lists every unready dependency in declaration order",
+			spec: spec1P("redpanda", "clickhouse", "foo"),
+			deps: snapshot(
+				readyComponent("redpanda", func(u *unstructured.Unstructured) { u.Object["spec"] = map[string]any{"enabled": false} }),
+				readyComponent("clickhouse", nil),
+			),
+			want:    gated,
+			wantMsg: "waiting on dependencies: redpanda (disabled), foo (not found)",
+		},
+		{name: "3P wrapper is gated after registering intent", spec: spec3P, deps: snapshot(), want: gated},
+		{
+			name: "CMS NotFound while gated is tolerated",
+			cms:  &mockCMS{obsErr: status.Error(codes.NotFound, "component not found")},
+			spec: spec1P("redpanda"), deps: snapshot(), want: gated,
+		},
+		{
+			name: "CMS failure while gated is surfaced",
+			cms:  &mockCMS{obsErr: status.Error(codes.Unavailable, "cms down")},
+			spec: spec1P("redpanda"), deps: snapshot(), want: gated, wantErr: true,
+		},
+		{
+			name: "CMS unregistered dependency gates without error",
+			cms:  &mockCMS{setErr: notRegisteredErr},
+			spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)), want: gated,
+			wantMsg: "waiting on dependencies: " + status.Convert(notRegisteredErr).Message(),
+		},
+		{
+			name: "CMS unregistered dependency gates without a resolver",
+			cms:  &mockCMS{setErr: notRegisteredErr},
+			spec: spec1P("redpanda"), deps: nil, want: gated,
+		},
+		{
+			name: "other intent rejection is surfaced",
+			cms:  &mockCMS{setErr: status.Error(codes.FailedPrecondition, "invalid state transition")},
+			spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)),
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusFalse, ReadyReason: "IntentApplicationFailed", DegradedStatus: ConditionStatusTrue, SetCalls: 1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "running release holds upgrade to a new generation while a dependency is unready",
+			helm: running(1), spec: spec1P("redpanda"), deps: snapshot(), existing: runningConds(1), want: upgradeHeld,
+			wantMsg: "Helm upgrade to generation 2 is held until dependencies are ready",
+		},
+		{
+			name: "running release at the current generation keeps Ready while a dependency is unready",
+			helm: running(2), spec: spec1P("redpanda"), deps: snapshot(), existing: runningConds(2), want: keptReady,
+		},
+		{
+			name: "running release is upgraded once dependencies are ready",
+			helm: running(1), spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)), existing: runningConds(1), want: actuated,
+		},
+		{
+			name: "running release holds upgrade while CMS has not registered a dependency",
+			cms:  &mockCMS{setErr: notRegisteredErr},
+			helm: running(1), spec: spec1P("redpanda"), deps: nil, existing: runningConds(1), want: upgradeHeld,
+		},
+		{
+			name: "running 3P wrapper keeps Ready while a dependency is unready",
+			spec: spec3P, deps: snapshot(),
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy}},
+			want:     keptReady,
+		},
+		{
+			name: "previously gated component stays gated",
+			spec: spec1P("redpanda"), deps: snapshot(),
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonDependenciesNotReady}},
+			want:     gated,
+		},
+		{
+			name: "dependency cycle is reported without registering intent",
+			spec: spec1P("redpanda"),
+			deps: snapshot(readyComponent("ingestion", withDependencies("redpanda")), readyComponent("redpanda", withDependencies("ingestion"))),
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDependencyCycle, DegradedStatus: ConditionStatusTrue,
+			},
+			wantMsg: "dependency cycle detected: ingestion -> redpanda -> ingestion",
+		},
+		{
+			name: "self-dependency is dropped and does not gate",
+			spec: spec1P("ingestion"),
+			deps: snapshot(readyComponent("ingestion", withDependencies("ingestion"))),
+			want: withoutDepsCondition(actuated),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cms, helm := tt.cms, tt.helm
+			if cms == nil {
+				cms = &mockCMS{}
+			}
+			if helm == nil {
+				helm = &mockHelm{}
+			}
+			wasActive := helm.active
+			r, _ := NewReconciler(cms, nil, helm)
+			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: tt.spec, HasFinalizer: true,
+				Enabled: true, ExistingConditions: tt.existing, Dependencies: tt.deps,
+			})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReconcileComponent() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.want, summarizeGate(res, cms, helm)); diff != "" {
+				t.Errorf("ReconcileComponent() outcome mismatch (-want +got):\n%s", diff)
+			}
+			checkReadyMessage(t, res, tt.wantMsg)
+			if wasActive && !helm.active {
+				t.Error("ReconcileComponent() tore down an already-running release")
+			}
+		})
+	}
+}
+
+// TestReconcileComponent_DependencyBlipHoldsUpgrade drives one component across passes: actuated,
+// a dependency blip at the same generation (Ready kept), a spec change while the dependency is
+// unready (upgrade held with HelmUpgradePending), then recovery.
+func TestReconcileComponent_DependencyBlipHoldsUpgrade(t *testing.T) {
+	cms, helm := &mockCMS{}, &mockHelm{}
+	r, _ := NewReconciler(cms, nil, helm)
+	ready := NewDependencySnapshot([]unstructured.Unstructured{readyComponent("redpanda", nil)})
+	unready := NewDependencySnapshot([]unstructured.Unstructured{readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 0, "status", ConditionStatusFalse) })})
+	healthy := gateOutcome{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse}
+	pending := gateOutcome{State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonHelmUpgradePending, DegradedStatus: ConditionStatusFalse}
+	with := func(o gateOutcome, depsReady string, setCalls, ensureCalls int) gateOutcome {
+		o.DependenciesReady, o.SetCalls, o.EnsureCalls = depsReady, setCalls, ensureCalls
+		return o
+	}
+	passes := []struct {
+		generation int64
+		deps       DependencyReadiness
+		want       gateOutcome
+	}{
+		{generation: 2, deps: ready, want: with(healthy, ConditionStatusTrue, 1, 1)},
+		{generation: 2, deps: unready, want: with(healthy, ConditionStatusFalse, 2, 1)},
+		{generation: 3, deps: unready, want: with(pending, ConditionStatusFalse, 3, 1)},
+		{generation: 3, deps: ready, want: with(healthy, ConditionStatusTrue, 4, 2)},
+	}
+	var existing []Condition
+	for i, p := range passes {
+		res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+			Namespace: "xmc", Name: "ingestion", Generation: p.generation, HasFinalizer: true, Enabled: true,
+			Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+			ExistingConditions: existing, Dependencies: p.deps,
+		})
+		if err != nil {
+			t.Fatalf("pass %d: ReconcileComponent() error = %v", i, err)
+		}
+		if diff := cmp.Diff(p.want, summarizeGate(res, cms, helm)); diff != "" {
+			t.Errorf("pass %d: ReconcileComponent() outcome mismatch (-want +got):\n%s", i, diff)
+		}
+		if !helm.active {
+			t.Fatalf("pass %d: release is not active", i)
+		}
+		existing = res.Conditions
+	}
+}
+
+func TestDependencyNotRegisteredMessage(t *testing.T) {
+	if dependencyNotFoundMessagePrefix != store.DependencyNotFoundMessagePrefix {
+		t.Fatalf("dependencyNotFoundMessagePrefix = %q, want store.DependencyNotFoundMessagePrefix %q", dependencyNotFoundMessagePrefix, store.DependencyNotFoundMessagePrefix)
+	}
+	const msg = store.DependencyNotFoundMessagePrefix + ` component "a" depends on "b", which is not registered`
+	notRegistered := status.Error(codes.FailedPrecondition, msg)
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "nil", err: nil, want: ""},
+		{name: "unregistered dependency", err: notRegistered, want: msg},
+		{name: "wrapped unregistered dependency", err: fmt.Errorf("failed to apply component intent to CMS: %w", notRegistered), want: msg},
+		{name: "other FailedPrecondition", err: status.Error(codes.FailedPrecondition, "dependency cycle detected: a -> b -> a"), want: ""},
+		{name: "other code with the prefix", err: status.Error(codes.Unavailable, msg), want: ""},
+		{name: "non-status error", err: errors.New(msg), want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dependencyNotRegisteredMessage(tt.err); got != tt.want {
+				t.Errorf("dependencyNotRegisteredMessage() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
