@@ -214,6 +214,57 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["message"], "something went wrong")
         self.assertEqual(output["instruction"], "please fix it")
 
+    def test_run_tool_custom_exit_code(self):
+        """Test tool runner with a custom exit code in result."""
+        parser = MagicMock()
+        mock_args = MagicMock()
+        parser.parse_args.return_value = mock_args
+
+        main_fn = MagicMock(return_value={"result": "ok", "_exit_code": 3})
+
+        captured_stdout = io.StringIO()
+        with (
+            patch("sys.stdout", captured_stdout),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(parser, main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 3)
+        output = json.loads(captured_stdout.getvalue())
+        self.assertEqual(output["status"], "success")
+        self.assertEqual(output["result"], {"result": "ok"})
+        self.assertNotIn("_exit_code", output["result"])
+
+    def test_run_tool_handled_error_custom_exit_code(self):
+        """Test tool runner with a HandledError with custom exit code and details."""
+        parser = MagicMock()
+        mock_args = MagicMock()
+        parser.parse_args.return_value = mock_args
+
+        def raise_handled_error(args):
+            raise HandledError(
+                "SHA mismatch",
+                "check git SHA",
+                exit_code=3,
+                details={"expected": "abc", "got": "def"},
+            )
+
+        main_fn = MagicMock(side_effect=raise_handled_error)
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(parser, main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 3)
+        output = json.loads(captured_stderr.getvalue())
+        self.assertEqual(output["status"], "error")
+        self.assertEqual(output["error_type"], "handled")
+        self.assertEqual(output["message"], "SHA mismatch")
+        self.assertEqual(output["details"], {"expected": "abc", "got": "def"})
+
     def test_run_tool_unhandled_error(self):
         """Test tool runner with an unexpected Exception."""
         parser = MagicMock()

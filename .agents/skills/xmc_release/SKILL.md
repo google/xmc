@@ -11,10 +11,16 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
 > All execution steps in this skill MUST strictly adhere to the policy rules defined in [Core Engineering Standards](../../rules/core_engineering.md) and [Skills & Automation Guidelines](../../rules/skills_and_automation.md).
 
 ### Resumption & Phase Selection
-- **Idempotency & Recent Run Check**: If resuming an interrupted release or if `main` has already been deployed and tested today, check for existing successful workflow runs targeting the current `origin/main` commit before re-triggering. Ensure `headSha` strictly matches `${TARGET_SHA}`:
+- **Idempotency & Recent Run Check**: If resuming an interrupted release or if `main` has already been deployed and tested today, check for existing successful workflow runs targeting the current `origin/main` commit before re-triggering using `--find-existing`:
   ```bash
-  gh run list --workflow=nightly-build.yml --branch=main --status=success --limit 5 --json databaseId,headSha --jq ".[] | select(.headSha == \"${TARGET_SHA}\") | .databaseId"
-  gh run list --workflow=nightly-examples-e2e.yml --branch=main --status=success --limit 5 --json databaseId,headSha --jq ".[] | select(.headSha == \"${TARGET_SHA}\") | .databaseId"
+  TARGET_SHA=$(git rev-parse origin/main)
+  STATE_FILE="${ANTIGRAVITY_CONVERSATION_DIR:-/tmp}/release_state.json"
+
+  PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+    --workflow nightly-build.yml \
+    --target-sha "${TARGET_SHA}" \
+    --find-existing \
+    --state-file "${STATE_FILE}"
   ```
 - **Direct Entry**: If deployment and E2E tests have already succeeded for the target `TARGET_SHA` commit, the agent may proceed directly to Phase 4 or Phase 5.
 - **Post-Review Resumption**: When resuming after the user approval gate, proceed with executing the publishing step in Phase 5 using the release notes at `<appDataDir>/brain/<conversation-id>/release_notes_v<version>.md` (or `/tmp/release_notes_v<version>.md`) without re-running earlier phases.
@@ -38,204 +44,134 @@ This skill guides an agent through preparing, validating, and publishing an XMC 
   Resolve the target commit from `origin/main` and initialize state tracking (persisted to `<appDataDir>/brain/<conversation-id>/release_state.json` or `/tmp/release_state.json`):
   ```bash
   TARGET_SHA=$(git rev-parse origin/main)
-  echo "{\"target_sha\": \"${TARGET_SHA}\"}" > /tmp/release_state.json
+  STATE_FILE="${ANTIGRAVITY_CONVERSATION_DIR:-/tmp}/release_state.json"
+  echo "{\"target_sha\": \"${TARGET_SHA}\"}" > "${STATE_FILE}"
   ```
-- Ensure Python dependencies and `PYTHONPATH=.` are configured when running helper tools.
+- Helper tools are executed via Python with `PYTHONPATH=.` configured.
 
 ---
 
 ## Phase 1: Deploy Newest Main to Nightly
 
-Trigger the nightly build and deployment workflow using GitHub Actions:
+Trigger the nightly build and deployment workflow using `tools/release/dispatch_and_watch.py`:
 
 ```bash
-# Capture dispatch timestamp and trigger workflow
-DISPATCH_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-gh workflow run nightly-build.yml --ref main
-
-# Poll until the workflow_dispatch run created at or after DISPATCH_TIME is registered (up to 30s)
-for i in {1..6}; do
-  RUN_ID=$(gh run list --workflow=nightly-build.yml --branch=main --limit 5 --json databaseId,headSha,event,createdAt --jq ".[] | select(.event == \"workflow_dispatch\" and .createdAt >= \"${DISPATCH_TIME}\") | .databaseId" | head -n 1)
-  if [ -n "${RUN_ID}" ]; then break; fi
-  sleep 5
-done
-
-if [ -z "${RUN_ID}" ]; then
-  echo "Error: Timed out waiting for nightly-build.yml dispatch run to register." >&2
-  exit 1
-fi
-
-# Verify run commit strictly matches TARGET_SHA
-RUN_SHA=$(gh run view "${RUN_ID}" --json headSha --jq '.headSha')
-if [ "${RUN_SHA}" != "${TARGET_SHA}" ]; then
-  echo "Error: Run headSha (${RUN_SHA}) does not match expected TARGET_SHA (${TARGET_SHA}). Aborting." >&2
-  exit 1
-fi
-
-echo "Triggered nightly build run ID: ${RUN_ID} (Commit: ${RUN_SHA})"
+# Dispatch and watch nightly deployment
+DEPLOY_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-build.yml \
+  --target-sha "${TARGET_SHA}" \
+  --state-file "${STATE_FILE}") || true
 ```
 
 Notify the user:
-> *"Triggered nightly deployment workflow (`nightly-build.yml`) for `main` (Run ID: `<RUN_ID>`). Monitoring progress..."*
+> *"Triggered nightly deployment workflow (`nightly-build.yml`) for commit `<TARGET_SHA>`. Monitoring progress..."*
 
 ---
 
-## Phase 2: Wait for Deployment & Abort on Failure
+## Phase 2: Verify Deployment Outcome & Gate
 
-Monitor the deployment run until completion using `gh run watch`:
+Inspect the JSON response from `dispatch_and_watch.py`:
 
 ```bash
-gh run watch "${RUN_ID}" --exit-status
+DEPLOY_CONCLUSION=$(echo "${DEPLOY_RESPONSE}" | jq -r '.result.conclusion // empty')
+DEPLOY_RUN_URL=$(echo "${DEPLOY_RESPONSE}" | jq -r '.result.url // empty')
 ```
 
 ### Outcome Handling:
-- **If `gh run watch` exits with non-zero (FAILED / CANCELLED)**:
-  1. Inspect the run conclusion and failed job logs:
+- **If `DEPLOY_CONCLUSION != "success"` (FAILED / CANCELLED / SHA MISMATCH)**:
+  1. Inspect the outcome details:
      ```bash
-     CONCLUSION=$(gh run view "${RUN_ID}" --json conclusion --jq '.conclusion')
-     gh run view "${RUN_ID}" --log-failed | tail -n 40
+     echo "${DEPLOY_RESPONSE}" | jq -r '.result.conclusion // .conclusion'
+     echo "${DEPLOY_RESPONSE}" | jq -r '.result.failed_jobs // empty'
      ```
-  2. **If Cancelled (`CONCLUSION == "cancelled"`)**:
-     A newer run in the `xmc-nightly-orchestration` concurrency group (or scheduled cron) may have superseded this execution. Notify the user:
-     > *"⚠️ **Nightly Deployment Cancelled**: Run `<RUN_ID>` was cancelled (likely superseded by a newer run in the concurrency group). Ask whether to re-dispatch or resume tracking the superseding run."*
-  3. **If Failed (`CONCLUSION == "failure"`)**:
-     **ABORT THE RELEASE PIPELINE IMMEDIATELY**.
-     Notify the user with exact failure details and the run link (avoiding raw log dumps):
-     > *"🚨 **Release Aborted**: Nightly deployment failed on `main`."*
-     > - **Run URL**: `https://github.com/google/xmc/actions/runs/<RUN_ID>`
-     > - **Failure Summary**: `<Concise summary of error from failed jobs>`
+  2. **ABORT THE RELEASE PIPELINE IMMEDIATELY**.
+  3. Notify the user with exact outcome details:
+     - **If SHA Mismatch (`DEPLOY_CONCLUSION == "sha_mismatch"`)**:
+       > *"🚨 **Release Aborted**: Commit SHA mismatch detected for `nightly-build.yml`."*
+       > - **Expected Commit**: `<TARGET_SHA>`
+       > - **Dispatched Commit**: `<echo "${DEPLOY_RESPONSE}" | jq -r '.result.head_sha'>`
+       > - **Run URL**: `<DEPLOY_RUN_URL>`
+     - **If Cancelled (`DEPLOY_CONCLUSION == "cancelled"`)**:
+       > *"🚨 **Release Aborted**: Nightly deployment run was cancelled (`<DEPLOY_RUN_URL>`)."* (Include superseded run ID if present).
+     - **If Failed (`DEPLOY_CONCLUSION == "failure"`)**:
+       > *"🚨 **Release Aborted**: Nightly deployment failed on `main`."*
+       > - **Run URL**: `<DEPLOY_RUN_URL>`
+       > - **Failed Jobs**: `<List of failed jobs and steps from output JSON>`
   4. Stop execution and await user instructions.
 - **If successful**:
-  Extract and record the deployed nightly tag from the build outputs to ensure E2E tests target this exact build:
-  ```bash
-  DEPLOYED_TAG=$(gh run view "${RUN_ID}" --json jobs --jq '.jobs[] | select(.name == "Generate Nightly Context") | .steps[]? | select(.name == "Compute Nightly Tag") | .conclusion')
-  ```
-  Proceed to Phase 3.
+  Notify the user:
+  > *"Nightly deployment succeeded (`<DEPLOY_RUN_URL>`). Proceeding to E2E test suite..."*
 
 ---
 
 ## Phase 3: Run End-to-End Test Suite & Abort on Failure
 
-Trigger the nightly examples E2E test suite against the freshly deployed nightly environment:
+Trigger and monitor the nightly examples E2E test suite against the freshly deployed nightly environment using `tools/release/dispatch_and_watch.py`:
 
 ```bash
-# Capture dispatch timestamp and trigger workflow
-E2E_DISPATCH_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-gh workflow run nightly-examples-e2e.yml --ref main
-
-# Poll until the workflow_dispatch run created at or after E2E_DISPATCH_TIME is registered (up to 30s)
-for i in {1..6}; do
-  E2E_RUN_ID=$(gh run list --workflow=nightly-examples-e2e.yml --branch=main --limit 5 --json databaseId,headSha,event,createdAt --jq ".[] | select(.event == \"workflow_dispatch\" and .createdAt >= \"${E2E_DISPATCH_TIME}\") | .databaseId" | head -n 1)
-  if [ -n "${E2E_RUN_ID}" ]; then break; fi
-  sleep 5
-done
-
-if [ -z "${E2E_RUN_ID}" ]; then
-  echo "Error: Timed out waiting for nightly-examples-e2e.yml dispatch run to register." >&2
-  exit 1
-fi
-
-# Verify run commit strictly matches TARGET_SHA
-E2E_RUN_SHA=$(gh run view "${E2E_RUN_ID}" --json headSha --jq '.headSha')
-if [ "${E2E_RUN_SHA}" != "${TARGET_SHA}" ]; then
-  echo "Error: E2E run headSha (${E2E_RUN_SHA}) does not match expected TARGET_SHA (${TARGET_SHA}). Aborting." >&2
-  exit 1
-fi
-
-echo "Triggered E2E test suite run ID: ${E2E_RUN_ID} (Commit: ${E2E_RUN_SHA})"
+E2E_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-examples-e2e.yml \
+  --target-sha "${TARGET_SHA}" \
+  --state-file "${STATE_FILE}") || true
 ```
 
-1. Notify the user:
-   > *"Nightly deployment succeeded. Triggered nightly examples E2E test suite (`nightly-examples-e2e.yml`, Run ID: `<E2E_RUN_ID>`). Monitoring execution..."*
-2. Watch the E2E run to completion:
-   ```bash
-   gh run watch "${E2E_RUN_ID}" --exit-status
-   ```
+Inspect the test outcome:
+
+```bash
+E2E_CONCLUSION=$(echo "${E2E_RESPONSE}" | jq -r '.result.conclusion // .conclusion // empty')
+E2E_RUN_URL=$(echo "${E2E_RESPONSE}" | jq -r '.result.url // .url // empty')
+```
 
 ### Outcome Handling:
-- **If E2E tests fail or are cancelled**:
-  1. Inspect the run conclusion and summarize failed matrix jobs:
+- **If `E2E_CONCLUSION != "success"`**:
+  1. Inspect failed test jobs:
      ```bash
-     E2E_CONCLUSION=$(gh run view "${E2E_RUN_ID}" --json conclusion --jq '.conclusion')
-     gh run view "${E2E_RUN_ID}" --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, conclusion: .conclusion}'
+     echo "${E2E_RESPONSE}" | jq -r '.result.failed_jobs // empty'
      ```
-  2. **If Cancelled (`E2E_CONCLUSION == "cancelled"`)**:
-     Notify the user that the E2E run was cancelled and inquire whether to re-dispatch.
-  3. **If Failed (`E2E_CONCLUSION == "failure"`)**:
-     - Check if failure appears to be a known transient infrastructure flake (e.g., runner network timeout).
-     - The agent may offer the user a single approved retry:
-       ```bash
-       gh run rerun "${E2E_RUN_ID}" --failed
-       ```
-     - If the failure persists or retry is not approved, **ABORT THE RELEASE PIPELINE IMMEDIATELY**.
-     - Notify the user with a concise summary (avoiding raw log dumps):
-       > *"🚨 **Release Aborted**: Nightly E2E test suite failed."*
-       > - **Run URL**: `https://github.com/google/xmc/actions/runs/<E2E_RUN_ID>`
-       > - **Failed Workloads**: `<List of failed example jobs>`
+  2. **ABORT THE RELEASE PIPELINE IMMEDIATELY**.
+  3. Notify the user:
+     > *"🚨 **Release Aborted**: Nightly E2E test suite failed."*
+     > - **Run URL**: `<E2E_RUN_URL>`
+     > - **Failed Examples**: `<List of failed test matrix items from output JSON>`
   4. Stop execution and await user instructions.
-- **If all E2E tests pass**: Proceed to Phase 4.
+- **If all E2E tests pass**:
+  Notify the user:
+  > *"All E2E tests passed (`<E2E_RUN_URL>`). Proceeding to visual snapshot gallery..."*
 
 ---
 
 ## Phase 4: Generate Visual Snapshot Gallery
 
-Generate the visual snapshot gallery verifying golden UI routes on the nightly deployment:
+Generate and monitor the visual snapshot gallery verifying golden UI routes on the nightly deployment:
 
 ```bash
-# Capture dispatch timestamp and trigger workflow
-VISUAL_DISPATCH_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-gh workflow run nightly-visual-snapshot.yml --ref main
-
-# Poll until the workflow_dispatch run created at or after VISUAL_DISPATCH_TIME is registered (up to 30s)
-for i in {1..6}; do
-  VISUAL_RUN_ID=$(gh run list --workflow=nightly-visual-snapshot.yml --branch=main --limit 5 --json databaseId,headSha,event,createdAt --jq ".[] | select(.event == \"workflow_dispatch\" and .createdAt >= \"${VISUAL_DISPATCH_TIME}\") | .databaseId" | head -n 1)
-  if [ -n "${VISUAL_RUN_ID}" ]; then break; fi
-  sleep 5
-done
-
-if [ -z "${VISUAL_RUN_ID}" ]; then
-  echo "Error: Timed out waiting for nightly-visual-snapshot.yml dispatch run to register." >&2
-  exit 1
-fi
-
-# Verify run commit strictly matches TARGET_SHA
-VISUAL_RUN_SHA=$(gh run view "${VISUAL_RUN_ID}" --json headSha --jq '.headSha')
-if [ "${VISUAL_RUN_SHA}" != "${TARGET_SHA}" ]; then
-  echo "Error: Visual snapshot run headSha (${VISUAL_RUN_SHA}) does not match expected TARGET_SHA (${TARGET_SHA}). Aborting." >&2
-  exit 1
-fi
-
-echo "Triggered visual snapshot run ID: ${VISUAL_RUN_ID} (Commit: ${VISUAL_RUN_SHA})"
+VISUAL_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-visual-snapshot.yml \
+  --target-sha "${TARGET_SHA}" \
+  --state-file "${STATE_FILE}") || true
 ```
 
-1. Monitor run completion:
-   ```bash
-   gh run watch "${VISUAL_RUN_ID}" --exit-status
-   ```
+Inspect the gallery generation outcome:
 
-### Outcome Handling & Gallery Verification:
-- **Inspect Run and Pages Deployment Step**:
-  The `Deploy to GitHub Pages` step uses `continue-on-error: true`, so `gh run watch` may exit 0 even if publishing the gallery failed. Inspect step outcomes:
-  ```bash
-  PAGE_DEPLOY_CONCLUSION=$(gh run view "${VISUAL_RUN_ID}" --json jobs --jq '.jobs[] | select(.name == "Deploy Gallery to GitHub Pages") | .conclusion // "failure"')
-  ```
-- **If visual snapshot run fails or pages deploy failed**:
-  1. Inspect the failed job summary:
+```bash
+VISUAL_CONCLUSION=$(echo "${VISUAL_RESPONSE}" | jq -r '.result.conclusion // .conclusion // empty')
+VISUAL_RUN_URL=$(echo "${VISUAL_RESPONSE}" | jq -r '.result.url // .url // empty')
+PAGE_URL=$(echo "${VISUAL_RESPONSE}" | jq -r '.result.page_url // .page_url // empty')
+```
+
+### Outcome Handling:
+- **If visual snapshot run fails**:
+  1. Inspect the failure details:
      ```bash
-     gh run view "${VISUAL_RUN_ID}" --log-failed | tail -n 40
+     echo "${VISUAL_RESPONSE}" | jq -r '.result.failed_jobs // empty'
      ```
   2. Notify the user with the failure details and ask whether to abort or proceed with release notes:
-     > *"⚠️ **Visual Snapshot Gallery Incomplete/Failed**: Review logs at `https://github.com/google/xmc/actions/runs/<VISUAL_RUN_ID>`. Pages deploy status: `<PAGE_DEPLOY_CONCLUSION>`. Awaiting confirmation on whether to abort or proceed to Phase 5."*
-  3. If user decides to abort, stop pipeline. If user confirms proceeding despite snapshot failure, proceed to Phase 5.
+     > *"⚠️ **Visual Snapshot Gallery Failed**: Review logs at `<VISUAL_RUN_URL>`. Awaiting confirmation on whether to abort or proceed."*
 - **If successful**:
-  Extract the deployed GitHub Pages URL from the step summary:
-  ```bash
-  GALLERY_URL=$(gh run view "${VISUAL_RUN_ID}" | grep -o 'https://[^ ]*github\.io/xmc/' | head -n 1)
-  ```
-  Provide the user with the verified snapshot gallery URL:
-  > *"✅ **Visual snapshot gallery generation completed**."*
-  > - **Run URL**: `https://github.com/google/xmc/actions/runs/<VISUAL_RUN_ID>`
-  > - **Interactive Gallery Link**: `${GALLERY_URL:-https://google.github.io/xmc/}`
+  Provide the user with the snapshot gallery URL:
+  > *"✅ Visual snapshot gallery generation completed."*
+  > - **Run URL**: `<VISUAL_RUN_URL>`
+  > - **Interactive Gallery Link**: `<PAGE_URL>` (defaults to `https://google.github.io/xmc/`)
 
 ---
 
@@ -269,5 +205,3 @@ Delegate the end-to-end release documentation, interactive user review, and publ
    PYTHONPATH=. python3 ./tools/release/publish_release.py --tag <version> --notes-file <path_to_markdown_file> --target-commit "${TARGET_SHA}" --draft
    ```
    *(Note: Never pass `--force`. If the tag already exists, abort and consult the user).*
-
-
