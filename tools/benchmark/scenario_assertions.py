@@ -37,11 +37,13 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 ORIGIN = "origin"
+ORIGIN_BASELINE = "origin_baseline"
 TRANSFER = "transfer"
 NEGATIVE = "negative"
 
 # Rendering order for the verdict matrix; also the set of accepted spec keys.
 SCENARIOS = (ORIGIN, TRANSFER, NEGATIVE)
+ALLOWED_SPEC_KEYS = (ORIGIN, ORIGIN_BASELINE, TRANSFER, NEGATIVE)
 
 
 class Verdict(enum.StrEnum):
@@ -74,11 +76,8 @@ class ScenarioOutcome:
     assertions: tuple[AssertionOutcome, ...]
 
 
-def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
-    """Reports whether a regex matches the target file's contents.
-
-    Matching is multiline, so `^` and `$` anchor to source lines rather than to the whole file.
-    """
+def _validate_pattern(target: Path, pattern: Any) -> str:
+    """Validates that pattern is a non-None string."""
     if pattern is None:
         raise HandledError(
             f"assertion on '{target}' is missing the 'pattern' field",
@@ -89,8 +88,17 @@ def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
             f"assertion on '{target}' has an invalid 'pattern' field type: {type(pattern).__name__}",
             "The pattern must be a string containing a regular expression.",
         )
+    return pattern
+
+
+def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
+    """Reports whether a regex matches the target file's contents.
+
+    Matching is multiline, so `^` and `$` anchor to source lines rather than to the whole file.
+    """
+    valid_pattern = _validate_pattern(target, pattern)
     if not target.is_file():
-        return False, f"file absent, cannot match /{pattern}/"
+        return False, f"file absent, cannot match /{valid_pattern}/"
     try:
         text = target.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -99,13 +107,13 @@ def _search_pattern(target: Path, pattern: Any) -> tuple[bool, str]:
             "Check file permissions.",
         ) from e
     try:
-        matched = re.search(pattern, text, re.MULTILINE) is not None
+        matched = re.search(valid_pattern, text, re.MULTILINE) is not None
     except re.error as e:
         raise HandledError(
-            f"invalid regular expression {pattern!r} on '{target}': {e}",
+            f"invalid regular expression {valid_pattern!r} on '{target}': {e}",
             "Correct the regular expression pattern in your assertion spec.",
         ) from e
-    return matched, f"/{pattern}/ {'matched' if matched else 'not matched'}"
+    return matched, f"/{valid_pattern}/ {'matched' if matched else 'not matched'}"
 
 
 def _file_exists(target: Path, _pattern: Any) -> tuple[bool, str]:
@@ -115,8 +123,8 @@ def _file_exists(target: Path, _pattern: Any) -> tuple[bool, str]:
 
 
 def _file_absent(target: Path, _pattern: Any) -> tuple[bool, str]:
-    """Passes when the target file is not present."""
-    present = target.is_file()
+    """Passes when the target path does not exist (neither file, directory, nor symlink)."""
+    present = target.exists() or target.is_symlink()
     return not present, "present" if present else "absent"
 
 
@@ -126,8 +134,11 @@ def _file_contains(target: Path, pattern: Any) -> tuple[bool, str]:
 
 
 def _file_omits(target: Path, pattern: Any) -> tuple[bool, str]:
-    """Passes when the pattern does not match the target file's contents."""
-    matched, detail = _search_pattern(target, pattern)
+    """Passes when the target file exists and the pattern does not match its contents."""
+    valid_pattern = _validate_pattern(target, pattern)
+    if not target.is_file():
+        return False, f"file absent, cannot verify omission of /{valid_pattern}/"
+    matched, detail = _search_pattern(target, valid_pattern)
     return not matched, detail
 
 
@@ -164,7 +175,8 @@ def _resolve_workspace_path(workspace: Path, kind: str, relative_path: Any) -> P
 
 def evaluate_assertion(workspace: Path, assertion: Mapping[str, Any]) -> AssertionOutcome:
     """Evaluates one pre-registered predicate against a scenario's workspace."""
-    kind = str(assertion.get("kind", ""))
+    raw_kind = assertion.get("kind") if "kind" in assertion else assertion.get("type", "")
+    kind = str(raw_kind)
     predicate = _PREDICATES.get(kind)
     if predicate is None:
         raise HandledError(
@@ -190,7 +202,7 @@ def _validate_scenario_spec(
     if not isinstance(raw_workspace, str) or not raw_workspace:
         raise HandledError(
             f"workspace for scenario '{scenario}' must be a non-empty string",
-            "Point 'workspace' at the arm's worktree root.",
+            "Point 'workspace' at the arm's worktree root or supply --<scenario>-workspace.",
         )
     workspace = Path(raw_workspace)
     if not workspace.is_dir():
@@ -232,11 +244,19 @@ def derive_verdict(outcomes: Mapping[str, ScenarioOutcome]) -> Verdict:
             "the 'origin' scenario is mandatory",
             "Without it there is no evidence the change addresses the friction at all.",
         )
-    if not origin.passed:
-        return Verdict.REJECTED
-
     transfer = outcomes.get(TRANSFER)
     negative = outcomes.get(NEGATIVE)
+    if transfer is None and negative is not None:
+        raise HandledError(
+            "scenario outcomes define 'negative' without 'transfer'",
+            "Boundary-governed changes must always evaluate a held-out 'transfer' scenario.",
+        )
+
+    origin_baseline = outcomes.get(ORIGIN_BASELINE)
+    if origin_baseline is not None and origin_baseline.passed:
+        return Verdict.REJECTED
+    if not origin.passed:
+        return Verdict.REJECTED
 
     transfer_failed = transfer is not None and not transfer.passed
     negative_failed = negative is not None and not negative.passed
@@ -278,7 +298,7 @@ def render_report(outcomes: Mapping[str, ScenarioOutcome], verdict: Verdict) -> 
         "| Scenario | Assertion | Result | Detail |",
         "| :--- | :--- | :---: | :--- |",
     ]
-    for scenario in SCENARIOS:
+    for scenario in ALLOWED_SPEC_KEYS:
         outcome = outcomes.get(scenario)
         if outcome is None:
             continue
@@ -314,26 +334,102 @@ def load_spec(spec_path: Path) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise HandledError(
             "assertion spec must be a JSON object keyed by scenario name",
-            f"Valid scenario keys: {', '.join(SCENARIOS)}.",
+            f"Valid scenario keys: {', '.join(ALLOWED_SPEC_KEYS)}.",
         )
-    unknown = sorted(set(spec) - set(SCENARIOS))
+    unknown = sorted(set(spec) - set(ALLOWED_SPEC_KEYS))
     if unknown:
         raise HandledError(
             f"unknown scenario keys: {', '.join(unknown)}",
-            f"Valid scenario keys: {', '.join(SCENARIOS)}.",
+            f"Valid scenario keys: {', '.join(ALLOWED_SPEC_KEYS)}.",
+        )
+    if NEGATIVE in spec and TRANSFER not in spec:
+        raise HandledError(
+            "assertion spec defines 'negative' without 'transfer'",
+            "Boundary-governed changes must always include a held-out 'transfer' scenario.",
         )
     return spec
 
 
+def apply_workspace_overrides(
+    spec: Mapping[str, Any],
+    *,
+    origin_workspace: str | None = None,
+    origin_baseline_workspace: str | None = None,
+    transfer_workspace: str | None = None,
+    negative_workspace: str | None = None,
+) -> dict[str, Any]:
+    """Binds or overrides scenario workspace paths supplied via CLI flags."""
+    updated: dict[str, Any] = {
+        key: dict(val) if isinstance(val, Mapping) else val for key, val in spec.items()
+    }
+    overrides = {
+        ORIGIN: origin_workspace,
+        TRANSFER: transfer_workspace,
+        NEGATIVE: negative_workspace,
+    }
+    for name, workspace_path in overrides.items():
+        if workspace_path and name in updated and isinstance(updated[name], dict):
+            updated[name]["workspace"] = workspace_path
+    if origin_baseline_workspace and ORIGIN in updated and isinstance(updated[ORIGIN], dict):
+        updated[ORIGIN]["baseline_workspace"] = origin_baseline_workspace
+    return updated
+
+
 def evaluate_spec(spec: Mapping[str, Any]) -> tuple[dict[str, ScenarioOutcome], Verdict]:
     """Evaluates every registered scenario and derives the resulting verdict."""
-    outcomes = {name: evaluate_scenario(name, spec[name]) for name in SCENARIOS if name in spec}
+    if NEGATIVE in spec and TRANSFER not in spec:
+        raise HandledError(
+            "assertion spec defines 'negative' without 'transfer'",
+            "Boundary-governed changes must always include a held-out 'transfer' scenario.",
+        )
+    outcomes: dict[str, ScenarioOutcome] = {}
+    for name in ALLOWED_SPEC_KEYS:
+        if name in spec:
+            outcomes[name] = evaluate_scenario(name, spec[name])
+    origin_spec = spec.get(ORIGIN)
+    if (
+        ORIGIN_BASELINE not in outcomes
+        and isinstance(origin_spec, Mapping)
+        and origin_spec.get("baseline_workspace")
+    ):
+        baseline_spec = {
+            "workspace": origin_spec["baseline_workspace"],
+            "assertions": origin_spec.get("assertions"),
+        }
+        outcomes[ORIGIN_BASELINE] = evaluate_scenario(ORIGIN_BASELINE, baseline_spec)
     return outcomes, derive_verdict(outcomes)
+
+
+def add_workspace_override_arguments(parser: argparse.ArgumentParser) -> None:
+    """Registers CLI flags for binding dynamic subagent branch worktree paths."""
+    parser.add_argument(
+        "--origin-workspace",
+        help="Override workspace path for the origin candidate arm.",
+    )
+    parser.add_argument(
+        "--origin-baseline-workspace",
+        help="Optional workspace path for the origin baseline arm (verifies baseline fails).",
+    )
+    parser.add_argument(
+        "--transfer-workspace",
+        help="Override workspace path for the held-out transfer candidate arm.",
+    )
+    parser.add_argument(
+        "--negative-workspace",
+        help="Override workspace path for the negative regression candidate arm.",
+    )
 
 
 def check_scenario_assertions(args: argparse.Namespace) -> dict[str, Any]:
     """Main orchestrator for the pre-registered assertion checker."""
-    outcomes, verdict = evaluate_spec(load_spec(Path(args.spec)))
+    spec = apply_workspace_overrides(
+        load_spec(Path(args.spec)),
+        origin_workspace=getattr(args, "origin_workspace", None),
+        origin_baseline_workspace=getattr(args, "origin_baseline_workspace", None),
+        transfer_workspace=getattr(args, "transfer_workspace", None),
+        negative_workspace=getattr(args, "negative_workspace", None),
+    )
+    outcomes, verdict = evaluate_spec(spec)
     report = render_report(outcomes, verdict)
 
     if args.output:
@@ -372,6 +468,7 @@ def main() -> None:
         "--output",
         help="Optional path to write the markdown verdict matrix.",
     )
+    add_workspace_override_arguments(parser)
     run_tool(parser, check_scenario_assertions)
 
 

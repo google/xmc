@@ -87,10 +87,29 @@ has already produced, so this costs no additional analysis:
   Negative regression is mandatory whenever the negative set is non-empty; an empty negative set on a
   non-trivial change is itself a finding worth surfacing, because a predicate that excludes nothing
   was never falsified.
-- **Pre-register each pass predicate before launching.** State it as a mechanical assertion over the
-  resulting worktree or transcript — *`examples/xdash_dashboard/create_dashboard_test.py` MUST
-  exist* — never as a judgement call such as *"the agent should handle dashboards well"*. A predicate
-  written after reading the transcripts will be fitted to them.
+- **Pre-register each pass predicate into `/tmp/benchmark_assertions.json` before launching.** State
+  every scenario's pass condition as a mechanical assertion (`file_exists`, `file_absent`,
+  `file_contains`, or `file_omits`) in `/tmp/benchmark_assertions.json` during Phase 1b — **before**
+  spawning any subagent in Phase 3, so predicates cannot be fitted to the transcripts afterwards.
+  Because `Workspace: "branch"` worktrees are created dynamically at spawn time, omit `"workspace"` in
+  Phase 1b (or leave it for CLI binding) and bind the spawned worktree paths via
+  `--origin-baseline-workspace`, `--origin-workspace`, `--transfer-workspace`, and
+  `--negative-workspace` when running `compare_trajectories.py`:
+
+  ```json
+  {
+    "origin":   {"assertions": [
+                   {"kind": "file_exists", "path": "examples/xdash_dashboard/create_dashboard_test.py"}]},
+    "transfer": {"assertions": [
+                   {"kind": "file_contains", "path": "pyproject.toml", "pattern": "^\\s*\"SLF001\""}]},
+    "negative": {"assertions": [
+                   {"kind": "file_absent", "path": "examples/chart_artifact_job/training_metrics_test.py"}]}
+  }
+  ```
+
+  `file_contains` and `file_omits` take a `pattern` matched as a multiline regex. A scenario passes
+  only when every one of its assertions passes (`origin` must also fail on `origin_baseline` and pass
+  on `origin` candidate), and `origin` is mandatory.
 
 > [!NOTE]
 > A finding routed to a rung that needs no boundary has no evidence sets to draw on, and benchmarks
@@ -143,48 +162,41 @@ turn/token telemetry in `compare_trajectories.py`). Because LLM trajectories are
 `compare_trajectories.py` evaluates whole-transcript metrics (`turns`, `est_tokens`), if contamination is
 ever detected, discard and re-run the entire affected arm rather than salvaging individual criteria.
 
-### Phase 4: Resource Teardown & Manifest Cleanup
-After both subagents complete, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
+### Phase 4: Dual-Pillar Evaluation & Relevance Gate
 
-```bash
-python3 tools/benchmark/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
-```
-
-### Phase 5: Dual-Pillar Evaluation & Relevance Gate
-
-Write the pre-registered predicates from Phase 1b into an assertion spec — **before** the arms are
-launched, so the verdict cannot be fitted to the transcripts afterwards. Each scenario names its
-arm's worktree and the predicates that must hold within it:
-
-```json
-{
-  "origin":   {"workspace": "/path/to/candidate/arm", "assertions": [
-                 {"kind": "file_exists", "path": "examples/xdash_dashboard/create_dashboard_test.py"}]},
-  "transfer": {"workspace": "/path/to/transfer/arm", "assertions": [
-                 {"kind": "file_contains", "path": "pyproject.toml", "pattern": "^\\s*\"SLF001\""}]},
-  "negative": {"workspace": "/path/to/negative/arm", "assertions": [
-                 {"kind": "file_absent", "path": "examples/chart_artifact_job/training_metrics_test.py"}]}
-}
-```
-
-Predicate kinds are `file_exists`, `file_absent`, `file_contains`, and `file_omits`; the latter two
-take a `pattern` matched as a multiline regex. A scenario passes only when every one of its
-assertions passes, and `origin` is mandatory.
-
-Pass the `transcript.jsonl` log file paths from both origin arms to
-`tools/benchmark/compare_trajectories.py`, along with the spec:
+Before tearing down the child worktrees, pass the `transcript.jsonl` log file paths from both `origin`
+arms to `tools/benchmark/compare_trajectories.py`, binding the dynamic branch worktree paths returned by
+`invoke_subagent` to the pre-registered `/tmp/benchmark_assertions.json` spec:
 
 ```bash
 python3 tools/benchmark/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> \
-  --prompt "<test_prompt>" --assertions /tmp/benchmark_assertions.json -o /tmp/trajectory_report.md
+  --prompt "<test_prompt>" \
+  --assertions /tmp/benchmark_assertions.json \
+  --origin-baseline-workspace <origin_baseline_worktree> \
+  --origin-workspace <origin_candidate_worktree> \
+  --transfer-workspace <transfer_candidate_worktree> \
+  --negative-workspace <negative_candidate_worktree> \
+  -o /tmp/trajectory_report.md
 ```
 
-With `--assertions`, the verdict matrix is derived mechanically and written into the report; without
-it, the report carries a placeholder for the agent to fill in by judgement. The spec can also be
-evaluated on its own, for instance while iterating on a predicate:
+With `--assertions`, the verdict matrix is derived mechanically (verifying `origin` fails on
+`origin_baseline` and passes on `origin` candidate, along with `transfer` and `negative`) and written into
+the report; without it, the report carries a placeholder for the agent to fill in by judgement. The spec
+can also be evaluated standalone:
 
 ```bash
-python3 tools/benchmark/scenario_assertions.py /tmp/benchmark_assertions.json
+python3 tools/benchmark/scenario_assertions.py /tmp/benchmark_assertions.json \
+  --origin-baseline-workspace <origin_baseline_worktree> \
+  --origin-workspace <origin_candidate_worktree> \
+  --transfer-workspace <transfer_candidate_worktree> \
+  --negative-workspace <negative_candidate_worktree>
+```
+
+### Phase 5: Resource Teardown & Manifest Cleanup
+After `compare_trajectories.py` finishes evaluating the child worktrees, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
+
+```bash
+python3 tools/benchmark/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
 ```
 
 The main agent reviews the output and populates the scorecard using the **Prompt Relevance Gate**:

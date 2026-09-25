@@ -255,12 +255,13 @@ class DeriveVerdictTest(unittest.TestCase):
         }
         self.assertEqual(derive_verdict(outcomes), Verdict.UNDER_GENERALIZED)
 
-    def test_failed_negative_with_missing_transfer_is_over_generalized(self):
+    def test_negative_with_missing_transfer_is_rejected(self):
         outcomes = {
             ORIGIN: _outcome(ORIGIN, passed=True),
-            NEGATIVE: _outcome(NEGATIVE, passed=False),
+            NEGATIVE: _outcome(NEGATIVE, passed=True),
         }
-        self.assertEqual(derive_verdict(outcomes), Verdict.OVER_GENERALIZED)
+        with self.assertRaises(HandledError):
+            derive_verdict(outcomes)
 
     def test_missing_origin_is_rejected(self):
         with self.assertRaises(HandledError):
@@ -349,6 +350,70 @@ class LoadAndEvaluateSpecTest(unittest.TestCase):
         spec_path.write_text("{not json", encoding="utf-8")
         with self.assertRaises(HandledError):
             load_spec(spec_path)
+
+    def test_file_omits_fails_on_missing_file(self):
+        outcome = evaluate_assertion(
+            self.workspace,
+            {"kind": "file_omits", "path": "missing.py", "pattern": "anything"},
+        )
+        self.assertFalse(outcome.passed)
+        self.assertIn("file absent, cannot verify omission", outcome.detail)
+
+    def test_file_absent_fails_when_directory_exists(self):
+        (self.workspace / "subdir").mkdir()
+        outcome = evaluate_assertion(
+            self.workspace,
+            {"kind": "file_absent", "path": "subdir"},
+        )
+        self.assertFalse(outcome.passed)
+        self.assertEqual(outcome.detail, "present")
+
+    def test_type_alias_for_kind_is_accepted(self):
+        outcome = evaluate_assertion(
+            self.workspace,
+            {"type": "file_exists", "path": "a.py"},
+        )
+        self.assertTrue(outcome.passed)
+
+    def test_negative_without_transfer_is_rejected(self):
+        scenario = {
+            "workspace": str(self.workspace),
+            "assertions": [{"kind": "file_exists", "path": "a.py"}],
+        }
+        spec_path = self._write_spec({ORIGIN: scenario, NEGATIVE: scenario})
+        with self.assertRaises(HandledError):
+            load_spec(spec_path)
+
+    def test_origin_baseline_workspace_rejects_when_baseline_already_passes(self):
+        scenario = {
+            "workspace": str(self.workspace),
+            "baseline_workspace": str(self.workspace),
+            "assertions": [{"kind": "file_exists", "path": "a.py"}],
+        }
+        _, verdict = evaluate_spec({ORIGIN: scenario, TRANSFER: scenario, NEGATIVE: scenario})
+        self.assertEqual(verdict, Verdict.REJECTED)
+
+    def test_origin_baseline_workspace_ships_when_baseline_fails_and_candidate_passes(self):
+        baseline_dir = self.workspace / "baseline_wt"
+        baseline_dir.mkdir()
+        spec_path = self._write_spec(
+            {
+                ORIGIN: {"assertions": [{"kind": "file_exists", "path": "a.py"}]},
+                TRANSFER: {"assertions": [{"kind": "file_exists", "path": "a.py"}]},
+                NEGATIVE: {"assertions": [{"kind": "file_exists", "path": "a.py"}]},
+            }
+        )
+        res = check_scenario_assertions(
+            argparse.Namespace(
+                spec=str(spec_path),
+                output=None,
+                origin_workspace=str(self.workspace),
+                origin_baseline_workspace=str(baseline_dir),
+                transfer_workspace=str(self.workspace),
+                negative_workspace=str(self.workspace),
+            )
+        )
+        self.assertEqual(res["verdict"], str(Verdict.SHIP))
 
 
 if __name__ == "__main__":

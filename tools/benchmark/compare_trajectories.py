@@ -26,6 +26,8 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.benchmark.scenario_assertions import (  # noqa: E402
+    add_workspace_override_arguments,
+    apply_workspace_overrides,
     evaluate_spec,
     load_spec,
     render_report,
@@ -155,7 +157,9 @@ def generate_markdown_report(
 
     verdict_block = verdict_section or (
         "### 🏆 Final Benchmark Verdict\n"
-        "*[Main Agent Verdict: SHIP / SHIP WITH RESERVATIONS (NEEDS EFFICIENCY TUNING) / "
+        "*[Main Agent Verdict: SHIP / SHIP (NO NEGATIVE REGRESSION SCENARIO) / "
+        "SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED) / "
+        "SHIP WITH RESERVATIONS (NEEDS EFFICIENCY TUNING) / "
         "UNDER-GENERALIZED / OVER-GENERALIZED / WRONG PREDICATE / REJECTED]*\n"
         "*[No pre-registered assertions were supplied, so this verdict is a judgement call. "
         "Prefer `--assertions` so the matrix is derived mechanically.]*\n"
@@ -224,7 +228,14 @@ def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
     verdict_section = None
     verdict = None
     if args.assertions:
-        outcomes, derived = evaluate_spec(load_spec(Path(args.assertions)))
+        spec = apply_workspace_overrides(
+            load_spec(Path(args.assertions)),
+            origin_workspace=getattr(args, "origin_workspace", None),
+            origin_baseline_workspace=getattr(args, "origin_baseline_workspace", None),
+            transfer_workspace=getattr(args, "transfer_workspace", None),
+            negative_workspace=getattr(args, "negative_workspace", None),
+        )
+        outcomes, derived = evaluate_spec(spec)
         verdict_section = render_report(outcomes, derived)
         verdict = str(derived)
 
@@ -284,6 +295,7 @@ def main() -> None:
         "--output",
         help="Optional path to write markdown output report.",
     )
+    add_workspace_override_arguments(parser)
     run_tool(parser, compare_trajectories)
 
 

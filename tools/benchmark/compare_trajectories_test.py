@@ -14,12 +14,14 @@
 
 """Unit tests for compare_trajectories tool."""
 
+import argparse
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from tools.benchmark.compare_trajectories import (
+    compare_trajectories,
     generate_markdown_report,
     parse_transcript,
 )
@@ -128,6 +130,59 @@ class CompareTrajectoriesTest(unittest.TestCase):
         )
         self.assertIn("**SHIP**", report)
         self.assertNotIn("Final Benchmark Verdict", report)
+
+    def test_fallback_placeholder_lists_all_ship_variants(self):
+        baseline = {
+            "turns": 2,
+            "file_bytes": 4096,
+            "est_tokens": 1024,
+            "error_count": 0,
+            "total_steps": 4,
+            "tool_counts": {},
+            "last_response_snippet": "Baseline",
+        }
+        report = generate_markdown_report(baseline, baseline)
+        self.assertIn("SHIP (NO NEGATIVE REGRESSION SCENARIO)", report)
+        self.assertIn("SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED)", report)
+
+    def test_compare_trajectories_with_assertions_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            b_path = Path(tmp_dir) / "baseline.jsonl"
+            c_path = Path(tmp_dir) / "candidate.jsonl"
+            entry = (
+                json.dumps({"type": "PLANNER_RESPONSE", "status": "DONE", "content": "Done"}) + "\n"
+            )
+            b_path.write_text(entry, encoding="utf-8")
+            c_path.write_text(entry, encoding="utf-8")
+            (Path(tmp_dir) / "target.py").write_text("fixed\n", encoding="utf-8")
+
+            spec_path = Path(tmp_dir) / "assertions.json"
+            spec_path.write_text(
+                json.dumps(
+                    {
+                        "origin": {
+                            "assertions": [
+                                {"kind": "file_contains", "path": "target.py", "pattern": "^fixed$"}
+                            ]
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                baseline_transcript=str(b_path),
+                candidate_transcript=str(c_path),
+                prompt="Fix bug",
+                assertions=str(spec_path),
+                output=None,
+                origin_workspace=tmp_dir,
+                origin_baseline_workspace=None,
+                transfer_workspace=None,
+                negative_workspace=None,
+            )
+            res = compare_trajectories(args)
+            self.assertEqual(res["verdict"], "SHIP (ORIGIN ONLY - GENERALIZATION UNTESTED)")
+            self.assertIn("Pre-Registered Scenario Verdict", res["markdown_report"])
 
 
 if __name__ == "__main__":
