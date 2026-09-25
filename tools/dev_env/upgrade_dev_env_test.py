@@ -319,14 +319,20 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_restart(self.config)
         self.assertEqual(mock_run.call_count, 11)
 
+    def _restart_cmd(self, deployment: str) -> list[str]:
+        return ["kubectl", "rollout", "restart", f"deployment/{deployment}", "-n", "xmc"]
+
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_restart_restarts_bridge_and_gateway_when_present(self, mock_run, mock_resolve):
+    def test_step_restart_restarts_bridge_before_gateway(self, mock_run, mock_resolve):
         mock_resolve.side_effect = lambda service, _ns: f"{service}-deployment"
         upgrade_dev_env.step_restart(self.config)
-        restarted = {call.args[0][3] for call in mock_run.call_args_list}
-        self.assertIn("deployment/xmc-bridge-deployment", restarted)
-        self.assertIn("deployment/ingestion-gateway-deployment", restarted)
+        cmds = [call.args[0] for call in mock_run.call_args_list]
+        bridge = self._restart_cmd("xmc-bridge-deployment")
+        gateway = self._restart_cmd("ingestion-gateway-deployment")
+        self.assertIn(bridge, cmds)
+        self.assertIn(gateway, cmds)
+        self.assertLess(cmds.index(bridge), cmds.index(gateway))
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
@@ -336,10 +342,10 @@ class TestStepSubprocesses(unittest.TestCase):
             None if service in absent else f"{service}-deployment"
         )
         upgrade_dev_env.step_restart(self.config)
-        restarted = {call.args[0][3] for call in mock_run.call_args_list}
+        cmds = [call.args[0] for call in mock_run.call_args_list]
         self.assertEqual(mock_run.call_count, 9)
-        self.assertNotIn("deployment/xmc-bridge-deployment", restarted)
-        self.assertNotIn("deployment/ingestion-gateway-deployment", restarted)
+        self.assertNotIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
+        self.assertNotIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
 
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_verify(self, mock_run):
