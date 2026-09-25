@@ -38,10 +38,10 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 
 ---
 
-## 3. Coexistence with Umbrella Chart (`deploy/helm/`) & Flag Integration
+## 3. Actuation Lifecycle
 
-1. **Legacy Umbrella Mode (`enable_metrics=true`, `managedByComponent=false`)**:
-   - `deploy/helm` renders `ingestion-gateway-deployment`, `ingestion-gateway-service`, and `ingestion-gateway-hpa` directly when `ingestionGatewayDeployment.enabled=true` and `ingestionGatewayDeployment.managedByComponent=false` (default).
-2. **1P Component Actuation Mode (`enable_components=true`, `managedByComponent=true`)**:
-   - Setting `ingestionGatewayDeployment.managedByComponent=true` in `deploy/helm/values.yaml` delegates `Deployment`, `Service`, and `HPA` creation to the `xmc-cmp-ingestion-gateway` Helm release managed by `xmc-bridge`, preventing duplicate resource collisions while preserving shared namespace RBAC and NetworkPolicies.
-   - When `xmc-bridge` upgrades release `xmc-cmp-ingestion-gateway`, [`templates/component.yaml`](templates/component.yaml) suppresses re-rendering `kind: Component` (`{{- if not (hasPrefix "xmc-cmp-" .Release.Name) }}`) because `Component/ingestion-gateway` already exists in the cluster and `xmc-bridge` operates with least-privilege RBAC (`get`/`list`/`watch` on `components.xmc.dev`).
+1. **Declare intent**: `helm install ingestion-gateway deploy/profiles/stable-2026a/components/ingestion-gateway --set enabled=true` renders only the `Component/ingestion-gateway` CR (`deployWorkload=false`).
+2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart with `ingestionGatewayDeployment.enabled=true`, rendering the `Deployment`, `Service`, `HPA`, and the `ingestion-gateway-components-reader` `Role`/`RoleBinding`.
+3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`, which removes the workload together with its RBAC.
+
+The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that the `RoleBinding` subject always matches the `Deployment` `serviceAccountName`. [`templates/component.yaml`](templates/component.yaml) is skipped for `xmc-cmp-*` releases because the `Component` CR is owned by the user's release, not by `xmc-bridge`.

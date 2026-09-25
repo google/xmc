@@ -171,7 +171,6 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
-{{- if not (hasPrefix "xmc-cmp-" .Release.Name) }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -201,5 +200,4 @@ roleRef:
   kind: Role
   name: ingestion-gateway-components-reader
   apiGroup: rbac.authorization.k8s.io
-{{- end }}
 {{- end }}

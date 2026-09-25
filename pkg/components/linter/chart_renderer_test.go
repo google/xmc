@@ -583,11 +583,10 @@ func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
 		t.Errorf("expected component.yaml to be suppressed for xmc-cmp- release")
 	}
 	bridgeDep := bridgeMap["ingestion-gateway/templates/deployment.yaml"]
-	if strings.Contains(bridgeDep, "kind: Role") {
-		t.Errorf("expected Role/RoleBinding to be suppressed in deployment.yaml for xmc-cmp- release")
-	}
-	if !strings.Contains(bridgeDep, "kind: Deployment") || !strings.Contains(bridgeDep, "kind: Service") || !strings.Contains(bridgeDep, "kind: HorizontalPodAutoscaler") {
-		t.Errorf("expected Deployment, Service, and HPA in deployment.yaml for xmc-cmp- release")
+	for _, want := range []string{"kind: Deployment", "kind: Service", "kind: HorizontalPodAutoscaler", "kind: Role", "kind: RoleBinding", "name: ingestion-gateway-components-reader"} {
+		if !strings.Contains(bridgeDep, want) {
+			t.Errorf("expected %q in deployment.yaml for xmc-cmp- release (component self-provisions workload and reader RBAC)", want)
+		}
 	}
 	if !strings.Contains(bridgeDep, `image: "custom.registry.io/ig:custom-tag"`) {
 		t.Errorf("expected explicit parameters[image] to take precedence, got:\n%s", bridgeDep)
