@@ -33,7 +33,7 @@ PIP_BIN="${VENV_DIR}/bin/pip"
 
 echo "--> [3/4] Upgrading pip and installing grpcio, protobuf & googleapis-common-protos..."
 "${PIP_BIN}" install --upgrade pip
-"${PIP_BIN}" install grpcio protobuf googleapis-common-protos
+"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
 # sysconfig.get_path('purelib') resolves against the running interpreter, which is the
 # venv's; site.getsitepackages() can report the base prefix instead.
