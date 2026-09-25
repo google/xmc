@@ -119,20 +119,27 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **Cold-Start State Hydration (`HydrateFromCluster` & `HydrateComponentState`)**:
   - `HydrateFromCluster(ctx)` inspects the `xmc-component-values` ConfigMap in the target namespace on controller startup and restores `activeState` for all previously enabled components.
   - `HydrateComponentState(ctx, ref, observedGeneration, crReady)` lazily reconciles in-memory `activeState` and `actuatedGenerations` from the `xmc-component-values` ConfigMap and the `Component` CR's `.status` (`observedGeneration` and `Ready=True` condition). This prevents redundant Helm release revision increments on cold start and ensures post-restart deactivation (`spec.enabled: false`) properly triggers `Delete1PComponent`.
-  - **Release Verification**: Because the values ConfigMap is persisted *before* the (asynchronous) Helm upgrade runs, neither the ConfigMap nor a `Ready=True` condition alone proves that the release exists. When hydration would record a new actuation (`crReady && observedGeneration > 0` with no actuation recorded yet), `HydrateComponentState` first calls `HelmActionRunner.Status` (outside the state mutex). If the release is missing, not `deployed`, or the status query fails, the CR is not trusted: the component is marked inactive and not actuated, so the next `Ensure1PComponent` re-installs it. A deployed release keeps the original guarantee (CR trusted, no revision bump). The deactivation path (`observedGeneration == 0`) is unchanged and performs no release lookup.
+  - **Release Verification**: Because the values ConfigMap is persisted *before* the (asynchronous) Helm upgrade runs, neither the ConfigMap nor a `Ready=True` condition alone proves that the release exists. When hydration would record a new actuation (`crReady && observedGeneration > 0` with no actuation recorded yet), `HydrateComponentState` first calls `HelmActionRunner.Status` (outside the state mutex). The CR is distrusted only on positive evidence: `driver.ErrReleaseNotFound` or a terminal non-`deployed` status (e.g. `failed`, `superseded`, `uninstalled`). In that case the component is marked inactive and not actuated, so the next `Ensure1PComponent` re-installs it. Transient status errors trust the CR (and are logged) so an API blip during restart does not cause a revision bump. A `pending-install`/`pending-upgrade`/`pending-rollback` release left by a crashed bridge also trusts the CR, because a re-upgrade would only fail with "another operation is in progress"; `ComponentHealth` reports it as `HelmReleaseStuck` instead. The deactivation path (`observedGeneration == 0`) is unchanged and performs no release lookup.
 - **1P Component Health (`ComponentHealth`)**:
   - `evaluateHealth` in `reconciler.go` derives 1P health from `HelmManager.ComponentHealth` whenever a `HelmManager` is configured (the `BridgeProber` fallback, which reports non-3P components as healthy, is used only without a `HelmManager`).
-  - Checks are evaluated in order; the first failure sets `Ready=False`, `Degraded=True`, and state `COMPONENT_STATE_PENDING_RECONCILIATION`, with the reason below on both conditions:
+  - **`deployed` means applied, not running**: upgrades run without `--wait`, so a `deployed` release means Helm applied the manifests. It does not mean the pods are ready. Pod-level readiness is out of scope for this check.
+  - **In-flight upgrades**: `K8sHelmManager` tracks async upgrades per component from enqueue until the worker finishes. While one is queued or running, `Status` would still report the *previous* `deployed` revision, so `ComponentHealth` returns `HelmUpgradePending` instead. An upgrade error takes precedence over pending so `Degraded` stays stable across retries.
+  - **Throttling**: a healthy (`deployed`) verdict is cached per component for 1 minute (`healthCacheTTL`) to avoid a Helm `Status` call (which lists release Secrets) on every poll. Any upgrade enqueue or completion invalidates the cache. The upgrade-error and pending checks never use the cache.
+  - Checks are evaluated in order. Reason constants are exported from `reconciler.go`, and the reason below is set on both `Ready` and `Degraded`. Every non-healthy result sets `Ready=False` and state `COMPONENT_STATE_PENDING_RECONCILIATION`:
 
-    | Reason | Meaning |
-    | :--- | :--- |
-    | `InvalidComponentRef` | The component reference is missing a name or namespace. |
-    | `HelmUpgradeFailed` | The last (sync or async) Helm upgrade for the component failed. |
-    | `HelmRunnerUninitialized` | No `HelmActionRunner` is configured, so release state cannot be verified. |
-    | `HelmReleaseNotFound` | The `xmc-cmp-<name>` release does not exist. |
-    | `HelmStatusUnavailable` | The Helm status query failed (e.g. API server unreachable). |
-    | `HelmReleaseNotReady` | The latest release revision is not `deployed` (e.g. `pending-install`, `failed`). |
-    | `ComponentHealthy` | The release is `deployed` and no upgrade error is pending (`Ready=True`, state `COMPONENT_STATE_ENABLED`). |
+    | Reason | Degraded | Meaning |
+    | :--- | :--- | :--- |
+    | `InvalidComponentRef` | `True` | The component reference is missing a name or namespace. |
+    | `HelmUpgradeFailed` | `True` | The last (sync or async) Helm upgrade for the component failed. |
+    | `HelmUpgradePending` | `False` | An async upgrade is queued or running; release status is not yet authoritative. |
+    | `HelmRunnerUninitialized` | `True` | No `HelmActionRunner` is configured, so release state cannot be verified. |
+    | `HelmReleaseNotFound` | `True` | The `xmc-cmp-<name>` release does not exist (`driver.ErrReleaseNotFound`). |
+    | `HelmStatusUnavailable` | *unchanged* | The Helm status query failed transiently (e.g. API server unreachable). The previous `Ready`/`Degraded` conditions are kept and a warning is logged. If there are no conditions at the current generation, it reports `Ready=False`, `Degraded=False`. |
+    | `HelmReleaseStuck` | `True` | The latest revision is `pending-install`, `pending-upgrade`, or `pending-rollback` with no in-flight upgrade in this bridge (e.g. the bridge crashed mid-operation). |
+    | `HelmReleaseNotReady` | `True` | The latest release revision is in another non-`deployed` state (e.g. `failed`). |
+    | `ComponentHealthy` | `False` | The release is `deployed` and no upgrade is pending or failed (`Ready=True`, state `COMPONENT_STATE_ENABLED`). |
+
+  - **Recovering a stuck release**: the bridge does not auto-recover `HelmReleaseStuck`. Helm records no lock owner, so an automatic rollback or uninstall could clobber an operation that another actor (an operator or another bridge replica) is actively running. To recover, run `helm rollback xmc-cmp-<name> -n <namespace>` (or `helm uninstall xmc-cmp-<name> -n <namespace>` for a `pending-install` with no prior revision). Then bump the `Component` spec or restart the bridge so it re-actuates.
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
   - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.

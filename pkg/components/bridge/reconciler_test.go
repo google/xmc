@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -229,7 +230,7 @@ func (m *mockHelm) ComponentHealth(ctx context.Context, ref ComponentRef) (bool,
 	if m.unhealthyReason != "" {
 		return false, m.unhealthyReason, "mock Helm release unhealthy"
 	}
-	return true, reasonComponentHealthy, "mock Helm release deployed"
+	return true, ReasonComponentHealthy, "mock Helm release deployed"
 }
 
 func TestNewReconciler(t *testing.T) {
@@ -426,30 +427,96 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantHealth: &healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: reasonComponentHealthy},
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy},
 		},
 		{
 			name:   "active 1P with missing Helm release is unhealthy even if prober is healthy",
 			cms:    &mockCMS{},
 			prober: &mockProber{healthy: true},
-			helm:   &mockHelm{unhealthyReason: reasonHelmReleaseNotFound},
+			helm:   &mockHelm{unhealthyReason: ReasonHelmReleaseNotFound},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: reasonHelmReleaseNotFound},
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseNotFound},
 		},
 		{
 			name: "active 1P with failed async Helm upgrade is unhealthy",
 			cms:  &mockCMS{},
-			helm: &mockHelm{unhealthyReason: reasonHelmUpgradeFailed},
+			helm: &mockHelm{unhealthyReason: ReasonHelmUpgradeFailed},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: reasonHelmUpgradeFailed},
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmUpgradeFailed},
+		},
+		{
+			name: "active 1P with in-flight Helm upgrade is not ready but not degraded",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: ReasonHelmUpgradePending},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusFalse, Reason: ReasonHelmUpgradePending},
+		},
+		{
+			name: "active 1P with stuck Helm release is degraded",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: ReasonHelmReleaseStuck},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseStuck},
+		},
+		{
+			name: "active 1P transient Helm status error keeps previous healthy conditions",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+				},
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy},
+		},
+		{
+			name: "active 1P transient Helm status error keeps previous degraded conditions",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonHelmReleaseNotFound},
+					{Type: ConditionTypeDegraded, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonHelmReleaseNotFound},
+				},
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseNotFound},
+		},
+		{
+			name: "active 1P transient Helm status error without current-generation conditions is unknown, not degraded",
+			cms:  &mockCMS{},
+			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
+				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+				},
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusFalse, Reason: ReasonHelmStatusUnavailable},
 		},
 		{
 			name:   "active 1P without HelmManager falls back to prober",
@@ -460,7 +527,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: "HealthProbeFailed"},
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHealthProbeFailed},
 		},
 		{
 			name: "deletion blocked by protection",
@@ -825,6 +892,78 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete guards against reporting Ready=True from the
+// previously deployed revision while an async upgrade for a new generation is still in flight.
+func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T) {
+	ctx := context.Background()
+	gate := make(chan struct{})
+	runner := &mockHelmActionRunner{
+		upgradeGate: gate,
+		installed:   map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true}, // Generation 1 is deployed.
+	}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
+	r, err := NewReconciler(&mockCMS{}, nil, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 2,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		HasFinalizer: true, DeletionProtection: true, Enabled: true,
+		ExistingConditions: []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() while upgrade in flight failed: %v", err)
+	}
+	wantPending := healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusFalse, Reason: ReasonHelmUpgradePending}
+	if diff := cmp.Diff(wantPending, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions while upgrade in flight mismatch (-want +got):\n%s", diff)
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+		t.Errorf("state while upgrade in flight = %v, want PENDING_RECONCILIATION", res.State)
+	}
+
+	close(gate)
+	_ = mgr.Close() // Waits for the worker to finish the upgrade.
+	res, err = r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() after upgrade failed: %v", err)
+	}
+	wantHealthy := healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy}
+	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions after upgrade mismatch (-want +got):\n%s", diff)
+	}
+	if got := runner.upgradeCalls; got != 1 {
+		t.Errorf("upgradeCalls = %d, want 1 (second pass must not re-upgrade)", got)
+	}
+}
+
+func TestHealthConditionStatuses(t *testing.T) {
+	tests := []struct {
+		healthy      bool
+		reason       string
+		wantReady    string
+		wantDegraded string
+	}{
+		{healthy: true, reason: ReasonComponentHealthy, wantReady: ConditionStatusTrue, wantDegraded: ConditionStatusFalse},
+		{reason: ReasonHelmUpgradePending, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
+		{reason: ReasonHelmStatusUnavailable, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
+		{reason: ReasonHelmReleaseStuck, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
+		{reason: ReasonHelmReleaseNotReady, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
+	}
+	for _, tt := range tests {
+		ready, degraded := healthConditionStatuses(tt.healthy, tt.reason)
+		if ready != tt.wantReady || degraded != tt.wantDegraded {
+			t.Errorf("healthConditionStatuses(%v, %q) = (%s, %s), want (%s, %s)", tt.healthy, tt.reason, ready, degraded, tt.wantReady, tt.wantDegraded)
+		}
 	}
 }
 

@@ -205,9 +205,9 @@ func TestFakeHelmManager_ComponentHealth(t *testing.T) {
 		wantHealthy bool
 		wantReason  string
 	}{
-		{name: "defaults to healthy", mgr: NewFakeHelmManager(), wantHealthy: true, wantReason: reasonComponentHealthy},
-		{name: "unhealthy reason injected", mgr: &FakeHelmManager{UnhealthyReason: reasonHelmReleaseNotFound}, wantReason: reasonHelmReleaseNotFound},
-		{name: "nil manager", mgr: nil, wantReason: reasonHelmRunnerUninitialized},
+		{name: "defaults to healthy", mgr: NewFakeHelmManager(), wantHealthy: true, wantReason: ReasonComponentHealthy},
+		{name: "unhealthy reason injected", mgr: &FakeHelmManager{UnhealthyReason: ReasonHelmReleaseNotFound}, wantReason: ReasonHelmReleaseNotFound},
+		{name: "nil manager", mgr: nil, wantReason: ReasonHelmRunnerUninitialized},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -224,14 +224,14 @@ func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref Compone
 // ComponentHealth reports the component as healthy unless UnhealthyReason is set.
 func (f *FakeHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
 	if f == nil {
-		return false, reasonHelmRunnerUninitialized, "fake Helm manager is nil"
+		return false, ReasonHelmRunnerUninitialized, "fake Helm manager is nil"
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.UnhealthyReason != "" {
 		return false, f.UnhealthyReason, "fake component unhealthy"
 	}
-	return true, reasonComponentHealthy, "fake component healthy"
+	return true, ReasonComponentHealthy, "fake component healthy"
 }
 
 // GetAppliedValues returns a thread-safe deep copy of the applied Helm values for a component.
