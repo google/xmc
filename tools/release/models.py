@@ -167,26 +167,3 @@ class PublishReleaseResult(TypedDict):
     release_id: int | None
     is_draft: bool
     notes_file: str
-
-
-class FailedJobSummary(TypedDict, total=False):
-    """Summarized failed job information."""
-
-    name: str
-    conclusion: str
-    failed_steps: list[str]
-    url: str
-
-
-class DispatchWatchResult(TypedDict, total=False):
-    """Structured output from workflow dispatch and watch operations."""
-
-    run_id: int
-    url: str
-    head_sha: str
-    event: str
-    conclusion: str
-    superseded_by: int | None
-    failed_jobs: list[FailedJobSummary]
-    page_url: str | None
-    _exit_code: int

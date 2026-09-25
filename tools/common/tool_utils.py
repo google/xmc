@@ -122,18 +122,10 @@ def _bootstrap_venv(venv_dir: Path) -> None:
 class HandledError(Exception):
     """Exception raised for errors that are handled with instructions."""
 
-    def __init__(
-        self,
-        message: str,
-        instruction: str,
-        exit_code: int = 1,
-        details: dict[str, Any] | None = None,
-    ):
+    def __init__(self, message, instruction):
         super().__init__(message)
         self.message = message
         self.instruction = instruction
-        self.exit_code = exit_code
-        self.details = details or {}
 
 
 def run_tool(parser: argparse.ArgumentParser, main_fn):
@@ -143,7 +135,7 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
     - Captures exceptions and formats output as JSON.
     - Exit codes:
       0: Success
-      1: Handled error (or custom exit code)
+      1: Handled error
       2: Unhandled error
     """
     ensure_venv()
@@ -151,13 +143,9 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         args = parser.parse_args()
         result = main_fn(args)
 
-        exit_code = 0
-        if isinstance(result, dict) and "_exit_code" in result:
-            exit_code = result.pop("_exit_code")
-
         output = {"status": "success", "result": result}
         print(json.dumps(output, indent=2))
-        sys.exit(exit_code)
+        sys.exit(0)
 
     except HandledError as e:
         output = {
@@ -166,10 +154,8 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
             "message": e.message,
             "instruction": e.instruction,
         }
-        if getattr(e, "details", None):
-            output["details"] = e.details
         print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(getattr(e, "exit_code", 1))
+        sys.exit(1)
 
     except Exception as e:
         output = {
