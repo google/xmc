@@ -1007,6 +1007,9 @@ func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (b
 	healthy, reason, msg := evaluateReleaseHealth(releaseName, rel, err)
 	if healthy {
 		m.mu.Lock()
+		if m.healthVerifiedAt == nil {
+			m.healthVerifiedAt = make(map[string]time.Time)
+		}
 		m.healthVerifiedAt[ref.String()] = time.Now()
 		m.mu.Unlock()
 	}
