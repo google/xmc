@@ -96,7 +96,6 @@ has already produced, so this costs no additional analysis:
 > A finding routed to a rung that needs no boundary has no evidence sets to draw on, and benchmarks
 > with the origin scenario alone. Record that explicitly in the report rather than leaving the two
 > missing scenarios unexplained.
-
 ### Phase 2: Risk Tier & Teardown Agreement
 If the task involves Tier 2 or Tier 3 side effects, present the teardown contract to the user before launching subagents:
 > *"Benchmark will test updates to `XMC Create PR`. Side Effects: Will create 2 temporary test PRs titled `[BENCHMARK TEST]` on remote. Post-benchmark cleanup will execute `gh pr close <PR_URL> --delete-branch`. Proceed with benchmark? (Y/n)"*

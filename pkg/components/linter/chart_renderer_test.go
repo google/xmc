@@ -89,77 +89,249 @@ upper: "MIXEDCASE"`,
 	}
 }
 
-func TestRedpandaBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
-	t.Parallel()
+func boolPtr(v bool) *bool { return &v }
 
-	redpandaDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", "redpanda"))
-	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
-
-	res, err := linter.NewLinter(nil).ValidateDirectory(redpandaDir)
+func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.ComponentManifest) {
+	t.Helper()
+	res, err := linter.NewLinter(nil).ValidateDirectory(chartDir)
 	if err != nil {
-		t.Fatalf("ValidateDir(%q) unexpected error: %v", redpandaDir, err)
+		t.Fatalf("ValidateDirectory(%q) unexpected error: %v", chartDir, err)
 	}
 	if !res.Valid {
-		t.Fatalf("ValidateDir(%q) failed with errors: %v", redpandaDir, res.Errors)
+		t.Fatalf("ValidateDirectory(%q) failed with errors: %v", chartDir, res.Errors)
 	}
 
-	tmplPath := filepath.Join(redpandaDir, "templates", "component.yaml")
-	rendered, err := linter.RenderChartTemplate(redpandaDir, tmplPath)
+	tmplPath := filepath.Join(chartDir, "templates", "component.yaml")
+	rendered, err := linter.RenderChartTemplate(chartDir, tmplPath)
 	if err != nil {
 		t.Fatalf("RenderChartTemplate() failed: %v", err)
 	}
 
 	var got linter.ComponentManifest
 	if err := yaml.Unmarshal(rendered, &got); err != nil {
-		t.Fatalf("failed to unmarshal rendered Redpanda Component manifest: %v", err)
+		t.Fatalf("failed to unmarshal rendered Component manifest: %v", err)
 	}
-
-	enabled := false
-	want := linter.ComponentManifest{
-		APIVersion: "xmc.dev/v1alpha1",
-		Kind:       "Component",
-		Metadata: linter.ObjectMetadata{
-			Name:      "redpanda",
-			Namespace: "xmc",
-			Labels: map[string]string{
-				"xmc.dev/profile":              "stable-2026a",
-				"app.kubernetes.io/name":       "redpanda",
-				"app.kubernetes.io/managed-by": "Helm",
-			},
-		},
-		Spec: linter.ComponentManifestSpec{
-			Enabled:            &enabled,
-			ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
-			ComponentClass:     "event-stream",
-			Version:            "0.1.0",
-			ChartVersion:       "0.1.0",
-			DeletionProtection: true,
-			DeletionPolicy:     "Delete",
-			WrapperRef: &linter.ComponentWrapperRef{
-				CrdGroup:               "redpanda.vectorized.io",
-				CrdVersion:             "v1alpha1",
-				CrdKind:                "Cluster",
-				TargetName:             "redpanda",
-				TargetNamespace:        "xmc",
-				ObservedGenerationPath: "$.status.observedGeneration",
-				ReadyConditionPath:     "$.status.conditions[?(@.type=='Ready')].status",
-				ExpectedReadyValue:     "True",
-				EndpointJsonPath:       "$.status.nodes.internal[0]",
-			},
-			Parameters: map[string]string{
-				"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
-				"kafkaPort":       "9092",
-				"defaultTopic":    "xmc-metrics",
-				"storageSize":     "10Gi",
-			},
-		},
-	}
-
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("rendered Redpanda Component manifest mismatch (-want +got):\n%s", diff)
+		t.Errorf("rendered Component manifest mismatch (-want +got):\n%s", diff)
+	}
+	validateManifestAgainstCRD(t, crdPath, &got)
+}
+
+func stageChartFile(t *testing.T, srcPath, dstPath string) {
+	t.Helper()
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", srcPath, err)
+	}
+	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", dstPath, err)
+	}
+}
+
+func mergeValuesMap(dst, src map[string]any) {
+	for k, v := range src {
+		srcMap, srcOk := v.(map[string]any)
+		dstMap, dstOk := dst[k].(map[string]any)
+		if srcOk && dstOk {
+			mergeValuesMap(dstMap, srcMap)
+			continue
+		}
+		dst[k] = v
+	}
+}
+
+func stageMergedChartValues(t *testing.T, srcDir, chartDir, customValues string) {
+	t.Helper()
+	baseBytes, err := os.ReadFile(filepath.Join(srcDir, "values.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read base values.yaml: %v", err)
+	}
+	baseMap := make(map[string]any)
+	if err := yaml.Unmarshal(baseBytes, &baseMap); err != nil {
+		t.Fatalf("failed to unmarshal base values.yaml: %v", err)
+	}
+	customMap := make(map[string]any)
+	if err := yaml.Unmarshal([]byte(customValues), &customMap); err != nil {
+		t.Fatalf("failed to unmarshal customValues: %v", err)
+	}
+	mergeValuesMap(baseMap, customMap)
+	mergedBytes, err := yaml.Marshal(baseMap)
+	if err != nil {
+		t.Fatalf("failed to marshal merged values.yaml: %v", err)
+	}
+	writeTestManifest(t, chartDir, "values.yaml", string(mergedBytes))
+}
+
+func stageChartWithValues(t *testing.T, srcDir, customValues string) string {
+	t.Helper()
+	chartDir := t.TempDir()
+	stageChartFile(t, filepath.Join(srcDir, "Chart.yaml"), filepath.Join(chartDir, "Chart.yaml"))
+	err := filepath.WalkDir(filepath.Join(srcDir, "templates"), func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(filepath.Join(srcDir, "templates"), path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(chartDir, "templates", rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		stageChartFile(t, path, dst)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to copy templates: %v", err)
+	}
+	stageMergedChartValues(t, srcDir, chartDir, customValues)
+	return chartDir
+}
+
+func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
+	t.Parallel()
+	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
+
+	tests := []struct {
+		name         string
+		component    string
+		customValues string
+		want         linter.ComponentManifest
+	}{
+		{
+			name:      "RedpandaDefaultBlueprint",
+			component: "redpanda",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "redpanda",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"app.kubernetes.io/name":       "redpanda",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+					ComponentClass:     "event-stream",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"brokerEndpoints": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+						"kafkaPort":       "9092",
+						"defaultTopic":    "xmc-metrics",
+						"storageSize":     "10Gi",
+					},
+				},
+			},
+		},
+		{
+			name:      "ClickHouseDefaultBlueprint",
+			component: "clickhouse",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "clickhouse",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"app.kubernetes.io/name":       "clickhouse",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+					ComponentClass:     "analytical-db",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"host":                "clickhouse.xmc-metrics.svc.cluster.local",
+						"clusterEndpoints":    "clickhouse.xmc-metrics.svc.cluster.local:9000",
+						"nativePort":          "9000",
+						"httpPort":            "8123",
+						"defaultDatabase":     "default",
+						"user":                "default",
+						"secretName":          "clickhouse-secret",
+						"secretPasswordKey":   "clickhouse-password",
+						"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
+						"storageSize":         "10Gi",
+					},
+				},
+			},
+		},
+		{
+			name:      "ClickHouseCustomOverrides",
+			component: "clickhouse",
+			customValues: `enabled: true
+namespace: xmc-metrics
+deletionProtection: false
+deletionPolicy: Orphan
+parameters:
+  host: "clickhouse-custom.xmc-metrics.svc.cluster.local"
+  nativePort: 9440
+  httpPort: 8443
+  defaultDatabase: "analytics"
+  user: "xmc_reader"
+  secretName: "clickhouse-custom-secret"
+  storageSize: "100Gi"
+`,
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "clickhouse",
+					Namespace: "xmc-metrics",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"app.kubernetes.io/name":       "clickhouse",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(true),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+					ComponentClass:     "analytical-db",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					DeletionProtection: false,
+					DeletionPolicy:     "Orphan",
+					Parameters: map[string]string{
+						"host":                "clickhouse-custom.xmc-metrics.svc.cluster.local",
+						"clusterEndpoints":    "clickhouse-custom.xmc-metrics.svc.cluster.local:9440",
+						"nativePort":          "9440",
+						"httpPort":            "8443",
+						"defaultDatabase":     "analytics",
+						"user":                "xmc_reader",
+						"secretName":          "clickhouse-custom-secret",
+						"secretPasswordKey":   "clickhouse-password",
+						"healthCheckEndpoint": "http://clickhouse-custom.xmc-metrics.svc.cluster.local:8443/ping",
+						"storageSize":         "100Gi",
+					},
+				},
+			},
+		},
 	}
 
-	validateManifestAgainstCRD(t, crdPath, &got)
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			chartDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", tc.component))
+			if tc.customValues != "" {
+				chartDir = stageChartWithValues(t, chartDir, tc.customValues)
+			}
+			verifyBlueprintChart(t, chartDir, crdPath, tc.want)
+		})
+	}
 }
 
 type crdSchemaDoc struct {
@@ -217,18 +389,16 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
 	}
 
-	if comp.Spec.WrapperRef == nil {
-		t.Fatal("comp.Spec.WrapperRef is nil")
-	}
-
-	wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
-	obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
-	if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
-		t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())
-	}
-	readyRe := regexp.MustCompile(wrapperProps.ReadyConditionPath.Pattern)
-	if !readyRe.MatchString(comp.Spec.WrapperRef.ReadyConditionPath) {
-		t.Errorf("readyConditionPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ReadyConditionPath, readyRe.String())
+	if comp.Spec.WrapperRef != nil {
+		wrapperProps := version.Schema.OpenAPIV3Schema.Properties.Spec.Properties.WrapperRef.Properties
+		obsRe := regexp.MustCompile(wrapperProps.ObservedGenerationPath.Pattern)
+		if !obsRe.MatchString(comp.Spec.WrapperRef.ObservedGenerationPath) {
+			t.Errorf("observedGenerationPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ObservedGenerationPath, obsRe.String())
+		}
+		readyRe := regexp.MustCompile(wrapperProps.ReadyConditionPath.Pattern)
+		if !readyRe.MatchString(comp.Spec.WrapperRef.ReadyConditionPath) {
+			t.Errorf("readyConditionPath %q does not match CRD pattern %q", comp.Spec.WrapperRef.ReadyConditionPath, readyRe.String())
+		}
 	}
 }
 

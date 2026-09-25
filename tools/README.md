@@ -67,7 +67,14 @@ Harness for automated validation and discovery of XMC component profiles:
 - [`run_linter.py`](components/run_linter.py): Discovers component manifest directories across configured search roots (`deploy/profiles`, `deploy/components`, `examples/components/profiles`), resolves co-located `rules.yaml` files, and runs `component-linter` with consolidated text/JSON reporting.
 - [`run_linter_test.py`](components/run_linter_test.py): Hermetic unit test suite for directory discovery, rules matching, exit codes, and JSON serialization.
 
-### 5. `tools/lint/` (Static Analyzers & Linters)
+### 6. `tools/release/` (Release Automation & Metadata Tooling)
+Tooling and automation for release metadata extraction, SemVer calculations, and GitHub release publication:
+- [`extract_release_metadata.py`](release/extract_release_metadata.py): Extracts git history, discovers dynamic feature flags, routes commits to audience tiers, and calculates SemVer recommendations.
+- [`publish_release.py`](release/publish_release.py): Tags git commits, pushes remote tags, and publishes GitHub Releases via `gh` CLI.
+- [`semver_engine.py`](release/semver_engine.py): Strict SemVer 2.0 recommendation engine and rationale generation.
+- See [`tools/release/README.md`](release/README.md) for complete CLI documentation and schema references.
+
+### 7. `tools/lint/` (Static Analyzers & Linters)
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 

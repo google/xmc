@@ -110,8 +110,11 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 	if spec == nil {
 		return false, "spec is nil"
 	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER || spec.GetWrapperRef() == nil {
+	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
 		return true, "Component healthy"
+	}
+	if spec.GetWrapperRef() == nil {
+		return p.probeOperatorlessHealth(ctx, spec)
 	}
 	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
 	if p.detector == nil {
@@ -136,6 +139,24 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 		return true, probeMsg
 	}
 	return true, res.Message
+}
+
+func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
+	endpoint := resolveProbeEndpoint(spec.GetParameters())
+	if endpoint == "" {
+		return false, "no wrapperRef or connection endpoint parameters configured"
+	}
+	ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
+	if !ok {
+		if probeMsg == "" {
+			return false, "health probe failed"
+		}
+		return false, probeMsg
+	}
+	if probeMsg != "" {
+		return true, probeMsg
+	}
+	return true, "Component healthy"
 }
 
 func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
@@ -794,13 +815,78 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
 		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
 	}
-	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath == "" {
+	if ref.Name == "" && resolveOperatorlessEndpoint(in) == "" {
 		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
 	}
 	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
 		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
 	}
 	return ref, "", ""
+}
+
+func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
+	if in.WrapperOpts.EndpointJSONPath != "" && !strings.HasPrefix(in.WrapperOpts.EndpointJSONPath, "$") {
+		return in.WrapperOpts.EndpointJSONPath
+	}
+	if in.Spec == nil || in.Spec.GetWrapperRef() != nil {
+		return ""
+	}
+	return resolveProbeEndpoint(in.Spec.GetParameters())
+}
+
+func firstNonEmptyToken(val string) string {
+	if val == "" {
+		return ""
+	}
+	for _, part := range strings.Split(val, ",") {
+		if first := strings.TrimSpace(part); first != "" {
+			return first
+		}
+	}
+	return ""
+}
+
+func resolveProbeEndpoint(params map[string]string) string {
+	if len(params) == 0 {
+		return ""
+	}
+	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
+		return ep
+	}
+	return resolveConnectionEndpoint(params)
+}
+
+func resolveConnectionEndpoint(params map[string]string) string {
+	if len(params) == 0 {
+		return ""
+	}
+	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints"} {
+		if first := firstNonEmptyToken(params[k]); first != "" {
+			return first
+		}
+	}
+	host := firstNonEmptyToken(params["host"])
+	if host == "" {
+		return ""
+	}
+	return formatHostEndpoint(host, params)
+}
+
+func formatHostEndpoint(host string, params map[string]string) string {
+	if strings.Count(host, ":") == 1 || (strings.HasPrefix(host, "[") && strings.Contains(host, "]:")) {
+		return host
+	}
+	for _, pk := range []string{"nativePort", "kafkaPort", "port", "httpPort"} {
+		port := strings.TrimSpace(params[pk])
+		if port == "" {
+			continue
+		}
+		if strings.Count(host, ":") > 1 && !strings.HasPrefix(host, "[") {
+			return fmt.Sprintf("[%s]:%s", host, port)
+		}
+		return fmt.Sprintf("%s:%s", host, port)
+	}
+	return host
 }
 
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
@@ -813,8 +899,10 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	if unreadyReason != "" {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
 	}
-	if ref.Name == "" && in.WrapperOpts.EndpointJSONPath != "" {
-		return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, in.WrapperOpts.EndpointJSONPath)
+	if ref.Name == "" {
+		if endpoint := resolveOperatorlessEndpoint(in); endpoint != "" {
+			return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, endpoint)
+		}
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
@@ -863,15 +951,24 @@ func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in Reconcil
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
 // It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
-func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, endpoint string) (*ReconcileResult, error) {
-	if ok, reason, msg := r.verifyEndpointHealth(ctx, endpoint); !ok {
+func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, probeEndpoint string) (*ReconcileResult, error) {
+	if ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint); !ok {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
 	}
+	connEndpoint := probeEndpoint
+	var secretName string
+	if in.Spec != nil && in.Spec.GetParameters() != nil {
+		if ce := resolveConnectionEndpoint(in.Spec.GetParameters()); ce != "" {
+			connEndpoint = ce
+		}
+		secretName = in.Spec.GetParameters()["secretName"]
+	}
 	resStatus := &ResourceStatus{
-		Found:    true,
-		Ready:    true,
-		Endpoint: endpoint,
-		Message:  "Static endpoint is reachable and healthy",
+		Found:            true,
+		Ready:            true,
+		Endpoint:         connEndpoint,
+		ConnectionSecret: secretName,
+		Message:          "Static endpoint is reachable and healthy",
 	}
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
 }

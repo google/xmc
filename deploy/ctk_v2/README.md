@@ -41,7 +41,8 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the optional metrics pipeline microservice (Ingestion Gateway). Controls metrics telemetry ingestion (Ingestion Gateway / ClickHouse pipeline).
 *   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
-*   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Resource Optimization & Diagnostics (ROD) Data Provider.
+*   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
+*   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
 *   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).

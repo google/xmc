@@ -27,6 +27,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
@@ -208,6 +209,41 @@ func TestFake_MutationIsolation(t *testing.T) {
 	tasks, err := fake.List(ctx)
 	if err != nil || len(tasks) != 1 || tasks[0].Action.GetDelete() != nil {
 		t.Errorf("Stored task Action was mutated via input reference")
+	}
+}
+
+func TestFake_MutationIsolation_WorkUnit(t *testing.T) {
+	ctx, fake := context.Background(), NewFake()
+	task := newTask("t1", 10)
+	task.WorkUnit = &essmsgpb.WorkUnit{
+		Name:     "experiments/100/workUnits/200",
+		Priority: essmsgpb.Priority_NORMAL,
+	}
+	if err := fake.Create(ctx, task); err != nil {
+		t.Fatalf("Create() error: %v", err)
+	}
+
+	task.WorkUnit = proto.Modify(task.WorkUnit, func(wu *essmsgpb.WorkUnit) {
+		wu.Priority = essmsgpb.Priority_HIGH
+	})
+
+	tasks, err := fake.List(ctx)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("List() error = %v, want 1 task", err)
+	}
+	if tasks[0].WorkUnit.GetPriority() != essmsgpb.Priority_NORMAL {
+		t.Errorf("Stored task WorkUnit was mutated via input reference: got %v, want %v", tasks[0].WorkUnit.GetPriority(), essmsgpb.Priority_NORMAL)
+	}
+
+	tasks[0].WorkUnit = proto.Modify(tasks[0].WorkUnit, func(wu *essmsgpb.WorkUnit) {
+		wu.Priority = essmsgpb.Priority_LOW
+	})
+	tasksSecond, err := fake.ListPending(ctx, 0)
+	if err != nil || len(tasksSecond) != 1 {
+		t.Fatalf("ListPending() error = %v, want 1 task", err)
+	}
+	if tasksSecond[0].WorkUnit.GetPriority() != essmsgpb.Priority_NORMAL {
+		t.Errorf("Stored task WorkUnit in Fake was mutated via output reference: got %v, want %v", tasksSecond[0].WorkUnit.GetPriority(), essmsgpb.Priority_NORMAL)
 	}
 }
 

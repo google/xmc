@@ -58,6 +58,7 @@ go_test(
     ],
     data = [
         "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026a/components/clickhouse:chart",
         "//deploy/profiles/stable-2026a/components/redpanda:chart",
     ],
     deps = [

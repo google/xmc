@@ -276,6 +276,25 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantAddFin: true,
 		},
 		{
+			name:   "active operatorless 3P with endpoint and secret in parameters",
+			cms:    &mockCMS{},
+			prober: &mockProber{healthy: true},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "clickhouse", Generation: 1,
+				Spec: &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{
+						"host":                "clickhouse.xmc-metrics.svc.cluster.local",
+						"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
+						"secretName":          "clickhouse-secret",
+					},
+				},
+				DeletionProtection: true, Enabled: true,
+			},
+			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantAddFin: true,
+		},
+		{
 			name: "active 3P with coordinate injection",
 			cms:  &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{
@@ -1651,6 +1670,26 @@ func TestBridgeProber(t *testing.T) {
 	if ok, msg := bpWithNilResult.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "health prober returned nil result" {
 		t.Errorf("expected false for nil result from prober: ok=%v, msg=%s", ok, msg)
 	}
+
+	// ProbeHealth for 3P without wrapperRef and without endpoint parameters must fail
+	spec3PEmpty := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+	}
+	if ok, msg := bp.ProbeHealth(ctx, spec3PEmpty, "xmc"); ok || msg != "no wrapperRef or connection endpoint parameters configured" {
+		t.Errorf("expected false for 3P without wrapperRef or endpoint parameters: ok=%v, msg=%s", ok, msg)
+	}
+
+	// ProbeHealth for 3P without wrapperRef with comma-prefixed / fallback endpoint parameters
+	spec3PParams := &componentspb.ComponentSpec{
+		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		Parameters: map[string]string{
+			"healthCheckEndpoint": " , ",
+			"clusterEndpoints":    " , http://my-crd.xmc:8080 , ",
+		},
+	}
+	if ok, msg := bp.ProbeHealth(ctx, spec3PParams, "xmc"); !ok || msg != "HTTP 200" {
+		t.Errorf("expected true for 3P with endpoint parameters: ok=%v, msg=%s", ok, msg)
+	}
 }
 
 func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
@@ -2012,5 +2051,92 @@ func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *te
 	}
 	if !helm.deleteCalled {
 		t.Error("expected Delete1PComponent to be called when deactivating previously Ready component after controller restart")
+	}
+}
+
+func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ReconcileComponentInput
+		want string
+	}{
+		{
+			name: "JSONPath EndpointJSONPath is ignored when wrapperRef is nil",
+			in: ReconcileComponentInput{
+				WrapperOpts: WrapperRef{EndpointJSONPath: "$.status.endpoint"},
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"endpoint": "http://clickhouse:8123"},
+				},
+			},
+			want: "http://clickhouse:8123",
+		},
+		{
+			name: "Static EndpointJSONPath override is returned",
+			in: ReconcileComponentInput{
+				WrapperOpts: WrapperRef{EndpointJSONPath: "http://static:8123"},
+			},
+			want: "http://static:8123",
+		},
+		{
+			name: "Non-nil WrapperRef does not fall through to parameters",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					WrapperRef: &componentspb.WrapperRef{CrdKind: "ClickHouseInstallation"},
+					Parameters: map[string]string{"host": "clickhouse", "httpPort": "8123"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "IPv6 host is bracketed when combined with port",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": " , 2001:db8::1 , ::1 ", "httpPort": "8123"},
+				},
+			},
+			want: "[2001:db8::1]:8123",
+		},
+		{
+			name: "host already containing port is returned directly",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": "my-service:8080", "httpPort": "8123"},
+				},
+			},
+			want: "my-service:8080",
+		},
+		{
+			name: "bracketed IPv6 host with port is returned directly",
+			in: ReconcileComponentInput{
+				Spec: &componentspb.ComponentSpec{
+					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{"host": "[2001:db8::1]:8080", "httpPort": "8123"},
+				},
+			},
+			want: "[2001:db8::1]:8080",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveOperatorlessEndpoint(tc.in); got != tc.want {
+				t.Errorf("resolveOperatorlessEndpoint() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	params := map[string]string{
+		"host":                "clickhouse.xmc-metrics.svc.cluster.local",
+		"nativePort":          "9000",
+		"httpPort":            "8123",
+		"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
+	}
+	if got := resolveProbeEndpoint(params); got != "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping" {
+		t.Errorf("resolveProbeEndpoint() = %q, want healthCheckEndpoint", got)
+	}
+	if got := resolveConnectionEndpoint(params); got != "clickhouse.xmc-metrics.svc.cluster.local:9000" {
+		t.Errorf("resolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
 	}
 }

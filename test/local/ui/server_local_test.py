@@ -356,8 +356,8 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "defaults",
                 "environ": {},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -365,8 +365,8 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "performance_dashboard_true",
                 "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -374,8 +374,8 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "is_non_prod_auth_true",
                 "environ": {"XMC_NON_PROD_AUTH": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
                 ),
             },
@@ -383,8 +383,8 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "pause_scheduling_enabled_true",
                 "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "true"},
                 "expected": (
-                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": false,'
-                    ' "resourceDashboardEnabled": false, "performanceDashboardEnabled":'
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
                 ),
             },

@@ -18,6 +18,7 @@ package pausedtask
 import (
 	"time"
 
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
@@ -46,6 +47,7 @@ type PausedTask struct {
 	TaskID           string
 	Target           string
 	Action           *actuatortaskpb.Action
+	WorkUnit         *essmsgpb.WorkUnit
 	OperationName    string
 	TraceID          string
 	Priority         int64
