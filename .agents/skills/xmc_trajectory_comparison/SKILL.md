@@ -5,22 +5,20 @@ description: Validates proposed skill or rule changes by executing concurrent A/
 
 # Skill & Rule Trajectory Comparison Benchmark
 
-This skill provides an automated A/B benchmark workflow to evaluate proposed changes to rules (`.agents/rules/`) or skills (`.agents/skills/`) before committing them. It spawns dual worker subagents to execute a test prompt concurrently across both a clean baseline copy and your modified candidate worktree, compares execution trajectories and output quality, and tears down any temporary external resources.
+This skill provides an automated A/B benchmark workflow to evaluate proposed changes to rules (`.agents/rules/`) or skills (`.agents/skills/`) before committing them. It spawns up to four concurrent worker subagent arms across clean baseline and modified candidate worktrees (`Origin Baseline`, `Origin Candidate`, `Held-out Transfer Candidate`, and `Negative Regression Candidate`), compares execution trajectories and scenario outcomes, and tears down any temporary external resources.
 
 ```mermaid
 graph TD
     A[Skill / Rule Edits in Worktree] --> B[1. Extract Structured Git Diff]
     B --> C[2. Main Agent Semantic Reasoning: Prompt Synthesis & Risk Classification]
-<<<<<<< HEAD
     C --> M["2b. Derive 3-Scenario Matrix from Evidence Sets (Origin / Transfer / Negative)"]
     M --> D[3. User Confirmation & Teardown Plan Agreement]
-=======
-    C --> D[3. User Confirmation & Teardown Plan Agreement]
->>>>>>> fix/benchmark-baseline-rule-injection
-    D -->|Approved| E1["Subagent Baseline: parent detached to baseline ref before spawn"]
-    D -->|Approved| E2[Subagent Candidate: Workspace branch + modified worktree]
-    E1 --> F1[Baseline Transcript Log & Outcome Artifacts]
-    E2 --> F2[Candidate Transcript Log & Outcome Artifacts]
+    D -->|Approved| E1["Origin Baseline Arm: parent detached to baseline ref before spawn"]
+    D -->|Approved| E2["Origin Candidate Arm: Workspace branch + modified worktree"]
+    D -->|Approved| E3["Transfer Candidate Arm (if boundary-governed): Workspace branch"]
+    D -->|Approved| E4["Negative Candidate Arm (if negative set non-empty): Workspace branch"]
+    E1 --> F1[Origin Baseline Transcript & Workspace]
+    E2 & E3 & E4 --> F2[Candidate Scenario Transcripts & Workspaces]
     F1 & F2 --> G[4. Run teardown_benchmark.py]
     G --> H[5. Run compare_trajectories.py --prompt ...]
     H --> I[6. Dual-Pillar Evaluation, Relevance Gate & 3-Scenario Verdict Matrix]
@@ -103,7 +101,7 @@ has already produced, so this costs no additional analysis:
 If the task involves Tier 2 or Tier 3 side effects, present the teardown contract to the user before launching subagents:
 > *"Benchmark will test updates to `XMC Create PR`. Side Effects: Will create 2 temporary test PRs titled `[BENCHMARK TEST]` on remote. Post-benchmark cleanup will execute `gh pr close <PR_URL> --delete-branch`. Proceed with benchmark? (Y/n)"*
 
-### Phase 3: Dual Concurrent Subagent Execution
+### Phase 3: Concurrent Subagent Arm Execution (Up to 4 Arms)
 
 > [!IMPORTANT]
 > **A subagent's injected rules must match its own disk state.** `.agents/` content is injected into a
@@ -112,36 +110,38 @@ If the task involves Tier 2 or Tier 3 side effects, present the teardown contrac
 > from a candidate parent silently receives a summary of the very change under test. Never rely on an
 > in-subagent reset to produce a clean baseline.
 
-1. **Baseline Subagent** — commit all candidate edits to the candidate branch first, then park the parent
-   worktree on `<baseline_ref>` *before* spawning. Never stash or leave edits uncommitted: `Workspace: "branch"`
-   runs `git worktree add`, which only checks out the **committed** `HEAD` into the child worktree (so
-   stashed or unstaged edits would be absent from the Candidate arm), while `git switch --detach` carries
-   dirty working-tree files into the Baseline arm.
+1. **Origin Baseline Subagent (`1` arm)** — commit all candidate edits to the candidate branch first, then
+   park the parent worktree on `<baseline_ref>` *before* spawning. Never stash or leave edits uncommitted:
+   `Workspace: "branch"` runs `git worktree add`, which only checks out the **committed** `HEAD` into the
+   child worktree (so stashed or unstaged edits would be absent from the Candidate arms), while
+   `git switch --detach` carries dirty working-tree files into the Baseline arm.
 
    ```bash
    test -z "$(git status --porcelain)" || { echo "dirty tree: commit candidate edits first"; exit 1; }
    git switch --detach <baseline_ref>   # parent worktree now matches the baseline
-   # → invoke_subagent for the baseline arm here, with Workspace: "branch"
+   # → invoke_subagent for the Origin Baseline arm here, with Workspace: "branch"
    git switch -                         # restore candidate branch as soon as invoke_subagent returns
    ```
 
    - `Workspace`: `"branch"` — the arm's branch is cut from the detached parent, so it starts clean and needs no reset.
-   - `Role`: `"Baseline Subagent"`
-   - `Prompt`: execute the target test prompt. Do **not** instruct a reset or a Turn-1 `.agents/` self-check.
-2. **Candidate Subagent** — spawn after the parent is restored to the committed candidate branch:
-   - `Workspace`: `"branch"`
-   - `Role`: `"Candidate Subagent"`
-   - `Prompt`: Execute the target test prompt directly within the modified worktree context, adhering strictly to context-aware execution bounds (do NOT run unrequested test suites for read-only or document summary prompts).
+   - `Role`: `"Origin Baseline Subagent"`
+   - `Prompt`: execute the `origin` scenario prompt. Do **not** instruct a reset or a Turn-1 `.agents/` self-check.
+2. **Candidate Subagents (`up to 3` arms in a single `invoke_subagent` call)** — spawn after the parent is
+   restored to the committed candidate branch, adhering strictly to context-aware execution bounds (do NOT
+   run unrequested test suites for read-only or document summary prompts):
+   - **`Origin Candidate Subagent`** (`Workspace: "branch"`): executes the `origin` scenario prompt (always required).
+   - **`Held-Out Transfer Candidate Subagent`** (`Workspace: "branch"`): executes the `transfer` scenario prompt on the held-out positive-set member (required whenever boundary derivation applies).
+   - **`Negative Regression Candidate Subagent`** (`Workspace: "branch"`): executes the `negative` scenario prompt on the negative-set member (required whenever the negative evidence set is non-empty).
 
-**Orchestrator isolation verification (MUST).** The two arms are spawned seconds apart and execute
-concurrently. Before trusting the results, verify from the orchestrator that each child worktree sits at
-its intended ref (`git -C <baseline_arm_worktree> rev-parse HEAD` must match `<baseline_ref>`, and
-`git -C <candidate_arm_worktree> rev-parse HEAD` must match `<candidate_ref>`) and inspect transcripts
-post-hoc rather than asking subagents to read `.agents/AGENTS.md` on Turn 1 (which only checks a single
-file and inflates turn/token telemetry in `compare_trajectories.py`). Because LLM trajectories are
-autoregressive and `compare_trajectories.py` evaluates whole-transcript metrics (`turns`, `est_tokens`),
-if contamination is ever detected, discard and re-run the entire affected arm rather than salvaging
-individual criteria.
+**Orchestrator isolation verification (MUST).** The Baseline batch and Candidate batch are spawned seconds
+apart and execute concurrently. Before trusting the results, verify from the orchestrator that every child
+worktree sits at its intended ref (`git -C <origin_baseline_worktree> rev-parse HEAD` must match
+`<baseline_ref>`, and `git -C <candidate_arm_worktree> rev-parse HEAD` across `origin`, `transfer`, and
+`negative` candidate worktrees must match `<candidate_ref>`) and inspect transcripts post-hoc rather than
+asking subagents to read `.agents/AGENTS.md` on Turn 1 (which only checks a single file and inflates
+turn/token telemetry in `compare_trajectories.py`). Because LLM trajectories are autoregressive and
+`compare_trajectories.py` evaluates whole-transcript metrics (`turns`, `est_tokens`), if contamination is
+ever detected, discard and re-run the entire affected arm rather than salvaging individual criteria.
 
 ### Phase 4: Resource Teardown & Manifest Cleanup
 After both subagents complete, run `tools/benchmark/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
