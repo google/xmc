@@ -359,16 +359,32 @@ func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponent
 	}
 	waitMsg, err := r.registerIntent(ctx, in, canonicalName, res)
 	if err != nil {
+		preserveDependenciesReady(res, in.ExistingConditions)
 		return res, err
 	}
 	if waitMsg != "" && !r.isActuated(in) {
 		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg, ConditionStatusFalse)
 	}
 	res, err = r.actuateAndEvaluate(ctx, in, canonicalName, res, waitMsg != "")
-	if err == nil && len(in.Spec.GetDependencies()) > 0 && (in.Dependencies != nil || waitMsg != "") {
+	if err != nil {
+		preserveDependenciesReady(res, in.ExistingConditions)
+		return res, err
+	}
+	if len(in.Spec.GetDependencies()) > 0 && (in.Dependencies != nil || waitMsg != "") {
 		setDependenciesReadyCondition(res, in, waitMsg)
 	}
-	return res, err
+	return res, nil
+}
+
+// preserveDependenciesReady carries an existing DependenciesReady condition over an error pass. The
+// status write replaces all conditions, and dropping it would make isActuated treat an actuated
+// component (e.g. a 3P wrapper that is not Ready) as never actuated on the next pass.
+func preserveDependenciesReady(res *ReconcileResult, existing []Condition) {
+	prev := findCondition(existing, ConditionTypeDependenciesReady)
+	if res == nil || prev == nil || findCondition(res.Conditions, ConditionTypeDependenciesReady) != nil {
+		return
+	}
+	res.Conditions = append(res.Conditions, *prev)
 }
 
 // registerIntent applies intent to CMS regardless of dependency readiness and returns a "waiting on

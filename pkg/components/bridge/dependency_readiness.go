@@ -37,7 +37,8 @@ type DependencyReadiness interface {
 
 // DependencySnapshot is an immutable, point-in-time DependencyReadiness view built from a
 // single Component list. Component names are global in CMS, so entries are keyed by
-// canonical name only.
+// canonical name only. The bridge lists one namespace, so a dependency on a Component outside
+// it resolves as "not found".
 type DependencySnapshot struct {
 	// unreadyReasons maps canonical Component names to "" when ready, or to the unready reason.
 	unreadyReasons map[string]string

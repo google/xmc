@@ -2768,3 +2768,22 @@ func TestSetDependenciesReadyConditionMessage(t *testing.T) {
 		})
 	}
 }
+
+// TestReconcileComponent_ErrorPassPreservesDependenciesReady guards isActuated: an error pass must not
+// drop DependenciesReady, or an actuated but unhealthy 3P wrapper would be re-gated on the next pass.
+func TestReconcileComponent_ErrorPassPreservesDependenciesReady(t *testing.T) {
+	r, _ := NewReconciler(&mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, nil, &mockHelm{})
+	prev := Condition{Type: ConditionTypeDependenciesReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady}
+	res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1, HasFinalizer: true, Enabled: true,
+		Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Dependencies: []string{"redpanda"}},
+		ExistingConditions: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1}, prev},
+		Dependencies:       NewDependencySnapshot(nil),
+	})
+	if err == nil {
+		t.Fatal("ReconcileComponent() error = nil, want CMS error")
+	}
+	if diff := cmp.Diff(&prev, findCondition(res.Conditions, ConditionTypeDependenciesReady)); diff != "" {
+		t.Errorf("ReconcileComponent() DependenciesReady mismatch (-want +got):\n%s", diff)
+	}
+}
