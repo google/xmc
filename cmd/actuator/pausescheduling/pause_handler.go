@@ -195,7 +195,6 @@ func (h *TaskPauseHandler) updateExecutionStatus(ctx context.Context, payload *a
 				StateUpdateTime: timestamppb.Now(),
 			},
 		},
-		// "status.state" also persists StateUpdateTime; it is not a separately updateable path.
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
 	}
 
