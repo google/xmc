@@ -567,8 +567,33 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		WrapperRef:     parseWrapperRef(specMap),
 		Manifests:      parseManifests(specMap),
 		Parameters:     parseParameters(specMap),
+		Dependencies:   parseDependencies(specMap),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
+}
+
+// parseDependencies converts the unstructured spec.dependencies list into canonical component names,
+// preserving declaration order and dropping empty, duplicate, and non-string entries.
+func parseDependencies(m map[string]any) []string {
+	raw, ok := m["dependencies"].([]any)
+	if !ok {
+		return nil
+	}
+	var res []string
+	seen := make(map[string]bool, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		name := naming.CanonicalComponentName(s)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		res = append(res, name)
+	}
+	return res
 }
 
 // parseParameters converts an unstructured parameters map into a string map.

@@ -542,6 +542,78 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	}
 }
 
+func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
+	ctx := context.Background()
+	specWithDeps := func(deps ...string) *componentspb.ComponentSpec {
+		return &componentspb.ComponentSpec{
+			Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:      "v1.0.0",
+			Dependencies: deps,
+		}
+	}
+	tests := []struct {
+		name          string
+		seedDependent bool
+		req           *componentspb.SetComponentIntentRequest
+		wantCode      codes.Code
+		wantStoreDep  []string
+	}{
+		{
+			name:         "dependencies pass through to the store graph",
+			req:          &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("redpanda")},
+			wantCode:     codes.OK,
+			wantStoreDep: []string{"redpanda"},
+		},
+		{
+			name:     "invalid dependency name is rejected",
+			req:      &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("redpanda", "Bad_Name")},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "invalid dependency name is rejected in validate_only",
+			req:      &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps(""), ValidateOnly: true},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:          "cycle via spec.dependencies is rejected",
+			seedDependent: true,
+			req:           &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps("components/ingestion-gateway")},
+			wantCode:      codes.FailedPrecondition,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ms := store.NewMemoryStore()
+			server := NewServer(ms)
+			if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps()}); err != nil {
+				t.Fatalf("SetComponentIntent(redpanda) unexpected error: %v", err)
+			}
+			if tc.seedDependent {
+				if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("redpanda")}); err != nil {
+					t.Fatalf("SetComponentIntent(ingestion-gateway) unexpected error: %v", err)
+				}
+			}
+			_, err := server.SetComponentIntent(ctx, tc.req)
+			if got := status.Code(err); got != tc.wantCode {
+				t.Fatalf("SetComponentIntent() got code %v, want %v (err: %v)", got, tc.wantCode, err)
+			}
+			if tc.wantStoreDep == nil {
+				return
+			}
+			rec, err := ms.GetComponent(ctx, tc.req.GetName())
+			if err != nil {
+				t.Fatalf("GetComponent(%q) unexpected error: %v", tc.req.GetName(), err)
+			}
+			if diff := cmp.Diff(tc.wantStoreDep, rec.Dependencies); diff != "" {
+				t.Errorf("store Dependencies mismatch (-want +got):\n%s", diff)
+			}
+			if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "redpanda"}); status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("PrepareDeactivation(redpanda) got code %v, want FailedPrecondition (active dependent)", status.Code(err))
+			}
+		})
+	}
+}
+
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()

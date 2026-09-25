@@ -159,13 +159,9 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 			return err
 		}
 
-		depIDs := make(map[string]int64, len(deps))
-		for _, dep := range deps {
-			depRec, ok := catalog[dep]
-			if !ok || isDeletedRecord(depRec) {
-				return ErrDependencyNotFound
-			}
-			depIDs[dep] = depRec.ComponentID
+		depIDs, err := resolveDependencyIDs(catalog, canonicalName, deps)
+		if err != nil {
+			return err
 		}
 
 		existingRec, exists := catalog[canonicalName]

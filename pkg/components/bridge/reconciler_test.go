@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1007,6 +1008,42 @@ func TestParseHelpers(t *testing.T) {
 	})
 	if len(conds) != 2 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" || conds[1].ObservedGeneration != 0 {
 		t.Errorf("unexpected conditions: %+v", conds)
+	}
+}
+
+func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {
+	tests := []struct {
+		name string
+		spec any
+		want []string
+	}{
+		{name: "nil spec", spec: nil, want: nil},
+		{name: "dependencies absent", spec: map[string]any{"version": "v1.0.0"}, want: nil},
+		{name: "dependencies not a list", spec: map[string]any{"dependencies": "redpanda"}, want: nil},
+		{name: "empty list", spec: map[string]any{"dependencies": []any{}}, want: nil},
+		{
+			name: "single dependency",
+			spec: map[string]any{"dependencies": []any{"redpanda"}},
+			want: []string{"redpanda"},
+		},
+		{
+			name: "canonicalizes, dedupes, and preserves declaration order",
+			spec: map[string]any{"dependencies": []any{" redpanda ", "components/auth", "redpanda", "components/redpanda"}},
+			want: []string{"redpanda", "auth"},
+		},
+		{
+			name: "drops empty and non-string entries",
+			spec: map[string]any{"dependencies": []any{"", "  ", float64(1), nil, map[string]any{"name": "x"}, "metrics"}},
+			want: []string{"metrics"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, _, _ := ParseSpecFromUnstructured(tc.spec)
+			if diff := cmp.Diff(tc.want, spec.GetDependencies()); diff != "" {
+				t.Errorf("ParseSpecFromUnstructured().GetDependencies() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

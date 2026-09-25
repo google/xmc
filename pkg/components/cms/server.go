@@ -113,6 +113,9 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
+	if err := validateDependencyNames(specToSet.GetDependencies()); err != nil {
+		return nil, err
+	}
 	if req.GetValidateOnly() {
 		protoComp := &componentspb.Component{
 			Name: naming.FullComponentName(canonicalName),
@@ -134,6 +137,17 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
+}
+
+// validateDependencyNames rejects structured spec.dependencies entries that are not valid
+// component names, so a typo cannot silently drop a dependency edge from the graph.
+func validateDependencyNames(deps []string) error {
+	for _, dep := range deps {
+		if !naming.IsValidComponentName(naming.CanonicalComponentName(dep)) {
+			return status.Errorf(codes.InvalidArgument, "invalid dependency name %q: must be a DNS-1123 component name", dep)
+		}
+	}
+	return nil
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and initiates draining.

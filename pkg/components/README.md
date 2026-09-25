@@ -41,11 +41,15 @@ The Components subsystem coordinates component definitions, versioning, and runt
 ### 1. Dependency Extraction & Normalization (`pkg/components/store/dependency_parser.go`)
 
 Components specify explicit dependencies on other components via:
+- **Structured Spec Field (preferred)**: `ComponentSpec.dependencies` (`repeated string`), populated by the bridge from the Component CR `spec.dependencies` list (e.g. `dependencies: [redpanda]`).
+- **Manifests**: `xmc.dev/depends-on` / `xmc.dev/dependencies` annotations or `spec.dependencies` inside raw manifests.
 - **Spec Descriptions**: Annotated tags such as `@depends-on: comp-a, comp-b`
 - **Labels**: Structured labels like `xmc.dev/dependency.<name>=<version>`
 
+All sources are merged into a single canonical, deduplicated, sorted set that is persisted as the component's dependency edges (Spanner `ComponentDependencies`) and drives cycle detection, deactivation safety, and deletion safety. On Spanner, every dependency must already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` naming the missing dependency. CMS rejects invalid (non DNS-1123) names in `ComponentSpec.dependencies` with `InvalidArgument`.
+
 Key functions:
-- `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names.
+- `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
 - `NormalizeDependencies(deps []string) []string`: Strips `components/` prefixes, deduplicates, and sorts lexicographically.
 
 ---
