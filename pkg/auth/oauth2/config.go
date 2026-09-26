@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"xmanager_cloud/logging/logging"
 )
@@ -35,6 +36,8 @@ const devOnlyJWTSecret = "default-jwt-secret-for-local-dev-only-12345"
 // brute-forced HS256 signing key. 32 bytes matches the HS256 output size.
 const minJWTSecretLen = 32
 
+const defaultSessionTTL = time.Hour
+
 // Config holds the configuration properties for OAuth2 and the authorization checks.
 type Config struct {
 	Port                  string
@@ -49,6 +52,7 @@ type Config struct {
 	ClientID              string
 	ClientSecret          string
 	JWTSecret             string
+	SessionTTL            time.Duration
 	RedirectURL           string
 	AuthURL               string
 	TokenURL              string
@@ -83,6 +87,14 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	sessionTTL, err := time.ParseDuration(getEnv("SESSION_TTL", defaultSessionTTL.String()))
+	if err != nil {
+		return nil, fmt.Errorf("invalid `SESSION_TTL`: %w", err)
+	}
+	if sessionTTL < time.Second {
+		return nil, fmt.Errorf("`SESSION_TTL` must be at least `1s`")
+	}
+
 	username, _ := getEnvOrFile("OIDC_USERNAME", getEnv("AUTH_USERNAME", ""))
 	password, _ := getEnvOrFile("OIDC_PASSWORD", getEnv("AUTH_PASSWORD", ""))
 
@@ -111,6 +123,7 @@ func LoadConfig() (*Config, error) {
 		ClientID:              clientID,
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
+		SessionTTL:            sessionTTL,
 		Username:              username,
 		Password:              password,
 		RedirectURL:           redirectURL,

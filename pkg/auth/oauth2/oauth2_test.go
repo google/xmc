@@ -1021,42 +1021,78 @@ func TestGetUserInfo(t *testing.T) {
 }
 
 func TestCreateSession(t *testing.T) {
-	jwtSecret := "test-jwt-secret-key-123456789-abcd"
-	a := newTestAuthenticator(&Config{
-		JWTSecret:    jwtSecret,
-		FrontendURL:  "http://localhost:8080",
-		SecureCookie: false,
-	})
-
-	req := httptest.NewRequest("GET", "/api/callback", nil)
-	w := httptest.NewRecorder()
-
-	err := a.createSession(w, req, "test@mycompany.com", "Test User", "https://example.com/pic")
-	if err != nil {
-		t.Fatalf("createSession failed: %v", err)
+	const jwtSecret = "test-jwt-secret-key-123456789-abcd"
+	for _, tc := range []struct {
+		name string
+		ttl  time.Duration
+		want time.Duration
+	}{
+		{name: "default", want: time.Hour},
+		{name: "one second", ttl: time.Second, want: time.Second},
+		{name: "one week", ttl: 7 * 24 * time.Hour, want: 7 * 24 * time.Hour},
+		{name: "thirty days", ttl: 30 * 24 * time.Hour, want: 30 * 24 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestAuthenticator(&Config{
+				JWTSecret:    jwtSecret,
+				SessionTTL:   tc.ttl,
+				FrontendURL:  "https://xmc.example.com",
+				CookieDomain: "xmc.example.com",
+				SecureCookie: true,
+			})
+			req := httptest.NewRequest("GET", "https://xmc.example.com/api/callback", nil)
+			w := httptest.NewRecorder()
+			if err := a.createSession(w, req, "test@mycompany.com", "Test User", "https://example.com/pic"); err != nil {
+				t.Fatalf("createSession failed: %v", err)
+			}
+			resp := w.Result()
+			defer resp.Body.Close()
+			cookies := resp.Cookies()
+			if len(cookies) != 1 || cookies[0].Name != "session_token" {
+				t.Fatal("expected a session cookie")
+			}
+			cookie := cookies[0]
+			claims := &SessionClaims{}
+			keyFunc := func(*jwt.Token) (interface{}, error) { return []byte(jwtSecret), nil }
+			if _, err := jwt.ParseWithClaims(cookie.Value, claims, keyFunc, jwt.WithTimeFunc(func() time.Time {
+				return cookie.Expires.Add(-time.Second)
+			})); err != nil {
+				t.Fatalf("session invalid before cookie expiry: %v", err)
+			}
+			if claims.Email != "test@mycompany.com" || claims.Name != "Test User" || claims.Picture != "https://example.com/pic" {
+				t.Error("session identity does not match the authenticated user")
+			}
+			if got := claims.ExpiresAt.Sub(claims.IssuedAt.Time); got != tc.want {
+				t.Errorf("token lifetime = %v, want %v", got, tc.want)
+			}
+			if !cookie.Expires.Equal(claims.ExpiresAt.Time) {
+				t.Errorf("cookie expiry = %v, token expiry = %v", cookie.Expires, claims.ExpiresAt.Time)
+			}
+			if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteNoneMode || cookie.Path != "/" || cookie.Domain != "xmc.example.com" {
+				t.Error("session cookie has unexpected security attributes")
+			}
+			if _, err := jwt.ParseWithClaims(cookie.Value, &SessionClaims{}, keyFunc, jwt.WithTimeFunc(func() time.Time {
+				return cookie.Expires
+			})); !errors.Is(err, jwt.ErrTokenExpired) {
+				t.Errorf("error at expiry = %v, want an expired token", err)
+			}
+		})
 	}
+}
 
-	resp := w.Result()
-	cookies := resp.Cookies()
-	var sessionCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "session_token" {
-			sessionCookie = c
-			break
-		}
-	}
-
-	if sessionCookie == nil {
-		t.Fatal("expected session_token cookie, found none")
-	}
-
-	claims, err := ParseSessionToken(sessionCookie.Value, []byte(jwtSecret))
-	if err != nil {
-		t.Fatalf("failed to parse session token: %v", err)
-	}
-
-	if claims.Email != "test@mycompany.com" {
-		t.Errorf("expected email test@mycompany.com, got %q", claims.Email)
+func TestCreateSessionRejectsInvalidTTL(t *testing.T) {
+	for _, ttl := range []time.Duration{-time.Hour, time.Millisecond} {
+		t.Run(ttl.String(), func(t *testing.T) {
+			a := newTestAuthenticator(&Config{SessionTTL: ttl})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/api/callback", nil)
+			if err := a.createSession(w, req, "test@mycompany.com", "Test User", ""); err == nil {
+				t.Fatal("expected an invalid session lifetime error")
+			}
+			if w.Header().Get("Set-Cookie") != "" {
+				t.Error("invalid session lifetime issued a cookie")
+			}
+		})
 	}
 }
 

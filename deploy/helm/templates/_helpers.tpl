@@ -122,6 +122,8 @@ Get the UI API URL.
 Common OAuth environment variables for XMC services.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
+- name: SESSION_TTL
+  value: {{ .Values.auth.sessionTtl | quote }}
 - name: MOCK_AUTH
   value: {{ .Values.auth.mockAuth | quote }}
 - name: ALLOWED_ORIGINS

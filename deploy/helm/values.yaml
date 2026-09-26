@@ -153,6 +153,8 @@ experimentStateServer:
   spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
 
 auth:
+  # Absolute lifetime for the session token and cookie, in Go duration syntax.
+  sessionTtl: "1h"
   iap:
     iapIssuer: "https://iap.googleapis.com"
     clientId: "YOUR_IAP_CLIENT_ID"
