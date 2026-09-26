@@ -156,6 +156,7 @@ func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, em
 		Path:     "/",
 		Domain:   a.getCookieDomain(r),
 		Expires:  now.Add(sessionTTL),
+		MaxAge:   int(sessionTTL / time.Second),
 		HttpOnly: true,
 		Secure:   a.isCookieSecure(r),
 		SameSite: a.getSameSiteMode(r),

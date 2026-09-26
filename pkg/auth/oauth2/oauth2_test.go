@@ -1052,6 +1052,9 @@ func TestCreateSession(t *testing.T) {
 				t.Fatal("expected a session cookie")
 			}
 			cookie := cookies[0]
+			if want := int(tc.want / time.Second); cookie.MaxAge != want {
+				t.Errorf("cookie MaxAge = %d, want %d", cookie.MaxAge, want)
+			}
 			claims := &SessionClaims{}
 			keyFunc := func(*jwt.Token) (interface{}, error) { return []byte(jwtSecret), nil }
 			if _, err := jwt.ParseWithClaims(cookie.Value, claims, keyFunc, jwt.WithTimeFunc(func() time.Time {
