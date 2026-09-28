@@ -192,7 +192,11 @@ def resolve_effective_base_ref(
         check=False,
         timeout=10,
     )
-    indep_set = {line.strip() for line in indep.stdout.splitlines() if line.strip()}
+    indep_set = (
+        {line.strip() for line in indep.stdout.splitlines() if line.strip()}
+        if indep.returncode == 0
+        else set()
+    )
     for mb in merge_bases:
         if mb in indep_set:
             return mb
@@ -376,7 +380,7 @@ def resolve_test_scope(
             "reason": "main branch push full regression",
         }
 
-    if not [f for f in files if f.strip()]:
+    if not any(f.strip() for f in files):
         return {
             "run_backend": True,
             "run_ui": True,
