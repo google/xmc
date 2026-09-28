@@ -39,7 +39,6 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
-    rod_deployment_enabled: bool = False
 
     @property
     def gke_cluster(self) -> str:
@@ -278,8 +277,6 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
-    rod_deployment_enabled = str(config.get("rod_deployment_enabled", False)).lower() == "true"
-
     return DeploymentConfig(
         project_id=config["project_id"],
         deployment_name=config["deployment_name"],
@@ -289,7 +286,6 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        rod_deployment_enabled=rod_deployment_enabled,
     )
 
 
@@ -389,7 +385,6 @@ def build_and_push_images(config: DeploymentConfig) -> None:
     image_registry = config.image_registry
     environment = config.environment
     image_tag = config.image_tag
-    rod_deployment_enabled = config.rod_deployment_enabled
 
     if not image_registry:
         raise ValueError("Required configuration field 'image_registry' is missing or empty.")
@@ -419,15 +414,8 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
         ("xmc_bridge", "//cmd/xmc_bridge:xmc_bridge_image_push"),
+        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
     ]
-
-    if rod_deployment_enabled:
-        targets.append(
-            (
-                "rod_data_provider",
-                "//cmd/rod_data_provider:rod_data_provider_image_push",
-            )
-        )
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")

@@ -18,7 +18,6 @@ import io
 import subprocess
 import sys
 import unittest
-from dataclasses import replace
 from unittest.mock import ANY, MagicMock, call, patch
 
 from tools.common.tool_utils import DeploymentConfig
@@ -797,12 +796,11 @@ image_tag: latest
     def test_step_images_default(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        # 10 bazel run calls (10 base targets, rod_data_provider disabled by default)
-        mock_run.side_effect = [bazel_res] * 10
+        mock_run.side_effect = [bazel_res] * 11
 
         deploy_dev_env.step_images(self.valid_config)
 
-        self.assertEqual(mock_run.call_count, 10)
+        self.assertEqual(mock_run.call_count, 11)
         mock_docker_auth.assert_called_once_with(self.valid_config)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
@@ -810,29 +808,6 @@ image_tag: latest
         )
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/xid_service:xid_service_image_push"],
-            env=ANY,
-        )
-        mock_run.assert_any_call(
-            ["bazel", "run", "//cmd/xmc_bridge:xmc_bridge_image_push"],
-            env=ANY,
-        )
-
-    @patch("tools.common.tool_utils.run_command")
-    @patch("tools.dev_env.deploy_dev_env.configure_docker_auth")
-    def test_step_images_rod_enabled(self, mock_docker_auth, mock_run):
-        bazel_res = MagicMock()
-
-        # 11 bazel run calls (10 base + rod_data_provider)
-        mock_run.side_effect = [bazel_res] * 11
-
-        config_rod_enabled = replace(self.valid_config, rod_deployment_enabled=True)
-
-        deploy_dev_env.step_images(config_rod_enabled)
-
-        self.assertEqual(mock_run.call_count, 11)
-        mock_docker_auth.assert_called_once_with(config_rod_enabled)
-        mock_run.assert_any_call(
-            ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,
         )
         mock_run.assert_any_call(
