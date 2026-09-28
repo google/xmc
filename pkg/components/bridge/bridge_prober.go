@@ -105,12 +105,7 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 	if !res.Ready {
 		return false, res.Message
 	}
-	if ok, probeMsg := p.probe3PEndpoint(ctx, res.Endpoint); !ok {
-		return false, probeMsg
-	} else if probeMsg != "" {
-		return true, probeMsg
-	}
-	return true, res.Message
+	return p.endpointVerdict(ctx, res.Endpoint, res.Message)
 }
 
 func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
@@ -118,17 +113,20 @@ func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *compon
 	if endpoint == "" {
 		return false, "no wrapperRef or connection endpoint parameters configured"
 	}
+	return p.endpointVerdict(ctx, endpoint, "Component healthy")
+}
+
+// endpointVerdict probes endpoint and returns the probe's message, falling back to
+// "health probe failed" on failure or to healthyMsg on success when the probe reports none.
+func (p *BridgeProber) endpointVerdict(ctx context.Context, endpoint, healthyMsg string) (bool, string) {
 	ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
-	if !ok {
-		if probeMsg == "" {
-			return false, "health probe failed"
-		}
-		return false, probeMsg
-	}
 	if probeMsg != "" {
-		return true, probeMsg
+		return ok, probeMsg
 	}
-	return true, "Component healthy"
+	if !ok {
+		return false, "health probe failed"
+	}
+	return true, healthyMsg
 }
 
 func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
