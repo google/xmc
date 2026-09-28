@@ -403,6 +403,9 @@ var (
 			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
 			{TableField: ChartIDTableField, SortOrder: querytools.Asc},
 		},
+		OrderByFieldsWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: ChartIDTableField, SortOrder: querytools.Asc},
+		},
 	}
 
 	// DashboardTables is the list of TableViews for Dashboard queries.

@@ -23,7 +23,6 @@ import (
 	"golang/cmp/cmpopts/cmpopts"
 	"googlesql/safesql/go/safesql"
 	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
 func TestListStatement(t *testing.T) {
@@ -394,11 +393,6 @@ func TestListParams_DecodePageToken(t *testing.T) {
 			name:            "cursor token preserves int64",
 			pageToken:       "eyJhIjoib25lIiwiYiI6Mn0",
 			wantAfterCursor: map[string]any{"a": "one", "b": int64(2)},
-		},
-		{
-			name:            "cursor token with xid derives bit_reversed_xid",
-			pageToken:       "eyJ4aWQiOjEyM30",
-			wantAfterCursor: map[string]any{"xid": int64(123), "bit_reversed_xid": spannerutils.ReverseBits(123)},
 		},
 		{
 			name:      "empty JSON map cursor token is rejected",

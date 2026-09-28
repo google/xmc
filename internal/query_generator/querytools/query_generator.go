@@ -889,7 +889,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		}
 	}
 
-	orderedPtFields, err := resolveOrderedPageTokenFields(pageTokenFields, orderByFields, userOrderBy, equalityFilters, ptFields)
+	orderedPtFields, err := resolveOrderedPageTokenFields(pageTokenFields, orderByFields, ptFields)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -974,31 +974,22 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	return query, tfToIdx, &unr, nil
 }
 
-// resolveOrderedPageTokenFields maps active pageTokenFields (or orderByFields if all are equality-filtered)
-// against the provided cursor map ptFields, failing if any userOrderBy field or all sort fields are missing.
-func resolveOrderedPageTokenFields(pageTokenFields, orderByFields, userOrderBy []UserOrderedIndex, equalityFilters map[TableField]bool, ptFields map[TableField]any) ([]UserOrderedIndex, error) {
+// resolveOrderedPageTokenFields validates that all active pageTokenFields (or orderByFields if all
+// are equality-filtered) are present in ptFields and returns them in sort order.
+func resolveOrderedPageTokenFields(pageTokenFields, orderByFields []UserOrderedIndex, ptFields map[TableField]any) ([]UserOrderedIndex, error) {
 	if len(ptFields) == 0 {
 		return nil, nil
-	}
-	for _, uob := range userOrderBy {
-		if !equalityFilters[uob.TableField] {
-			if _, ok := ptFields[uob.TableField]; !ok {
-				return nil, status.Errorf(status.InvalidArgument, "page token is missing required sort field %q", uob.TableField)
-			}
-		}
 	}
 	requiredFields := pageTokenFields
 	if len(requiredFields) == 0 {
 		requiredFields = orderByFields
 	}
-	var orderedPtFields []UserOrderedIndex
+	orderedPtFields := make([]UserOrderedIndex, 0, len(requiredFields))
 	for _, ob := range requiredFields {
-		if _, ok := ptFields[ob.TableField]; ok {
-			orderedPtFields = append(orderedPtFields, ob)
+		if _, ok := ptFields[ob.TableField]; !ok {
+			return nil, status.Errorf(status.InvalidArgument, "page token is missing required sort field %q", ob.TableField)
 		}
-	}
-	if len(orderedPtFields) == 0 {
-		return nil, status.Errorf(status.InvalidArgument, "page token does not match any active ORDER BY fields")
+		orderedPtFields = append(orderedPtFields, ob)
 	}
 	return orderedPtFields, nil
 }

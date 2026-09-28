@@ -26,7 +26,6 @@ import (
 	"task/go/status"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
 	"encoding/base64"
 	"encoding/json"
@@ -264,11 +263,6 @@ func normalizeCursorNumbers(cursor map[string]any) {
 			cursor[k] = i
 		} else if f, err := num.Float64(); err == nil {
 			cursor[k] = f
-		}
-	}
-	if xid, ok := cursor["xid"].(int64); ok {
-		if _, hasBitReversed := cursor["bit_reversed_xid"]; !hasBitReversed {
-			cursor["bit_reversed_xid"] = spannerutils.ReverseBits(xid)
 		}
 	}
 }

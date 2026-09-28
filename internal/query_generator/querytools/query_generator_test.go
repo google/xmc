@@ -1301,6 +1301,24 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 		}
 	})
 
+	t.Run("missing required index tie-breaker field in page token returns InvalidArgument", func(t *testing.T) {
+		_, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			nil,
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Asc}},
+			10,
+			0,
+			map[TableField]any{ReleaseDateTableField: "2026-01-01"},
+			nil,
+		)
+		statusErr, ok := status.FromError(err)
+		if !ok || statusErr.Code != status.InvalidArgument {
+			t.Errorf("GenerateQuery() got error %v, want InvalidArgument", err)
+		}
+	})
+
 	t.Run("nullable sort field ASC with nil cursor value generates IS NULL / IS NOT NULL", func(t *testing.T) {
 		stmt, _, _, err := qg.GenerateQuery(
 			[]TableField{SingerIDTableField},
