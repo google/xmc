@@ -190,9 +190,10 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 2. **Publish Release as GitHub Draft (Post-Approval Only)**:
    Execute the release publishing tool with `--draft` and explicitly pin `--target-commit origin/main` to ensure the release tag points to the canonical verified main commit:
    ```bash
-   NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"
+   VERSION="<version>"
+   NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v${VERSION}.md"
    python3 ./tools/release/publish_release.py \
-       --tag <version> \
+       --tag "${VERSION}" \
        --target-commit origin/main \
        --notes-file "${NOTES_FILE}" \
        --draft
