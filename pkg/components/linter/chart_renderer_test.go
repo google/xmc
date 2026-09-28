@@ -15,6 +15,8 @@
 package linter_test
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,6 +25,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -473,4 +478,245 @@ spec:
 	if !res.Valid {
 		t.Errorf("expected valid chart render and lint, got errors: %+v", res.Errors)
 	}
+}
+
+func TestIngestionGatewaySubChartRendering(t *testing.T) {
+	t.Parallel()
+
+	igDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", "ingestion-gateway"))
+
+	res, err := linter.NewLinter(nil).ValidateDirectory(igDir)
+	if err != nil {
+		t.Fatalf("ValidateDirectory(%q) unexpected error: %v", igDir, err)
+	}
+	if !res.Valid {
+		t.Fatalf("ValidateDirectory(%q) failed with errors: %v", igDir, res.Errors)
+	}
+
+	tmplPath := filepath.Join(igDir, "templates", "component.yaml")
+	rendered, err := linter.RenderChartTemplate(igDir, tmplPath)
+	if err != nil {
+		t.Fatalf("RenderChartTemplate() failed: %v", err)
+	}
+
+	var got linter.ComponentManifest
+	if err := yaml.Unmarshal(rendered, &got); err != nil {
+		t.Fatalf("failed to unmarshal rendered Ingestion Gateway Component manifest: %v", err)
+	}
+
+	enabled := false
+	want := linter.ComponentManifest{
+		APIVersion: "xmc.dev/v1alpha1",
+		Kind:       "Component",
+		Metadata: linter.ObjectMetadata{
+			Name:      "ingestion-gateway",
+			Namespace: "xmc",
+			Labels: map[string]string{
+				"xmc.dev/profile":              "stable-2026a",
+				"xmc.dev/component-type":       "custom-1p-component",
+				"app.kubernetes.io/name":       "ingestion-gateway",
+				"app.kubernetes.io/managed-by": "Helm",
+			},
+		},
+		Spec: linter.ComponentManifestSpec{
+			Enabled:            &enabled,
+			ComponentType:      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
+			ComponentClass:     "metrics-ingestion",
+			Version:            "0.1.0",
+			ChartVersion:       "0.1.0",
+			DeletionProtection: true,
+			DeletionPolicy:     "Delete",
+			Dependencies: []linter.ComponentDependencyRef{
+				{Name: "redpanda"},
+				{Name: "clickhouse"},
+			},
+			Parameters: map[string]string{
+				"port":            "8080",
+				"redpandaBrokers": "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+				"topicName":       "xmc-metrics",
+				"minPartitions":   "128",
+				"minReplicas":     "1",
+			},
+		},
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("rendered Ingestion Gateway Component manifest mismatch (-want +got):\n%s", diff)
+	}
+
+	verifySubChartOverridesAndGuards(t, igDir)
+}
+
+func verifySubChartOverridesAndGuards(t *testing.T, igDir string) {
+	t.Helper()
+
+	overrides := map[string]any{
+		"enabled":        true,
+		"deployWorkload": true,
+		"global":         map[string]any{"imageTag": "v1.2.3"},
+		"parameters":     map[string]any{"port": 9090},
+	}
+	renderedMap, err := renderChartWithValues(igDir, "ingestion-gateway", overrides)
+	if err != nil {
+		t.Fatalf("renderChartWithValues(ingestion-gateway) failed: %v", err)
+	}
+	compYAML := renderedMap["ingestion-gateway/templates/component.yaml"]
+	if !strings.Contains(compYAML, `imageTag: "v1.2.3"`) || !strings.Contains(compYAML, `port: "9090"`) {
+		t.Errorf("expected imageTag v1.2.3 and port 9090 in component.yaml, got:\n%s", compYAML)
+	}
+	depYAML := renderedMap["ingestion-gateway/templates/deployment.yaml"]
+	if !strings.Contains(depYAML, `image: "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway:v1.2.3"`) || !strings.Contains(depYAML, `"-port=9090"`) {
+		t.Errorf("expected overridden image tag and port in deployment.yaml, got:\n%s", depYAML)
+	}
+	verifyBridgeReleaseGuards(t, igDir)
+}
+
+func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
+	t.Helper()
+
+	bridgeMap, err := renderChartWithValues(igDir, "xmc-cmp-ingestion-gateway", map[string]any{
+		"global":                     map[string]any{"imageTag": "v1.2.3"},
+		"ingestionGatewayDeployment": map[string]any{"enabled": true, "image": "custom.registry.io/ig:custom-tag"},
+	})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(xmc-cmp-ingestion-gateway) failed: %v", err)
+	}
+	if strings.Contains(bridgeMap["ingestion-gateway/templates/component.yaml"], "kind: Component") {
+		t.Errorf("expected component.yaml to be suppressed for xmc-cmp- release")
+	}
+	bridgeDep := bridgeMap["ingestion-gateway/templates/deployment.yaml"]
+	for _, want := range []string{"kind: Deployment", "kind: Service", "kind: HorizontalPodAutoscaler", "kind: Role", "kind: RoleBinding", "name: ingestion-gateway-components-reader", "kind: NetworkPolicy", "name: ingestion-gateway-network-policy"} {
+		if !strings.Contains(bridgeDep, want) {
+			t.Errorf("expected %q in deployment.yaml for xmc-cmp- release (component self-provisions workload, reader RBAC and NetworkPolicy)", want)
+		}
+	}
+	if !strings.Contains(bridgeDep, `image: "custom.registry.io/ig:custom-tag"`) {
+		t.Errorf("expected explicit parameters[image] to take precedence, got:\n%s", bridgeDep)
+	}
+	assertWellFormedManifests(t, bridgeDep)
+
+	crOnlyMap, err := renderChartWithValues(igDir, "ingestion-gateway", map[string]any{"enabled": true})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(ingestion-gateway, CR only) failed: %v", err)
+	}
+	if crOnly := crOnlyMap["ingestion-gateway/templates/deployment.yaml"]; strings.Contains(crOnly, "kind: ") {
+		t.Errorf("expected no workload or NetworkPolicy when only the Component CR is declared, got:\n%s", crOnly)
+	}
+}
+
+// assertWellFormedManifests fails if any rendered YAML document lacks apiVersion or kind, which
+// Kubernetes rejects at install time (e.g. a template chomping the newline before apiVersion).
+func assertWellFormedManifests(t *testing.T, manifest string) {
+	t.Helper()
+	dec := yaml.NewDecoder(strings.NewReader(manifest))
+	for i := 0; ; i++ {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			t.Fatalf("yaml document %d failed to decode: %v", i, err)
+		}
+		if doc == nil {
+			continue
+		}
+		if doc["apiVersion"] == nil || doc["kind"] == nil {
+			t.Errorf("yaml document %d missing apiVersion or kind: apiVersion=%v kind=%v", i, doc["apiVersion"], doc["kind"])
+		}
+	}
+}
+
+func TestStable2026aProfileDAGValidation(t *testing.T) {
+	t.Parallel()
+
+	profileDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a"))
+	rulesPath := filepath.Join(profileDir, "rules.yaml")
+
+	rules, err := linter.LoadRules(rulesPath)
+	if err != nil {
+		t.Fatalf("LoadRules(%q) failed: %v", rulesPath, err)
+	}
+
+	res, err := linter.NewLinter(rules).ValidateDirectory(profileDir)
+	if err != nil {
+		t.Fatalf("ValidateDirectory(%q) unexpected error: %v", profileDir, err)
+	}
+	if !res.Valid {
+		t.Fatalf("ValidateDirectory(%q) failed with errors: %v", profileDir, res.Errors)
+	}
+
+	igRendered, err := renderChartWithValues(
+		filepath.Join(profileDir, "components", "ingestion-gateway"),
+		"ingestion-gateway",
+		map[string]any{"enabled": true},
+	)
+	if err != nil {
+		t.Fatalf("failed to render enabled ingestion-gateway: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		redpanda   bool
+		clickhouse bool
+		wantValid  bool
+	}{
+		{name: "both dependencies enabled", redpanda: true, clickhouse: true, wantValid: true},
+		{name: "redpanda disabled", redpanda: false, clickhouse: true},
+		{name: "clickhouse disabled", redpanda: true, clickhouse: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTestManifest(t, dir, "ingestion-gateway.yaml", igRendered["ingestion-gateway/templates/component.yaml"])
+			writeTestManifest(t, dir, "redpanda.yaml", renderProfileComponent(t, profileDir, "redpanda", tt.redpanda))
+			writeTestManifest(t, dir, "clickhouse.yaml", renderProfileComponent(t, profileDir, "clickhouse", tt.clickhouse))
+			got, err := linter.NewLinter(rules).ValidateDirectory(dir)
+			if err != nil {
+				t.Fatalf("ValidateDirectory() error: %v", err)
+			}
+			if got.Valid != tt.wantValid {
+				t.Fatalf("ValidateDirectory() valid = %v, want %v (errors: %+v)", got.Valid, tt.wantValid, got.Errors)
+			}
+			if !tt.wantValid {
+				assertDiagnosticRule(t, got, "DISABLED_DEPENDENCY")
+			}
+		})
+	}
+}
+
+// renderProfileComponent renders a stable-2026a component's Component CR with the given enabled flag.
+func renderProfileComponent(t *testing.T, profileDir, name string, enabled bool) string {
+	t.Helper()
+	rendered, err := renderChartWithValues(filepath.Join(profileDir, "components", name), name, map[string]any{"enabled": enabled})
+	if err != nil {
+		t.Fatalf("failed to render %s (enabled=%v): %v", name, enabled, err)
+	}
+	return rendered[name+"/templates/component.yaml"]
+}
+
+func renderChartWithValues(chartRoot, releaseName string, overrides map[string]any) (map[string]string, error) {
+	ch, err := loader.LoadDir(chartRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
+	}
+	if releaseName == "" {
+		releaseName = ch.Name()
+	}
+	releaseOpts := chartutil.ReleaseOptions{
+		Name:      releaseName,
+		Namespace: "xmc",
+		Revision:  1,
+		IsInstall: true,
+	}
+	mergedVals := chartutil.CoalesceTables(overrides, ch.Values)
+	renderValues, err := chartutil.ToRenderValues(ch, mergedVals, releaseOpts, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", chartRoot, err)
+	}
+	rendered, err := engine.Render(ch, renderValues)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render Helm chart in %s: %w", chartRoot, err)
+	}
+	return rendered, nil
 }

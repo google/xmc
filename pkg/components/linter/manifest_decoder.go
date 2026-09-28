@@ -178,6 +178,7 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 		ComponentClass     string                  `yaml:"componentClass,omitempty"`
 		Version            string                  `yaml:"version,omitempty"`
 		ChartVersion       string                  `yaml:"chartVersion,omitempty"`
+		ImageTag           string                  `yaml:"imageTag,omitempty"`
 		DeletionPolicy     string                  `yaml:"deletionPolicy,omitempty"`
 		DeletionProtection bool                    `yaml:"deletionProtection,omitempty"`
 		WrapperRef         *ComponentWrapperRef    `yaml:"wrapperRef,omitempty"`
@@ -192,7 +193,7 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 	}
 	s.Enabled = raw.Enabled
 	s.ComponentType = firstNonEmpty(raw.ComponentType, raw.Type)
-	s.ComponentClass, s.ChartVersion = raw.ComponentClass, raw.ChartVersion
+	s.ComponentClass, s.ChartVersion, s.ImageTag = raw.ComponentClass, raw.ChartVersion, raw.ImageTag
 	s.Version, s.DeletionPolicy, s.DeletionProtection = firstNonEmpty(raw.Version, raw.ChartVersion), raw.DeletionPolicy, raw.DeletionProtection
 	s.WrapperRef, s.LifecycleControl, s.Manifests, s.Description = raw.WrapperRef, raw.LifecycleControl, raw.Manifests, raw.Description
 	if err := s.decodeParameters(&raw.Parameters); err != nil {

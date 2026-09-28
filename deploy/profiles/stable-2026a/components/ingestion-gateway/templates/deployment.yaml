@@ -1,0 +1,245 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- $ig := .Values.ingestionGatewayDeployment | default dict -}}
+{{- if or .Values.deployWorkload $ig.enabled -}}
+{{- $params := .Values.parameters | default dict -}}
+{{- $port := $ig.port | default $params.port | default 8080 -}}
+{{- $sasl := $ig.sasl | default .Values.sasl | default dict -}}
+{{- $tls := $ig.tls | default .Values.tls | default dict -}}
+{{- $useSasl := and $sasl.enabled $sasl.secretName -}}
+{{- $useTls := and $tls.enabled $tls.secretName -}}
+{{- $managedBy := .Release.Service | default "Helm" | quote -}}
+{{- $saName := $ig.serviceAccountName | default .Values.serviceAccountName | default "default" -}}
+{{- $ns := .Values.namespace | default .Release.Namespace | default "xmc" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-gateway-deployment
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  {{- if $ig.replicas }}
+  replicas: {{ $ig.replicas }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: ingestion-gateway
+  template:
+    metadata:
+      labels:
+        app: ingestion-gateway
+    spec:
+      serviceAccountName: {{ $saName }}
+      {{- if ($ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds) }}
+      terminationGracePeriodSeconds: {{ $ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if or $useSasl $useTls }}
+      volumes:
+      {{- if $useSasl }}
+      - name: kafka-sasl-credentials
+        secret:
+          secretName: {{ $sasl.secretName }}
+      {{- end }}
+      {{- if $useTls }}
+      - name: kafka-tls-credentials
+        secret:
+          secretName: {{ $tls.secretName }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: ingestion-gateway
+        image: {{ include "ingestion-gateway.image" . | quote }}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop: ["ALL"]
+        {{- if or $useSasl $useTls }}
+        volumeMounts:
+        {{- if $useSasl }}
+        - name: kafka-sasl-credentials
+          mountPath: /etc/kafka/credentials
+          readOnly: true
+        {{- end }}
+        {{- if $useTls }}
+        - name: kafka-tls-credentials
+          mountPath: /etc/kafka/tls
+          readOnly: true
+        {{- end }}
+        {{- end }}
+        ports:
+        - containerPort: {{ $port }}
+          name: http-port
+        args:
+        - "-port={{ $port }}"
+        - "-enable_components={{ if hasKey $ig "enableComponents" }}{{ $ig.enableComponents }}{{ else if hasKey .Values "enableComponents" }}{{ .Values.enableComponents }}{{ else }}true{{ end }}"
+        - "-components_namespace={{ $ns }}"
+        - "-redpanda_brokers={{ $ig.redpandaBrokers | default $params.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
+        - "-topic_name={{ $ig.topicName | default $params.topicName | default "xmc-metrics" }}"
+        - "-min_partitions={{ $ig.minPartitions | default $params.minPartitions | default 128 }}"
+        - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 1 }}"
+        - "-project_id={{ $ig.projectId | default .Values.projectId }}"
+        {{- if $sasl }}
+        - "-sasl_enabled={{ $sasl.enabled | default false }}"
+        {{- if $useSasl }}
+        - "-sasl_mechanism={{ $sasl.mechanism | default "SCRAM-SHA-256" }}"
+        - "-sasl_credentials_dir=/etc/kafka/credentials"
+        {{- end }}
+        {{- end }}
+        {{- if $tls }}
+        - "-tls_enabled={{ $tls.enabled | default false }}"
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: {{ $port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ $port }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        {{- $resources := $ig.resources | default .Values.resources }}
+        {{- if $resources }}
+        resources:
+          {{- toYaml $resources | nindent 10 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion-gateway-service
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  type: ClusterIP
+  selector:
+    app: ingestion-gateway
+  ports:
+  - port: {{ $port }}
+    name: http-port
+    targetPort: http-port
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion-gateway-hpa
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestion-gateway-deployment
+  minReplicas: {{ ($ig.hpa | default dict).minReplicas | default .Values.minReplicas | default 2 }}
+  maxReplicas: {{ ($ig.hpa | default dict).maxReplicas | default .Values.maxReplicas | default 10 }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingestion-gateway-components-reader
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/part-of: xmanager-cloud
+rules:
+- apiGroups: ["xmc.dev"]
+  resources: ["components"]
+  resourceNames: ["redpanda"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingestion-gateway-components-reader-binding
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/part-of: xmanager-cloud
+subjects:
+- kind: ServiceAccount
+  name: {{ $saName }}
+  namespace: {{ $ns }}
+roleRef:
+  kind: Role
+  name: ingestion-gateway-components-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# Mirrors the umbrella policy in deploy/helm/templates/network-policies.yaml (used when
+# enable_components is false); keep the rules in sync.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingestion-gateway-network-policy
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              xmc.google.com/metrics-client: "true"
+      ports:
+        - protocol: TCP
+          port: {{ $port }}
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9644
+{{- end }}
