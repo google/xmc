@@ -41,7 +41,7 @@ class DispatchAndWatchTest(unittest.TestCase):
             dispatch_and_watch(p)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_find_existing_success(self, mock_run, mock_which):
         run_list = json.dumps(
             [
@@ -71,14 +71,23 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_dispatch_and_watch_success(self, mock_run, mock_which):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 202, "headSha": "target_sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 202,
+                            "headSha": "target_sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -95,7 +104,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_dispatch_sha_mismatch(self, mock_run, mock_which):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
@@ -114,21 +123,41 @@ class DispatchAndWatchTest(unittest.TestCase):
                 ),
             ),  # list
         ]
-        p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "expected_sha"])
+        p = create_parser().parse_args(
+            [
+                "--workflow",
+                "build.yml",
+                "--target-sha",
+                "expected_sha",
+                "--poll-attempts",
+                "1",
+                "--poll-interval",
+                "0",
+            ]
+        )
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "sha_mismatch")
         self.assertEqual(res["page_url"], "")
         self.assertEqual(res["_exit_code"], EXIT_SHA_MISMATCH)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_dispatch_cancelled(self, mock_run, mock_which):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 404, "headSha": "sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 404,
+                            "headSha": "sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -144,7 +173,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["_exit_code"], EXIT_CANCELLED)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_page_url_extraction(self, mock_run, mock_which):
         # 1. Direct page_url in view_data
         mock_run.side_effect = [
@@ -152,7 +181,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 501, "headSha": "sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 501,
+                            "headSha": "sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -179,7 +217,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 502, "headSha": "sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 502,
+                            "headSha": "sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -214,7 +261,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 503, "headSha": "sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 503,
+                            "headSha": "sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -242,7 +298,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps([{"databaseId": 504, "headSha": "sha", "url": "run_url"}]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 504,
+                            "headSha": "sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
             ),  # list
             subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
             subprocess.CompletedProcess(
@@ -272,7 +337,7 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/str-out/")
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.subprocess.run")
+    @patch("tools.release.dispatch_and_watch.run_command")
     def test_state_file_updates(self, mock_run, mock_which):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "release_state.json"
@@ -285,7 +350,16 @@ class DispatchAndWatchTest(unittest.TestCase):
                 subprocess.CompletedProcess(
                     args=[],
                     returncode=0,
-                    stdout=json.dumps([{"databaseId": 601, "headSha": "sha601", "url": "run_url"}]),
+                    stdout=json.dumps(
+                        [
+                            {
+                                "databaseId": 601,
+                                "headSha": "sha601",
+                                "url": "run_url",
+                                "createdAt": "2099-01-01T00:00:00Z",
+                            }
+                        ]
+                    ),
                 ),  # list
                 subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
                 subprocess.CompletedProcess(
@@ -339,6 +413,10 @@ class DispatchAndWatchTest(unittest.TestCase):
                     "expected_sha",
                     "--state-file",
                     str(state_path),
+                    "--poll-attempts",
+                    "1",
+                    "--poll-interval",
+                    "0",
                 ]
             )
             res = dispatch_and_watch(p)
@@ -382,7 +460,16 @@ class DispatchAndWatchTest(unittest.TestCase):
                 subprocess.CompletedProcess(
                     args=[],
                     returncode=0,
-                    stdout=json.dumps([{"databaseId": 604, "headSha": "sha604", "url": "run_url"}]),
+                    stdout=json.dumps(
+                        [
+                            {
+                                "databaseId": 604,
+                                "headSha": "sha604",
+                                "url": "run_url",
+                                "createdAt": "2099-01-01T00:00:00Z",
+                            }
+                        ]
+                    ),
                 ),  # list
                 subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
                 subprocess.CompletedProcess(
@@ -414,7 +501,16 @@ class DispatchAndWatchTest(unittest.TestCase):
                 subprocess.CompletedProcess(
                     args=[],
                     returncode=0,
-                    stdout=json.dumps([{"databaseId": 605, "headSha": "sha605", "url": "run_url"}]),
+                    stdout=json.dumps(
+                        [
+                            {
+                                "databaseId": 605,
+                                "headSha": "sha605",
+                                "url": "run_url",
+                                "createdAt": "2099-01-01T00:00:00Z",
+                            }
+                        ]
+                    ),
                 ),  # list
                 subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
                 subprocess.CompletedProcess(

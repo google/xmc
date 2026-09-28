@@ -66,7 +66,7 @@ Trigger the nightly build and deployment workflow using `tools/release/dispatch_
 DEPLOY_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
   --workflow nightly-build.yml \
   --target-sha "${TARGET_SHA}" \
-  --state-file "${STATE_FILE}") || true
+  --state-file "${STATE_FILE}")
 ```
 
 Notify the user:
@@ -120,7 +120,7 @@ Trigger and monitor the nightly examples E2E test suite against the freshly depl
 E2E_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
   --workflow nightly-examples-e2e.yml \
   --target-sha "${TARGET_SHA}" \
-  --state-file "${STATE_FILE}") || true
+  --state-file "${STATE_FILE}")
 ```
 
 Inspect the test outcome:
@@ -156,7 +156,7 @@ Generate and monitor the visual snapshot gallery verifying golden UI routes on t
 VISUAL_RESPONSE=$(PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
   --workflow nightly-visual-snapshot.yml \
   --target-sha "${TARGET_SHA}" \
-  --state-file "${STATE_FILE}") || true
+  --state-file "${STATE_FILE}")
 ```
 
 Inspect the gallery generation outcome:
