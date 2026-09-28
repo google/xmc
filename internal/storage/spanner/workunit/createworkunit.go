@@ -123,7 +123,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 		// 5. Buffer mutations for Experiment status and resources via thin repository methods.
 		// TODO(b/517479143): Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.
-		if err := r.experimentRepo.UpdateExperimentStatus(ctx, tx, exp); err != nil {
+		if err := r.experimentRepo.WithTx(tx).UpdateExperimentStatus(ctx, exp); err != nil {
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
 		if resourcesChanged {

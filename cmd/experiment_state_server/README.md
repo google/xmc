@@ -32,10 +32,12 @@ cmd/experiment_state_server/
 
 ## Storage Layer
 
-ESS delegates persistence to the relational Cloud Spanner storage package under `internal/storage/spanner/`:
-- `internal/storage/spanner/experiment/`: Experiment metadata, status transactions, and snapshot consistency queries.
-- `internal/storage/spanner/workunit/`: Distributed work unit scheduling, state transitions, and failure diagnostics.
-- `internal/storage/spanner/schema/`: Schema definitions and DDL migrations.
+ESS delegates persistence to the storage subsystem defined in [`internal/storage`](../../internal/storage/README.md):
+- **Interfaces**: Handlers interact with `storage.Storage` and execute multi-entity atomic mutations via `storage.TransactionRunner` using transaction-scoped repositories (`*storage.Transaction`).
+- **Cloud Spanner Backend**: Persistence is implemented in `internal/storage/spanner/` (`experiment/`, `workunit/`, `statusmessage/`, `statushistory/`).
+- **Hermetic Testing**: Service handlers are unit-tested in memory without database emulators using `storage.MockStorage`.
+
+For details on the transaction model, see [internal/storage/README.md](../../internal/storage/README.md).
 
 ---
 

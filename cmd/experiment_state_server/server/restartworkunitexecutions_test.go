@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package workunit_test
+package server
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/storage"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -57,27 +58,27 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		t.Errorf("Initial experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
-	restartedWLEs, err := storageClient.RestartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	restartedWLEs, err := restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
 	if err != nil {
-		t.Fatalf("RestartWorkUnitExecutions failed: %v", err)
+		t.Fatalf("restartWorkUnitExecutions failed: %v", err)
 	}
 
 	if len(restartedWLEs) != 2 {
-		t.Errorf("RestartWorkUnitExecutions returned %d executions, want 2", len(restartedWLEs))
+		t.Errorf("restartWorkUnitExecutions returned %d executions, want 2", len(restartedWLEs))
 	}
 
 	for _, wid := range wids {
 		restartedWLE := restartedWLEs[wid]
 		if restartedWLE == nil {
-			t.Errorf("RestartWorkUnitExecutions returned nil execution for wid %d", wid)
+			t.Errorf("restartWorkUnitExecutions returned nil execution for wid %d", wid)
 			continue
 		}
 		expectedName := fmt.Sprintf("experiments/123/workUnits/%d/executions/2", wid)
 		if restartedWLE.GetName() != expectedName {
-			t.Errorf("RestartWorkUnitExecutions returned execution with name %q, want %q for wid %d", restartedWLE.GetName(), expectedName, wid)
+			t.Errorf("restartWorkUnitExecutions returned execution with name %q, want %q for wid %d", restartedWLE.GetName(), expectedName, wid)
 		}
 		if want := essmsgpb.WorkUnitStatus_RESTARTING; restartedWLE.GetStatus().GetState() != want {
-			t.Errorf("RestartWorkUnitExecutions returned execution with state %v, want %v for wid %d", restartedWLE.GetStatus().GetState(), want, wid)
+			t.Errorf("restartWorkUnitExecutions returned execution with state %v, want %v for wid %d", restartedWLE.GetStatus().GetState(), want, wid)
 		}
 
 		// Verify work unit has new execution as current.
@@ -140,8 +141,45 @@ func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 	wids := []int64{1}
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
-	_, err = storageClient.RestartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
+	_, err = restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
 	if status.ExtractCanonicalCode(err) != status.Internal {
-		t.Errorf("RestartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
+		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
+	}
+}
+
+func TestRestartWorkUnitExecutions_RetryIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		RunInTransactionAttempts: 2,
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name: "experiments/123/workUnits/1",
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name:   "experiments/123/workUnits/1/executions/1",
+				Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_FAILED},
+			},
+		},
+		Experiment: &essmsgpb.Experiment{
+			Name: "experiments/123",
+			Status: &essmsgpb.ExperimentStatus{
+				ChildStateCounts: []*essmsgpb.ExperimentStatus_StateCount{
+					{State: essmsgpb.WorkUnitStatus_FAILED, Count: 1},
+				},
+			},
+		},
+	}
+
+	got, err := restartWorkUnitExecutions(ctx, mockStorage, "test@example.com", 123, []int64{1})
+	if err != nil {
+		t.Fatalf("restartWorkUnitExecutions failed: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Errorf("restartWorkUnitExecutions returned %d executions, want 1", len(got))
+	}
+	if gotCount := spanner.ChildStateCountInState(t, mockStorage.UpdatedExperiment, essmsgpb.WorkUnitStatus_RESTARTING); gotCount != 1 {
+		t.Errorf("RESTARTING count after retried transaction = %d, want 1", gotCount)
+	}
+	if gotCount := spanner.ChildStateCountInState(t, mockStorage.UpdatedExperiment, essmsgpb.WorkUnitStatus_FAILED); gotCount != 0 {
+		t.Errorf("FAILED count after retried transaction = %d, want 0", gotCount)
 	}
 }
