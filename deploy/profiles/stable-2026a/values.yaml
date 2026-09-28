@@ -1,0 +1,31 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Admin values for the stable-2026a profile. Every key is validated by
+# values.schema.json; unknown keys are rejected.
+
+global:
+  # Fixed profile identity; must equal "stable-2026a".
+  platformProfile: stable-2026a
+  # Optional image tag forwarded to 1P components (spec.imageTag).
+  imageTag: ""
+
+# Per-component overrides, deep-merged over components/<name>/values.yaml.
+# Allowed keys for every component:
+#   enabled            - bool, renders spec.enabled.
+#   namespace          - string, Component CR namespace (DNS-1123 label).
+#   deletionProtection - bool, renders spec.deletionProtection (false is honored).
+#   deletionPolicy     - "Delete" or "Orphan".
+#   parameters         - map of component parameters (see each component README).
+#   dependencies       - list of component names the component depends on.
+# ingestion-gateway additionally accepts imageTag, a fallback used only when
+# global.imageTag is empty.
+# Component identity (componentClass) and chart versions are fixed by the
+# catalog and cannot be overridden.
+components:
+  redpanda:
+    enabled: false
+  clickhouse:
+    enabled: false
+  ingestion-gateway:
+    enabled: false

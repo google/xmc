@@ -1,0 +1,12 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: xmc-profile-stable-2026a
+description: >-
+  XMC stable-2026a component profile. Renders the Component CRs of every
+  catalog component in this profile from a single admin values file.
+type: application
+# Bump the patch version whenever any components/<name>/Chart.yaml version changes.
+version: 1.0.0
+annotations:
+  xmc.dev/profile: stable-2026a

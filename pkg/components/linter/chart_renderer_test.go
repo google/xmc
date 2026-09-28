@@ -722,15 +722,6 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 		t.Fatalf("ValidateDirectory(%q) failed with errors: %v", profileDir, res.Errors)
 	}
 
-	igRendered, err := renderChartWithValues(
-		filepath.Join(profileDir, "components", "ingestion-gateway"),
-		"ingestion-gateway",
-		map[string]any{"enabled": true},
-	)
-	if err != nil {
-		t.Fatalf("failed to render enabled ingestion-gateway: %v", err)
-	}
-
 	tests := []struct {
 		name       string
 		redpanda   bool
@@ -744,9 +735,11 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeTestManifest(t, dir, "ingestion-gateway.yaml", igRendered["ingestion-gateway/templates/component.yaml"])
-			writeTestManifest(t, dir, "redpanda.yaml", renderProfileComponent(t, profileDir, "redpanda", tt.redpanda))
-			writeTestManifest(t, dir, "clickhouse.yaml", renderProfileComponent(t, profileDir, "clickhouse", tt.clickhouse))
+			writeTestManifest(t, dir, "rendered.yaml", renderStable2026aProfile(t, profileDir, map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": tt.redpanda},
+				"clickhouse":        map[string]any{"enabled": tt.clickhouse},
+			}))
 			got, err := linter.NewLinter(rules).ValidateDirectory(dir)
 			if err != nil {
 				t.Fatalf("ValidateDirectory() error: %v", err)
@@ -755,20 +748,21 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 				t.Fatalf("ValidateDirectory() valid = %v, want %v (errors: %+v)", got.Valid, tt.wantValid, got.Errors)
 			}
 			if !tt.wantValid {
-				assertDiagnosticRule(t, got, "DISABLED_DEPENDENCY")
+				assertDiagnosticRules(t, got, []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"})
 			}
 		})
 	}
 }
 
-// renderProfileComponent renders a stable-2026a component's Component CR with the given enabled flag.
-func renderProfileComponent(t *testing.T, profileDir, name string, enabled bool) string {
+// renderStable2026aProfile renders the stable-2026a profile meta-chart with the given
+// components.<name> overrides, as an admin would with helm template -f values.yaml.
+func renderStable2026aProfile(t *testing.T, profileDir string, components map[string]any) string {
 	t.Helper()
-	rendered, err := renderChartWithValues(filepath.Join(profileDir, "components", name), name, map[string]any{"enabled": enabled})
+	rendered, err := renderChartWithValues(profileDir, "xmc-profile", map[string]any{"components": components})
 	if err != nil {
-		t.Fatalf("failed to render %s (enabled=%v): %v", name, enabled, err)
+		t.Fatalf("failed to render stable-2026a profile with components %v: %v", components, err)
 	}
-	return rendered[name+"/templates/component.yaml"]
+	return rendered["xmc-profile-stable-2026a/templates/components.yaml"]
 }
 
 func renderChartWithValues(chartRoot, releaseName string, overrides map[string]any) (map[string]string, error) {

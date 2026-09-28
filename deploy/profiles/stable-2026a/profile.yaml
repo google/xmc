@@ -1,0 +1,12 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Profile metadata. name must match Chart.yaml annotation xmc.dev/profile,
+# values.yaml global.platformProfile and the values.schema.json const.
+name: stable-2026a
+# First XMC release that ships the xmc-bridge component runtime this profile needs.
+minXmcVersion: "0.13.0"
+# Months (YYYY-MM, inclusive) during which this profile receives patch releases.
+supportWindow:
+  start: "2026-10"
+  end: "2027-03"

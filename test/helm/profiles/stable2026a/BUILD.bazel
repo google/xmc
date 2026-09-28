@@ -1,0 +1,19 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+# Contract tests for the stable-2026a profile meta-chart. They live outside the chart package so
+# the test binary is not placed inside the chart directory that Helm's loader reads.
+go_test(
+    name = "stable2026a_test",
+    srcs = ["profile_chart_test.go"],
+    data = ["//deploy/profiles/stable-2026a:chart"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@sh_helm_helm_v3//pkg/chart/loader",
+        "@sh_helm_helm_v3//pkg/chartutil",
+        "@sh_helm_helm_v3//pkg/engine",
+    ],
+)

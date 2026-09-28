@@ -40,7 +40,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 
 ## 3. Actuation Lifecycle
 
-1. **Declare intent**: `helm install ingestion-gateway deploy/profiles/stable-2026a/components/ingestion-gateway --set enabled=true` renders only the `Component/ingestion-gateway` CR (`deployWorkload=false`).
+1. **Declare intent**: install the [`stable-2026a` profile](../../README.md) with `components.ingestion-gateway.enabled=true`. The profile renders only the `Component/ingestion-gateway` CR from [`templates/component.yaml`](templates/component.yaml); this chart's workload templates are never rendered by the profile.
 2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart with `ingestionGatewayDeployment.enabled=true`. The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`. The policy's rules mirror the umbrella policy used when `enable_components=false`.
 3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`. This removes the workload together with its RBAC and NetworkPolicy.
 
@@ -53,6 +53,6 @@ The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that 
 | `enable_components` (`componentsDeployment.enabled`) | Gateway workload owner |
 | :---: | :--- |
 | `false` | Umbrella chart, when `enable_metrics` (`ingestionGatewayDeployment.enabled`) is `true` (unchanged legacy behavior). |
-| `true` | Only this chart: the gateway is optional and runs once this chart is installed with `enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC/NetworkPolicy. |
+| `true` | Only this chart: the gateway is optional and runs once the profile is installed with `components.ingestion-gateway.enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC/NetworkPolicy. |
 
 The gateway `NetworkPolicy` follows the same ownership. With `enable_components=true`, it ships in the `xmc-cmp-ingestion-gateway` release regardless of `enable_metrics`. A test keeps its rules identical to the umbrella policy.

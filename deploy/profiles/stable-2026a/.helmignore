@@ -1,0 +1,14 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Keeps the packaged profile chart limited to what templates/components.yaml
+# reads via .Files. Helm "!" negation is unreliable here, so only explicit
+# exclusions are used.
+*.tgz
+*.go
+BUILD.bazel
+README.md
+components/*/BUILD.bazel
+components/*/README.md
+components/*/templates/_*.tpl
+components/*/templates/deployment.yaml
