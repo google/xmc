@@ -66,6 +66,7 @@ var (
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
+				Nullable:     true,
 			},
 			messageIDTableField: {
 				Name:         messageIDTableField,

@@ -27,6 +27,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -282,10 +283,11 @@ func TestExtractWorkUnitCursor(t *testing.T) {
 				UpdateTime: nowProto,
 			},
 			want: map[string]any{
-				"xid":          int64(123),
-				"work_unit_id": int64(1),
-				"created":      now,
-				"updated":      now,
+				"xid":              int64(123),
+				"bit_reversed_xid": spannerutils.ReverseBits(123),
+				"work_unit_id":     int64(1),
+				"created":          now,
+				"updated":          now,
 			},
 			wantErr: false,
 		},
@@ -295,8 +297,9 @@ func TestExtractWorkUnitCursor(t *testing.T) {
 				Name: "experiments/123/workUnits/2",
 			},
 			want: map[string]any{
-				"xid":          int64(123),
-				"work_unit_id": int64(2),
+				"xid":              int64(123),
+				"bit_reversed_xid": spannerutils.ReverseBits(123),
+				"work_unit_id":     int64(2),
 			},
 			wantErr: false,
 		},

@@ -390,9 +390,14 @@ func TestListParams_DecodePageToken(t *testing.T) {
 			wantAfterCursor: nil,
 		},
 		{
-			name:            "cursor token",
+			name:            "cursor token preserves int64",
 			pageToken:       "eyJhIjoib25lIiwiYiI6Mn0",
-			wantAfterCursor: map[string]any{"a": "one", "b": 2.0},
+			wantAfterCursor: map[string]any{"a": "one", "b": int64(2)},
+		},
+		{
+			name:      "empty JSON map cursor token is rejected",
+			pageToken: "e30",
+			wantErr:   true,
 		},
 		{
 			name:      "invalid base64 token",

@@ -361,4 +361,89 @@ func TestListStatusMessages_DefaultOrdering(t *testing.T) {
 	if gotMessages[0].GetContent().GetUserFacingText() != "Newer Message" {
 		t.Errorf("Expected first message to be 'Newer Message', got %q. Default ordering might be using work_unit_id first.", gotMessages[0].GetContent().GetUserFacingText())
 	}
+
+	// Verify pagination across mixed experiment and work unit status messages.
+	page1, nextToken, err := storage.ListStatusMessages(ctx, "experiments/123", 1, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListStatusMessages page 1 failed: %v", err)
+	}
+	if len(page1) != 1 || page1[0].GetContent().GetUserFacingText() != "Newer Message" {
+		t.Fatalf("ListStatusMessages page 1 got %v, want ['Newer Message']", page1)
+	}
+	page2, nextToken2, err := storage.ListStatusMessages(ctx, "experiments/123", 1, nextToken, "", "", 0)
+	if err != nil {
+		t.Fatalf("ListStatusMessages page 2 failed: %v", err)
+	}
+	if len(page2) != 1 || page2[0].GetContent().GetUserFacingText() != "Older Message" {
+		t.Fatalf("ListStatusMessages page 2 got %v, want ['Older Message']", page2)
+	}
+	if nextToken2 != "" {
+		t.Errorf("ListStatusMessages page 2 returned non-empty nextPageToken %q, want empty", nextToken2)
+	}
+}
+
+func TestExtractStatusMessageCursor(t *testing.T) {
+	testTime := time.Date(2026, time.April, 13, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		msg     *essmsgpb.StatusMessage
+		wantWID any
+		wantErr bool
+	}{
+		{
+			name: "experiment status message has nil work_unit_id",
+			msg: &essmsgpb.StatusMessage{
+				Name: "experiments/123/statusMessages/10",
+				Content: &essmsgpb.StructuredMessage{
+					Parent:     "experiments/123",
+					CreateTime: timestamppb.New(testTime),
+				},
+			},
+			wantWID: nil,
+		},
+		{
+			name: "work unit status message extracts work_unit_id from name",
+			msg: &essmsgpb.StatusMessage{
+				Name: "experiments/123/workUnits/456/statusMessages/10",
+				Content: &essmsgpb.StructuredMessage{
+					Parent:     "experiments/123/workUnits/456",
+					CreateTime: timestamppb.New(testTime),
+				},
+			},
+			wantWID: int64(456),
+		},
+		{
+			name: "work unit status message falls back to parent when name omits workUnits segment",
+			msg: &essmsgpb.StatusMessage{
+				Name: "experiments/123/statusMessages/10",
+				Content: &essmsgpb.StructuredMessage{
+					Parent:     "experiments/123/workUnits/789",
+					CreateTime: timestamppb.New(testTime),
+				},
+			},
+			wantWID: int64(789),
+		},
+		{
+			name: "invalid status message name returns error",
+			msg: &essmsgpb.StatusMessage{
+				Name: "invalid-name",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cursor, err := statusmessage.ExtractStatusMessageCursor(tc.msg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ExtractStatusMessageCursor() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if gotWID := cursor["work_unit_id"]; gotWID != tc.wantWID {
+				t.Errorf("cursor[\"work_unit_id\"] = %v (%T), want %v (%T)", gotWID, gotWID, tc.wantWID, tc.wantWID)
+			}
+		})
+	}
 }

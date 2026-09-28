@@ -196,6 +196,7 @@ var (
 				QueryLiteral: safesql.New("e.CompleteTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
+				Nullable:     true,
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{

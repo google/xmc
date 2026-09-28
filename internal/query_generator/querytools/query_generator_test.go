@@ -1257,3 +1257,128 @@ func mustAddSortDirectionToOrderedFieldsAndIndices(t *testing.T, tableView Table
 	}
 	return tv
 }
+
+func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
+	nullableReleaseDateTable := TableView{
+		Name:       "NullableAlbums",
+		NameClause: safesql.New("NullableAlbums a"),
+		Fields: map[TableField]Member{
+			SingerIDTableField: {
+				QueryLiteral: safesql.New("a.SingerId"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+			},
+			ReleaseDateTableField: {
+				QueryLiteral: safesql.New("a.ReleaseDate"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Nullable:     true,
+			},
+		},
+		OrderedIndexTableFields: []TableField{SingerIDTableField},
+	}
+
+	qg, err := NewQueryGenerator([]TableView{nullableReleaseDateTable}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewQueryGenerator() failed: %v", err)
+	}
+
+	t.Run("missing required sort field in page token returns InvalidArgument", func(t *testing.T) {
+		_, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			nil,
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Asc}},
+			10,
+			0,
+			map[TableField]any{SingerIDTableField: int64(1)},
+			nil,
+		)
+		statusErr, ok := status.FromError(err)
+		if !ok || statusErr.Code != status.InvalidArgument {
+			t.Errorf("GenerateQuery() got error %v, want InvalidArgument", err)
+		}
+	})
+
+	t.Run("missing required index tie-breaker field in page token returns InvalidArgument", func(t *testing.T) {
+		_, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			nil,
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Asc}},
+			10,
+			0,
+			map[TableField]any{ReleaseDateTableField: "2026-01-01"},
+			nil,
+		)
+		statusErr, ok := status.FromError(err)
+		if !ok || statusErr.Code != status.InvalidArgument {
+			t.Errorf("GenerateQuery() got error %v, want InvalidArgument", err)
+		}
+	})
+
+	t.Run("nullable sort field ASC with nil cursor value generates IS NULL / IS NOT NULL", func(t *testing.T) {
+		stmt, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			&fpb.Expression{},
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Asc}},
+			10,
+			0,
+			map[TableField]any{ReleaseDateTableField: nil, SingerIDTableField: int64(42)},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("GenerateQuery() failed: %v", err)
+		}
+		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate IS NULL AND a.SingerId > @val21) OR (a.ReleaseDate IS NOT NULL)) ORDER BY a.ReleaseDate, a.SingerId LIMIT 10"
+		if stmt.SQL != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		}
+	})
+
+	t.Run("nullable sort field DESC with non-nil cursor value includes OR IS NULL", func(t *testing.T) {
+		stmt, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			nil,
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
+			10,
+			0,
+			map[TableField]any{ReleaseDateTableField: "2026-01-01", SingerIDTableField: int64(42)},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("GenerateQuery() failed: %v", err)
+		}
+		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate = @val20 AND a.SingerId > @val21) OR ((a.ReleaseDate < @val10 OR a.ReleaseDate IS NULL))) ORDER BY a.ReleaseDate DESC, a.SingerId LIMIT 10"
+		if stmt.SQL != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		}
+	})
+
+	t.Run("nullable sort field DESC with nil cursor value generates IS NULL and FALSE", func(t *testing.T) {
+		stmt, _, _, err := qg.GenerateQuery(
+			[]TableField{SingerIDTableField},
+			nil,
+			nil,
+			nil,
+			[]UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
+			10,
+			0,
+			map[TableField]any{ReleaseDateTableField: nil, SingerIDTableField: int64(42)},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("GenerateQuery() failed: %v", err)
+		}
+		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate IS NULL AND a.SingerId > @val21) OR (FALSE)) ORDER BY a.ReleaseDate DESC, a.SingerId LIMIT 10"
+		if stmt.SQL != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		}
+	})
+}

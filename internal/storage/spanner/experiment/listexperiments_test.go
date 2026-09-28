@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -373,10 +374,11 @@ func TestExtractExperimentCursor(t *testing.T) {
 				CompleteTime: nowProto,
 			},
 			want: map[string]any{
-				"xid":       int64(123),
-				"created":   now,
-				"updated":   now,
-				"completed": now,
+				"xid":              int64(123),
+				"bit_reversed_xid": spannerutils.ReverseBits(123),
+				"created":          now,
+				"updated":          now,
+				"completed":        now,
 			},
 			wantErr: false,
 		},
@@ -386,7 +388,9 @@ func TestExtractExperimentCursor(t *testing.T) {
 				Name: "experiments/456",
 			},
 			want: map[string]any{
-				"xid": int64(456),
+				"xid":              int64(456),
+				"bit_reversed_xid": spannerutils.ReverseBits(456),
+				"completed":        nil,
 			},
 			wantErr: false,
 		},
@@ -408,6 +412,49 @@ func TestExtractExperimentCursor(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("extractExperimentCursor(%v) returned diff (-want +got):\n%s", tc.entry, diff)
+			}
+		})
+	}
+}
+
+func TestListExperiments_PaginationDefaultOrderByAndNullableCompleted(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(essClient)
+
+	exp1 := spanner.BlankExperimentProto(1)
+	exp1.Status.LaunchState = essmsgpb.ExperimentStatus_COMPLETED
+	spanner.CreateAndStoreExperiment(ctx, t, storage, exp1)
+
+	exp2 := spanner.BlankExperimentProto(2)
+	exp2.Status.LaunchState = essmsgpb.ExperimentStatus_LAUNCHING
+	spanner.CreateAndStoreExperiment(ctx, t, storage, exp2)
+
+	exp3 := spanner.BlankExperimentProto(3)
+	exp3.Status.LaunchState = essmsgpb.ExperimentStatus_COMPLETED
+	spanner.CreateAndStoreExperiment(ctx, t, storage, exp3)
+
+	for _, orderBy := range []string{"", "completed", "completed desc"} {
+		t.Run("orderBy="+orderBy, func(t *testing.T) {
+			var allXIDs []int64
+			pageToken := ""
+			for page := 0; page < 5; page++ {
+				got, nextToken, err := storage.ListExperiments(ctx, 1, pageToken, "", orderBy, 0)
+				if err != nil {
+					t.Fatalf("ListExperiments(orderBy=%q, page=%d) failed: %v", orderBy, page, err)
+				}
+				for _, e := range got {
+					xid, _ := validator.ValidateExperimentName(e.GetName())
+					allXIDs = append(allXIDs, xid)
+				}
+				pageToken = nextToken
+				if pageToken == "" {
+					break
+				}
+			}
+			sort.Slice(allXIDs, func(i, j int) bool { return allXIDs[i] < allXIDs[j] })
+			if diff := cmp.Diff([]int64{1, 2, 3}, allXIDs); diff != "" {
+				t.Errorf("Paginated ListExperiments(orderBy=%q) visited XIDs diff (-want +got):\n%s", orderBy, diff)
 			}
 		})
 	}

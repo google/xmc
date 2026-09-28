@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -99,7 +100,9 @@ func ExtractExperimentCursor(exp *essmsgpb.Experiment) (map[string]any, error) {
 	}
 
 	cursor := map[string]any{
-		"xid": xid,
+		"xid":              xid,
+		"bit_reversed_xid": spannerutils.ReverseBits(xid),
+		"completed":        nil,
 	}
 
 	if exp.CreateTime != nil {
