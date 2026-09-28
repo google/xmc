@@ -575,6 +575,11 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			wantCode: codes.InvalidArgument,
 		},
 		{
+			name:     "dependency with empty canonical name is rejected",
+			req:      &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("redpanda", "/")},
+			wantCode: codes.InvalidArgument,
+		},
+		{
 			name:     "self dependency is rejected",
 			req:      &componentspb.SetComponentIntentRequest{Name: "components/ingestion-gateway", Spec: specWithDeps("redpanda", "components/ingestion-gateway")},
 			wantCode: codes.InvalidArgument,

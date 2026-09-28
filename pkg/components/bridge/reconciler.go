@@ -574,7 +574,9 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 }
 
 // parseDependencies converts the unstructured spec.dependencies list into canonical component names,
-// preserving declaration order and dropping empty, duplicate, and non-string entries.
+// preserving declaration order and dropping duplicate and non-string entries. Strings with an empty
+// canonical name (e.g. "" or "/") are kept verbatim so CMS rejects the spec with
+// InvalidArgument instead of the bridge silently dropping a dependency edge.
 func parseDependencies(m map[string]any) []string {
 	raw, ok := m["dependencies"].([]any)
 	if !ok {
@@ -588,7 +590,11 @@ func parseDependencies(m map[string]any) []string {
 			continue
 		}
 		name := naming.CanonicalComponentName(s)
-		if name == "" || seen[name] {
+		if name == "" {
+			res = append(res, s)
+			continue
+		}
+		if seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -597,12 +603,12 @@ func parseDependencies(m map[string]any) []string {
 	return res
 }
 
-// dropSelfDependency removes references to canonicalName from canonical deps, logging a warning when found,
+// dropSelfDependency removes references to canonicalName from deps, logging a warning when found,
 // because a component that depends on itself could never become ready.
 func dropSelfDependency(ctx context.Context, deps []string, canonicalName string) []string {
 	var res []string
 	for _, dep := range deps {
-		if dep == canonicalName {
+		if naming.CanonicalComponentName(dep) == canonicalName {
 			logging.Warn(ctx, "Ignoring self-dependency in component spec", "name", canonicalName)
 			continue
 		}
