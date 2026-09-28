@@ -66,7 +66,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop:
                 - ALL
@@ -143,13 +143,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: clickhouse
-          securityContext:
-            allowPrivilegeEscalation: false
-            privileged: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
           image: clickhouse/clickhouse-server:24.3-alpine
           env:
             - name: CLICKHOUSE_DO_NOT_CHOWN
@@ -162,22 +155,10 @@ spec:
             - containerPort: 9000
               name: tcp
           volumeMounts:
-            - name: clickhouse-data
-              mountPath: /var/lib/clickhouse
-            - name: clickhouse-log
-              mountPath: /var/log/clickhouse-server
-            - name: tmp
-              mountPath: /tmp
             - name: format-schemas
               mountPath: /var/lib/clickhouse/format_schemas/metrics.proto
               subPath: metrics.proto
       volumes:
-        - name: clickhouse-data
-          emptyDir: {}
-        - name: clickhouse-log
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
         - name: format-schemas
           configMap:
             name: clickhouse-format-schemas
