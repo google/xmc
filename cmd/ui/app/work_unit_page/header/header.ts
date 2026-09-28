@@ -98,6 +98,8 @@ export class Header {
         return StatusOption.PENDING;
       case 'STOPPED':
         return StatusOption.NOT_RUNNING;
+      case 'SCHEDULING_PAUSED':
+        return StatusOption.SCHEDULING_PAUSED;
       default:
         return StatusOption.UNKNOWN;
     }

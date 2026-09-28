@@ -195,7 +195,7 @@ func (h *TaskPauseHandler) updateExecutionStatus(ctx context.Context, payload *a
 				StateUpdateTime: timestamppb.Now(),
 			},
 		},
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state", "status.state_update_time"}},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
 	}
 
 	if _, err := h.workUnitStatusUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {

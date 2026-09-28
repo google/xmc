@@ -123,6 +123,26 @@ describe('WorkUnitsTable Component', () => {
     expect(cells['Tags']).toBe('tag1');
   });
 
+  it('should display scheduling paused status', async () => {
+    state.workUnitsService.searchWorkUnits.and.returnValue(
+      of({
+        workUnits: [
+          {
+            name: 'experiments/1/workUnits/4',
+            createTime: '2023-10-27T10:03:00Z',
+            currentWorkUnitExecution: { status: { state: 'SCHEDULING_PAUSED' } },
+          },
+        ],
+      }),
+    );
+    bootstrap(WorkUnitsTable, { xid: '1' });
+
+    const harness = await getHarness(WorkUnitsTableHarness);
+    const rows = await harness.getDataRows();
+    const cells = await rows[0].getCellTextByColumnName();
+    expect(cells['Status']).toBe('Scheduling Paused');
+  });
+
   it('should handle pagination', async () => {
     bootstrap(WorkUnitsTable, { xid: '1' });
 
