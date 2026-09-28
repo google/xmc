@@ -172,7 +172,8 @@ jobs:
           # This sets sys.path[0] to the repository root (${GITHUB_WORKSPACE}), ensuring canonical
           # package imports (e.g. `from tools.nightly_tests import common`) resolve cleanly without sys.path hacks.
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_verify \
-            --xid="${XID}"
+            --xid="${XID}" \
+            --expected_work_units="${NUM_WORK_UNITS}"
 
           echo "================================================================="
           echo " Workload Verification Completed Successfully!"
@@ -194,7 +195,8 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_ui_verify \
-            --xid="${XID}" --ui_base_url="${UI_URL}"
+            --xid="${XID}" --ui_base_url="${UI_URL}" \
+            --expected_work_units="${NUM_WORK_UNITS}"
 
       - name: 'Upload UI Diagnostic Screenshots'
         if: failure() && steps.verify-ui-traversal.outcome == 'failure'

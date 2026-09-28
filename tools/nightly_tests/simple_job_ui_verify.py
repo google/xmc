@@ -39,6 +39,7 @@ def verify_simple_job_ui(
     auth_token: str | None = None,
     headless: bool = True,
     screenshots_dir: str | None = None,
+    expected_work_units: int = EXPECTED_WORK_UNITS,
 ) -> None:
     """Executes UI traversal assertions for the simple demo workload experiment.
 
@@ -48,7 +49,9 @@ def verify_simple_job_ui(
         auth_token: Optional Bearer or IAP OIDC token.
         headless: Whether to run Chromium in headless mode.
         screenshots_dir: Directory where diagnostic screenshots are saved.
+        expected_work_units: Number of expected WorkUnits in the UI tab.
     """
+    expected_names = tuple(str(i) for i in range(1, expected_work_units + 1))
     with ui_entities_validator.XMCUIBrowserSession(
         ui_base_url=ui_base_url,
         auth_token=auth_token,
@@ -59,8 +62,8 @@ def verify_simple_job_ui(
         header = session.assert_experiment_header(expected_title_pattern="Demo Workload")
         session.take_screenshot(f"ui_step2_header_xid_{xid}.png")
         session.assert_work_units_tab(
-            min_units=EXPECTED_WORK_UNITS,
-            expected_names=EXPECTED_WORK_UNIT_NAMES,
+            min_units=expected_work_units,
+            expected_names=expected_names,
         )
         session.take_screenshot(f"ui_step3_work_units_xid_{xid}.png")
         common.print_success_summary(
@@ -69,6 +72,7 @@ def verify_simple_job_ui(
                 ("Experiment XID", str(xid)),
                 ("UI Base URL", ui_base_url),
                 ("Header Title", header),
+                ("Verified WorkUnits", f"{expected_work_units}"),
                 ("Diagnostic Screenshots", session.screenshots_dir),
             ],
         )
@@ -78,12 +82,14 @@ def main(argv: Sequence[str]) -> None:
     """CLI entrypoint."""
     common.validate_argv(argv)
     with common.handle_verification_errors():
+        expected_work_units = common.resolve_expected_work_units(EXPECTED_WORK_UNITS)
         verify_simple_job_ui(
             xid=common.parse_xid(common.get_flag(FLAGS, "xid")),
             ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
             auth_token=common.get_flag(FLAGS, "auth_token"),
             headless=common.get_flag(FLAGS, "headless", True),
             screenshots_dir=common.get_flag(FLAGS, "screenshots_dir"),
+            expected_work_units=expected_work_units,
         )
 
 
