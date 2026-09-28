@@ -316,6 +316,27 @@ func TestApplySpecUpdateMask(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "UpdateDependencies",
+			base:     &componentspb.ComponentSpec{Type: base.Type, Dependencies: []string{"redpanda"}},
+			update:   &componentspb.ComponentSpec{Dependencies: []string{"redpanda", "auth"}},
+			paths:    []string{"dependencies"},
+			wantSpec: &componentspb.ComponentSpec{Type: base.Type, Dependencies: []string{"redpanda", "auth"}},
+		},
+		{
+			name:     "ClearDependencies",
+			base:     &componentspb.ComponentSpec{Type: base.Type, Dependencies: []string{"redpanda"}},
+			update:   &componentspb.ComponentSpec{},
+			paths:    []string{"dependencies"},
+			wantSpec: &componentspb.ComponentSpec{Type: base.Type},
+		},
+		{
+			name:     "PreserveDependenciesWhenNotInMask",
+			base:     &componentspb.ComponentSpec{Version: "v1.0.0", Dependencies: []string{"redpanda"}},
+			update:   &componentspb.ComponentSpec{Version: "v2.0.0", Dependencies: []string{"auth"}},
+			paths:    []string{"version"},
+			wantSpec: &componentspb.ComponentSpec{Version: "v2.0.0", Dependencies: []string{"redpanda"}},
+		},
 	}
 
 	for _, tc := range tests {

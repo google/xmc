@@ -35,6 +35,8 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/logging/logging"
 )
@@ -69,7 +71,13 @@ type HelmManager interface {
 	RecordActuation(ref ComponentRef, generation int64)
 	// HydrateComponentState synchronizes in-memory active and actuated generation state from existing CR status and cluster storage on cold start.
 	HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error
+	// ComponentHealth reports whether the component's Helm release is deployed and its last upgrade succeeded,
+	// returning a single-word condition reason and a human-readable message.
+	ComponentHealth(ctx context.Context, ref ComponentRef) (healthy bool, reason, message string)
 }
+
+// healthCacheTTL bounds how long a deployed-release verdict is reused before ComponentHealth re-queries Helm.
+const healthCacheTTL = time.Minute
 
 // upgradeRequest encapsulates a component upgrade request for debounced asynchronous execution.
 type upgradeRequest struct {
@@ -77,6 +85,8 @@ type upgradeRequest struct {
 	namespace string
 	chartPath string
 	values    map[string]any
+	// seq identifies this enqueue in pendingUpgrades so only the latest request clears the in-flight marker.
+	seq uint64
 }
 
 // K8sHelmManager implements HelmManager by synchronizing component values in Kubernetes ConfigMaps
@@ -103,6 +113,11 @@ type K8sHelmManager struct {
 	upgradeErrs         map[string]error
 	upgradeMu           sync.Mutex
 	upgradeSem          chan struct{}
+	// pendingUpgrades maps component keys to the sequence number of their latest enqueued async upgrade.
+	pendingUpgrades map[string]uint64
+	upgradeSeq      uint64
+	// healthVerifiedAt records when a component's release was last observed deployed, to throttle Status calls.
+	healthVerifiedAt map[string]time.Time
 
 	stopMu      sync.RWMutex
 	stopped     bool
@@ -114,6 +129,8 @@ type K8sHelmManager struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
+
+var _ HelmManager = (*K8sHelmManager)(nil)
 
 // HelmManagerOption configures a K8sHelmManager.
 type HelmManagerOption func(*K8sHelmManager)
@@ -176,6 +193,8 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		componentChartPaths: make(map[string]string),
 		chartCache:          make(map[string]*chart.Chart),
 		upgradeErrs:         make(map[string]error),
+		pendingUpgrades:     make(map[string]uint64),
+		healthVerifiedAt:    make(map[string]time.Time),
 		upgradeSem:          make(chan struct{}, 1),
 		upgradeChan:         make(chan upgradeRequest, 100),
 		stopCh:              make(chan struct{}),
@@ -257,9 +276,12 @@ func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
 	return ref.Namespace, nil
 }
 
+// setUpgradeErr records (or clears) the last upgrade/uninstall error for ref. Every call marks a release
+// operation boundary, so it also invalidates the cached health verdict.
 func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.healthVerifiedAt, ref.String())
 	if m.upgradeErrs == nil {
 		m.upgradeErrs = make(map[string]error)
 	}
@@ -268,6 +290,35 @@ func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
 		return
 	}
 	delete(m.upgradeErrs, ref.String())
+}
+
+// markUpgradePending records a new in-flight async upgrade for ref and returns its sequence number.
+func (m *K8sHelmManager) markUpgradePending(ref ComponentRef) uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pendingUpgrades == nil {
+		m.pendingUpgrades = make(map[string]uint64)
+	}
+	m.upgradeSeq++
+	m.pendingUpgrades[ref.String()] = m.upgradeSeq
+	delete(m.healthVerifiedAt, ref.String())
+	return m.upgradeSeq
+}
+
+// clearUpgradePending clears the in-flight marker for ref only if seq is still the latest enqueued upgrade.
+func (m *K8sHelmManager) clearUpgradePending(ref ComponentRef, seq uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pendingUpgrades[ref.String()] == seq {
+		delete(m.pendingUpgrades, ref.String())
+	}
+}
+
+func (m *K8sHelmManager) isUpgradePending(ref ComponentRef) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, pending := m.pendingUpgrades[ref.String()]
+	return pending
 }
 
 // GetUpgradeError returns the last error encountered during an upgrade for the given component, if any.
@@ -490,12 +541,15 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 		return err
 	}
 
+	seq := m.markUpgradePending(ref)
 	select {
 	case <-m.stopCh:
+		m.clearUpgradePending(ref, seq)
 		return errors.New("helm manager is stopped")
-	case m.upgradeChan <- upgradeRequest{ref: ref, namespace: targetNamespace, chartPath: resolvedChartPath, values: values}:
+	case m.upgradeChan <- upgradeRequest{ref: ref, namespace: targetNamespace, chartPath: resolvedChartPath, values: values, seq: seq}:
 		return nil
 	case <-ctx.Done():
+		m.clearUpgradePending(ref, seq)
 		m.setUpgradeErr(ref, ctx.Err())
 		return ctx.Err()
 	}
@@ -625,6 +679,8 @@ func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 }
 
 func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
+	// Deferred so the marker is cleared only after setUpgradeErr records the outcome (and even on panic).
+	defer m.clearUpgradePending(req.ref, req.seq)
 	parentCtx := context.Background()
 	if m != nil && m.ctx != nil {
 		parentCtx = m.ctx
@@ -862,6 +918,8 @@ func (m *K8sHelmManager) HydrateFromCluster(ctx context.Context) error {
 
 // HydrateComponentState synchronizes in-memory activeState and actuatedGenerations for a component
 // from cluster storage and existing CR status conditions on cold start.
+// Before trusting a Ready=True CR as proof of actuation, it verifies that the component's Helm release is
+// actually deployed; otherwise the component is treated as not actuated so the next Ensure re-installs it.
 func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
 	if m == nil {
 		return nil
@@ -877,8 +935,110 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 	if !known {
 		hydrateErr = m.hydrateNamespaceFromConfigMap(ctx, ref.Namespace)
 	}
+	if crReady && m.wouldRecordHydratedActuation(key, observedGeneration) && m.releaseContradictsReadyCR(ctx, ref) {
+		logging.Warn(ctx, "Component CR reports Ready but its Helm release is missing or failed; forcing re-actuation", "name", ref.Name, "namespace", ref.Namespace, "generation", observedGeneration)
+		crReady = false
+	}
 	m.applyHydratedState(key, observedGeneration, crReady)
 	return hydrateErr
+}
+
+// wouldRecordHydratedActuation reports whether hydrating a Ready CR at observedGeneration would record a new actuation.
+func (m *K8sHelmManager) wouldRecordHydratedActuation(key string, observedGeneration int64) bool {
+	if observedGeneration <= 0 {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.actuatedGenerations[key] == 0
+}
+
+// releaseContradictsReadyCR queries Helm (outside m.mu) and reports whether the release definitively contradicts a
+// Ready CR: it is missing or in a terminal non-deployed state (failed, superseded, uninstalled, ...). Transient query
+// errors and pending-* states keep trusting the CR: re-upgrading would only bump a revision or fail with "another
+// operation is in progress"; ComponentHealth surfaces pending-* releases as HelmReleaseStuck instead.
+func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref ComponentRef) bool {
+	if m.runner == nil {
+		return true
+	}
+	rel, err := m.runner.Status(ctx, ComponentReleaseName(ref.Name), ref.Namespace)
+	if errors.Is(err, driver.ErrReleaseNotFound) {
+		return true
+	}
+	if err != nil {
+		logging.Warn(ctx, "Failed to verify Helm release during hydration; trusting CR status", "name", ref.Name, "namespace", ref.Namespace, "err", err)
+		return false
+	}
+	status := releaseStatus(rel)
+	return status != release.StatusDeployed && !status.IsPending()
+}
+
+// ComponentHealth reports whether the component's last Helm upgrade succeeded, no upgrade is in flight, and its
+// release is deployed. Deployed verdicts are cached for healthCacheTTL to avoid querying Helm on every poll.
+func (m *K8sHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
+	if m == nil {
+		return false, ReasonHelmRunnerUninitialized, "Helm manager is uninitialized; cannot verify release status"
+	}
+	if _, err := m.validateAndResolve(ref); err != nil {
+		return false, ReasonInvalidComponentRef, err.Error()
+	}
+	if err := m.GetUpgradeError(ref); err != nil {
+		return false, ReasonHelmUpgradeFailed, fmt.Sprintf("Helm upgrade failed: %v", err)
+	}
+	if m.isUpgradePending(ref) {
+		return false, ReasonHelmUpgradePending, "Helm upgrade is queued or in progress"
+	}
+	if m.runner == nil {
+		return false, ReasonHelmRunnerUninitialized, "Helm action runner is uninitialized; cannot verify release status"
+	}
+	return m.releaseHealth(ctx, ref)
+}
+
+// releaseHealth returns the cached deployed verdict if still fresh, otherwise queries Helm and caches a deployed result.
+func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
+	releaseName := ComponentReleaseName(ref.Name)
+	m.mu.RLock()
+	verifiedAt, cached := m.healthVerifiedAt[ref.String()]
+	m.mu.RUnlock()
+	if cached && time.Since(verifiedAt) < healthCacheTTL {
+		return true, ReasonComponentHealthy, fmt.Sprintf("Helm release %q deployed", releaseName)
+	}
+	rel, err := m.runner.Status(ctx, releaseName, ref.Namespace)
+	healthy, reason, msg := evaluateReleaseHealth(releaseName, rel, err)
+	if healthy {
+		m.mu.Lock()
+		if m.healthVerifiedAt == nil {
+			m.healthVerifiedAt = make(map[string]time.Time)
+		}
+		m.healthVerifiedAt[ref.String()] = time.Now()
+		m.mu.Unlock()
+	}
+	return healthy, reason, msg
+}
+
+// evaluateReleaseHealth maps a Helm status query result to a health verdict, condition reason, and message.
+func evaluateReleaseHealth(releaseName string, rel *release.Release, statusErr error) (bool, string, string) {
+	if errors.Is(statusErr, driver.ErrReleaseNotFound) {
+		return false, ReasonHelmReleaseNotFound, fmt.Sprintf("Helm release %q not found", releaseName)
+	}
+	if statusErr != nil {
+		return false, ReasonHelmStatusUnavailable, fmt.Sprintf("failed to query Helm release %q status: %v", releaseName, statusErr)
+	}
+	status := releaseStatus(rel)
+	if status.IsPending() {
+		return false, ReasonHelmReleaseStuck, fmt.Sprintf("Helm release %q is stuck in %q with no upgrade in flight; recover with `helm rollback` (or `helm uninstall` for pending-install)", releaseName, status)
+	}
+	if status != release.StatusDeployed {
+		return false, ReasonHelmReleaseNotReady, fmt.Sprintf("Helm release %q status is %q", releaseName, status)
+	}
+	return true, ReasonComponentHealthy, fmt.Sprintf("Helm release %q deployed", releaseName)
+}
+
+func releaseStatus(rel *release.Release) release.Status {
+	if rel == nil || rel.Info == nil {
+		return release.StatusUnknown
+	}
+	return rel.Info.Status
 }
 
 func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {

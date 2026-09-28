@@ -94,6 +94,22 @@ This is the main worker controller.
 			},
 			want: []string{"dep-a", "dep-b", "self-comp"},
 		},
+		{
+			name: "structured spec dependencies only",
+			spec: &componentspb.ComponentSpec{
+				Dependencies: []string{"redpanda", "components/auth", " ", "Invalid_Name"},
+			},
+			want: []string{"auth", "redpanda"},
+		},
+		{
+			name: "structured spec dependencies merged and deduped with directives",
+			spec: &componentspb.ComponentSpec{
+				Dependencies: []string{"redpanda", "auth"},
+				Description:  "@depends-on: redpanda, metrics",
+			},
+			labels: map[string]string{"xmc.dev/depends-on": "components/auth"},
+			want:   []string{"auth", "metrics", "redpanda"},
+		},
 	}
 
 	for _, tt := range tests {

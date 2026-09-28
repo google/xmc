@@ -25,7 +25,7 @@ _custom_grpc_gateway = repository_rule(
     implementation = _custom_grpc_gateway_impl,
 )
 
-def _repo_import_impl(ctx):
+def _repo_import_impl(_ctx):
     _custom_grpc_gateway(name = "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
 
 repo_import = module_extension(

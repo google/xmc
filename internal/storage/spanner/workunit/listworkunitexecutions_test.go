@@ -20,8 +20,10 @@ import (
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
@@ -60,10 +62,26 @@ func TestListWorkUnitExecutions(t *testing.T) {
 		t.Errorf("ListWorkUnitExecutions(%d, %d) returned diff (-want +got):\n%s", xid, wid, diff)
 	}
 
-	// Now restart work unit to create a second execution.
-	_, err = storage.RestartWorkUnitExecutions(ctx, "test-restarter", xid, []int64{wid})
+	// Now archive the first execution and create a second execution using a transaction.
+	err = storage.RunInTransaction(ctx, func(txCtx context.Context, tx *corestorage.Transaction) error {
+		firstExec := createdWu.CurrentWorkUnitExecution
+		firstExec.State = essmsgpb.WorkUnitExecution_INACTIVE
+		if err := tx.WorkUnits.SaveWorkUnitExecution(txCtx, firstExec); err != nil {
+			return err
+		}
+		now := timestamppb.Now()
+		secondExec := &essmsgpb.WorkUnitExecution{
+			Name:       "experiments/123/workUnits/1/executions/2",
+			State:      essmsgpb.WorkUnitExecution_ACTIVE,
+			Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
+			Status:     &essmsgpb.WorkUnitStatus{},
+			CreateTime: now,
+			UpdateTime: now,
+		}
+		return tx.WorkUnits.UpdateCurrentWorkUnitExecution(txCtx, xid, wid, 2, secondExec)
+	})
 	if err != nil {
-		t.Fatalf("RestartWorkUnitExecutions failed: %v", err)
+		t.Fatalf("archiving and creating second execution failed: %v", err)
 	}
 
 	gotWues, err = storage.ListWorkUnitExecutions(ctx, xid, wid)

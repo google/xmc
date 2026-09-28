@@ -23,25 +23,11 @@ import (
 
 func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 	ctx := context.Background()
-	r := &Repository{}
+	r := &TxRepository{}
 
-	err := r.UpdateExperimentStatus(ctx, nil, nil)
+	err := r.UpdateExperimentStatus(ctx, nil)
 	if err == nil || err.Error() != "experiment must not be nil" {
 		t.Errorf("UpdateExperimentStatus(nil exp) returned error: %v, want 'experiment must not be nil'", err)
-	}
-}
-
-func TestUpdateExperimentStatus_NilTransaction(t *testing.T) {
-	ctx := context.Background()
-	r := &Repository{}
-
-	exp := &essmsgpb.Experiment{
-		Name: "experiments/1001",
-	}
-
-	err := r.UpdateExperimentStatus(ctx, nil, exp)
-	if err == nil || err.Error() != "transaction must not be nil" {
-		t.Errorf("UpdateExperimentStatus(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }
 

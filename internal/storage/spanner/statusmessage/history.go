@@ -29,8 +29,16 @@ import (
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
+// SaveStatusMessageHistoryIfChanged buffers a status message history mutation in the bound Spanner transaction if the message changed.
+// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
+// delegated helper; return them once it is inlined here.
+func (r *TxRepository) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	SaveStatusMessageHistoryIfChanged(ctx, xid, wid, eid, oldMsg, newMsg, r.tx)
+	return nil
+}
+
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation if the message changed.
-// TODO(b/517479143): Move status message change detection above the repository layer.
+// TODO(b/517479143): Inline into Repository.SaveStatusMessageHistoryIfChanged once Experiment and WorkUnit transactions are moved out of Spanner.
 func SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid *int64, eid *int64, currentMsg, newMsg *essmsgpb.StructuredMessage, txn *spanner.ReadWriteTransaction) {
 	if newMsg == nil {
 		return

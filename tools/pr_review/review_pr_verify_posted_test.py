@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
 from tools.pr_review.review_pr_verify_posted import (
+    _is_re_review_thread_posted,
     parse_checklist_approved_items,
     verify_review_comments_posted,
 )
@@ -162,6 +163,12 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         self.assertEqual(items[0]["line"], 42)
         self.assertEqual(items[1]["item_id"], "#2")
         self.assertEqual(items[1]["line"], 55)
+
+    def test_is_re_review_thread_posted_unknown_action(self):
+        item = {"action": "CUSTOM_ACTION", "thread_id": 301}
+        ok, err = _is_re_review_thread_posted(item, "", [])
+        self.assertFalse(ok)
+        self.assertEqual(err, "Unknown action 'CUSTOM_ACTION' on Thread ID `301`")
 
 
 if __name__ == "__main__":

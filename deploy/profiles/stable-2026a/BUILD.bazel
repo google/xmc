@@ -1,0 +1,18 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+filegroup(
+    name = "rules",
+    srcs = ["rules.yaml"],
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "stable2026a",
+    srcs = ["charts.go"],
+    embedsrcs = ["//deploy/profiles/stable-2026a/components/ingestion-gateway:chart"],
+    importpath = "xmanager_cloud/deploy/profiles/stable-2026a",
+    visibility = ["//visibility:public"],
+)

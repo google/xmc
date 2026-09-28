@@ -42,6 +42,12 @@ type Repository struct {
 	driftCache          *driftCache
 }
 
+// TxRepository manages transactional persistence for experiment entities in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
+}
+
 // RepositoryConfig configures optional settings for Repository.
 type RepositoryConfig struct {
 	EnableComponents bool
@@ -64,4 +70,12 @@ func NewRepository(client *spanner.Client, cfg RepositoryConfig) (*Repository, e
 		enableComponents:    cfg.EnableComponents,
 		driftCache:          newDriftCache(),
 	}, nil
+}
+
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }

@@ -24,14 +24,26 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 1. **Deletion Evaluation & Finalizer Gating**:
    - If `metadata.deletionTimestamp` is present and `spec.deletionProtection: true`, emit `ConditionTypeDeletionBlocked` (`True`) and prevent deletion.
    - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
-2. **Intent Synchronization**:
-   - Propagate desired spec to CMS via `SetComponentIntent`, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`.
-3. **Enablement & Workload Actuation**:
+2. **Intent Registration** (enabled components):
+   - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`. Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
+   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (Spanner store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
+3. **Dependency Activation Gate** (`spec.enabled: true` with `spec.dependencies`, all component types):
+   - `cmd/xmc_bridge` builds a `DependencySnapshot` (`dependency_readiness.go`) once per reconcile pass from the listed Component CRs and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
+   - A component on a multi-node `spec.dependencies` cycle (self-references are dropped) reports `Ready=False`/`Degraded=True` reason `DependencyCycle` with the cycle path (e.g. `dependency cycle detected: ingestion -> redpanda -> ingestion`); intent is not sent.
+   - **Not yet actuated** (no active 1P release, no `DependenciesReady` condition, and `Ready` not `True`): while any dependency is not ready, the component stays `COMPONENT_STATE_PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` reason `DependenciesNotReady` and a message such as `waiting on dependencies: redpanda (disabled), foo (not found)`. No workload is created. The next poll retries without logging an error.
+   - **Already actuated**: a dependency blip never tears the workload down. The informational `DependenciesReady` condition turns `False` (reason `DependenciesNotReady`) and pending Helm installs/upgrades are held until every dependency is ready again. With nothing to upgrade, `Ready` stays health-derived. When an upgrade to a new generation is held, the component reports `PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` (reason `HelmUpgradePending`) so the new generation is never reported as ready before it is applied.
+   - A chain of N dependent components settles over up to N passes (one poll interval each), because each pass evaluates readiness from a snapshot taken at the start of the pass.
+   - `Reconcile` (no resolver) does not gate activation on the snapshot; CMS unregistered-dependency rejections still gate.
+4. **Enablement & Workload Actuation**:
    - **Enabled (`spec.enabled: true`)**:
      - For 1P components, synthesizes Helm variable overrides and delegates release updates to `HelmManager`.
      - For 3P wrapper components, queries `StatusDetector` to evaluate dynamic CR health and updates observed status.
      - Transitions to `COMPONENT_STATE_ENABLED` upon success.
-   - **Disabled (`spec.enabled: false`)**: Deactivates 1P Helm variable overrides and transitions CMS state to `COMPONENT_STATE_DISABLED`.
+   - **Disabled (`spec.enabled: false`)**: Gated by CMS deactivation safety:
+     1. `PrepareDeactivation` (skipped once the CR already reports `Ready` reason `ComponentDisabled` at the current generation). If CMS returns `FailedPrecondition` because enabled components still depend on this one, the workload keeps running, `DeactivationBlocked=True` and `Ready=False`/`Degraded=False` reason `DeactivationBlocked` name the active dependents, and the pass returns without error. While blocked, CMS is re-checked at most every 30s (the `DeactivationBlocked` `lastTransitionTime` records the last check). `NotFound` (never registered) proceeds without the handshake.
+     2. Deletes the 1P Helm workload.
+     3. `CompleteDeactivation` finalizes the CMS handshake (`DISABLING` → `DISABLED`), then `UpdateObservedGeneration` reports `COMPONENT_STATE_DISABLED`. CMS RPC failures before teardown report reason `CMSDeactivationFailed` (`Degraded=True`).
+     4. If the handshake fails after the workload was deleted (or a later `PrepareDeactivation` is blocked or fails), `Ready=False`/`Degraded=True` reason `DeactivationIncomplete` is reported and the whole handshake is retried on the next pass (deletion is idempotent).
 
 ---
 
@@ -42,6 +54,20 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
+| `DeactivationBlocked` | `True` | `spec.enabled: false` blocked because enabled components depend on this one; the workload keeps running. |
+| `DependenciesReady` | `True` / `False` | Informational, on actuated enabled components with `spec.dependencies`. `False` means Helm upgrades are held (see `HelmUpgradePending`). |
+
+The bridge writes the full conditions list with server-side apply on every pass, so `DeactivationBlocked` and `DependenciesReady` are replaced wholesale and are absent whenever they do not apply (e.g. `DependenciesReady` is dropped while a component is gated or disabled).
+
+Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIATION`). CMS receives the same coarse `Ready=False` status message as other unready paths; the details live on the CR conditions:
+
+| Reason | Degraded | Meaning |
+| :--- | :--- | :--- |
+| `DependenciesNotReady` | `False` | A not-yet-actuated enabled component waits on missing, disabled, deleting, unready, stale, degraded, or CMS-unregistered `spec.dependencies`. |
+| `DependencyCycle` | `True` | The component is on a `spec.dependencies` cycle; the message names the cycle path. |
+| `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
+| `DeactivationBlocked` | `False` | CMS `PrepareDeactivation` rejected disabling the component because it has active dependents. |
+| `DeactivationIncomplete` | `True` | The workload was deleted but the CMS deactivation handshake has not completed; retried every pass. |
 
 ---
 
@@ -52,6 +78,8 @@ The bridge reconciler ingests Kubernetes Custom Resource manifests and unmarshal
 - **Structured Parameters (`spec.parameters`)**:
   - Key-value tuning parameters declared under `spec.parameters` (e.g. `topicName`, `port`, `bufferBytes`, `brokerEndpoints`) are parsed into `map<string, string> parameters` on `ComponentSpec`.
   - **Safe Numeric Formatting**: Unstructured JSON unmarshaling in Go parses numbers as `float64`. To prevent scientific notation formatting on large integers ($\ge 1,000,000$, such as `1048576` for 1MB becoming `"1e+06"`), `parseParameters` checks if `val == float64(int64(val))` and uses `strconv.FormatInt(int64(val), 10)` for integral values, while preserving decimals via `strconv.FormatFloat(val, 'f', -1, 64)`. Booleans and integers are explicitly formatted via `strconv`.
+- **Dependencies (`spec.dependencies`)**:
+  - The list of component names this component depends on is parsed by `parseDependencies` into `repeated string dependencies` on `ComponentSpec`. Entries are canonicalized (`naming.CanonicalComponentName`) and deduplicated in declaration order, and non-string entries are dropped. Strings with an empty canonical name (e.g. `""`, `"/"`) are passed through verbatim, so CMS rejects the spec with `InvalidArgument` instead of silently losing a dependency edge. `ReconcileComponent` also drops self-references in either form (logging a warning) so a component can never wait on itself. CMS persists them as dependency edges so cycle detection, deactivation safety, and deletion safety honor CR-declared dependencies.
 - **Manifests & Wrapper References**:
   - `spec.manifests`: Slice of raw YAML strings for declarative workload resources.
   - `spec.wrapperRef`: Target CRD coordinates (`crdKind`, `crdGroup`, `crdVersion`, `targetName`, `targetNamespace`) for third-party operators.
@@ -95,7 +123,8 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `RecordActuation(ref ComponentRef, generation int64)`
   - `HydrateFromCluster(ctx context.Context) error`
   - `HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error`
-- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection.
+  - `ComponentHealth(ctx context.Context, ref ComponentRef) (healthy bool, reason, message string)`
+- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection (`EnsureErr`, `DeleteErr`, and `UnhealthyReason` for `ComponentHealth`, which defaults to healthy).
 
 ---
 
@@ -116,6 +145,27 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 - **Cold-Start State Hydration (`HydrateFromCluster` & `HydrateComponentState`)**:
   - `HydrateFromCluster(ctx)` inspects the `xmc-component-values` ConfigMap in the target namespace on controller startup and restores `activeState` for all previously enabled components.
   - `HydrateComponentState(ctx, ref, observedGeneration, crReady)` lazily reconciles in-memory `activeState` and `actuatedGenerations` from the `xmc-component-values` ConfigMap and the `Component` CR's `.status` (`observedGeneration` and `Ready=True` condition). This prevents redundant Helm release revision increments on cold start and ensures post-restart deactivation (`spec.enabled: false`) properly triggers `Delete1PComponent`.
+  - **Release Verification**: Because the values ConfigMap is persisted *before* the (asynchronous) Helm upgrade runs, neither the ConfigMap nor a `Ready=True` condition alone proves that the release exists. When hydration would record a new actuation (`crReady && observedGeneration > 0` with no actuation recorded yet), `HydrateComponentState` first calls `HelmActionRunner.Status` (outside the state mutex). The CR is distrusted only on positive evidence: `driver.ErrReleaseNotFound` or a terminal non-`deployed` status (e.g. `failed`, `superseded`, `uninstalled`). In that case the component is marked inactive and not actuated, so the next `Ensure1PComponent` re-installs it. Transient status errors trust the CR (and are logged) so an API blip during restart does not cause a revision bump. A `pending-install`/`pending-upgrade`/`pending-rollback` release left by a crashed bridge also trusts the CR, because a re-upgrade would only fail with "another operation is in progress"; `ComponentHealth` reports it as `HelmReleaseStuck` instead. The deactivation path (`observedGeneration == 0`) is unchanged and performs no release lookup.
+- **1P Component Health (`ComponentHealth`)**:
+  - `evaluateHealth` in `reconciler.go` derives 1P health from `HelmManager.ComponentHealth` whenever a `HelmManager` is configured (the `BridgeProber` fallback, which reports non-3P components as healthy, is used only without a `HelmManager`).
+  - **`deployed` means applied, not running**: upgrades run without `--wait`, so a `deployed` release means Helm applied the manifests. It does not mean the pods are ready. Pod-level readiness is out of scope for this check.
+  - **In-flight upgrades**: `K8sHelmManager` tracks async upgrades per component from enqueue until the worker finishes. While one is queued or running, `Status` would still report the *previous* `deployed` revision, so `ComponentHealth` returns `HelmUpgradePending` instead. An upgrade error takes precedence over pending so `Degraded` stays stable across retries.
+  - **Throttling**: a healthy (`deployed`) verdict is cached per component for 1 minute (`healthCacheTTL`) to avoid a Helm `Status` call (which lists release Secrets) on every poll. Any upgrade enqueue or completion invalidates the cache. The upgrade-error and pending checks never use the cache.
+  - Checks are evaluated in order. Reason constants are exported from `reconciler.go`, and the reason below is set on both `Ready` and `Degraded`. Every non-healthy result sets `Ready=False` and state `COMPONENT_STATE_PENDING_RECONCILIATION`:
+
+    | Reason | Degraded | Meaning |
+    | :--- | :--- | :--- |
+    | `InvalidComponentRef` | `True` | The component reference is missing a name or namespace. |
+    | `HelmUpgradeFailed` | `True` | The last (sync or async) Helm upgrade for the component failed. |
+    | `HelmUpgradePending` | `False` | An async upgrade is queued or running; release status is not yet authoritative. |
+    | `HelmRunnerUninitialized` | `True` | No `HelmActionRunner` is configured, so release state cannot be verified. |
+    | `HelmReleaseNotFound` | `True` | The `xmc-cmp-<name>` release does not exist (`driver.ErrReleaseNotFound`). |
+    | `HelmStatusUnavailable` | *unchanged* | The Helm status query failed transiently (e.g. API server unreachable). The previous `Ready`/`Degraded` conditions are kept and a warning is logged. If there are no conditions at the current generation, it reports `Ready=False`, `Degraded=False`. |
+    | `HelmReleaseStuck` | `True` | The latest revision is `pending-install`, `pending-upgrade`, or `pending-rollback` with no in-flight upgrade in this bridge (e.g. the bridge crashed mid-operation). |
+    | `HelmReleaseNotReady` | `True` | The latest release revision is in another non-`deployed` state (e.g. `failed`). |
+    | `ComponentHealthy` | `False` | The release is `deployed` and no upgrade is pending or failed (`Ready=True`, state `COMPONENT_STATE_ENABLED`). |
+
+  - **Recovering a stuck release**: the bridge does not auto-recover `HelmReleaseStuck`. Helm records no lock owner, so an automatic rollback or uninstall could clobber an operation that another actor (an operator or another bridge replica) is actively running. To recover, run `helm rollback xmc-cmp-<name> -n <namespace>` (or `helm uninstall xmc-cmp-<name> -n <namespace>` for a `pending-install` with no prior revision). Then bump the `Component` spec or restart the bridge so it re-actuates.
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated and no errors are pending.
   - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
@@ -127,7 +177,7 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `Purge1PComponent`: Permanently deletes the component JSON key from the ConfigMap upon component teardown, and uninstalls the release.
   - `Orphan1PComponent`: Retains the ConfigMap values while detaching bridge ownership without triggering release upgrades.
 - **Live Helm Go SDK Release Actuation (`SDKHelmActionRunner`)**:
-  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`), allowing in-process Helm release upgrades and uninstalls without CLI child processes.
+  - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`, `Status`), allowing in-process Helm release upgrades, uninstalls, and read-only release status queries without CLI child processes. `Status` reports missing releases as errors matching `driver.ErrReleaseNotFound`.
   - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Resolves per-component chart paths via `WithRunnerChartPathResolver` and caches loaded `*chart.Chart` instances by path (`chartCache`) to avoid repeated disk I/O. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
 - **Context-Aware Upgrade Lock**:
   - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.

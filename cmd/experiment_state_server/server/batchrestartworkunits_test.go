@@ -304,7 +304,7 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{},
+		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	testCases := []struct {
@@ -353,8 +353,8 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				ListWorkUnitsResp:            []*msgpb.WorkUnit{workUnit},
-				RestartWorkUnitExecutionsErr: fmt.Errorf("storage restart work unit executions failed"),
+				ListWorkUnitsResp:   []*msgpb.WorkUnit{workUnit},
+				RunInTransactionErr: fmt.Errorf("storage restart work unit executions failed"),
 			},
 			wantErr: status.ErrInternal,
 		},
@@ -364,8 +364,8 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				ListWorkUnitsResp:             []*msgpb.WorkUnit{workUnit},
-				RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{},
+				ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},
+				FetchWorkUnitErr:  fmt.Errorf("work unit missing"),
 			},
 			wantErr: status.ErrInternal,
 		},
@@ -375,9 +375,10 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				ListWorkUnitsResp:             []*msgpb.WorkUnit{workUnit},
-				RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{456: {}},
-				AddWorkUnitOperationErr:       fmt.Errorf("storage add operation failed"),
+				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
+				WorkUnit:                workUnit,
+				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
+				AddWorkUnitOperationErr: fmt.Errorf("storage add operation failed"),
 			},
 			wantErr: status.ErrInternal,
 		},
@@ -412,15 +413,16 @@ func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{},
+		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	storage := &storage.MockStorage{
-		ListWorkUnitsResp:             []*msgpb.WorkUnit{workUnit},
-		RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{456: {}},
+		ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},
+		WorkUnit:          workUnit,
+		Experiment:        &msgpb.Experiment{Name: "experiments/123"},
 	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
@@ -506,16 +508,13 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 
 func TestBatchRestartWorkUnits_NoCurrentExecutionFails(t *testing.T) {
 	ctx := context.Background()
+	wuWithoutExec := &msgpb.WorkUnit{
+		Name: "experiments/1/workUnits/1",
+	}
 	mockStorage := &storage.MockStorage{
-		Experiment: &msgpb.Experiment{Name: "experiments/1"},
-		ListWorkUnitsResp: []*msgpb.WorkUnit{
-			{
-				Name: "experiments/1/workUnits/1",
-			},
-		},
-		RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{
-			1: {Name: "experiments/1/workUnits/1/executions/2"},
-		},
+		Experiment:        &msgpb.Experiment{Name: "experiments/1"},
+		WorkUnit:          wuWithoutExec,
+		ListWorkUnitsResp: []*msgpb.WorkUnit{wuWithoutExec},
 	}
 	mockXid := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},

@@ -122,7 +122,6 @@ def publish_release(args: argparse.Namespace) -> PublishReleaseResult:
                 target_commit,
                 repo_dir,
                 remote=args.remote,
-                force=args.force,
                 skip_push=args.skip_push,
             )
             release_id = None

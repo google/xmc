@@ -74,6 +74,7 @@ export class WorkUnitsStatusBar {
 const ORDERED_STATES: WorkUnitStatus.WorkUnitState[] = [
   'WORK_UNIT_STATE_UNSPECIFIED',
   'INITIALIZING',
+  'SCHEDULING_PAUSED',
   'SCHEDULING',
   'STARTING',
   'RUNNING',

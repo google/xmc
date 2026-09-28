@@ -1,0 +1,17 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+staticChecks:
+  enforceDeletionProtection: true
+  maxDrainTimeoutSeconds: 300
+
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      componentVersion: ">=0.1.0"
+      requires:
+        - component: redpanda
+          version: ">=0.1.0"
+          reason: "Ingestion Gateway requires Redpanda event-streaming broker for Kafka metric publishing."
+        - component: clickhouse
+          version: ">=0.1.0"
+          reason: "Ingestion Gateway metrics are only useful with ClickHouse as the metrics store."

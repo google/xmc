@@ -20,11 +20,12 @@ import (
 	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-
+	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/query_generator/querytools"
+	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
@@ -34,9 +35,11 @@ type spannerTransaction interface {
 }
 
 // ExperimentTxStore defines transactional experiment operations required by WorkUnit repository.
+// TODO(b/517479143): Remove ExperimentTxStore and the experimentRepo dependency from WorkUnit
+// repository once CreateWorkUnit and UpdateWorkUnitExecutions orchestration are moved out of Spanner.
 type ExperimentTxStore interface {
 	FetchExperimentTransaction(ctx context.Context, xid int64, tx experiment.SpannerTransaction) (*essmsgpb.Experiment, error)
-	UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
+	WithTx(tx *spanner.ReadWriteTransaction) *experiment.TxRepository
 	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
 }
 
@@ -49,6 +52,12 @@ type Repository struct {
 	workUnitsQueryGen querytools.QueryGenerator
 }
 
+// TxRepository manages transactional persistence for work unit entities in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
+}
+
 // NewRepository creates a new WorkUnit repository instance with initialized query generator.
 func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Repository, error) {
 	if client == nil {
@@ -57,7 +66,7 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Reposito
 
 	workUnitsQueryGen, err := querytools.NewQueryGenerator(workunitschema.WorkUnitTables, nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create work units query generator: %w", err)
+		return nil, fmt.Errorf("failed to create WorkUnits query generator: %w", err)
 	}
 
 	return &Repository{
@@ -65,4 +74,33 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Reposito
 		experimentRepo:    expRepo,
 		workUnitsQueryGen: workUnitsQueryGen,
 	}, nil
+}
+
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
+}
+
+// SaveWorkUnitExecution saves a work unit execution using the bound read-write transaction.
+func (r *TxRepository) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
+	if execution == nil {
+		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
+	}
+	mutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(execution)
+	if err != nil {
+		return fmt.Errorf("failed to create mutation for work unit execution: %v: %w", err, status.ErrInternal)
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
+}
+
+// UpdateCurrentWorkUnitExecution updates the current work unit execution using the bound read-write transaction.
+func (r *TxRepository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
+	if execution == nil {
+		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
+	}
+	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }

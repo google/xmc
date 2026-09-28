@@ -34,6 +34,45 @@ from tools.benchmark.scenario_assertions import (  # noqa: E402
 )
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
+_MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "write_to_file",
+        "replace_file_content",
+        "multi_replace_file_content",
+    }
+)
+
+
+def _record_tool_call(
+    tc: Any,
+    tool_counts: collections.Counter[str],
+    modified_files: list[str],
+) -> None:
+    """Records tool usage metrics and tracks files touched by mutating tools."""
+    if not isinstance(tc, dict):
+        return
+    name = tc.get("name") or tc.get("tool_name") or "unknown_tool"
+    tool_counts[name] += 1
+    if name not in _MUTATING_TOOLS:
+        return
+    args = tc.get("args") or {}
+    if isinstance(args, dict):
+        target = args.get("TargetFile")
+        if target and target not in modified_files:
+            modified_files.append(str(target))
+
+
+def _parse_step_line(line: str) -> dict[str, Any] | None:
+    """Parses a single JSONL line into a step dictionary if valid."""
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        step = json.loads(stripped)
+        return step if isinstance(step, dict) else None
+    except json.JSONDecodeError:
+        return None
+
 
 def parse_transcript(transcript_path: Path) -> dict[str, Any]:
     """Parses a transcript.jsonl file and extracts trajectory metrics and outcome artifacts."""
@@ -55,47 +94,23 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
     try:
         with open(transcript_path, encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
+                step = _parse_step_line(line)
+                if step is None:
                     continue
                 total_steps += 1
-                try:
-                    step = json.loads(line)
-                    if not isinstance(step, dict):
-                        continue
-                except json.JSONDecodeError:
-                    continue
-
-                step_type = step.get("type", "")
-                status = step.get("status", "")
-
-                if step_type == "PLANNER_RESPONSE":
+                if step.get("type") == "PLANNER_RESPONSE":
                     turns += 1
                     content = step.get("content", "")
                     if content:
                         last_response = content
 
-                if status == "ERROR":
+                if step.get("status") == "ERROR":
                     error_count += 1
 
                 tool_calls = step.get("tool_calls", [])
                 if isinstance(tool_calls, list):
                     for tc in tool_calls:
-                        if isinstance(tc, dict):
-                            name = tc.get("name") or tc.get("tool_name") or "unknown_tool"
-                            tool_counts[name] += 1
-                            mutating_tools = {
-                                "write_to_file",
-                                "replace_file_content",
-                                "multi_replace_file_content",
-                            }
-                            if name in mutating_tools:
-                                args = tc.get("args") or {}
-                                if isinstance(args, dict):
-                                    target = args.get("TargetFile")
-                                    if target and target not in modified_files:
-                                        modified_files.append(str(target))
-
+                        _record_tool_call(tc, tool_counts, modified_files)
     except OSError as e:
         raise HandledError(
             f"Failed to read transcript file '{transcript_path}': {e}",

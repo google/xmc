@@ -113,6 +113,14 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
+	deps, err := canonicalDependencies(canonicalName, specToSet.GetDependencies())
+	if err != nil {
+		return nil, err
+	}
+	if len(deps) > 0 {
+		specToSet = proto.Clone(specToSet).(*componentspb.ComponentSpec)
+		specToSet.Dependencies = deps
+	}
 	if req.GetValidateOnly() {
 		protoComp := &componentspb.Component{
 			Name: naming.FullComponentName(canonicalName),
@@ -134,6 +142,30 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
+}
+
+// canonicalDependencies returns spec.dependencies as deduplicated canonical component names in
+// declaration order. This is the single canonicalization point at the CMS API boundary, so the
+// persisted spec holds canonical names. It rejects entries that are not valid component names or
+// that reference the component itself, so a typo cannot silently drop a dependency edge and a
+// self-reference cannot block readiness forever.
+func canonicalDependencies(canonicalName string, deps []string) ([]string, error) {
+	var res []string
+	seen := make(map[string]bool, len(deps))
+	for _, dep := range deps {
+		canonicalDep := naming.CanonicalComponentName(dep)
+		if !naming.IsValidComponentName(canonicalDep) {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid dependency name %q: must be a DNS-1123 component name", dep)
+		}
+		if canonicalDep == canonicalName {
+			return nil, status.Errorf(codes.InvalidArgument, "component %q cannot depend on itself", canonicalName)
+		}
+		if !seen[canonicalDep] {
+			seen[canonicalDep] = true
+			res = append(res, canonicalDep)
+		}
+	}
+	return res, nil
 }
 
 // PrepareDeactivation evaluates the safety of deactivating a component and initiates draining.

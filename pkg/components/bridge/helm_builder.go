@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,8 +83,12 @@ func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 		}
 	}
 
-	if opts.ImageTag != "" || opts.Parameters["image"] != "" || opts.Parameters["imageRepository"] != "" {
+	defaultEnvImg := os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(opts.Ref.Name, "-", "_")) + "_IMAGE")
+	if opts.ImageTag != "" || opts.Parameters["image"] != "" || opts.Parameters["imageRepository"] != "" || defaultEnvImg != "" {
 		compValues["image"] = ResolveImage(opts.Ref.Name, opts.ImageTag, opts.Parameters)
+	}
+	if projID := os.Getenv("PROJECT_ID"); projID != "" {
+		compValues["projectId"] = projID
 	}
 	if opts.DrainTimeoutSeconds > 0 {
 		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + terminationGracePeriodBufferSeconds
@@ -122,6 +127,11 @@ func ResolveImage(componentName string, imageTag string, parameters map[string]s
 		return img
 	}
 	repo := parameters["imageRepository"]
+	if repo == "" && (imageTag == "" || imageTag == "0.1.0") {
+		if envImg := os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"); envImg != "" {
+			return envImg
+		}
+	}
 	if repo == "" {
 		repo = DefaultComponentRepository(componentName)
 	}

@@ -137,7 +137,15 @@ func (a *Authenticator) validateState(r *http.Request) (string, error) {
 }
 
 func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, email, name, picture string) error {
-	sessionToken, err := GenerateSessionToken(email, name, picture, 1*time.Hour, a.JWTSecret)
+	sessionTTL := a.Config.SessionTTL
+	if sessionTTL == 0 {
+		sessionTTL = defaultSessionTTL
+	}
+	if sessionTTL < time.Second {
+		return fmt.Errorf("session lifetime must be at least `1s`")
+	}
+	now := time.Now()
+	sessionToken, err := generateSessionTokenAt(email, name, picture, sessionTTL, a.JWTSecret, now)
 	if err != nil {
 		return fmt.Errorf("failed to generate session token: %w", err)
 	}
@@ -147,7 +155,8 @@ func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, em
 		Value:    sessionToken,
 		Path:     "/",
 		Domain:   a.getCookieDomain(r),
-		Expires:  time.Now().Add(1 * time.Hour),
+		Expires:  now.Add(sessionTTL),
+		MaxAge:   int(sessionTTL / time.Second),
 		HttpOnly: true,
 		Secure:   a.isCookieSecure(r),
 		SameSite: a.getSameSiteMode(r),

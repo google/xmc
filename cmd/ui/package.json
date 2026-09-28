@@ -45,6 +45,7 @@
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
     "jasmine-core": "~5.1.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
@@ -69,6 +70,7 @@
     "vite": "7.3.6",
     "@hono/node-server": "2.0.12",
     "webpack-dev-server": "5.2.6",
-    "less": "^4.8.1"
+    "less": "^4.8.1",
+    "qs": "6.16.0"
   }
 }

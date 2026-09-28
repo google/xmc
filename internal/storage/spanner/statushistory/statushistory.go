@@ -61,6 +61,7 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
+// TODO(b/517479143): Inline into Repository.SaveWorkUnitStatusHistoryIfChanged once CreateWorkUnit and UpdateWorkUnitExecutions are moved out of Spanner.
 func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, t time.Time, tx *spanner.ReadWriteTransaction) {
 	if ctx == nil || ctx.Err() != nil {
 		return
@@ -98,9 +99,31 @@ type Repository struct {
 	client *spanner.Client
 }
 
+// TxRepository manages transactional persistence for status history in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
+}
+
 // NewRepository initializes a new statushistory Repository.
 func NewRepository(client *spanner.Client) *Repository {
 	return &Repository{client: client}
+}
+
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
+}
+
+// SaveWorkUnitStatusHistoryIfChanged buffers a work unit status history mutation if the state changed using the bound read-write transaction.
+// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
+// delegated helper; return them once it is inlined here.
+func (r *TxRepository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+	SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, eid, queueName, prevState, newState, resources, timestamp, r.tx)
+	return nil
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues and returns raw rows.

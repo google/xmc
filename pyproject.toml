@@ -56,8 +56,12 @@ select = [
     "RUF015",  # Ruff: Prefer next(iter()) over list()[0]
     "RUF019",  # Ruff: Unnecessary key check before dictionary access
     "S506",    # Bandit: Probable use of unsafe yaml.load
+    "C901",    # mccabe: Cyclomatic complexity enforcement
 ]
 ignore = ["B904", "SIM102", "SIM105", "SIM117", "E501", "PERF203"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -34,6 +34,12 @@ func (r *Repository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*
 	return r.FetchWorkUnitTransaction(ctx, xid, wid, r.client.Single())
 }
 
+// FetchWorkUnit retrieves a single WorkUnit from storage by its unique XID and WID within the bound read-write transaction.
+func (r *TxRepository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
+	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
+	return r.FetchWorkUnitTransaction(ctx, xid, wid, r.tx)
+}
+
 // FetchWorkUnitTransaction retrieves a single WorkUnit from storage by its unique XID and WID in a transaction.
 func (r *Repository) FetchWorkUnitTransaction(ctx context.Context, xid int64, wid int64, txn spannerTransaction) (*essmsgpb.WorkUnit, error) {
 	logging.Info(ctx, "Fetch work unit row")

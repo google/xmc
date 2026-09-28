@@ -230,30 +230,32 @@ func (c *Controller) Run(ctx context.Context) error {
 
 // RunReconcilePass lists all Component resources in the configured namespace and executes
 // reconciliation on each item sequentially, checking context cancellation between iterations.
+// Activation is gated on a dependency readiness snapshot taken from the same list.
 func (c *Controller) RunReconcilePass(ctx context.Context) error {
 	list, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list Component resources: %w", err)
 	}
 	logging.Debug(ctx, "Reconciliation pass found components", "namespace", c.namespace, "count", len(list.Items))
+	deps := bridge.NewDependencySnapshot(list.Items)
 	for i := range list.Items {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		c.reconcileItem(ctx, &list.Items[i])
+		c.reconcileItem(ctx, &list.Items[i], deps)
 	}
 	return nil
 }
 
 // reconcileItem performs a bounded reconciliation pass on a single unstructured Component resource.
-// It establishes a per-item timeout context (probeTimeout), calls Reconciler.Reconcile, and updates
-// the custom resource's .status subresource with the resulting state and conditions.
-func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstructured) {
+// It establishes a per-item timeout context (probeTimeout), calls Reconciler.ReconcileWithDependencies, and
+// updates the custom resource's .status subresource with the resulting state and conditions.
+func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstructured, deps bridge.DependencyReadiness) {
 	name := item.GetName()
 	reconcileCtx, cancel := context.WithTimeout(ctx, c.probeTimeout)
 	defer cancel()
 
-	res, err := c.reconciler.Reconcile(reconcileCtx, item)
+	res, err := c.reconciler.ReconcileWithDependencies(reconcileCtx, item, deps)
 	if err != nil {
 		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
 		c.handleReconcileFailure(ctx, item, res)

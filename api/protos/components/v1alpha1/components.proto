@@ -220,6 +220,16 @@ message ComponentSpec {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "parameters"
   ];
+
+  // Names of components this component depends on (e.g. ["redpanda"]),
+  // mirroring the Component CR `spec.dependencies` field. Names are
+  // canonicalized and merged with dependencies declared via description
+  // directives or manifests; the union drives CMS cycle detection,
+  // deactivation safety, and deletion safety.
+  repeated string dependencies = 10 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "dependencies"
+  ];
 }
 
 // ComponentAccessStatus represents the observed runtime status and reachability of a component.
