@@ -226,7 +226,7 @@ def _is_re_review_thread_posted(
             f"RESOLVE action on Thread ID `{thread_id}` has not been verified (neither marked [x] nor has a reply)",
         )
 
-    return True, None
+    return False, f"Unknown action '{item.get('action')}' on Thread ID `{thread_id}`"
 
 
 def _verify_all_checklist_items(
