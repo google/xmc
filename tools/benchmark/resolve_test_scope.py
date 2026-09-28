@@ -36,6 +36,11 @@ CORE_INFRA_FILES: set[str] = {
     "MODULE.bazel.lock",
     "BUILD.bazel",
     "compat.bzl",
+    ".bazelrc",
+    ".bazelversion",
+    ".github/workflows/unit-tests.yml",
+    ".github/actions/run-backend-tests/action.yml",
+    "tools/benchmark/resolve_test_scope.py",
 }
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
@@ -105,6 +110,10 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         if clean_f in CORE_INFRA_FILES:
             has_core_infra = True
 
+        if clean_f.startswith(".github/actions/run-ui-tests/"):
+            has_ui = True
+            continue
+
         if is_non_code_file(clean_f):
             continue
 
@@ -133,16 +142,86 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
     }
 
 
-def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") -> list[str]:
+def _get_merge_base(ref_a: str, ref_b: str) -> str | None:
+    """Returns the merge-base commit SHA between ref_a and ref_b, or None on failure."""
+    res = subprocess.run(
+        ["git", "merge-base", ref_a, ref_b],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if res.returncode != 0:
+        return None
+    return res.stdout.strip() or None
+
+
+def resolve_effective_base_ref(
+    base_ref: str,
+    head_ref: str = "HEAD",
+    base_branch: str | None = None,
+) -> str:
+    """Resolves the closest merge-base across origin/<base_branch>, base_ref, and origin/main.
+
+    Prioritizes the live target branch ref (origin/<base_branch>) over webhook base_ref so
+    commits moved down a stack are not dropped, and excludes merge-bases equal to head_ref.
+    """
+    clean_branch = (base_branch or "").strip()
+    if not clean_branch and base_ref in {"origin/main", "main", "HEAD~1"}:
+        return base_ref
+
+    mb_target = None
+    if clean_branch and clean_branch not in {"main", "origin/main"}:
+        mb_target = _get_merge_base(f"origin/{clean_branch}", head_ref)
+    if not mb_target:
+        mb_target = _get_merge_base(base_ref, head_ref)
+
+    mb_main = (
+        _get_merge_base("origin/main", head_ref)
+        if base_ref not in {"origin/main", "main"}
+        else None
+    )
+    merge_bases = list(dict.fromkeys(mb for mb in (mb_target, mb_main) if mb and mb != head_ref))
+    if len(merge_bases) <= 1:
+        return merge_bases[0] if merge_bases else base_ref
+
+    indep = subprocess.run(
+        ["git", "merge-base", "--independent", *merge_bases],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    indep_set = {line.strip() for line in indep.stdout.splitlines() if line.strip()}
+    for mb in merge_bases:
+        if mb in indep_set:
+            return mb
+    return merge_bases[0]
+
+
+def get_git_modified_files(
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+    base_branch: str | None = None,
+) -> list[str]:
     """Retrieves modified files using git diff against base_ref, falling back to git status."""
     try:
+        effective_base = "HEAD~1"
         if base_ref:
-            cmd = ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"]
+            effective_base = resolve_effective_base_ref(base_ref, head_ref, base_branch)
+            cmd = ["git", "diff", "--name-only", f"{effective_base}...{head_ref}"]
         else:
-            # Compare against HEAD~1 if no base provided
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
+        if result.returncode != 0 and base_ref and head_ref != "HEAD":
+            result = subprocess.run(
+                ["git", "diff", "--name-only", f"{effective_base}...HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
         if result.returncode == 0:
             return [line.strip().strip('"') for line in result.stdout.splitlines() if line.strip()]
 
@@ -220,10 +299,15 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         clean_f = f.strip()
         if not clean_f or is_non_code_file(clean_f):
             continue
-        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+        is_code_or_build = (
+            clean_f.endswith(CODE_EXTENSIONS) or Path(clean_f).name in BUILD_FILE_NAMES
+        )
+        if clean_f.startswith("cmd/ui/") and not is_code_or_build:
             continue
 
         pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
+        if not is_code_or_build and pkg in {None, "//"}:
+            return []
         if pkg:
             pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
             changed_pkgs.add(pkg_target)
@@ -278,14 +362,27 @@ def resolve_test_scope(
     cwd: Path | None = None,
 ) -> dict[str, object]:
     """Main entry point for test scope resolution."""
-    # Main branch push events always run full regression suites
-    if event_name == "push" and ref in {"refs/heads/main", "main"}:
+    # Main branch push / dispatch / schedule events always run full regression suites
+    if event_name in {"push", "workflow_dispatch", "schedule"} and ref in {
+        "refs/heads/main",
+        "main",
+        "",
+    }:
         return {
             "run_backend": True,
             "run_ui": True,
             "backend_mode": "all",
             "bazel_targets": "//... -//cmd/ui/...",
             "reason": "main branch push full regression",
+        }
+
+    if not [f for f in files if f.strip()]:
+        return {
+            "run_backend": True,
+            "run_ui": True,
+            "backend_mode": "all",
+            "bazel_targets": "//... -//cmd/ui/...",
+            "reason": "no modified files detected; defaulting to full test suite for safety",
         }
 
     classification = classify_modified_files(files)
@@ -359,6 +456,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--files", nargs="*", help="Optional explicit list of modified file paths.")
     parser.add_argument("--base", help="Git diff base reference.")
+    parser.add_argument("--base-branch", default="", help="Git diff base branch name.")
     parser.add_argument("--head", default="HEAD", help="Git diff head reference.")
     parser.add_argument("--event", default="pull_request", help="GitHub event name.")
     parser.add_argument("--ref", default="", help="GitHub ref name.")
@@ -375,7 +473,11 @@ def main() -> None:
     if args.files is not None:
         modified_files = args.files
     else:
-        modified_files = get_git_modified_files(base_ref=args.base, head_ref=args.head)
+        modified_files = get_git_modified_files(
+            base_ref=args.base,
+            head_ref=args.head,
+            base_branch=args.base_branch,
+        )
 
     print(f"DEBUG modified_files: {modified_files}", file=sys.stderr)
 

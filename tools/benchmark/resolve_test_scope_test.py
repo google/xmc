@@ -22,11 +22,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark.resolve_test_scope import (
+    _get_merge_base,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     find_enclosing_bazel_package,
     get_git_modified_files,
     is_non_code_file,
+    main,
+    resolve_effective_base_ref,
     resolve_test_scope,
     write_github_output,
 )
@@ -372,6 +375,217 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "rdeps")
         self.assertEqual(scope["bazel_targets"], "//deploy/ctk_v2:verify_xmc_test")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_get_merge_base(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(returncode=0, stdout="abc1234\n")
+        self.assertEqual(_get_merge_base("origin/main", "HEAD"), "abc1234")
+
+        mock_run.return_value = unittest.mock.Mock(returncode=1, stdout="")
+        self.assertIsNone(_get_merge_base("bad-ref", "HEAD"))
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_fast_path_and_single_candidate(self, mock_run):
+        # Fast-path: origin/main without base_branch does not invoke git
+        self.assertEqual(resolve_effective_base_ref("origin/main", "HEAD"), "origin/main")
+        mock_run.assert_not_called()
+
+        # Single valid merge-base candidate returns directly without --independent
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=0, stdout="mb111\n"),
+            unittest.mock.Mock(returncode=0, stdout="mb111\n"),
+        ]
+        self.assertEqual(resolve_effective_base_ref("sha-base", "sha-head"), "mb111")
+        self.assertEqual(mock_run.call_count, 2)
+
+        # No valid merge-bases falls back to original base_ref
+        mock_run.reset_mock()
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=1, stdout=""),
+            unittest.mock.Mock(returncode=1, stdout=""),
+        ]
+        self.assertEqual(resolve_effective_base_ref("sha-base", "sha-head"), "sha-base")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_stacked_pr_picks_closest_ancestor(self, mock_run):
+        # Simulate stacked PR rebased onto newer origin/main while origin/parent-branch is not fetched
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=1, stdout=""),  # merge-base(origin/parent-branch, head)
+            unittest.mock.Mock(returncode=0, stdout="old_main_sha\n"),  # merge-base(base_ref, head)
+            unittest.mock.Mock(
+                returncode=0, stdout="new_main_sha\n"
+            ),  # merge-base(origin/main, head)
+            unittest.mock.Mock(returncode=0, stdout="new_main_sha\n"),  # merge-base --independent
+        ]
+        effective = resolve_effective_base_ref(
+            base_ref="stale_parent_sha",
+            head_ref="rebased_head_sha",
+            base_branch="feat/parent-branch",
+        )
+        self.assertEqual(effective, "new_main_sha")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_commit_moved_down_stack_prefers_origin_branch(
+        self, mock_run
+    ):
+        # When feat/parent is rewound from A2 to A1 and A2 moves into feat/child,
+        # live origin/feat/parent (A1) is preferred over stale webhook PR_BASE_SHA (A2).
+        mock_run.side_effect = [
+            unittest.mock.Mock(
+                returncode=0, stdout="sha_a1\n"
+            ),  # merge-base(origin/feat/parent, head)
+            unittest.mock.Mock(returncode=0, stdout="sha_m1\n"),  # merge-base(origin/main, head)
+            unittest.mock.Mock(returncode=0, stdout="sha_a1\n"),  # merge-base --independent
+        ]
+        effective = resolve_effective_base_ref(
+            base_ref="stale_sha_a2",
+            head_ref="child_head_sha",
+            base_branch="feat/parent",
+        )
+        self.assertEqual(effective, "sha_a1")
+        self.assertEqual(mock_run.call_count, 3)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_excludes_head_ref(self, mock_run):
+        # If head_ref is already merged into origin/main, mb(origin/main, head) == head_ref
+        # and must be excluded so we do not diff head_ref...head_ref.
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=0, stdout="base_mb_sha\n"),  # merge-base(base_ref, head)
+            unittest.mock.Mock(
+                returncode=0, stdout="pr_head_sha\n"
+            ),  # merge-base(origin/main, head)
+        ]
+        effective = resolve_effective_base_ref(
+            base_ref="pr_base_sha",
+            head_ref="pr_head_sha",
+        )
+        self.assertEqual(effective, "base_mb_sha")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_independent_fallback(self, mock_run):
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=0, stdout="mb_first\n"),
+            unittest.mock.Mock(returncode=0, stdout="mb_second\n"),
+            unittest.mock.Mock(returncode=1, stdout=""),  # --independent fails
+        ]
+        effective = resolve_effective_base_ref("sha-base", "sha-head")
+        self.assertEqual(effective, "mb_first")
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_get_git_modified_files_with_base_branch_and_head(self, mock_run):
+        mock_run.side_effect = [
+            unittest.mock.Mock(
+                returncode=0, stdout="old_mb\n"
+            ),  # merge-base(origin/feat/stack-parent, head)
+            unittest.mock.Mock(
+                returncode=0, stdout="closest_mb\n"
+            ),  # merge-base(origin/main, head)
+            unittest.mock.Mock(returncode=0, stdout="closest_mb\n"),  # merge-base --independent
+            unittest.mock.Mock(returncode=0, stdout="pkg/components/service.go\n"),  # git diff
+        ]
+        files = get_git_modified_files(
+            base_ref="stale_base",
+            head_ref="pr_head_sha",
+            base_branch="feat/stack-parent",
+        )
+        self.assertEqual(files, ["pkg/components/service.go"])
+        diff_cmd = mock_run.call_args[0][0]
+        self.assertEqual(diff_cmd, ["git", "diff", "--name-only", "closest_mb...pr_head_sha"])
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_get_git_modified_files_retries_head_on_missing_pr_head_sha(self, mock_run):
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=1, stdout=""),  # merge-base(base_ref, missing_sha)
+            unittest.mock.Mock(returncode=1, stdout=""),  # merge-base(origin/main, missing_sha)
+            unittest.mock.Mock(returncode=128, stdout=""),  # git diff base...missing_sha fails
+            unittest.mock.Mock(
+                returncode=0, stdout="pkg/auth/handler.go\n"
+            ),  # git diff base...HEAD
+        ]
+        files = get_git_modified_files(base_ref="base_sha", head_ref="missing_sha")
+        self.assertEqual(files, ["pkg/auth/handler.go"])
+
+    def test_resolve_test_scope_empty_files_and_workflow_dispatch_fail_open(self):
+        empty_scope = resolve_test_scope([], use_rdeps=False)
+        self.assertTrue(empty_scope["run_backend"])
+        self.assertTrue(empty_scope["run_ui"])
+        self.assertEqual(empty_scope["backend_mode"], "all")
+
+        dispatch_scope = resolve_test_scope(
+            ["README.md"],
+            event_name="workflow_dispatch",
+            ref="refs/heads/main",
+            use_rdeps=False,
+        )
+        self.assertTrue(dispatch_scope["run_backend"])
+        self.assertTrue(dispatch_scope["run_ui"])
+        self.assertEqual(dispatch_scope["backend_mode"], "all")
+
+    def test_classify_ci_workflow_and_ui_action_files(self):
+        ui_action = classify_modified_files([".github/actions/run-ui-tests/action.yml"])
+        self.assertFalse(ui_action["has_core_infra"])
+        self.assertTrue(ui_action["has_ui"])
+        self.assertFalse(ui_action["has_backend"])
+
+        unit_wf = classify_modified_files([".github/workflows/unit-tests.yml"])
+        self.assertTrue(unit_wf["has_core_infra"])
+        self.assertTrue(unit_wf["has_ui"])
+        self.assertTrue(unit_wf["has_backend"])
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_discover_bazel_rdeps_targets_includes_non_code_testdata_package(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "BUILD.bazel").touch()
+            pkg_auth = base / "pkg" / "auth"
+            (pkg_auth / "testdata").mkdir(parents=True)
+            (pkg_auth / "BUILD.bazel").touch()
+            pkg_other = base / "pkg" / "other"
+            pkg_other.mkdir(parents=True)
+            (pkg_other / "BUILD.bazel").touch()
+
+            mock_run.return_value = unittest.mock.Mock(
+                returncode=0,
+                stdout="//pkg/auth:auth_test\n//pkg/other:other_test\n",
+            )
+            targets = discover_bazel_rdeps_targets(
+                ["pkg/auth/testdata/expected.txt", "pkg/other/foo.go"],
+                cwd=base,
+            )
+            self.assertEqual(targets, ["//pkg/auth:auth_test", "//pkg/other:other_test"])
+            query_str = mock_run.call_args[0][0][-1]
+            self.assertIn("//pkg/auth:all", query_str)
+            self.assertIn("//pkg/other:all", query_str)
+
+            # Unpackaged root non-code file triggers empty rdeps fallback -> backend_mode="all"
+            targets_root = discover_bazel_rdeps_targets(
+                ["unknown_root_data.yaml", "pkg/other/foo.go"],
+                cwd=base,
+            )
+            self.assertEqual(targets_root, [])
+
+    @patch("tools.benchmark.resolve_test_scope.get_git_modified_files")
+    def test_main_passes_base_branch_and_head(self, mock_get_files):
+        mock_get_files.return_value = ["README.md"]
+        with patch(
+            "sys.argv",
+            [
+                "resolve_test_scope.py",
+                "--base",
+                "base_sha",
+                "--base-branch",
+                "feat/parent",
+                "--head",
+                "head_sha",
+                "--no-rdeps",
+            ],
+        ):
+            main()
+        mock_get_files.assert_called_once_with(
+            base_ref="base_sha",
+            head_ref="head_sha",
+            base_branch="feat/parent",
+        )
 
 
 if __name__ == "__main__":

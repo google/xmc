@@ -29,18 +29,23 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
 
 ### Key Components
 
-1. **ARC AutoscalingRunnerSet (`arc-runner-set`)**:
-   - Deployed in the `arc-runners` namespace.
-   - Dynamically scales ephemeral runner pods up based on GitHub Actions job queue demand.
+1. **ARC AutoscalingRunnerSet (`arc-runner-set`) & GKE Node Pool Sizing**:
+   - Deployed in the `arc-runners` namespace on an `n2-standard-16` (16 vCPU, 64 GB RAM) GKE node pool (`minNodeCount: 12`, `maxNodeCount: 24`).
+   - Configured with `minRunners: 24` warm standby pods and `maxRunners: 48` maximum concurrent runner pods.
+   - Each runner pod requests `7 CPU / 24Gi` (`runner` container, `8 CPU / 28Gi` limit) plus `500m CPU / 1Gi` (`dind` sidecar), packing **2 runner pods per `n2-standard-16` node** so all 24 warm standby pods remain scheduled on the 12 warm nodes with zero GKE node-autoscaler cold-start delay during multi-PR bursts.
 
-2. **In-Cluster Bazel Remote Cache (`bazel-remote-cache`)**:
+2. **Workflow Concurrency & Stacked PR Diff Scoping**:
+   - **Superseded Run Cancellation**: [`.github/workflows/unit-tests.yml`](../.github/workflows/unit-tests.yml) configures `concurrency` (`group: ${{ github.workflow }}-v2-${{ github.event.pull_request.number || github.head_ref || github.run_id }}`, `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`) so rapid force-pushes or stacked PR rebases immediately cancel superseded runs on the same PR while preserving post-submit `push` runs on `main`.
+   - **Closest Merge-Base Resolution**: [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/actions/run-ui-tests/action.yml`](../.github/actions/run-ui-tests/action.yml) fetch `origin/main` and `origin/${PR_BASE_REF}` and diff against `PR_HEAD_SHA` (`github.event.pull_request.head.sha` / `github.event.merge_group.head_sha`) rather than GitHub's synthetic merge commit (`refs/pull/<num>/merge`). [`tools/benchmark/resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) prioritizes the live target branch (`origin/${PR_BASE_REF}`) and selects the closest ancestor across `origin/${PR_BASE_REF}` (or `PR_BASE_SHA`) and `origin/main` via `git merge-base --independent`.
+
+3. **In-Cluster Bazel Remote Cache (`bazel-remote-cache`)**:
    - Manifest: [`deploy/ci/bazel-remote-cache.yaml`](../deploy/ci/bazel-remote-cache.yaml)
    - Runs `buchgr/bazel-remote-cache` backed by a 100Gi SSD PersistentVolumeClaim (`premium-rwo`).
    - Listens on `grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092` (gRPC) and `:8080` (HTTP).
    - Provides internal Gigabit/10Gbps cluster networking speeds, eliminating the 2.5–10 minute overhead of downloading/uploading compressed cache tarballs across public GitHub cache APIs.
    - Automatically manages LRU cache eviction at 90 GiB.
 
-3. **Bazel Configuration (`.bazelrc`)**:
+4. **Bazel Configuration (`.bazelrc`)**:
    - CI builds use the `--config=ci` profile:
      ```ini
      build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092

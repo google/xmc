@@ -31,16 +31,22 @@ runs:
     - name: 'Resolve UI Test Scope'
       id: 'scope'
       env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        PR_BASE_REF: ${{ github.base_ref }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         GITHUB_SHA: ${{ github.sha }}
         EVENT_NAME: ${{ github.event_name }}
         GITHUB_REF: ${{ github.ref }}
       shell: bash
       run: |
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main \
+          ${PR_BASE_REF:+"+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"} || true
         BASE_REF="${PR_BASE_SHA:-origin/main}"
+        HEAD_REF="${PR_HEAD_SHA:-${GITHUB_SHA}}"
         python3 tools/benchmark/resolve_test_scope.py \
           --base "${BASE_REF}" \
-          --head "${GITHUB_SHA}" \
+          --base-branch "${PR_BASE_REF}" \
+          --head "${HEAD_REF}" \
           --event "${EVENT_NAME}" \
           --ref "${GITHUB_REF}" \
           --no-rdeps \
