@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -52,169 +51,6 @@ const (
 	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
 	dependencyNotFoundMessagePrefix = "dependency not found:"
 )
-
-// CMSClient defines the interface for communicating with the CMS control plane.
-type CMSClient interface {
-	// SetComponentIntent registers or updates declarative component intent in CMS.
-	SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error)
-	// UpdateObservedGeneration updates the observed generation, state, and status message of a component in CMS.
-	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
-	// ExecuteDeletion executes component deletion in the CMS backend.
-	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
-	// PrepareDeactivation validates deactivation safety (FailedPrecondition on active dependents) and marks the component DISABLING.
-	PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error)
-	// CompleteDeactivation transitions a DISABLING component to DISABLED.
-	CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error)
-}
-
-// StatusDetectorHealthProber defines the status detection and active health checking interface for 3P custom resources.
-type StatusDetectorHealthProber interface {
-	// DetectStatus queries the target 3P custom resource to determine readiness and extract access coordinates.
-	DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)
-	// Probe executes an active HTTP/TCP probe against target.
-	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
-	// ProbeHealth evaluates the runtime health of a component based on its spec and default namespace, returning health status and message.
-	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string)
-}
-
-// BridgeProber combines StatusDetector and HealthProber into StatusDetectorHealthProber.
-type BridgeProber struct {
-	detector     StatusDetector
-	healthProber HealthProber
-	probeTimeout time.Duration
-}
-
-var _ StatusDetectorHealthProber = (*BridgeProber)(nil)
-
-// NewBridgeProber creates a BridgeProber combining detector and health prober.
-func NewBridgeProber(detector StatusDetector, prober HealthProber, probeTimeout time.Duration) *BridgeProber {
-	if probeTimeout <= 0 {
-		probeTimeout = 5 * time.Second
-	}
-	return &BridgeProber{
-		detector:     detector,
-		healthProber: prober,
-		probeTimeout: probeTimeout,
-	}
-}
-
-// DetectStatus queries the target 3P resource via the underlying dynamic StatusDetector.
-func (p *BridgeProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
-	if p.detector == nil {
-		return nil, errors.New("status detector is uninitialized")
-	}
-	return p.detector.DetectStatus(ctx, ref)
-}
-
-// Probe executes an active HTTP/TCP health probe against target using the configured probe timeout.
-func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
-	if p.healthProber == nil {
-		return nil, errors.New("health prober is uninitialized")
-	}
-	if timeout <= 0 {
-		timeout = p.probeTimeout
-	}
-	return p.healthProber.Probe(ctx, target, timeout)
-}
-
-// ProbeHealth evaluates whether a component is healthy based on its spec and default namespace.
-// For 3P wrappers, it queries the status detector and verifies endpoint health via active probing.
-// Non-3P components are reported healthy; the Reconciler only relies on this for 1P components when no
-// HelmManager is configured, otherwise 1P health comes from HelmManager.ComponentHealth.
-func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
-	if spec == nil {
-		return false, "spec is nil"
-	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
-		return true, "Component healthy"
-	}
-	if spec.GetWrapperRef() == nil {
-		return p.probeOperatorlessHealth(ctx, spec)
-	}
-	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
-	if p.detector == nil {
-		return false, "status detector is uninitialized"
-	}
-	res, err := p.detector.DetectStatus(ctx, wRef)
-	if err != nil {
-		return false, fmt.Sprintf("status detection error: %v", err)
-	}
-	if res == nil {
-		return false, "status detector returned nil status"
-	}
-	if !res.Found {
-		return false, res.Message
-	}
-	if !res.Ready {
-		return false, res.Message
-	}
-	if ok, probeMsg := p.probe3PEndpoint(ctx, res.Endpoint); !ok {
-		return false, probeMsg
-	} else if probeMsg != "" {
-		return true, probeMsg
-	}
-	return true, res.Message
-}
-
-func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
-	endpoint := resolveProbeEndpoint(spec.GetParameters())
-	if endpoint == "" {
-		return false, "no wrapperRef or connection endpoint parameters configured"
-	}
-	ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
-	if !ok {
-		if probeMsg == "" {
-			return false, "health probe failed"
-		}
-		return false, probeMsg
-	}
-	if probeMsg != "" {
-		return true, probeMsg
-	}
-	return true, "Component healthy"
-}
-
-func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
-	if endpoint == "" || p.healthProber == nil {
-		return true, ""
-	}
-	probeRes, err := p.healthProber.Probe(ctx, endpoint, p.probeTimeout)
-	if err != nil {
-		return false, fmt.Sprintf("health probe error: %v", err)
-	}
-	if probeRes == nil {
-		return false, "health prober returned nil result"
-	}
-	if !probeRes.Healthy {
-		return false, probeRes.Message
-	}
-	return true, probeRes.Message
-}
-
-type serverClientAdapter struct {
-	server componentspb.ComponentManagerServiceServer
-}
-
-// NewCMSClientAdapter creates a CMSClient adapter wrapping an in-process gRPC server.
-func NewCMSClientAdapter(s componentspb.ComponentManagerServiceServer) CMSClient {
-	return &serverClientAdapter{server: s}
-}
-
-func (a *serverClientAdapter) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
-	return a.server.SetComponentIntent(ctx, in)
-}
-func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
-	return a.server.UpdateObservedGeneration(ctx, in)
-}
-func (a *serverClientAdapter) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
-	return a.server.ExecuteDeletion(ctx, in)
-}
-func (a *serverClientAdapter) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
-	return a.server.PrepareDeactivation(ctx, in)
-}
-func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
-	return a.server.CompleteDeactivation(ctx, in)
-}
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
 type AccessStatus struct {
@@ -848,14 +684,6 @@ func dropSelfDependency(ctx context.Context, deps []string, canonicalName string
 	return res
 }
 
-// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.
-func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
-	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
-		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
-	})
-	return err
-}
-
 // resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
 func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
 	ref := in.WrapperOpts
@@ -879,61 +707,6 @@ func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
 		return ""
 	}
 	return resolveProbeEndpoint(in.Spec.GetParameters())
-}
-
-func firstNonEmptyToken(val string) string {
-	if val == "" {
-		return ""
-	}
-	for _, part := range strings.Split(val, ",") {
-		if first := strings.TrimSpace(part); first != "" {
-			return first
-		}
-	}
-	return ""
-}
-
-func resolveProbeEndpoint(params map[string]string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
-		return ep
-	}
-	return resolveConnectionEndpoint(params)
-}
-
-func resolveConnectionEndpoint(params map[string]string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints"} {
-		if first := firstNonEmptyToken(params[k]); first != "" {
-			return first
-		}
-	}
-	host := firstNonEmptyToken(params["host"])
-	if host == "" {
-		return ""
-	}
-	return formatHostEndpoint(host, params)
-}
-
-func formatHostEndpoint(host string, params map[string]string) string {
-	if strings.Count(host, ":") == 1 || (strings.HasPrefix(host, "[") && strings.Contains(host, "]:")) {
-		return host
-	}
-	for _, pk := range []string{"nativePort", "kafkaPort", "port", "httpPort"} {
-		port := strings.TrimSpace(params[pk])
-		if port == "" {
-			continue
-		}
-		if strings.Count(host, ":") > 1 && !strings.HasPrefix(host, "[") {
-			return fmt.Sprintf("[%s]:%s", host, port)
-		}
-		return fmt.Sprintf("%s:%s", host, port)
-	}
-	return host
 }
 
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,

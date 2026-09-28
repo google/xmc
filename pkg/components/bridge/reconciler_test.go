@@ -1073,36 +1073,6 @@ func TestReconcile_Unstructured(t *testing.T) {
 	}
 }
 
-type dummyServer struct {
-	componentspb.UnimplementedComponentManagerServiceServer
-}
-
-func (d *dummyServer) SetComponentIntent(context.Context, *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	return &componentspb.SetComponentIntentResponse{}, nil
-}
-
-func (d *dummyServer) UpdateObservedGeneration(context.Context, *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	return &componentspb.UpdateObservedGenerationResponse{}, nil
-}
-
-func (d *dummyServer) ExecuteDeletion(context.Context, *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	return &componentspb.ExecuteDeletionResponse{}, nil
-}
-
-func TestCMSClientAdapter(t *testing.T) {
-	a := NewCMSClientAdapter(&dummyServer{})
-	ctx := context.Background()
-	if _, err := a.SetComponentIntent(ctx, nil); err != nil {
-		t.Error(err)
-	}
-	if _, err := a.UpdateObservedGeneration(ctx, nil); err != nil {
-		t.Error(err)
-	}
-	if _, err := a.ExecuteDeletion(ctx, nil); err != nil {
-		t.Error(err)
-	}
-}
-
 func TestDropSelfDependency(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1505,92 +1475,6 @@ func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
 	})
 }
 
-func TestBridgeProber(t *testing.T) {
-	fakeDetector := NewFakeStatusDetector()
-	fakeDetector.SetStatus("xmc/my-crd", &ResourceStatus{Found: true, Ready: true, Endpoint: "http://my-crd.xmc:8080"})
-	fakeProber := NewFakeHealthProber()
-	fakeProber.SetResult("http://my-crd.xmc:8080", &HealthProbeResult{Healthy: true, Message: "HTTP 200"})
-
-	bp := NewBridgeProber(fakeDetector, fakeProber, time.Second)
-	ctx := context.Background()
-
-	// DetectStatus
-	st, err := bp.DetectStatus(ctx, WrapperRef{Name: "my-crd", Namespace: "xmc"})
-	if err != nil || !st.Found || !st.Ready {
-		t.Errorf("DetectStatus() = %+v, %v", st, err)
-	}
-
-	// Probe
-	pr, err := bp.Probe(ctx, "http://my-crd.xmc:8080", time.Second)
-	if err != nil || !pr.Healthy {
-		t.Errorf("Probe() = %+v, %v", pr, err)
-	}
-	prZeroTimeout, err := bp.Probe(ctx, "http://my-crd.xmc:8080", 0)
-	if err != nil || !prZeroTimeout.Healthy {
-		t.Errorf("Probe() with zero timeout = %+v, %v", prZeroTimeout, err)
-	}
-
-	// ProbeHealth for 1P
-	if ok, _ := bp.ProbeHealth(ctx, &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}, "xmc"); !ok {
-		t.Error("expected 1P component healthy")
-	}
-
-	// ProbeHealth for 3P
-	spec3P := &componentspb.ComponentSpec{
-		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
-		WrapperRef: &componentspb.WrapperRef{CrdGroup: "custom.io", CrdVersion: "v1", CrdKind: "Custom", TargetName: "my-crd", TargetNamespace: "xmc"},
-	}
-	if ok, msg := bp.ProbeHealth(ctx, spec3P, "xmc"); !ok || msg != "HTTP 200" {
-		t.Errorf("expected 3P healthy: ok=%v, msg=%s", ok, msg)
-	}
-
-	// ProbeHealth with uninitialized detector
-	emptyBP := &BridgeProber{}
-	if ok, _ := emptyBP.ProbeHealth(ctx, spec3P, "xmc"); ok {
-		t.Error("expected false for uninitialized BridgeProber")
-	}
-	if _, err := emptyBP.DetectStatus(ctx, WrapperRef{}); err == nil {
-		t.Error("expected error for uninitialized detector")
-	}
-	if _, err := emptyBP.Probe(ctx, "http://foo", time.Second); err == nil {
-		t.Error("expected error for uninitialized health prober")
-	}
-
-	// ProbeHealth with nil status returned from detector
-	nilStatusDetector := &mockDetector{status: nil}
-	bpWithNilStatus := NewBridgeProber(nilStatusDetector, fakeProber, time.Second)
-	if ok, msg := bpWithNilStatus.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "status detector returned nil status" {
-		t.Errorf("expected false for nil status from detector: ok=%v, msg=%s", ok, msg)
-	}
-
-	// ProbeHealth with nil result returned from prober
-	nilResultProber := &mockProberDirect{probeRes: nil}
-	bpWithNilResult := NewBridgeProber(fakeDetector, nilResultProber, time.Second)
-	if ok, msg := bpWithNilResult.ProbeHealth(ctx, spec3P, "xmc"); ok || msg != "health prober returned nil result" {
-		t.Errorf("expected false for nil result from prober: ok=%v, msg=%s", ok, msg)
-	}
-
-	// ProbeHealth for 3P without wrapperRef and without endpoint parameters must fail
-	spec3PEmpty := &componentspb.ComponentSpec{
-		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
-	}
-	if ok, msg := bp.ProbeHealth(ctx, spec3PEmpty, "xmc"); ok || msg != "no wrapperRef or connection endpoint parameters configured" {
-		t.Errorf("expected false for 3P without wrapperRef or endpoint parameters: ok=%v, msg=%s", ok, msg)
-	}
-
-	// ProbeHealth for 3P without wrapperRef with comma-prefixed / fallback endpoint parameters
-	spec3PParams := &componentspb.ComponentSpec{
-		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
-		Parameters: map[string]string{
-			"healthCheckEndpoint": " , ",
-			"clusterEndpoints":    " , http://my-crd.xmc:8080 , ",
-		},
-	}
-	if ok, msg := bp.ProbeHealth(ctx, spec3PParams, "xmc"); !ok || msg != "HTTP 200" {
-		t.Errorf("expected true for 3P with endpoint parameters: ok=%v, msg=%s", ok, msg)
-	}
-}
-
 func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
 	ctx := context.Background()
 	rec := &Reconciler{
@@ -1629,30 +1513,6 @@ func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
 	if readyCond == nil || readyCond.Status != ConditionStatusFalse || readyCond.Reason != "CrossNamespaceForbidden" {
 		t.Errorf("expected Ready condition False with reason CrossNamespaceForbidden, got %+v", readyCond)
 	}
-}
-
-type mockDetector struct {
-	status *ResourceStatus
-	err    error
-}
-
-func (m *mockDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
-	return m.status, m.err
-}
-
-type mockProberDirect struct {
-	probeRes *HealthProbeResult
-	err      error
-}
-
-func (m *mockProberDirect) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
-	return m.probeRes, m.err
-}
-func (m *mockProberDirect) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
-	return m.probeRes, m.err
-}
-func (m *mockProberDirect) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
-	return m.probeRes, m.err
 }
 
 func TestPopulateAccessEnvVars(t *testing.T) {
