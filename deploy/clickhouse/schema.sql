@@ -102,7 +102,7 @@ ENGINE = Null;
 
 -- 5. Materialized View for the Pub/Sub path, populating xmc_metrics from xmc_metrics_pubsub_queue.
 -- Its SELECT must stay identical to xmc_metrics_mv's (apart from the source table) so both message
--- buses apply the same filtering, defaults and timestamp sanitization.
+-- buses apply the same filtering, defaults and timestamp sanitization; schema_test.py enforces this.
 CREATE MATERIALIZED VIEW IF NOT EXISTS xmc_metrics_pubsub_mv TO xmc_metrics AS
 SELECT
     xid,

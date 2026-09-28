@@ -54,7 +54,10 @@ go_test(
 
 go_test(
     name = "clickhouse_pipeline_test",
-    srcs = ["clickhouse_pipeline_test.go"],
+    srcs = [
+        "clickhouse_pipeline_test.go",
+        "pubsub_pipeline_test.go",
+    ],
     data = [
         "//api/protos/metrics:metrics.proto",
         "//deploy/clickhouse:schema.sql",
@@ -66,8 +69,14 @@ go_test(
     ],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
+        "//cmd/metrics_ingester/metricsingester",
         "//test/metrics/infra",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_google_cloud_go_pubsub//:pubsub",
+        "@com_google_cloud_go_pubsub//pstest",
+        "@org_golang_google_api//option",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_protobuf//proto",
     ],
 )

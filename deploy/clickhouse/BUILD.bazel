@@ -12,4 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_test.bzl", "py_test")
+
 exports_files(["schema.sql"])
+
+py_test(
+    name = "schema_test",
+    srcs = ["schema_test.py"],
+    data = ["schema.sql"],
+)
