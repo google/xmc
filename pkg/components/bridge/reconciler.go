@@ -43,6 +43,14 @@ const (
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
+	// ReasonDependenciesNotReady marks an enabled component waiting on unready spec.dependencies.
+	ReasonDependenciesNotReady = "DependenciesNotReady"
+	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
+	ReasonDependencyCycle = "DependencyCycle"
+	// ConditionTypeDependenciesReady is informational on actuated components with dependencies; it does not affect Ready.
+	ConditionTypeDependenciesReady = "DependenciesReady"
+	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
+	dependencyNotFoundMessagePrefix = "dependency not found:"
 )
 
 // Ready/Degraded condition reasons reported by component health evaluation.
@@ -300,6 +308,9 @@ type ReconcileComponentInput struct {
 	ExistingConditions []Condition
 	HelmOpts           HelmComponentOptions
 	WrapperOpts        WrapperRef
+	// Dependencies optionally resolves readiness of Spec.Dependencies. When nil, activation
+	// is not gated on dependency readiness.
+	Dependencies DependencyReadiness
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -307,10 +318,8 @@ type ReconcileComponentInput struct {
 // 1. Validates input name and spec.
 // 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
 // 3. Attaches deletion protection finalizer if not already present.
-// 4. Synchronizes declarative intent with CMS via applyIntent.
-// 5. If !Enabled, handles deactivation via reconcileDisabled.
-// 6. Ensures 1P child workloads via ensure1PComponent or 3P wrapper reconciliation.
-// 7. Evaluates runtime health via evaluateHealth and updates observed generation in CMS.
+// 4. If !Enabled, synchronizes intent via applyIntent and handles deactivation via reconcileDisabled.
+// 5. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
@@ -329,17 +338,100 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		res.AddFinalizer = true
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
-	if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
-		return res, err
-	}
 	if !in.Enabled {
+		if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
+			return res, err
+		}
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
+	return r.reconcileEnabled(ctx, in, canonicalName, res)
+}
+
+// reconcileEnabled rejects dependency cycles, registers intent (so CMS knows the dependency edges
+// that guard deactivation even while this component waits), then gates actuation: a not-yet-actuated
+// component (see isActuated) is held with DependenciesNotReady; an actuated one keeps its running
+// workload with DependenciesReady=False, and a held Helm upgrade reports HelmUpgradePending.
+func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if in.Dependencies != nil {
+		if cycle := in.Dependencies.DependencyCycle(ctx, canonicalName); cycle != "" {
+			return r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, "dependency cycle detected: "+cycle, ConditionStatusTrue)
+		}
+	}
+	waitMsg, err := r.registerIntent(ctx, in, canonicalName, res)
+	if err != nil {
+		preserveDependenciesReady(res, in.ExistingConditions)
+		return res, err
+	}
+	if waitMsg != "" && !r.isActuated(in) {
+		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg, ConditionStatusFalse)
+	}
+	res, err = r.actuateAndEvaluate(ctx, in, canonicalName, res, waitMsg != "")
+	if err != nil {
+		preserveDependenciesReady(res, in.ExistingConditions)
+		return res, err
+	}
+	if len(in.Spec.GetDependencies()) > 0 && (in.Dependencies != nil || waitMsg != "") {
+		setDependenciesReadyCondition(res, in, waitMsg)
+	}
+	return res, nil
+}
+
+// preserveDependenciesReady carries an existing DependenciesReady condition over an error pass. The
+// status write replaces all conditions, and dropping it would make isActuated treat an actuated
+// component (e.g. a 3P wrapper that is not Ready) as never actuated on the next pass.
+func preserveDependenciesReady(res *ReconcileResult, existing []Condition) {
+	prev := findCondition(existing, ConditionTypeDependenciesReady)
+	if res == nil || prev == nil || findCondition(res.Conditions, ConditionTypeDependenciesReady) != nil {
+		return
+	}
+	res.Conditions = append(res.Conditions, *prev)
+}
+
+// registerIntent applies intent to CMS regardless of dependency readiness and returns a "waiting on
+// dependencies" message when actuation must wait. A CMS rejection because a dependency is not
+// registered yet is reported as waiting, not as an error; the intent is retried next pass.
+func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (string, error) {
+	waitMsg := unreadyDependenciesMessage(ctx, in)
+	err := r.applyIntent(ctx, in, canonicalName, res)
+	notRegistered := dependencyNotRegisteredMessage(err)
+	if notRegistered == "" {
+		return waitMsg, err
+	}
+	if waitMsg == "" {
+		waitMsg = "waiting on dependencies: " + notRegistered
+	}
+	return waitMsg, nil
+}
+
+// dependencyNotRegisteredMessage returns the CMS status message if err (possibly wrapped) is the
+// store's FailedPrecondition for an unregistered dependency, or "" otherwise.
+func dependencyNotRegisteredMessage(err error) string {
+	// Not status.FromError: for wrapped errors it replaces the message with the full err.Error(),
+	// which would defeat the prefix match below.
+	var se interface{ GRPCStatus() *status.Status }
+	if !errors.As(err, &se) {
+		return ""
+	}
+	st := se.GRPCStatus()
+	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), dependencyNotFoundMessagePrefix) {
+		return ""
+	}
+	return st.Message()
+}
+
+// actuateAndEvaluate reconciles the workload (3P observation or 1P Helm release, with Helm upgrades
+// skipped when holdUpgrade is true) and evaluates health.
+func (r *Reconciler) actuateAndEvaluate(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, holdUpgrade bool) (*ReconcileResult, error) {
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
 		return r.reconcile3PWrapper(ctx, in, canonicalName, res)
 	}
-	if err := r.ensure1PComponent(ctx, in, res); err != nil {
+	held, err := r.ensure1PComponent(ctx, in, res, holdUpgrade)
+	if err != nil {
 		return res, err
+	}
+	if held {
+		msg := fmt.Sprintf("Helm upgrade to generation %d is held until dependencies are ready", in.Generation)
+		return r.reportGated(ctx, in, canonicalName, res, ReasonHelmUpgradePending, msg, ConditionStatusFalse)
 	}
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
@@ -441,6 +533,69 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	return res, nil
 }
 
+// unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
+// or "" when activation may proceed (disabled, no dependencies, or no resolver configured).
+func unreadyDependenciesMessage(ctx context.Context, in ReconcileComponentInput) string {
+	if !in.Enabled || in.Dependencies == nil {
+		return ""
+	}
+	var waiting []string
+	for _, dep := range in.Spec.GetDependencies() {
+		if ready, reason := in.Dependencies.IsDependencyReady(ctx, dep); !ready {
+			waiting = append(waiting, fmt.Sprintf("%s (%s)", dep, reason))
+		}
+	}
+	if len(waiting) == 0 {
+		return ""
+	}
+	return "waiting on dependencies: " + strings.Join(waiting, ", ")
+}
+
+// isActuated reports whether an enabled component already passed dependency gating: its 1P release
+// is active, it reports DependenciesReady (set only after passing the gate), or its Ready is True.
+func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
+	if r.helmManager != nil && in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager.IsComponentActive(resolveComponentRef(in)) {
+		return true
+	}
+	if findCondition(in.ExistingConditions, ConditionTypeDependenciesReady) != nil {
+		return true
+	}
+	ready := findCondition(in.ExistingConditions, ConditionTypeReady)
+	return ready != nil && ready.Status == ConditionStatusTrue
+}
+
+// setDependenciesReadyCondition records the informational DependenciesReady condition for an actuated
+// component; waitMsg is empty when every dependency is ready.
+func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentInput, waitMsg string) {
+	if waitMsg == "" {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusTrue, in.Generation, "AllDependenciesReady", "All dependencies are ready")
+		return
+	}
+	held := "; running workload is left in place"
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		held = "; Helm upgrades are held, running workload is left in place"
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusFalse, in.Generation, ReasonDependenciesNotReady, waitMsg+held)
+}
+
+// reportGated holds the component in PENDING_RECONCILIATION with Ready=False without touching workloads.
+// CMS gets the coarse "Ready=False" message like other unready paths (it is only re-synced on Ready or
+// generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
+func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
+	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
+		return res, nil
+	}
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	resetReadyTransitionTime(res.Conditions)
+	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
+	return res, nil
+}
+
 func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
 	if r.helmManager == nil {
 		logging.Warn(ctx, "HelmManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
@@ -463,14 +618,15 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 	return nil
 }
 
-// ensure1PComponent sets component enablement and parameter values in the Helm release.
-func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
+// ensure1PComponent sets component enablement and parameter values in the Helm release. When
+// holdUpgrade is true (dependencies unready), a pending install/upgrade is skipped and held is true.
+func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult, holdUpgrade bool) (held bool, err error) {
 	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		return nil
+		return false, nil
 	}
 	if r.helmManager == nil {
 		logging.Warn(ctx, "HelmManager is nil; skipping 1P Helm component reconciliation", "name", in.Name, "namespace", in.Namespace)
-		return nil
+		return false, nil
 	}
 	ref := resolveComponentRef(in)
 	readyAtGen := isReadyAtGeneration(in.ExistingConditions, in.Generation)
@@ -479,7 +635,11 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	}
 	if r.helmManager.IsComponentActuated(ref, in.Generation) {
 		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
-		return nil
+		return false, nil
+	}
+	if holdUpgrade {
+		logging.Debug(ctx, "Holding 1P Helm upgrade until dependencies are ready", "name", in.Name, "generation", in.Generation)
+		return true, nil
 	}
 	in.HelmOpts.Ref = ref
 	in.HelmOpts.Enabled = in.Enabled
@@ -487,11 +647,11 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, ReasonHelmUpgradeFailed, err.Error())
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, ReasonHelmUpgradeFailed, err.Error())
-		return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
+		return false, fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
 	r.helmManager.RecordActuation(ref, in.Generation)
 	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace, "generation", in.Generation)
-	return nil
+	return false, nil
 }
 
 func wasComponentPreviouslyActive(existing []Condition) bool {
@@ -597,7 +757,13 @@ func (r *Reconciler) probeComponentHealth(ctx context.Context, in ReconcileCompo
 
 // Reconcile is the top-level reconciler entrypoint for an unstructured Kubernetes Component custom resource.
 // It parses the spec, generation, and status conditions into ReconcileComponentInput and calls ReconcileComponent.
+// Activation is not gated on dependency readiness; see ReconcileWithDependencies.
 func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructured) (*ReconcileResult, error) {
+	return r.ReconcileWithDependencies(ctx, obj, nil)
+}
+
+// ReconcileWithDependencies is Reconcile with activation gated on deps (nil disables gating).
+func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstructured.Unstructured, deps DependencyReadiness) (*ReconcileResult, error) {
 	if obj == nil {
 		return nil, errors.New("unstructured object must not be nil")
 	}
@@ -623,6 +789,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, obj *unstructured.Unstructur
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 		HelmOpts:           opts,
 		WrapperOpts:        wopts,
+		Dependencies:       deps,
 	})
 }
 
