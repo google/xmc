@@ -432,6 +432,29 @@ func TestWaitBackoff(t *testing.T) {
 	}
 }
 
+func TestIngesterFlushesPendingBatchOnShutdown(t *testing.T) {
+	ctx := context.Background()
+	srv, _, sub := newFakeSubscription(ctx, t)
+	writer := newFakeWriter(0)
+	source := &signallingSource{MessageSource: sub, handedOver: make(chan struct{}, 10)}
+	_, stop := startIngester(t, source, writer, 100, neverTick)
+
+	id := publishMetric(t, srv, testMetric())
+	select {
+	case <-source.handedOver:
+	case <-time.After(waitTimeout):
+		t.Fatal("timed out waiting for the message to be received")
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+	awaitAcks(t, srv, id)
+}
+
 // failingSource invokes f once per message and then fails permanently, as Receive does on a
 // non-retryable service error.
 type failingSource struct {
@@ -464,6 +487,22 @@ func TestIngesterReturnsSourceErrorAfterFlushing(t *testing.T) {
 	}
 	if in.IsRunning() {
 		t.Error("IsRunning() = true after Run returned")
+	}
+}
+
+func TestDrainBuffered(t *testing.T) {
+	msgCh := make(chan *pubsub.Message, 3)
+	first, second := &pubsub.Message{ID: "1"}, &pubsub.Message{ID: "2"}
+	msgCh <- second
+
+	got := drainBuffered(msgCh, []*pubsub.Message{first})
+	if len(got) != 2 || got[0] != first || got[1] != second {
+		t.Errorf("drainBuffered() = %v, want [first second]", got)
+	}
+
+	close(msgCh)
+	if got := drainBuffered(msgCh, nil); len(got) != 0 {
+		t.Errorf("drainBuffered(closed) = %v, want empty", got)
 	}
 }
 
@@ -510,28 +549,25 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	}
 }
 
-func TestIngesterNacksPendingBatchOnShutdown(t *testing.T) {
-	ctx := context.Background()
-	srv, _, sub := newFakeSubscription(ctx, t)
+func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
 	writer := newFakeWriter(0)
-	source := &signallingSource{MessageSource: sub, handedOver: make(chan struct{}, 10)}
-	_, stop := startIngester(t, source, writer, 100, neverTick)
+	ctx, cancel := context.WithCancel(context.Background())
+	source := &scriptedSource{script: func(ctx context.Context, f func(context.Context, *pubsub.Message)) error {
+		f(ctx, metricMessage(t, "1", 1))
+		cancel()
+		writer.awaitWrites(t, 1) // The shutdown flush, which runs after the buffer is drained.
+		// A callback still in flight: its context is live, so it enqueues rather than nacking, and
+		// nackUntilClosed must settle it.
+		f(context.Background(), metricMessage(t, "2", 2))
+		return nil
+	}}
 
-	id := publishMetric(t, srv, testMetric())
-	select {
-	case <-source.handedOver:
-	case <-time.After(waitTimeout):
-		t.Fatal("timed out waiting for the message to be received")
-	}
-	if err := stop(); err != nil {
-		t.Fatalf("Run() error = %v, want nil", err)
+	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	if got := writer.snapshot(); len(got) != 0 {
-		t.Errorf("writes = %v, want none: pending messages are nacked on shutdown", got)
-	}
-	if acks := srv.Message(id).Acks; acks != 0 {
-		t.Errorf("Acks = %d, want 0 for a message nacked on shutdown", acks)
+	if diff := cmp.Diff([][]*pb.Metric{{metricWithStep(1)}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
 	}
 }
 

@@ -35,6 +35,10 @@ const (
 	defaultRetryMax     = 30 * time.Second
 )
 
+// shutdownFlushTimeout bounds the final insert attempted when Run's context is cancelled, keeping
+// shutdown well inside the default 30s Kubernetes termination grace period.
+const shutdownFlushTimeout = 10 * time.Second
+
 // MessageSource delivers Pub/Sub messages to f until ctx is done. *pubsub.Subscription satisfies it.
 type MessageSource interface {
 	Receive(ctx context.Context, f func(context.Context, *pubsub.Message)) error
@@ -117,8 +121,7 @@ func (in *Ingester) Run(ctx context.Context) error {
 // last flush. Resetting the ticker after a size-triggered flush avoids a tiny follow-up insert.
 //
 // Receive does not return on cancellation until every outstanding message is acked or nacked, so
-// on ctx.Done this loop must settle its pending batch itself rather than wait for msgCh to close. It
-// nacks them, so Pub/Sub redelivers them to the next ingester.
+// on ctx.Done this loop must settle its pending batch itself rather than wait for msgCh to close.
 func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message) {
 	ticker := time.NewTicker(in.batchInterval)
 	defer ticker.Stop()
@@ -146,7 +149,7 @@ func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message)
 			}
 			pending = nil
 		case <-ctx.Done():
-			nackAll(pending)
+			in.flushOnShutdown(ctx, drainBuffered(msgCh, pending))
 			nackUntilClosed(msgCh)
 			return
 		}
@@ -186,6 +189,13 @@ func (in *Ingester) flushBounded(ctx context.Context, msgs []*pubsub.Message) bo
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), in.writeTimeout)
 	defer cancel()
 	return in.flush(writeCtx, msgs)
+}
+
+// flushOnShutdown writes the final batch with a fresh, bounded context, since ctx is already done.
+func (in *Ingester) flushOnShutdown(ctx context.Context, pending []*pubsub.Message) {
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFlushTimeout)
+	defer cancel()
+	in.flush(flushCtx, pending)
 }
 
 // flush writes msgs as one batch, acking them on success and nacking them for redelivery on failure.
@@ -260,8 +270,23 @@ func nackAll(msgs []*pubsub.Message) {
 	}
 }
 
-// nackUntilClosed nacks messages buffered in or still reaching msgCh after shutdown began, until
-// Run closes it.
+// drainBuffered appends the messages already buffered in msgCh to pending without blocking, so the
+// final flush includes everything the receive callbacks handed over before shutdown began.
+func drainBuffered(msgCh <-chan *pubsub.Message, pending []*pubsub.Message) []*pubsub.Message {
+	for {
+		select {
+		case msg, ok := <-msgCh:
+			if !ok {
+				return pending
+			}
+			pending = append(pending, msg)
+		default:
+			return pending
+		}
+	}
+}
+
+// nackUntilClosed nacks messages that reach msgCh after shutdown began, until Run closes it.
 func nackUntilClosed(msgCh <-chan *pubsub.Message) {
 	for msg := range msgCh {
 		msg.Nack()
