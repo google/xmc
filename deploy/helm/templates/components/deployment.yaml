@@ -28,6 +28,8 @@ spec:
       app: xmc-bridge
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/components/configmap.yaml") . | sha256sum }}
       labels:
         app: xmc-bridge
         app.kubernetes.io/name: xmc-bridge

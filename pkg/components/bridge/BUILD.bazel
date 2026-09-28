@@ -35,6 +35,7 @@ go_library(
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
         "//api/protos/components/v1alpha1",
+        "//deploy/profiles/stable-2026a:stable2026a",
         "//internal/logging",
         "//pkg/components/graph",
         "//pkg/components/naming",

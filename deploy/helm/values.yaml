@@ -74,6 +74,9 @@ metrics:
     password: ""
 
 ingestionGatewayDeployment:
+  # Deploys the gateway from this chart only while componentsDeployment.enabled is false. With
+  # components enabled, the gateway is optional and installed via the stable-2026a
+  # ingestion-gateway component chart (actuated by xmc-bridge).
   enabled: false
   hpa:
     minReplicas: 3

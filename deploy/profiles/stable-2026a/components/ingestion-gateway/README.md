@@ -45,3 +45,14 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`. This removes the workload together with its RBAC and NetworkPolicy.
 
 The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that the `RoleBinding` subject always matches the `Deployment` `serviceAccountName`. [`templates/component.yaml`](templates/component.yaml) is skipped for `xmc-cmp-*` releases because the `Component` CR is owned by the user's release, not by `xmc-bridge`.
+
+---
+
+## 4. Coexistence with the Umbrella Chart (`deploy/helm/`)
+
+| `enable_components` (`componentsDeployment.enabled`) | Gateway workload owner |
+| :---: | :--- |
+| `false` | Umbrella chart, when `enable_metrics` (`ingestionGatewayDeployment.enabled`) is `true` (unchanged legacy behavior). |
+| `true` | Only this chart: the gateway is optional and runs once this chart is installed with `enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC/NetworkPolicy. |
+
+The gateway `NetworkPolicy` follows the same ownership. With `enable_components=true`, it ships in the `xmc-cmp-ingestion-gateway` release regardless of `enable_metrics`. A test keeps its rules identical to the umbrella policy.

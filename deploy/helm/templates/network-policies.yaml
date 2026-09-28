@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if .Values.ingestionGatewayDeployment.enabled }}
+# With componentsDeployment.enabled, the ingestion-gateway component release ships an equivalent
+# policy alongside its Deployment (deploy/profiles/stable-2026a/components/ingestion-gateway).
+{{- if and .Values.ingestionGatewayDeployment.enabled (not .Values.componentsDeployment.enabled) }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
