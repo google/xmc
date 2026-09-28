@@ -15,6 +15,9 @@
 // Package bridge implements the GitOps Bridge Controller reconciliation loop.
 package bridge
 
+// TODO: Split this file by responsibility (conditions.go, spec_parser.go,
+// wrapper_reconciler.go, lifecycle.go, reconciler.go); see google/xmc#992 review.
+
 import (
 	"context"
 	"encoding/json"
@@ -543,6 +546,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
+		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
 	}
 	if err != nil {
