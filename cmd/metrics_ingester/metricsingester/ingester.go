@@ -66,19 +66,22 @@ func (in *Ingester) Run(ctx context.Context) error {
 		in.batchLoop(ctx, msgCh)
 	}()
 
-	err := in.source.Receive(ctx, func(cbCtx context.Context, msg *pubsub.Message) {
+	defer func() {
+		close(msgCh)
+		<-loopDone
+	}()
+
+	return in.source.Receive(ctx, func(cbCtx context.Context, msg *pubsub.Message) {
 		select {
 		case msgCh <- msg:
 		case <-cbCtx.Done():
 			msg.Nack()
 		}
 	})
-	close(msgCh)
-	<-loopDone
-	return err
 }
 
-// batchLoop accumulates messages and flushes when a batch fills or the interval elapses.
+// batchLoop accumulates messages and flushes when a batch fills or batchInterval passes since the
+// last flush. Resetting the ticker after a size-triggered flush avoids a tiny follow-up insert.
 //
 // Receive does not return on cancellation until every outstanding message is acked or nacked, so
 // on ctx.Done this loop must settle its pending batch itself rather than wait for msgCh to close. It
@@ -99,6 +102,7 @@ func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message)
 			if len(pending) >= in.batchSize {
 				in.flush(ctx, pending)
 				pending = nil
+				ticker.Reset(in.batchInterval)
 			}
 		case <-ticker.C:
 			in.flush(ctx, pending)
