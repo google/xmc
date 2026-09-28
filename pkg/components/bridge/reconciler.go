@@ -291,6 +291,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
+	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
 	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
 	if in.IsDeleting {
@@ -567,8 +568,54 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		WrapperRef:     parseWrapperRef(specMap),
 		Manifests:      parseManifests(specMap),
 		Parameters:     parseParameters(specMap),
+		Dependencies:   parseDependencies(specMap),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
+}
+
+// parseDependencies converts the unstructured spec.dependencies list into canonical component names,
+// preserving declaration order and dropping duplicate and non-string entries. Strings with an empty
+// canonical name (e.g. "" or "/") are kept verbatim so CMS rejects the spec with
+// InvalidArgument instead of the bridge silently dropping a dependency edge.
+func parseDependencies(m map[string]any) []string {
+	raw, ok := m["dependencies"].([]any)
+	if !ok {
+		return nil
+	}
+	var res []string
+	seen := make(map[string]bool, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		name := naming.CanonicalComponentName(s)
+		if name == "" {
+			res = append(res, s)
+			continue
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		res = append(res, name)
+	}
+	return res
+}
+
+// dropSelfDependency removes references to canonicalName from deps, logging a warning when found,
+// because a component that depends on itself could never become ready. deps must already be
+// canonical (parseDependencies is the bridge's single canonicalization point).
+func dropSelfDependency(ctx context.Context, deps []string, canonicalName string) []string {
+	var res []string
+	for _, dep := range deps {
+		if dep == canonicalName {
+			logging.Warn(ctx, "Ignoring self-dependency in component spec", "name", canonicalName)
+			continue
+		}
+		res = append(res, dep)
+	}
+	return res
 }
 
 // parseParameters converts an unstructured parameters map into a string map.

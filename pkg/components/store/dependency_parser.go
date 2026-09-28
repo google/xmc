@@ -33,10 +33,12 @@ const (
 var descDirectivePattern = regexp.MustCompile(`(?i)(?:^|\n)\s*(?:[-*+]\s+)?(?:@|xmc:|xmc\.dev/)?(?:depends-on|dependencies)\s*:\s*([^\n]+)`)
 
 // ExtractDependencies extracts all component dependency references from the component spec and labels.
-// It deduplicates, canonicalizes, and returns sorted dependencies.
+// Sources are the structured spec.dependencies field, manifest annotations/spec.dependencies,
+// description directives, and well-known labels. The union is deduplicated, canonicalized, and sorted.
 func ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string {
 	var rawDeps []string
 	if spec != nil {
+		rawDeps = append(rawDeps, spec.GetDependencies()...)
 		if len(spec.GetManifests()) > 0 {
 			rawDeps = append(rawDeps, ExtractDependenciesFromManifests(spec.GetManifests())...)
 		}

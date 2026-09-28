@@ -41,11 +41,17 @@ The Components subsystem coordinates component definitions, versioning, and runt
 ### 1. Dependency Extraction & Normalization (`pkg/components/store/dependency_parser.go`)
 
 Components specify explicit dependencies on other components via:
+- **Structured Spec Field (preferred)**: `ComponentSpec.dependencies` (`repeated string`), populated by the bridge from the Component CR `spec.dependencies` list (e.g. `dependencies: [redpanda]`).
+- **Manifests**: `xmc.dev/depends-on` / `xmc.dev/dependencies` annotations or `spec.dependencies` inside raw manifests.
 - **Spec Descriptions**: Annotated tags such as `@depends-on: comp-a, comp-b`
 - **Labels**: Structured labels like `xmc.dev/dependency.<name>=<version>`
 
+All sources are merged into a single canonical, deduplicated, sorted set that is persisted as the component's dependency edges (Spanner `ComponentDependencies`) and drives cycle detection, deactivation safety, and deletion safety. CMS rejects invalid (non DNS-1123) names and self-references in `ComponentSpec.dependencies` with `InvalidArgument`; the bridge additionally drops self-references (with a warning) before calling CMS.
+
+**Unregistered dependencies & rollout ordering**: `SpannerStore` (production) requires every dependency to already be registered in CMS; otherwise `SetComponentIntent` fails with `FailedPrecondition` naming the missing dependency (e.g. `component "ingestion-gateway" depends on "redpanda", which is not registered`). If the bridge reconciles a dependent before its dependency, the dependent reports `IntentApplicationFailed` and is retried until the dependency's intent is registered. `MemoryStore` (dev/test only) does **not** reject unregistered dependencies; it records the edge as-is.
+
 Key functions:
-- `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names.
+- `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
 - `NormalizeDependencies(deps []string) []string`: Strips `components/` prefixes, deduplicates, and sorts lexicographically.
 
 ---

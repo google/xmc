@@ -26,6 +26,11 @@ import (
 	"xmanager_cloud/pkg/components/naming"
 )
 
+// DependencyNotFoundMessagePrefix starts the FailedPrecondition message returned when a component
+// declares a dependency that is not registered. The GitOps bridge matches codes.FailedPrecondition
+// plus this prefix to report "waiting on dependencies" instead of an error, so keep it stable.
+const DependencyNotFoundMessagePrefix = "dependency not found:"
+
 // DependencyGraph represents an adjacency mapping of component names to their dependencies or dependents.
 type DependencyGraph = graph.DependencyGraph
 
@@ -144,6 +149,20 @@ func validateProspectiveGraph(depGraph DependencyGraph, canonicalTarget string, 
 		return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", cycleStr)
 	}
 	return nil
+}
+
+// resolveDependencyIDs maps each dependency name to the ComponentID of its registered, non-deleted record.
+// It returns a FailedPrecondition error naming the first dependency that is not registered.
+func resolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {
+	depIDs := make(map[string]int64, len(deps))
+	for _, dep := range deps {
+		depRec, ok := catalog[dep]
+		if !ok || depRec == nil || isDeletedRecord(depRec) {
+			return nil, status.Errorf(codes.FailedPrecondition, DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep)
+		}
+		depIDs[dep] = depRec.ComponentID
+	}
+	return depIDs, nil
 }
 
 // FindTransitiveDependents returns all components that transitively depend on root.

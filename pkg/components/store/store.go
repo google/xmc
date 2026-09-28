@@ -37,7 +37,6 @@ var (
 	ErrHasActiveDependents    = status.Error(codes.FailedPrecondition, "component has active dependents")
 	ErrInvalidGeneration      = status.Error(codes.InvalidArgument, "invalid generation")
 	ErrInvalidStateTransition = status.Error(codes.FailedPrecondition, "invalid state transition")
-	ErrDependencyNotFound     = status.Error(codes.FailedPrecondition, "dependency not found")
 	ErrDependencyCycle        = status.Error(codes.FailedPrecondition, "dependency cycle detected")
 )
 

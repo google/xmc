@@ -547,6 +547,90 @@ func TestMemoryStore_SetComponentIntent_CycleRejection(t *testing.T) {
 	}
 }
 
+// specWithDeps returns a 1P spec whose dependencies are declared only via the structured
+// spec.dependencies field (mirroring the Component CR), with an optional description.
+func specWithDeps(desc string, deps ...string) *componentspb.ComponentSpec {
+	return &componentspb.ComponentSpec{
+		Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:      "v1.0.0",
+		Description:  desc,
+		Dependencies: deps,
+	}
+}
+
+func TestMemoryStore_SpecDependencies(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name     string
+		action   func(ms *MemoryStore) error
+		wantCode codes.Code
+	}{
+		{
+			name: "deactivating a dependency with an active spec.dependencies dependent is blocked",
+			action: func(ms *MemoryStore) error {
+				_, err := ms.PrepareDeactivation(ctx, "redpanda", false)
+				return err
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "non-cascading deletion of a dependency with an active dependent is blocked",
+			action: func(ms *MemoryStore) error {
+				return ms.ExecuteDeletion(ctx, "redpanda", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "cycle via spec.dependencies is rejected",
+			action: func(ms *MemoryStore) error {
+				_, err := ms.SetComponentIntent(ctx, "redpanda", specWithDeps("", "components/ingestion-gateway"), nil, 0)
+				return err
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "deactivating the dependent itself is allowed",
+			action: func(ms *MemoryStore) error {
+				_, err := ms.PrepareDeactivation(ctx, "ingestion-gateway", false)
+				return err
+			},
+			wantCode: codes.OK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := NewMemoryStore()
+			if _, err := ms.SetComponentIntent(ctx, "redpanda", specWithDeps(""), nil, 0); err != nil {
+				t.Fatalf("SetComponentIntent(redpanda) unexpected error: %v", err)
+			}
+			if _, err := ms.SetComponentIntent(ctx, "ingestion-gateway", specWithDeps("", "redpanda"), nil, 0); err != nil {
+				t.Fatalf("SetComponentIntent(ingestion-gateway) unexpected error: %v", err)
+			}
+			if got := status.Code(tt.action(ms)); got != tt.wantCode {
+				t.Errorf("action got code %v, want %v", got, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestMemoryStore_SpecDependencies_MergedWithDirectives(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+	spec := specWithDeps("@depends-on: redpanda, metrics", "redpanda", "components/auth")
+
+	rec, err := ms.SetComponentIntent(ctx, "ingestion-gateway", spec, nil, 0)
+	if err != nil {
+		t.Fatalf("SetComponentIntent(ingestion-gateway) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]string{"auth", "metrics", "redpanda"}, rec.Dependencies); diff != "" {
+		t.Errorf("Dependencies mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"redpanda", "components/auth"}, rec.Spec.GetDependencies()); diff != "" {
+		t.Errorf("Spec.Dependencies not preserved verbatim (-want +got):\n%s", diff)
+	}
+}
+
 func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
