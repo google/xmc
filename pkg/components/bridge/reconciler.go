@@ -15,6 +15,9 @@
 // Package bridge implements the GitOps Bridge Controller reconciliation loop.
 package bridge
 
+// TODO: Split this file by responsibility (conditions.go, spec_parser.go,
+// wrapper_reconciler.go, lifecycle.go, reconciler.go); see google/xmc#992 review.
+
 import (
 	"context"
 	"encoding/json"
@@ -45,10 +48,17 @@ const (
 	ConditionStatusFalse             = "False"
 	// ReasonDependenciesNotReady marks an enabled component waiting on unready spec.dependencies.
 	ReasonDependenciesNotReady = "DependenciesNotReady"
+	// ReasonDeactivationBlocked marks a disabled component kept running because enabled components depend on it.
+	ReasonDeactivationBlocked = "DeactivationBlocked"
+	// ReasonDeactivationIncomplete marks a disabled component whose workload was removed before the CMS handshake completed.
+	ReasonDeactivationIncomplete = "DeactivationIncomplete"
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
 	// ConditionTypeDependenciesReady is informational on actuated components with dependencies; it does not affect Ready.
 	ConditionTypeDependenciesReady = "DependenciesReady"
+	reasonComponentDisabled        = "ComponentDisabled"
+	// deactivationRecheckInterval throttles PrepareDeactivation while deactivation is blocked.
+	deactivationRecheckInterval = 30 * time.Second
 	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
 	dependencyNotFoundMessagePrefix = "dependency not found:"
 )
@@ -85,6 +95,10 @@ type CMSClient interface {
 	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
 	// ExecuteDeletion executes component deletion in the CMS backend.
 	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
+	// PrepareDeactivation validates deactivation safety (FailedPrecondition on active dependents) and marks the component DISABLING.
+	PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error)
+	// CompleteDeactivation transitions a DISABLING component to DISABLED.
+	CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error)
 }
 
 // StatusDetectorHealthProber defines the status detection and active health checking interface for 3P custom resources.
@@ -229,6 +243,12 @@ func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *
 func (a *serverClientAdapter) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
 	return a.server.ExecuteDeletion(ctx, in)
 }
+func (a *serverClientAdapter) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
+	return a.server.PrepareDeactivation(ctx, in)
+}
+func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
+	return a.server.CompleteDeactivation(ctx, in)
+}
 
 // Condition represents a standardized Kubernetes custom resource condition.
 type Condition struct {
@@ -318,7 +338,8 @@ type ReconcileComponentInput struct {
 // 1. Validates input name and spec.
 // 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
 // 3. Attaches deletion protection finalizer if not already present.
-// 4. If !Enabled, synchronizes intent via applyIntent and handles deactivation via reconcileDisabled.
+// 4. If !Enabled, synchronizes intent via applyIntent and handles deactivation via
+// reconcileDisabled (gated by CMS deactivation safety).
 // 5. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
@@ -514,23 +535,99 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	return nil
 }
 
-// reconcileDisabled disables 1P components in Helm when deactivated (enabled: false),
-// sets state to COMPONENT_STATE_DISABLED, sets conditions to Ready=False, Degraded=False,
-// and updates the observed generation in CMS.
+// reconcileDisabled deactivates a component (enabled: false). PrepareDeactivation blocks while
+// active dependents exist (the workload keeps running; re-checked every deactivationRecheckInterval).
+// Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
+// component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	if msg, ok := recentDeactivationBlock(in); ok {
+		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
+	}
+	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
+	if status.Code(err) == codes.FailedPrecondition {
+		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
+		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
+	}
+	if err != nil {
+		err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
+		markDeactivationFailed(in, res, "CMSDeactivationFailed", err.Error())
+		return res, err
+	}
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
 			return res, err
 		}
 	}
+	if prepared {
+		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
+			err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
+			markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+			return res, err
+		}
+	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentDisabled", "Component is disabled")
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
+}
+
+// prepareDeactivation runs the CMS safety check unless already disabled at this generation. It returns
+// true when CompleteDeactivation must follow; a CMS NotFound means there is nothing to guard.
+func (r *Reconciler) prepareDeactivation(ctx context.Context, in ReconcileComponentInput, canonicalName string) (bool, error) {
+	if ready := findCondition(in.ExistingConditions, ConditionTypeReady); ready != nil && ready.Reason == reasonComponentDisabled && ready.ObservedGeneration == in.Generation {
+		return false, nil
+	}
+	_, err := r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName})
+	if status.Code(err) == codes.NotFound {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// recentDeactivationBlock returns the DeactivationBlocked message if CMS rejected deactivation at
+// this generation less than deactivationRecheckInterval ago (its LastTransitionTime is the last check).
+func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
+	c := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked)
+	if c == nil || c.Status != ConditionStatusTrue || c.ObservedGeneration != in.Generation || time.Since(c.LastTransitionTime) >= deactivationRecheckInterval {
+		return "", false
+	}
+	return c.Message, true
+}
+
+// reportDeactivationBlocked reports DeactivationBlocked=True with msg; checked marks a fresh CMS
+// check, restarting the recheck interval. Ready keeps DeactivationIncomplete if the workload is gone.
+func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
+	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
+		cond.LastTransitionTime = time.Now().UTC()
+	}
+	if wasTornDown(in) {
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
+		return res, nil
+	}
+	return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationBlocked, msg, ConditionStatusFalse)
+}
+
+// wasTornDown reports whether a previous pass removed the workload without completing deactivation.
+func wasTornDown(in ReconcileComponentInput) bool {
+	ready := findCondition(in.ExistingConditions, ConditionTypeReady)
+	return ready != nil && ready.Reason == ReasonDeactivationIncomplete
+}
+
+// markDeactivationFailed records Ready=False, Degraded=True with reason, or DeactivationIncomplete
+// once an earlier pass removed the workload (the handshake is retried every pass).
+func markDeactivationFailed(in ReconcileComponentInput, res *ReconcileResult, reason, msg string) {
+	if wasTornDown(in) {
+		reason = ReasonDeactivationIncomplete
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, msg)
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -654,13 +751,18 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	return false, nil
 }
 
+// wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
+// gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated.
 func wasComponentPreviouslyActive(existing []Condition) bool {
-	for _, c := range existing {
-		if c.Type == ConditionTypeReady {
-			return c.Status == ConditionStatusTrue || (c.Reason != "" && c.Reason != "ComponentDisabled")
-		}
+	ready := findCondition(existing, ConditionTypeReady)
+	if ready == nil {
+		return false
 	}
-	return false
+	switch ready.Reason {
+	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle:
+		return ready.Status == ConditionStatusTrue
+	}
+	return true
 }
 
 func isReadyAtGeneration(existing []Condition, generation int64) bool {
