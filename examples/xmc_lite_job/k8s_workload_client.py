@@ -45,8 +45,10 @@ class WorkloadClientConfig:
 
 def _dns1035_jobset_name(raw_name: str) -> str:
   """Formats a raw job name as a DNS-1035 label starting with an alphabetic char."""
-  label = xm_k8s.convert_to_valid_label(raw_name).lower()
-  return f"xm-{label}" if not label or not label[0].isalpha() else label
+  label = xm_k8s.convert_to_valid_label(raw_name).lower().strip("-")
+  if not label or not label[0].isalpha():
+    label = f"xm-{label}" if label else "xm-jobset"
+  return label[:63].rstrip("-")
 
 
 def _load_kube_config() -> None:
@@ -75,8 +77,12 @@ def _build_replicated_job_entry(
     api_client: k8s_client.ApiClient, v1_job: k8s_client.V1Job
 ) -> dict[str, Any]:
   """Converts an xmanager V1Job into a JobSet ReplicatedJob dictionary."""
-  pod_template = api_client.sanitize_for_serialization(v1_job.spec.template)
-  pod_template.setdefault("spec", {})["restartPolicy"] = "Never"
+  pod_template = (
+      api_client.sanitize_for_serialization(v1_job.spec.template) or {}
+  )
+  if pod_template.get("spec") is None:
+    pod_template["spec"] = {}
+  pod_template["spec"]["restartPolicy"] = "Never"
   return {
       "name": _extract_short_job_name(v1_job.metadata.name),
       "replicas": 1,
@@ -139,28 +145,36 @@ class XmcLiteKubernetesClient(xm_k8s.Client):
     self.namespace = config.namespace
     self.recorded_manifests: list[dict[str, Any]] = []
 
+  def _create_service(self, *args: Any, **kwargs: Any) -> None:
+    """No-op to prevent automatic service creation during super().launch."""
+    del args, kwargs
+
   def _ensure_experiments_service(self) -> None:
     """Ensures the headless 'experiments' V1Service exists in the namespace."""
     core_api = k8s_client.CoreV1Api(self.api_client)
-    items = core_api.list_namespaced_service(namespace=self.namespace).items
-    if any(item.metadata.name == EXPERIMENTS_SERVICE_NAME for item in items):
+    try:
+      core_api.read_namespaced_service(EXPERIMENTS_SERVICE_NAME, self.namespace)
       return
+    except k8s_client.ApiException as e:
+      if e.status != 404:
+        raise
     body = k8s_client.V1Service(
         metadata=k8s_client.V1ObjectMeta(name=EXPERIMENTS_SERVICE_NAME),
         spec=k8s_client.V1ServiceSpec(
             selector={"service": EXPERIMENTS_SERVICE_NAME}, cluster_ip="None"
         ),
     )
-    core_api.create_namespaced_service(namespace=self.namespace, body=body)
+    try:
+      core_api.create_namespaced_service(namespace=self.namespace, body=body)
+    except k8s_client.ApiException as e:
+      if e.status != 409:
+        raise
 
   def _build_v1_jobs(
       self, get_full_job_name: Callable[[str], str], jobs: Sequence[xm.Job]
   ) -> list[k8s_client.V1Job]:
     """Builds V1Job objects via super().launch without immediate submission."""
-    with (
-        mock.patch.object(self, "_create_service"),
-        mock.patch.object(k8s_client.BatchV1Api, "create_namespaced_job"),
-    ):
+    with mock.patch.object(self.api_client, "call_api", return_value=None):
       v1_jobs = super().launch(get_full_job_name, jobs)
     labels = _build_labels(self.config.local_queue)
     for job in v1_jobs:

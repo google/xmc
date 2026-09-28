@@ -45,7 +45,7 @@ Workloads are scheduled directly onto GKE as either Kubernetes **`JobSet`** (`jo
 
 | API Group | Resources | Verbs | Why It Is Needed |
 | :--- | :--- | :--- | :--- |
-| `""` (core) | `services` | `get`, `list`, `create` | `xmanager/cloud/kubernetes.py` creates the headless `experiments` Service for inter-pod DNS resolution. |
+| `""` (core) | `services` | `get`, `create` | `XmcLiteKubernetesClient._ensure_experiments_service()` reads and creates the headless `experiments` Service for inter-pod DNS resolution. |
 | `""` (core) | `pods`, `pods/log` | `get`, `list`, `watch` | Used by `KubernetesHandle.wait()` and `kubectl logs` to monitor pod completion. |
 | `batch` | `jobs` | `get`, `list`, `watch`, `create`, `delete` | Required when launching workloads in native `batch/v1` `Job` mode (`--workload_mode=job`). |
 | `jobset.x-k8s.io` | `jobsets` | `get`, `list`, `watch`, `create`, `delete` | Required when launching workloads in `JobSet` mode (`--workload_mode=jobset`). |
@@ -133,6 +133,7 @@ source examples/xmc_lite_job/.venv/bin/activate
   ```
 
 ### Step 3: Inspect the Local SQLite Database & Kubernetes Resources
+`~/.xmanager/experiments.sqlite3` is initialized on the first `launch.py` run (`inspect_sqlite_state.py` raises `FileNotFoundError` if called before any experiment has been created):
 ```bash
 # Decode and print experiment, work_unit, and job protobuf records from ~/.xmanager/experiments.sqlite3:
 python3 -m examples.xmc_lite_job.inspect_sqlite_state
@@ -170,7 +171,7 @@ kubectl get jobsets,jobs,pods,svc -n "${K8S_NAMESPACE:-default}"
   - Creates a headless `v1/Service` named `experiments` (`clusterIP: None`, `selector: {service: experiments}`).
   - Creates one `batch/v1` `Job` per `xm.Job` named `<experiment_id>-<work_unit_id>-<job_name>` with `backoffLimit: 0` and `restartPolicy: Never`.
 - **In `jobset` mode ([`k8s_workload_client.py`](k8s_workload_client.py))**:
-  - Creates a `jobset.x-k8s.io/v1alpha2` `JobSet` named `xm-<experiment_id>-<work_unit_id>-jobset` with `failurePolicy.maxRestarts: 0`, `replicatedJobs[*].template.spec.backoffLimit: 0`, `restartPolicy: Never`, and optional `kueue.x-k8s.io/queue-name` label.
+  - Creates a `jobset.x-k8s.io/v1alpha2` `JobSet` named `xm-<experiment_id>-<work_unit_id>-jobset` (normalized to a valid DNS-1035 label $\le 63$ characters with leading/trailing hyphens stripped) with `failurePolicy.maxRestarts: 0`, `replicatedJobs[*].template.spec.backoffLimit: 0`, `restartPolicy: Never`, and optional `kueue.x-k8s.io/queue-name` label.
 
 ---
 

@@ -93,6 +93,8 @@ def read_sqlite_experiments(
   if experiment_id is not None:
     query += " WHERE e.experiment_id = ?"
   query += " ORDER BY e.experiment_id DESC, w.work_unit_id ASC, j.job_name ASC"
+  if not os.path.exists(db_path):
+    raise FileNotFoundError(f"SQLite database file not found at: {db_path}")
   with sqlite3.connect(db_path) as conn:
     rows = conn.execute(query, params).fetchall()
   return [_row_to_stored_job(row) for row in rows]
