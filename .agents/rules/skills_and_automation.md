@@ -46,3 +46,13 @@ This document provides standards for skill architecture, workflow automation, an
 ## 8. Subagent Delegation Policy for Context Preservation
 - **Offload Heavy Traversal & Analysis**: When a task involves reading multiple log files, running heavy test matrices, or performing broad codebase searches, delegate execution to worker subagents (`research-google` or `self`).
 - **Prevent Main Context Bloat**: Do NOT dump raw test logs or intermediate shell command outputs into the primary agent's context window. Have worker subagents summarize key metrics and actionable recommendations in their return messages.
+
+## 9. Workflow Orchestration & Remote Automation Invariants
+- **Strict Target Commit Pinning**: Skills that orchestrate builds, deployments, E2E tests, or releases MUST explicitly pin operations to the canonical remote target (e.g. `TARGET_SHA=$(git rev-parse origin/main)`). Never default to `HEAD` or local working tree state when executing release or staging workflows.
+- **Asynchronous Run Correlation & Polling Invariants**: When polling for newly triggered remote CI runs (e.g. GitHub Actions, Borg jobs), helpers MUST:
+  1. Record dispatch timestamp $t_0$ and filter strictly on `createdAt >= t_0`.
+  2. Require matching **both** timestamp and commit SHA (`headSha.startswith(target_sha)`). Never use loose `or` conditions in polling loops.
+  3. Abort immediately with structured failure diagnostics upon commit mismatch or concurrency cancellation.
+- **Closed-Circuit Error Propagation (No `|| true`)**: Never append `|| true` to command invocations inside Markdown skill definitions. Allow non-zero exit codes to fail fast and bubble up to the agent for proper error inspection and recovery.
+- **Environment-Aware State Persistence**: Persist multi-turn execution state using `${ARTIFACT_DIR:-/tmp}/<state_file>.json` to ensure survivability across session restarts and context resets.
+- **Explicit Heading Slug Anchors**: Cross-skill references MUST link to Markdown heading slug anchors (e.g. `[Mandatory Confirmation Gate](../other_skill/SKILL.md#6-mandatory-confirmation-gate--release-publishing)`) rather than volatile section numbers.
