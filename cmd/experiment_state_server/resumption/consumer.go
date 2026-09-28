@@ -45,6 +45,25 @@ type Consumer struct {
 	drainTimeout time.Duration
 }
 
+// NewRedisConsumer creates the Redis consumer client for the scheduling resumption stream.
+func NewRedisConsumer(redisAddr string) (redisclient.Consumer, error) {
+	if redisAddr == "" {
+		return nil, fmt.Errorf("redis address cannot be empty")
+	}
+	return redisclient.NewConsumer(
+		redisclient.Config{
+			Addr: redisAddr,
+		},
+		constants.RedisResumeStream,
+		constants.RedisESSGroup,
+		constants.RedisDLQ,
+		constants.RedisMaxRetries,
+		constants.RedisProcessTimeout,
+		constants.RedisAbandonedMessageTimeout,
+		constants.RedisReadBatchSize,
+	), nil
+}
+
 // StartConsumer creates and starts the resumption stream consumer and its cleanup worker.
 func StartConsumer(ctx context.Context, cfg ConsumerConfig, worker Worker) (*Consumer, error) {
 	if worker == nil {
@@ -58,21 +77,10 @@ func StartConsumer(ctx context.Context, cfg ConsumerConfig, worker Worker) (*Con
 
 	client := cfg.Client
 	if client == nil {
-		if cfg.RedisAddr == "" {
-			return nil, fmt.Errorf("redis address cannot be empty")
+		client, err = NewRedisConsumer(cfg.RedisAddr)
+		if err != nil {
+			return nil, err
 		}
-		client = redisclient.NewConsumer(
-			redisclient.Config{
-				Addr: cfg.RedisAddr,
-			},
-			constants.RedisResumeStream,
-			constants.RedisESSGroup,
-			constants.RedisDLQ,
-			constants.RedisMaxRetries,
-			constants.RedisProcessTimeout,
-			constants.RedisAbandonedMessageTimeout,
-			constants.RedisReadBatchSize,
-		)
 	}
 
 	client.InitializeClient(ctx)

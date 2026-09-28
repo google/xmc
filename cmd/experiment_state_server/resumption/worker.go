@@ -42,6 +42,11 @@ type TaskQueue interface {
 	CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
 }
 
+// ClaimExtender extends the lease of the Redis message that triggered the resumption.
+type ClaimExtender interface {
+	ExtendClaim(ctx context.Context) error
+}
+
 // Worker defines the contract for running paused task resumption.
 type Worker interface {
 	StartResumption(ctx context.Context, req Request) error
@@ -52,6 +57,7 @@ type ResumptionWorker struct {
 	pauseStateRepo        pausestate.Repository
 	pausedTaskRepo        pausedtask.Repository
 	taskQueue             TaskQueue
+	claimExtender         ClaimExtender
 	throttlePauseDuration time.Duration
 }
 
@@ -60,11 +66,13 @@ func NewResumptionWorker(
 	pauseStateRepo pausestate.Repository,
 	pausedTaskRepo pausedtask.Repository,
 	taskQueue TaskQueue,
+	claimExtender ClaimExtender,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
 		pauseStateRepo:        pauseStateRepo,
 		pausedTaskRepo:        pausedTaskRepo,
 		taskQueue:             taskQueue,
+		claimExtender:         claimExtender,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
@@ -156,7 +164,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return err
 		}
 
-		// TODO(pausescheduling): Extend message lease via heartbeat during batch processing.
+		w.extendClaim(ctx, req.ResumptionRunID)
 	}
 }
 
@@ -181,7 +189,7 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 		"pause_duration", w.pauseDuration(),
 		"resumption_run_id", req.ResumptionRunID)
 
-	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
+	w.extendClaim(ctx, req.ResumptionRunID)
 
 	if err := w.waitOrCancel(ctx); err != nil {
 		return false, err
@@ -196,6 +204,17 @@ func (w *ResumptionWorker) pauseDuration() time.Duration {
 		return defaultThrottlePauseDuration
 	}
 	return w.throttlePauseDuration
+}
+
+// extendClaim keeps the trigger message leased so it is not timed out or
+// reclaimed mid-replay. Failures are not fatal: ResumptionWorkerID fencing
+// prevents duplicate replay if another worker takes over.
+func (w *ResumptionWorker) extendClaim(ctx context.Context, runID string) {
+	if err := w.claimExtender.ExtendClaim(ctx); err != nil {
+		logging.Warn(ctx, "Failed to extend resumption trigger claim",
+			"error", err,
+			"resumption_run_id", runID)
+	}
 }
 
 // waitOrCancel blocks the calling goroutine for the worker's pause duration,
