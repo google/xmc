@@ -85,6 +85,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_cli_runtime//pkg/genericclioptions",
         "@io_k8s_client_go//dynamic/fake",
         "@io_k8s_client_go//kubernetes/fake",
         "@io_k8s_client_go//restmapper",
@@ -94,5 +95,6 @@ go_test(
         "@org_golang_google_protobuf//types/known/durationpb",
         "@sh_helm_helm_v3//pkg/chart",
         "@sh_helm_helm_v3//pkg/release",
+        "@sh_helm_helm_v3//pkg/storage/driver",
     ],
 )

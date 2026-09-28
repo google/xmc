@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,30 @@ const (
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
+)
+
+// Ready/Degraded condition reasons reported by component health evaluation.
+const (
+	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
+	ReasonComponentHealthy = "ComponentHealthy"
+	// ReasonHealthProbeFailed indicates the prober-based health check failed.
+	ReasonHealthProbeFailed = "HealthProbeFailed"
+	// ReasonInvalidComponentRef indicates the component reference is missing a name or namespace.
+	ReasonInvalidComponentRef = "InvalidComponentRef"
+	// ReasonHelmUpgradeFailed indicates the last Helm upgrade for the component failed.
+	ReasonHelmUpgradeFailed = "HelmUpgradeFailed"
+	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a fault (Degraded=False).
+	ReasonHelmUpgradePending = "HelmUpgradePending"
+	// ReasonHelmRunnerUninitialized indicates no Helm action runner is configured, so release state cannot be verified.
+	ReasonHelmRunnerUninitialized = "HelmRunnerUninitialized"
+	// ReasonHelmReleaseNotFound indicates the component's Helm release does not exist.
+	ReasonHelmReleaseNotFound = "HelmReleaseNotFound"
+	// ReasonHelmReleaseNotReady indicates the latest release revision is in a terminal non-deployed state (e.g. failed).
+	ReasonHelmReleaseNotReady = "HelmReleaseNotReady"
+	// ReasonHelmReleaseStuck indicates the release is pending-install/upgrade/rollback with no upgrade in flight in this bridge.
+	ReasonHelmReleaseStuck = "HelmReleaseStuck"
+	// ReasonHelmStatusUnavailable indicates a transient failure querying Helm release status; health is left unchanged.
+	ReasonHelmStatusUnavailable = "HelmStatusUnavailable"
 )
 
 // CMSClient defines the interface for communicating with the CMS control plane.
@@ -106,6 +131,8 @@ func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Du
 
 // ProbeHealth evaluates whether a component is healthy based on its spec and default namespace.
 // For 3P wrappers, it queries the status detector and verifies endpoint health via active probing.
+// Non-3P components are reported healthy; the Reconciler only relies on this for 1P components when no
+// HelmManager is configured, otherwise 1P health comes from HelmManager.ComponentHealth.
 func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
 	if spec == nil {
 		return false, "spec is nil"
@@ -458,8 +485,8 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmUpgradeFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmUpgradeFailed", err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, ReasonHelmUpgradeFailed, err.Error())
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, ReasonHelmUpgradeFailed, err.Error())
 		return fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
 	r.helmManager.RecordActuation(ref, in.Generation)
@@ -496,21 +523,20 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 // conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
 // Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	isHealthy, healthMsg := true, "Component is active"
-	if r.prober != nil {
-		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
-	}
+	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
-
-	readyStatus, readyReason, degradedStatus, degradedReason := ConditionStatusFalse, "HealthProbeFailed", ConditionStatusTrue, "HealthProbeFailed"
-	if isHealthy {
-		readyStatus, readyReason, degradedStatus, degradedReason = ConditionStatusTrue, "ComponentHealthy", ConditionStatusFalse, "ComponentHealthy"
-		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
-	} else {
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if reason == ReasonHelmStatusUnavailable && preserveHealthConditions(in, res) {
+		logging.Warn(ctx, "Transient component health check failure; keeping previous Ready/Degraded conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
+		return res, nil
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, readyReason, healthMsg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, degradedReason, healthMsg)
+
+	readyStatus, degradedStatus := healthConditionStatuses(isHealthy, reason)
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if isHealthy {
+		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, reason, healthMsg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, reason, healthMsg)
 
 	if shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
@@ -518,8 +544,55 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 		}
 		resetReadyTransitionTime(res.Conditions)
 	}
-	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy)
+	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
 	return res, nil
+}
+
+// healthConditionStatuses maps a health verdict to Ready/Degraded statuses. Pending upgrades and
+// unknown (transient) status are not faults, so they report Degraded=False.
+func healthConditionStatuses(healthy bool, reason string) (ready, degraded string) {
+	if healthy {
+		return ConditionStatusTrue, ConditionStatusFalse
+	}
+	if reason == ReasonHelmUpgradePending || reason == ReasonHelmStatusUnavailable {
+		return ConditionStatusFalse, ConditionStatusFalse
+	}
+	return ConditionStatusFalse, ConditionStatusTrue
+}
+
+// preserveHealthConditions copies the existing Ready/Degraded conditions into res and derives the state from them.
+// It returns false (leaving res untouched) when there is no Ready condition observed at the current generation.
+func preserveHealthConditions(in ReconcileComponentInput, res *ReconcileResult) bool {
+	idx := slices.IndexFunc(in.ExistingConditions, func(c Condition) bool { return c.Type == ConditionTypeReady })
+	if idx < 0 || in.ExistingConditions[idx].ObservedGeneration != in.Generation {
+		return false
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if in.ExistingConditions[idx].Status == ConditionStatusTrue {
+		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	}
+	for _, c := range in.ExistingConditions {
+		if c.Type == ConditionTypeReady || c.Type == ConditionTypeDegraded {
+			upsertCondition(&res.Conditions, c)
+		}
+	}
+	return true
+}
+
+// probeComponentHealth returns the health verdict, condition reason, and message for an enabled component.
+// 1P components managed by a HelmManager report their real Helm release state; others fall back to the prober.
+func (r *Reconciler) probeComponentHealth(ctx context.Context, in ReconcileComponentInput) (bool, string, string) {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager != nil {
+		return r.helmManager.ComponentHealth(ctx, resolveComponentRef(in))
+	}
+	if r.prober == nil {
+		return true, ReasonComponentHealthy, "Component is active"
+	}
+	healthy, msg := r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
+	if !healthy {
+		return false, ReasonHealthProbeFailed, msg
+	}
+	return true, ReasonComponentHealthy, msg
 }
 
 // Reconcile is the top-level reconciler entrypoint for an unstructured Kubernetes Component custom resource.
@@ -846,14 +919,18 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 			break
 		}
 	}
-	newCond := Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message}
-	for i, c := range *conditions {
-		if c.Type == condType {
-			(*conditions)[i] = newCond
+	upsertCondition(conditions, Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message})
+}
+
+// upsertCondition replaces the entry in conditions with the same Type as c, or appends c.
+func upsertCondition(conditions *[]Condition, c Condition) {
+	for i := range *conditions {
+		if (*conditions)[i].Type == c.Type {
+			(*conditions)[i] = c
 			return
 		}
 	}
-	*conditions = append(*conditions, newCond)
+	*conditions = append(*conditions, c)
 }
 
 // resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
@@ -991,7 +1068,7 @@ func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in Reconcil
 		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
 	}
 	if !isHealthy {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "HealthProbeFailed", healthMsg)
+		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonHealthProbeFailed, healthMsg)
 	}
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
 }
@@ -1068,8 +1145,8 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	populateAccessEnvVars(res, resStatus)
 
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, "ComponentHealthy", msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "ComponentHealthy", msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, ReasonComponentHealthy, msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, ReasonComponentHealthy, msg)
 
 	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusTrue, in.Generation) {
 		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
