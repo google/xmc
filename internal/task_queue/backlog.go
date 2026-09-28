@@ -22,6 +22,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
@@ -41,6 +42,7 @@ var _ RedisStreamClient = (*redisclient.PublisherClient)(nil)
 // reads only the (maxThreshold - pending) + 1 entries needed to decide, avoiding unbounded stream reads.
 func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, stream, group string, maxThreshold int) (int64, error) {
 	if client == nil {
+		logging.Warn(ctx, "No Redis stream client configured; reporting empty backlog", "stream", stream)
 		return 0, nil
 	}
 	if maxThreshold <= 0 {
@@ -57,6 +59,7 @@ func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, strea
 
 	targetGroup := findGroup(groups, group)
 	if targetGroup == nil {
+		logging.Warn(ctx, "Consumer group not found on stream; reporting empty backlog", "stream", stream, "group", group)
 		return 0, nil
 	}
 
@@ -85,10 +88,12 @@ func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, strea
 // CalculateBacklog calculates the backlog on the actuator task stream.
 func (c *Client) CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error) {
 	if c == nil || c.redisClient == nil {
+		logging.Warn(ctx, "Task queue Redis client not configured; reporting empty backlog")
 		return 0, nil
 	}
 	rClient, ok := c.redisClient.(RedisStreamClient)
 	if !ok {
+		logging.Warn(ctx, "Task queue Redis client does not support stream inspection; reporting empty backlog")
 		return 0, nil
 	}
 	return CalculateStreamBacklog(ctx, rClient, constants.RedisStream, constants.RedisGroup, maxThreshold)

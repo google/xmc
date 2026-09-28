@@ -273,7 +273,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		// TODO(pausescheduling): Replace in-memory fake repositories with Spanner repositories once implemented.
 		pauseStateRepo := pausestate.NewFake()
 		pausedTaskRepo := pausedtask.NewFake()
-		worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueueClient, taskQueueClient)
+		worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueueClient)
 		consumer, err := resumption.StartConsumer(ctx, resumption.ConsumerConfig{
 			RedisAddr: cfg.RedisAddr,
 		}, worker)

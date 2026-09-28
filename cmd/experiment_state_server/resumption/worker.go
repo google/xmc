@@ -33,14 +33,11 @@ const (
 	defaultThrottlePauseDuration = 10 * time.Second
 )
 
-// BacklogChecker defines the contract for checking downstream task queue backlog.
-type BacklogChecker interface {
-	CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error)
-}
-
-// PayloadPublisher defines the interface for enqueuing actuation tasks.
-type PayloadPublisher interface {
+// TaskQueue defines the task queue operations used by the resumption worker:
+// enqueuing actuation tasks and checking the downstream backlog.
+type TaskQueue interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+	CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error)
 }
 
 // Worker defines the contract for running paused task resumption.
@@ -52,8 +49,7 @@ type Worker interface {
 type ResumptionWorker struct {
 	pauseStateRepo        pausestate.Repository
 	pausedTaskRepo        pausedtask.Repository
-	publisher             PayloadPublisher
-	backlogChecker        BacklogChecker
+	taskQueue             TaskQueue
 	throttlePauseDuration time.Duration
 }
 
@@ -61,14 +57,12 @@ type ResumptionWorker struct {
 func NewResumptionWorker(
 	pauseStateRepo pausestate.Repository,
 	pausedTaskRepo pausedtask.Repository,
-	publisher PayloadPublisher,
-	backlogChecker BacklogChecker,
+	taskQueue TaskQueue,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
 		pauseStateRepo:        pauseStateRepo,
 		pausedTaskRepo:        pausedTaskRepo,
-		publisher:             publisher,
-		backlogChecker:        backlogChecker,
+		taskQueue:             taskQueue,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
@@ -165,16 +159,12 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 }
 
 func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (bool, error) {
-	if w.backlogChecker == nil {
-		return false, nil
-	}
-
 	maxThreshold := req.MaxBacklogThreshold
 	if maxThreshold <= 0 {
 		maxThreshold = defaultMaxBacklog
 	}
 
-	backlog, err := w.backlogChecker.CalculateBacklog(ctx, maxThreshold)
+	backlog, err := w.taskQueue.CalculateBacklog(ctx, maxThreshold)
 	if err != nil {
 		return false, fmt.Errorf("failed to calculate task queue backlog: %w", err)
 	}
@@ -282,7 +272,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 		}
 
 		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
-		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
+		if err := w.taskQueue.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
 			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 			break
 		}
