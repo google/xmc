@@ -51,7 +51,7 @@ bazel run //cmd/component-linter:component-linter -- --manifests-dir=deploy/prof
 
 ## 3. Exit Code Semantics
 
-The `xmc-linter` binary produces deterministic exit codes suitable for CI/CD status checks and git pre-commit hooks:
+The `component-linter` binary produces deterministic exit codes suitable for CI/CD status checks and git pre-commit hooks:
 
 | Exit Code | Meaning | Description |
 | :---: | :--- | :--- |
@@ -109,7 +109,7 @@ When validation issues are detected:
 
 ## 5. Component Manifest Specification, Helm Sub-Charts & Flexible YAML AST
 
-`xmc-linter` defines the typed Component AST in `pkg/components/linter/manifest.go`, renders Helm sub-chart templates via `pkg/components/linter/chart_renderer.go`, and implements custom YAML deserializers in `pkg/components/linter/manifest_decoder.go` supporting flexible dependency declarations, duration formats, YAML merge keys (`<<`), and aliases.
+`component-linter` defines the typed Component AST in `pkg/components/linter/manifest.go`, renders Helm sub-chart templates via `pkg/components/linter/chart_renderer.go`, and implements custom YAML deserializers in `pkg/components/linter/manifest_decoder.go` supporting flexible dependency declarations, duration formats, YAML merge keys (`<<`), and aliases.
 
 ### Helm Sub-Chart Template Rendering (`chart_renderer.go`)
 
@@ -215,7 +215,7 @@ flowchart LR
     C -.->|"CYCLE (Detected)"| A
 ```
 
-- **Cycle Path Formatting**: When a cycle is detected, `xmc-linter` reports the exact closed loop traversal path:
+- **Cycle Path Formatting**: When a cycle is detected, `component-linter` reports the exact closed loop traversal path:
   ```text
   [ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
   ```
@@ -236,7 +236,7 @@ The matrix validation layer (`pkg/components/linter/matrix.go`, `constraints.go`
 
 ### SemVer 2.0.0 Constraint Algebra
 
-`xmc-linter` includes a full SemVer 2.0.0 constraint parser supporting standard npm/Go constraint operators:
+`component-linter` includes a full SemVer 2.0.0 constraint parser supporting standard npm/Go constraint operators:
 
 | Operator | Notation Example | Meaning / Evaluation Rule |
 | :--- | :--- | :--- |
@@ -279,7 +279,7 @@ compatibilityMatrix:
 
 ## 9. Multi-Pass Static Validation Pipeline
 
-When `xmc-linter` executes, it coordinates all verification validators in a linear pipeline:
+When `component-linter` executes, it coordinates all verification validators in a linear pipeline:
 
 ```mermaid
 flowchart TD
@@ -295,7 +295,7 @@ flowchart TD
 ### End-to-End Example: Detecting Multi-Pass Failures
 
 ```bash
-$ bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/test/ --rules-config=deploy/profiles/test/rules.yaml --output=text
+$ bazel run //cmd/component-linter:component-linter -- --manifests-dir=deploy/profiles/test/ --rules-config=deploy/profiles/test/rules.yaml --output=text
 [ERROR] cluster-scoped kind "ClusterRole" is forbidden when namespace scope is enforced
 [ERROR] dependency cycle detected: storage-controller -> storage-driver -> storage-controller
 [ERROR] component "storage-driver" (version 1.0.0) does not satisfy dependency constraint "^2.0.0" required by "storage-controller"
@@ -310,10 +310,10 @@ $ bazel run //cmd/xmc-linter:xmc-linter -- --manifests-dir=deploy/profiles/test/
 
 ```bash
 # Run all unit tests across CLI and linter packages
-bazel test //cmd/xmc-linter/... //pkg/components/linter/...
+bazel test //cmd/component-linter/... //pkg/components/linter/...
 
 # Run tests with error verbosity
-bazel test //cmd/xmc-linter/... //pkg/components/linter/... --test_output=errors
+bazel test //cmd/component-linter/... //pkg/components/linter/... --test_output=errors
 ```
 
 ### Code Coverage Measurement
@@ -322,7 +322,7 @@ Measure test coverage using Bazel LCOV reports:
 
 ```bash
 # Run coverage across all linter targets
-bazel coverage //cmd/xmc-linter/... //pkg/components/linter/... --combined_report=lcov
+bazel coverage //cmd/component-linter/... //pkg/components/linter/... --combined_report=lcov
 
 # Inspect coverage percentage
 genhtml bazel-out/_coverage/_coverage_report.dat -o coverage_html/
