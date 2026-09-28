@@ -190,22 +190,38 @@ End by presenting the report in markdown with clickable file links and awaiting 
 
 When the user approves candidate rule, skill, or tooling enhancements:
 
-### Step 1: Synthesize Benchmark Scenario Prompt
-Formulate a realistic test scenario prompt reproducing the conditions where the previous agent made the mistake or received review feedback.
+### Step 1: Hand the Evidence Sets to the Benchmark
+Section 5 has already produced the positive and negative sets; pass them through rather than
+re-synthesizing a single prompt from the incident. The benchmark derives three scenarios from them —
+origin, held-out transfer, and negative regression — per
+[Derive the Scenario Matrix](../xmc_trajectory_comparison/SKILL.md#phase-1b-derive-the-scenario-matrix).
+Name the specific file chosen for each scenario, and state each scenario's pass predicate as a
+mechanical assertion **before** launching.
+
+A finding routed to a rung that needed no boundary has no evidence sets, and so benchmarks with the
+origin scenario alone. Say so explicitly rather than presenting a one-scenario result as if it were
+the full matrix.
 
 ### Step 2: Propose Trajectory Comparison Benchmark
 Propose running [XMC Trajectory Comparison](../xmc_trajectory_comparison/SKILL.md) to empirically validate the new rule before opening a remote PR:
-> *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` to benchmark this candidate rule against baseline on the test prompt: '[test prompt]'?"*
+- **Three-scenario matrix** (when boundary derivation ran with a non-empty negative set):
+  > *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over three scenarios — origin `[file]`, held-out transfer `[file]`, negative regression `[file]` — drawn from the evidence sets above?"*
+- **Two-scenario matrix** (when boundary derivation ran but the negative set was empty):
+  > *"Candidate rule drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over two scenarios — origin `[file]`, held-out transfer `[file]` (no negative regression files found) — drawn from the evidence sets above?"*
+- **Origin scenario only** (when the control needed no boundary):
+  > *"Candidate change drafted on branch `docs/rules-update-...`. Before opening a Draft PR, would you like to run `/XMC Trajectory Comparison` over the origin scenario `[file]` (no boundary needed)?"*
 
 ### Step 3: Dual Subagent Benchmark & Scorecard
 - If approved, invoke [XMC Trajectory Comparison](../xmc_trajectory_comparison/SKILL.md).
-- The benchmark runs dual subagents (Baseline vs. Candidate on clean worktrees), compares trajectories via `tools/compare_trajectories.py`, and generates the benchmark artifact `/tmp/benchmark_report_<branch>.md`.
+- The benchmark runs a baseline/candidate pair on the origin scenario plus candidate-only arms for
+  transfer and negative regression, compares trajectories via `tools/benchmark/compare_trajectories.py`,
+  and generates the benchmark artifact `/tmp/benchmark_report_<branch_name>.md`.
 
 ### Step 4: Draft PR Creation with Auto-Embedded Benchmark
 1. **Isolated Subagent Workspace (Preferred)**:
    - Launch a worker subagent with `Workspace: "branch"`.
    - **Clean Head Checkout**: The subagent MUST start by fetching and creating its dedicated branch directly from clean `origin/main` (e.g., `git fetch origin && git checkout -b docs/rules-update-... origin/main`). This ensures the reflection PR contains strictly rule/tooling enhancements and never mixes scope with the parent agent's active feature branch.
-   - Follow [XMC Create PR](../xmc_create_pr/SKILL.md): `xmc_create_pr` auto-detects `/tmp/benchmark_report_<branch>.md` and embeds the empirical A/B benchmark scorecard into `pr_body.md` under `🧪 Trajectory & Outcome Benchmark Results`.
+   - Follow [XMC Create PR](../xmc_create_pr/SKILL.md): `xmc_create_pr` auto-detects `/tmp/benchmark_report_<branch_name>.md` and embeds the empirical A/B benchmark scorecard into `pr_body.md` under `🧪 Trajectory & Outcome Benchmark Results`.
    - Obtain user confirmation and open a Draft PR (`gh pr create --draft`).
    - The primary agent's active worktree remains 100% untouched and safe from branch switching conflicts.
 

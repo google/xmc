@@ -39,8 +39,8 @@ def generate_runtime_config(
         refresh_interval = 30000
 
     feature_flags = {
-        "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", False),
-        "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False),
+        "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", True),
+        "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", True),
         "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
         "isNonProdAuth": get_bool_env("XMC_NON_PROD_AUTH", False)
         or get_bool_env("SHOW_SAFETY_WARNING", False),

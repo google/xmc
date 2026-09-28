@@ -55,7 +55,7 @@ essDeployment:
     maxReplicas: 10
 
 healthServiceDeployment:
-  enabled: false
+  enabled: true
 
 metrics:
   enabled: false
@@ -103,7 +103,7 @@ ingestionGatewayDeployment:
       memory: "256Mi"
 
 rodDeployment:
-  enabled: false
+  enabled: true
   serviceAccountName: "rod-data-provider-service-account"
   gcpServiceAccount: ""
 

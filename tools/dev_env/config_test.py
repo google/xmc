@@ -168,7 +168,10 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertEqual(cfg.xid_database, "xids-db-dev")
         self.assertEqual(cfg.cluster_name, "xmc-dev")
         self.assertTrue(cfg.auto_migrate)
-        self.assertEqual(cfg.enabled_services, config.BASE_SERVICES)
+        self.assertEqual(
+            cfg.enabled_services,
+            [*config.BASE_SERVICES, "rod_data_provider", "health_service"],
+        )
         self.assertEqual(cfg.gcp_service_account, "xmc-dev-sa@my-proj.iam.gserviceaccount.com")
         self.assertIsNone(cfg.config_path)
 
@@ -218,7 +221,8 @@ class ConfigResolutionTest(unittest.TestCase):
         """Verifies feature flags resolved from YAML and environment variables."""
         cfg_file = self.root / "config.yaml"
         cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  health_service_deployment_enabled: true\n",
+            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  health_service_deployment_enabled: false\n"
+            "  rod_deployment_enabled: false\n",
             encoding="utf-8",
         )
 
@@ -227,7 +231,7 @@ class ConfigResolutionTest(unittest.TestCase):
             cfg = config.load_config(args, repo_root=self.root)
             self.assertIn("ingestion_gateway", cfg.enabled_services)
             self.assertIn("components", cfg.enabled_services)
-            self.assertIn("health_service", cfg.enabled_services)
+            self.assertNotIn("health_service", cfg.enabled_services)
             self.assertNotIn("rod_data_provider", cfg.enabled_services)
             self.assertNotIn("dashboard_service", cfg.enabled_services)
 
