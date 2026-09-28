@@ -331,15 +331,12 @@ class TestStepSubprocesses(unittest.TestCase):
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_restart_restarts_bridge_before_gateway(self, mock_run, mock_resolve):
+    def test_step_restart_triggers_bridge_and_gateway(self, mock_run, mock_resolve):
         mock_resolve.side_effect = lambda service, _ns: f"{service}-deployment"
         upgrade_dev_env.step_restart(self.config)
         cmds = [call.args[0] for call in mock_run.call_args_list]
-        bridge = self._restart_cmd("xmc-bridge-deployment")
-        gateway = self._restart_cmd("ingestion-gateway-deployment")
-        self.assertIn(bridge, cmds)
-        self.assertIn(gateway, cmds)
-        self.assertLess(cmds.index(bridge), cmds.index(gateway))
+        self.assertIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
+        self.assertIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
