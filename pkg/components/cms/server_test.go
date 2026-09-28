@@ -565,6 +565,12 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			wantStoreDep: []string{"redpanda"},
 		},
 		{
+			name:         "prefixed and duplicate dependencies are persisted canonical",
+			req:          &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("components/redpanda", "redpanda")},
+			wantCode:     codes.OK,
+			wantStoreDep: []string{"redpanda"},
+		},
+		{
 			name:     "invalid dependency name is rejected",
 			req:      &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("redpanda", "Bad_Name")},
 			wantCode: codes.InvalidArgument,
@@ -616,6 +622,9 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantStoreDep, rec.Dependencies); diff != "" {
 				t.Errorf("store Dependencies mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantStoreDep, rec.Spec.GetDependencies()); diff != "" {
+				t.Errorf("persisted spec.dependencies mismatch (-want +got):\n%s", diff)
 			}
 			if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: "redpanda"}); status.Code(err) != codes.FailedPrecondition {
 				t.Errorf("PrepareDeactivation(redpanda) got code %v, want FailedPrecondition (active dependent)", status.Code(err))

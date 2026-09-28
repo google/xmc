@@ -1057,7 +1057,6 @@ func TestDropSelfDependency(t *testing.T) {
 		{name: "no self reference", deps: []string{"redpanda", "auth"}, want: []string{"redpanda", "auth"}},
 		{name: "self reference dropped", deps: []string{"redpanda", "ingestion-gateway", "auth"}, want: []string{"redpanda", "auth"}},
 		{name: "only self reference", deps: []string{"ingestion-gateway"}, want: nil},
-		{name: "non-canonical self reference dropped", deps: []string{"components/ingestion-gateway", "redpanda"}, want: []string{"redpanda"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

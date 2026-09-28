@@ -604,11 +604,12 @@ func parseDependencies(m map[string]any) []string {
 }
 
 // dropSelfDependency removes references to canonicalName from deps, logging a warning when found,
-// because a component that depends on itself could never become ready.
+// because a component that depends on itself could never become ready. deps must already be
+// canonical (parseDependencies is the bridge's single canonicalization point).
 func dropSelfDependency(ctx context.Context, deps []string, canonicalName string) []string {
 	var res []string
 	for _, dep := range deps {
-		if naming.CanonicalComponentName(dep) == canonicalName {
+		if dep == canonicalName {
 			logging.Warn(ctx, "Ignoring self-dependency in component spec", "name", canonicalName)
 			continue
 		}
