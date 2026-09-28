@@ -51,7 +51,6 @@ class GithubReleaseClientTest(unittest.TestCase):
             draft=True,
             prerelease=True,
             target_commit="a1b2c3d4",
-            force=True,
             skip_push=False,
         )
         self.assertIn("--draft", cmd)
@@ -68,7 +67,6 @@ class GithubReleaseClientTest(unittest.TestCase):
             draft=False,
             prerelease=False,
             target_commit="a1b2c3d4",
-            force=False,
             skip_push=True,
         )
         self.assertIn("--verify-tag", cmd_skip)
@@ -93,7 +91,6 @@ class GithubReleaseClientTest(unittest.TestCase):
             target_commit="HEAD",
             repo_dir=Path("."),
             remote="origin",
-            force=True,
         )
         self.assertEqual(url, "https://github.com/myorg/myrepo/releases/tag/0.6.0")
         self.assertIn("--repo", mock_subprocess.call_args[0][0])
