@@ -55,6 +55,28 @@ actuator:
 
 ---
 
+## Login session lifetime
+
+`auth.sessionTtl` sets the absolute lifetime of both the signed session token and
+its browser cookie. The chart passes it to the backend as `SESSION_TTL`. Use Go
+duration syntax, for example `168h` for a week or `720h` for thirty days. The
+value must be at least `1s`; an invalid value prevents the backend from starting.
+The default is defined in `values.yaml` and `defaultSessionTTL` in
+`pkg/auth/oauth2/config.go`.
+
+```yaml
+auth:
+  sessionTtl: "168h"
+```
+
+Activity does not extend the lifetime. The setting applies to sessions issued
+after the backend restarts; existing tokens retain their signed expiry. Longer
+lifetimes also extend the period in which a copied token can be used. Logout
+clears the browser cookie without revoking the token, and disabling a Google
+account does not invalidate an existing session admitted by the domain allowlist.
+
+---
+
 ## Out-of-Cluster & Remote Kubernetes Configuration (`k8s.remote`)
 
 By default, the `actuator` and `reconciler` controllers manage `JobSet` and `Workload` resources on the Kubernetes cluster where they are deployed (using standard in-cluster service account tokens via `rest.InClusterConfig()`).
