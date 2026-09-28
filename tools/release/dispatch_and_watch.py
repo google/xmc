@@ -51,43 +51,42 @@ def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.Complet
 
 def _extract_page_url(view_data: dict[str, Any]) -> str:
     """Extracts GitHub Pages URL from run view data or jobs step outputs if available."""
-    if not view_data or not isinstance(view_data, dict):
+    if not isinstance(view_data, dict):
         return ""
-    if view_data.get("page_url"):
-        return str(view_data["page_url"])
-    if view_data.get("pageUrl"):
-        return str(view_data["pageUrl"])
+
+    def _get_url(obj: Any) -> str:
+        if isinstance(obj, dict):
+            return str(obj.get("page_url") or obj.get("pageUrl") or "")
+        return ""
+
+    url = _get_url(view_data)
+    if url:
+        return url
 
     for job in view_data.get("jobs", []):
         if not isinstance(job, dict):
             continue
-        if job.get("page_url"):
-            return str(job["page_url"])
-        if job.get("pageUrl"):
-            return str(job["pageUrl"])
+        url = _get_url(job)
+        if url:
+            return url
         env = job.get("environment")
         if isinstance(env, dict) and env.get("url"):
             return str(env["url"])
         for step in job.get("steps", []):
             if not isinstance(step, dict):
                 continue
-            if step.get("page_url"):
-                return str(step["page_url"])
-            if step.get("pageUrl"):
-                return str(step["pageUrl"])
+            url = _get_url(step)
+            if url:
+                return url
             outputs = step.get("outputs") or step.get("output")
             if isinstance(outputs, str) and outputs.strip().startswith("{"):
                 try:
-                    loaded_out = json.loads(outputs)
-                    if isinstance(loaded_out, dict):
-                        outputs = loaded_out
-                except (json.JSONDecodeError, OSError):
-                    pass
-            if isinstance(outputs, dict):
-                if outputs.get("page_url"):
-                    return str(outputs["page_url"])
-                if outputs.get("pageUrl"):
-                    return str(outputs["pageUrl"])
+                    outputs = json.loads(outputs)
+                except json.JSONDecodeError:
+                    outputs = None
+            url = _get_url(outputs)
+            if url:
+                return url
     return ""
 
 
@@ -273,11 +272,8 @@ def _watch_run_outcome(
         conclusion=conclusion,
     )
 
-    exit_code = (
-        EXIT_SUCCESS
-        if conclusion == "success"
-        else (EXIT_CANCELLED if conclusion == "cancelled" else EXIT_FAILURE)
-    )
+    exit_codes = {"success": EXIT_SUCCESS, "cancelled": EXIT_CANCELLED}
+    exit_code = exit_codes.get(conclusion, EXIT_FAILURE)
     return {
         "run_id": run_id,
         "url": run_url,
