@@ -573,7 +573,7 @@ func preserveHealthConditions(in ReconcileComponentInput, res *ReconcileResult) 
 	}
 	for _, c := range in.ExistingConditions {
 		if c.Type == ConditionTypeReady || c.Type == ConditionTypeDegraded {
-			res.Conditions = append(res.Conditions, c)
+			upsertCondition(&res.Conditions, c)
 		}
 	}
 	return true
@@ -919,14 +919,18 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 			break
 		}
 	}
-	newCond := Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message}
-	for i, c := range *conditions {
-		if c.Type == condType {
-			(*conditions)[i] = newCond
+	upsertCondition(conditions, Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message})
+}
+
+// upsertCondition replaces the entry in conditions with the same Type as c, or appends c.
+func upsertCondition(conditions *[]Condition, c Condition) {
+	for i := range *conditions {
+		if (*conditions)[i].Type == c.Type {
+			(*conditions)[i] = c
 			return
 		}
 	}
-	*conditions = append(*conditions, newCond)
+	*conditions = append(*conditions, c)
 }
 
 // resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.

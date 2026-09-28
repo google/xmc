@@ -2419,3 +2419,17 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 		t.Errorf("resolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
 	}
 }
+
+func TestPreserveHealthConditions_ReplacesExistingEntries(t *testing.T) {
+	ready := Condition{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 3, Reason: "ComponentHealthy"}
+	degraded := Condition{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 3, Reason: "ComponentHealthy"}
+	in := ReconcileComponentInput{Generation: 3, ExistingConditions: []Condition{ready, degraded}}
+	res := &ReconcileResult{Conditions: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, Reason: "Stale"}}}
+
+	if !preserveHealthConditions(in, res) {
+		t.Fatal("preserveHealthConditions() = false, want true")
+	}
+	if diff := cmp.Diff([]Condition{ready, degraded}, res.Conditions); diff != "" {
+		t.Errorf("preserveHealthConditions() conditions mismatch (-want +got):\n%s", diff)
+	}
+}
