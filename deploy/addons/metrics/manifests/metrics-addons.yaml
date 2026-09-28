@@ -12,30 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: clickhouse-format-schemas
-  namespace: xmc-metrics
-  labels:
-    app.kubernetes.io/name: clickhouse
-data:
-  metrics.proto: |
-    // Copyright 2026 Google LLC
-    syntax = "proto3";
-    package cloud.xmanager.v1;
-    message Metric {
-      int64 xid = 1;
-      int64 work_unit_id = 2;
-      int64 execution_id = 3;
-      string job_name = 4;
-      string replica_id = 5;
-      string metric_name = 6;
-      double metric_value = 7;
-      int64 step = 8;
-      int64 timestamp = 9;
-    }
----
+# Note: Prior to applying this manifest manually, create the format schema ConfigMap:
+#   kubectl create configmap clickhouse-format-schemas --namespace=xmc-metrics \
+#     --from-file=metrics.proto=api/protos/metrics/metrics.proto --dry-run=client -o yaml | kubectl apply -f -
+
 apiVersion: v1
 kind: Service
 metadata:
