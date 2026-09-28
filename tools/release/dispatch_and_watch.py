@@ -26,11 +26,6 @@ from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
 
-EXIT_SUCCESS = 0
-EXIT_FAILURE = 1
-EXIT_CANCELLED = 2
-EXIT_SHA_MISMATCH = 3
-
 
 def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Runs GitHub CLI command with handled error for missing binary."""
@@ -168,7 +163,6 @@ def _find_existing_run(
                 "conclusion": "success",
                 "failed_jobs": [],
                 "page_url": "",
-                "_exit_code": EXIT_SUCCESS,
             }
     return None
 
@@ -272,8 +266,6 @@ def _watch_run_outcome(
         conclusion=conclusion,
     )
 
-    exit_codes = {"success": EXIT_SUCCESS, "cancelled": EXIT_CANCELLED}
-    exit_code = exit_codes.get(conclusion, EXIT_FAILURE)
     return {
         "run_id": run_id,
         "url": run_url,
@@ -281,7 +273,6 @@ def _watch_run_outcome(
         "conclusion": conclusion,
         "failed_jobs": failed_jobs,
         "page_url": page_url,
-        "_exit_code": exit_code,
     }
 
 
@@ -332,7 +323,6 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             "conclusion": "sha_mismatch",
             "failed_jobs": [],
             "page_url": "",
-            "_exit_code": EXIT_SHA_MISMATCH,
         }
 
     # 5. Watch to completion via `gh run watch`

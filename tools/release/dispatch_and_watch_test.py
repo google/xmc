@@ -23,9 +23,6 @@ from unittest.mock import patch
 
 from tools.common.tool_utils import HandledError
 from tools.release.dispatch_and_watch import (
-    EXIT_CANCELLED,
-    EXIT_SHA_MISMATCH,
-    EXIT_SUCCESS,
     create_parser,
     dispatch_and_watch,
 )
@@ -68,7 +65,6 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["run_id"], 101)
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
-        self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
@@ -101,7 +97,6 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["run_id"], 202)
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
-        self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
@@ -138,7 +133,6 @@ class DispatchAndWatchTest(unittest.TestCase):
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "sha_mismatch")
         self.assertEqual(res["page_url"], "")
-        self.assertEqual(res["_exit_code"], EXIT_SHA_MISMATCH)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
@@ -170,7 +164,6 @@ class DispatchAndWatchTest(unittest.TestCase):
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "cancelled")
         self.assertEqual(res["page_url"], "")
-        self.assertEqual(res["_exit_code"], EXIT_CANCELLED)
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
@@ -379,7 +372,6 @@ class DispatchAndWatchTest(unittest.TestCase):
                 ]
             )
             res = dispatch_and_watch(p)
-            self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(state["existing_key"], "val")
@@ -420,7 +412,6 @@ class DispatchAndWatchTest(unittest.TestCase):
                 ]
             )
             res = dispatch_and_watch(p)
-            self.assertEqual(res["_exit_code"], EXIT_SHA_MISMATCH)
 
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(state["target_sha"], "expected_sha")
@@ -447,7 +438,6 @@ class DispatchAndWatchTest(unittest.TestCase):
                 ]
             )
             res = dispatch_and_watch(p)
-            self.assertEqual(res["_exit_code"], EXIT_SUCCESS)
 
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(state["target_sha"], "sha603")

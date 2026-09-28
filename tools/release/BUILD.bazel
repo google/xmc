@@ -213,8 +213,6 @@ py_library(
     srcs = ["dispatch_and_watch.py"],
     imports = ["../.."],
     deps = [
-        ":git_ops_lib",
-        ":models_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -235,7 +233,6 @@ py_test(
     imports = ["../.."],
     deps = [
         ":dispatch_and_watch_lib",
-        ":models_lib",
         "//tools/common:tool_utils",
     ],
 )
