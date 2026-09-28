@@ -114,13 +114,3 @@ func componentUnreadyReason(obj *unstructured.Unstructured, enabled bool) string
 	}
 	return ""
 }
-
-// findCondition returns the first condition of condType, or nil if absent.
-func findCondition(conds []Condition, condType string) *Condition {
-	for i := range conds {
-		if conds[i].Type == condType {
-			return &conds[i]
-		}
-	}
-	return nil
-}
