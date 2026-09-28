@@ -92,6 +92,12 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 	upsertCondition(conditions, Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message})
 }
 
+// setReadiness records the Ready and Degraded conditions of one reconciliation outcome, sharing reason and msg.
+func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, degraded, reason, msg string) {
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ready, in.Generation, reason, msg)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
+}
+
 // upsertCondition replaces the entry in conditions with the same Type as c, or appends c.
 func upsertCondition(conditions *[]Condition, c Condition) {
 	for i := range *conditions {

@@ -247,8 +247,7 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "IntentApplicationFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "IntentApplicationFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "IntentApplicationFailed", err.Error())
 		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	}
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
@@ -308,8 +307,7 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
+	setReadiness(res, in, ConditionStatusFalse, degraded, reason, msg)
 	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
 		return res, nil
 	}
@@ -348,8 +346,7 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, ReasonHelmUpgradeFailed, err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, ReasonHelmUpgradeFailed, err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, ReasonHelmUpgradeFailed, err.Error())
 		return false, fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
 	r.helmManager.RecordActuation(ref, in.Generation)
@@ -389,14 +386,9 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if isHealthy {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, reason, healthMsg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, reason, healthMsg)
-
-	if shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
+	setReadiness(res, in, readyStatus, degradedStatus, reason, healthMsg)
+	if err := r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus); err != nil {
+		return res, err
 	}
 	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
 	return res, nil

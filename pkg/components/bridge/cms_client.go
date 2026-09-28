@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc"
 
@@ -67,4 +68,17 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int
 		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
 	})
 	return err
+}
+
+// syncReadyToCMS reports res.State to CMS when shouldSyncToCMS allows it for readyStatus, then
+// restarts the CMS heartbeat by stamping the Ready condition's transition time.
+func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string) error {
+	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
+		return nil
+	}
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready="+readyStatus); err != nil {
+		return fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	}
+	resetReadyTransitionTime(res.Conditions)
+	return nil
 }
