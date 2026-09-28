@@ -913,3 +913,24 @@ func TestResumptionWorker_BacklogThrottling_WorkerFenced(t *testing.T) {
 		t.Errorf("expected 0 published tasks when fenced, got %d", len(publisher.calls))
 	}
 }
+
+func TestWaitOrCancel_Elapses(t *testing.T) {
+	worker := NewResumptionWorker(nil, nil, nil, nil)
+	worker.throttlePauseDuration = time.Millisecond
+
+	if err := worker.waitOrCancel(context.Background()); err != nil {
+		t.Errorf("waitOrCancel() unexpected error: %v", err)
+	}
+}
+
+func TestWaitOrCancel_ContextCancelled(t *testing.T) {
+	worker := NewResumptionWorker(nil, nil, nil, nil)
+	worker.throttlePauseDuration = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := worker.waitOrCancel(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("waitOrCancel() error = %v, want %v", err, context.Canceled)
+	}
+}

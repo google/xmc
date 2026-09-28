@@ -36,8 +36,9 @@ type RedisStreamClient interface {
 var _ RedisStreamClient = (*redisclient.PublisherClient)(nil)
 
 // CalculateStreamBacklog calculates the total backlog (pending + lag) on a Redis stream for a consumer group.
-// It retrieves pending messages from XINFO GROUPS and undelivered messages from XRANGE up to maxThreshold + 1,
-// avoiding unbounded stream reads while capping lag calculation.
+// It reads pending and last-delivered-id from XINFO GROUPS, then counts undelivered messages via XRANGE.
+// The result is capped at maxThreshold: if pending alone reaches it, XRANGE is skipped; otherwise XRANGE
+// reads only the (maxThreshold - pending) + 1 entries needed to decide, avoiding unbounded stream reads.
 func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, stream, group string, maxThreshold int) (int64, error) {
 	if client == nil {
 		return 0, nil
@@ -59,12 +60,18 @@ func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, strea
 		return 0, nil
 	}
 
+	requiredLag := int64(maxThreshold) - targetGroup.Pending
+	if requiredLag <= 0 {
+		return targetGroup.Pending, nil
+	}
+
 	start := targetGroup.LastDeliveredID
 	if start == "" {
 		start = "-"
 	}
 
-	msgs, err := client.XRangeN(ctx, stream, start, "+", int64(maxThreshold)+1).Result()
+	// +1 because XRANGE's start bound is inclusive and may return the last delivered message itself.
+	msgs, err := client.XRangeN(ctx, stream, start, "+", requiredLag+1).Result()
 	if err != nil {
 		if isMissingStreamErr(err) {
 			return targetGroup.Pending, nil

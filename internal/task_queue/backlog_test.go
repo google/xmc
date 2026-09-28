@@ -153,8 +153,27 @@ func TestCalculateStreamBacklog(t *testing.T) {
 		if client.recordedStart != "100-0" {
 			t.Errorf("start = %q, want %q", client.recordedStart, "100-0")
 		}
-		if client.recordedCount != 101 {
-			t.Errorf("count = %d, want 101", client.recordedCount)
+		if client.recordedCount != 94 {
+			t.Errorf("count = %d, want 94 (threshold 100 - pending 7 + 1)", client.recordedCount)
+		}
+	})
+
+	t.Run("pending meets threshold skips xrange", func(t *testing.T) {
+		client := &fakeRedisStreamClient{
+			groupsResult: []redis.XInfoGroup{
+				{Name: "group", Pending: 12, LastDeliveredID: "100-0"},
+			},
+			xrangeErr: errors.New("xrange must not be called"),
+		}
+		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if backlog != 12 {
+			t.Errorf("backlog = %d, want 12", backlog)
+		}
+		if client.recordedStream != "" {
+			t.Errorf("xrange was called on stream %q, want no call", client.recordedStream)
 		}
 	})
 
@@ -175,6 +194,9 @@ func TestCalculateStreamBacklog(t *testing.T) {
 		}
 		if backlog != 5 {
 			t.Errorf("backlog = %d, want 5 (3 pending + 2 lag)", backlog)
+		}
+		if client.recordedCount != 8 {
+			t.Errorf("count = %d, want 8 (threshold 10 - pending 3 + 1)", client.recordedCount)
 		}
 	})
 

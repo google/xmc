@@ -190,18 +190,30 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 
 	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
 
+	if err := w.waitOrCancel(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// waitOrCancel blocks the calling goroutine for the worker's pause duration,
+// returning early with ctx.Err() if the context is cancelled first.
+func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 	pauseDuration := w.throttlePauseDuration
 	if pauseDuration <= 0 {
 		pauseDuration = defaultThrottlePauseDuration
 	}
 
+	timer := time.NewTimer(pauseDuration)
+	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
-		return false, ctx.Err()
-	case <-time.After(pauseDuration):
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-
-	return true, nil
 }
 
 func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
