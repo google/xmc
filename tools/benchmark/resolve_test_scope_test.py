@@ -16,13 +16,16 @@
 """Unit tests for tools/resolve_test_scope.py."""
 
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark.resolve_test_scope import (
+    _correlate_rebased_parent_tip,
     _get_merge_base,
+    _normalize_subject,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     find_enclosing_bazel_package,
@@ -481,6 +484,7 @@ class TestResolveTestScope(unittest.TestCase):
                 returncode=0, stdout="closest_mb\n"
             ),  # merge-base(origin/main, head)
             unittest.mock.Mock(returncode=0, stdout="closest_mb\n"),  # merge-base --independent
+            unittest.mock.Mock(returncode=0, stdout=""),  # _correlate_rebased_parent_tip parent_log
             unittest.mock.Mock(returncode=0, stdout="pkg/components/service.go\n"),  # git diff
         ]
         files = get_git_modified_files(
@@ -491,6 +495,193 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertEqual(files, ["pkg/components/service.go"])
         diff_cmd = mock_run.call_args[0][0]
         self.assertEqual(diff_cmd, ["git", "diff", "--name-only", "closest_mb...pr_head_sha"])
+
+    def test_normalize_subject_strips_squash_pr_suffix(self):
+        self.assertEqual(
+            _normalize_subject("feat(ui): add layer-1 button (#990)"),
+            "feat(ui): add layer-1 button",
+        )
+        self.assertEqual(
+            _normalize_subject("fix(api): handle (edge case) (#42)\n"),
+            "fix(api): handle (edge case)",
+        )
+        self.assertEqual(
+            _normalize_subject("feat(core): keep non-pr parens (v2)"),
+            "feat(core): keep non-pr parens (v2)",
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_correlate_rebased_parent_tip_matches_amended_and_squash_merged_parents(self, mock_run):
+        # Parent branch has 2 commits; child has rebased copies of those 2 plus 1 child commit
+        mock_run.side_effect = [
+            unittest.mock.Mock(
+                returncode=0,
+                stdout="feat(ui): parent commit 1 (#101)\nfeat(ui): parent commit 2\n",
+            ),
+            unittest.mock.Mock(
+                returncode=0,
+                stdout=(
+                    "sha_p1_rebased feat(ui): parent commit 1\n"
+                    "sha_p2_rebased feat(ui): parent commit 2\n"
+                    "sha_child_1 feat(api): child commit\n"
+                ),
+            ),
+        ]
+        correlated = _correlate_rebased_parent_tip(
+            parent_base="sha_m1",
+            target_ref="origin/feat/layer-1",
+            candidate_base="sha_m2",
+            head_ref="sha_child_1",
+        )
+        self.assertEqual(correlated, "sha_p2_rebased")
+
+        # Never consumes the final commit on head_ref even if subject collides
+        mock_run.side_effect = [
+            unittest.mock.Mock(returncode=0, stdout="feat: same subject\n"),
+            unittest.mock.Mock(returncode=0, stdout="sha_only feat: same subject\n"),
+        ]
+        self.assertEqual(
+            _correlate_rebased_parent_tip("sha_m1", "origin/feat/layer-1", "sha_m2", "sha_only"),
+            "sha_m2",
+        )
+
+    def test_gh_stack_shenanigans_real_git_repo(self):
+        """Verifies all 5 gh-stack topologies in a real temporary Git repository."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+
+            def git(*args: str) -> str:
+                res = subprocess.run(
+                    ["git", *args],
+                    cwd=repo,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                return res.stdout.strip()
+
+            def commit_file(rel_path: str, content: str, msg: str) -> str:
+                full = repo / rel_path
+                full.parent.mkdir(parents=True, exist_ok=True)
+                full.write_text(content, encoding="utf-8")
+                git("add", rel_path)
+                git("commit", "-m", msg)
+                return git("rev-parse", "HEAD")
+
+            git("init", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test User")
+
+            # Base commit M1 on main
+            m1 = commit_file("README.md", "# XMC\n", "chore: initial commit")
+            git("update-ref", "refs/remotes/origin/main", m1)
+
+            # Layer 1 (UI change): feat/layer-1 -> A1
+            git("checkout", "-b", "feat/layer-1", m1)
+            a1 = commit_file("cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button")
+            git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
+
+            # Layer 2 (Backend change): feat/layer-2 -> B1 (stacked on A1)
+            git("checkout", "-b", "feat/layer-2", a1)
+            b1 = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
+
+            # Advance origin/main with an unrelated backend change M2
+            git("checkout", "main")
+            m2 = commit_file("pkg/core/other.go", "package core\n", "feat(core): unrelated main")
+            git("update-ref", "refs/remotes/origin/main", m2)
+
+            old_cwd = os.getcwd()
+            os.chdir(repo)
+            try:
+                # Shenanigan 1: Synthetic merge commit (refs/pull/<num>/merge) vs PR_HEAD_SHA
+                # Create a synthetic merge commit merging stale feat/layer-1 or main into B1
+                git("checkout", "-B", "pr-merge-sim", b1)
+                git("merge", "--no-ff", "-m", "Merge b1 into main", m2)
+                files_pr_head = get_git_modified_files(
+                    base_ref=a1,
+                    head_ref=b1,
+                    base_branch="feat/layer-1",
+                )
+                self.assertEqual(files_pr_head, ["pkg/api/svc.go"])
+                scope_s1 = resolve_test_scope(files_pr_head, use_rdeps=False)
+                self.assertTrue(scope_s1["run_backend"])
+                self.assertFalse(scope_s1["run_ui"])
+
+                # Shenanigan 2: gh stack sync / rebase onto M2 where webhook PR_BASE_SHA is stale (A1)
+                # Layer 1 rebased onto M2 -> A1_rebased; Layer 2 rebased onto A1_rebased -> B1_rebased
+                git("checkout", "-B", "feat/layer-1", m2)
+                a1_rebased = commit_file(
+                    "cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button"
+                )
+                git("checkout", "-B", "feat/layer-2", a1_rebased)
+                b1_rebased = commit_file(
+                    "pkg/api/svc.go", "package api\n", "feat(api): add service"
+                )
+
+                # Subcase 2a: origin/feat/layer-1 is updated to A1_rebased, but PR_BASE_SHA is stale A1
+                git("update-ref", "refs/remotes/origin/feat/layer-1", a1_rebased)
+                files_s2a = get_git_modified_files(
+                    base_ref=a1,
+                    head_ref=b1_rebased,
+                    base_branch="feat/layer-1",
+                )
+                self.assertEqual(files_s2a, ["pkg/api/svc.go"])
+
+                # Shenanigan 3: Non-atomic gh stack submit / parent amended before origin/feat/layer-1 updates
+                # Suppose origin/feat/layer-1 still points to old A1 while feat/layer-2 is pushed at B1_rebased!
+                # Without parent subject correlation, mb(origin/main, B1_rebased) == M2 would leak A1_rebased (UI)!
+                git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
+                files_s3 = get_git_modified_files(
+                    base_ref=a1,
+                    head_ref=b1_rebased,
+                    base_branch="feat/layer-1",
+                )
+                self.assertEqual(files_s3, ["pkg/api/svc.go"])
+                scope_s3 = resolve_test_scope(files_s3, use_rdeps=False)
+                self.assertTrue(scope_s3["run_backend"])
+                self.assertFalse(scope_s3["run_ui"])
+
+                # Shenanigan 4: Bottom PR (feat/layer-1) squash-merged into main with ' (#990)' suffix
+                # and feat/layer-2 auto-retargeted to base_branch='main' BEFORE feat/layer-2 is rebased!
+                # Here feat/layer-2 is still at B1 (M1 -> A1 -> B1), while origin/main advances to M3_squash.
+                git("checkout", "main")
+                m3_squash = commit_file(
+                    "cmd/ui/src/btn.ts",
+                    "export const v = 1;\n",
+                    "feat(ui): add button (#990)",
+                )
+                git("update-ref", "refs/remotes/origin/main", m3_squash)
+                files_s4 = get_git_modified_files(
+                    base_ref=m3_squash,
+                    head_ref=b1,
+                    base_branch="main",
+                )
+                self.assertEqual(files_s4, ["pkg/api/svc.go"])
+                scope_s4 = resolve_test_scope(files_s4, use_rdeps=False)
+                self.assertTrue(scope_s4["run_backend"])
+                self.assertFalse(scope_s4["run_ui"])
+
+                # Shenanigan 5: Commit moved/rewound from parent layer down into child layer
+                # Suppose feat/layer-1 originally had A1 -> A2 (touching pkg/moved/moved.go), and
+                # feat/layer-2 had B_after_a2 (touching pkg/api/svc.go). Then the author rewinds
+                # origin/feat/layer-1 back to A1 so A2 is now part of feat/layer-2, while webhook
+                # PR_BASE_SHA is still stale A2.
+                git("checkout", "-B", "feat/layer-1-ext", a1)
+                a2 = commit_file(
+                    "pkg/moved/moved.go", "package moved\n", "feat(moved): move to layer 2"
+                )
+                git("checkout", "-B", "feat/layer-2-ext", a2)
+                b_ext = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
+                # Rewind origin/feat/layer-1 to A1 while webhook base_ref is stale A2
+                git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
+                files_s5 = get_git_modified_files(
+                    base_ref=a2,
+                    head_ref=b_ext,
+                    base_branch="feat/layer-1",
+                )
+                self.assertEqual(sorted(files_s5), ["pkg/api/svc.go", "pkg/moved/moved.go"])
+            finally:
+                os.chdir(old_cwd)
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_retries_head_on_missing_pr_head_sha(self, mock_run):

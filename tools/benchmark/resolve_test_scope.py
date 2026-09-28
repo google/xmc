@@ -156,6 +156,59 @@ def _get_merge_base(ref_a: str, ref_b: str) -> str | None:
     return res.stdout.strip() or None
 
 
+def _normalize_subject(subject: str) -> str:
+    """Strips trailing PR number suffixes like ' (#123)' from commit subjects."""
+    s = subject.strip()
+    if s.endswith(")") and " (#" in s:
+        prefix, _, suffix = s.rpartition(" (#")
+        if suffix[:-1].isdigit():
+            return prefix.strip()
+    return s
+
+
+def _correlate_rebased_parent_tip(
+    parent_base: str,
+    target_ref: str,
+    candidate_base: str,
+    head_ref: str,
+) -> str:
+    """Advances candidate_base past rebased/squash-merged parent commits matching target_ref."""
+    try:
+        parent_log = subprocess.run(
+            ["git", "log", "--format=%s", f"{parent_base}..{target_ref}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if parent_log.returncode != 0 or not parent_log.stdout.strip():
+            return candidate_base
+
+        parent_subjects = {
+            _normalize_subject(line) for line in parent_log.stdout.splitlines() if line.strip()
+        }
+        head_log = subprocess.run(
+            ["git", "log", "--reverse", "--format=%H %s", f"{candidate_base}..{head_ref}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if head_log.returncode != 0 or not head_log.stdout.strip():
+            return candidate_base
+    except Exception:
+        return candidate_base
+
+    commits = [line.strip().split(" ", 1) for line in head_log.stdout.splitlines() if line.strip()]
+    correlated = candidate_base
+    for parts in commits[:-1]:
+        if len(parts) == 2 and _normalize_subject(parts[1]) in parent_subjects:
+            correlated = parts[0]
+        else:
+            break
+    return correlated
+
+
 def resolve_effective_base_ref(
     base_ref: str,
     head_ref: str = "HEAD",
@@ -164,15 +217,21 @@ def resolve_effective_base_ref(
     """Resolves the closest merge-base across origin/<base_branch>, base_ref, and origin/main.
 
     Prioritizes the live target branch ref (origin/<base_branch>) over webhook base_ref so
-    commits moved down a stack are not dropped, and excludes merge-bases equal to head_ref.
+    commits moved down a stack are not dropped, excludes merge-bases equal to head_ref, and
+    correlates rewritten parent commits across gh-stack rebases and squash-merges.
     """
     clean_branch = (base_branch or "").strip()
     if not clean_branch and base_ref in {"origin/main", "main", "HEAD~1"}:
         return base_ref
 
+    is_stacked_branch = bool(clean_branch and clean_branch not in {"main", "origin/main"})
+    target_ref = base_ref
     mb_target = None
-    if clean_branch and clean_branch not in {"main", "origin/main"}:
-        mb_target = _get_merge_base(f"origin/{clean_branch}", head_ref)
+    if is_stacked_branch:
+        branch_ref = f"origin/{clean_branch}"
+        mb_target = _get_merge_base(branch_ref, head_ref)
+        if mb_target:
+            target_ref = branch_ref
     if not mb_target:
         mb_target = _get_merge_base(base_ref, head_ref)
 
@@ -182,25 +241,35 @@ def resolve_effective_base_ref(
         else None
     )
     merge_bases = list(dict.fromkeys(mb for mb in (mb_target, mb_main) if mb and mb != head_ref))
-    if len(merge_bases) <= 1:
-        return merge_bases[0] if merge_bases else base_ref
+    if not merge_bases:
+        return base_ref
 
-    indep = subprocess.run(
-        ["git", "merge-base", "--independent", *merge_bases],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-    indep_set = (
-        {line.strip() for line in indep.stdout.splitlines() if line.strip()}
-        if indep.returncode == 0
-        else set()
-    )
-    for mb in merge_bases:
-        if mb in indep_set:
-            return mb
-    return merge_bases[0]
+    candidate = merge_bases[0]
+    if len(merge_bases) > 1:
+        indep = subprocess.run(
+            ["git", "merge-base", "--independent", *merge_bases],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        indep_set = (
+            {line.strip() for line in indep.stdout.splitlines() if line.strip()}
+            if indep.returncode == 0
+            else set()
+        )
+        for mb in merge_bases:
+            if mb in indep_set:
+                candidate = mb
+                break
+
+    if is_stacked_branch and candidate == mb_main:
+        return _correlate_rebased_parent_tip(
+            mb_target or candidate, target_ref, candidate, head_ref
+        )
+    if clean_branch in {"main", "origin/main"} and candidate != base_ref:
+        return _correlate_rebased_parent_tip(candidate, base_ref, candidate, head_ref)
+    return candidate
 
 
 def get_git_modified_files(
