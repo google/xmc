@@ -698,107 +698,71 @@ func (m *mockBacklogCalculator) CalculateBacklog(ctx context.Context, maxThresho
 	return val, nil
 }
 
-func TestResumptionWorker_BacklogThrottling(t *testing.T) {
+const throttleTestRunID = "run-throttle"
+
+// newThrottleTestWorker returns a worker with a single pending task and a 1ms throttle pause.
+func newThrottleTestWorker(t *testing.T, backlogCalc *mockBacklogCalculator) (*ResumptionWorker, *mockPublisher, pausestate.Repository) {
+	t.Helper()
 	ctx := context.Background()
+
 	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-throttle"})
+	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: throttleTestRunID})
 
 	taskRepo := pausedtask.NewFake()
 	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 
 	publisher := &mockPublisher{}
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{10, 2}, // First check: busy (10 >= 5), second check: cleared (2 < 5).
-	}
-
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
+	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, backlogCalc))
 	worker.throttlePauseDuration = time.Millisecond
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-throttle",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
-	if err != nil {
-		t.Fatalf("StartResumption() unexpected error: %v", err)
-	}
-
-	if backlogCalc.calls != 3 {
-		t.Errorf("backlogCalc.calls = %d, want 3 (2 for batch 1, 1 for subsequent batch check)", backlogCalc.calls)
-	}
-	if backlogCalc.recordedMax != 5 {
-		t.Errorf("recordedMax = %d, want 5", backlogCalc.recordedMax)
-	}
-	if len(publisher.calls) != 1 {
-		t.Errorf("expected 1 task published after throttling resolved, got %d", len(publisher.calls))
-	}
+	return worker, publisher, pauseRepo
 }
 
-func TestResumptionWorker_BacklogUnderThreshold(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-unthrottled"})
+func throttleTestRequest(threshold int) Request {
+	return Request{ResumptionRunID: throttleTestRunID, BatchSize: 10, MaxBacklogThreshold: threshold}
+}
 
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
-	publisher := &mockPublisher{}
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{2}, // 2 < 5: not busy.
+func TestResumptionWorker_BacklogThrottleDecision(t *testing.T) {
+	// Checker calls: a throttled run checks once while busy, once before publishing,
+	// and once before the final empty fetch (3); an unthrottled run skips the first (2).
+	tests := []struct {
+		name          string
+		backlogValues []int64
+		threshold     int
+		wantCalls     int
+		wantMax       int
+	}{
+		{name: "above threshold throttles once", backlogValues: []int64{10, 2}, threshold: 5, wantCalls: 3, wantMax: 5},
+		{name: "equal to threshold throttles once", backlogValues: []int64{5, 0}, threshold: 5, wantCalls: 3, wantMax: 5},
+		{name: "below threshold does not throttle", backlogValues: []int64{2}, threshold: 5, wantCalls: 2, wantMax: 5},
+		{name: "zero threshold falls back to default", threshold: 0, wantCalls: 2, wantMax: defaultMaxBacklog},
 	}
 
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
-	worker.throttlePauseDuration = time.Millisecond
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backlogCalc := &mockBacklogCalculator{backlogValues: tc.backlogValues}
+			worker, publisher, _ := newThrottleTestWorker(t, backlogCalc)
 
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-unthrottled",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
-	if err != nil {
-		t.Fatalf("StartResumption() unexpected error: %v", err)
-	}
-
-	if backlogCalc.calls != 2 {
-		t.Errorf("backlogCalc.calls = %d, want 2 (1 for batch 1, 1 for subsequent batch check)", backlogCalc.calls)
-	}
-	if len(publisher.calls) != 1 {
-		t.Errorf("expected 1 task published, got %d", len(publisher.calls))
+			if err := worker.StartResumption(context.Background(), throttleTestRequest(tc.threshold)); err != nil {
+				t.Fatalf("StartResumption() unexpected error: %v", err)
+			}
+			if backlogCalc.calls != tc.wantCalls {
+				t.Errorf("backlogCalc.calls = %d, want %d", backlogCalc.calls, tc.wantCalls)
+			}
+			if backlogCalc.recordedMax != tc.wantMax {
+				t.Errorf("recordedMax = %d, want %d", backlogCalc.recordedMax, tc.wantMax)
+			}
+			if len(publisher.calls) != 1 {
+				t.Errorf("expected 1 published task, got %d", len(publisher.calls))
+			}
+		})
 	}
 }
 
 func TestResumptionWorker_BacklogThrottling_CalculatorError(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-calc-err"})
-
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
 	calcErr := errors.New("redis connection refused")
-	backlogCalc := &mockBacklogCalculator{calculateErr: calcErr}
-	publisher := &mockPublisher{}
+	worker, publisher, _ := newThrottleTestWorker(t, &mockBacklogCalculator{calculateErr: calcErr})
 
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
-	worker.throttlePauseDuration = time.Millisecond
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-calc-err",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
+	err := worker.StartResumption(context.Background(), throttleTestRequest(5))
 	if !errors.Is(err, calcErr) {
 		t.Fatalf("StartResumption() error = %v, want %v", err, calcErr)
 	}
@@ -809,32 +773,11 @@ func TestResumptionWorker_BacklogThrottling_CalculatorError(t *testing.T) {
 
 func TestResumptionWorker_BacklogThrottling_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-cancel"})
-
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{10},
-		onCalculate: func() {
-			cancel()
-		},
-	}
-	publisher := &mockPublisher{}
-
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
+	backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10}, onCalculate: cancel}
+	worker, publisher, _ := newThrottleTestWorker(t, backlogCalc)
 	worker.throttlePauseDuration = time.Hour
 
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-cancel",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
+	err := worker.StartResumption(ctx, throttleTestRequest(5))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("StartResumption() error = %v, want %v", err, context.Canceled)
 	}
@@ -844,37 +787,16 @@ func TestResumptionWorker_BacklogThrottling_ContextCanceled(t *testing.T) {
 }
 
 func TestResumptionWorker_BacklogThrottling_SchedulingRepaused(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-repause"})
-
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{10},
-		onCalculate: func() {
-			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
-				SchedulingPaused: true,
-				ResumptionRunID:  "run-repause",
-			})
-		},
+	backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10}}
+	worker, publisher, pauseRepo := newThrottleTestWorker(t, backlogCalc)
+	backlogCalc.onCalculate = func() {
+		_ = pauseRepo.Set(context.Background(), &pausestate.PauseSchedulingState{
+			SchedulingPaused: true,
+			ResumptionRunID:  throttleTestRunID,
+		})
 	}
-	publisher := &mockPublisher{}
 
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
-	worker.throttlePauseDuration = time.Millisecond
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-repause",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
-	if err != nil {
+	if err := worker.StartResumption(context.Background(), throttleTestRequest(5)); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
 	if len(publisher.calls) != 0 {
@@ -883,117 +805,19 @@ func TestResumptionWorker_BacklogThrottling_SchedulingRepaused(t *testing.T) {
 }
 
 func TestResumptionWorker_BacklogThrottling_WorkerFenced(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-fence"})
-
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{10},
-		onCalculate: func() {
-			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
-				SchedulingPaused:   false,
-				ResumptionRunID:    "run-fence",
-				ResumptionWorkerID: "worker-fenced-other",
-			})
-		},
+	backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10}}
+	worker, publisher, pauseRepo := newThrottleTestWorker(t, backlogCalc)
+	backlogCalc.onCalculate = func() {
+		_ = pauseRepo.Set(context.Background(), &pausestate.PauseSchedulingState{
+			ResumptionRunID:    throttleTestRunID,
+			ResumptionWorkerID: "worker-fenced-other",
+		})
 	}
-	publisher := &mockPublisher{}
 
-	worker := NewResumptionWorker(
-		pauseRepo,
-		taskRepo,
-		newMockTaskQueue(publisher, backlogCalc),
-	)
-	worker.throttlePauseDuration = time.Millisecond
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-fence",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
-	if err != nil {
+	if err := worker.StartResumption(context.Background(), throttleTestRequest(5)); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
 	if len(publisher.calls) != 0 {
 		t.Errorf("expected 0 published tasks when fenced, got %d", len(publisher.calls))
-	}
-}
-
-func TestWaitOrCancel_Elapses(t *testing.T) {
-	worker := NewResumptionWorker(nil, nil, nil)
-	worker.throttlePauseDuration = time.Millisecond
-
-	if err := worker.waitOrCancel(context.Background()); err != nil {
-		t.Errorf("waitOrCancel() unexpected error: %v", err)
-	}
-}
-
-func TestWaitOrCancel_ContextCancelled(t *testing.T) {
-	worker := NewResumptionWorker(nil, nil, nil)
-	worker.throttlePauseDuration = time.Hour
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := worker.waitOrCancel(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("waitOrCancel() error = %v, want %v", err, context.Canceled)
-	}
-}
-
-func TestResumptionWorker_BacklogAtThresholdThrottles(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-boundary"})
-
-	taskRepo := pausedtask.NewFake()
-	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
-
-	publisher := &mockPublisher{}
-	backlogCalc := &mockBacklogCalculator{
-		backlogValues: []int64{5, 0}, // First check: equal to threshold (throttle), then cleared.
-	}
-
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, backlogCalc))
-	worker.throttlePauseDuration = time.Millisecond
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-boundary",
-		BatchSize:           10,
-		MaxBacklogThreshold: 5,
-	})
-	if err != nil {
-		t.Fatalf("StartResumption() unexpected error: %v", err)
-	}
-	if backlogCalc.calls != 3 {
-		t.Errorf("backlogCalc.calls = %d, want 3 (throttled once at backlog == threshold)", backlogCalc.calls)
-	}
-	if len(publisher.calls) != 1 {
-		t.Errorf("expected 1 task published after throttling resolved, got %d", len(publisher.calls))
-	}
-}
-
-func TestResumptionWorker_DefaultBacklogThreshold(t *testing.T) {
-	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-default"})
-
-	publisher := &mockPublisher{}
-	backlogCalc := &mockBacklogCalculator{}
-
-	worker := NewResumptionWorker(pauseRepo, pausedtask.NewFake(), newMockTaskQueue(publisher, backlogCalc))
-
-	err := worker.StartResumption(ctx, Request{
-		ResumptionRunID:     "run-default",
-		BatchSize:           10,
-		MaxBacklogThreshold: 0,
-	})
-	if err != nil {
-		t.Fatalf("StartResumption() unexpected error: %v", err)
-	}
-	if backlogCalc.recordedMax != defaultMaxBacklog {
-		t.Errorf("recordedMax = %d, want default %d", backlogCalc.recordedMax, defaultMaxBacklog)
 	}
 }
