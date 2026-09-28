@@ -38,7 +38,6 @@ def _build_gh_release_cmd(
     draft: bool,
     prerelease: bool,
     target_commit: str,
-    force: bool,
     skip_push: bool = False,
 ) -> list[str]:
     """Builds the gh release create command arguments."""
@@ -74,7 +73,6 @@ def publish_via_gh_cli(
     target_commit: str,
     repo_dir: Path,
     remote: str = "origin",
-    force: bool = False,
     skip_push: bool = False,
 ) -> str:
     """Publishes a GitHub release using the gh CLI."""
@@ -88,7 +86,6 @@ def publish_via_gh_cli(
         draft,
         prerelease,
         target_commit,
-        force,
         skip_push=skip_push,
     )
     try:

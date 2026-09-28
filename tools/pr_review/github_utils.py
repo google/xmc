@@ -89,7 +89,7 @@ def call_github_api(
     return None
 
 
-def _call_api_with_gh(endpoint, method, payload, user_agent):
+def _call_api_with_gh(endpoint, method, payload, _user_agent):
     """Calls GitHub API using gh CLI binary."""
     cmd = ["gh", "api", "-X", method, endpoint]
     input_data = None

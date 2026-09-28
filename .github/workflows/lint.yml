@@ -105,6 +105,10 @@ jobs:
         run: |
           go run ./tools/lint/check_go_determinism
 
+      - name: 'Verify Go Dependencies (go mod tidy)'
+        run: |
+          go mod tidy -diff
+
       - name: 'Install & Run Buildifier'
         run: |
           if ! command -v buildifier &>/dev/null; then
@@ -116,7 +120,7 @@ jobs:
           fi
           BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
           if [ -n "$BAZEL_FILES" ]; then
-            buildifier -mode=check $BAZEL_FILES
+            buildifier -lint=warn -warnings=unused-variable -mode=check $BAZEL_FILES
           fi
 
       - name: 'Install & Run addlicense'
