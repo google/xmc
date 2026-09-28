@@ -182,6 +182,91 @@ def parse_checklist_approved_items(content: str) -> list[dict[str, Any]]:
     return items
 
 
+def _is_initial_inline_posted(
+    item: dict[str, Any],
+    live_comments: list[dict[str, Any]],
+) -> bool:
+    """Checks whether an initial inline review comment matches an active PR comment."""
+    for lc in live_comments:
+        lc_path = lc.get("path")
+        lc_line = lc.get("line") or lc.get("original_line")
+        if lc_path == item["file_path"] and str(lc_line) == str(item["line"]):
+            return True
+    return False
+
+
+def _is_re_review_thread_posted(
+    item: dict[str, Any],
+    content: str,
+    live_comments: list[dict[str, Any]],
+) -> tuple[bool, str | None]:
+    """Verifies that a re-review thread action (RESPOND or RESOLVE) is fulfilled."""
+    thread_id = item["thread_id"]
+    if item["action"] == "RESPOND":
+        replies = [lc for lc in live_comments if lc.get("in_reply_to_id") == thread_id]
+        if replies:
+            return True, None
+        return False, f"Recommended response on Thread ID `{thread_id}` has not been posted"
+
+    if item["action"] == "RESOLVE":
+        is_checked = False
+        thread_header = f"### Thread ID `{thread_id}`"
+        if thread_header in content:
+            start_idx = content.find(thread_header)
+            next_thread_idx = content.find("### Thread ID", start_idx + len(thread_header))
+            thread_block = (
+                content[start_idx:next_thread_idx] if next_thread_idx != -1 else content[start_idx:]
+            )
+            is_checked = "- **Audit Verification Status**: `- [x]" in thread_block
+        has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
+        if is_checked or has_reply:
+            return True, None
+        return (
+            False,
+            f"RESOLVE action on Thread ID `{thread_id}` has not been verified (neither marked [x] nor has a reply)",
+        )
+
+    return True, None
+
+
+def _verify_all_checklist_items(
+    items: list[dict[str, Any]],
+    content: str,
+    live_comments: list[dict[str, Any]],
+) -> tuple[int, list[str]]:
+    """Iterates through checklist items and verifies each against live GitHub comments."""
+    unposted: list[str] = []
+    verified_count = 0
+    for item in items:
+        if item["type"] == "initial_inline":
+            if _is_initial_inline_posted(item, live_comments):
+                verified_count += 1
+            else:
+                unposted.append(
+                    f"Approved comment '{item['item_id']}' on {item['file_path']}:L{item['line']} missing from live PR diff"
+                )
+        elif item["type"] == "re_review_thread":
+            ok, err = _is_re_review_thread_posted(item, content, live_comments)
+            if ok:
+                verified_count += 1
+            elif err:
+                unposted.append(err)
+    return verified_count, unposted
+
+
+def _mark_items_as_posted(content: str, items: list[dict[str, Any]]) -> str:
+    """Updates the audit checklist content marking approved items as Posted."""
+    updated_content = content
+    for item in items:
+        if item["type"] == "initial_inline":
+            pattern = re.compile(
+                rf"(\|\s*{re.escape(item['item_id'])}\s*\|\s*)(Approved|Confirmed)(\s*\|)",
+                re.IGNORECASE,
+            )
+            updated_content = pattern.sub(r"\1Posted\3", updated_content)
+    return updated_content
+
+
 def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
     """Verify approved audit checklist items against actual posted inline GitHub comments."""
     checklist_path = Path(args.checklist_file)
@@ -220,67 +305,10 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(live_comments, list):
         live_comments = []
 
-    unposted = []
-    verified_count = 0
-
-    for item in items:
-        if item["type"] == "initial_inline":
-            # Match by path and line
-            found = False
-            for lc in live_comments:
-                lc_path = lc.get("path")
-                lc_line = lc.get("line") or lc.get("original_line")
-                if lc_path == item["file_path"] and str(lc_line) == str(item["line"]):
-                    found = True
-                    break
-            if found:
-                verified_count += 1
-            else:
-                unposted.append(
-                    f"Approved comment '{item['item_id']}' on {item['file_path']}:L{item['line']} missing from live PR diff"
-                )
-
-        elif item["type"] == "re_review_thread":
-            thread_id = item["thread_id"]
-            if item["action"] == "RESPOND":
-                # Check that at least one reply exists where in_reply_to_id == thread_id
-                replies = [lc for lc in live_comments if lc.get("in_reply_to_id") == thread_id]
-                if replies:
-                    verified_count += 1
-                else:
-                    unposted.append(
-                        f"Recommended response on Thread ID `{thread_id}` has not been posted"
-                    )
-            elif item["action"] == "RESOLVE":
-                is_checked = False
-                thread_header = f"### Thread ID `{thread_id}`"
-                if thread_header in content:
-                    start_idx = content.find(thread_header)
-                    next_thread_idx = content.find("### Thread ID", start_idx + len(thread_header))
-                    thread_block = (
-                        content[start_idx:next_thread_idx]
-                        if next_thread_idx != -1
-                        else content[start_idx:]
-                    )
-                    is_checked = "- **Audit Verification Status**: `- [x]" in thread_block
-                has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
-                if is_checked or has_reply:
-                    verified_count += 1
-                else:
-                    unposted.append(
-                        f"RESOLVE action on Thread ID `{thread_id}` has not been verified (neither marked [x] nor has a reply)"
-                    )
+    verified_count, unposted = _verify_all_checklist_items(items, content, live_comments)
 
     # Update checklist file marking approved items as verified/posted
-    updated_content = content
-    for item in items:
-        if item["type"] == "initial_inline":
-            pattern = re.compile(
-                rf"(\|\s*{re.escape(item['item_id'])}\s*\|\s*)(Approved|Confirmed)(\s*\|)",
-                re.IGNORECASE,
-            )
-            updated_content = pattern.sub(r"\1Posted\3", updated_content)
-
+    updated_content = _mark_items_as_posted(content, items)
     checklist_path.write_text(updated_content, encoding="utf-8")
 
     if unposted:
