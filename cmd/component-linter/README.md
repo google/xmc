@@ -116,6 +116,7 @@ When validation issues are detected:
 When scanning a Helm component sub-chart directory (`Chart.yaml`, `values.yaml`, `templates/*.yaml`):
 - Chart metadata files (`Chart.yaml`, `Chart.yml`, `values*.yaml`, `rules.yaml`) and underscore-prefixed helper partials (`templates/_*`, e.g. `_helpers.tpl`) are automatically skipped as standalone Kubernetes documents.
 - Template manifests under `templates/*.yaml` are rendered against `Chart.yaml`, `values.yaml`, and `templates/_*` helpers using the official Helm v3 SDK (`helm.sh/helm/v3/pkg/chart/loader`, `chartutil`, and `engine`) before YAML decoding.
+- Chart roots nested under an enclosing chart root inside `--manifests-dir` (a directory with its own `Chart.yaml`, such as a profile meta-chart's `components/<name>`) are rendered only through the enclosing chart, not individually. Vendored Helm subcharts under `<chart>/charts/<sub>` are still linted individually. To lint a nested chart standalone, point `--manifests-dir` at it.
 
 ### Manifest Structure
 

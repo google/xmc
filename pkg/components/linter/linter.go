@@ -71,9 +71,20 @@ func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawMani
 	var rawManifests []*RawManifest
 	var compManifests []*ComponentManifest
 
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to resolve absolute path of %q: %w", dir, err)
+	}
+
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
 			return walkErr
+		}
+		if d.IsDir() {
+			if isNestedChartRoot(absDir, path) {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if (ext != ".yaml" && ext != ".yml") || isChartOrRulesConfigFile(path) {

@@ -65,13 +65,41 @@ func isChartOrRulesConfigFile(path string) bool {
 func findChartRoot(filePath string) string {
 	absPath, _ := filepath.Abs(filePath)
 	for dir := filepath.Dir(absPath); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-		for _, name := range []string{"Chart.yaml", "Chart.yml"} {
-			if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
-				return dir
-			}
+		if hasChartFile(dir) {
+			return dir
 		}
 	}
 	return ""
+}
+
+// hasChartFile reports whether dir directly contains a Chart.yaml or Chart.yml file.
+func hasChartFile(dir string) bool {
+	for _, name := range []string{"Chart.yaml", "Chart.yml"} {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// isNestedChartRoot reports whether dir is a Helm chart root enclosed by another chart root located
+// at or below absWalkRoot (an absolute path). Such nested charts are rendered by their parent chart
+// (for example a profile meta-chart reading components/<name>/ via .Files), so rendering them again
+// would duplicate their manifests. Vendored subcharts under <parent>/charts/ and chart roots whose
+// parent chart lies outside absWalkRoot are still linted individually.
+func isNestedChartRoot(absWalkRoot, dir string) bool {
+	if !hasChartFile(dir) {
+		return false
+	}
+	outer := findChartRoot(dir)
+	if outer == "" {
+		return false
+	}
+	if absDir, err := filepath.Abs(dir); err != nil || filepath.Dir(absDir) == filepath.Join(outer, "charts") {
+		return false
+	}
+	rel, err := filepath.Rel(absWalkRoot, outer)
+	return err == nil && filepath.IsLocal(rel)
 }
 
 // RenderChartTemplate loads the Helm chart at chartRoot (using a thread-safe cache) and renders templatePath

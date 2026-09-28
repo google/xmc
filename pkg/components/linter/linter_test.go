@@ -15,6 +15,7 @@
 package linter_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -210,6 +211,79 @@ spec:
 			t.Fatalf("expected valid nested directories, got err=%v, errors=%v", err, res.Errors)
 		}
 	})
+}
+
+func TestValidateDirectory_NestedChartRoots(t *testing.T) {
+	t.Parallel()
+
+	const (
+		chartYAML    = "apiVersion: v2\nname: %s\nversion: 0.1.0\n"
+		validComp    = "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: %s }\nspec: { version: 0.1.0 }\n"
+		missingDepOf = "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: %s }\nspec: { version: 0.1.0, enabled: true, dependencies: [missing-dep] }\n"
+	)
+	// Charts render invalid or conflicting Components, so the diagnostics reveal which charts the
+	// walker rendered.
+	tree := t.TempDir()
+	writeTestTree(t, tree, map[string]string{
+		// Profile meta-chart with a nested component chart it renders itself.
+		"profiles/profile/Chart.yaml":                            fmt.Sprintf(chartYAML, "profile"),
+		"profiles/profile/templates/components.yaml":             fmt.Sprintf(validComp, "a"),
+		"profiles/profile/components/a/Chart.yaml":               fmt.Sprintf(chartYAML, "a"),
+		"profiles/profile/components/a/templates/component.yaml": fmt.Sprintf(missingDepOf, "a"),
+		// Chart with a vendored Helm subchart under charts/.
+		"vendored/Chart.yaml":                          fmt.Sprintf(chartYAML, "vendored"),
+		"vendored/templates/components.yaml":           fmt.Sprintf(validComp, "v"),
+		"vendored/charts/sub/Chart.yaml":               fmt.Sprintf(chartYAML, "sub"),
+		"vendored/charts/sub/templates/component.yaml": fmt.Sprintf(missingDepOf, "sub"),
+		// Independent sibling charts under a chart-free directory, both defining "dup".
+		"catalog/a/Chart.yaml":               fmt.Sprintf(chartYAML, "a"),
+		"catalog/a/templates/component.yaml": fmt.Sprintf(validComp, "dup"),
+		"catalog/b/Chart.yaml":               fmt.Sprintf(chartYAML, "b"),
+		"catalog/b/templates/component.yaml": fmt.Sprintf(validComp, "dup"),
+	})
+
+	tests := []struct {
+		name     string
+		lintDir  string
+		wantRule string // Empty means the directory must lint with zero diagnostics.
+	}{
+		{name: "outer chart root skips nested chart", lintDir: "profiles/profile"},
+		{name: "directory above outer chart root skips nested chart", lintDir: "profiles"},
+		{name: "nested chart linted on its own is rendered", lintDir: "profiles/profile/components/a", wantRule: "MISSING_DEPENDENCY"},
+		{name: "chart-free directory renders charts whose parent is outside the walk", lintDir: "profiles/profile/components", wantRule: "MISSING_DEPENDENCY"},
+		{name: "vendored charts/ subchart is still rendered", lintDir: "vendored", wantRule: "MISSING_DEPENDENCY"},
+		{name: "sibling charts under chart-free directory are both rendered", lintDir: "catalog", wantRule: "DUPLICATE_COMPONENT_NAME"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res, err := linter.NewLinter(nil).ValidateDirectory(filepath.Join(tree, tt.lintDir))
+			if err != nil {
+				t.Fatalf("ValidateDirectory(%q) error: %v", tt.lintDir, err)
+			}
+			if tt.wantRule == "" && len(res.Diagnostics) != 0 {
+				t.Fatalf("ValidateDirectory(%q) diagnostics = %+v, want none", tt.lintDir, res.Diagnostics)
+			}
+			if tt.wantRule != "" && res.Valid {
+				t.Fatalf("ValidateDirectory(%q) valid = true, want %s error", tt.lintDir, tt.wantRule)
+			}
+			assertDiagnosticRule(t, res, tt.wantRule)
+		})
+	}
+}
+
+// writeTestTree writes files (keyed by slash-separated path relative to root), creating parent directories.
+func writeTestTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("failed to create parent of %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write %s: %v", rel, err)
+		}
+	}
 }
 
 func writeTestManifest(t *testing.T, dir, filename, content string) {
