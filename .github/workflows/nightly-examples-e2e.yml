@@ -217,6 +217,11 @@ jobs:
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
 
+          # Bridge the external GitHub Actions runner to the internal ClickHouse ClusterIP
+          # service in the GKE cluster via an ephemeral, health-checked port-forward with
+          # automated trap cleanup. This allows verification scripts to assert metrics ingestion
+          # without exposing ClickHouse publicly. Conditionally appends
+          # --require_clickhouse_metrics=true to the verification arguments for ClickHouse-enabled workloads.
           EXTRA_VERIFY_ARGS=()
           if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
             if ! curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
