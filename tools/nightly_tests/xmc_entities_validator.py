@@ -753,10 +753,6 @@ def query_clickhouse_sql(
     )
 
 
-# Backward-compatibility alias
-query_clickhouse_http = query_clickhouse_sql
-
-
 def _verify_clickhouse_sql_metrics_once(
     endpoint: str,
     xid: str,
