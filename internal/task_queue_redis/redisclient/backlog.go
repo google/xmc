@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client
+package redisclient
 
 import (
 	"context"
@@ -21,30 +21,26 @@ import (
 	"strings"
 
 	"github.com/redis/go-redis/v9"
-	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
-// RedisStreamClient defines the subset of Redis stream commands required for backlog inspection.
-type RedisStreamClient interface {
+// streamInspector is the subset of Redis stream commands required for backlog inspection.
+type streamInspector interface {
 	XInfoGroups(ctx context.Context, key string) *redis.XInfoGroupsCmd
 	XRangeN(ctx context.Context, stream, start, stop string, count int64) *redis.XMessageSliceCmd
 }
 
-// Compile-time guarantee that the production publisher supports backlog inspection.
-// Without it, Client.CalculateBacklog would silently report an empty backlog.
-var _ RedisStreamClient = (*redisclient.PublisherClient)(nil)
+// BacklogLength returns the number of unprocessed messages (pending + undelivered) for the
+// consumer group on the publisher's stream. The count is exact below maxThreshold and capped
+// just above it.
+func (p *PublisherClient) BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
+	return streamBacklogLength(ctx, p.Client, p.StreamName, group, maxThreshold)
+}
 
-// CalculateStreamBacklog calculates the total backlog (pending + lag) on a Redis stream for a consumer group.
-// It reads pending and last-delivered-id from XINFO GROUPS, then counts undelivered messages via XRANGE.
-// The result is capped at maxThreshold: if pending alone reaches it, XRANGE is skipped; otherwise XRANGE
-// reads only the (maxThreshold - pending) + 1 entries needed to decide, avoiding unbounded stream reads.
-func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, stream, group string, maxThreshold int) (int64, error) {
-	if client == nil {
-		logging.Warn(ctx, "No Redis stream client configured; reporting empty backlog", "stream", stream)
-		return 0, nil
-	}
+// streamBacklogLength reads pending and last-delivered-id from XINFO GROUPS, then counts
+// undelivered messages via XRANGE. If pending alone reaches maxThreshold, XRANGE is skipped;
+// otherwise XRANGE reads only the (maxThreshold - pending) + 1 entries needed to decide.
+func streamBacklogLength(ctx context.Context, client streamInspector, stream, group string, maxThreshold int) (int64, error) {
 	if maxThreshold <= 0 {
 		return 0, fmt.Errorf("max backlog threshold must be positive, got %d", maxThreshold)
 	}
@@ -77,26 +73,13 @@ func CalculateStreamBacklog(ctx context.Context, client RedisStreamClient, strea
 	msgs, err := client.XRangeN(ctx, stream, start, "+", requiredLag+1).Result()
 	if err != nil {
 		if isMissingStreamErr(err) {
-			return targetGroup.Pending, nil
+			// The stream was deleted after XINFO GROUPS; its pending entries went with it.
+			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to query lag via xrange for stream %s: %w", stream, err)
 	}
 
 	return targetGroup.Pending + undeliveredCount(msgs, targetGroup.LastDeliveredID), nil
-}
-
-// CalculateBacklog calculates the backlog on the actuator task stream.
-func (c *Client) CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error) {
-	if c == nil || c.redisClient == nil {
-		logging.Warn(ctx, "Task queue Redis client not configured; reporting empty backlog")
-		return 0, nil
-	}
-	rClient, ok := c.redisClient.(RedisStreamClient)
-	if !ok {
-		logging.Warn(ctx, "Task queue Redis client does not support stream inspection; reporting empty backlog")
-		return 0, nil
-	}
-	return CalculateStreamBacklog(ctx, rClient, constants.RedisStream, constants.RedisGroup, maxThreshold)
 }
 
 // isMissingStreamErr reports whether err indicates the stream key does not exist.

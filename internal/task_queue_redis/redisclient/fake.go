@@ -25,6 +25,12 @@ type FakeClient struct {
 	taskHandler     func(context.Context, string, string) TaskResult
 	PingError       error
 	AddMessageError error
+	// Backlog and BacklogError are returned by BacklogLength.
+	Backlog      int64
+	BacklogError error
+	// BacklogGroup and BacklogThreshold record the last BacklogLength arguments.
+	BacklogGroup     string
+	BacklogThreshold int
 }
 
 // NewFakeClient creates a new FakeClient.
@@ -43,6 +49,15 @@ func (c *FakeClient) AddMessage(ctx context.Context, data string, failedAttempts
 	}
 	c.Messages = append(c.Messages, data)
 	return nil
+}
+
+// BacklogLength records its arguments and returns the configured Backlog and BacklogError.
+func (c *FakeClient) BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.BacklogGroup = group
+	c.BacklogThreshold = maxThreshold
+	return c.Backlog, c.BacklogError
 }
 
 // GetStreamLen returns the number of messages added.

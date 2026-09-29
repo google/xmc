@@ -28,6 +28,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -673,14 +674,16 @@ type mockBacklogCalculator struct {
 	calculateErr  error
 	calls         int
 	recordedMax   int
+	recordedGroup string
 	onCalculate   func()
 }
 
-func (m *mockBacklogCalculator) CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error) {
+func (m *mockBacklogCalculator) CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
 	m.recordedMax = maxThreshold
+	m.recordedGroup = group
 
 	if m.onCalculate != nil {
 		m.onCalculate()
@@ -750,6 +753,9 @@ func TestResumptionWorker_BacklogThrottleDecision(t *testing.T) {
 			}
 			if backlogCalc.recordedMax != tc.wantMax {
 				t.Errorf("recordedMax = %d, want %d", backlogCalc.recordedMax, tc.wantMax)
+			}
+			if backlogCalc.recordedGroup != constants.RedisGroup {
+				t.Errorf("recordedGroup = %q, want %q", backlogCalc.recordedGroup, constants.RedisGroup)
 			}
 			if len(publisher.calls) != 1 {
 				t.Errorf("expected 1 published task, got %d", len(publisher.calls))

@@ -42,6 +42,9 @@ type Config struct {
 // Publisher is an interface for publishing messages to Redis.
 type Publisher interface {
 	AddMessage(ctx context.Context, data string, failedAttempts string) error
+	// BacklogLength returns the number of unprocessed messages for the consumer group on the
+	// publisher's stream, exact below maxThreshold and capped just above it.
+	BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
 	Ping(ctx context.Context) error
 	Close(ctx context.Context) error
 }

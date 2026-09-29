@@ -412,6 +412,17 @@ func (c *Client) PingRedis(ctx context.Context) error {
 	return c.redisClient.Ping(ctx)
 }
 
+// CalculateBacklogLength returns the number of tasks on the task stream not yet processed
+// (pending + undelivered) by the given consumer group. The count is exact below maxThreshold
+// and capped just above it.
+func (c *Client) CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
+	if c == nil || c.redisClient == nil {
+		logging.Warn(ctx, "Task queue Redis client not configured; reporting empty backlog")
+		return 0, nil
+	}
+	return c.redisClient.BacklogLength(ctx, group, maxThreshold)
+}
+
 func generateIdempotencyKey(target string, action *actuatortaskpb.Action, curTime time.Time) string {
 	var actionType string
 	switch action.GetAction().(type) {

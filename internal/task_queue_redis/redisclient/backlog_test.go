@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client
+package redisclient
 
 import (
 	"context"
@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/redis/go-redis/v9"
-	"xmanager_cloud/kubernetes/common/constants"
 )
 
 type fakeRedisStreamClient struct {
@@ -60,35 +59,12 @@ func (f *fakeRedisStreamClient) XRangeN(ctx context.Context, stream, start, stop
 	return cmd
 }
 
-type fakePublisherWithoutStream struct{}
-
-func (f *fakePublisherWithoutStream) AddMessage(ctx context.Context, data string, failedAttempts string) error {
-	return nil
-}
-func (f *fakePublisherWithoutStream) Ping(ctx context.Context) error  { return nil }
-func (f *fakePublisherWithoutStream) Close(ctx context.Context) error { return nil }
-
-type fakePublisherWithStream struct {
-	fakePublisherWithoutStream
-	fakeRedisStreamClient
-}
-
-func TestCalculateStreamBacklog(t *testing.T) {
+func TestStreamBacklogLength(t *testing.T) {
 	ctx := context.Background()
-
-	t.Run("nil client returns 0", func(t *testing.T) {
-		backlog, err := CalculateStreamBacklog(ctx, nil, "stream", "group", 100)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if backlog != 0 {
-			t.Errorf("backlog = %d, want 0", backlog)
-		}
-	})
 
 	t.Run("non-positive threshold returns error", func(t *testing.T) {
 		client := &fakeRedisStreamClient{}
-		if _, err := CalculateStreamBacklog(ctx, client, "stream", "group", 0); err == nil {
+		if _, err := streamBacklogLength(ctx, client, "stream", "group", 0); err == nil {
 			t.Fatal("expected error for zero threshold, got nil")
 		}
 	})
@@ -98,7 +74,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 			client := &fakeRedisStreamClient{
 				groupsErr: missingErr,
 			}
-			backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 100)
+			backlog, err := streamBacklogLength(ctx, client, "stream", "group", 100)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -113,7 +89,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 		client := &fakeRedisStreamClient{
 			groupsErr: expectedErr,
 		}
-		_, err := CalculateStreamBacklog(ctx, client, "stream", "group", 100)
+		_, err := streamBacklogLength(ctx, client, "stream", "group", 100)
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("err = %v, want %v", err, expectedErr)
 		}
@@ -125,7 +101,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 				{Name: "other-group", Pending: 5, LastDeliveredID: "100-0"},
 			},
 		}
-		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 100)
+		backlog, err := streamBacklogLength(ctx, client, "stream", "group", 100)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -143,7 +119,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 				{ID: "100-0"}, // Matches lastDeliveredID, stripped.
 			},
 		}
-		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 100)
+		backlog, err := streamBacklogLength(ctx, client, "stream", "group", 100)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -165,7 +141,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 			},
 			xrangeErr: errors.New("xrange must not be called"),
 		}
-		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 10)
+		backlog, err := streamBacklogLength(ctx, client, "stream", "group", 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -188,7 +164,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 				{ID: "102-0"},
 			},
 		}
-		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 10)
+		backlog, err := streamBacklogLength(ctx, client, "stream", "group", 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -210,7 +186,7 @@ func TestCalculateStreamBacklog(t *testing.T) {
 				{ID: "2-0"},
 			},
 		}
-		backlog, err := CalculateStreamBacklog(ctx, client, "stream", "group", 10)
+		backlog, err := streamBacklogLength(ctx, client, "stream", "group", 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -230,64 +206,25 @@ func TestCalculateStreamBacklog(t *testing.T) {
 			},
 			xrangeErr: expectedErr,
 		}
-		_, err := CalculateStreamBacklog(ctx, client, "stream", "group", 10)
+		_, err := streamBacklogLength(ctx, client, "stream", "group", 10)
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("err = %v, want %v", err, expectedErr)
 		}
 	})
-}
 
-func TestClient_CalculateBacklog(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("nil redisClient returns 0", func(t *testing.T) {
-		c := &Client{}
-		backlog, err := c.CalculateBacklog(ctx, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if backlog != 0 {
-			t.Errorf("backlog = %d, want 0", backlog)
-		}
-	})
-
-	t.Run("redisClient not implementing RedisStreamClient returns 0", func(t *testing.T) {
-		c := &Client{
-			redisClient: &fakePublisherWithoutStream{},
-		}
-		backlog, err := c.CalculateBacklog(ctx, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if backlog != 0 {
-			t.Errorf("backlog = %d, want 0", backlog)
-		}
-	})
-
-	t.Run("valid stream client calculates correctly", func(t *testing.T) {
-		pub := &fakePublisherWithStream{
-			fakeRedisStreamClient: fakeRedisStreamClient{
-				groupsResult: []redis.XInfoGroup{
-					{Name: constants.RedisGroup, Pending: 4, LastDeliveredID: "50-0"},
-				},
-				xrangeResult: []redis.XMessage{
-					{ID: "50-0"},
-					{ID: "51-0"},
-				},
+	t.Run("stream deleted before xrange returns 0", func(t *testing.T) {
+		client := &fakeRedisStreamClient{
+			groupsResult: []redis.XInfoGroup{
+				{Name: "group", Pending: 3, LastDeliveredID: "100-0"},
 			},
+			xrangeErr: redis.Nil,
 		}
-		c := &Client{
-			redisClient: pub,
-		}
-		backlog, err := c.CalculateBacklog(ctx, 5)
+		count, err := streamBacklogLength(ctx, client, "stream", "group", 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if backlog != 5 {
-			t.Errorf("backlog = %d, want 5 (4 pending + 1 lag)", backlog)
-		}
-		if pub.recordedInfoKey != constants.RedisStream {
-			t.Errorf("queried key = %q, want %q", pub.recordedInfoKey, constants.RedisStream)
+		if count != 0 {
+			t.Errorf("count = %d, want 0", count)
 		}
 	})
 }

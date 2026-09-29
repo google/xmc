@@ -24,6 +24,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -37,7 +38,10 @@ const (
 // enqueuing actuation tasks and checking the downstream backlog.
 type TaskQueue interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
-	CalculateBacklog(ctx context.Context, maxThreshold int) (int64, error)
+	// CalculateBacklogLength returns the number of tasks in the downstream task queue not yet
+	// processed by the given consumer group. The count is exact below maxThreshold and capped
+	// just above it.
+	CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
 }
 
 // Worker defines the contract for running paused task resumption.
@@ -164,7 +168,7 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 		maxThreshold = defaultMaxBacklog
 	}
 
-	backlog, err := w.taskQueue.CalculateBacklog(ctx, maxThreshold)
+	backlog, err := w.taskQueue.CalculateBacklogLength(ctx, constants.RedisGroup, maxThreshold)
 	if err != nil {
 		return false, fmt.Errorf("failed to calculate task queue backlog: %w", err)
 	}
@@ -176,6 +180,7 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 	logging.Info(ctx, "Tasks queue backlog exceeded threshold; pausing replay",
 		"backlog", backlog,
 		"max_backlog_threshold", maxThreshold,
+		"pause_duration", w.pauseDuration(),
 		"resumption_run_id", req.ResumptionRunID)
 
 	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
@@ -187,15 +192,18 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 	return true, nil
 }
 
+// pauseDuration returns the configured throttle pause, falling back to the default.
+func (w *ResumptionWorker) pauseDuration() time.Duration {
+	if w.throttlePauseDuration <= 0 {
+		return defaultThrottlePauseDuration
+	}
+	return w.throttlePauseDuration
+}
+
 // waitOrCancel blocks the calling goroutine for the worker's pause duration,
 // returning early with ctx.Err() if the context is cancelled first.
 func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
-	pauseDuration := w.throttlePauseDuration
-	if pauseDuration <= 0 {
-		pauseDuration = defaultThrottlePauseDuration
-	}
-
-	timer := time.NewTimer(pauseDuration)
+	timer := time.NewTimer(w.pauseDuration())
 	defer timer.Stop()
 
 	select {
