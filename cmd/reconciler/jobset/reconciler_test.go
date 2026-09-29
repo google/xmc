@@ -737,8 +737,8 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 		{
 			name:       "Conflict",
 			patchErr:   &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonConflict}},
-			wantResult: ctrl.Result{Requeue: true},
-			wantErr:    false,
+			wantResult: ctrl.Result{},
+			wantErr:    true,
 		},
 		{
 			name:       "OtherError",
@@ -775,6 +775,57 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 				t.Errorf("Reconcile() result = %v, want %v", result, tc.wantResult)
 			}
 		})
+	}
+}
+
+func TestActuatorReconcilerFinalizer_PatchUsesOptimisticLock(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+	initialJobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-jobset",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.ExperimentIDLabel: "123",
+				constants.WorkUnitIDLabel:   "1",
+				constants.ExecutionIDLabel:  "1",
+			},
+			Finalizers:        []string{constants.JobSetFinalizer},
+			DeletionTimestamp: &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)},
+		},
+	}
+	var patchData string
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(initialJobSet).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				data, err := patch.Data(obj)
+				if err != nil {
+					return err
+				}
+				patchData = string(data)
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	reconciler, err := NewReconciler(Params{
+		Client:  cl,
+		Scheme:  scheme,
+		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
+	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() unexpected error: %v", err)
+	}
+	if !strings.Contains(patchData, `"resourceVersion"`) {
+		t.Errorf("finalizer patch = %s, want it to carry resourceVersion for optimistic locking", patchData)
 	}
 }
 

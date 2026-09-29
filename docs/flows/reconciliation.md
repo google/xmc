@@ -135,9 +135,17 @@ disappear from the API server before the Reconciler observed it, leaving the wor
 2. Hand a stopped-state update to the batcher.
 3. Only then remove the finalizer and patch the JobSet, letting the deletion complete.
 
-A conflict on the patch requeues; a `NotFound` is treated as already-done. A JobSet carrying the
-finalizer but with unparseable labels is logged and released rather than blocking deletion
-indefinitely — a stuck finalizer is worse than a lost state update.
+The finalizer patch carries the JobSet's `resourceVersion` (optimistic lock), so a concurrent
+change to the finalizer list surfaces as a conflict instead of being silently overwritten. A
+conflict is returned as an error and retried with the workqueue's exponential backoff; a `NotFound`
+is treated as already-done. A JobSet carrying the finalizer but with unparseable labels is logged
+and released rather than blocking deletion indefinitely — a stuck finalizer is worse than a lost
+state update.
+
+Outside the deletion branch, errors that retrying cannot fix — unparseable XMC labels on a JobSet
+or Workload, or a JobSet that cannot be converted to a `WorkUnitExecutionUpdate` — are returned as
+`reconcile.TerminalError`. They are logged and counted, but not requeued; the object is reconciled
+again only when it next changes.
 
 ### Startup pod checks
 

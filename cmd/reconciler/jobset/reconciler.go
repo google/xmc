@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -311,10 +312,13 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	// Modify the jobSet object in-place to remove the finalizer
 	controllerutil.RemoveFinalizer(jobSet, constants.JobSetFinalizer)
 
-	// Patch the object in the API server
+	// Patch the object in the API server. The optimistic lock makes the patch carry
+	// the resourceVersion, so a concurrent change to the finalizers list results in
+	// a Conflict instead of silently overwriting another controller's finalizer.
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
 	// it blocks the entire logging system for some reason.
-	if err := r.Patch(logging.Strip(ctx), jobSet, client.MergeFrom(patchBase)); err != nil {
+	patch := client.MergeFromWithOptions(patchBase, client.MergeFromWithOptimisticLock{})
+	if err := r.Patch(logging.Strip(ctx), jobSet, patch); err != nil {
 		return r.handlePatchError(ctx, jobSet, err)
 	}
 
@@ -330,8 +334,9 @@ func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobS
 		return ctrl.Result{}, nil
 	}
 	if apierrors.IsConflict(err) {
-		logging.Debug(ctx, "Conflict patching finalizer for JobSet, requeuing for retry.", "namespace", jobSet.Namespace)
-		return ctrl.Result{Requeue: true}, nil
+		// Returning the error lets the workqueue rate limiter retry with exponential backoff.
+		logging.Debug(ctx, "Conflict patching finalizer for JobSet, retrying with backoff.", "namespace", jobSet.Namespace)
+		return ctrl.Result{}, fmt.Errorf("conflict patching finalizer for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
 	}
 	logging.Error(ctx, "Failed to patch finalizer for JobSet", "namespace", jobSet.Namespace, "error", err)
 	return ctrl.Result{}, fmt.Errorf("failed to patch finalizer for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
@@ -345,8 +350,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if err != nil {
-		logging.Error(ctx, "Failed to parse labels for JobSet", "namespace", jobSet.Namespace, "error", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to parse XMC labels for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err))
 	}
 
 	var result ctrl.Result
@@ -391,9 +395,9 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 
 	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	if err != nil {
-		logging.Error(ctx, "Failed to convert JobSet to WorkUnitExecutionUpdate", "namespace", jobSet.Namespace, "error", err)
-		// we do not want to requeue as fields used in the update are monitored by predicate
-		return ctrl.Result{}, nil
+		// Not retried: fields used in the update are monitored by the predicate, so a
+		// relevant change triggers a new reconcile.
+		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to convert JobSet %s/%s to WorkUnitExecutionUpdate: %w", jobSet.Namespace, jobSet.Name, err))
 	}
 	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)

@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/labels"
@@ -203,8 +204,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 	parsedLabels, err := parseXMCLabelsFromPodSet(ctx, &workload)
 	if err != nil {
-		logging.Error(ctx, "Failed to parse labels for Workload", "workload", workload.GetName(), "error", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to parse XMC labels for Workload %s: %w", req.NamespacedName, err))
 	}
 	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 

@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -241,10 +242,9 @@ func TestWorkloadReconciler_NoLabels(t *testing.T) {
 			Namespace: "default",
 		},
 	})
-	if err != nil {
-		t.Fatalf("Reconcile() returned unexpected error: %v", err)
+	if !errors.Is(err, reconcile.TerminalError(nil)) {
+		t.Fatalf("Reconcile() error = %v, want terminal error", err)
 	}
-
 	if len(rec.Batcher.Updates) != 0 {
 		t.Errorf("Expected 0 updates in batcher, got %d", len(rec.Batcher.Updates))
 	}
