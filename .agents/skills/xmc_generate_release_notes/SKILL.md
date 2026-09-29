@@ -38,7 +38,9 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
      ```
 3. **Inspect Commit Range**:
    ```bash
-   git log --oneline <base_tag>..<target_ref>
+   BASE_TAG="<base_tag>"
+   TARGET_REF="${TARGET_REF:-origin/main}"
+   git log --oneline "${BASE_TAG}".."${TARGET_REF}"
    ```
 
 ---
@@ -176,15 +178,26 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
    * Include the complete 4-section layout with flag instructions and narrative synthesis.
 3. **Interactive Review**:
    Present the draft file path to the user for review. If the user requests adjustments (e.g. changing version number, tuning descriptions, or regrouping entries), use `replace_file_content` to update the markdown file.
+4. **Preflight Validation (`--dry-run`)**:
+   Run non-mutating preflight validation with `--dry-run` to verify tag format, commit resolution, tag availability on remote, and notes file readability prior to requesting user approval:
+   ```bash
+   VERSION="<version>"
+   NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v${VERSION}.md"
+   PYTHONPATH=. python3 ./tools/release/publish_release.py \
+       --tag "${VERSION}" \
+       --target-commit origin/main \
+       --notes-file "${NOTES_FILE}" \
+       --dry-run
+   ```
 
 ---
 
 ## 6. Mandatory Confirmation Gate & Release Publishing
 
 > [!CAUTION]
-> **STRICT INVARIANT: NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT CONFIRMATION FROM THE USER.**
->
-> The agent MUST NOT call `publish_release.py`, run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
+> **STRICT INVARIANTS**:
+> 1. **NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT USER CONFIRMATION**: The agent MUST NOT call `publish_release.py`, run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
+> 2. **NEVER USE `--force` TO OVERWRITE AN EXISTING TAG OR RELEASE AUTONOMOUSLY**: If a tag or release already exists locally or on the remote, abort immediately and consult the user.
 
 1. **Wait for Explicit User Approval**:
    Confirm that the user has explicitly approved both the **version number** and the **release notes content**.
@@ -193,7 +206,7 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
    ```bash
    VERSION="<version>"
    NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v${VERSION}.md"
-   python3 ./tools/release/publish_release.py \
+   PYTHONPATH=. python3 ./tools/release/publish_release.py \
        --tag "${VERSION}" \
        --target-commit origin/main \
        --notes-file "${NOTES_FILE}" \
@@ -203,3 +216,11 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
    > Publishing as a draft gives the team a collaborative proofreading window (e.g. 1–2 hours) on GitHub Releases to review the changelog and propose adjustments before manually publishing it to the public. Omit `--draft` only if the user explicitly instructs to publish publicly immediately.
 3. **Confirm Publication**:
    Provide the user with the generated GitHub Release URL and confirm that the git tag was successfully pushed.
+4. **Draft to Public Promotion (Separate Post-Review Action)**:
+   Once the collaborative proofreading window is complete and the user explicitly requests making the release public, promote the draft release:
+   ```bash
+   TAG="<version>"
+   gh release edit "${TAG}" --draft=false
+   ```
+   > [!CAUTION]
+   > Promoting a draft release to public is an irreversible public action and MUST NOT be performed autonomously. It requires an explicit user confirmation gate (e.g., "promote release to public").

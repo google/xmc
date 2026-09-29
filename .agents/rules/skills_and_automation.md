@@ -7,6 +7,7 @@ This document provides standards for skill architecture, workflow automation, an
 ## 1. Extracting Complex Logic to Executable Python Scripts
 - **Executable Scripts over Inline Commands**: Never embed multi-step parsing logic, string manipulation, or inline shell code (e.g., `python3 -c "..."`) inside Markdown skill definitions or shell invocations. Always write Python code to standalone `.py` script files via `write_to_file` or rely on pre-written tools in `tools/`.
 - **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `tools/` or skill-specific script directories.
+- **Multi-Phase Polling & Workflow Orchestration in Dedicated Python Helpers**: Multi-step remote CI polling, GitHub API orchestration, JSON parsing, or condition evaluation MUST NOT be implemented via inline bash loops with `sleep` or fragile jq filters in skill definitions. Encapsulate them into dedicated Python CLI tools in `tools/` with hermetic unit tests. Inline bash in skill definitions is restricted strictly to simple single-line invocations, environment variable definitions, or piping preflight commands.
 - **Automated Verification**: Accompany every extracted script with unit tests (e.g., `tool_name_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
 
 ## 2. DRY & KISS in Skill & Rule Design
@@ -52,7 +53,18 @@ This document provides standards for skill architecture, workflow automation, an
 - **Asynchronous Run Correlation & Polling Invariants**: When polling for newly triggered remote CI runs (e.g. GitHub Actions, Borg jobs), helpers MUST:
   1. Record dispatch timestamp $t_0$ and filter strictly on `createdAt >= t_0`.
   2. Require matching **both** timestamp and commit SHA (`headSha.startswith(target_sha)`). Never use loose `or` conditions in polling loops.
-  3. Abort immediately with structured failure diagnostics upon commit mismatch or concurrency cancellation.
+  3. Distinguish distinct execution conclusions (`success`, `failure`, `cancelled`, `sha_mismatch`) with dedicated exit codes. Report concurrency cancellation specifically if a newer run in the concurrency group supersedes the active run.
+- **Non-Mutating Preflight Validation (`--dry-run`) Before Confirmation Gates**: Before waiting on a mandatory confirmation gate for mutating, irreversible, or public operations (such as publishing a release or creating a git tag), skills and tools MUST run non-mutating preflight validation (`--dry-run`). This verifies parameter validity, commit SHA resolution, remote tag availability, and artifact existence *before* prompting the user for approval.
+- **Prohibition on `--force` and Autonomous Tag Overwrites**: Skills and automation tools MUST NEVER use `--force` or overwrite existing git tags or releases autonomously. If a tag or release already exists locally or on the remote, abort immediately and consult the user.
+- **Resumption State Loading & Persistence Idiom**: Persist multi-turn execution state using `${ARTIFACT_DIR:-/tmp}/<state_file>.json` so that state survives across session restarts and context resets. Skills that accept direct entry or resume execution MUST use the standard loading idiom:
+  ```bash
+  STATE_FILE="${ARTIFACT_DIR:-/tmp}/<workflow>_state.json"
+  if [[ -z "${TARGET_SHA:-}" && -f "${STATE_FILE}" ]]; then
+    TARGET_SHA=$(jq -r '.target_sha // empty' "${STATE_FILE}")
+  fi
+  ```
+- **Variable Placeholder Consolidation**: All bash code snippets in skill playbooks and documentation MUST consolidate parameter placeholders at the very top of the snippet (e.g. `BASE_TAG="<base_tag>"`, `VERSION="<version>"`), avoiding inline `<placeholders>` deep inside command arguments.
+- **Single Source of Truth for Workflow Actions**: When a skill orchestrates an end-to-end pipeline (such as release orchestration), it MUST delegate discrete responsibilities (like release notes drafting, publishing, and draft-to-public promotion) to the canonical owning skill rather than reimplementing or duplicating the step.
+- **Structured Error & Log Summarization (No Context Dumping)**: Remote CI watchers and test runners must parse and summarize job outcomes into structured JSON (e.g. `failed_jobs`), strictly avoiding dumping massive raw build or test logs into the main agent context window.
 - **Closed-Circuit Error Propagation (No `|| true`)**: Never append `|| true` to command invocations inside Markdown skill definitions. Allow non-zero exit codes to fail fast and bubble up to the agent for proper error inspection and recovery.
-- **Environment-Aware State Persistence**: Persist multi-turn execution state using `${ARTIFACT_DIR:-/tmp}/<state_file>.json` to ensure survivability across session restarts and context resets.
 - **Explicit Heading Slug Anchors**: Cross-skill references MUST link to Markdown heading slug anchors (e.g. `[Mandatory Confirmation Gate](../other_skill/SKILL.md#6-mandatory-confirmation-gate--release-publishing)`) rather than volatile section numbers.
