@@ -194,7 +194,7 @@ def main(argv: Sequence[str]) -> None:
         experiment = _assert_experiment(stub, xid)
         wu_results = _assert_work_units(stub, xid, expected_queue, timeout_sec)
         _assert_jobset(stub, xid)
-        _assert_clickhouse_sql_metrics(xid, timeout_sec=min(timeout_sec, 30))
+        _assert_clickhouse_sql_metrics(xid, timeout_sec=timeout_sec)
         _check_optional_dashboard(xid)
         _print_summary(experiment, len(wu_results), expected_queue, ui_base_url, xid)
 

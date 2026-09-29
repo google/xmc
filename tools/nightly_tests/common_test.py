@@ -103,6 +103,30 @@ class CommonTest(unittest.TestCase):
             self.assertEqual(common.resolve_dashboard_endpoint(""), "https://xmc-ui.example.com")
             self.assertEqual(mock_ui.call_count, 2)
 
+    def test_resolve_clickhouse_endpoint(self) -> None:
+        # Explicit parameter takes highest precedence
+        self.assertEqual(
+            common.resolve_clickhouse_endpoint("http://clickhouse.internal:8123/"),
+            "http://clickhouse.internal:8123",
+        )
+        self.assertEqual(
+            common.resolve_clickhouse_endpoint("clickhouse.internal:8123"),
+            "http://clickhouse.internal:8123",
+        )
+        # Fallback to CLICKHOUSE_ENDPOINT
+        with mock.patch.dict("os.environ", {"CLICKHOUSE_ENDPOINT": "ch-host:9000"}, clear=True):
+            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://ch-host:9000")
+        # Fallback to CLICKHOUSE_HOST and CLICKHOUSE_HTTP_PORT
+        with mock.patch.dict(
+            "os.environ",
+            {"CLICKHOUSE_HOST": "10.0.0.5", "CLICKHOUSE_HTTP_PORT": "8124"},
+            clear=True,
+        ):
+            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://10.0.0.5:8124")
+        # Default fallback
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://127.0.0.1:8123")
+
     def test_resolve_ui_base_url(self) -> None:
         with mock.patch(
             "tools.nightly_tests.xmc_entities_validator.resolve_ui_base_url",
