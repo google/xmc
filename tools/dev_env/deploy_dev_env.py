@@ -48,6 +48,17 @@ from tools.common.tool_utils import (  # noqa: E402
 # ANSI Color Codes
 BOLD = "\033[1m"
 
+# Per-user install directories that login shell profiles commonly add to PATH.
+# Agent and other non-login shells skip those profiles, so binaries installed
+# here look missing even though they are present.
+USER_INSTALL_DIRS: tuple[str, ...] = (
+    "~/.terraform/bin",
+    "~/.local/bin",
+    "~/go/bin",
+    "~/bin",
+    "./cluster-toolkit",
+)
+
 
 def error_exit(msg: str) -> NoReturn:
     """Logs an error message and exits with status 1.
@@ -139,6 +150,43 @@ def parse_version(v: str) -> tuple[int, ...]:
     return tuple(map(int, re.findall(r"\d+", v)[:3]))
 
 
+def _find_off_path_binary(binary: str) -> pathlib.Path | None:
+    """Searches well-known user install directories for an executable binary.
+
+    Args:
+        binary: Name of the executable to look for.
+
+    Returns:
+        Path to the first executable match, or None if no directory contains it.
+    """
+    for install_dir in USER_INSTALL_DIRS:
+        candidate = pathlib.Path(install_dir).expanduser() / binary
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _require_binary_on_path(binary: str) -> None:
+    """Exits with an actionable error if a required CLI binary is not on PATH.
+
+    Args:
+        binary: Name of the required executable.
+    """
+    if shutil.which(binary):
+        return
+    off_path_binary = _find_off_path_binary(binary)
+    if off_path_binary is None:
+        error_exit(
+            f"CLI dependency '{binary}' was not found on PATH or in any of: "
+            f"{', '.join(USER_INSTALL_DIRS)}."
+        )
+    error_exit(
+        f"CLI dependency '{binary}' was found at '{off_path_binary}' but is not on PATH "
+        "(agent/non-login shells do not load your shell profile); "
+        f"add '{off_path_binary.parent}' to PATH."
+    )
+
+
 def _verify_binaries() -> None:
     """Verifies required CLI binaries are installed and gcluster is executable."""
     required_binaries = [
@@ -150,8 +198,7 @@ def _verify_binaries() -> None:
         "bazel",
     ]
     for binary in required_binaries:
-        if not shutil.which(binary):
-            error_exit(f"CLI dependency '{binary}' is required but not installed.")
+        _require_binary_on_path(binary)
 
     local_gcluster = pathlib.Path("./cluster-toolkit/gcluster")
     if not local_gcluster.is_file() or not os.access(local_gcluster, os.X_OK):
