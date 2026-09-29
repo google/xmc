@@ -91,9 +91,10 @@ ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [Click
 Navigate into your master directory containing the `cluster-toolkit` folder and compile the blueprint:
 
 ```bash
-./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force \
+  --vars helm_chart_content_hash=$(python3 tools/dev_env/chart_fingerprint.py deploy/helm)
 ```
-This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code.
+This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code. The `helm_chart_content_hash` variable fingerprints the chart contents, so template-only edits (including deleted templates) still trigger a Helm upgrade.
 
 > [!IMPORTANT]
 > `gcluster create --force` copies the Helm chart into `ctk-out/<deployment_name>/.ghpc/staged/` but never deletes files that were removed from the repository, so deleted templates keep being deployed. When re-compiling an existing deployment after Helm templates were removed or renamed, delete that directory first (`rm -rf ctk-out/<deployment_name>/.ghpc/staged`); `gcluster create` re-stages every file. The `tools/dev_env` deploy and upgrade tooling does this automatically.

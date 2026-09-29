@@ -106,14 +106,16 @@ class CompileBlueprintTest(unittest.TestCase):
     """Tests for compile_blueprint."""
 
     @mock.patch.object(blueprint_compiler, "run_command")
+    @mock.patch.object(blueprint_compiler, "compute_chart_content_hash", return_value="abc123")
     @mock.patch.object(blueprint_compiler, "purge_staged_artifacts")
-    def test_purges_before_gcluster_create(self, mock_purge, mock_run) -> None:
+    def test_purges_before_gcluster_create(self, mock_purge, mock_hash, mock_run) -> None:
         order = mock.Mock()
         order.attach_mock(mock_purge, "purge")
         order.attach_mock(mock_run, "run")
 
         blueprint_compiler.compile_blueprint("my-config.yaml", _DEPLOYMENT)
 
+        mock_hash.assert_called_once_with(Path("deploy/helm"))
         self.assertEqual(
             order.mock_calls,
             [
@@ -127,6 +129,8 @@ class CompileBlueprintTest(unittest.TestCase):
                         "my-config.yaml",
                         "-o",
                         "ctk-out",
+                        "--vars",
+                        "helm_chart_content_hash=abc123",
                         "-l",
                         "WARNING",
                         "-w",
