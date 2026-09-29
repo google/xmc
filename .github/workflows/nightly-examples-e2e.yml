@@ -60,7 +60,7 @@ jobs:
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=60 --gpus=0'
             verify_module: 'tools.nightly_tests.simple_job_verify'
-            expected_queue: '${{ inputs.queue_name || 'cpu-queue' }}'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'clickhouse_metrics_job'
             name: 'ClickHouse Metrics Job'
@@ -68,7 +68,7 @@ jobs:
             entrypoint: 'launch.py'
             args: ''
             verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
-            expected_queue: '${{ inputs.queue_name || 'cpu-queue' }}'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
 
     env:
