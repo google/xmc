@@ -62,7 +62,7 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 	}
 	ns := crreader.ResolveNamespace(src.Namespace)
 	comp, err := src.Getter.GetComponent(ctx, ns, ClickHouseComponentName)
-	if apierrors.IsNotFound(err) || (err == nil && crreader.IsDisabled(comp)) {
+	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
 		logging.Info(ctx, "ClickHouse Component CR is absent or disabled; falling back to static environment configuration", "namespace", ns, "component", ClickHouseComponentName)
 		return xmcclickhouse.GetOptions()
 	}
