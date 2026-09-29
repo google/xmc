@@ -838,6 +838,7 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 		delete(m.actuatedGenerations, key)
 	}
 	delete(m.componentChartPaths, key)
+	delete(m.repairNeeded, key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -864,6 +865,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 		delete(m.actuatedGenerations, key)
 	}
 	delete(m.componentChartPaths, key)
+	delete(m.repairNeeded, key)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
 	return nil
