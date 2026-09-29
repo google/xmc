@@ -196,7 +196,7 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
 
 > [!CAUTION]
 > **STRICT INVARIANTS**:
-> 1. **NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT USER CONFIRMATION**: The agent MUST NOT call `publish_release.py`, run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
+> 1. **NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT USER CONFIRMATION**: The agent MUST NOT call `publish_release.py` (without `--dry-run`), run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after running the `--dry-run` preflight check and presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
 > 2. **NEVER USE `--force` TO OVERWRITE AN EXISTING TAG OR RELEASE AUTONOMOUSLY**: If a tag or release already exists locally or on the remote, abort immediately and consult the user.
 
 1. **Wait for Explicit User Approval**:
@@ -220,7 +220,7 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
    Once the collaborative proofreading window is complete and the user explicitly requests making the release public, promote the draft release:
    ```bash
    TAG="<version>"
-   gh release edit "${TAG}" --draft=false
+   gh release edit "v${TAG#v}" --draft=false
    ```
    > [!CAUTION]
    > Promoting a draft release to public is an irreversible public action and MUST NOT be performed autonomously. It requires an explicit user confirmation gate (e.g., "promote release to public").
