@@ -20,8 +20,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/redis/go-redis/v9"
 	"xmanager_cloud/logging/logging"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // streamInspector is the subset of Redis stream commands required for backlog inspection.
@@ -30,9 +31,7 @@ type streamInspector interface {
 	XRangeN(ctx context.Context, stream, start, stop string, count int64) *redis.XMessageSliceCmd
 }
 
-// BacklogLength returns the number of unprocessed messages (pending + undelivered) for the
-// consumer group on the publisher's stream. The count is exact below maxThreshold and capped
-// just above it.
+// BacklogLength implements Publisher.BacklogLength for the client's stream.
 func (p *PublisherClient) BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
 	return streamBacklogLength(ctx, p.Client, p.StreamName, group, maxThreshold)
 }

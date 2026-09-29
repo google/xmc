@@ -27,6 +27,11 @@ import (
 	"sync"
 	"time"
 
+	"xmanager_cloud/common/interfaces"
+	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/task_queue_redis/redisclient"
+
 	"github.com/google/uuid"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"golang.org/x/oauth2/google"
@@ -35,14 +40,11 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/common/interfaces"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -412,9 +414,7 @@ func (c *Client) PingRedis(ctx context.Context) error {
 	return c.redisClient.Ping(ctx)
 }
 
-// CalculateBacklogLength returns the number of tasks on the task stream not yet processed
-// (pending + undelivered) by the given consumer group. The count is exact below maxThreshold
-// and capped just above it.
+// CalculateBacklogLength returns the consumer group's backlog on the task stream.
 func (c *Client) CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
 	if c == nil || c.redisClient == nil {
 		logging.Warn(ctx, "Task queue Redis client not configured; reporting empty backlog")

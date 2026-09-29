@@ -21,8 +21,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"xmanager_cloud/logging/logging"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // TaskResult is the return type of TaskHandler.

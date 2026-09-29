@@ -38,9 +38,7 @@ const (
 // enqueuing actuation tasks and checking the downstream backlog.
 type TaskQueue interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
-	// CalculateBacklogLength returns the number of tasks in the downstream task queue not yet
-	// processed by the given consumer group. The count is exact below maxThreshold and capped
-	// just above it.
+	// CalculateBacklogLength returns the consumer group's backlog, capped just above maxThreshold.
 	CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
 }
 
