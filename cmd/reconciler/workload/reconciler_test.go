@@ -416,21 +416,23 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 }
 
 // levelRecorder is a slog.Handler that records the level of every log record
-// it receives, so tests can assert on emitted log severities.
+// it receives, so tests can assert on emitted log severities. Handlers derived
+// via WithAttrs/WithGroup are new instances (per the slog.Handler contract) that
+// share the same levels slice.
 type levelRecorder struct {
-	levels []slog.Level
+	levels *[]slog.Level
 }
 
 func (h *levelRecorder) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *levelRecorder) Handle(_ context.Context, r slog.Record) error {
-	h.levels = append(h.levels, r.Level)
+	*h.levels = append(*h.levels, r.Level)
 	return nil
 }
 
-func (h *levelRecorder) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *levelRecorder) WithAttrs([]slog.Attr) slog.Handler { return &levelRecorder{levels: h.levels} }
 
-func (h *levelRecorder) WithGroup(string) slog.Handler { return h }
+func (h *levelRecorder) WithGroup(string) slog.Handler { return &levelRecorder{levels: h.levels} }
 
 func TestHasValidXMCLabels(t *testing.T) {
 	testCases := []struct {
@@ -465,8 +467,8 @@ func TestHasValidXMCLabels(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			recorder := &levelRecorder{}
-			ctx := logging.WithLogger(t.Context(), slog.New(recorder))
+			var recordedLevels []slog.Level
+			ctx := logging.WithLogger(t.Context(), slog.New(&levelRecorder{levels: &recordedLevels}))
 			workload := &v1beta1.Workload{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-workload"},
 				Spec: v1beta1.WorkloadSpec{
@@ -481,7 +483,7 @@ func TestHasValidXMCLabels(t *testing.T) {
 			if got := hasValidXMCLabels(ctx, workload); got != tc.want {
 				t.Errorf("hasValidXMCLabels() = %v, want %v", got, tc.want)
 			}
-			if diff := cmp.Diff(tc.wantLevels, recorder.levels); diff != "" {
+			if diff := cmp.Diff(tc.wantLevels, recordedLevels); diff != "" {
 				t.Errorf("hasValidXMCLabels() logged unexpected levels (-want +got):\n%s", diff)
 			}
 		})
