@@ -149,7 +149,7 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 
 	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: ":8081"},
+		Metrics:                metricsserver.Options{BindAddress: fmt.Sprintf(":%d", cfg.MetricsPort)},
 		HealthProbeBindAddress: ":8080",
 		Cache: cache.Options{
 			ByObject: map[runtimeclient.Object]cache.ByObject{

@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -55,23 +56,23 @@ import (
 )
 
 var (
-	reconcileTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileTotal = promauto.With(ctrlmetrics.Registry).NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_reconcile_total",
 		Help: "Total number of JobSet reconciliations started",
 	}, []string{})
 
-	reconcileErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileErrorsTotal = promauto.With(ctrlmetrics.Registry).NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_reconcile_errors_total",
 		Help: "Total number of JobSet reconciliations that returned an error",
 	}, []string{})
 
-	reconcileDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	reconcileDuration = promauto.With(ctrlmetrics.Registry).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "jobset_reconcile_duration_milliseconds",
 		Help:    "Duration of JobSet Reconcile calls in milliseconds",
 		Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000},
 	}, []string{})
 
-	updatesSentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesSentTotal = promauto.With(ctrlmetrics.Registry).NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the JobSet reconciler",
 	}, []string{})
@@ -79,7 +80,7 @@ var (
 	// mlRunSyncDuration measures the wall-clock the reconcile loop spends in the
 	// MLRun path, so we can tell how much MLRun creation adds to a reconcile
 	// (compare against jobset_reconcile_duration_milliseconds).
-	mlRunSyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	mlRunSyncDuration = promauto.With(ctrlmetrics.Registry).NewHistogram(prometheus.HistogramOpts{
 		Name:    "jobset_reconciler_mlrun_sync_duration_seconds",
 		Help:    "Wall-clock time the reconciler spends in the MLRun path per reconcile.",
 		Buckets: mlRunLatencyBuckets,

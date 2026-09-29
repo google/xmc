@@ -23,6 +23,7 @@ import (
 
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
@@ -42,41 +43,45 @@ const (
 	KueueSyncSource
 )
 
+// metricsFactory registers batcher metrics with the controller-runtime registry,
+// which is served by the manager's metrics endpoint.
+var metricsFactory = promauto.With(ctrlmetrics.Registry)
+
 var (
-	updatesAddedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesAddedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_updates_added_total",
 		Help: "Total number of updates added to the batcher",
 	}, []string{"xid"})
 
-	batchesProcessedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	batchesProcessedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_cycles_processed_total",
 		Help: "Total number of batch processing cycles completed",
 	}, []string{})
 
-	updatesProcessedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesProcessedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_updates_processed_total",
 		Help: "Total number of work unit updates processed",
 	}, []string{"xid"})
 
-	experimentsPerCycle = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	experimentsPerCycle = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_experiments_per_cycle",
 		Help:    "Distribution of the number of experiments processed in each cycle",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	}, []string{})
 
-	workunitsPerExperiment = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	workunitsPerExperiment = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_workunits_per_experiment",
 		Help:    "Distribution of the number of work unit updates per experiment in each cycle",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	}, []string{"xid"})
 
-	batchProcessingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	batchProcessingDuration = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_cycle_duration_seconds",
 		Help:    "Duration of the batch processing cycle",
 		Buckets: prometheus.DefBuckets,
 	}, []string{})
 
-	updateWorkUnitExecutionsCalls = promauto.NewCounterVec(
+	updateWorkUnitExecutionsCalls = metricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_calls_total",
 			Help: "Total number of calls to UpdateWorkUnitExecutions per experiment.",
@@ -84,7 +89,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updateWorkUnitExecutionsSuccess = promauto.NewCounterVec(
+	updateWorkUnitExecutionsSuccess = metricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_success_total",
 			Help: "Total number of successful calls to UpdateWorkUnitExecutions per experiment.",
@@ -92,7 +97,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updateWorkUnitExecutionsFailures = promauto.NewCounterVec(
+	updateWorkUnitExecutionsFailures = metricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_failures_total",
 			Help: "Total number of failed calls to UpdateWorkUnitExecutions per experiment.",
@@ -100,7 +105,7 @@ var (
 		[]string{"xid", "reason"},
 	)
 
-	updateWorkUnitExecutionsDuration = promauto.NewHistogramVec(
+	updateWorkUnitExecutionsDuration = metricsFactory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "xmc_actuator_batcher_update_duration_seconds",
 			Help:    "Duration of UpdateWorkUnitExecutions calls.",
@@ -109,7 +114,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updatesPerBatch = promauto.NewHistogramVec(
+	updatesPerBatch = metricsFactory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "xmc_actuator_batcher_updates_per_batch",
 			Help:    "Number of work unit updates per batch call to UpdateWorkUnitExecutions.",
