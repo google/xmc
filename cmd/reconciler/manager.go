@@ -38,7 +38,6 @@ import (
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
-	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	ss "xmanager_cloud/storage/spanner/spanner"
@@ -55,7 +54,6 @@ type Manager struct {
 	batcher       *shared.UpdateBatcher
 	k8sClient     *k8sclient.Client
 	spannerClient *spanner.Client
-	kueueSync     *kueuesync.Reconciler
 	cleanup       func() error
 	closeOnce     sync.Once
 	closeErr      error
@@ -92,14 +90,9 @@ func (m *Manager) Close() error {
 	return m.closeErr
 }
 
-// Start starts background workers and the controller-runtime manager.
+// Start starts the controller-runtime manager, which in turn runs all
+// registered controllers and background runnables until ctx is cancelled.
 func (m *Manager) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if m.kueueSync != nil {
-		go m.kueueSync.RunPositionInQueueSync(ctx)
-	}
 	return startManager(ctx, m.ctrlMgr)
 }
 
@@ -255,7 +248,7 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
 		newMLRunCreator(ctx, gceMeta.ProjectID, cfg.MldiagnosticsEnvironment, gceMeta.Location))
 
-	batcher, kueueSyncReconciler, err := registerControllers(ctx, controllerRegistrationParams{
+	batcher, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,
 		cfg:         cfg,
 		storage:     storage,
@@ -285,7 +278,6 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		batcher:       batcher,
 		k8sClient:     k8sClient,
 		spannerClient: spannerClient,
-		kueueSync:     kueueSyncReconciler,
 		cleanup:       cleanup,
 	}, nil
 }
