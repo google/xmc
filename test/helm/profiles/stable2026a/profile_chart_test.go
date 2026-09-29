@@ -154,6 +154,7 @@ func TestProfileChart_RendersOnlyCatalogComponentCRs(t *testing.T) {
 	}{
 		{name: "default values"},
 		{name: "all components enabled", overrides: allEnabled},
+		{name: "wrapper-chart global key", overrides: map[string]any{"global": map[string]any{"foo": "bar"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

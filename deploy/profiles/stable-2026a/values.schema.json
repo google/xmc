@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "xmc-profile-stable-2026a values",
-  "description": "Values for the stable-2026a profile. Install this chart as a top-level release only; it is not intended to be nested under another chart (global rejects unknown keys).",
+  "description": "Values for the stable-2026a profile. Unknown components and per-component keys are rejected. global accepts additional keys so the profile can be nested under a wrapper chart that defines its own globals; only platformProfile and imageTag are constrained.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "global": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "platformProfile": { "const": "stable-2026a" },
         "imageTag": { "type": "string" }

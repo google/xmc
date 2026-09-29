@@ -71,6 +71,8 @@ components:
 - **Recover a stuck uninstall:** if the admission policy denied the uninstall and the release is stuck in `uninstalling`, patch each remaining CR, for example `kubectl patch components.xmc.dev <name> -n xmc --type=merge -p '{"spec":{"deletionProtection":false}}'`, then run `helm uninstall` again.
 - **Remove a component from the catalog:** first ship a profile patch that sets the component to `enabled: false` and `deletionProtection: false`. Otherwise the admission policy denies the delete that the next `helm upgrade` performs.
 
+Renders with `deletionProtection: false` intentionally fail the component linter, because the profile [`rules.yaml`](rules.yaml) sets `enforceDeletionProtection: true`. Apply these teardown and removal steps without the lint gate.
+
 ## Values Contract
 
 Per-component overrides live under `components.<name>` and are deep-merged over that component's `values.yaml`. Explicit `false`, `0`, and `""` overrides are honored, and lists (such as `dependencies`) replace the defaults. `null` overrides are not supported: the schema rejects most of them, and Helm drops the rest so the component default applies. Use `[]` or an explicit value instead.
@@ -79,6 +81,7 @@ Per-component overrides live under `components.<name>` and are deep-merged over 
 | :--- | :--- | :--- |
 | `global.platformProfile` | all | Fixed to `stable-2026a`. |
 | `global.imageTag` | `ingestion-gateway` | Image tag rendered into `spec.imageTag`. |
+| Other `global.*` keys | none | Accepted so the profile can be nested under a wrapper chart with its own globals; the component templates ignore them. |
 | `enabled` | all | Renders `spec.enabled`. |
 | `namespace` | all | Namespace of the `Component` CR. Must be a DNS-1123 label. |
 | `deletionProtection` | all | Renders `spec.deletionProtection`. |

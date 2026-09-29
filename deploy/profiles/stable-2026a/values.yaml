@@ -1,8 +1,9 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 
-# Admin values for the stable-2026a profile. Every key is validated by
-# values.schema.json; unknown keys are rejected.
+# Admin values for the stable-2026a profile, validated by values.schema.json.
+# Unknown components and per-component keys are rejected; global also accepts
+# keys defined by a wrapper chart.
 
 global:
   # Fixed profile identity; must equal "stable-2026a".
