@@ -184,6 +184,9 @@ func TestNewCacheOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newCacheOptions() unexpected error: %v", err)
 	}
+	if len(opts.ByObject) != 2 {
+		t.Errorf("newCacheOptions() expected 2 ByObject entries, got %d", len(opts.ByObject))
+	}
 	selectors := make(map[string]labels.Selector)
 	for obj, byObj := range opts.ByObject {
 		switch obj.(type) {
