@@ -49,6 +49,48 @@ func TestHasChartFile(t *testing.T) {
 	}
 }
 
+func TestIsNestedChartRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	for _, rel := range []string{
+		"outer/Chart.yaml",
+		"outer/components/a/Chart.yaml",
+		"outer/charts/sub/Chart.yaml",
+		"standalone/Chart.yaml",
+		"plain/values.yaml",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("failed to create directory for %s: %v", rel, err)
+		}
+		writeFileIn(filepath.Base(path))(t, filepath.Dir(path))
+	}
+
+	tests := []struct {
+		name     string
+		walkRoot string
+		dir      string
+		want     bool
+	}{
+		{name: "not a chart root", walkRoot: ".", dir: "plain"},
+		{name: "no enclosing chart", walkRoot: ".", dir: "standalone"},
+		{name: "enclosed by chart below walk root", walkRoot: ".", dir: "outer/components/a", want: true},
+		{name: "enclosed by chart at walk root", walkRoot: "outer", dir: "outer/components/a", want: true},
+		{name: "vendored subchart", walkRoot: ".", dir: "outer/charts/sub"},
+		{name: "enclosing chart outside walk root", walkRoot: "outer/components", dir: "outer/components/a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isNestedChartRoot(filepath.Join(root, tt.walkRoot), filepath.Join(root, tt.dir))
+			if got != tt.want {
+				t.Errorf("isNestedChartRoot(%q, %q) = %v, want %v", tt.walkRoot, tt.dir, got, tt.want)
+			}
+		})
+	}
+}
+
 // writeFileIn returns a setup step writing an empty file with the given name.
 func writeFileIn(name string) func(t *testing.T, dir string) {
 	return func(t *testing.T, dir string) {

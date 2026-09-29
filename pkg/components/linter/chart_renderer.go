@@ -91,11 +91,16 @@ func isNestedChartRoot(absWalkRoot, dir string) bool {
 	if !hasChartFile(dir) {
 		return false
 	}
-	outer := findChartRoot(dir)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	// findChartRoot starts its search at the parent of absDir, so it returns the enclosing chart.
+	outer := findChartRoot(absDir)
 	if outer == "" {
 		return false
 	}
-	if absDir, err := filepath.Abs(dir); err != nil || filepath.Dir(absDir) == filepath.Join(outer, "charts") {
+	if filepath.Dir(absDir) == filepath.Join(outer, "charts") {
 		return false
 	}
 	rel, err := filepath.Rel(absWalkRoot, outer)
