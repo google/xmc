@@ -19,7 +19,7 @@ Demonstrates submitting an experiment and multiple WorkUnits targeted at a speci
 to showcase workload lifecycle.
 
 Usage:
-    python3 launch.py --queue=cpu-cluster-queue --num_work_units=3 --duration=60 --gpus=0
+    python3 launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0
 """
 
 from __future__ import annotations
