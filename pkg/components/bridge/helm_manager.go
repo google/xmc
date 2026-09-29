@@ -118,6 +118,9 @@ type K8sHelmManager struct {
 	upgradeSeq      uint64
 	// healthVerifiedAt records when a component's release was last observed deployed, to throttle Status calls.
 	healthVerifiedAt map[string]time.Time
+	// repairNeeded marks component keys whose actuated release was found missing, failed, or drifted from its manifest;
+	// it forces the next Ensure1PComponent to re-run the Helm upgrade at the current generation.
+	repairNeeded map[string]bool
 
 	stopMu      sync.RWMutex
 	stopped     bool
@@ -195,6 +198,7 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		upgradeErrs:         make(map[string]error),
 		pendingUpgrades:     make(map[string]uint64),
 		healthVerifiedAt:    make(map[string]time.Time),
+		repairNeeded:        make(map[string]bool),
 		upgradeSem:          make(chan struct{}, 1),
 		upgradeChan:         make(chan upgradeRequest, 100),
 		stopCh:              make(chan struct{}),
@@ -737,9 +741,10 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	} else {
 		delete(m.componentChartPaths, key)
 	}
+	repair := m.repairNeeded[key]
 	m.mu.Unlock()
 
-	if !modified && !chartPathChanged && m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
+	if !modified && !chartPathChanged && !repair && m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
 		return nil
 	}
 
@@ -752,9 +757,10 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 		m.activeState = make(map[string]bool)
 	}
 	m.activeState[key] = opts.Enabled
+	delete(m.repairNeeded, key)
 	m.mu.Unlock()
 
-	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled)
+	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled, "repair", repair)
 	return nil
 }
 
@@ -791,6 +797,7 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	if m.actuatedGenerations != nil {
 		delete(m.actuatedGenerations, key)
 	}
+	delete(m.repairNeeded, key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -862,7 +869,8 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	return nil
 }
 
-// IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
+// IsComponentActuated returns true if the component is active, was actuated at the given generation without errors,
+// and its release has not since been found missing, failed, or drifted.
 func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
@@ -870,7 +878,7 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	key := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.activeState[key] {
+	if !m.activeState[key] || m.repairNeeded[key] {
 		return false
 	}
 	if m.upgradeErrs != nil && m.upgradeErrs[key] != nil {
@@ -994,7 +1002,9 @@ func (m *K8sHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) 
 	return m.releaseHealth(ctx, ref)
 }
 
-// releaseHealth returns the cached deployed verdict if still fresh, otherwise queries Helm and caches a deployed result.
+// releaseHealth returns the cached deployed verdict if still fresh, otherwise queries Helm, verifies that every object
+// in the deployed release still exists, and caches a healthy result. A missing, terminally failed, or drifted release
+// marks the component for repair so the next reconcile pass re-runs its Helm upgrade at the current generation.
 func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
 	releaseName := ComponentReleaseName(ref.Name)
 	m.mu.RLock()
@@ -1006,14 +1016,56 @@ func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (b
 	rel, err := m.runner.Status(ctx, releaseName, ref.Namespace)
 	healthy, reason, msg := evaluateReleaseHealth(releaseName, rel, err)
 	if healthy {
-		m.mu.Lock()
+		healthy, reason, msg = m.releaseResourceHealth(ctx, releaseName, rel)
+	}
+	m.recordReleaseHealth(ctx, ref, healthy, reason)
+	return healthy, reason, msg
+}
+
+// releaseResourceHealth reports drift when objects rendered by a deployed release no longer exist in the cluster.
+// Lookup failures are transient: the deployed verdict is kept so an API blip never triggers a re-upgrade.
+func (m *K8sHelmManager) releaseResourceHealth(ctx context.Context, releaseName string, rel *release.Release) (bool, string, string) {
+	deployedMsg := fmt.Sprintf("Helm release %q deployed", releaseName)
+	missing, err := m.runner.MissingResources(ctx, rel)
+	if err != nil {
+		logging.Warn(ctx, "Failed to verify Helm release resources; trusting deployed status", "release", releaseName, "err", err)
+		return true, ReasonComponentHealthy, deployedMsg
+	}
+	if len(missing) == 0 {
+		return true, ReasonComponentHealthy, deployedMsg
+	}
+	return false, ReasonHelmReleaseDrifted, fmt.Sprintf("Helm release %q is missing %d resource(s) (%s); re-applying the release", releaseName, len(missing), strings.Join(missing, ", "))
+}
+
+// recordReleaseHealth caches a healthy verdict, or marks the component for repair when the release needs re-applying.
+func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentRef, healthy bool, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if healthy {
 		if m.healthVerifiedAt == nil {
 			m.healthVerifiedAt = make(map[string]time.Time)
 		}
 		m.healthVerifiedAt[ref.String()] = time.Now()
-		m.mu.Unlock()
+		return
 	}
-	return healthy, reason, msg
+	if !releaseNeedsRepair(reason) {
+		return
+	}
+	if m.repairNeeded == nil {
+		m.repairNeeded = make(map[string]bool)
+	}
+	m.repairNeeded[componentKey(ref.Namespace, ref.Name)] = true
+	logging.Warn(ctx, "Component Helm release needs repair; scheduling re-upgrade at current generation", "name", ref.Name, "namespace", ref.Namespace, "reason", reason)
+}
+
+// releaseNeedsRepair reports whether a health reason means the release must be re-applied: it is missing, in a
+// terminal non-deployed state, or its objects drifted. Transient and in-flight reasons never trigger repair.
+func releaseNeedsRepair(reason string) bool {
+	switch reason {
+	case ReasonHelmReleaseNotFound, ReasonHelmReleaseNotReady, ReasonHelmReleaseDrifted:
+		return true
+	}
+	return false
 }
 
 // evaluateReleaseHealth maps a Helm status query result to a health verdict, condition reason, and message.
