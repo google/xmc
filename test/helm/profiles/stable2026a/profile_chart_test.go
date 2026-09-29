@@ -18,7 +18,6 @@
 package stable2026a_test
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,9 +43,6 @@ const (
 	renderedComponentsKey = "xmc-profile-stable-2026a/templates/components.yaml"
 )
 
-// catalogOrder is the dependency order in which templates/components.yaml renders components.
-var catalogOrder = []string{"redpanda", "clickhouse", "ingestion-gateway"}
-
 // profileChartDir locates the profile chart in Bazel runfiles (TEST_SRCDIR) or, under plain
 // go test, relative to this package directory.
 func profileChartDir(t *testing.T) string {
@@ -67,20 +63,25 @@ func profileChartDir(t *testing.T) string {
 	return ""
 }
 
-// renderChart renders the chart at chartDir with overrides through the Helm SDK, including
-// .helmignore filtering and values.schema.json validation, and returns rendered templates keyed
-// by "<chart>/<path>".
-func renderChart(chartDir, releaseName string, overrides map[string]any) (map[string]string, error) {
-	ch, err := loader.Load(chartDir)
+// loadChart loads the chart at dir through the Helm SDK, applying .helmignore.
+func loadChart(t *testing.T, dir string) *chart.Chart {
+	t.Helper()
+	ch, err := loader.Load(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load chart %s: %w", chartDir, err)
+		t.Fatalf("failed to load chart %s: %v", dir, err)
 	}
-	return renderLoadedChart(ch, releaseName, overrides)
+	return ch
 }
 
-// renderLoadedChart renders an already loaded chart, so tests can modify ch.Files in memory
-// before rendering.
-func renderLoadedChart(ch *chart.Chart, releaseName string, overrides map[string]any) (map[string]string, error) {
+// profileChart loads a fresh copy of the profile meta-chart, which tests may modify in memory.
+func profileChart(t *testing.T) *chart.Chart {
+	t.Helper()
+	return loadChart(t, profileChartDir(t))
+}
+
+// renderChart renders ch with overrides through the Helm SDK, including values.schema.json
+// validation, and returns rendered templates keyed by "<chart>/<path>".
+func renderChart(ch *chart.Chart, releaseName string, overrides map[string]any) (map[string]string, error) {
 	opts := chartutil.ReleaseOptions{Name: releaseName, Namespace: "xmc", Revision: 1, IsInstall: true}
 	vals, err := chartutil.ToRenderValues(ch, overrides, opts, nil)
 	if err != nil {
@@ -89,14 +90,22 @@ func renderLoadedChart(ch *chart.Chart, releaseName string, overrides map[string
 	return engine.Render(ch, vals)
 }
 
-// renderProfileDocs renders the profile meta-chart and returns its decoded YAML documents.
-func renderProfileDocs(t *testing.T, overrides map[string]any) []map[string]any {
+// renderProfileDocs renders a profile chart and returns its decoded Component documents.
+func renderProfileDocs(t *testing.T, ch *chart.Chart, overrides map[string]any) []map[string]any {
 	t.Helper()
-	rendered, err := renderChart(profileChartDir(t), "xmc-profile", overrides)
+	rendered, err := renderChart(ch, "xmc-profile", overrides)
 	if err != nil {
 		t.Fatalf("renderChart(profile, %v) failed: %v", overrides, err)
 	}
 	return decodeDocs(t, rendered[renderedComponentsKey])
+}
+
+// assertErrorContains fails the test unless err is non-nil and its message contains want.
+func assertErrorContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("renderChart() error = %v, want error containing %q", err, want)
+	}
 }
 
 // componentOverrides builds admin values that override a single catalog component.
@@ -123,9 +132,18 @@ func decodeDocs(t *testing.T, manifest string) []map[string]any {
 	}
 }
 
+// lookup returns the value at the key path in a decoded YAML document, or nil when any key is
+// absent.
+func lookup(doc any, keys ...string) any {
+	for _, key := range keys {
+		m, _ := doc.(map[string]any)
+		doc = m[key]
+	}
+	return doc
+}
+
 func docName(doc map[string]any) string {
-	meta, _ := doc["metadata"].(map[string]any)
-	name, _ := meta["name"].(string)
+	name, _ := lookup(doc, "metadata", "name").(string)
 	return name
 }
 
@@ -143,28 +161,23 @@ func docByName(t *testing.T, docs []map[string]any, name string) map[string]any 
 func TestProfileChart_RendersOnlyCatalogComponentCRs(t *testing.T) {
 	t.Parallel()
 
-	allEnabled := map[string]any{"components": map[string]any{
-		"redpanda":          map[string]any{"enabled": true},
-		"clickhouse":        map[string]any{"enabled": true},
-		"ingestion-gateway": map[string]any{"enabled": true, "imageTag": "v1.2.3"},
-	}}
 	tests := []struct {
 		name      string
 		overrides map[string]any
 	}{
 		{name: "default values"},
-		{name: "all components enabled", overrides: allEnabled},
+		{name: "all components enabled", overrides: map[string]any{"components": map[string]any{"redpanda": map[string]any{"enabled": true},
+			"clickhouse": map[string]any{"enabled": true}, "ingestion-gateway": map[string]any{"enabled": true, "imageTag": "v1.2.3"}}}},
 		{name: "wrapper-chart global key", overrides: map[string]any{"global": map[string]any{"foo": "bar"}}},
 	}
+	// templates/components.yaml renders the catalog in dependency order.
+	want := []string{"Component/redpanda", "Component/clickhouse", "Component/ingestion-gateway"}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			var got, want []string
-			for _, doc := range renderProfileDocs(t, tt.overrides) {
+			var got []string
+			for _, doc := range renderProfileDocs(t, profileChart(t), tt.overrides) {
 				got = append(got, fmt.Sprintf("%v/%s", doc["kind"], docName(doc)))
-			}
-			for _, name := range catalogOrder {
-				want = append(want, "Component/"+name)
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("rendered kind/name mismatch (-want +got):\n%s", diff)
@@ -184,28 +197,23 @@ func TestProfileChart_MatchesStandaloneComponentCharts(t *testing.T) {
 		{name: "redpanda defaults", component: "redpanda"},
 		{name: "clickhouse defaults", component: "clickhouse"},
 		{name: "ingestion-gateway defaults", component: "ingestion-gateway"},
-		{name: "redpanda overrides", component: "redpanda", overrides: map[string]any{
-			"enabled": true, "namespace": "data", "deletionProtection": false, "deletionPolicy": "Orphan",
-			"parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"},
-		}},
-		{name: "clickhouse overrides", component: "clickhouse", overrides: map[string]any{
-			"enabled": true, "parameters": map[string]any{"host": "ch.example.internal", "httpPort": 18123},
-		}},
-		{name: "ingestion-gateway overrides", component: "ingestion-gateway", overrides: map[string]any{
-			"enabled": true, "imageTag": "v9", "dependencies": []any{"redpanda"},
-			"parameters": map[string]any{"topicName": "custom", "extraKey": "extra"},
-		}},
+		{name: "redpanda overrides", component: "redpanda", overrides: map[string]any{"enabled": true, "namespace": "data",
+			"deletionProtection": false, "deletionPolicy": "Orphan", "parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"}}},
+		{name: "clickhouse overrides", component: "clickhouse", overrides: map[string]any{"enabled": true,
+			"parameters": map[string]any{"host": "ch.example.internal", "httpPort": 18123}}},
+		{name: "ingestion-gateway overrides", component: "ingestion-gateway", overrides: map[string]any{"enabled": true, "imageTag": "v9",
+			"dependencies": []any{"redpanda"}, "parameters": map[string]any{"topicName": "custom", "extraKey": "extra"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			componentDir := filepath.Join(profileChartDir(t), "components", tt.component)
-			standalone, err := renderChart(componentDir, "xmc-profile", tt.overrides)
+			standalone, err := renderChart(loadChart(t, componentDir), "xmc-profile", tt.overrides)
 			if err != nil {
 				t.Fatalf("renderChart(%s) failed: %v", tt.component, err)
 			}
 			want := decodeDocs(t, standalone[tt.component+"/templates/component.yaml"])
-			got := docByName(t, renderProfileDocs(t, componentOverrides(tt.component, tt.overrides)), tt.component)
+			got := docByName(t, renderProfileDocs(t, profileChart(t), componentOverrides(tt.component, tt.overrides)), tt.component)
 			if diff := cmp.Diff(want, []map[string]any{got}); diff != "" {
 				t.Errorf("profile-rendered %s differs from standalone chart (-standalone +profile):\n%s", tt.component, diff)
 			}
@@ -216,13 +224,8 @@ func TestProfileChart_MatchesStandaloneComponentCharts(t *testing.T) {
 func TestProfileChart_HonorsExplicitFalsyOverrides(t *testing.T) {
 	t.Parallel()
 
-	docs := renderProfileDocs(t, map[string]any{
-		"global": map[string]any{"imageTag": "v2"},
-		"components": map[string]any{
-			"redpanda":          map[string]any{"deletionProtection": false},
-			"ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}},
-		},
-	})
+	docs := renderProfileDocs(t, profileChart(t), map[string]any{"global": map[string]any{"imageTag": "v2"}, "components": map[string]any{
+		"redpanda": map[string]any{"deletionProtection": false}, "ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}}}})
 	tests := []struct {
 		name      string
 		component string
@@ -237,8 +240,7 @@ func TestProfileChart_HonorsExplicitFalsyOverrides(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			spec, _ := docByName(t, docs, tt.component)["spec"].(map[string]any)
-			if diff := cmp.Diff(tt.want, spec[tt.field]); diff != "" {
+			if diff := cmp.Diff(tt.want, lookup(docByName(t, docs, tt.component), "spec", tt.field)); diff != "" {
 				t.Errorf("%s spec.%s mismatch (-want +got):\n%s", tt.component, tt.field, diff)
 			}
 		})
@@ -272,10 +274,8 @@ func TestProfileChart_RejectsInvalidInstalls(t *testing.T) {
 			if releaseName == "" {
 				releaseName = "xmc-profile"
 			}
-			_, err := renderChart(profileChartDir(t), releaseName, tt.overrides)
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("renderChart() error = %v, want error containing %q", err, tt.wantErr)
-			}
+			_, err := renderChart(profileChart(t), releaseName, tt.overrides)
+			assertErrorContains(t, err, tt.wantErr)
 		})
 	}
 }
@@ -284,10 +284,7 @@ func TestProfileChart_RejectsInvalidInstalls(t *testing.T) {
 // file at path with data, or removes the file when remove is true.
 func loadChartWithFileEdit(t *testing.T, path, data string, remove bool) *chart.Chart {
 	t.Helper()
-	ch, err := loader.Load(profileChartDir(t))
-	if err != nil {
-		t.Fatalf("failed to load profile chart: %v", err)
-	}
+	ch := profileChart(t)
 	i := slices.IndexFunc(ch.Files, func(f *chart.File) bool { return f.Name == path })
 	if i < 0 {
 		t.Fatalf("profile chart has no file %q", path)
@@ -300,64 +297,75 @@ func loadChartWithFileEdit(t *testing.T, path, data string, remove bool) *chart.
 	return ch
 }
 
-// redpandaSpecSummary extracts the redpanda spec fields asserted by the file presence tests.
-func redpandaSpecSummary(t *testing.T, rendered map[string]string) map[string]any {
-	t.Helper()
-	spec, _ := docByName(t, decodeDocs(t, rendered[renderedComponentsKey]), "redpanda")["spec"].(map[string]any)
-	params, _ := spec["parameters"].(map[string]any)
-	return map[string]any{
-		"enabled":            spec["enabled"],
-		"deletionProtection": spec["deletionProtection"],
-		"kafkaPort":          params["kafkaPort"],
-	}
-}
-
-// TestProfileChart_ComponentFilePresence checks that empty component files are tolerated, while
-// missing files and invalid YAML fail rendering with a message naming the file.
+// TestProfileChart_ComponentFilePresence checks that an empty component values.yaml is tolerated,
+// while missing files and invalid YAML fail rendering with a message naming the file.
 func TestProfileChart_ComponentFilePresence(t *testing.T) {
 	t.Parallel()
 
-	const chartPath = "components/redpanda/Chart.yaml"
-	const valuesPath = "components/redpanda/values.yaml"
-	const templatePath = "components/redpanda/templates/component.yaml"
+	const dir = "components/redpanda/"
+	missing := func(file string) string { return fmt.Sprintf("required file %q is missing", dir+file) }
+	invalid := func(file string) string { return fmt.Sprintf("xmc-profile: %s: error converting YAML", dir+file) }
 	tests := []struct {
 		name      string
-		path      string
+		file      string
 		data      string
 		remove    bool
 		overrides map[string]any
 		want      map[string]any
 		wantErr   string
 	}{
-		{name: "empty values.yaml renders template defaults", path: valuesPath,
+		{name: "empty values.yaml renders template defaults", file: "values.yaml",
 			want: map[string]any{"enabled": false, "deletionProtection": true, "kafkaPort": "9092"}},
-		{name: "empty values.yaml still applies overrides", path: valuesPath,
+		{name: "empty values.yaml still applies overrides", file: "values.yaml",
 			overrides: componentOverrides("redpanda", map[string]any{"enabled": true, "deletionProtection": false, "parameters": map[string]any{"kafkaPort": 19092}}),
 			want:      map[string]any{"enabled": true, "deletionProtection": false, "kafkaPort": "19092"}},
-		{name: "missing Chart.yaml fails", path: chartPath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", chartPath)},
-		{name: "invalid Chart.yaml fails", path: chartPath, data: "name: [redpanda\n", wantErr: fmt.Sprintf("xmc-profile: %s: error converting YAML", chartPath)},
-		{name: "invalid values.yaml fails", path: valuesPath, data: "enabled: [true\n", wantErr: fmt.Sprintf("xmc-profile: %s: error converting YAML", valuesPath)},
-		{name: "missing values.yaml fails", path: valuesPath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", valuesPath)},
-		{name: "missing component.yaml fails", path: templatePath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", templatePath)},
+		{name: "missing Chart.yaml", file: "Chart.yaml", remove: true, wantErr: missing("Chart.yaml")},
+		{name: "missing values.yaml", file: "values.yaml", remove: true, wantErr: missing("values.yaml")},
+		{name: "missing component.yaml", file: "templates/component.yaml", remove: true, wantErr: missing("templates/component.yaml")},
+		{name: "invalid Chart.yaml", file: "Chart.yaml", data: "name: [redpanda\n", wantErr: invalid("Chart.yaml")},
+		{name: "invalid values.yaml", file: "values.yaml", data: "enabled: [true\n", wantErr: invalid("values.yaml")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderLoadedChart(loadChartWithFileEdit(t, tt.path, tt.data, tt.remove), "xmc-profile", tt.overrides)
+			ch := loadChartWithFileEdit(t, dir+tt.file, tt.data, tt.remove)
 			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("renderLoadedChart() error = %v, want error containing %q", err, tt.wantErr)
-				}
+				_, err := renderChart(ch, "xmc-profile", tt.overrides)
+				assertErrorContains(t, err, tt.wantErr)
 				return
 			}
-			if err != nil {
-				t.Fatalf("renderLoadedChart() failed: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, redpandaSpecSummary(t, rendered)); diff != "" {
+			spec := lookup(docByName(t, renderProfileDocs(t, ch, tt.overrides), "redpanda"), "spec")
+			got := map[string]any{"enabled": lookup(spec, "enabled"), "deletionProtection": lookup(spec, "deletionProtection"), "kafkaPort": lookup(spec, "parameters", "kafkaPort")}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("redpanda spec mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
+}
+
+// readProfileSources decodes profile.yaml, Chart.yaml, values.yaml and values.schema.json (JSON
+// is a subset of YAML) from chartDir, keyed by file name.
+func readProfileSources(t *testing.T, chartDir string) map[string]any {
+	t.Helper()
+	src := map[string]any{}
+	for _, name := range []string{"profile.yaml", "Chart.yaml", "values.yaml", "values.schema.json"} {
+		data, err := os.ReadFile(filepath.Join(chartDir, name))
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", name, err)
+		}
+		var doc map[string]any
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			t.Fatalf("failed to parse %s: %v", name, err)
+		}
+		src[name] = doc
+	}
+	return src
+}
+
+// sortedKeys returns the sorted keys of v if it is a decoded YAML mapping, or nil otherwise.
+func sortedKeys(v any) []string {
+	m, _ := v.(map[string]any)
+	return slices.Sorted(maps.Keys(m))
 }
 
 // TestProfileChart_CatalogIsConsistent guards against catalog drift: a component added to or
@@ -366,41 +374,25 @@ func TestProfileChart_CatalogIsConsistent(t *testing.T) {
 	t.Parallel()
 
 	chartDir := profileChartDir(t)
-	entries, err := os.ReadDir(filepath.Join(chartDir, "components"))
+	chartFiles, err := filepath.Glob(filepath.Join(chartDir, "components", "*", "Chart.yaml"))
 	if err != nil {
-		t.Fatalf("failed to list components/: %v", err)
+		t.Fatalf("failed to list component charts: %v", err)
 	}
-	var componentDirs []string
-	for _, e := range entries {
-		if e.IsDir() {
-			componentDirs = append(componentDirs, e.Name())
-		}
+	var componentDirs, rendered []string
+	for _, f := range chartFiles {
+		componentDirs = append(componentDirs, filepath.Base(filepath.Dir(f)))
 	}
-	var rendered []string
-	for _, doc := range renderProfileDocs(t, nil) {
+	for _, doc := range renderProfileDocs(t, profileChart(t), nil) {
 		rendered = append(rendered, docName(doc))
 	}
-	var values struct {
-		Components map[string]any `yaml:"components"`
-	}
-	readYAML(t, filepath.Join(chartDir, "values.yaml"), &values)
-	var schema struct {
-		Properties struct {
-			Components struct {
-				Properties map[string]any `json:"properties"`
-			} `json:"components"`
-		} `json:"properties"`
-	}
-	readJSON(t, filepath.Join(chartDir, "values.schema.json"), &schema)
-
-	wantDirs := slices.Sorted(slices.Values(componentDirs))
+	src := readProfileSources(t, chartDir)
 	catalogs := map[string][]string{
 		"templates/components.yaml": slices.Sorted(slices.Values(rendered)),
-		"values.yaml":               slices.Sorted(maps.Keys(values.Components)),
-		"values.schema.json":        slices.Sorted(maps.Keys(schema.Properties.Components.Properties)),
+		"values.yaml":               sortedKeys(lookup(src, "values.yaml", "components")),
+		"values.schema.json":        sortedKeys(lookup(src, "values.schema.json", "properties", "components", "properties")),
 	}
 	for source, names := range catalogs {
-		if diff := cmp.Diff(wantDirs, names); diff != "" {
+		if diff := cmp.Diff(slices.Sorted(slices.Values(componentDirs)), names); diff != "" {
 			t.Errorf("%s catalog differs from components/ directories (-dirs +%s):\n%s", source, source, diff)
 		}
 	}
@@ -409,52 +401,25 @@ func TestProfileChart_CatalogIsConsistent(t *testing.T) {
 func TestProfileMetadata_IsConsistent(t *testing.T) {
 	t.Parallel()
 
-	chartDir := profileChartDir(t)
-	var profile struct {
-		Name          string `yaml:"name"`
-		MinXmcVersion string `yaml:"minXmcVersion"`
-		SupportWindow struct {
-			Start string `yaml:"start"`
-			End   string `yaml:"end"`
-		} `yaml:"supportWindow"`
+	src := readProfileSources(t, profileChartDir(t))
+	name, _ := lookup(src, "profile.yaml", "name").(string)
+	if name == "" {
+		t.Fatal("profile.yaml name is empty")
 	}
-	readYAML(t, filepath.Join(chartDir, "profile.yaml"), &profile)
-	var chart struct {
-		Annotations map[string]string `yaml:"annotations"`
-	}
-	readYAML(t, filepath.Join(chartDir, "Chart.yaml"), &chart)
-	var values struct {
-		Global struct {
-			PlatformProfile string `yaml:"platformProfile"`
-		} `yaml:"global"`
-	}
-	readYAML(t, filepath.Join(chartDir, "values.yaml"), &values)
-	var schema struct {
-		Properties struct {
-			Global struct {
-				Properties struct {
-					PlatformProfile struct {
-						Const string `json:"const"`
-					} `json:"platformProfile"`
-				} `json:"properties"`
-			} `json:"global"`
-		} `json:"properties"`
-	}
-	readJSON(t, filepath.Join(chartDir, "values.schema.json"), &schema)
-
-	want := map[string]string{"Chart.yaml annotation": profile.Name, "values.yaml": profile.Name, "values.schema.json": profile.Name}
-	got := map[string]string{
-		"Chart.yaml annotation": chart.Annotations["xmc.dev/profile"],
-		"values.yaml":           values.Global.PlatformProfile,
-		"values.schema.json":    schema.Properties.Global.Properties.PlatformProfile.Const,
+	want := map[string]any{"Chart.yaml annotation": name, "values.yaml": name, "values.schema.json": name}
+	got := map[string]any{
+		"Chart.yaml annotation": lookup(src, "Chart.yaml", "annotations", "xmc.dev/profile"),
+		"values.yaml":           lookup(src, "values.yaml", "global", "platformProfile"),
+		"values.schema.json":    lookup(src, "values.schema.json", "properties", "global", "properties", "platformProfile", "const"),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("profile name %q is not used consistently (-want +got):\n%s", profile.Name, diff)
+		t.Errorf("profile name %q is not used consistently (-want +got):\n%s", name, diff)
 	}
-	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(profile.MinXmcVersion) {
-		t.Errorf("profile.yaml minXmcVersion = %q, want MAJOR.MINOR.PATCH", profile.MinXmcVersion)
+	if v := fmt.Sprint(lookup(src, "profile.yaml", "minXmcVersion")); !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(v) {
+		t.Errorf("profile.yaml minXmcVersion = %q, want MAJOR.MINOR.PATCH", v)
 	}
-	assertSupportWindow(t, profile.SupportWindow.Start, profile.SupportWindow.End)
+	window := lookup(src, "profile.yaml", "supportWindow")
+	assertSupportWindow(t, fmt.Sprint(lookup(window, "start")), fmt.Sprint(lookup(window, "end")))
 }
 
 // assertSupportWindow checks both bounds are YYYY-MM months and start precedes end.
@@ -467,27 +432,5 @@ func assertSupportWindow(t *testing.T, start, end string) {
 	}
 	if !startMonth.Before(endMonth) {
 		t.Errorf("profile.yaml supportWindow start %q must be before end %q", start, end)
-	}
-}
-
-func readYAML(t *testing.T, path string, out any) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %s: %v", path, err)
-	}
-	if err := yaml.Unmarshal(data, out); err != nil {
-		t.Fatalf("failed to parse %s: %v", path, err)
-	}
-}
-
-func readJSON(t *testing.T, path string, out any) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %s: %v", path, err)
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		t.Fatalf("failed to parse %s: %v", path, err)
 	}
 }
