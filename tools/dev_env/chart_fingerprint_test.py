@@ -87,6 +87,26 @@ class ComputeChartContentHashTest(unittest.TestCase):
 
         self.assertEqual(baseline, compute_chart_content_hash(chart_dir))
 
+    def test_ignores_hidden_files_and_directories(self) -> None:
+        chart_dir = self._make_chart("chart", _BASELINE_FILES)
+        baseline = compute_chart_content_hash(chart_dir)
+        (chart_dir / ".DS_Store").write_bytes(b"\0finder")
+        (chart_dir / "templates" / ".git").mkdir()
+        (chart_dir / "templates" / ".git" / "config").write_text("[core]\n")
+        (chart_dir / "templates" / "xid" / ".deployment.yaml.swp").write_bytes(b"swap")
+
+        self.assertEqual(baseline, compute_chart_content_hash(chart_dir))
+
+    def test_helmignore_changes_hash(self) -> None:
+        chart_dir = self._make_chart("chart", _BASELINE_FILES)
+        baseline = compute_chart_content_hash(chart_dir)
+        (chart_dir / ".helmignore").write_text("*.tmp\n")
+        with_helmignore = compute_chart_content_hash(chart_dir)
+        (chart_dir / ".helmignore").write_text("*.bak\n")
+
+        self.assertNotEqual(baseline, with_helmignore)
+        self.assertNotEqual(with_helmignore, compute_chart_content_hash(chart_dir))
+
     def test_missing_directory_raises(self) -> None:
         with self.assertRaises(FileNotFoundError):
             compute_chart_content_hash(self.root / "missing")

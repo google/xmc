@@ -25,13 +25,19 @@ import hashlib
 import sys
 from pathlib import Path
 
+HELMIGNORE_FILENAME = ".helmignore"
+
 
 def compute_chart_content_hash(chart_dir: Path) -> str:
-    """Returns a SHA-256 hex digest over all regular files in a chart.
+    """Returns a SHA-256 hex digest over the content files of a chart.
 
     The digest covers each file's POSIX path relative to `chart_dir` and its
     bytes, visited in sorted path order, so it is independent of filesystem
     iteration order and changes on any file addition, edit, rename, or removal.
+    Hidden files and directories (any path component starting with `.`, such as
+    `.DS_Store`, editor swap files, or `.git/`) are skipped because they never
+    affect the rendered chart. `.helmignore` is the exception: it changes what
+    Helm packages, so it is hashed.
 
     Args:
         chart_dir: Root directory of the Helm chart (e.g. `deploy/helm`).
@@ -45,11 +51,20 @@ def compute_chart_content_hash(chart_dir: Path) -> str:
     if not chart_dir.is_dir():
         raise FileNotFoundError(f"Helm chart directory not found: {chart_dir}")
     digest = hashlib.sha256()
-    files = sorted(p for p in chart_dir.rglob("*") if p.is_file())
+    files = sorted(
+        p
+        for p in chart_dir.rglob("*")
+        if p.is_file() and _is_content_path(p.relative_to(chart_dir))
+    )
     for path in files:
         digest.update(path.relative_to(chart_dir).as_posix().encode() + b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
+
+
+def _is_content_path(rel_path: Path) -> bool:
+    """Reports whether a chart-relative path contributes to the fingerprint."""
+    return all(not part.startswith(".") or part == HELMIGNORE_FILENAME for part in rel_path.parts)
 
 
 def main(argv: list[str]) -> int:
