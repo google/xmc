@@ -48,9 +48,10 @@ Before running any upgrade step, verify that the required CLI tools are installe
 
 > [!CAUTION]
 > **Check Action**: If any CLI check fails (command not found or returns error):
-> 1. **Stop execution immediately**.
-> 2. Alert the user about the missing/broken CLI dependency.
-> 3. Provide installation instructions and do not proceed.
+> 1. **Rule out PATH first**: Apply [PATH-First Diagnosis for Missing CLIs](../../rules/core_engineering.md#9-diagnostic-protocol-bazel-ci--agent-shell--zero-task-polling); if the binary is found, add its directory to `PATH` and re-run the check.
+> 2. If still failing, **stop execution immediately**.
+> 3. Alert the user about the missing/broken CLI dependency.
+> 4. Provide installation instructions and do not proceed.
 
 ### Configuration File Verification (YAML)
 Verify that the deployment configuration YAML file exists. By default, the script looks for `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
