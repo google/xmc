@@ -40,6 +40,22 @@ Glob on the literal path.
 {{- end -}}
 
 {{/*
+xmc-profile.readYaml parses a required chart file as a YAML mapping and merges
+it into dst in place: (list $ path dst). An empty file adds nothing. Invalid
+YAML fails rendering, because fromYaml would otherwise return {"Error": ...}
+and that map would silently flow into the component values or metadata.
+*/}}
+{{- define "xmc-profile.readYaml" -}}
+{{- $root := index . 0 -}}
+{{- $path := index . 1 -}}
+{{- $parsed := include "xmc-profile.readFile" (list $root $path) | fromYaml | default dict -}}
+{{- if hasKey $parsed "Error" -}}
+{{- fail (printf "xmc-profile: %s: %s" $path $parsed.Error) -}}
+{{- end -}}
+{{- include "xmc-profile.mergeInto" (list (index . 2) $parsed) -}}
+{{- end -}}
+
+{{/*
 xmc-profile.component renders the Component CR of one catalog component:
 (list $ name). Values resolve like a Helm sub-chart:
   components/<name>/values.yaml <- {global: .Values.global} <- .Values.components.<name>
@@ -53,8 +69,10 @@ named templates (_*.tpl) or use .Files, because those are not loaded here.
 {{- $root := index . 0 -}}
 {{- $name := index . 1 -}}
 {{- $dir := printf "components/%s" $name -}}
-{{- $meta := include "xmc-profile.readFile" (list $root (printf "%s/Chart.yaml" $dir)) | fromYaml -}}
-{{- $values := include "xmc-profile.readFile" (list $root (printf "%s/values.yaml" $dir)) | fromYaml | default dict -}}
+{{- $meta := dict -}}
+{{- include "xmc-profile.readYaml" (list $root (printf "%s/Chart.yaml" $dir) $meta) -}}
+{{- $values := dict -}}
+{{- include "xmc-profile.readYaml" (list $root (printf "%s/values.yaml" $dir) $values) -}}
 {{- $body := include "xmc-profile.readFile" (list $root (printf "%s/templates/component.yaml" $dir)) -}}
 {{- include "xmc-profile.mergeInto" (list $values (dict "global" ($root.Values.global | default dict))) -}}
 {{- include "xmc-profile.mergeInto" (list $values (index ($root.Values.components | default dict) $name | default dict)) -}}

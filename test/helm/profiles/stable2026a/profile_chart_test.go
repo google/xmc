@@ -279,9 +279,9 @@ func TestProfileChart_RejectsInvalidInstalls(t *testing.T) {
 	}
 }
 
-// loadChartWithFileEdit loads the profile chart and, in memory only, empties or removes the file
-// at path.
-func loadChartWithFileEdit(t *testing.T, path string, remove bool) *chart.Chart {
+// loadChartWithFileEdit loads the profile chart and, in memory only, replaces the content of the
+// file at path with data, or removes the file when remove is true.
+func loadChartWithFileEdit(t *testing.T, path, data string, remove bool) *chart.Chart {
 	t.Helper()
 	ch, err := loader.Load(profileChartDir(t))
 	if err != nil {
@@ -295,11 +295,11 @@ func loadChartWithFileEdit(t *testing.T, path string, remove bool) *chart.Chart 
 		ch.Files = slices.Delete(ch.Files, i, i+1)
 		return ch
 	}
-	ch.Files[i] = &chart.File{Name: path, Data: []byte{}}
+	ch.Files[i] = &chart.File{Name: path, Data: []byte(data)}
 	return ch
 }
 
-// redpandaSpecSummary extracts the redpanda spec fields asserted by the file edit tests.
+// redpandaSpecSummary extracts the redpanda spec fields asserted by the file presence tests.
 func redpandaSpecSummary(t *testing.T, rendered map[string]string) map[string]any {
 	t.Helper()
 	spec, _ := docByName(t, decodeDocs(t, rendered[renderedComponentsKey]), "redpanda")["spec"].(map[string]any)
@@ -311,14 +311,18 @@ func redpandaSpecSummary(t *testing.T, rendered map[string]string) map[string]an
 	}
 }
 
-func TestProfileChart_ToleratesEmptyComponentFiles(t *testing.T) {
+// TestProfileChart_ComponentFilePresence checks that empty component files are tolerated, while
+// missing files and invalid YAML fail rendering with a message naming the file.
+func TestProfileChart_ComponentFilePresence(t *testing.T) {
 	t.Parallel()
 
+	const chartPath = "components/redpanda/Chart.yaml"
 	const valuesPath = "components/redpanda/values.yaml"
 	const templatePath = "components/redpanda/templates/component.yaml"
 	tests := []struct {
 		name      string
 		path      string
+		data      string
 		remove    bool
 		overrides map[string]any
 		want      map[string]any
@@ -329,13 +333,16 @@ func TestProfileChart_ToleratesEmptyComponentFiles(t *testing.T) {
 		{name: "empty values.yaml still applies overrides", path: valuesPath,
 			overrides: componentOverrides("redpanda", map[string]any{"enabled": true, "deletionProtection": false, "parameters": map[string]any{"kafkaPort": 19092}}),
 			want:      map[string]any{"enabled": true, "deletionProtection": false, "kafkaPort": "19092"}},
+		{name: "missing Chart.yaml fails", path: chartPath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", chartPath)},
+		{name: "invalid Chart.yaml fails", path: chartPath, data: "name: [redpanda\n", wantErr: fmt.Sprintf("xmc-profile: %s: error converting YAML", chartPath)},
+		{name: "invalid values.yaml fails", path: valuesPath, data: "enabled: [true\n", wantErr: fmt.Sprintf("xmc-profile: %s: error converting YAML", valuesPath)},
 		{name: "missing values.yaml fails", path: valuesPath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", valuesPath)},
 		{name: "missing component.yaml fails", path: templatePath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", templatePath)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderLoadedChart(loadChartWithFileEdit(t, tt.path, tt.remove), "xmc-profile", tt.overrides)
+			rendered, err := renderLoadedChart(loadChartWithFileEdit(t, tt.path, tt.data, tt.remove), "xmc-profile", tt.overrides)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("renderLoadedChart() error = %v, want error containing %q", err, tt.wantErr)
