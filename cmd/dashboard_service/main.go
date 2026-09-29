@@ -128,10 +128,10 @@ func buildClickHouseResolver(enableComponents bool, namespace string) dataengine
 	)
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
 		mu.Lock()
-		defer mu.Unlock()
 		if getter == nil {
 			g, err := crreader.NewK8sGetter()
 			if err != nil {
+				mu.Unlock()
 				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
 			}
 			getter = g
@@ -139,11 +139,15 @@ func buildClickHouseResolver(enableComponents bool, namespace string) dataengine
 		if secrets == nil {
 			s, err := crreader.NewK8sSecretReader()
 			if err != nil {
+				mu.Unlock()
 				return "", nil, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
 			}
 			secrets = s
 		}
-		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}
+		g, s := getter, secrets
+		mu.Unlock()
+
+		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: s}
 		return resolveClickHouseWithSource(src, nil)(ctx)
 	}
 }
