@@ -20,8 +20,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
+	constants "xmanager_cloud/kubernetes/common/constants"
 )
 
 type fakeStartManager struct {
@@ -158,6 +164,60 @@ func TestInitSpannerAndStorage_EmptyDBName(t *testing.T) {
 	}
 	if st != nil {
 		t.Errorf("initSpannerAndStorage() storage = %v, want nil", st)
+	}
+}
+
+func TestNewScheme(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("newScheme() unexpected error: %v", err)
+	}
+	for _, obj := range []runtimeclient.Object{&corev1.Pod{}, &v1alpha2.JobSet{}, &v1beta1.Workload{}, &v1beta1.ClusterQueue{}} {
+		if _, _, err := scheme.ObjectKinds(obj); err != nil {
+			t.Errorf("newScheme() does not recognize %T: %v", obj, err)
+		}
+	}
+}
+
+func TestNewCacheOptions(t *testing.T) {
+	opts, err := newCacheOptions()
+	if err != nil {
+		t.Fatalf("newCacheOptions() unexpected error: %v", err)
+	}
+	selectors := make(map[string]labels.Selector)
+	for obj, byObj := range opts.ByObject {
+		switch obj.(type) {
+		case *v1alpha2.JobSet:
+			selectors["jobset"] = byObj.Label
+		case *corev1.Pod:
+			selectors["pod"] = byObj.Label
+		default:
+			t.Errorf("newCacheOptions() has unexpected ByObject entry for %T", obj)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		object string
+		labels labels.Set
+		want   bool
+	}{
+		{name: "xmc-managed jobset", object: "jobset", labels: labels.Set{constants.ManagedByLabel: constants.XmcLabelValue}, want: true},
+		{name: "foreign jobset", object: "jobset", labels: labels.Set{constants.ManagedByLabel: "someone-else"}, want: false},
+		{name: "unlabeled jobset", object: "jobset", labels: labels.Set{}, want: false},
+		{name: "jobset pod", object: "pod", labels: labels.Set{v1alpha2.JobSetNameKey: "js"}, want: true},
+		{name: "non-jobset pod", object: "pod", labels: labels.Set{"app": "other"}, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sel, ok := selectors[tc.object]
+			if !ok || sel == nil {
+				t.Fatalf("newCacheOptions() has no label selector for %s", tc.object)
+			}
+			if got := sel.Matches(tc.labels); got != tc.want {
+				t.Errorf("%s selector %q Matches(%v) = %t, want %t", tc.object, sel, tc.labels, got, tc.want)
+			}
+		})
 	}
 }
 
