@@ -214,25 +214,39 @@ image_tag: latest
         for name, which_result, installed_off_path, want_error_substrings in test_cases:
             with (
                 self.subTest(name),
-                tempfile.TemporaryDirectory() as install_dir,
+                tempfile.TemporaryDirectory() as raw_install_dir,
                 patch("shutil.which", return_value=which_result),
-                patch.object(deploy_dev_env, "USER_INSTALL_DIRS", (install_dir,)),
-                patch.object(deploy_dev_env, "log_error") as mock_log_error,
             ):
-                if installed_off_path:
-                    binary_path = pathlib.Path(install_dir) / "terraform"
-                    binary_path.touch(mode=0o755)
+                install_dir = str(pathlib.Path(raw_install_dir).resolve())
+                with (
+                    patch.object(deploy_dev_env, "USER_INSTALL_DIRS", (install_dir,)),
+                    patch.object(deploy_dev_env, "log_error") as mock_log_error,
+                ):
+                    self._assert_require_binary_on_path(
+                        install_dir, installed_off_path, want_error_substrings, mock_log_error
+                    )
 
-                if not want_error_substrings:
-                    deploy_dev_env._require_binary_on_path("terraform")
-                    mock_log_error.assert_not_called()
-                    continue
+    def _assert_require_binary_on_path(
+        self,
+        install_dir: str,
+        installed_off_path: bool,
+        want_error_substrings: tuple[str, ...],
+        mock_log_error: MagicMock,
+    ) -> None:
+        """Runs one _require_binary_on_path case against a resolved install dir."""
+        if installed_off_path:
+            (pathlib.Path(install_dir) / "terraform").touch(mode=0o755)
 
-                with self.assertRaises(SystemExit):
-                    deploy_dev_env._require_binary_on_path("terraform")
-                logged_message = mock_log_error.call_args.args[0]
-                for substring in want_error_substrings:
-                    self.assertIn(substring.format(install_dir=install_dir), logged_message)
+        if not want_error_substrings:
+            deploy_dev_env._require_binary_on_path("terraform")
+            mock_log_error.assert_not_called()
+            return
+
+        with self.assertRaises(SystemExit):
+            deploy_dev_env._require_binary_on_path("terraform")
+        logged_message = mock_log_error.call_args.args[0]
+        for substring in want_error_substrings:
+            self.assertIn(substring.format(install_dir=install_dir), logged_message)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_check_terraform_version_success(self, mock_run):

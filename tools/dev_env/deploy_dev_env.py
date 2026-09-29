@@ -56,7 +56,6 @@ USER_INSTALL_DIRS: tuple[str, ...] = (
     "~/.local/bin",
     "~/go/bin",
     "~/bin",
-    "./cluster-toolkit",
 )
 
 
@@ -157,12 +156,13 @@ def _find_off_path_binary(binary: str) -> pathlib.Path | None:
         binary: Name of the executable to look for.
 
     Returns:
-        Path to the first executable match, or None if no directory contains it.
+        Absolute path to the first executable match, or None if no directory
+        contains it.
     """
     for install_dir in USER_INSTALL_DIRS:
         candidate = pathlib.Path(install_dir).expanduser() / binary
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
+            return candidate.resolve()
     return None
 
 

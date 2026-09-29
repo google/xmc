@@ -19,8 +19,8 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
    export IAP_CLIENT_ID="<your-oauth-iap-client-id>.apps.googleusercontent.com"
    export XMC_CLIENT_SA="<client-sa>@<your-gcp-project-id>.iam.gserviceaccount.com"
    ```
-   Without `XMANAGER_ENDPOINT` the client dials its built-in placeholder endpoint; without
-   `IAP_CLIENT_ID` / `XMC_CLIENT_SA` it prompts for them interactively.
+   Without `XMANAGER_ENDPOINT`, the client dials its built-in placeholder endpoint; without
+   `IAP_CLIENT_ID` / `XMC_CLIENT_SA`, it prompts for them interactively.
 
 > [!IMPORTANT]
 > `--queue` takes the Kueue **LocalQueue** name (`cpu-queue`, `gpu-queue`, `tpu-queue`), not the
