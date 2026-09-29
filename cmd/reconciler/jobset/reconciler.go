@@ -347,11 +347,11 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
 	parsedLabels, err := labels.ParseXMCLabels(jobSet.Labels)
-	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
-	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if err != nil {
 		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to parse XMC labels for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err))
 	}
+	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
+	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 
 	var result ctrl.Result
 	var podErrorMsg, startupWarningMsg string
