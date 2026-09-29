@@ -96,7 +96,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
   TAG=agy
   CONV=<conversation_id>
   ```
-- **Environment & URL Sanitization Policy**: Public documentation (`docs/*.md`), PR descriptions, and public commit messages must never expose specific development environment identifiers, private cluster names, internal domain hostnames (`*.example.com`), test GCP project IDs, or live internal cluster/runner capacity sizing numbers (e.g., exact GKE node pool `minNodeCount`/`maxNodeCount` or ARC `minRunners`/`maxRunners` replica counts). Use generalized phrasing (e.g. "Live GKE Development Environment via deployment script" or generic example placeholders) in public docs and manual verification evidence.
+- **Environment & URL Sanitization Policy**: Public documentation (`docs/*.md`), PR descriptions, and public commit messages must never expose specific development environment identifiers, private cluster names, internal domain hostnames (`*.example.com`), test GCP project IDs, or live internal cluster/runner capacity sizing numbers (e.g., exact GKE node pool `minNodeCount`/`maxNodeCount` or ARC `minRunners`/`maxRunners` replica counts). Use generalized phrasing (e.g., "Live GKE Development Environment via deployment script" or generic example placeholders) in public docs and manual verification evidence.
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback Policy
