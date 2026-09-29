@@ -965,6 +965,56 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	}
 }
 
+// TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration guards against a component staying Ready while
+// objects of its Helm release were deleted out of band: the bridge must report drift, then re-apply the release
+// on the next pass without waiting for a new CR generation.
+func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.T) {
+	ctx := context.Background()
+	runner := &mockHelmActionRunner{
+		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
+		missing:   []string{"Role/ingestion-components-reader"},
+	}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	r, err := NewReconciler(&mockCMS{}, nil, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		HasFinalizer: true, DeletionProtection: true, Enabled: true,
+		ExistingConditions: []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() detecting drift failed: %v", err)
+	}
+	wantDrifted := healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseDrifted}
+	if diff := cmp.Diff(wantDrifted, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions on drift detection mismatch (-want +got):\n%s", diff)
+	}
+	if got := runner.upgradeCalls; got != 0 {
+		t.Errorf("upgradeCalls after drift detection = %d, want 0", got)
+	}
+
+	in.ExistingConditions = res.Conditions
+	res, err = r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() repairing drift failed: %v", err)
+	}
+	wantHealthy := healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy}
+	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions after repair mismatch (-want +got):\n%s", diff)
+	}
+	if got := runner.upgradeCalls; got != 1 {
+		t.Errorf("upgradeCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
+	}
+}
+
 func TestHealthConditionStatuses(t *testing.T) {
 	tests := []struct {
 		healthy      bool
@@ -977,6 +1027,7 @@ func TestHealthConditionStatuses(t *testing.T) {
 		{reason: ReasonHelmStatusUnavailable, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
 		{reason: ReasonHelmReleaseStuck, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
 		{reason: ReasonHelmReleaseNotReady, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
+		{reason: ReasonHelmReleaseDrifted, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
 	}
 	for _, tt := range tests {
 		ready, degraded := healthConditionStatuses(tt.healthy, tt.reason)

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	"helm.sh/helm/v3/pkg/action"
@@ -40,6 +41,8 @@ type HelmActionRunner interface {
 	Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error)
 	// Status returns the latest recorded revision of the release. Missing releases yield an error matching driver.ErrReleaseNotFound.
 	Status(ctx context.Context, releaseName, namespace string) (*release.Release, error)
+	// MissingResources returns "Kind/name" for every object in rel's manifest that no longer exists in the cluster.
+	MissingResources(ctx context.Context, rel *release.Release) ([]string, error)
 }
 
 // SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
@@ -156,6 +159,34 @@ func (r *SDKHelmActionRunner) Status(ctx context.Context, releaseName, namespace
 		return nil, fmt.Errorf("helm status failed for release %q in namespace %q: %w", releaseName, namespace, err)
 	}
 	return rel, nil
+}
+
+// MissingResources parses rel's rendered manifest (hooks excluded) and GETs every object from the cluster, returning
+// "Kind/name" for each one that is NotFound. Any other lookup error aborts the check and is returned.
+func (r *SDKHelmActionRunner) MissingResources(ctx context.Context, rel *release.Release) ([]string, error) {
+	if rel == nil {
+		return nil, errors.New("helm release is nil")
+	}
+	actionConfig, err := r.newActionConfig(ctx, rel.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	resources, err := actionConfig.KubeClient.Build(strings.NewReader(rel.Manifest), false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse manifest of Helm release %q: %w", rel.Name, err)
+	}
+	var missing []string
+	for _, info := range resources {
+		getErr := info.Get()
+		if apierrors.IsNotFound(getErr) {
+			missing = append(missing, info.Mapping.GroupVersionKind.Kind+"/"+info.Name)
+			continue
+		}
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get %s %q of Helm release %q: %w", info.Mapping.GroupVersionKind.Kind, info.Name, rel.Name, getErr)
+		}
+	}
+	return missing, nil
 }
 
 // newActionConfig initializes a Helm action configuration scoped to namespace using the runner's storage driver.

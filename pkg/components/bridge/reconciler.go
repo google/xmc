@@ -85,6 +85,9 @@ const (
 	ReasonHelmReleaseStuck = "HelmReleaseStuck"
 	// ReasonHelmStatusUnavailable indicates a transient failure querying Helm release status; health is left unchanged.
 	ReasonHelmStatusUnavailable = "HelmStatusUnavailable"
+	// ReasonHelmReleaseDrifted indicates objects rendered by the deployed Helm release are missing from the cluster;
+	// the bridge re-applies the release at the current generation to recreate them.
+	ReasonHelmReleaseDrifted = "HelmReleaseDrifted"
 )
 
 // CMSClient defines the interface for communicating with the CMS control plane.
