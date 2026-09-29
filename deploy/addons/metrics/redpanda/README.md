@@ -74,10 +74,11 @@ Review and adjust `deploy/addons/metrics/redpanda/values.yaml` as needed for you
 
 ### 5. Deploy Redpanda
 
-Deploy Redpanda using Helm with the provided `values.yaml`:
+Deploy Redpanda (chart version `5.8.3`, packaging Redpanda application binary `v24.1.x`, compatible with ClickHouse `24.3`) using Helm with the provided `values.yaml`:
 
 ```bash
 helm install redpanda redpanda/redpanda \
+    --version 5.8.3 \
     --namespace xmc-metrics \
     --create-namespace \
     -f values.yaml

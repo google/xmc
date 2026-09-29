@@ -41,10 +41,9 @@ kubectl config set-context --current --namespace=xmc-metrics
 
 #### Option A: Public Helm Repositories (Requires Direct Internet Access)
 
-Add the official ClickHouse / ClickStack Helm repositories:
+Add the official ClickStack Helm repository:
 
 ```bash
-helm repo add clickhouse https://charts.clickhouse.com
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
 helm repo update
 ```
