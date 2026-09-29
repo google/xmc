@@ -182,63 +182,13 @@ def _check_connectivity() -> None:
     print("In another terminal run: curl http://localhost:8080/actuate/health")
 
 
-def _check_log_monitor(
-    environment: str | None,
-    region: str | None,
-    project_id: str | None,
-) -> None:
-    """Checks readiness status of Cloud Run Log Monitor service.
-
-    Args:
-      environment: Target deployment environment.
-      region: Target GCP region.
-      project_id: Target GCP project ID.
-    """
-    print("\n--- 7. Cloud Run Log Monitor Status ---")
-    if not environment or not region or not project_id:
-        print("⚠️ Skipping Log Monitor check: ENVIRONMENT, REGION, or PROJECT_ID is not set.")
-        return
-
-    svc_name = f"xmc-log-monitor-{environment}"
-    print(f"Checking Cloud Run Service: {svc_name} in {region}...")
-
-    gcloud_cmd = [
-        "gcloud",
-        "run",
-        "services",
-        "list",
-        f"--filter=metadata.name={svc_name} AND status.conditions.type=Ready",
-        "--flatten=status.conditions",
-        "--format=value(status.conditions.status)",
-        "--platform",
-        "managed",
-        "--region",
-        region,
-        "--project",
-        project_id,
-    ]
-    status = _run_command(gcloud_cmd).strip()
-
-    if not status:
-        print(f"❌ Log Monitor Cloud Run service {svc_name} not found or status is unavailable.")
-        return
-
-    print(f"Service Status (Ready): {status}")
-
-    if status != "True":
-        print("❌ Log Monitor Cloud Run service is NOT Ready.")
-        return
-
-    print("✅ Log Monitor Cloud Run service is running and Ready.")
-
-
 def _check_components(enable_components: bool) -> None:
     """Checks status of foundational component controllers if enabled.
 
     Args:
       enable_components: Whether foundational component controllers are enabled.
     """
-    print("\n--- 8. Component Controllers Status ---")
+    print("\n--- 7. Component Controllers Status ---")
     if not enable_components:
         print("ℹ️ Skipping Component Controllers check: enable_components is false.")
         return
@@ -266,10 +216,9 @@ def main() -> int:
     print("XManager on Cloud (XMC) v2 Verification")
     print("=========================================")
 
-    env, region, project_id, enable_components = _resolve_config()
+    _, _, _, enable_components = _resolve_config()
     _check_k8s_resources()
     _check_connectivity()
-    _check_log_monitor(env, region, project_id)
     _check_components(enable_components)
 
     print("=========================================")

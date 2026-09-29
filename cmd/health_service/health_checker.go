@@ -26,7 +26,6 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/components/summary"
 
-	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -41,7 +40,6 @@ type HealthCheckerParams struct {
 	EssHealthClient          health.SpannerHealthClient
 	XidHealthClient          health.SpannerHealthClient
 	RedisClient              RedisPingClient
-	CloudRunService          *run.Service
 	EssExpectedSchemaVersion int64
 	XidExpectedSchemaVersion int64
 	ComponentsProvider       summary.CustomComponentsInfoProvider
@@ -54,7 +52,6 @@ type HealthChecker struct {
 	essHealthClient          health.SpannerHealthClient
 	xidHealthClient          health.SpannerHealthClient
 	redisClient              RedisPingClient
-	cloudRunService          *run.Service
 	essExpectedSchemaVersion int64
 	xidExpectedSchemaVersion int64
 	componentsProvider       summary.CustomComponentsInfoProvider
@@ -81,7 +78,6 @@ func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		essHealthClient:          params.EssHealthClient,
 		xidHealthClient:          params.XidHealthClient,
 		redisClient:              params.RedisClient,
-		cloudRunService:          params.CloudRunService,
 		essExpectedSchemaVersion: params.EssExpectedSchemaVersion,
 		xidExpectedSchemaVersion: params.XidExpectedSchemaVersion,
 		componentsProvider:       params.ComponentsProvider,
@@ -242,7 +238,7 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 		{
 			name: "Log Monitor",
 			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				return c.checkCloudRunComponent(ctx, "Log Monitor", c.cfg.LogMonitorResourceName)
+				return c.checkHTTPComponent(ctx, "Log Monitor", c.cfg.LogMonitorURL, "/healthz")
 			},
 		},
 		{
@@ -408,72 +404,6 @@ func (c *HealthChecker) checkRedis(ctx context.Context) *spb.ComponentHealth {
 	return &spb.ComponentHealth{
 		Name:        "Redis",
 		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-}
-
-func (c *HealthChecker) checkCloudRunComponent(ctx context.Context, name string, serviceName string) *spb.ComponentHealth {
-	if serviceName == "" {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
-			ErrorMessage: "log monitor resource name is not configured",
-		}
-	}
-
-	if c.cloudRunService == nil {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
-			ErrorMessage: "cloud run client not initialized",
-		}
-	}
-
-	apiCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	resp, err := c.cloudRunService.Projects.Locations.Services.Get(serviceName).Context(apiCtx).Do()
-	if err != nil {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("failed to get service: %v", err),
-		}
-	}
-
-	if resp == nil {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: "received empty response from cloud run API",
-		}
-	}
-
-	if resp.TerminalCondition == nil {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: "terminal condition is missing",
-		}
-	}
-
-	if resp.TerminalCondition.State != "CONDITION_SUCCEEDED" {
-		return &spb.ComponentHealth{
-			Name:         name,
-			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("service not ready: %s (reason: %s, message: %s)", resp.TerminalCondition.State, resp.TerminalCondition.Reason, resp.TerminalCondition.Message),
-		}
-	}
-
-	return &spb.ComponentHealth{
-		Name:        name,
-		Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 	}
 }

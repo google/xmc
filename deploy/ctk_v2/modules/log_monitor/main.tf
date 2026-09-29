@@ -11,12 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-resource "google_project_service" "run_api" {
-  project            = var.project_id
-  service            = "run.googleapis.com"
-  disable_on_destroy = false
-}
-
 resource "google_project_service" "pubsub_api" {
   project            = var.project_id
   service            = "pubsub.googleapis.com"
@@ -35,76 +29,8 @@ resource "google_project_service_identity" "pubsub_sa" {
   service  = "pubsub.googleapis.com"
 }
 
-
-resource "google_cloud_run_v2_service" "log_monitor" {
-  provider            = google-beta
-  project             = google_project_service.run_api.project
-  name                = "xmc-log-monitor-${var.environment}"
-  location            = var.region
-  deletion_protection = var.deletion_protection
-
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-
-  template {
-    service_account = var.service_account_email
-
-    scaling {
-      # min instance is added so that the service is always active and can
-      # listen to the pubsub topic.
-      min_instance_count = 1
-      max_instance_count = 1
-    }
-
-    containers {
-      image = var.image_url
-
-      resources {
-        cpu_idle = false
-      }
-
-      ports {
-        container_port = 8080
-      }
-
-      startup_probe {
-        initial_delay_seconds = 0
-        timeout_seconds       = 5
-        period_seconds        = 10
-        failure_threshold     = 3
-        http_get {
-          path = "/healthz"
-        }
-      }
-
-      liveness_probe {
-        initial_delay_seconds = 0
-        timeout_seconds       = 5
-        period_seconds        = 30
-        failure_threshold     = 3
-        http_get {
-          path = "/healthz"
-        }
-      }
-      env {
-        name  = "PUBSUB_SUBSCRIPTION_ID"
-        value = google_pubsub_subscription.log_monitor_subscription.name
-      }
-      env {
-        name  = "GOOGLE_CLOUD_PROJECT"
-        value = var.project_id
-      }
-      args = [
-        "-alsologtostderr",
-        "-spanner_database_name=projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}",
-        "-quota_project_id=${var.project_id}",
-        "-log_keyword=${var.logging_sink_custom_keyword}",
-        "-max_concurrent_updates=${var.max_concurrent_updates}",
-      ]
-    }
-  }
-
-  depends_on = [google_project_service.run_api]
-}
+# The Log Monitor workload that consumes log_monitor_subscription runs in GKE and is deployed by the
+# Helm chart (deploy/helm/templates/log-monitor); this module only provisions the log pipeline.
 
 resource "google_pubsub_topic" "log_monitor_topic" {
   project = google_project_service.pubsub_api.project

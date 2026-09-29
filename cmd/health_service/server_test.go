@@ -338,7 +338,6 @@ func TestListConfigEntries(t *testing.T) {
 		EssHealthClient: nil,
 		XidHealthClient: nil,
 		RedisClient:     nil,
-		CloudRunService: nil,
 	})
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)

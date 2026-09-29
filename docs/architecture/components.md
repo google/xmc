@@ -19,7 +19,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
-| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | Cloud Run service | HTTP health endpoint | Terraform module |
+| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (single replica) | HTTP `8080` (health) | always |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
 Container images are pinned per service through the `*_custom_image` values in
@@ -90,13 +90,13 @@ The operator-facing diagnostic surface, reachable at `/v1/health`. Three RPCs:
 
 - `GetHealthStatus` — runs checks in parallel against the ESS and XID Spanner databases (including
   reporting the applied schema migration version), Redis, peer gRPC services via the standard gRPC
-  health protocol, peer HTTP services, and Cloud Run services such as the Log Monitor.
+  health protocol, and peer HTTP services, including the Log Monitor's `/healthz`.
 - `ListConfigEntries` — returns the effective runtime configuration of the deployment, so operators
   can confirm what a running pod actually has rather than what the chart intended.
 - `GetUserInfo` — returns the calling identity as the platform sees it, including group membership
   resolved through Cloud Identity. Administrative responses are gated by an admin role guard.
 
-**Depends on:** Cloud Spanner (both databases), Redis, ESS, XID, Cloud Run API, Cloud Identity API.
+**Depends on:** Cloud Spanner (both databases), Redis, ESS, XID, Log Monitor, Cloud Identity API.
 
 ### 2.4 Dashboard Service
 
@@ -238,7 +238,8 @@ reach it with `kubectl port-forward` (see [`deploy/local`](../../deploy/local)).
 ### 4.2 Log Monitor
 
 **Source:** [`cmd/log_monitor`](../../cmd/log_monitor) ·
-**Infrastructure:** [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor)
+**Chart:** [`deploy/helm/templates/log-monitor`](../../deploy/helm/templates/log-monitor) ·
+**Log pipeline:** [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor)
 
 Turns interesting workload log lines into structured status messages that appear alongside a work
 unit in the UI. A Cloud Logging sink selects container logs that carry XMC's managed-by and
@@ -248,6 +249,11 @@ each entry into a `StructuredMessage` with a mapped severity and extracted stack
 batch by experiment, and writes the updates to Spanner.
 
 Because the filter is applied at the sink, the Log Monitor never sees the full log firehose.
+
+It runs as a single-replica GKE `Deployment` under the `log-monitor-service-account` Kubernetes
+service account, which Workload Identity maps to the dedicated `xmc-lm-sa` Google service account.
+The Terraform module provisions only the sink, topics, and subscription; the chart always deploys
+the workload.
 
 **Depends on:** Pub/Sub, Cloud Spanner.
 

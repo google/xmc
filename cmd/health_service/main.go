@@ -47,8 +47,6 @@ import (
 	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
 
-	run "google.golang.org/api/run/v2"
-
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
@@ -220,11 +218,6 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		redisPingClient = publisher
 	}
 
-	cloudRunService, err := run.NewService(ctx)
-	if err != nil {
-		logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
-	}
-
 	customProvider, compSpannerClient := initCustomComponentsProvider(ctx, cfg)
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
@@ -232,7 +225,6 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		EssHealthClient:          essSpannerClient,
 		XidHealthClient:          xidSpannerClient,
 		RedisClient:              redisPingClient,
-		CloudRunService:          cloudRunService,
 		EssExpectedSchemaVersion: version.EssExpectedSchemaVersion(),
 		XidExpectedSchemaVersion: version.XidExpectedSchemaVersion(),
 		ComponentsProvider:       customProvider,

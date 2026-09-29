@@ -161,45 +161,6 @@ vars:
         self.assertIn("Gateway IP Address: 35.240.10.20", output)
         self.assertIn("Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output)
 
-    def test_check_log_monitor_missing_env(self):
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor(None, "us-central1", "proj")
-
-        output = captured.getvalue()
-        self.assertIn("Skipping Log Monitor check", output)
-
-    @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_log_monitor_ready(self, mock_run):
-        mock_run.return_value = "True\n"
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
-
-        output = captured.getvalue()
-        self.assertIn("Service Status (Ready): True", output)
-        self.assertIn("Log Monitor Cloud Run service is running and Ready.", output)
-
-    @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_log_monitor_not_ready(self, mock_run):
-        mock_run.return_value = "False\n"
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
-
-        output = captured.getvalue()
-        self.assertIn("Log Monitor Cloud Run service is NOT Ready.", output)
-
-    @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_log_monitor_not_found(self, mock_run):
-        mock_run.return_value = ""
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
-
-        output = captured.getvalue()
-        self.assertIn("not found or status is unavailable", output)
-
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_components_disabled(self, mock_run):
         captured = io.StringIO()
@@ -208,7 +169,7 @@ vars:
 
         mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
+        self.assertIn("--- 7. Component Controllers Status ---", output)
         self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
 
     @mock.patch.object(verify_xmc, "_run_command")
@@ -219,11 +180,10 @@ vars:
 
         mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
+        self.assertIn("--- 7. Component Controllers Status ---", output)
         self.assertIn("Foundational Component Controllers enabled.", output)
 
     @mock.patch.object(verify_xmc, "_check_components")
-    @mock.patch.object(verify_xmc, "_check_log_monitor")
     @mock.patch.object(verify_xmc, "_check_connectivity")
     @mock.patch.object(verify_xmc, "_check_k8s_resources")
     @mock.patch.object(verify_xmc, "_resolve_config")
@@ -234,7 +194,6 @@ vars:
         mock_resolve_config,
         mock_k8s,
         mock_connectivity,
-        mock_log_monitor,
         mock_components,
     ):
         mock_resolve_config.return_value = ("dev", "us-central1", "test-proj", True)
@@ -247,7 +206,6 @@ vars:
         mock_resolve_config.assert_called_once()
         mock_k8s.assert_called_once()
         mock_connectivity.assert_called_once()
-        mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj")
         mock_components.assert_called_once_with(True)
 
 

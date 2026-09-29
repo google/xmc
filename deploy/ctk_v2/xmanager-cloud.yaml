@@ -165,7 +165,6 @@ deployment_groups:
       project_roles:
       - logging.logWriter
       - monitoring.metricWriter
-      - run.viewer
       - iam.securityReviewer
       - serviceusage.serviceUsageConsumer
 
@@ -301,6 +300,12 @@ deployment_groups:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: xid-service
 
+  - id: xmc_wi_binding_log_monitor
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(log_monitor_service_account.service_account_email)
+      k8s_service_account_name: log-monitor-service-account
+
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
     use: [network, workload_service_account]
@@ -381,6 +386,15 @@ deployment_groups:
         client_id: $(vars.iap_client_id)
         client_secret: $(vars.iap_client_secret)
 
+  # Provisions the Cloud Logging sink, Pub/Sub topics and subscription the Log Monitor consumes.
+  # The Log Monitor itself runs in GKE, deployed by xmc_app_helm below from this module's outputs.
+  - id: log_monitor
+    source: ./deploy/ctk_v2/modules/log_monitor
+    use: [log_monitor_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      environment: $(vars.environment)
+      service_account_email: $(log_monitor_service_account.service_account_email)
 
   - id: xmc_app_helm
     source: community/modules/management/direct-helm-install
@@ -421,8 +435,15 @@ deployment_groups:
         value: $(vars.admin_panel_observability_url)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
-      - name: healthService.logMonitorResourceName
-        value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
+      - name: log_monitor_custom_image
+        value: $(vars.log_monitor_image)
+      - name: logMonitor.gcpServiceAccount
+        value: $(log_monitor_service_account.service_account_email)
+      - name: logMonitor.subscriptionId
+        value: $(log_monitor.subscription_id)
+      - name: logMonitor.logKeyword
+        value: $(log_monitor.log_keyword)
+        type: string
       - name: healthService.cacheTTL
         value: $(vars.health_status_cache_ttl)
       - name: healthService.forceRefreshMaxRequests
@@ -536,14 +557,3 @@ deployment_groups:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
-
-  - id: log_monitor
-    source: ./deploy/ctk_v2/modules/log_monitor
-    use: [log_monitor_service_account]
-    settings:
-      project_id: $(vars.project_id)
-      region: $(vars.region)
-      environment: $(vars.environment)
-      image_url: $(vars.log_monitor_image)
-      service_account_email: $(log_monitor_service_account.service_account_email)
-      deletion_protection: $(vars.deletion_protection)

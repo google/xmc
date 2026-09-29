@@ -160,6 +160,8 @@ class HelmDeployer:
                     f"databases/{cfg.xid_database}"
                 )
             },
+            # KinD has no logging sink or Pub/Sub subscription for the Log Monitor to consume.
+            "logMonitorDeployment": {"enabled": False},
         }
 
         for s in cfg.enabled_services:

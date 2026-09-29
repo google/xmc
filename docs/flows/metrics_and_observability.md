@@ -157,8 +157,8 @@ When a chart is empty, the pipeline's stages fail in distinguishable ways:
 
 ## 3. Log Monitoring Pipeline
 
-The path that turns an application crash into a user-visible status message. Unlike metrics, it
-runs entirely outside the cluster.
+The path that turns an application crash into a user-visible status message. Unlike metrics, the
+filtering and transport happen in Cloud Logging and Pub/Sub rather than in the cluster.
 
 ```mermaid
 graph LR
@@ -166,7 +166,7 @@ graph LR
     CL["Cloud Logging"]
     SK["Log sink<br/>(filtered)"]
     PS[("Pub/Sub topic")]
-    LM["Log Monitor<br/>(Cloud Run)"]
+    LM["Log Monitor<br/>(GKE)"]
     SP[("Spanner")]
     UI["Web UI"]
 
@@ -177,7 +177,8 @@ graph LR
 A Cloud Logging sink, provisioned by
 [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor), filters container
 logs and routes them to a Pub/Sub topic with a dead-letter topic attached. The Log Monitor is a
-Cloud Run service subscribed to it.
+single-replica GKE `Deployment` ([`deploy/helm/templates/log-monitor`](../../deploy/helm/templates/log-monitor))
+subscribed to it.
 
 For each entry it:
 
@@ -192,11 +193,6 @@ For each entry it:
 Those messages surface through
 [`ListStatusMessages`](experiment_lifecycle.md#7-status-messages) alongside the scheduling and
 startup diagnostics written by the [Reconciler](reconciliation.md).
-
-**Why Cloud Run and not a pod.** The Log Monitor reads a Pub/Sub subscription and writes Spanner —
-it never touches the Kubernetes API. Keeping it out of the cluster means it survives cluster
-problems, which is precisely when its output is most needed. It is also optional: environments that
-do not enable the Terraform module simply get no parsed application errors.
 
 The `XMC LOG:` convention is what makes this affordable. Ingesting every line every job prints
 would be expensive and mostly noise, so the sink filters, and users opt into the pipeline by
@@ -216,7 +212,7 @@ The Health Service answers "is XMC working?" for the UI's status page and for op
 | Actuator | HTTP `GET /readyz` |
 | Reconciler | HTTP `GET /readyz` |
 | XID Service | gRPC health check on `xmc.XidService` |
-| Log Monitor | Cloud Run service state |
+| Log Monitor | HTTP `GET /healthz` |
 | Redis | `PING` |
 | Spanner ESS / Spanner XID | Connectivity **plus schema version comparison** |
 

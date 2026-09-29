@@ -65,7 +65,7 @@ vars:
   # Toggles public endpoints access on GKE Control Plane
   gcp_public_cidrs_access_enabled: false
 
-  # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
+  # If true, deletion protection will be enabled on supported resources (databases)
   deletion_protection: false
 
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)

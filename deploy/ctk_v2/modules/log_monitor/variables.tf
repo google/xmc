@@ -16,20 +16,9 @@ variable "project_id" {
   description = "The GCP project ID where the resources will be created."
 }
 
-variable "region" {
-  type        = string
-  description = "The region for Cloud Run service."
-  default     = "us-central1"
-}
-
-variable "image_url" {
-  type        = string
-  description = "The URL of the container image to deploy."
-}
-
 variable "service_account_email" {
   type        = string
-  description = "The email of the pre-existing service account to use for the Cloud Run service."
+  description = "The email of the pre-existing service account the Log Monitor workload runs as; it is granted subscriber access to the subscription."
 }
 
 variable "pubsub_topic_name" {
@@ -59,16 +48,4 @@ variable "logging_sink_custom_keyword" {
 variable "environment" {
   type        = string
   description = "The environment name."
-}
-
-variable "deletion_protection" {
-  description = "If true, deletion protection will be enabled on created resources."
-  type        = bool
-  default     = false
-}
-
-variable "max_concurrent_updates" {
-  type        = number
-  description = "The maximum number of concurrent updates to Spanner during one batch log processing."
-  default     = 10
 }
