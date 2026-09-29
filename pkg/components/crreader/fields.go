@@ -32,18 +32,23 @@ const (
 )
 
 // IsDisabled reports whether a Component CR is nil, has spec.enabled=false,
-// or is in a disabled, disabling, or deleted status state.
+// has malformed spec.enabled or status.state fields, or is in a disabled, disabling, or deleted status state.
 func IsDisabled(comp *unstructured.Unstructured) bool {
 	if comp == nil || comp.Object == nil {
 		return true
 	}
-	if enabled, ok, err := SpecEnabled(comp); err == nil && ok && !enabled {
+	enabled, ok, err := SpecEnabled(comp)
+	if err != nil {
 		return true
 	}
-	if state, err := StatusState(comp); err == nil {
-		return state == StateDisabled || state == StateDisabling || state == StateDeleted
+	if ok && !enabled {
+		return true
 	}
-	return false
+	state, err := StatusState(comp)
+	if err != nil {
+		return true
+	}
+	return state == StateDisabled || state == StateDisabling || state == StateDeleted
 }
 
 // SpecEnabled extracts spec.enabled from a Component CR.
@@ -82,10 +87,10 @@ func NestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[str
 	if err != nil || !ok || raw == nil {
 		return nil, err
 	}
-	if _, isAnyMap := raw.(map[string]any); !isAnyMap {
-		if _, isStrMap := raw.(map[string]string); !isStrMap {
-			return nil, fmt.Errorf("field %s is not a map (got %T)", strings.Join(fields, "."), raw)
-		}
+	switch raw.(type) {
+	case map[string]any, map[string]string:
+	default:
+		return nil, fmt.Errorf("field %s is not a map (got %T)", strings.Join(fields, "."), raw)
 	}
 	return CoerceStringMap(raw), nil
 }

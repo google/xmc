@@ -81,13 +81,22 @@ func TestIsDisabled(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "malformed status.state type defaults to not disabled when spec.enabled is true",
+			name: "malformed status.state type defaults to disabled when spec.enabled is true",
 			comp: func() *unstructured.Unstructured {
 				u := baselineComponent()
 				_ = unstructured.SetNestedField(u.Object, int64(42), "status", "state")
 				return u
 			}(),
-			want: false,
+			want: true,
+		},
+		{
+			name: "malformed spec.enabled type defaults to disabled",
+			comp: func() *unstructured.Unstructured {
+				u := baselineComponent()
+				_ = unstructured.SetNestedField(u.Object, "not-a-bool", "spec", "enabled")
+				return u
+			}(),
+			want: true,
 		},
 	}
 
