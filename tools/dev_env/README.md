@@ -281,6 +281,9 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--skip-terraform-init`: Skip `terraform init` during deployment.
 
 > [!NOTE]
+> The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy.
+
+> [!NOTE]
 > For step-by-step developer verification workflows, port-forwarding, and manual testing procedures on developer clusters, see the [Developer Cluster Setup & Manual Testing Guide](../../deploy/local/README.md).
 
 ---

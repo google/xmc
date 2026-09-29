@@ -95,6 +95,9 @@ Navigate into your master directory containing the `cluster-toolkit` folder and 
 ```
 This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code.
 
+> [!IMPORTANT]
+> `gcluster create --force` copies the Helm chart into `ctk-out/<deployment_name>/.ghpc/staged/` but never deletes files that were removed from the repository, so deleted templates keep being deployed. When re-compiling an existing deployment after Helm templates were removed or renamed, delete that directory first (`rm -rf ctk-out/<deployment_name>/.ghpc/staged`); `gcluster create` re-stages every file. The `tools/dev_env` deploy and upgrade tooling does this automatically.
+
 ### Step 2: Provision the Infrastructure
 Execute the deployment to begin provisioning:
 

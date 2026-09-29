@@ -44,6 +44,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_success,
     run_command,
 )
+from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
@@ -328,21 +329,7 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    run_command(
-        [
-            "./cluster-toolkit/gcluster",
-            "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
-            "-d",
-            config.config_path,
-            "-o",
-            "ctk-out",
-            "-l",
-            "WARNING",
-            "-w",
-            "--force",
-        ]
-    )
+    compile_blueprint(config.config_path, config.deployment_name)
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
