@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -120,20 +121,35 @@ func buildClickHouseConnector(enableComponents bool, namespace string) dataengin
 	if !enableComponents {
 		return connectClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
 	}
-	getter, err := crreader.NewK8sGetter()
-	if err != nil {
-		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize component CR getter: %w", err))
+	var (
+		mu      sync.Mutex
+		getter  crreader.Getter
+		secrets crreader.SecretReader
+	)
+	return func(ctx context.Context) (dataengine.ClickHouseConn, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if getter == nil {
+			g, err := crreader.NewK8sGetter()
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+			}
+			getter = g
+		}
+		if secrets == nil {
+			s, err := crreader.NewK8sSecretReader()
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
+			}
+			secrets = s
+		}
+		return connectClickHouseWithSource(componentconfig.Source{
+			Enabled:   true,
+			Namespace: namespace,
+			Getter:    getter,
+			Secrets:   secrets,
+		}, nil)(ctx)
 	}
-	secrets, err := crreader.NewK8sSecretReader()
-	if err != nil {
-		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err))
-	}
-	return connectClickHouseWithSource(componentconfig.Source{
-		Enabled:   true,
-		Namespace: namespace,
-		Getter:    getter,
-		Secrets:   secrets,
-	}, nil)
 }
 
 func connectClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Connector {
@@ -154,7 +170,7 @@ func connectClickHouseWithSource(src componentconfig.Source, initErr error) data
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
 func initDataEngine(ctx context.Context) *dataengine.Provider {
-	if !clickhouse.Configured() {
+	if !clickhouse.Configured() && !cfg.EnableComponents {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
