@@ -30,9 +30,7 @@ from examples.xmc_lite_job import k8s_workload_client
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
-_EXP_NAME = flags.DEFINE_string(
-    "exp_name", "xmc-lite-job", "Title of the experiment in SQLite."
-)
+_EXP_NAME = flags.DEFINE_string("exp_name", "xmc-lite-job", "Title of the experiment in SQLite.")
 _WORKLOAD_MODE = flags.DEFINE_enum(
     "workload_mode", "jobset", ["jobset", "job"], "Kubernetes workload kind."
 )
@@ -42,9 +40,7 @@ _NAMESPACE = flags.DEFINE_string(
 _LOCAL_QUEUE = flags.DEFINE_string("local_queue", "", "Optional Kueue LocalQueue name.")
 _NUM_WORK_UNITS = flags.DEFINE_integer("num_work_units", 1, "Number of WorkUnits to launch.")
 _DURATION = flags.DEFINE_integer("duration", 30, "Worker sleep duration in seconds.")
-_IMAGE = flags.DEFINE_string(
-    "image", "python:3.11-slim", "Container image URI to execute on GKE."
-)
+_IMAGE = flags.DEFINE_string("image", "python:3.11-slim", "Container image URI to execute on GKE.")
 _DRY_RUN = flags.DEFINE_bool(
     "dry_run", False, "Record manifests and SQLite state without calling GKE."
 )
