@@ -25,6 +25,7 @@ import argparse
 import json
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 CORE_INFRA_FILES: set[str] = {
@@ -156,6 +157,18 @@ def _get_merge_base(ref_a: str, ref_b: str) -> str | None:
     return res.stdout.strip() or None
 
 
+def _is_ancestor(ancestor_ref: str, descendant_ref: str) -> bool:
+    """Returns True if ancestor_ref is an ancestor of descendant_ref."""
+    res = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor_ref, descendant_ref],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    return res.returncode == 0
+
+
 def _normalize_subject(subject: str) -> str:
     """Strips trailing PR number suffixes like ' (#123)' from commit subjects."""
     s = subject.strip()
@@ -166,27 +179,129 @@ def _normalize_subject(subject: str) -> str:
     return s
 
 
-def _correlate_rebased_parent_tip(
+def _compute_patch_id(diff_text: str) -> str | None:
+    """Computes a stable git patch-id from unified diff text."""
+    if not diff_text.strip():
+        return None
+    res = subprocess.run(
+        ["git", "patch-id", "--stable"],
+        input=diff_text,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    return res.stdout.strip().split()[0]
+
+
+def _compute_bulk_patch_ids(shas: list[str]) -> dict[str, str]:
+    """Computes stable git patch-ids in bulk for a list of commit SHAs."""
+    if not shas:
+        return {}
+    log_res = subprocess.run(
+        ["git", "log", "-p", "--no-walk", *shas],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if log_res.returncode != 0 or not log_res.stdout.strip():
+        return {}
+    patch_res = subprocess.run(
+        ["git", "patch-id", "--stable"],
+        input=log_res.stdout,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if patch_res.returncode != 0:
+        return {}
+    return {
+        parts[1]: parts[0]
+        for line in patch_res.stdout.splitlines()
+        if len(parts := line.split()) >= 2
+    }
+
+
+def _index_parent_commits(
     parent_base: str,
     target_ref: str,
+    allow_subject_fallback: bool,
+) -> tuple[set[str], Counter[str]]:
+    """Indexes active (non-reverted) parent commits by patch-id and 1-to-1 subject count."""
+    parent_log = subprocess.run(
+        ["git", "log", "--reverse", "--format=%H %s", f"{parent_base}..{target_ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if parent_log.returncode != 0 or not parent_log.stdout.strip():
+        return set(), Counter()
+
+    active_commits: list[tuple[str, str]] = []
+    for line in parent_log.stdout.splitlines():
+        parts = line.strip().split(" ", 1)
+        if not parts or not parts[0]:
+            continue
+        sha = parts[0]
+        raw_subj = parts[1].strip() if len(parts) > 1 else ""
+        if raw_subj.startswith('Revert "') and raw_subj.endswith('"'):
+            reverted = _normalize_subject(raw_subj[len('Revert "') : -1])
+            active_commits = [c for c in active_commits if c[1] != reverted]
+            continue
+        active_commits.append((sha, _normalize_subject(raw_subj)))
+
+    parent_shas = [sha for sha, _ in active_commits]
+    patch_ids = set(_compute_bulk_patch_ids(parent_shas).values())
+    subjects = (
+        Counter(subj for _, subj in active_commits if subj) if allow_subject_fallback else Counter()
+    )
+    return patch_ids, subjects
+
+
+def _match_cumulative_squash_prefix(
     candidate_base: str,
-    head_ref: str,
+    prefix_commits: list[list[str]],
+    parent_patch_ids: set[str],
+    current_correlated: str,
 ) -> str:
-    """Advances candidate_base past rebased/squash-merged parent commits matching target_ref."""
-    try:
-        parent_log = subprocess.run(
-            ["git", "log", "--format=%s", f"{parent_base}..{target_ref}"],
+    """Checks if a multi-commit prefix matches a squash-merge commit patch-id."""
+    if not parent_patch_ids or current_correlated == prefix_commits[-1][0]:
+        return current_correlated
+    for sha, _ in reversed(prefix_commits):
+        if sha == current_correlated:
+            break
+        diff_res = subprocess.run(
+            ["git", "diff", candidate_base, sha],
             capture_output=True,
             text=True,
             check=False,
             timeout=10,
         )
-        if parent_log.returncode != 0 or not parent_log.stdout.strip():
+        if diff_res.returncode == 0 and _compute_patch_id(diff_res.stdout) in parent_patch_ids:
+            return sha
+    return current_correlated
+
+
+def _correlate_rebased_parent_tip(
+    parent_base: str,
+    target_ref: str,
+    candidate_base: str,
+    head_ref: str,
+    allow_subject_fallback: bool = False,
+) -> str:
+    """Advances candidate_base past rebased/squash-merged parent commits matching target_ref."""
+    try:
+        parent_patch_ids, parent_subjects = _index_parent_commits(
+            parent_base, target_ref, allow_subject_fallback
+        )
+        if not parent_patch_ids and not parent_subjects:
             return candidate_base
 
-        parent_subjects = {
-            _normalize_subject(line) for line in parent_log.stdout.splitlines() if line.strip()
-        }
         head_log = subprocess.run(
             ["git", "log", "--reverse", "--format=%H %s", f"{candidate_base}..{head_ref}"],
             capture_output=True,
@@ -196,17 +311,36 @@ def _correlate_rebased_parent_tip(
         )
         if head_log.returncode != 0 or not head_log.stdout.strip():
             return candidate_base
+
+        commits = [
+            line.strip().split(" ", 1) for line in head_log.stdout.splitlines() if line.strip()
+        ]
+        prefix_commits = [parts for parts in commits[:-1] if len(parts) == 2]
+        if not prefix_commits:
+            return candidate_base
+
+        head_patch_ids = (
+            _compute_bulk_patch_ids([c[0] for c in prefix_commits]) if parent_patch_ids else {}
+        )
+        correlated = candidate_base
+        for sha, subj in prefix_commits:
+            norm_subj = _normalize_subject(subj)
+            patch_id = head_patch_ids.get(sha)
+            if patch_id and patch_id in parent_patch_ids:
+                correlated = sha
+                if parent_subjects[norm_subj] > 0:
+                    parent_subjects[norm_subj] -= 1
+            elif allow_subject_fallback and parent_subjects[norm_subj] > 0:
+                correlated = sha
+                parent_subjects[norm_subj] -= 1
+            else:
+                break
+
+        return _match_cumulative_squash_prefix(
+            candidate_base, prefix_commits, parent_patch_ids, correlated
+        )
     except Exception:
         return candidate_base
-
-    commits = [line.strip().split(" ", 1) for line in head_log.stdout.splitlines() if line.strip()]
-    correlated = candidate_base
-    for parts in commits[:-1]:
-        if len(parts) == 2 and _normalize_subject(parts[1]) in parent_subjects:
-            correlated = parts[0]
-        else:
-            break
-    return correlated
 
 
 def resolve_effective_base_ref(
@@ -216,31 +350,29 @@ def resolve_effective_base_ref(
 ) -> str:
     """Resolves the closest merge-base across origin/<base_branch>, base_ref, and origin/main.
 
-    Prioritizes the live target branch ref (origin/<base_branch>) over webhook base_ref so
-    commits moved down a stack are not dropped, excludes merge-bases equal to head_ref, and
-    correlates rewritten parent commits across gh-stack rebases and squash-merges.
+    Includes both mb_branch and mb_base (suppressing mb_base only when origin/<base_branch> is
+    an ancestor of base_ref due to a rewound stack parent), excludes merge-bases equal to
+    head_ref, and correlates rewritten parent commits across gh-stack rebases and squash-merges.
     """
     clean_branch = (base_branch or "").strip()
     if not clean_branch and base_ref in {"origin/main", "main", "HEAD~1"}:
         return base_ref
 
     is_stacked_branch = bool(clean_branch and clean_branch not in {"main", "origin/main"})
-    target_ref = base_ref
-    mb_target = None
-    if is_stacked_branch:
-        branch_ref = f"origin/{clean_branch}"
-        mb_target = _get_merge_base(branch_ref, head_ref)
-        if mb_target:
-            target_ref = branch_ref
-    if not mb_target:
-        mb_target = _get_merge_base(base_ref, head_ref)
+    branch_ref = f"origin/{clean_branch}" if is_stacked_branch else ""
+    mb_branch = _get_merge_base(branch_ref, head_ref) if is_stacked_branch else None
+    mb_base = _get_merge_base(base_ref, head_ref)
+    if mb_branch and mb_base and mb_branch != mb_base and _is_ancestor(branch_ref, base_ref):
+        mb_base = None
 
     mb_main = (
         _get_merge_base("origin/main", head_ref)
         if base_ref not in {"origin/main", "main"}
         else None
     )
-    merge_bases = list(dict.fromkeys(mb for mb in (mb_target, mb_main) if mb and mb != head_ref))
+    merge_bases = list(
+        dict.fromkeys(mb for mb in (mb_branch, mb_base, mb_main) if mb and mb != head_ref)
+    )
     if not merge_bases:
         return base_ref
 
@@ -264,11 +396,15 @@ def resolve_effective_base_ref(
                 break
 
     if is_stacked_branch and candidate == mb_main:
+        target_ref = branch_ref if mb_branch else base_ref
+        parent_base = mb_branch or mb_base or candidate
         return _correlate_rebased_parent_tip(
-            mb_target or candidate, target_ref, candidate, head_ref
+            parent_base, target_ref, candidate, head_ref, allow_subject_fallback=True
         )
     if clean_branch in {"main", "origin/main"} and candidate != base_ref:
-        return _correlate_rebased_parent_tip(candidate, base_ref, candidate, head_ref)
+        return _correlate_rebased_parent_tip(
+            candidate, base_ref, candidate, head_ref, allow_subject_fallback=False
+        )
     return candidate
 
 
@@ -288,6 +424,7 @@ def get_git_modified_files(
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
         if result.returncode != 0 and base_ref and head_ref != "HEAD":
+            effective_base = resolve_effective_base_ref(base_ref, "HEAD", base_branch)
             result = subprocess.run(
                 ["git", "diff", "--name-only", f"{effective_base}...HEAD"],
                 capture_output=True,

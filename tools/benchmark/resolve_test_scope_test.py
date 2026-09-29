@@ -419,6 +419,7 @@ class TestResolveTestScope(unittest.TestCase):
                 returncode=0, stdout="new_main_sha\n"
             ),  # merge-base(origin/main, head)
             unittest.mock.Mock(returncode=0, stdout="new_main_sha\n"),  # merge-base --independent
+            unittest.mock.Mock(returncode=0, stdout=""),  # _index_parent_commits parent_log
         ]
         effective = resolve_effective_base_ref(
             base_ref="stale_parent_sha",
@@ -432,11 +433,16 @@ class TestResolveTestScope(unittest.TestCase):
         self, mock_run
     ):
         # When feat/parent is rewound from A2 to A1 and A2 moves into feat/child,
-        # live origin/feat/parent (A1) is preferred over stale webhook PR_BASE_SHA (A2).
+        # origin/feat/parent (A1) is an ancestor of stale webhook PR_BASE_SHA (A2),
+        # so mb_base (A2) is suppressed in favor of mb_branch (A1).
         mock_run.side_effect = [
             unittest.mock.Mock(
                 returncode=0, stdout="sha_a1\n"
             ),  # merge-base(origin/feat/parent, head)
+            unittest.mock.Mock(returncode=0, stdout="sha_a2\n"),  # merge-base(base_ref, head)
+            unittest.mock.Mock(
+                returncode=0, stdout=""
+            ),  # merge-base --is-ancestor origin/feat/parent stale_sha_a2 (True)
             unittest.mock.Mock(returncode=0, stdout="sha_m1\n"),  # merge-base(origin/main, head)
             unittest.mock.Mock(returncode=0, stdout="sha_a1\n"),  # merge-base --independent
         ]
@@ -446,7 +452,31 @@ class TestResolveTestScope(unittest.TestCase):
             base_branch="feat/parent",
         )
         self.assertEqual(effective, "sha_a1")
-        self.assertEqual(mock_run.call_count, 3)
+        self.assertEqual(mock_run.call_count, 5)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_effective_base_ref_parent_rebased_before_child_keeps_mb_base(self, mock_run):
+        # When origin/feat/parent is amended/rebased before feat/child is rebased,
+        # mb_branch drops to sha_m1 while mb_base is still sha_a1 (the direct parent).
+        # Because origin/feat/parent is NOT an ancestor of base_ref, mb_base is kept
+        # and selected by --independent.
+        mock_run.side_effect = [
+            unittest.mock.Mock(
+                returncode=0, stdout="sha_m1\n"
+            ),  # merge-base(origin/feat/parent, head)
+            unittest.mock.Mock(returncode=0, stdout="sha_a1\n"),  # merge-base(base_ref, head)
+            unittest.mock.Mock(
+                returncode=1, stdout=""
+            ),  # merge-base --is-ancestor origin/feat/parent sha_a1 (False)
+            unittest.mock.Mock(returncode=0, stdout="sha_m1\n"),  # merge-base(origin/main, head)
+            unittest.mock.Mock(returncode=0, stdout="sha_a1\n"),  # merge-base --independent
+        ]
+        effective = resolve_effective_base_ref(
+            base_ref="sha_a1",
+            head_ref="child_head_sha",
+            base_branch="feat/parent",
+        )
+        self.assertEqual(effective, "sha_a1")
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_resolve_effective_base_ref_excludes_head_ref(self, mock_run):
@@ -480,11 +510,12 @@ class TestResolveTestScope(unittest.TestCase):
             unittest.mock.Mock(
                 returncode=0, stdout="old_mb\n"
             ),  # merge-base(origin/feat/stack-parent, head)
+            unittest.mock.Mock(returncode=0, stdout="old_mb\n"),  # merge-base(base_ref, head)
             unittest.mock.Mock(
                 returncode=0, stdout="closest_mb\n"
             ),  # merge-base(origin/main, head)
             unittest.mock.Mock(returncode=0, stdout="closest_mb\n"),  # merge-base --independent
-            unittest.mock.Mock(returncode=0, stdout=""),  # _correlate_rebased_parent_tip parent_log
+            unittest.mock.Mock(returncode=0, stdout=""),  # _index_parent_commits parent_log
             unittest.mock.Mock(returncode=0, stdout="pkg/components/service.go\n"),  # git diff
         ]
         files = get_git_modified_files(
@@ -511,42 +542,67 @@ class TestResolveTestScope(unittest.TestCase):
         )
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
-    def test_correlate_rebased_parent_tip_matches_amended_and_squash_merged_parents(self, mock_run):
-        # Parent branch has 2 commits; child has rebased copies of those 2 plus 1 child commit
+    def test_correlate_rebased_parent_tip_matches_patch_id_and_bounded_subject(self, mock_run):
+        # 1. Stacked branch with allow_subject_fallback=True:
+        # Parent has 1 commit ("wip"); child has 2 "wip" commits + 1 final commit.
+        # 1-to-1 Counter consumption ensures only the first "wip" commit is consumed!
         mock_run.side_effect = [
-            unittest.mock.Mock(
-                returncode=0,
-                stdout="feat(ui): parent commit 1 (#101)\nfeat(ui): parent commit 2\n",
-            ),
+            unittest.mock.Mock(returncode=0, stdout="sha_p1 wip\n"),  # parent log
+            unittest.mock.Mock(returncode=0, stdout="diff_p1\n"),  # parent log -p
+            unittest.mock.Mock(returncode=0, stdout="pid_parent sha_p1\n"),  # parent patch-id
             unittest.mock.Mock(
                 returncode=0,
                 stdout=(
-                    "sha_p1_rebased feat(ui): parent commit 1\n"
-                    "sha_p2_rebased feat(ui): parent commit 2\n"
-                    "sha_child_1 feat(api): child commit\n"
+                    "sha_p1_amended wip\n"
+                    "sha_child_wip wip\n"
+                    "sha_child_final feat(api): child commit\n"
                 ),
-            ),
+            ),  # head log
+            unittest.mock.Mock(returncode=0, stdout="diff_head\n"),  # head log -p
+            unittest.mock.Mock(
+                returncode=0,
+                stdout="pid_amended sha_p1_amended\npid_child1 sha_child_wip\n",
+            ),  # head patch-id
+            unittest.mock.Mock(returncode=0, stdout="diff_cum\n"),  # cumulative git diff
+            unittest.mock.Mock(returncode=0, stdout="pid_cum -\n"),  # cumulative patch-id
         ]
         correlated = _correlate_rebased_parent_tip(
             parent_base="sha_m1",
             target_ref="origin/feat/layer-1",
             candidate_base="sha_m2",
-            head_ref="sha_child_1",
+            head_ref="sha_child_final",
+            allow_subject_fallback=True,
         )
-        self.assertEqual(correlated, "sha_p2_rebased")
+        self.assertEqual(correlated, "sha_p1_amended")
 
-        # Never consumes the final commit on head_ref even if subject collides
+        # 2. Non-stacked branch (allow_subject_fallback=False):
+        # Subject collision with different patch-id MUST NOT advance candidate_base!
         mock_run.side_effect = [
-            unittest.mock.Mock(returncode=0, stdout="feat: same subject\n"),
-            unittest.mock.Mock(returncode=0, stdout="sha_only feat: same subject\n"),
+            unittest.mock.Mock(returncode=0, stdout="sha_main fix: lint\n"),  # parent log
+            unittest.mock.Mock(returncode=0, stdout="diff_main\n"),  # parent log -p
+            unittest.mock.Mock(returncode=0, stdout="pid_main sha_main\n"),  # parent patch-id
+            unittest.mock.Mock(
+                returncode=0,
+                stdout="sha_pr1 fix: lint\nsha_pr2 feat: second commit\n",
+            ),  # head log
+            unittest.mock.Mock(returncode=0, stdout="diff_pr1\n"),  # head log -p
+            unittest.mock.Mock(returncode=0, stdout="pid_pr1 sha_pr1\n"),  # head patch-id
+            unittest.mock.Mock(returncode=0, stdout="diff_cum\n"),  # cumulative git diff
+            unittest.mock.Mock(returncode=0, stdout="pid_pr1 -\n"),  # cumulative patch-id
         ]
         self.assertEqual(
-            _correlate_rebased_parent_tip("sha_m1", "origin/feat/layer-1", "sha_m2", "sha_only"),
-            "sha_m2",
+            _correlate_rebased_parent_tip(
+                "sha_m1",
+                "origin/main",
+                "sha_m1",
+                "sha_pr2",
+                allow_subject_fallback=False,
+            ),
+            "sha_m1",
         )
 
     def test_gh_stack_shenanigans_real_git_repo(self):
-        """Verifies all 5 gh-stack topologies in a real temporary Git repository."""
+        """Verifies all gh-stack topologies and review edge cases in a real Git repository."""
         with tempfile.TemporaryDirectory() as tmpdir:
             repo = Path(tmpdir)
 
@@ -594,7 +650,6 @@ class TestResolveTestScope(unittest.TestCase):
             os.chdir(repo)
             try:
                 # Shenanigan 1: Synthetic merge commit (refs/pull/<num>/merge) vs PR_HEAD_SHA
-                # Create a synthetic merge commit merging stale feat/layer-1 or main into B1
                 git("checkout", "-B", "pr-merge-sim", b1)
                 git("merge", "--no-ff", "-m", "Merge b1 into main", m2)
                 files_pr_head = get_git_modified_files(
@@ -607,8 +662,7 @@ class TestResolveTestScope(unittest.TestCase):
                 self.assertTrue(scope_s1["run_backend"])
                 self.assertFalse(scope_s1["run_ui"])
 
-                # Shenanigan 2: gh stack sync / rebase onto M2 where webhook PR_BASE_SHA is stale (A1)
-                # Layer 1 rebased onto M2 -> A1_rebased; Layer 2 rebased onto A1_rebased -> B1_rebased
+                # Shenanigan 2a: gh stack sync / rebase onto M2 where webhook PR_BASE_SHA is stale (A1)
                 git("checkout", "-B", "feat/layer-1", m2)
                 a1_rebased = commit_file(
                     "cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button"
@@ -617,8 +671,6 @@ class TestResolveTestScope(unittest.TestCase):
                 b1_rebased = commit_file(
                     "pkg/api/svc.go", "package api\n", "feat(api): add service"
                 )
-
-                # Subcase 2a: origin/feat/layer-1 is updated to A1_rebased, but PR_BASE_SHA is stale A1
                 git("update-ref", "refs/remotes/origin/feat/layer-1", a1_rebased)
                 files_s2a = get_git_modified_files(
                     base_ref=a1,
@@ -627,9 +679,24 @@ class TestResolveTestScope(unittest.TestCase):
                 )
                 self.assertEqual(files_s2a, ["pkg/api/svc.go"])
 
+                # Shenanigan 2b (Comment #4132468885): Parent branch amended with a renamed title
+                # BEFORE child branch (still at B1 on A1) is rebased.
+                # mb_base (A1) is preserved and chosen over mb_branch (M1)!
+                git("checkout", "-B", "feat/layer-1-amended", m1)
+                a1_renamed = commit_file(
+                    "cmd/ui/src/btn.ts",
+                    "export const v = 2;\n",
+                    "feat(ui): completely different parent title",
+                )
+                git("update-ref", "refs/remotes/origin/feat/layer-1", a1_renamed)
+                files_s2b = get_git_modified_files(
+                    base_ref=a1,
+                    head_ref=b1,
+                    base_branch="feat/layer-1",
+                )
+                self.assertEqual(files_s2b, ["pkg/api/svc.go"])
+
                 # Shenanigan 3: Non-atomic gh stack submit / parent amended before origin/feat/layer-1 updates
-                # Suppose origin/feat/layer-1 still points to old A1 while feat/layer-2 is pushed at B1_rebased!
-                # Without parent subject correlation, mb(origin/main, B1_rebased) == M2 would leak A1_rebased (UI)!
                 git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
                 files_s3 = get_git_modified_files(
                     base_ref=a1,
@@ -641,38 +708,64 @@ class TestResolveTestScope(unittest.TestCase):
                 self.assertTrue(scope_s3["run_backend"])
                 self.assertFalse(scope_s3["run_ui"])
 
-                # Shenanigan 4: Bottom PR (feat/layer-1) squash-merged into main with ' (#990)' suffix
-                # and feat/layer-2 auto-retargeted to base_branch='main' BEFORE feat/layer-2 is rebased!
-                # Here feat/layer-2 is still at B1 (M1 -> A1 -> B1), while origin/main advances to M3_squash.
-                git("checkout", "main")
-                m3_squash = commit_file(
-                    "cmd/ui/src/btn.ts",
-                    "export const v = 1;\n",
-                    "feat(ui): add button (#990)",
+                # Shenanigan 4a: 2-commit parent PR (A1 -> A2_ui) squash-merged into main as a single
+                # commit M3_squash, and child PR (M1 -> A1 -> A2_ui -> B_multi) retargeted to main
+                # before child rebase! Cumulative prefix patch-id correlates M1..A2_ui with M3_squash.
+                git("checkout", "-B", "feat/layer-1-multi", a1)
+                a2_ui = commit_file(
+                    "cmd/ui/src/icon.ts", "export const icon = 'x';\n", "feat(ui): add icon"
                 )
+                git("checkout", "-B", "feat/layer-2-multi", a2_ui)
+                b_multi = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
+
+                git("checkout", "main")
+                (repo / "cmd/ui/src").mkdir(parents=True, exist_ok=True)
+                (repo / "cmd/ui/src/btn.ts").write_text("export const v = 1;\n", encoding="utf-8")
+                (repo / "cmd/ui/src/icon.ts").write_text(
+                    "export const icon = 'x';\n", encoding="utf-8"
+                )
+                git("add", "cmd/ui/src/btn.ts", "cmd/ui/src/icon.ts")
+                git("commit", "-m", "feat(ui): add button and icon (#990)")
+                m3_squash = git("rev-parse", "HEAD")
                 git("update-ref", "refs/remotes/origin/main", m3_squash)
-                files_s4 = get_git_modified_files(
+
+                files_s4a = get_git_modified_files(
                     base_ref=m3_squash,
-                    head_ref=b1,
+                    head_ref=b_multi,
                     base_branch="main",
                 )
-                self.assertEqual(files_s4, ["pkg/api/svc.go"])
-                scope_s4 = resolve_test_scope(files_s4, use_rdeps=False)
-                self.assertTrue(scope_s4["run_backend"])
-                self.assertFalse(scope_s4["run_ui"])
+                self.assertEqual(files_s4a, ["pkg/api/svc.go"])
+
+                # Shenanigan 4b (Comment #4132468872): Standard multi-commit PR targeting main where
+                # commit 1 happens to have the exact same subject as M2 on main ("feat(core): unrelated main")
+                # MUST NOT drop commit 1's files because patch-id differs and allow_subject_fallback=False!
+                git("checkout", "-B", "feat/standard-pr", m1)
+                c1_colliding = commit_file(
+                    "cmd/ui/src/colliding.ts",
+                    "export const c = 1;\n",
+                    "feat(core): unrelated main",
+                )
+                c2_standard = commit_file(
+                    "pkg/api/standard.go", "package api\n", "feat(api): standard endpoint"
+                )
+                files_s4b = get_git_modified_files(
+                    base_ref=m3_squash,
+                    head_ref=c2_standard,
+                    base_branch="main",
+                )
+                self.assertEqual(
+                    sorted(files_s4b),
+                    ["cmd/ui/src/colliding.ts", "pkg/api/standard.go"],
+                )
+                self.assertNotEqual(c1_colliding, c2_standard)
 
                 # Shenanigan 5: Commit moved/rewound from parent layer down into child layer
-                # Suppose feat/layer-1 originally had A1 -> A2 (touching pkg/moved/moved.go), and
-                # feat/layer-2 had B_after_a2 (touching pkg/api/svc.go). Then the author rewinds
-                # origin/feat/layer-1 back to A1 so A2 is now part of feat/layer-2, while webhook
-                # PR_BASE_SHA is still stale A2.
                 git("checkout", "-B", "feat/layer-1-ext", a1)
                 a2 = commit_file(
                     "pkg/moved/moved.go", "package moved\n", "feat(moved): move to layer 2"
                 )
                 git("checkout", "-B", "feat/layer-2-ext", a2)
                 b_ext = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
-                # Rewind origin/feat/layer-1 to A1 while webhook base_ref is stale A2
                 git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
                 files_s5 = get_git_modified_files(
                     base_ref=a2,
@@ -685,16 +778,26 @@ class TestResolveTestScope(unittest.TestCase):
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_retries_head_on_missing_pr_head_sha(self, mock_run):
+        # When missing_sha fails merge-base and git diff, fallback re-resolves effective_base
+        # against "HEAD" before running git diff resolved_head_base...HEAD (Comment #4132468903).
         mock_run.side_effect = [
             unittest.mock.Mock(returncode=1, stdout=""),  # merge-base(base_ref, missing_sha)
             unittest.mock.Mock(returncode=1, stdout=""),  # merge-base(origin/main, missing_sha)
-            unittest.mock.Mock(returncode=128, stdout=""),  # git diff base...missing_sha fails
+            unittest.mock.Mock(returncode=128, stdout=""),  # git diff base_sha...missing_sha fails
+            unittest.mock.Mock(
+                returncode=0, stdout="resolved_head_mb\n"
+            ),  # merge-base(base_ref, HEAD)
+            unittest.mock.Mock(
+                returncode=0, stdout="resolved_head_mb\n"
+            ),  # merge-base(origin/main, HEAD)
             unittest.mock.Mock(
                 returncode=0, stdout="pkg/auth/handler.go\n"
-            ),  # git diff base...HEAD
+            ),  # git diff resolved_head_mb...HEAD
         ]
         files = get_git_modified_files(base_ref="base_sha", head_ref="missing_sha")
         self.assertEqual(files, ["pkg/auth/handler.go"])
+        diff_cmd = mock_run.call_args[0][0]
+        self.assertEqual(diff_cmd, ["git", "diff", "--name-only", "resolved_head_mb...HEAD"])
 
     def test_resolve_test_scope_empty_files_and_workflow_dispatch_fail_open(self):
         empty_scope = resolve_test_scope([], use_rdeps=False)

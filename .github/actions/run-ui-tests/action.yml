@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: 'Run Angular UI Unit Tests'
-description: 'Resolves test scope and executes Angular UI unit and screenshot tests'
+description: 'Resolves test scope and executes Angular UI unit and screenshot tests (requires actions/checkout with fetch-depth: 0)'
 
 inputs:
   node-version:
@@ -39,11 +39,6 @@ runs:
         GITHUB_REF: ${{ github.ref }}
       shell: bash
       run: |
-        if [ -n "${PR_BASE_REF}" ]; then
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}" || true
-        else
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main || true
-        fi
         BASE_REF="${PR_BASE_SHA:-origin/main}"
         HEAD_REF="${PR_HEAD_SHA:-${GITHUB_SHA}}"
         python3 tools/benchmark/resolve_test_scope.py \
