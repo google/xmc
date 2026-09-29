@@ -33,6 +33,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
@@ -74,6 +75,12 @@ func renderChart(chartDir, releaseName string, overrides map[string]any) (map[st
 	if err != nil {
 		return nil, fmt.Errorf("failed to load chart %s: %w", chartDir, err)
 	}
+	return renderLoadedChart(ch, releaseName, overrides)
+}
+
+// renderLoadedChart renders an already loaded chart, so tests can modify ch.Files in memory
+// before rendering.
+func renderLoadedChart(ch *chart.Chart, releaseName string, overrides map[string]any) (map[string]string, error) {
 	opts := chartutil.ReleaseOptions{Name: releaseName, Namespace: "xmc", Revision: 1, IsInstall: true}
 	vals, err := chartutil.ToRenderValues(ch, overrides, opts, nil)
 	if err != nil {
@@ -267,6 +274,79 @@ func TestProfileChart_RejectsInvalidInstalls(t *testing.T) {
 			_, err := renderChart(profileChartDir(t), releaseName, tt.overrides)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("renderChart() error = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// loadChartWithFileEdit loads the profile chart and, in memory only, empties or removes the file
+// at path.
+func loadChartWithFileEdit(t *testing.T, path string, remove bool) *chart.Chart {
+	t.Helper()
+	ch, err := loader.Load(profileChartDir(t))
+	if err != nil {
+		t.Fatalf("failed to load profile chart: %v", err)
+	}
+	i := slices.IndexFunc(ch.Files, func(f *chart.File) bool { return f.Name == path })
+	if i < 0 {
+		t.Fatalf("profile chart has no file %q", path)
+	}
+	if remove {
+		ch.Files = slices.Delete(ch.Files, i, i+1)
+		return ch
+	}
+	ch.Files[i] = &chart.File{Name: path, Data: []byte{}}
+	return ch
+}
+
+// redpandaSpecSummary extracts the redpanda spec fields asserted by the file edit tests.
+func redpandaSpecSummary(t *testing.T, rendered map[string]string) map[string]any {
+	t.Helper()
+	spec, _ := docByName(t, decodeDocs(t, rendered[renderedComponentsKey]), "redpanda")["spec"].(map[string]any)
+	params, _ := spec["parameters"].(map[string]any)
+	return map[string]any{
+		"enabled":            spec["enabled"],
+		"deletionProtection": spec["deletionProtection"],
+		"kafkaPort":          params["kafkaPort"],
+	}
+}
+
+func TestProfileChart_ToleratesEmptyComponentFiles(t *testing.T) {
+	t.Parallel()
+
+	const valuesPath = "components/redpanda/values.yaml"
+	const templatePath = "components/redpanda/templates/component.yaml"
+	tests := []struct {
+		name      string
+		path      string
+		remove    bool
+		overrides map[string]any
+		want      map[string]any
+		wantErr   string
+	}{
+		{name: "empty values.yaml renders template defaults", path: valuesPath,
+			want: map[string]any{"enabled": false, "deletionProtection": true, "kafkaPort": "9092"}},
+		{name: "empty values.yaml still applies overrides", path: valuesPath,
+			overrides: componentOverrides("redpanda", map[string]any{"enabled": true, "deletionProtection": false, "parameters": map[string]any{"kafkaPort": 19092}}),
+			want:      map[string]any{"enabled": true, "deletionProtection": false, "kafkaPort": "19092"}},
+		{name: "missing values.yaml fails", path: valuesPath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", valuesPath)},
+		{name: "missing component.yaml fails", path: templatePath, remove: true, wantErr: fmt.Sprintf("required file %q is missing", templatePath)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rendered, err := renderLoadedChart(loadChartWithFileEdit(t, tt.path, tt.remove), "xmc-profile", tt.overrides)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("renderLoadedChart() error = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("renderLoadedChart() failed: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, redpandaSpecSummary(t, rendered)); diff != "" {
+				t.Errorf("redpanda spec mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -25,17 +25,18 @@ this is harmless because component templates never mutate them.
 {{- end -}}
 
 {{/*
-xmc-profile.readFile returns the content of a chart file or fails when it is
-missing (for example when .helmignore excludes it): (list $ path).
+xmc-profile.readFile returns the content of a chart file, which may be empty,
+or fails when the file is missing (for example when .helmignore excludes it):
+(list $ path). Helm 3 .Files has no Has method, so existence is checked with
+Glob on the literal path.
 */}}
 {{- define "xmc-profile.readFile" -}}
 {{- $root := index . 0 -}}
 {{- $path := index . 1 -}}
-{{- $content := $root.Files.Get $path -}}
-{{- if not $content -}}
+{{- if not ($root.Files.Glob $path) -}}
 {{- fail (printf "xmc-profile: required file %q is missing from the profile chart" $path) -}}
 {{- end -}}
-{{- $content -}}
+{{- $root.Files.Get $path -}}
 {{- end -}}
 
 {{/*
@@ -53,7 +54,7 @@ named templates (_*.tpl) or use .Files, because those are not loaded here.
 {{- $name := index . 1 -}}
 {{- $dir := printf "components/%s" $name -}}
 {{- $meta := include "xmc-profile.readFile" (list $root (printf "%s/Chart.yaml" $dir)) | fromYaml -}}
-{{- $values := include "xmc-profile.readFile" (list $root (printf "%s/values.yaml" $dir)) | fromYaml -}}
+{{- $values := include "xmc-profile.readFile" (list $root (printf "%s/values.yaml" $dir)) | fromYaml | default dict -}}
 {{- $body := include "xmc-profile.readFile" (list $root (printf "%s/templates/component.yaml" $dir)) -}}
 {{- include "xmc-profile.mergeInto" (list $values (dict "global" ($root.Values.global | default dict))) -}}
 {{- include "xmc-profile.mergeInto" (list $values (index ($root.Values.components | default dict) $name | default dict)) -}}
