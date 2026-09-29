@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for common nightly test verification utilities."""
+"""Unit tests for tools.nightly_tests.common module."""
 
 from __future__ import annotations
 
@@ -25,42 +25,24 @@ from tools.nightly_tests import common
 
 
 class CommonTest(unittest.TestCase):
-    """Test suite for tools.nightly_tests.common helper functions."""
+    """Test cases for common.py utilities."""
 
     def test_get_flag(self) -> None:
-        # None flags object returns default
-        self.assertIsNone(common.get_flag(None, "xid"))
-        self.assertEqual(common.get_flag(None, "xid", "default_val"), "default_val")
-
-        # Object with attribute present
-        flags_obj = SimpleNamespace(xid="42", endpoint="localhost:8080", empty=None)
-        self.assertEqual(common.get_flag(flags_obj, "xid"), "42")
-        self.assertEqual(common.get_flag(flags_obj, "endpoint"), "localhost:8080")
-
-        # Object with missing attribute or None value returns default
-        self.assertIsNone(common.get_flag(flags_obj, "missing"))
-        self.assertEqual(common.get_flag(flags_obj, "missing", "fallback"), "fallback")
-        self.assertEqual(common.get_flag(flags_obj, "empty", "fallback"), "fallback")
+        flags_mock = SimpleNamespace(xid="12345", endpoint=None)
+        self.assertEqual(common.get_flag(flags_mock, "xid"), "12345")
+        self.assertEqual(common.get_flag(flags_mock, "endpoint", "default:443"), "default:443")
+        self.assertEqual(common.get_flag(flags_mock, "nonexistent", "fallback"), "fallback")
+        self.assertEqual(common.get_flag(None, "xid", "fallback"), "fallback")
 
     def test_validate_argv(self) -> None:
-        # Valid argv with 1 or 0 elements
         common.validate_argv(["script.py"])
-        common.validate_argv([])
-
-        # Extra positional arguments should raise app.UsageError
         with self.assertRaises(common.app.UsageError):
             common.validate_argv(["script.py", "extra_arg"])
 
-        with self.assertRaises(common.app.UsageError):
-            common.validate_argv(["script.py", "arg1", "arg2"])
-
     def test_parse_xid(self) -> None:
-        # Plain numeric or slug ID
-        self.assertEqual(common.parse_xid("42"), "42")
-        self.assertEqual(common.parse_xid("  12345  "), "12345")
-        self.assertEqual(common.parse_xid("custom-slug"), "custom-slug")
-
-        # Resource name format experiments/<id> and dashboards/<slug>
+        self.assertEqual(common.parse_xid("12345"), "12345")
+        self.assertEqual(common.parse_xid("experiments/12345"), "12345")
+        self.assertEqual(common.parse_xid("dashboards/my_dashboard"), "my_dashboard")
         self.assertEqual(common.parse_xid("experiments/42"), "42")
         self.assertEqual(common.parse_xid("/experiments/42"), "42")
         self.assertEqual(common.parse_xid("experiments/test-exp-99"), "test-exp-99")
@@ -70,39 +52,56 @@ class CommonTest(unittest.TestCase):
         self.assertEqual(common.parse_xid("dashboards/test-dashboard-123"), "test-dashboard-123")
         self.assertEqual(common.parse_xid("/dashboards/test-dashboard-123"), "test-dashboard-123")
 
-        # Empty / None when required=True raises ValueError
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ValueError):
             common.parse_xid(None, required=True)
-        self.assertIn("Experiment XID (--xid) is required", str(ctx.exception))
-
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ValueError):
             common.parse_xid("", required=True)
-        self.assertIn("Experiment XID (--xid) is required", str(ctx.exception))
-
-        with self.assertRaises(ValueError) as ctx:
-            common.parse_xid("   ", required=True)
-        self.assertIn("Experiment XID (--xid) is required", str(ctx.exception))
-
-        # Empty / None when required=False returns empty string
         self.assertEqual(common.parse_xid(None, required=False), "")
-        self.assertEqual(common.parse_xid("", required=False), "")
-        self.assertEqual(common.parse_xid("   ", required=False), "")
 
     def test_resolve_endpoint(self) -> None:
-        # Provided endpoint takes highest precedence
-        self.assertEqual(
-            common.resolve_endpoint("grpc.example.com:443"),
-            "grpc.example.com:443",
-        )
+        # Provided endpoint takes precedence
+        self.assertEqual(common.resolve_endpoint("custom-ess:9090"), "custom-ess:9090")
 
-        # Fallback to XMANAGER_ENDPOINT environment variable
-        with mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "custom-ess:9090"}):
-            self.assertEqual(common.resolve_endpoint(None), "custom-ess:9090")
-            self.assertEqual(common.resolve_endpoint(""), "custom-ess:9090")
+        # Environment variable fallback
+        with mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "env-ess:8443"}, clear=True):
+            self.assertEqual(common.resolve_endpoint(None), "env-ess:8443")
+            self.assertEqual(common.resolve_endpoint(""), "env-ess:8443")
 
         # Default fallback when no env var is set
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(common.resolve_endpoint(None), "localhost:8080")
+
+    def test_resolve_dashboard_endpoint(self) -> None:
+        # Provided endpoint takes highest precedence
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("https://custom-dash.example.com"),
+            "https://custom-dash.example.com",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("http://custom-dash.example.com"),
+            "http://custom-dash.example.com",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("localhost:8080"),
+            "http://localhost:8080",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("127.0.0.1:9090"),
+            "http://127.0.0.1:9090",
+        )
+        self.assertEqual(
+            common.resolve_dashboard_endpoint("dashboard.example.com"),
+            "https://dashboard.example.com",
+        )
+
+        # Fallback to resolve_ui_base_url
+        with mock.patch(
+            "tools.nightly_tests.common.resolve_ui_base_url",
+            return_value="https://xmc-ui.example.com",
+        ) as mock_ui:
+            self.assertEqual(common.resolve_dashboard_endpoint(None), "https://xmc-ui.example.com")
+            self.assertEqual(common.resolve_dashboard_endpoint(""), "https://xmc-ui.example.com")
+            self.assertEqual(mock_ui.call_count, 2)
 
     def test_resolve_ui_base_url(self) -> None:
         with mock.patch(

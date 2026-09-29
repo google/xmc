@@ -17,7 +17,8 @@
 
 Asserts that the ClickHouse Metrics Ingestion validation experiment and its WorkUnit
 were correctly created, scheduled to the expected queue, configured with metric writer
-JobSet specifications, and executed to completion.
+JobSet specifications, executed to completion, verified directly in ClickHouse via SQL queries,
+and optionally verifies the created Dashboard.
 
 Note:
     This script serves as the lean baseline verifier for the workload's Kubernetes lifecycle
@@ -31,6 +32,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from typing import Any
 
@@ -43,11 +45,12 @@ EXPECTED_WORK_UNITS: int = 1
 DEFAULT_QUEUE: str = "cpu-queue"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("clickhouse-metric-writer",)
 DEFAULT_TIMEOUT_SEC: int = 600
+EXPECTED_METRIC_SUBSET: set[str] = {"train/loss", "train/accuracy"}
 
 
 def _assert_experiment(stub: Any, xid: str) -> Any:
     """Asserts experiment existence and title pattern."""
-    print(f"\n[1/3] Asserting Experiment metadata for XID {xid}...")
+    print(f"\n[1/5] Asserting Experiment metadata for XID {xid}...")
     experiment = xmc_entities_validator.validate_experiment(
         stub=stub,
         xid=xid,
@@ -62,7 +65,7 @@ def _assert_work_units(
     stub: Any, xid: str, expected_queue: str, timeout_sec: int
 ) -> list[dict[str, Any]]:
     """Asserts work unit execution state and queue mapping."""
-    print(f"\n[2/3] Asserting {EXPECTED_WORK_UNITS} WorkUnit targeted at '{expected_queue}'...")
+    print(f"\n[2/5] Asserting {EXPECTED_WORK_UNITS} WorkUnit targeted at '{expected_queue}'...")
     wu_results = xmc_entities_validator.validate_work_units(
         stub=stub,
         xid=xid,
@@ -80,7 +83,7 @@ def _assert_work_units(
 
 def _assert_jobset(stub: Any, xid: str) -> list[dict[str, Any]]:
     """Validates JobSet structure."""
-    print("\n[3/3] Validating JobSet structure...")
+    print("\n[3/5] Validating JobSet structure...")
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
     raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
     if not raw_work_units:
@@ -94,6 +97,54 @@ def _assert_jobset(stub: Any, xid: str) -> list[dict[str, Any]]:
                 "spec": "clickhouse-metric-writer",
             }
         ],
+    )
+
+
+def _assert_clickhouse_sql_metrics(
+    xid: str,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 3,
+) -> dict[str, Any]:
+    """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
+    raw_endpoint = common.get_flag(FLAGS, "clickhouse_endpoint", None)
+    endpoint = common.resolve_clickhouse_endpoint(raw_endpoint)
+    strict_required = bool(common.get_flag(FLAGS, "require_clickhouse_metrics", False))
+    print(f"\n[4/5] Validating ClickHouse SQL metric rows for XID {xid} via {endpoint}...")
+
+    return xmc_entities_validator.validate_clickhouse_metrics(
+        endpoint=endpoint,
+        xid=xid,
+        expected_metric_names=EXPECTED_METRIC_SUBSET,
+        expected_min_rows=1,
+        timeout_sec=timeout_sec,
+        poll_interval_sec=poll_interval_sec,
+        strict_required=strict_required,
+    )
+
+
+def _check_optional_dashboard(
+    xid: str, timeout_sec: int = 20, poll_interval_sec: int = 2
+) -> dict[str, Any]:
+    """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
+    raw_endpoint = (
+        common.get_flag(FLAGS, "dashboard_endpoint", None)
+        or os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
+    )
+    strict_required = bool(common.get_flag(FLAGS, "require_clickhouse_metrics", False)) or bool(
+        raw_endpoint
+    )
+    dash_endpoint = common.resolve_dashboard_endpoint(raw_endpoint)
+    dashboard_id = f"exp_{xid}_training_overview"
+    print(f"\n[5/5] Verifying Dashboard & GetChartData for XID {xid} via {dash_endpoint}...")
+
+    return xmc_entities_validator.validate_dashboard_chart_data(
+        base_endpoint=dash_endpoint,
+        dashboard_id=dashboard_id,
+        min_hydrated_points=1,
+        timeout_sec=timeout_sec,
+        poll_interval_sec=poll_interval_sec,
+        strict_required=strict_required,
     )
 
 
@@ -117,7 +168,7 @@ def _print_summary(
 ) -> None:
     """Prints verification success summary."""
     common.print_success_summary(
-        "ALL CLICKHOUSE METRICS WORKLOAD ASSERTIONS PASSED SUCCESSFULLY!",
+        "ALL CLICKHOUSE METRICS JOB ASSERTIONS PASSED SUCCESSFULLY!",
         [
             ("Experiment", f"{experiment.name} (Title: '{experiment.title}')"),
             ("Verified WorkUnits", f"{wu_count} / {EXPECTED_WORK_UNITS}"),
@@ -143,6 +194,8 @@ def main(argv: Sequence[str]) -> None:
         experiment = _assert_experiment(stub, xid)
         wu_results = _assert_work_units(stub, xid, expected_queue, timeout_sec)
         _assert_jobset(stub, xid)
+        _assert_clickhouse_sql_metrics(xid, timeout_sec=min(timeout_sec, 30))
+        _check_optional_dashboard(xid)
         _print_summary(experiment, len(wu_results), expected_queue, ui_base_url, xid)
 
 
