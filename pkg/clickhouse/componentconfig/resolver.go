@@ -144,10 +144,11 @@ func normalizeEndpointToken(token, defaultPortStr string) (string, error) {
 	if host, port, err := net.SplitHostPort(token); err == nil {
 		return joinValidatedHostPort(host, port)
 	}
-	if strings.Contains(token, ":") && net.ParseIP(token) == nil {
+	cleanToken := strings.TrimPrefix(strings.TrimSuffix(token, "]"), "[")
+	if strings.Contains(token, ":") && net.ParseIP(cleanToken) == nil {
 		return "", fmt.Errorf("invalid ClickHouse endpoint %q", token)
 	}
-	return joinValidatedHostPort(token, defaultPortStr)
+	return joinValidatedHostPort(cleanToken, defaultPortStr)
 }
 
 func joinValidatedHostPort(host, portStr string) (string, error) {

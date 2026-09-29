@@ -264,4 +264,13 @@ func TestParseEndpointsEdgeCases(t *testing.T) {
 	if _, err := joinValidatedHostPort("   ", "9000"); err == nil {
 		t.Errorf("joinValidatedHostPort(empty host) succeeded, want error")
 	}
+
+	addrs, err := parseEndpoints("[::1], [2001:db8::1]:9001", "9000")
+	if err != nil {
+		t.Fatalf("parseEndpoints(bracketed IPv6) unexpected error: %v", err)
+	}
+	wantAddrs := []string{"[::1]:9000", "[2001:db8::1]:9001"}
+	if diff := cmp.Diff(wantAddrs, addrs); diff != "" {
+		t.Errorf("parseEndpoints(bracketed IPv6) mismatch (-want +got):\n%s", diff)
+	}
 }
