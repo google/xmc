@@ -58,11 +58,12 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
 3. **Execute Release Metadata Extraction Tool**:
    Run the extraction helper tool with `--approved-flags` and pin to the canonical `--target-ref` (`origin/main`):
    ```bash
+   BASE_TAG="<base_tag>"
    TARGET_REF="${TARGET_REF:-origin/main}"
    METADATA_FILE="${ARTIFACT_DIR:-/tmp}/release_metadata.json"
 
    python3 ./tools/release/extract_release_metadata.py \
-       --base-ref <base_tag> \
+       --base-ref "${BASE_TAG}" \
        --target-ref "${TARGET_REF}" \
        --approved-flags rod_deployment_enabled rodDeployment.enabled enable_metrics metrics.enabled \
        --output "${METADATA_FILE}"
