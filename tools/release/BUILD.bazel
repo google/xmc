@@ -19,6 +19,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "dispatch_and_watch.py",
     "extract_release_metadata.py",
     "feature_flags.py",
     "git_ops.py",
@@ -204,5 +205,34 @@ py_test(
         ":publish_release_lib",
         "//tools/common:tool_utils",
         "//tools/pr_review:github_utils",
+    ],
+)
+
+py_library(
+    name = "dispatch_and_watch_lib",
+    srcs = ["dispatch_and_watch.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "dispatch_and_watch",
+    srcs = ["dispatch_and_watch.py"],
+    imports = ["../.."],
+    main = "dispatch_and_watch.py",
+    deps = [
+        ":dispatch_and_watch_lib",
+    ],
+)
+
+py_test(
+    name = "dispatch_and_watch_test",
+    srcs = ["dispatch_and_watch_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":dispatch_and_watch_lib",
+        "//tools/common:tool_utils",
     ],
 )
