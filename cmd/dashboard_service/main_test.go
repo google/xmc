@@ -250,7 +250,7 @@ func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("CLICKHOUSE_HOST", "")
 
-	if provider := initDataEngine(context.Background(), Config{}); provider != nil {
+	if provider := initDataEngine(context.Background(), &server.Config{}); provider != nil {
 		t.Errorf("initDataEngine() = %v, want nil when ClickHouse is not configured", provider)
 	}
 }
@@ -262,7 +262,7 @@ func TestInitDataEngine_SurvivesUnreachableClickHouse(t *testing.T) {
 	t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 	t.Setenv("CLICKHOUSE_PORT", "1")
 
-	provider := initDataEngine(context.Background(), Config{})
+	provider := initDataEngine(context.Background(), &server.Config{})
 
 	if provider == nil {
 		t.Fatal("initDataEngine() = nil, want a provider that keeps retrying")

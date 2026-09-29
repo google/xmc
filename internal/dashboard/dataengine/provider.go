@@ -207,6 +207,9 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Conn
 	if err != nil {
 		return fmt.Errorf("failed to connect to clickhouse: %w", err)
 	}
+	if conn == nil {
+		return fmt.Errorf("connector returned nil connection")
+	}
 	engine, err := New(conn)
 	if err != nil {
 		closeConn(conn)
@@ -252,6 +255,9 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 	conn, fp, err := p.dial(dialCtx)
 	if err != nil {
 		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: %w", err))
+	}
+	if conn == nil {
+		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: connection is nil"))
 	}
 	engine, err := New(conn)
 	if err != nil {

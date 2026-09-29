@@ -156,12 +156,18 @@ func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial
 //
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
-func initDataEngine(ctx context.Context, cfg Config) *dataengine.Provider {
+func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provider {
 	if !clickhouse.Configured() {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(cfg.EnableComponents, cfg.ComponentsNamespace))
+	enableComponents := false
+	componentsNamespace := "xmc"
+	if cfg != nil {
+		enableComponents = cfg.EnableComponents
+		componentsNamespace = cfg.ComponentsNamespace
+	}
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {
@@ -365,12 +371,12 @@ func run() int {
 	google.Init()
 	flag.Parse()
 
-	srvCfg := LoadConfig()
-	logger := logging.NewGCPLogger(slog.LevelInfo, srvCfg.ProjectID)
+	cfg := LoadConfig()
+	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	authenticator, oauthCfg, err := initAuthenticator(ctx, srvCfg.ProjectID)
+	authenticator, oauthCfg, err := initAuthenticator(ctx, cfg.ProjectID)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize authenticator", "error", err)
 		return 1
@@ -378,7 +384,7 @@ func run() int {
 	de := initDataEngine(ctx, cfg)
 
 	spannerDB := getSpannerDatabaseName()
-	sc, err := initSpannerClient(ctx, spannerDB, srvCfg.ProjectID)
+	sc, err := initSpannerClient(ctx, spannerDB, cfg.ProjectID)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize Spanner client", "error", err)
 		return 1
@@ -390,9 +396,9 @@ func run() int {
 		logging.Error(ctx, "Failed to initialize dashboard repository", "error", err)
 		return 1
 	}
-	authorizer := initAuthorizer(ctx, srvCfg.ProjectID, oauthCfg)
+	authorizer := initAuthorizer(ctx, cfg.ProjectID, oauthCfg)
 
-	xidClient, xidConn, err := initXidClient(srvCfg.XidServiceAddr)
+	xidClient, xidConn, err := initXidClient(cfg.XidServiceAddr)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize XID service client", "error", err)
 		return 1
@@ -400,14 +406,14 @@ func run() int {
 	defer xidConn.Close()
 
 	errChan := make(chan error, 2)
-	grpcServer, lis, err := initGRPCServer(ctx, srvCfg, repo, authorizer, xidClient, de, errChan)
+	grpcServer, lis, err := initGRPCServer(ctx, cfg, repo, authorizer, xidClient, de, errChan)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize gRPC server", "error", err)
 		return 1
 	}
 	defer lis.Close()
 
-	httpServer, err := initHTTPServer(ctx, srvCfg, authenticator, sc, de, errChan)
+	httpServer, err := initHTTPServer(ctx, cfg, authenticator, sc, de, errChan)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize HTTP server", "error", err)
 		return 1

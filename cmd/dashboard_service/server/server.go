@@ -55,10 +55,12 @@ type ChartDataEngine interface {
 
 // Config holds configuration for the dashboard service server.
 type Config struct {
-	Port           string
-	GRPCPort       string
-	ProjectID      string
-	XidServiceAddr string
+	Port                string
+	GRPCPort            string
+	ProjectID           string
+	XidServiceAddr      string
+	EnableComponents    bool
+	ComponentsNamespace string
 }
 
 // Server implements the generated pb.DashboardServiceServer interface.
