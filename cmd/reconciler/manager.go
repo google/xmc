@@ -21,12 +21,13 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/cache/cache"
-	runtimeclient "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/common/health"
@@ -148,10 +149,10 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 
 	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     ":8081",
+		Metrics:                metricsserver.Options{BindAddress: ":8081"},
 		HealthProbeBindAddress: ":8080",
-		NewCache: cache.BuilderWithOptions(cache.Options{
-			SelectorsByObject: cache.SelectorsByObject{
+		Cache: cache.Options{
+			ByObject: map[runtimeclient.Object]cache.ByObject{
 				&v1alpha2.JobSet{}: {
 					Label: labels.SelectorFromSet(labels.Set{
 						constants.ManagedByLabel: constants.XmcLabelValue,
@@ -160,7 +161,7 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 				&v1beta1.MultiKueueCluster{}: {},
 				&v1beta1.ResourceFlavor{}:    {},
 			},
-		}),
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to start manager: %w", err)

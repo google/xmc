@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
 

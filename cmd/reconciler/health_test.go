@@ -20,11 +20,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/version/version"
-	"golang/k8s_io/client_go/v/v0_23/discovery/discovery"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	healthzpkg "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/healthz/healthz"
+	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
+	healthzpkg "sigs.k8s.io/controller-runtime/pkg/healthz"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	migversion "xmanager_cloud/storage/spanner/migrations/version"
 )

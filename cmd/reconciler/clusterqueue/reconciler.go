@@ -20,14 +20,12 @@ import (
 	"fmt"
 	"sync"
 
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/logging/logging"
 )
@@ -129,14 +127,12 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		return errors.New("reconciler cannot be nil")
 	}
 	logging.Debug(ctx, "Setting up clusterqueue reconciler controller")
-	c, err := controller.New("clusterqueue", mgr, controller.Options{
-		Reconciler: r,
-	})
+	err := ctrl.NewControllerManagedBy(mgr).
+		Named("clusterqueue").
+		For(&v1beta1.ClusterQueue{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
+		Complete(r)
 	if err != nil {
 		return fmt.Errorf("failed to create clusterqueue controller: %w", err)
-	}
-	if err := c.Watch(&source.Kind{Type: &v1beta1.ClusterQueue{}}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{}); err != nil {
-		return fmt.Errorf("failed to watch ClusterQueue: %w", err)
 	}
 	return nil
 }
