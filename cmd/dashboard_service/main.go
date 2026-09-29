@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -120,15 +121,31 @@ func buildClickHouseResolver(enableComponents bool, namespace string) dataengine
 	if !enableComponents {
 		return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
 	}
-	getter, err := crreader.NewK8sGetter()
-	if err != nil {
-		return resolveClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize component CR getter: %w", err))
+	var (
+		mu      sync.Mutex
+		getter  crreader.Getter
+		secrets crreader.SecretReader
+	)
+	return func(ctx context.Context) (string, dataengine.Connector, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if getter == nil {
+			g, err := crreader.NewK8sGetter()
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+			}
+			getter = g
+		}
+		if secrets == nil {
+			s, err := crreader.NewK8sSecretReader()
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
+			}
+			secrets = s
+		}
+		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}
+		return resolveClickHouseWithSource(src, nil)(ctx)
 	}
-	secrets, err := crreader.NewK8sSecretReader()
-	if err != nil {
-		return resolveClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err))
-	}
-	return resolveClickHouseWithSource(componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}, nil)
 }
 
 func resolveClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Resolver {
@@ -157,15 +174,15 @@ func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
 func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provider {
-	if !clickhouse.Configured() {
-		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
-		return nil
-	}
 	enableComponents := false
 	componentsNamespace := "xmc"
 	if cfg != nil {
 		enableComponents = cfg.EnableComponents
 		componentsNamespace = cfg.ComponentsNamespace
+	}
+	if !clickhouse.Configured() && !enableComponents {
+		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
+		return nil
 	}
 	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
