@@ -49,14 +49,14 @@ This document provides standards for skill architecture, workflow automation, an
 - **Prevent Main Context Bloat**: Do NOT dump raw test logs or intermediate shell command outputs into the primary agent's context window. Have worker subagents summarize key metrics and actionable recommendations in their return messages.
 
 ## 9. Workflow Orchestration & Remote Automation Invariants
-- **Strict Target Commit Pinning**: Skills that orchestrate builds, deployments, E2E tests, or releases MUST explicitly pin operations to the canonical remote target (e.g. `TARGET_SHA=$(git rev-parse origin/main)`). Never default to `HEAD` or local working tree state when executing release or staging workflows.
+- **Strict Target Commit Pinning**: Skills and automation scripts that orchestrate, verify, or validate builds, deployments, E2E test runs, or releases MUST explicitly pin operations and target comparisons to the canonical remote target (e.g. `TARGET_SHA=$(git rev-parse origin/main)`). Never default to `HEAD` or local uncommitted working tree state when executing or verifying release, staging, or deployment workflows.
 - **Asynchronous Run Correlation & Polling Invariants**: When polling for newly triggered remote CI runs (e.g. GitHub Actions, Borg jobs), helpers MUST:
   1. Record dispatch timestamp $t_0$ and filter strictly on `createdAt >= t_0`.
   2. Require matching **both** timestamp and commit SHA (`headSha.startswith(target_sha)`). Never use loose `or` conditions in polling loops.
   3. Distinguish distinct execution conclusions (`success`, `failure`, `cancelled`, `sha_mismatch`) with dedicated exit codes. Report concurrency cancellation specifically if a newer run in the concurrency group supersedes the active run.
 - **Non-Mutating Preflight Validation (`--dry-run`) Before Confirmation Gates**: Before waiting on a mandatory confirmation gate for mutating, irreversible, or public operations (such as publishing a release or creating a git tag), skills and tools MUST run non-mutating preflight validation (`--dry-run`). This verifies parameter validity, commit SHA resolution, remote tag availability, and artifact existence *before* prompting the user for approval.
 - **Prohibition on `--force` and Autonomous Tag Overwrites**: Skills and automation tools MUST NEVER use `--force` or overwrite existing git tags or releases autonomously. If a tag or release already exists locally or on the remote, abort immediately and consult the user.
-- **Resumption State Loading & Persistence Idiom**: Persist multi-turn execution state using `${ARTIFACT_DIR:-/tmp}/<state_file>.json` so that state survives across session restarts and context resets. Skills that accept direct entry or resume execution MUST use the standard loading idiom:
+- **Resumption State Loading & Persistence Idiom**: Persist multi-turn execution state, verification results, and generated reports using `${ARTIFACT_DIR:-/tmp}/<file>.<ext>` to ensure survivability across session restarts and CI artifact preservation. Skills that accept direct entry or resume execution MUST use the standard loading idiom:
   ```bash
   STATE_FILE="${ARTIFACT_DIR:-/tmp}/<workflow>_state.json"
   if [[ -z "${TARGET_SHA:-}" && -f "${STATE_FILE}" ]]; then
