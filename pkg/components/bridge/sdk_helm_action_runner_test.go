@@ -26,7 +26,11 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/resource"
 
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -164,6 +168,64 @@ func TestSDKHelmActionRunner_MissingResources(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("MissingResources() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestFindMissingResources_AbortsBeforeGet verifies the checks that must stop the loop before info.Get() runs. The
+// infos have no Client, so reaching Get() would panic.
+func TestFindMissingResources_AbortsBeforeGet(t *testing.T) {
+	configMap := &unstructured.Unstructured{}
+	configMap.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		info    *resource.Info
+		wantErr string
+	}{
+		{
+			name:    "cancelled context",
+			ctx:     cancelled,
+			info:    &resource.Info{Name: "a", Mapping: &meta.RESTMapping{GroupVersionKind: configMap.GroupVersionKind()}},
+			wantErr: context.Canceled.Error(),
+		},
+		{
+			name:    "nil REST mapping",
+			ctx:     context.Background(),
+			info:    &resource.Info{Name: "a", Object: configMap},
+			wantErr: `ConfigMap "a" of Helm release "xmc-cmp-a" has no REST mapping`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findMissingResources(tt.ctx, "xmc-cmp-a", []*resource.Info{tt.info})
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("findMissingResources() = (%v, %v), want error %q", got, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResourceKind(t *testing.T) {
+	configMap := &unstructured.Unstructured{}
+	configMap.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	tests := []struct {
+		name string
+		info *resource.Info
+		want string
+	}{
+		{name: "from mapping", info: &resource.Info{Mapping: &meta.RESTMapping{GroupVersionKind: schema.GroupVersionKind{Kind: "Role"}}, Object: configMap}, want: "Role"},
+		{name: "from object", info: &resource.Info{Object: configMap}, want: "ConfigMap"},
+		{name: "object without kind", info: &resource.Info{Object: &unstructured.Unstructured{}}, want: "Unknown"},
+		{name: "neither", info: &resource.Info{}, want: "Unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resourceKind(tt.info); got != tt.want {
+				t.Errorf("resourceKind() = %q, want %q", got, tt.want)
 			}
 		})
 	}

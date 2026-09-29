@@ -1670,29 +1670,42 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 	}
 }
 
-// TestK8sHelmManager_Delete1PComponent_ClearsRepair verifies uninstalling a component drops any pending repair marker.
-func TestK8sHelmManager_Delete1PComponent_ClearsRepair(t *testing.T) {
-	ctx := context.Background()
+// TestK8sHelmManager_TeardownClearsRepair verifies that uninstalling, purging, or orphaning a component drops any
+// pending repair marker.
+func TestK8sHelmManager_TeardownClearsRepair(t *testing.T) {
 	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
-	runner := &mockHelmActionRunner{}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
-	defer mgr.Close()
-	if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
-		t.Fatalf("Ensure1PComponent failed: %v", err)
+	tests := []struct {
+		name     string
+		teardown func(context.Context, *K8sHelmManager) error
+	}{
+		{name: "Delete1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Delete1PComponent(ctx, ref) }},
+		{name: "Purge1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Purge1PComponent(ctx, ref) }},
+		{name: "Orphan1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Orphan1PComponent(ctx, ref) }},
 	}
-	runner.mu.Lock()
-	runner.missing = []string{"Service/ingestion-gateway-service"}
-	runner.mu.Unlock()
-	if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != ReasonHelmReleaseDrifted {
-		t.Fatalf("ComponentHealth() reason = %q, want %q", reason, ReasonHelmReleaseDrifted)
-	}
-	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
-		t.Fatalf("Delete1PComponent failed: %v", err)
-	}
-	mgr.mu.RLock()
-	defer mgr.mu.RUnlock()
-	if mgr.repairNeeded[componentKey(ref.Namespace, ref.Name)] {
-		t.Error("repairNeeded still set after Delete1PComponent")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			runner := &mockHelmActionRunner{}
+			mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+			defer mgr.Close()
+			if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+				t.Fatalf("Ensure1PComponent failed: %v", err)
+			}
+			runner.mu.Lock()
+			runner.missing = []string{"Service/ingestion-gateway-service"}
+			runner.mu.Unlock()
+			if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != ReasonHelmReleaseDrifted {
+				t.Fatalf("ComponentHealth() reason = %q, want %q", reason, ReasonHelmReleaseDrifted)
+			}
+			if err := tt.teardown(ctx, mgr); err != nil {
+				t.Fatalf("%s failed: %v", tt.name, err)
+			}
+			mgr.mu.RLock()
+			defer mgr.mu.RUnlock()
+			if mgr.repairNeeded[componentKey(ref.Namespace, ref.Name)] {
+				t.Errorf("repairNeeded still set after %s", tt.name)
+			}
+		})
 	}
 }
 

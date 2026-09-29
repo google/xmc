@@ -24,6 +24,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/resource"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
@@ -162,7 +163,8 @@ func (r *SDKHelmActionRunner) Status(ctx context.Context, releaseName, namespace
 }
 
 // MissingResources parses rel's rendered manifest (hooks excluded) and GETs every object from the cluster, returning
-// "Kind/name" for each one that is NotFound. Any other lookup error aborts the check and is returned.
+// "Kind/name" for each one that is NotFound. Context cancellation, an object without a REST mapping, or any other
+// lookup error aborts the check and is returned.
 func (r *SDKHelmActionRunner) MissingResources(ctx context.Context, rel *release.Release) ([]string, error) {
 	if rel == nil {
 		return nil, errors.New("helm release is nil")
@@ -175,18 +177,43 @@ func (r *SDKHelmActionRunner) MissingResources(ctx context.Context, rel *release
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse manifest of Helm release %q: %w", rel.Name, err)
 	}
+	return findMissingResources(ctx, rel.Name, resources)
+}
+
+// findMissingResources GETs each resource and returns "Kind/name" for every one that is NotFound.
+func findMissingResources(ctx context.Context, releaseName string, resources []*resource.Info) ([]string, error) {
 	var missing []string
 	for _, info := range resources {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// info.Get() dereferences info.Mapping, so an unmapped object cannot be looked up.
+		if info.Mapping == nil {
+			return nil, fmt.Errorf("%s %q of Helm release %q has no REST mapping", resourceKind(info), info.Name, releaseName)
+		}
 		getErr := info.Get()
 		if apierrors.IsNotFound(getErr) {
-			missing = append(missing, info.Mapping.GroupVersionKind.Kind+"/"+info.Name)
+			missing = append(missing, resourceKind(info)+"/"+info.Name)
 			continue
 		}
 		if getErr != nil {
-			return nil, fmt.Errorf("failed to get %s %q of Helm release %q: %w", info.Mapping.GroupVersionKind.Kind, info.Name, rel.Name, getErr)
+			return nil, fmt.Errorf("failed to get %s %q of Helm release %q: %w", resourceKind(info), info.Name, releaseName, getErr)
 		}
 	}
 	return missing, nil
+}
+
+// resourceKind returns the Kind of info, preferring its REST mapping and falling back to the decoded object.
+func resourceKind(info *resource.Info) string {
+	if info.Mapping != nil {
+		return info.Mapping.GroupVersionKind.Kind
+	}
+	if info.Object != nil {
+		if kind := info.Object.GetObjectKind().GroupVersionKind().Kind; kind != "" {
+			return kind
+		}
+	}
+	return "Unknown"
 }
 
 // newActionConfig initializes a Helm action configuration scoped to namespace using the runner's storage driver.
