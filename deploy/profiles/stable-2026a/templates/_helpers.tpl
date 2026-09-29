@@ -4,6 +4,10 @@ SPDX-License-Identifier: Apache-2.0
 */}}
 
 {{/*
+See README.md "How the Profile Renders Components" for the rendering flow and design rationale.
+*/}}
+
+{{/*
 xmc-profile.mergeInto deep-merges src into dst in place: (list dst src).
 Keys in src always win, including explicit false, 0 and "" values, which sprig
 merge/mergeOverwrite silently drop. Nested maps merge recursively; lists and

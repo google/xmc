@@ -108,11 +108,48 @@ Component runtime dependencies are not Helm dependencies. They are expressed in 
 - A profile patch release bumps the changed component's `Chart.yaml` version and the patch version in the profile [`Chart.yaml`](Chart.yaml).
 - [`profile.yaml`](profile.yaml) records the minimum XMC release and the support window. A test keeps its `name` consistent with the `Chart.yaml` annotation, `values.yaml`, and `values.schema.json`.
 
+## How the Profile Renders Components
+
+[`templates/components.yaml`](templates/components.yaml) calls `xmc-profile.component` from [`templates/_helpers.tpl`](templates/_helpers.tpl) once per catalog component. That helper resolves values the way Helm resolves a sub-chart, then renders the component's own `component.yaml` with `tpl`:
+
+```mermaid
+flowchart LR
+  chart["readYaml components/NAME/Chart.yaml"] --> values["readYaml components/NAME/values.yaml"]
+  values --> body["readFile components/NAME/templates/component.yaml"]
+  body --> global["mergeInto global"]
+  global --> overrides["mergeInto components.NAME"]
+  overrides --> ctx["build .Chart and .Template context"]
+  ctx --> tpl["tpl body with context"]
+  tpl --> cr["Component CR"]
+```
+
+For example, with admin values `global.imageTag: v1.2.3` and overrides under `components.ingestion-gateway`, the rendered `ingestion-gateway` CR resolves as follows:
+
+| Key | Component `values.yaml` | `global` | `components.ingestion-gateway` | Result |
+| :--- | :--- | :--- | :--- | :--- |
+| `deletionProtection` | `true` | | `false` | `false`: explicit falsy overrides win |
+| `parameters.topicName` | `xmc-metrics` | | `custom` | `custom` |
+| `parameters.port` | `8080` | | | `8080`: nested maps merge key by key |
+| `dependencies` | `[redpanda, clickhouse]` | | `[redpanda]` | `[redpanda]`: lists are replaced |
+| `global.imageTag` | `""` | `v1.2.3` | | `v1.2.3`, rendered as `spec.imageTag` |
+
+### Why the Template Looks Unusual
+
+| Pattern | Reason |
+| :--- | :--- |
+| `.Files.Glob` on a literal path | Helm 3 `.Files` has no callable `Has` method. A missing file fails rendering with a clear error instead of rendering an empty template. |
+| `hasKey $parsed "Error"` after `fromYaml` | `fromYaml` returns `{"Error": ...}` for invalid YAML, which would otherwise merge silently into the values or chart metadata. |
+| Custom `mergeInto` instead of sprig `merge`/`mergeOverwrite` | Sprig drops falsy overrides, so `deletionProtection: false` would be ignored. |
+| Helpers fill a caller-provided dict in place | Named templates can only return strings. |
+| `deepCopy` of merged maps | The resolved values never alias a `.Values` map. Lists stay shared, which is safe because component templates never mutate them. |
+| Hand-built `tpl` context | `tpl` receives only `.Values`, `.Chart`, `.Release`, `.Capabilities`, and `.Template` (`Name`, `BasePath`); the component chart's `.Files` and named templates are not loaded. |
+
 ## Authoring `component.yaml`
 
-The meta-chart renders each `components/<name>/templates/component.yaml` with `tpl`, so these templates must follow this invariant:
+The profile renders each `components/<name>/templates/component.yaml` with the limited `tpl` context described above, so these templates must follow these rules:
 
 - Use only `.Values`, `.Chart` (`Name`, `Version`, `AppVersion`), `.Release`, `.Capabilities`, and `.Template`.
-- Do not `include` named templates from the component chart's `_*.tpl` files, and do not use `.Files`. Neither is available when the profile renders the template.
+- Do not `include` named templates from the component chart's `_*.tpl` files, and do not use `.Files`.
+- Do not exclude `components/*/Chart.yaml`, `components/*/values.yaml`, or `components/*/templates/component.yaml` in [`.helmignore`](.helmignore); the profile reads them through `.Files` and fails rendering if one is missing.
 
 When adding a component, add it to the list in [`templates/components.yaml`](templates/components.yaml), to `components` in [`values.yaml`](values.yaml) and [`values.schema.json`](values.schema.json), and to the `:chart` filegroup in [`BUILD.bazel`](BUILD.bazel). [`profile_chart_test.go`](../../../test/helm/profiles/stable2026a/profile_chart_test.go) checks that rendering matches each standalone component chart and that the catalog lists stay consistent.
