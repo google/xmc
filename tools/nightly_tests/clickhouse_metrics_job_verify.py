@@ -19,6 +19,12 @@ Asserts that the ClickHouse Metrics Ingestion validation experiment and its Work
 were correctly created, scheduled to the expected queue, configured with metric writer
 JobSet specifications, and executed to completion.
 
+Note:
+    This script serves as the lean baseline verifier for the workload's Kubernetes lifecycle
+    and JobSet specification. Comprehensive analytical ClickHouse SQL row-count assertions
+    and Dashboard Service hydration validations are implemented in stacked PR #1029
+    (tools/nightly_tests/clickhouse_metrics_job_verify.py).
+
 Usage:
     python3 -m tools.nightly_tests.clickhouse_metrics_job_verify --xid=22
 """
