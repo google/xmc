@@ -187,26 +187,24 @@ from xmanager.vizier.service import resources_pb2
 from xmanager.xm_cloud import work_unit_pb2
 
 with xm_cloud.create_experiment(experiment_title="simple-job") as experiment:
-  job_proto = work_unit_pb2.Job(
-      name="worker",
-      kubernetes_job=work_unit_pb2.KubernetesJob(
-          image_uri="python:3.11-slim",
-          args=["python3", "-c", "print('Hello from Full XMC')"],
-          resources=resources_pb2.Resources(cpu=1, memory_bytes=1024**3),
-          replica_count=1,
-      ),
-  )
-  wu_proto = work_unit_pb2.WorkUnit(
-      scheduling_constraints=work_unit_pb2.SchedulingConstraints(
-          local_queue="default-queue"
-      ),
-      payload=work_unit_pb2.WorkUnitPayload(jobs=[job_proto]),
-  )
-  req = work_unit_pb2.CreateWorkUnitRequest(
-      parent=experiment.resource_name,
-      work_unit=wu_proto,
-  )
-  experiment._experiment_state_stub.create_work_unit(req)
+    job_proto = work_unit_pb2.Job(
+        name="worker",
+        kubernetes_job=work_unit_pb2.KubernetesJob(
+            image_uri="python:3.11-slim",
+            args=["python3", "-c", "print('Hello from Full XMC')"],
+            resources=resources_pb2.Resources(cpu=1, memory_bytes=1024**3),
+            replica_count=1,
+        ),
+    )
+    wu_proto = work_unit_pb2.WorkUnit(
+        scheduling_constraints=work_unit_pb2.SchedulingConstraints(local_queue="default-queue"),
+        payload=work_unit_pb2.WorkUnitPayload(jobs=[job_proto]),
+    )
+    req = work_unit_pb2.CreateWorkUnitRequest(
+        parent=experiment.resource_name,
+        work_unit=wu_proto,
+    )
+    experiment._experiment_state_stub.create_work_unit(req)
 ```
 
 Or using the high-level `xm_cloud` SDK:
@@ -216,22 +214,22 @@ from xmanager import xm
 from xmanager import xm_cloud
 
 with xm_cloud.create_experiment(experiment_title="simple-job") as experiment:
-  [executable] = experiment.package([
-      xm.container(
-          image_path="python:3.11-slim",
-          executor_spec=xm_cloud.KubernetesJobExecutorSpec(),
-      )
-  ])
-  job = xm.Job(
-      executable=executable,
-      executor=xm_cloud.KubernetesJobExecutor(
-          requirements=xm.JobRequirements(cpu=1, ram=1 * xm.GiB),
-          replica_retry_limit=0,
-      ),
-      args=["python3", "-c", "print('Hello from xm_cloud')"],
-      name="worker",
-  )
-  experiment.add(job)
+    [executable] = experiment.package([
+        xm.container(
+            image_path="python:3.11-slim",
+            executor_spec=xm_cloud.KubernetesJobExecutorSpec(),
+        )
+    ])
+    job = xm.Job(
+        executable=executable,
+        executor=xm_cloud.KubernetesJobExecutor(
+            requirements=xm.JobRequirements(cpu=1, ram=1 * xm.GiB),
+            replica_retry_limit=0,
+        ),
+        args=["python3", "-c", "print('Hello from xm_cloud')"],
+        name="worker",
+    )
+    experiment.add(job)
 ```
 
 ### B. XMC Lite Script (`xm_local.Kubernetes`)
@@ -243,24 +241,20 @@ from xmanager import xm
 from xmanager import xm_local
 from xmanager.xm_local import executables as local_executables
 
-with xm_local.create_experiment(
-    experiment_title="simple-job-lite"
-) as experiment:
-  executable = local_executables.GoogleContainerRegistryImage(
-      name="worker",
-      image_path="python:3.11-slim",
-      args=xm.SequentialArgs.from_collection(
-          ["python3", "-c", "print('Hello from XMC Lite')"]
-      ),
-  )
-  job = xm.Job(
-      executable=executable,
-      executor=xm_local.Kubernetes(
-          requirements=xm.JobRequirements(cpu=1, ram=1 * xm.GiB),
-      ),
-      name="worker",
-  )
-  experiment.add(job)
+with xm_local.create_experiment(experiment_title="simple-job-lite") as experiment:
+    executable = local_executables.GoogleContainerRegistryImage(
+        name="worker",
+        image_path="python:3.11-slim",
+        args=xm.SequentialArgs.from_collection(["python3", "-c", "print('Hello from XMC Lite')"]),
+    )
+    job = xm.Job(
+        executable=executable,
+        executor=xm_local.Kubernetes(
+            requirements=xm.JobRequirements(cpu=1, ram=1 * xm.GiB),
+        ),
+        name="worker",
+    )
+    experiment.add(job)
 ```
 
 ### C. Summary of Differences & SDK Gap Analysis
