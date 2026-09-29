@@ -382,15 +382,16 @@ func (c *closableMockConn) Close() error {
 
 func newSummaryConn(metricName string, lastVal float64) *closableMockConn {
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
-	return &closableMockConn{
-		mockClickHouseConn: mockClickHouseConn{
-			queryFn: func(ctx context.Context, query string, args ...any) (driver.Rows, error) {
-				return &mockRows{data: [][]any{
-					{metricName, lastVal, lastVal, lastVal, lastVal, int64(1), sampleTime},
-				}}, nil
-			},
-		},
+	conn := &closableMockConn{}
+	conn.queryFn = func(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+		if conn.closed.Load() {
+			return nil, errors.New("clickhouse connection is closed")
+		}
+		return &mockRows{data: [][]any{
+			{metricName, lastVal, lastVal, lastVal, lastVal, int64(1), sampleTime},
+		}}, nil
 	}
+	return conn
 }
 
 func summaryTestChart() *dpb.Chart {
@@ -462,68 +463,76 @@ func TestDynamicProviderUnchangedFingerprintReusesEngine(t *testing.T) {
 }
 
 func TestDynamicProviderChangedFingerprintSwapsEngineAndClosesOldConn(t *testing.T) {
-	connV1 := newSummaryConn("loss", 0.5)
-	connV2 := newSummaryConn("loss", 0.1)
+	for _, gracePeriod := range []time.Duration{0, 15 * time.Millisecond} {
+		t.Run(fmt.Sprintf("grace_%s", gracePeriod), func(t *testing.T) {
+			connV1 := newSummaryConn("loss", 0.5)
+			connV2 := newSummaryConn("loss", 0.1)
 
-	var mu sync.Mutex
-	currentFP := "fp-v1"
-	currentConn := connV1
-	var dialCount int
+			var mu sync.Mutex
+			currentFP := "fp-v1"
+			currentConn := connV1
+			var dialCount int
 
-	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
-		mu.Lock()
-		fp, c := currentFP, currentConn
-		mu.Unlock()
-		return fp, func(ctx context.Context) (ClickHouseConn, error) {
+			provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+				mu.Lock()
+				fp, c := currentFP, currentConn
+				mu.Unlock()
+				return fp, func(ctx context.Context) (ClickHouseConn, error) {
+					mu.Lock()
+					dialCount++
+					mu.Unlock()
+					return c, nil
+				}, nil
+			}, WithRetryInterval(0), WithCloseGracePeriod(gracePeriod))
+
+			if err := provider.Ping(context.Background()); err != nil {
+				t.Fatalf("initial Ping() error: %v", err)
+			}
+			dataV1, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+			if err != nil {
+				t.Fatalf("FetchChartData() v1 error: %v", err)
+			}
+			if got := dataV1.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
+				t.Fatalf("v1 summary LatestValue = %v, want 0.5", got)
+			}
+
+			// Update configuration to v2. Before Ping runs, chart queries continue using the cached v1 engine.
 			mu.Lock()
-			dialCount++
+			currentFP = "fp-v2"
+			currentConn = connV2
 			mu.Unlock()
-			return c, nil
-		}, nil
-	}, WithRetryInterval(0))
 
-	if err := provider.Ping(context.Background()); err != nil {
-		t.Fatalf("initial Ping() error: %v", err)
-	}
-	dataV1, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
-	if err != nil {
-		t.Fatalf("FetchChartData() v1 error: %v", err)
-	}
-	if got := dataV1.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
-		t.Fatalf("v1 summary LatestValue = %v, want 0.5", got)
-	}
+			prePingData, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+			if err != nil {
+				t.Fatalf("FetchChartData() before Ping error: %v", err)
+			}
+			if got := prePingData.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
+				t.Fatalf("pre-Ping summary LatestValue = %v, want 0.5 from cached engine", got)
+			}
 
-	// Update configuration to v2. Before Ping runs, chart queries continue using the cached v1 engine.
-	mu.Lock()
-	currentFP = "fp-v2"
-	currentConn = connV2
-	mu.Unlock()
+			// Ping detects fingerprint change, dials v2, swaps engine, and schedules closing v1 connection.
+			if err := provider.Ping(context.Background()); err != nil {
+				t.Fatalf("Ping() after fingerprint change error: %v", err)
+			}
+			deadline := time.Now().Add(200 * time.Millisecond)
+			for !connV1.closed.Load() && time.Now().Before(deadline) {
+				time.Sleep(2 * time.Millisecond)
+			}
+			if !connV1.closed.Load() {
+				t.Error("connV1.closed = false, want true after engine swap and grace period")
+			}
+			if connV2.closed.Load() {
+				t.Error("connV2.closed = true, want false for active connection")
+			}
 
-	prePingData, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
-	if err != nil {
-		t.Fatalf("FetchChartData() before Ping error: %v", err)
-	}
-	if got := prePingData.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
-		t.Fatalf("pre-Ping summary LatestValue = %v, want 0.5 from cached engine", got)
-	}
-
-	// Ping detects fingerprint change, dials v2, swaps engine, and closes v1 connection.
-	if err := provider.Ping(context.Background()); err != nil {
-		t.Fatalf("Ping() after fingerprint change error: %v", err)
-	}
-	if !connV1.closed.Load() {
-		t.Error("connV1.closed = false, want true after engine swap")
-	}
-	if connV2.closed.Load() {
-		t.Error("connV2.closed = true, want false for active connection")
-	}
-
-	dataV2, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
-	if err != nil {
-		t.Fatalf("FetchChartData() v2 error: %v", err)
-	}
-	if got := dataV2.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.1 {
-		t.Errorf("v2 summary LatestValue = %v, want 0.1", got)
+			dataV2, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+			if err != nil {
+				t.Fatalf("FetchChartData() v2 error: %v", err)
+			}
+			if got := dataV2.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.1 {
+				t.Errorf("v2 summary LatestValue = %v, want 0.1", got)
+			}
+		})
 	}
 }
 
@@ -534,7 +543,7 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 	tests := []struct {
 		name           string
 		nextResolve    Resolver
-		checkAfterPing func(t *testing.T)
+		checkAfterPing func(t *testing.T, err error)
 	}{
 		{
 			name: "resolver error on Ping",
@@ -565,9 +574,12 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 			nextResolve: func(ctx context.Context) (string, Connector, error) {
 				return "fp-v2", func(context.Context) (ClickHouseConn, error) { return unhealthyNewConn, nil }, nil
 			},
-			checkAfterPing: func(t *testing.T) {
+			checkAfterPing: func(t *testing.T, err error) {
 				if !unhealthyNewConn.closed.Load() {
 					t.Error("unhealthyNewConn.closed = false, want failed replacement connection closed")
+				}
+				if err == nil || !errors.Is(err, errors.Unwrap(err)) {
+					t.Errorf("Ping() error = %v, want wrapped error", err)
 				}
 			},
 		},
@@ -595,14 +607,15 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 			activeResolve = tt.nextResolve
 			mu.Unlock()
 
-			if err := provider.Ping(context.Background()); err == nil {
+			pingErr := provider.Ping(context.Background())
+			if pingErr == nil {
 				t.Fatal("Ping() succeeded on broken config update, want error")
 			}
 			if connV1.closed.Load() {
 				t.Error("connV1.closed = true, want existing engine connection kept open when rebuild fails")
 			}
 			if tt.checkAfterPing != nil {
-				tt.checkAfterPing(t)
+				tt.checkAfterPing(t, pingErr)
 			}
 
 			data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)

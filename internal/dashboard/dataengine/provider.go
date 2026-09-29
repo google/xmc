@@ -33,6 +33,10 @@ import (
 // struggling ClickHouse into a dial flood from every dashboard service pod at once.
 const defaultRetryInterval = 15 * time.Second
 
+// defaultCloseGracePeriod bounds how long a superseded DataEngine remains open after a config swap
+// so in-flight lock-free chart queries on the previous connection pool can finish cleanly.
+const defaultCloseGracePeriod = time.Minute
+
 // dialKey names the shared connection attempt. A Provider dials one destination, so every caller
 // waiting for an engine waits on the same key.
 const dialKey = "clickhouse"
@@ -49,9 +53,10 @@ type Resolver func(ctx context.Context) (fingerprint string, connect Connector, 
 // the engine once at startup left the process permanently without one in both cases, so callers
 // ask the Provider instead and it retries, at a bounded rate, until a connection succeeds.
 type Provider struct {
-	connect       Connector
-	resolve       Resolver
-	retryInterval time.Duration
+	connect          Connector
+	resolve          Resolver
+	retryInterval    time.Duration
+	closeGracePeriod time.Duration
 
 	// engine is read on every call and that read must never block. A reader lock would not do:
 	// it queues behind an in-flight dial, which is precisely the wait Engine promises callers it
@@ -61,7 +66,7 @@ type Provider struct {
 	// group collapses concurrent dials into one shared attempt whose result every caller receives.
 	group singleflight.Group
 
-	// rebuildMu serializes readiness configuration checks and engine swaps once an initial engine exists.
+	// rebuildMu serializes engine swaps once a configuration fingerprint change is detected.
 	rebuildMu sync.Mutex
 
 	// mu guards the bookkeeping the retry interval is computed from and the active config fingerprint.
@@ -84,14 +89,22 @@ func WithRetryInterval(interval time.Duration) ProviderOption {
 	}
 }
 
+// WithCloseGracePeriod overrides how long a superseded engine waits before closing its connection.
+func WithCloseGracePeriod(gracePeriod time.Duration) ProviderOption {
+	return func(p *Provider) {
+		p.closeGracePeriod = gracePeriod
+	}
+}
+
 // NewProvider creates a Provider that builds engines over the connections connect returns.
 func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 	if connect == nil {
 		panic("connect must not be nil")
 	}
 	provider := &Provider{
-		connect:       connect,
-		retryInterval: defaultRetryInterval,
+		connect:          connect,
+		retryInterval:    defaultRetryInterval,
+		closeGracePeriod: defaultCloseGracePeriod,
 	}
 	for _, opt := range opts {
 		opt(provider)
@@ -106,8 +119,9 @@ func NewDynamicProvider(resolve Resolver, opts ...ProviderOption) *Provider {
 		panic("resolve must not be nil")
 	}
 	provider := &Provider{
-		resolve:       resolve,
-		retryInterval: defaultRetryInterval,
+		resolve:          resolve,
+		retryInterval:    defaultRetryInterval,
+		closeGracePeriod: defaultCloseGracePeriod,
 	}
 	for _, opt := range opts {
 		opt(provider)
@@ -164,9 +178,6 @@ func (p *Provider) Ping(ctx context.Context) error {
 }
 
 func (p *Provider) pingDynamic(ctx context.Context) error {
-	p.rebuildMu.Lock()
-	defer p.rebuildMu.Unlock()
-
 	fp, connect, err := p.resolve(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve clickhouse configuration: %w", err)
@@ -175,9 +186,20 @@ func (p *Provider) pingDynamic(ctx context.Context) error {
 		return fmt.Errorf("failed to resolve clickhouse configuration: connector must not be nil")
 	}
 	if !p.hasFingerprint(fp) {
-		return p.rebuild(ctx, fp, connect)
+		if err := p.rebuildIfChanged(ctx, fp, connect); err != nil {
+			return err
+		}
 	}
 	return p.engine.Load().Ping(ctx)
+}
+
+func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, connect Connector) error {
+	p.rebuildMu.Lock()
+	defer p.rebuildMu.Unlock()
+	if p.hasFingerprint(fingerprint) {
+		return nil
+	}
+	return p.rebuild(ctx, fingerprint, connect)
 }
 
 func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Connector) error {
@@ -192,10 +214,10 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Conn
 	}
 	if err := engine.Ping(ctx); err != nil {
 		closeConn(conn)
-		return err
+		return fmt.Errorf("failed to ping clickhouse: %w", err)
 	}
 	old := p.storeEngine(engine, fingerprint)
-	closeEngine(old)
+	p.scheduleCloseEngine(old)
 	return nil
 }
 
@@ -288,6 +310,19 @@ func (p *Provider) storeEngine(engine *DataEngine, fingerprint string) *DataEngi
 	p.fingerprint = fingerprint
 	p.lastErr = nil
 	return p.engine.Swap(engine)
+}
+
+func (p *Provider) scheduleCloseEngine(engine *DataEngine) {
+	if engine == nil {
+		return
+	}
+	if p.closeGracePeriod <= 0 {
+		closeEngine(engine)
+		return
+	}
+	time.AfterFunc(p.closeGracePeriod, func() {
+		closeEngine(engine)
+	})
 }
 
 func closeConn(conn ClickHouseConn) {
