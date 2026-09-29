@@ -18,6 +18,8 @@ package componentconfig
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"strconv"
@@ -49,6 +51,16 @@ type Source struct {
 	Namespace string
 	Getter    crreader.Getter
 	Secrets   crreader.SecretReader
+}
+
+// OptionsFingerprint returns a deterministic SHA-256 hex digest of the connection target and credentials in opts.
+func OptionsFingerprint(opts *clickhouse.Options) string {
+	if opts == nil {
+		return ""
+	}
+	payload := strings.Join(opts.Addr, ",") + "\x00" + opts.Auth.Database + "\x00" + opts.Auth.Username + "\x00" + opts.Auth.Password
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
 }
 
 // ResolveOptions returns ClickHouse connection options resolved from the clickhouse Component CR

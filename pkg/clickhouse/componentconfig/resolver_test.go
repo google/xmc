@@ -265,3 +265,31 @@ func TestParseEndpointsEdgeCases(t *testing.T) {
 		t.Errorf("joinValidatedHostPort(empty host) succeeded, want error")
 	}
 }
+
+func TestOptionsFingerprint(t *testing.T) {
+	t.Parallel()
+	if got := OptionsFingerprint(nil); got != "" {
+		t.Errorf("OptionsFingerprint(nil) = %q, want empty string", got)
+	}
+	base := &clickhouse.Options{
+		Addr: []string{"ch-0.local:9000", "ch-1.local:9000"},
+		Auth: clickhouse.Auth{Database: "analytics", Username: "reader", Password: "secret"},
+	}
+	baseFP := OptionsFingerprint(base)
+	if baseFP == "" {
+		t.Fatal("OptionsFingerprint(base) returned empty string")
+	}
+	if got := OptionsFingerprint(base); got != baseFP {
+		t.Errorf("OptionsFingerprint(base) = %q, want deterministic %q", got, baseFP)
+	}
+	for _, variant := range []*clickhouse.Options{
+		{Addr: []string{"ch-0.local:9000"}, Auth: base.Auth},
+		{Addr: base.Addr, Auth: clickhouse.Auth{Database: "other", Username: "reader", Password: "secret"}},
+		{Addr: base.Addr, Auth: clickhouse.Auth{Database: "analytics", Username: "other", Password: "secret"}},
+		{Addr: base.Addr, Auth: clickhouse.Auth{Database: "analytics", Username: "reader", Password: "other"}},
+	} {
+		if got := OptionsFingerprint(variant); got == baseFP {
+			t.Errorf("OptionsFingerprint(%+v) = %q, want distinct fingerprint from base", variant, got)
+		}
+	}
+}

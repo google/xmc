@@ -17,10 +17,13 @@ package dataengine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
@@ -365,4 +368,322 @@ func mustFail(t *testing.T, provider *Provider) error {
 		t.Fatalf("Engine() = %v, want an error", engine)
 	}
 	return err
+}
+
+type closableMockConn struct {
+	mockClickHouseConn
+	closed atomic.Bool
+}
+
+func (c *closableMockConn) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func newSummaryConn(metricName string, lastVal float64) *closableMockConn {
+	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	return &closableMockConn{
+		mockClickHouseConn: mockClickHouseConn{
+			queryFn: func(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+				return &mockRows{data: [][]any{
+					{metricName, lastVal, lastVal, lastVal, lastVal, int64(1), sampleTime},
+				}}, nil
+			},
+		},
+	}
+}
+
+func summaryTestChart() *dpb.Chart {
+	return &dpb.Chart{
+		Name: "experiments/1/workUnits/1/charts/summary",
+		Xid:  1,
+		Wid:  1,
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "kpi",
+				Type:   dpb.PlotType_SUMMARY_BOX,
+				Data:   &dpb.DataSpec{Metrics: []string{"loss"}},
+			},
+		},
+	}
+}
+
+func TestNewDynamicProviderPanicsWithoutResolver(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("NewDynamicProvider(nil) returned normally, want a panic")
+		}
+	}()
+
+	NewDynamicProvider(nil)
+}
+
+func TestDynamicProviderUnchangedFingerprintReusesEngine(t *testing.T) {
+	var resolveCalls, dialCalls atomic.Int32
+	conn := newSummaryConn("loss", 0.5)
+	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+		resolveCalls.Add(1)
+		return "fp-v1", func(ctx context.Context) (ClickHouseConn, error) {
+			dialCalls.Add(1)
+			return conn, nil
+		}, nil
+	}, WithRetryInterval(0))
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	firstEngine, err := provider.Engine(context.Background())
+	if err != nil {
+		t.Fatalf("Engine() error: %v", err)
+	}
+
+	// Chart queries must never call the resolver once an engine is cached.
+	if _, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil); err != nil {
+		t.Fatalf("FetchChartData() error: %v", err)
+	}
+	if got := resolveCalls.Load(); got != 1 {
+		t.Errorf("resolveCalls after FetchChartData = %d, want 1 (zero K8s resolution on query path)", got)
+	}
+
+	// Subsequent Ping with unchanged fingerprint re-checks fingerprint without re-dialing.
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("second Ping() error: %v", err)
+	}
+	secondEngine, _ := provider.Engine(context.Background())
+	if firstEngine != secondEngine {
+		t.Errorf("Engine() changed on unchanged fingerprint: %p != %p", firstEngine, secondEngine)
+	}
+	if got := dialCalls.Load(); got != 1 {
+		t.Errorf("dialCalls = %d, want 1", got)
+	}
+	if conn.closed.Load() {
+		t.Error("active connection was closed on unchanged fingerprint")
+	}
+}
+
+func TestDynamicProviderChangedFingerprintSwapsEngineAndClosesOldConn(t *testing.T) {
+	connV1 := newSummaryConn("loss", 0.5)
+	connV2 := newSummaryConn("loss", 0.1)
+
+	var mu sync.Mutex
+	currentFP := "fp-v1"
+	currentConn := connV1
+	var dialCount int
+
+	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+		mu.Lock()
+		fp, c := currentFP, currentConn
+		mu.Unlock()
+		return fp, func(ctx context.Context) (ClickHouseConn, error) {
+			mu.Lock()
+			dialCount++
+			mu.Unlock()
+			return c, nil
+		}, nil
+	}, WithRetryInterval(0))
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	dataV1, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+	if err != nil {
+		t.Fatalf("FetchChartData() v1 error: %v", err)
+	}
+	if got := dataV1.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
+		t.Fatalf("v1 summary LatestValue = %v, want 0.5", got)
+	}
+
+	// Update configuration to v2. Before Ping runs, chart queries continue using the cached v1 engine.
+	mu.Lock()
+	currentFP = "fp-v2"
+	currentConn = connV2
+	mu.Unlock()
+
+	prePingData, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+	if err != nil {
+		t.Fatalf("FetchChartData() before Ping error: %v", err)
+	}
+	if got := prePingData.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
+		t.Fatalf("pre-Ping summary LatestValue = %v, want 0.5 from cached engine", got)
+	}
+
+	// Ping detects fingerprint change, dials v2, swaps engine, and closes v1 connection.
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping() after fingerprint change error: %v", err)
+	}
+	if !connV1.closed.Load() {
+		t.Error("connV1.closed = false, want true after engine swap")
+	}
+	if connV2.closed.Load() {
+		t.Error("connV2.closed = true, want false for active connection")
+	}
+
+	dataV2, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+	if err != nil {
+		t.Fatalf("FetchChartData() v2 error: %v", err)
+	}
+	if got := dataV2.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.1 {
+		t.Errorf("v2 summary LatestValue = %v, want 0.1", got)
+	}
+}
+
+func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
+	unhealthyNewConn := newSummaryConn("loss", 0.9)
+	unhealthyNewConn.pingFn = func(context.Context) error { return errors.New("new clickhouse ping failed") }
+
+	tests := []struct {
+		name           string
+		nextResolve    Resolver
+		checkAfterPing func(t *testing.T)
+	}{
+		{
+			name: "resolver error on Ping",
+			nextResolve: func(ctx context.Context) (string, Connector, error) {
+				return "", nil, errors.New("k8s api timeout")
+			},
+		},
+		{
+			name: "nil connector returned by resolver on Ping",
+			nextResolve: func(ctx context.Context) (string, Connector, error) {
+				return "fp-v2", nil, nil
+			},
+		},
+		{
+			name: "dial failure on fingerprint change",
+			nextResolve: func(ctx context.Context) (string, Connector, error) {
+				return "fp-v2", func(context.Context) (ClickHouseConn, error) { return fails() }, nil
+			},
+		},
+		{
+			name: "nil connection on fingerprint change",
+			nextResolve: func(ctx context.Context) (string, Connector, error) {
+				return "fp-v2", func(context.Context) (ClickHouseConn, error) { return nil, nil }, nil
+			},
+		},
+		{
+			name: "ping failure on newly dialed connection",
+			nextResolve: func(ctx context.Context) (string, Connector, error) {
+				return "fp-v2", func(context.Context) (ClickHouseConn, error) { return unhealthyNewConn, nil }, nil
+			},
+			checkAfterPing: func(t *testing.T) {
+				if !unhealthyNewConn.closed.Load() {
+					t.Error("unhealthyNewConn.closed = false, want failed replacement connection closed")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connV1 := newSummaryConn("loss", 0.5)
+			var mu sync.Mutex
+			activeResolve := Resolver(func(ctx context.Context) (string, Connector, error) {
+				return "fp-v1", func(context.Context) (ClickHouseConn, error) { return connV1, nil }, nil
+			})
+			provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+				mu.Lock()
+				r := activeResolve
+				mu.Unlock()
+				return r(ctx)
+			}, WithRetryInterval(0))
+
+			if err := provider.Ping(context.Background()); err != nil {
+				t.Fatalf("initial Ping() error: %v", err)
+			}
+
+			mu.Lock()
+			activeResolve = tt.nextResolve
+			mu.Unlock()
+
+			if err := provider.Ping(context.Background()); err == nil {
+				t.Fatal("Ping() succeeded on broken config update, want error")
+			}
+			if connV1.closed.Load() {
+				t.Error("connV1.closed = true, want existing engine connection kept open when rebuild fails")
+			}
+			if tt.checkAfterPing != nil {
+				tt.checkAfterPing(t)
+			}
+
+			data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+			if err != nil {
+				t.Fatalf("FetchChartData() failed after unsuccessful rebuild: %v", err)
+			}
+			if got := data.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
+				t.Errorf("summary LatestValue = %v, want 0.5 from preserved v1 engine", got)
+			}
+		})
+	}
+}
+
+func TestDynamicProviderInitialDialFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		resolve Resolver
+	}{
+		{
+			name: "resolver returns error on initial build",
+			resolve: func(ctx context.Context) (string, Connector, error) {
+				return "", nil, errors.New("initial resolution failed")
+			},
+		},
+		{
+			name: "resolver returns nil connector on initial build",
+			resolve: func(ctx context.Context) (string, Connector, error) {
+				return "fp-v1", nil, nil
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := NewDynamicProvider(tt.resolve, WithRetryInterval(0))
+			if err := provider.Ping(context.Background()); err == nil {
+				t.Fatal("Ping() = nil, want error on initial build failure")
+			}
+		})
+	}
+}
+
+func TestDynamicProviderConcurrentPingAndFetchChartData(t *testing.T) {
+	var step atomic.Int64
+	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+		n := step.Add(1)
+		fp := fmt.Sprintf("fp-%d", n%4)
+		return fp, func(ctx context.Context) (ClickHouseConn, error) {
+			if n%5 == 0 {
+				return nil, errors.New("transient dial failure")
+			}
+			return newSummaryConn("loss", float64(n)), nil
+		}, nil
+	}, WithRetryInterval(0))
+
+	// Seed initial healthy engine before concurrent stress.
+	step.Store(1)
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 25 {
+				_ = provider.Ping(context.Background())
+			}
+		}()
+	}
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				if _, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil); err != nil {
+					t.Errorf("concurrent FetchChartData() error: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

@@ -115,32 +115,40 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
-// buildClickHouseConnector constructs the connector the dataengine Provider uses on each dial.
-func buildClickHouseConnector(enableComponents bool, namespace string) dataengine.Connector {
+// buildClickHouseResolver constructs the dynamic resolver the dataengine Provider uses on dial and readiness checks.
+func buildClickHouseResolver(enableComponents bool, namespace string) dataengine.Resolver {
 	if !enableComponents {
-		return connectClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
+		return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
 	}
 	getter, err := crreader.NewK8sGetter()
 	if err != nil {
-		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize component CR getter: %w", err))
+		return resolveClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize component CR getter: %w", err))
 	}
 	secrets, err := crreader.NewK8sSecretReader()
 	if err != nil {
-		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err))
+		return resolveClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err))
 	}
-	return connectClickHouseWithSource(componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}, nil)
+	return resolveClickHouseWithSource(componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}, nil)
 }
 
-func connectClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Connector {
-	return func(ctx context.Context) (dataengine.ClickHouseConn, error) {
+func resolveClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Resolver {
+	return resolveClickHouseWithDialer(src, initErr, func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
+		return clickhouse.ConnectWithOptions(ctx, opts)
+	})
+}
+
+func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial func(context.Context, *clickhouse.Options) (dataengine.ClickHouseConn, error)) dataengine.Resolver {
+	return func(ctx context.Context) (string, dataengine.Connector, error) {
 		if initErr != nil {
-			return nil, initErr
+			return "", nil, initErr
 		}
 		opts, err := componentconfig.ResolveOptions(ctx, src)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		return clickhouse.ConnectWithOptions(ctx, opts)
+		return componentconfig.OptionsFingerprint(opts), func(dialCtx context.Context) (dataengine.ClickHouseConn, error) {
+			return dial(dialCtx, opts)
+		}, nil
 	}
 }
 
@@ -153,7 +161,7 @@ func initDataEngine(ctx context.Context) *dataengine.Provider {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewProvider(buildClickHouseConnector(cfg.EnableComponents, cfg.ComponentsNamespace))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(cfg.EnableComponents, cfg.ComponentsNamespace))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {

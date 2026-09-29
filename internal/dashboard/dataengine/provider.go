@@ -17,6 +17,7 @@ package dataengine
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,9 @@ const dialKey = "clickhouse"
 // Connector opens the ClickHouse connection a DataEngine runs its queries through.
 type Connector func(ctx context.Context) (ClickHouseConn, error)
 
+// Resolver resolves the active ClickHouse configuration fingerprint and a Connector bound to that configuration.
+type Resolver func(ctx context.Context) (fingerprint string, connect Connector, err error)
+
 // Provider hands out a DataEngine, building one on first use and rebuilding it after a failure.
 //
 // ClickHouse comes up on its own schedule and can be restarted underneath a running pod. Building
@@ -46,6 +50,7 @@ type Connector func(ctx context.Context) (ClickHouseConn, error)
 // ask the Provider instead and it retries, at a bounded rate, until a connection succeeds.
 type Provider struct {
 	connect       Connector
+	resolve       Resolver
 	retryInterval time.Duration
 
 	// engine is read on every call and that read must never block. A reader lock would not do:
@@ -56,10 +61,15 @@ type Provider struct {
 	// group collapses concurrent dials into one shared attempt whose result every caller receives.
 	group singleflight.Group
 
-	// mu guards the bookkeeping the retry interval is computed from. Only the goroutine running
-	// the shared attempt touches these, so the lock is uncontended; it is kept because relying on
-	// singleflight's internal ordering for that guarantee would be an easy thing to break later.
+	// rebuildMu serializes readiness configuration checks and engine swaps once an initial engine exists.
+	rebuildMu sync.Mutex
+
+	// mu guards the bookkeeping the retry interval is computed from and the active config fingerprint.
+	// Only the goroutine running the shared attempt or serialized readiness check touches these, so the
+	// lock is uncontended; it is kept because relying on singleflight's internal ordering for that
+	// guarantee would be an easy thing to break later.
 	mu          sync.Mutex
+	fingerprint string
 	lastErr     error
 	lastAttempt time.Time
 }
@@ -81,6 +91,22 @@ func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 	}
 	provider := &Provider{
 		connect:       connect,
+		retryInterval: defaultRetryInterval,
+	}
+	for _, opt := range opts {
+		opt(provider)
+	}
+	return provider
+}
+
+// NewDynamicProvider creates a Provider that resolves configuration on initial dial and swaps the
+// cached engine on readiness Ping whenever the resolved configuration fingerprint changes.
+func NewDynamicProvider(resolve Resolver, opts ...ProviderOption) *Provider {
+	if resolve == nil {
+		panic("resolve must not be nil")
+	}
+	provider := &Provider{
+		resolve:       resolve,
 		retryInterval: defaultRetryInterval,
 	}
 	for _, opt := range opts {
@@ -124,11 +150,53 @@ func (p *Provider) Engine(ctx context.Context) (*DataEngine, error) {
 // engine stays valid and recovers without a rebuild, and tearing it down here would fail the
 // queries already running on it.
 func (p *Provider) Ping(ctx context.Context) error {
-	engine, err := p.Engine(ctx)
+	if p.engine.Load() == nil {
+		engine, err := p.Engine(ctx)
+		if err != nil {
+			return err
+		}
+		return engine.Ping(ctx)
+	}
+	if p.resolve != nil {
+		return p.pingDynamic(ctx)
+	}
+	return p.engine.Load().Ping(ctx)
+}
+
+func (p *Provider) pingDynamic(ctx context.Context) error {
+	p.rebuildMu.Lock()
+	defer p.rebuildMu.Unlock()
+
+	fp, connect, err := p.resolve(ctx)
 	if err != nil {
+		return fmt.Errorf("failed to resolve clickhouse configuration: %w", err)
+	}
+	if connect == nil {
+		return fmt.Errorf("failed to resolve clickhouse configuration: connector must not be nil")
+	}
+	if !p.hasFingerprint(fp) {
+		return p.rebuild(ctx, fp, connect)
+	}
+	return p.engine.Load().Ping(ctx)
+}
+
+func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Connector) error {
+	conn, err := connect(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to clickhouse: %w", err)
+	}
+	engine, err := New(conn)
+	if err != nil {
+		closeConn(conn)
+		return fmt.Errorf("failed to initialize data engine: %w", err)
+	}
+	if err := engine.Ping(ctx); err != nil {
+		closeConn(conn)
 		return err
 	}
-	return engine.Ping(ctx)
+	old := p.storeEngine(engine, fingerprint)
+	closeEngine(old)
+	return nil
 }
 
 // attemptDue reports whether enough time has passed since the last attempt to make another.
@@ -159,17 +227,34 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.dialTimeout())
 	defer cancel()
 
-	conn, err := p.connect(dialCtx)
+	conn, fp, err := p.dial(dialCtx)
 	if err != nil {
 		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: %w", err))
 	}
 	engine, err := New(conn)
 	if err != nil {
+		closeConn(conn)
 		return nil, p.recordAttempt(fmt.Errorf("failed to initialize data engine: %w", err))
 	}
 
-	p.engine.Store(engine)
-	return engine, p.recordAttempt(nil)
+	p.storeEngine(engine, fp)
+	return engine, nil
+}
+
+func (p *Provider) dial(ctx context.Context) (ClickHouseConn, string, error) {
+	if p.resolve == nil {
+		conn, err := p.connect(ctx)
+		return conn, "", err
+	}
+	fp, connect, err := p.resolve(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if connect == nil {
+		return nil, "", fmt.Errorf("resolved connector must not be nil")
+	}
+	conn, err := connect(ctx)
+	return conn, fp, err
 }
 
 // beginAttempt reports whether a fresh attempt is due, and if not, why the last one failed.
@@ -189,6 +274,32 @@ func (p *Provider) recordAttempt(err error) error {
 	defer p.mu.Unlock()
 	p.lastErr = err
 	return err
+}
+
+func (p *Provider) hasFingerprint(fingerprint string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.fingerprint == fingerprint
+}
+
+func (p *Provider) storeEngine(engine *DataEngine, fingerprint string) *DataEngine {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.fingerprint = fingerprint
+	p.lastErr = nil
+	return p.engine.Swap(engine)
+}
+
+func closeConn(conn ClickHouseConn) {
+	if closer, ok := conn.(io.Closer); ok {
+		_ = closer.Close()
+	}
+}
+
+func closeEngine(engine *DataEngine) {
+	if engine != nil {
+		closeConn(engine.conn)
+	}
 }
 
 // dialTimeout bounds a single connection attempt.

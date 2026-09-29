@@ -26,13 +26,16 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/google/go-cmp/cmp"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
 )
@@ -278,7 +281,7 @@ func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
 }
 
 func TestChartDataEngine_WrapsProvider(t *testing.T) {
-	provider := dataengine.NewProvider(buildClickHouseConnector(false, ""))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(false, ""))
 
 	got := chartDataEngine(provider)
 
@@ -422,29 +425,29 @@ func TestInitRepository_NilClient(t *testing.T) {
 	}
 }
 
-func TestConnectClickHouseWithSource(t *testing.T) {
+func TestResolveClickHouseWithSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	t.Run("surfaces initialization error", func(t *testing.T) {
-		conn := connectClickHouseWithSource(componentconfig.Source{}, errors.New("k8s init failed"))
-		if _, err := conn(ctx); err == nil || !strings.Contains(err.Error(), "k8s init failed") {
-			t.Errorf("conn() error = %v, want k8s init failed", err)
+		resolve := resolveClickHouseWithSource(componentconfig.Source{}, errors.New("k8s init failed"))
+		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "k8s init failed") {
+			t.Errorf("resolve() error = %v, want k8s init failed", err)
 		}
 	})
 
 	t.Run("surfaces component resolution error", func(t *testing.T) {
-		conn := connectClickHouseWithSource(componentconfig.Source{
+		resolve := resolveClickHouseWithSource(componentconfig.Source{
 			Enabled: true,
 			Getter:  &crreader.FakeGetter{Err: errors.New("rbac forbidden")},
 		}, nil)
-		if _, err := conn(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
-			t.Errorf("conn() error = %v, want rbac forbidden", err)
+		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
+			t.Errorf("resolve() error = %v, want rbac forbidden", err)
 		}
 	})
 }
 
-func TestBuildClickHouseConnector_InvalidKubeconfigSurfacesErrorOnDial(t *testing.T) {
+func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *testing.T) {
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
@@ -453,8 +456,78 @@ func TestBuildClickHouseConnector_InvalidKubeconfigSurfacesErrorOnDial(t *testin
 	}
 	t.Setenv("KUBECONFIG", badKubeconfig)
 
-	connector := buildClickHouseConnector(true, "xmc")
-	if _, err := connector(context.Background()); err == nil {
-		t.Errorf("connector() with invalid kubeconfig succeeded, want error")
+	resolve := buildClickHouseResolver(true, "xmc")
+	if _, _, err := resolve(context.Background()); err == nil {
+		t.Errorf("resolve() with invalid kubeconfig succeeded, want error")
+	}
+}
+
+func TestClickHouseProviderRebuildsWhenComponentCRChanges(t *testing.T) {
+	t.Setenv("CLICKHOUSE_PASSWORD_FILE", "")
+	cr := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
+			"metadata":   map[string]any{"name": "clickhouse", "namespace": "xmc"},
+			"spec": map[string]any{
+				"enabled": true,
+				"parameters": map[string]any{
+					"defaultDatabase":   "analytics",
+					"user":              "reader",
+					"secretName":        "ch-secret",
+					"secretPasswordKey": "clickhouse-password",
+				},
+			},
+			"status": map[string]any{
+				"state": "COMPONENT_STATE_ENABLED",
+				"access": map[string]any{
+					"envVars": map[string]any{
+						"HOST": "ch-v1.xmc.svc.cluster.local",
+						"PORT": "9000",
+					},
+				},
+			},
+		},
+	}
+	getter := &crreader.FakeGetter{Component: cr}
+	secrets := &crreader.FakeSecretReader{
+		Secrets: map[string]map[string]string{
+			"xmc/ch-secret": {"clickhouse-password": "pw-1"},
+		},
+	}
+
+	var dialedAddrs [][]string
+	resolve := resolveClickHouseWithDialer(
+		componentconfig.Source{Enabled: true, Namespace: "xmc", Getter: getter, Secrets: secrets},
+		nil,
+		func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
+			dialedAddrs = append(dialedAddrs, opts.Addr)
+			return stubClickHouseConn{}, nil
+		},
+	)
+	provider := dataengine.NewDynamicProvider(resolve, dataengine.WithRetryInterval(0))
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("second Ping() with unchanged CR error: %v", err)
+	}
+	if diff := cmp.Diff([][]string{{"ch-v1.xmc.svc.cluster.local:9000"}}, dialedAddrs); diff != "" {
+		t.Fatalf("dialedAddrs after unchanged Ping mismatch (-want +got):\n%s", diff)
+	}
+
+	if err := unstructured.SetNestedField(cr.Object, "ch-v2.xmc.svc.cluster.local", "status", "access", "envVars", "HOST"); err != nil {
+		t.Fatalf("SetNestedField failed: %v", err)
+	}
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping() after CR update error: %v", err)
+	}
+	wantAddrs := [][]string{
+		{"ch-v1.xmc.svc.cluster.local:9000"},
+		{"ch-v2.xmc.svc.cluster.local:9000"},
+	}
+	if diff := cmp.Diff(wantAddrs, dialedAddrs); diff != "" {
+		t.Errorf("dialedAddrs after CR update mismatch (-want +got):\n%s", diff)
 	}
 }
