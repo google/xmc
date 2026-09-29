@@ -24,13 +24,22 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
-// PayloadPublisher defines the interface for enqueuing actuation tasks.
-type PayloadPublisher interface {
+const (
+	// defaultThrottlePauseDuration is the pause interval when downstream queue backlog exceeds threshold.
+	defaultThrottlePauseDuration = 10 * time.Second
+)
+
+// TaskQueue defines the task queue operations used by the resumption worker:
+// enqueuing actuation tasks and checking the downstream backlog.
+type TaskQueue interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+	// CalculateBacklogLength returns the consumer group's backlog, capped just above maxThreshold.
+	CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
 }
 
 // Worker defines the contract for running paused task resumption.
@@ -40,21 +49,23 @@ type Worker interface {
 
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
-	pauseStateRepo pausestate.Repository
-	pausedTaskRepo pausedtask.Repository
-	publisher      PayloadPublisher
+	pauseStateRepo        pausestate.Repository
+	pausedTaskRepo        pausedtask.Repository
+	taskQueue             TaskQueue
+	throttlePauseDuration time.Duration
 }
 
 // NewResumptionWorker creates a new ResumptionWorker with required dependencies.
 func NewResumptionWorker(
 	pauseStateRepo pausestate.Repository,
 	pausedTaskRepo pausedtask.Repository,
-	publisher PayloadPublisher,
+	taskQueue TaskQueue,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
-		pauseStateRepo: pauseStateRepo,
-		pausedTaskRepo: pausedTaskRepo,
-		publisher:      publisher,
+		pauseStateRepo:        pauseStateRepo,
+		pausedTaskRepo:        pausedTaskRepo,
+		taskQueue:             taskQueue,
+		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
 
@@ -122,7 +133,13 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return nil
 		}
 
-		// TODO(pausescheduling): Check downstream Redis backlog against req.MaxBacklogThreshold before fetching next batch.
+		throttled, err := w.throttleIfBusy(ctx, req)
+		if err != nil {
+			return err
+		}
+		if throttled {
+			continue
+		}
 
 		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
 		if err != nil {
@@ -140,6 +157,58 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 		}
 
 		// TODO(pausescheduling): Extend message lease via heartbeat during batch processing.
+	}
+}
+
+func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (bool, error) {
+	maxThreshold := req.MaxBacklogThreshold
+	if maxThreshold <= 0 {
+		maxThreshold = defaultMaxBacklog
+	}
+
+	backlog, err := w.taskQueue.CalculateBacklogLength(ctx, constants.RedisGroup, maxThreshold)
+	if err != nil {
+		return false, fmt.Errorf("failed to calculate task queue backlog: %w", err)
+	}
+
+	if backlog < int64(maxThreshold) {
+		return false, nil
+	}
+
+	logging.Info(ctx, "Tasks queue backlog exceeded threshold; pausing replay",
+		"backlog", backlog,
+		"max_backlog_threshold", maxThreshold,
+		"pause_duration", w.pauseDuration(),
+		"resumption_run_id", req.ResumptionRunID)
+
+	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
+
+	if err := w.waitOrCancel(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// pauseDuration returns the configured throttle pause, falling back to the default.
+func (w *ResumptionWorker) pauseDuration() time.Duration {
+	if w.throttlePauseDuration <= 0 {
+		return defaultThrottlePauseDuration
+	}
+	return w.throttlePauseDuration
+}
+
+// waitOrCancel blocks the calling goroutine for the worker's pause duration,
+// returning early with ctx.Err() if the context is cancelled first.
+func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
+	timer := time.NewTimer(w.pauseDuration())
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -209,7 +278,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 		}
 
 		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
-		if err := w.publisher.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
+		if err := w.taskQueue.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
 			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 			break
 		}

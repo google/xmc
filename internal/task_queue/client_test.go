@@ -633,3 +633,49 @@ func TestEnqueueWorkUnitTask_RedisAddMessageError(t *testing.T) {
 		t.Fatalf("EnqueueWorkUnitTask() error = %v, want %v", err, redisErr)
 	}
 }
+
+func TestClient_CalculateBacklogLength(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil redisClient returns 0", func(t *testing.T) {
+		c := &Client{}
+		backlog, err := c.CalculateBacklogLength(ctx, "test-group", 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if backlog != 0 {
+			t.Errorf("backlog = %d, want 0", backlog)
+		}
+	})
+
+	t.Run("delegates to publisher with given group", func(t *testing.T) {
+		pub := redisclient.NewFakeClient()
+		pub.Backlog = 7
+		c := &Client{redisClient: pub}
+
+		backlog, err := c.CalculateBacklogLength(ctx, "test-group", 5)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if backlog != 7 {
+			t.Errorf("backlog = %d, want 7", backlog)
+		}
+		if pub.BacklogGroup != "test-group" {
+			t.Errorf("group = %q, want %q", pub.BacklogGroup, "test-group")
+		}
+		if pub.BacklogThreshold != 5 {
+			t.Errorf("threshold = %d, want 5", pub.BacklogThreshold)
+		}
+	})
+
+	t.Run("publisher error propagates", func(t *testing.T) {
+		wantErr := errors.New("redis down")
+		pub := redisclient.NewFakeClient()
+		pub.BacklogError = wantErr
+		c := &Client{redisClient: pub}
+
+		if _, err := c.CalculateBacklogLength(ctx, "test-group", 5); !errors.Is(err, wantErr) {
+			t.Fatalf("err = %v, want %v", err, wantErr)
+		}
+	})
+}

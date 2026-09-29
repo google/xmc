@@ -55,6 +55,7 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/compat/proto",
         "//internal/compat/protocmp",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage/spanner/pausedtask",
         "//internal/storage/spanner/pausestate",
