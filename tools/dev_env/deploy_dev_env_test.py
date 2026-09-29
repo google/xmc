@@ -674,29 +674,15 @@ image_tag: latest
 
     # --- Individual Step Tests ---
 
-    @patch("tools.dev_env.deploy_dev_env.run_command")
-    def test_step_compile(self, mock_run):
+    @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
+    def test_step_compile(self, mock_compile):
         deploy_dev_env.step_compile(
             self.valid_config,
             self.dns_project,
             self.dns_zone,
             "my-config.yaml",
         )
-        mock_run.assert_called_once_with(
-            [
-                "./cluster-toolkit/gcluster",
-                "create",
-                "deploy/ctk_v2/xmanager-cloud.yaml",
-                "-d",
-                "my-config.yaml",
-                "-o",
-                "ctk-out",
-                "-l",
-                "WARNING",
-                "-w",
-                "--force",
-            ]
-        )
+        mock_compile.assert_called_once_with("my-config.yaml", self.valid_config.deployment_name)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")
