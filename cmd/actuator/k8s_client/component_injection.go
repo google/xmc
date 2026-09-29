@@ -32,6 +32,7 @@ import (
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/crreader"
 )
 
 // componentAccess encapsulates resolved access configurations from a component custom resource.
@@ -113,7 +114,7 @@ func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv
 
 // evaluateComponentPlacement validates enablement, health, and drift for a required component.
 func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) error {
-	if isComponentDisabled(comp) {
+	if crreader.IsDisabled(comp) {
 		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is disabled", compName))
 	}
 
@@ -181,28 +182,9 @@ func (c *Client) fetchComponentResource(ctx context.Context, name, namespace str
 		return u, nil
 	}
 	if c.dynamicClient != nil {
-		gvr := schema.GroupVersionResource{
-			Group:    constants.ComponentCRDGroup,
-			Version:  constants.ComponentCRDVersion,
-			Resource: constants.ComponentCRDResource,
-		}
-		return c.dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		return c.dynamicClient.Resource(crreader.ComponentGVR()).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	}
 	return nil, apierrors.NewServiceUnavailable("no kubernetes client available to fetch component")
-}
-
-// isComponentDisabled checks whether a component is explicitly disabled via spec.enabled or status.state.
-func isComponentDisabled(comp *unstructured.Unstructured) bool {
-	if comp == nil || comp.Object == nil {
-		return false
-	}
-	if enabled, ok, err := unstructured.NestedBool(comp.Object, "spec", "enabled"); err == nil && ok && !enabled {
-		return true
-	}
-	if state, ok, err := unstructured.NestedString(comp.Object, "status", "state"); err == nil && ok {
-		return state == "COMPONENT_STATE_DISABLED" || state == "COMPONENT_STATE_DISABLING" || state == "COMPONENT_STATE_DELETED"
-	}
-	return false
 }
 
 // evaluateComponentHealth checks whether the component is fully initialized and healthy (Ready=True, Degraded!=True).
@@ -304,25 +286,7 @@ func extractComponentAccess(comp *unstructured.Unstructured) (componentAccess, e
 
 // extractStringMap converts an unstructured map[string]any to map[string]string, converting scalar types to strings.
 func extractStringMap(raw any) map[string]string {
-	m, ok := raw.(map[string]any)
-	if !ok || len(m) == 0 {
-		return nil
-	}
-	res := make(map[string]string, len(m))
-	for k, v := range m {
-		if v == nil {
-			continue
-		}
-		switch val := v.(type) {
-		case string:
-			res[k] = val
-		case json.Number:
-			res[k] = val.String()
-		default:
-			res[k] = fmt.Sprintf("%v", val)
-		}
-	}
-	return res
+	return crreader.CoerceStringMap(raw)
 }
 
 // injectAccessIntoJobSet injects environment variables and volume mounts across all replicated jobs.

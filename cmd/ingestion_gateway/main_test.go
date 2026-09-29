@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
+	"xmanager_cloud/pkg/components/crreader"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -41,15 +42,6 @@ func TestStartHTTPServerWithProducer(t *testing.T) {
 	if srv == nil {
 		t.Fatalf("expected non-nil server from startHTTPServer")
 	}
-}
-
-type mockMainComponentGetter struct {
-	comp *unstructured.Unstructured
-	err  error
-}
-
-func (m *mockMainComponentGetter) GetComponent(_ context.Context, _, _ string) (*unstructured.Unstructured, error) {
-	return m.comp, m.err
 }
 
 func TestResolveComponentConfigIfEnabled(t *testing.T) {
@@ -93,7 +85,7 @@ func TestResolveComponentConfigIfEnabled(t *testing.T) {
 			},
 		},
 	}
-	resolveComponentConfigIfEnabled(ctx, enabledCfg, &mockMainComponentGetter{comp: comp})
+	resolveComponentConfigIfEnabled(ctx, enabledCfg, &crreader.FakeGetter{Component: comp})
 	if len(enabledCfg.RedpandaBrokers) != 1 || enabledCfg.RedpandaBrokers[0] != "dynamic-broker:9092" {
 		t.Errorf("RedpandaBrokers = %v, want [dynamic-broker:9092]", enabledCfg.RedpandaBrokers)
 	}
@@ -111,7 +103,7 @@ func TestResolveComponentConfigIfEnabled(t *testing.T) {
 		MinReplicas:      1,
 		EnableComponents: true,
 	}
-	resolveComponentConfigIfEnabled(ctx, fallbackCfg, &mockMainComponentGetter{err: context.DeadlineExceeded})
+	resolveComponentConfigIfEnabled(ctx, fallbackCfg, &crreader.FakeGetter{Err: context.DeadlineExceeded})
 	if fallbackCfg.TopicName != "static-topic" {
 		t.Errorf("TopicName = %q, want static-topic on fallback", fallbackCfg.TopicName)
 	}
