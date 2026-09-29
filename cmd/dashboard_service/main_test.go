@@ -33,6 +33,8 @@ import (
 	"xmanager_cloud/cmd/dashboard_service/server"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/clickhouse/componentconfig"
+	"xmanager_cloud/pkg/components/crreader"
 )
 
 func TestSetupHTTPHandler(t *testing.T) {
@@ -276,7 +278,7 @@ func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
 }
 
 func TestChartDataEngine_WrapsProvider(t *testing.T) {
-	provider := dataengine.NewProvider(connectClickHouse)
+	provider := dataengine.NewProvider(buildClickHouseConnector(false, ""))
 
 	got := chartDataEngine(provider)
 
@@ -417,5 +419,42 @@ func TestInitRepository_NilClient(t *testing.T) {
 	_, err := initRepository(ctx, nil)
 	if err == nil {
 		t.Fatal("expected error for nil spanner client, got nil")
+	}
+}
+
+func TestConnectClickHouseWithSource(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	t.Run("surfaces initialization error", func(t *testing.T) {
+		conn := connectClickHouseWithSource(componentconfig.Source{}, errors.New("k8s init failed"))
+		if _, err := conn(ctx); err == nil || !strings.Contains(err.Error(), "k8s init failed") {
+			t.Errorf("conn() error = %v, want k8s init failed", err)
+		}
+	})
+
+	t.Run("surfaces component resolution error", func(t *testing.T) {
+		conn := connectClickHouseWithSource(componentconfig.Source{
+			Enabled: true,
+			Getter:  &crreader.FakeGetter{Err: errors.New("rbac forbidden")},
+		}, nil)
+		if _, err := conn(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
+			t.Errorf("conn() error = %v, want rbac forbidden", err)
+		}
+	})
+}
+
+func TestBuildClickHouseConnector_InvalidKubeconfigSurfacesErrorOnDial(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
+
+	connector := buildClickHouseConnector(true, "xmc")
+	if _, err := connector(context.Background()); err == nil {
+		t.Errorf("connector() with invalid kubeconfig succeeded, want error")
 	}
 }

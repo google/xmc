@@ -48,6 +48,8 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
+	"xmanager_cloud/pkg/clickhouse/componentconfig"
+	"xmanager_cloud/pkg/components/crreader"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
@@ -113,9 +115,33 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
-// connectClickHouse adapts the shared ClickHouse client to the connector the provider expects.
-func connectClickHouse(ctx context.Context) (dataengine.ClickHouseConn, error) {
-	return clickhouse.Connect(ctx)
+// buildClickHouseConnector constructs the connector the dataengine Provider uses on each dial.
+func buildClickHouseConnector(enableComponents bool, namespace string) dataengine.Connector {
+	if !enableComponents {
+		return connectClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
+	}
+	getter, err := crreader.NewK8sGetter()
+	if err != nil {
+		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize component CR getter: %w", err))
+	}
+	secrets, err := crreader.NewK8sSecretReader()
+	if err != nil {
+		return connectClickHouseWithSource(componentconfig.Source{}, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err))
+	}
+	return connectClickHouseWithSource(componentconfig.Source{Enabled: true, Namespace: namespace, Getter: getter, Secrets: secrets}, nil)
+}
+
+func connectClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Connector {
+	return func(ctx context.Context) (dataengine.ClickHouseConn, error) {
+		if initErr != nil {
+			return nil, initErr
+		}
+		opts, err := componentconfig.ResolveOptions(ctx, src)
+		if err != nil {
+			return nil, err
+		}
+		return clickhouse.ConnectWithOptions(ctx, opts)
+	}
 }
 
 // initDataEngine prepares the chart data engine, for deployments that configure ClickHouse.
@@ -127,7 +153,7 @@ func initDataEngine(ctx context.Context) *dataengine.Provider {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewProvider(connectClickHouse)
+	provider := dataengine.NewProvider(buildClickHouseConnector(cfg.EnableComponents, cfg.ComponentsNamespace))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {

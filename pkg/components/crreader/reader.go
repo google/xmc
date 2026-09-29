@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	constants "xmanager_cloud/kubernetes/common/constants"
@@ -52,6 +53,11 @@ type Getter interface {
 	GetComponent(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error)
 }
 
+// SecretReader retrieves a single string value from a Kubernetes Secret by namespace, name, and key.
+type SecretReader interface {
+	GetSecretValue(ctx context.Context, namespace, name, key string) (string, error)
+}
+
 type k8sGetter struct {
 	client dynamic.Interface
 }
@@ -76,6 +82,28 @@ func NewK8sGetter() (Getter, error) {
 	return NewGetterFromDynamic(dynClient), nil
 }
 
+type k8sSecretReader struct{ client kubernetes.Interface }
+
+var _ SecretReader = (*k8sSecretReader)(nil)
+
+// NewSecretReaderFromClientset constructs a SecretReader backed by the provided Kubernetes clientset.
+func NewSecretReaderFromClientset(client kubernetes.Interface) SecretReader {
+	return &k8sSecretReader{client: client}
+}
+
+// NewK8sSecretReader constructs a SecretReader backed by the in-cluster or default kubeconfig.
+func NewK8sSecretReader() (SecretReader, error) {
+	restCfg, err := loadRestConfig()
+	if err != nil {
+		return nil, err
+	}
+	clientset, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
+	}
+	return NewSecretReaderFromClientset(clientset), nil
+}
+
 func loadRestConfig() (*rest.Config, error) {
 	restCfg, err := rest.InClusterConfig()
 	if err == nil {
@@ -95,4 +123,23 @@ func (g *k8sGetter) GetComponent(ctx context.Context, namespace, name string) (*
 		return nil, fmt.Errorf("dynamic kubernetes client is not initialized")
 	}
 	return g.client.Resource(ComponentGVR()).Namespace(ResolveNamespace(namespace)).Get(ctx, name, metav1.GetOptions{})
+}
+
+// GetSecretValue fetches a Kubernetes Secret and extracts key, stripping only trailing line terminators.
+func (s *k8sSecretReader) GetSecretValue(ctx context.Context, namespace, name, key string) (string, error) {
+	if s == nil || s.client == nil {
+		return "", fmt.Errorf("kubernetes clientset is not initialized")
+	}
+	ns := ResolveNamespace(namespace)
+	secret, err := s.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s/%s: %w", ns, name, err)
+	}
+	if raw, ok := secret.Data[key]; ok {
+		return strings.TrimRight(string(raw), "\r\n"), nil
+	}
+	if val, ok := secret.StringData[key]; ok {
+		return strings.TrimRight(val, "\r\n"), nil
+	}
+	return "", fmt.Errorf("secret %s/%s is missing key %q", ns, name, key)
 }

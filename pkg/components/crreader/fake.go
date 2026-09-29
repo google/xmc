@@ -16,6 +16,8 @@ package crreader
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -54,4 +56,41 @@ func cloneUnstructured(u *unstructured.Unstructured) *unstructured.Unstructured 
 		return nil
 	}
 	return u.DeepCopy()
+}
+
+// FakeSecretReader is an in-memory test double for SecretReader intended exclusively for unit testing.
+type FakeSecretReader struct {
+	Secrets map[string]map[string]string
+	Err     error
+}
+
+var _ SecretReader = (*FakeSecretReader)(nil)
+
+// GetSecretValue returns the configured error or looks up key in Secrets["namespace/name"] or Secrets["name"].
+func (f *FakeSecretReader) GetSecretValue(_ context.Context, namespace, name, key string) (string, error) {
+	if f == nil {
+		return "", fmt.Errorf("secret reader is nil")
+	}
+	if f.Err != nil {
+		return "", f.Err
+	}
+	data := f.lookupSecret(namespace, name)
+	if data == nil {
+		return "", fmt.Errorf("secret %s/%s not found", namespace, name)
+	}
+	val, ok := data[key]
+	if !ok {
+		return "", fmt.Errorf("secret %s/%s missing key %q", namespace, name, key)
+	}
+	return strings.TrimRight(val, "\r\n"), nil
+}
+
+func (f *FakeSecretReader) lookupSecret(namespace, name string) map[string]string {
+	if f.Secrets == nil {
+		return nil
+	}
+	if data, ok := f.Secrets[namespace+"/"+name]; ok {
+		return data
+	}
+	return f.Secrets[name]
 }

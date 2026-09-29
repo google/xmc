@@ -93,6 +93,25 @@ func GetOptions() (*clickhouse.Options, error) {
 	return opts, nil
 }
 
+// PasswordFromFileEnv reads the ClickHouse password from CLICKHOUSE_PASSWORD_FILE when set.
+// It returns ("", false, nil) when CLICKHOUSE_PASSWORD_FILE is empty.
+func PasswordFromFileEnv() (string, bool, error) {
+	path := os.Getenv("CLICKHOUSE_PASSWORD_FILE")
+	if path == "" {
+		return "", false, nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", true, fmt.Errorf("failed to read CLICKHOUSE_PASSWORD_FILE %q: %w", path, err)
+	}
+
+	// Secret Manager payloads routinely carry a trailing newline, which is not part of the password.
+	// Only the line terminator is stripped: a space is a legal password character, so trimming all
+	// surrounding whitespace would corrupt a valid credential into an authentication failure.
+	return strings.TrimRight(string(content), "\r\n"), true, nil
+}
+
 // getPassword reads the ClickHouse password, preferring the file CLICKHOUSE_PASSWORD_FILE names.
 //
 // The file form mirrors JWT_SECRET_FILE and CLIENT_SECRET_FILE: it lets the deployment mount the
@@ -100,20 +119,10 @@ func GetOptions() (*clickhouse.Options, error) {
 // An unreadable file is an error rather than a fall back to CLICKHOUSE_PASSWORD, because falling
 // back would connect with the wrong credential and surface as an authentication failure instead.
 func getPassword() (string, error) {
-	path := os.Getenv("CLICKHOUSE_PASSWORD_FILE")
-	if path == "" {
-		return os.Getenv("CLICKHOUSE_PASSWORD"), nil
+	if pw, ok, err := PasswordFromFileEnv(); ok || err != nil {
+		return pw, err
 	}
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to read CLICKHOUSE_PASSWORD_FILE %q: %w", path, err)
-	}
-
-	// Secret Manager payloads routinely carry a trailing newline, which is not part of the password.
-	// Only the line terminator is stripped: a space is a legal password character, so trimming all
-	// surrounding whitespace would corrupt a valid credential into an authentication failure.
-	return strings.TrimRight(string(content), "\r\n"), nil
+	return os.Getenv("CLICKHOUSE_PASSWORD"), nil
 }
 
 // Connect establishes a connection to ClickHouse using options loaded from environment variables.
@@ -122,6 +131,14 @@ func Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ConnectWithOptions(ctx, opts)
+}
+
+// ConnectWithOptions establishes and pings a connection to ClickHouse using the provided options.
+func ConnectWithOptions(ctx context.Context, opts *clickhouse.Options) (driver.Conn, error) {
+	if opts == nil {
+		return nil, fmt.Errorf("clickhouse options cannot be nil")
+	}
 
 	conn, err := clickhouse.Open(opts)
 	if err != nil {
@@ -129,6 +146,7 @@ func Connect(ctx context.Context) (driver.Conn, error) {
 	}
 
 	if err := conn.Ping(ctx); err != nil {
+		_ = conn.Close()
 		return nil, fmt.Errorf("failed to ping clickhouse: %w", err)
 	}
 

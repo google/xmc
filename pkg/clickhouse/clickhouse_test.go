@@ -15,6 +15,7 @@
 package clickhouse
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -208,5 +209,53 @@ func TestConfigured(t *testing.T) {
 				t.Errorf("Configured() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPasswordFromFileEnv(t *testing.T) {
+	t.Run("unset returns false", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_PASSWORD_FILE", "")
+		pw, ok, err := PasswordFromFileEnv()
+		if err != nil || ok || pw != "" {
+			t.Errorf("PasswordFromFileEnv() = (%q, %v, %v), want (\"\", false, nil)", pw, ok, err)
+		}
+	})
+
+	t.Run("set and readable returns trimmed password", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_PASSWORD_FILE", writePasswordFile(t, " s3cret \r\n"))
+		pw, ok, err := PasswordFromFileEnv()
+		if err != nil || !ok || pw != " s3cret " {
+			t.Errorf("PasswordFromFileEnv() = (%q, %v, %v), want (\" s3cret \", true, nil)", pw, ok, err)
+		}
+	})
+
+	t.Run("set and unreadable returns error", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_PASSWORD_FILE", filepath.Join(t.TempDir(), "missing"))
+		_, ok, err := PasswordFromFileEnv()
+		if err == nil || !ok {
+			t.Errorf("PasswordFromFileEnv() = (_, %v, %v), want (true, non-nil error)", ok, err)
+		}
+	})
+}
+
+func TestConnectWithOptions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	if _, err := ConnectWithOptions(ctx, nil); err == nil {
+		t.Errorf("ConnectWithOptions(nil) succeeded, want error")
+	}
+
+	opts := &clickhouse.Options{
+		Addr:        []string{"127.0.0.1:1"},
+		DialTimeout: 100 * time.Millisecond,
+	}
+	if _, err := ConnectWithOptions(ctx, opts); err == nil {
+		t.Errorf("ConnectWithOptions(unreachable) succeeded, want error")
+	}
+
+	t.Setenv("CLICKHOUSE_DSN", "clickhouse://localhost:9000?dial_timeout=invalid")
+	if _, err := Connect(ctx); err == nil {
+		t.Errorf("Connect(invalid DSN) succeeded, want error")
 	}
 }
