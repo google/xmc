@@ -820,14 +820,12 @@ def validate_clickhouse_metrics(
                 expected_min_rows=expected_min_rows,
             ):
                 return res
-        except AssertionError:
-            raise
         except Exception as e:
             last_error = e
 
         time.sleep(poll_interval_sec)
 
-    if strict_required or last_error is None:
+    if strict_required:
         raise AssertionError(
             f"ClickHouse SQL metrics validation timed out after {timeout_sec}s for XID {xid}. "
             f"Last error: {last_error}"

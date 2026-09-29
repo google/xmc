@@ -640,9 +640,50 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                     endpoint="http://localhost:8123",
                     xid="22",
                     expected_metric_names={"train/loss", "train/accuracy"},
-                    timeout_sec=5,
+                    timeout_sec=0.05,
+                    poll_interval_sec=0.01,
                 )
             self.assertIn("Expected metrics ['train/accuracy'] not found", str(ctx.exception))
+
+    def test_validate_clickhouse_metrics_retries_on_incomplete_metrics_until_success(self) -> None:
+        responses = [
+            {"data": [{"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25}]},
+            {
+                "data": [
+                    {"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25},
+                    {"metric_name": "train/accuracy", "row_count": 200, "avg_val": 0.85},
+                ]
+            },
+        ]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            side_effect=responses,
+        ):
+            res = xmc_entities_validator.validate_clickhouse_metrics(
+                endpoint="http://localhost:8123",
+                xid="22",
+                expected_metric_names={"train/loss", "train/accuracy"},
+                timeout_sec=1.0,
+                poll_interval_sec=0.01,
+            )
+            self.assertEqual(res["total_rows"], 400)
+            self.assertEqual(len(res["metrics"]), 2)
+
+    def test_validate_clickhouse_metrics_non_strict_returns_skipped_on_timeout(self) -> None:
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            return_value=None,
+        ):
+            res = xmc_entities_validator.validate_clickhouse_metrics(
+                endpoint="http://localhost:8123",
+                xid="22",
+                expected_metric_names={"train/loss"},
+                timeout_sec=0.05,
+                poll_interval_sec=0.01,
+                strict_required=False,
+            )
+            self.assertTrue(res.get("skipped"))
+            self.assertEqual(res["total_rows"], 0)
 
     def test_validate_dashboard_chart_data_success(self) -> None:
         dash_response = {"chartIds": ["dashboards/exp_22_training_overview/charts/loss_chart"]}
