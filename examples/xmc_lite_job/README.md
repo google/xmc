@@ -214,12 +214,14 @@ from xmanager import xm
 from xmanager import xm_cloud
 
 with xm_cloud.create_experiment(experiment_title="simple-job") as experiment:
-    [executable] = experiment.package([
-        xm.container(
-            image_path="python:3.11-slim",
-            executor_spec=xm_cloud.KubernetesJobExecutorSpec(),
-        )
-    ])
+    [executable] = experiment.package(
+        [
+            xm.container(
+                image_path="python:3.11-slim",
+                executor_spec=xm_cloud.KubernetesJobExecutorSpec(),
+            )
+        ]
+    )
     job = xm.Job(
         executable=executable,
         executor=xm_cloud.KubernetesJobExecutor(
