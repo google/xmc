@@ -134,6 +134,6 @@ Whenever creating, modifying, or reviewing GitHub Actions workflow files under `
 
 3. **Post-Checkout Git Credentials & Ref Availability (`persist-credentials: false`)**:
    - Because `actions/checkout` with `persist-credentials: false` strips the Git HTTP authorization header at the end of the `Checkout` step itself, subsequent workflow or composite action steps MUST NOT run unauthenticated `git fetch` or `git pull` commands (e.g., `git fetch origin ... || true`), which fail authentication on private repositories.
-   - Instead, either rely on refs already fetched during checkout by specifying `fetch-depth: 0` on `actions/checkout` (which fetches `+refs/heads/*:refs/remotes/origin/*`), or explicitly pass `GITHUB_TOKEN` via an `http.extraheader` configuration when live remote ref fetching is required.
+   - Instead, either rely on refs already fetched during checkout by specifying `fetch-depth: 0` on `actions/checkout` (which fetches `+refs/heads/*:refs/remotes/origin/*`), or explicitly pass `GITHUB_TOKEN` via an `http.extraHeader` configuration when live remote ref fetching is required.
 
 
