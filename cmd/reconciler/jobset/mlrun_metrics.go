@@ -18,10 +18,9 @@ import (
 	"context"
 	"time"
 
-	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
-	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
+	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 )
 
 // mlRunLatencyBuckets covers the latency range of a remote control-plane RPC
@@ -33,12 +32,12 @@ var (
 	// mlRunRequestsTotal and mlRunRequestDuration are the RED (Rate/Errors/
 	// Duration) signals for the MLRun control plane, split by operation so a
 	// regression can be attributed to a specific call.
-	mlRunRequestsTotal = promauto.With(ctrlmetrics.Registry).NewCounterVec(prometheus.CounterOpts{
+	mlRunRequestsTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_reconciler_mlrun_requests_total",
 		Help: "Total MLRun control-plane calls made by the reconciler, by operation and result.",
 	}, []string{"operation", "result"})
 
-	mlRunRequestDuration = promauto.With(ctrlmetrics.Registry).NewHistogramVec(prometheus.HistogramOpts{
+	mlRunRequestDuration = shared.MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "jobset_reconciler_mlrun_request_duration_seconds",
 		Help:    "Latency of MLRun control-plane calls in seconds, by operation.",
 		Buckets: mlRunLatencyBuckets,

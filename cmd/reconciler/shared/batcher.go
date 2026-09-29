@@ -43,45 +43,45 @@ const (
 	KueueSyncSource
 )
 
-// metricsFactory registers batcher metrics with the controller-runtime registry,
+// MetricsFactory registers reconciler metrics with the controller-runtime registry,
 // which is served by the manager's metrics endpoint.
-var metricsFactory = promauto.With(ctrlmetrics.Registry)
+var MetricsFactory = promauto.With(ctrlmetrics.Registry)
 
 var (
-	updatesAddedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
+	updatesAddedTotal = MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_updates_added_total",
 		Help: "Total number of updates added to the batcher",
 	}, []string{"xid"})
 
-	batchesProcessedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
+	batchesProcessedTotal = MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_cycles_processed_total",
 		Help: "Total number of batch processing cycles completed",
 	}, []string{})
 
-	updatesProcessedTotal = metricsFactory.NewCounterVec(prometheus.CounterOpts{
+	updatesProcessedTotal = MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_updates_processed_total",
 		Help: "Total number of work unit updates processed",
 	}, []string{"xid"})
 
-	experimentsPerCycle = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
+	experimentsPerCycle = MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_experiments_per_cycle",
 		Help:    "Distribution of the number of experiments processed in each cycle",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	}, []string{})
 
-	workunitsPerExperiment = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
+	workunitsPerExperiment = MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_workunits_per_experiment",
 		Help:    "Distribution of the number of work unit updates per experiment in each cycle",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	}, []string{"xid"})
 
-	batchProcessingDuration = metricsFactory.NewHistogramVec(prometheus.HistogramOpts{
+	batchProcessingDuration = MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "batcher_cycle_duration_seconds",
 		Help:    "Duration of the batch processing cycle",
 		Buckets: prometheus.DefBuckets,
 	}, []string{})
 
-	updateWorkUnitExecutionsCalls = metricsFactory.NewCounterVec(
+	updateWorkUnitExecutionsCalls = MetricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_calls_total",
 			Help: "Total number of calls to UpdateWorkUnitExecutions per experiment.",
@@ -89,7 +89,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updateWorkUnitExecutionsSuccess = metricsFactory.NewCounterVec(
+	updateWorkUnitExecutionsSuccess = MetricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_success_total",
 			Help: "Total number of successful calls to UpdateWorkUnitExecutions per experiment.",
@@ -97,7 +97,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updateWorkUnitExecutionsFailures = metricsFactory.NewCounterVec(
+	updateWorkUnitExecutionsFailures = MetricsFactory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "xmc_actuator_batcher_update_failures_total",
 			Help: "Total number of failed calls to UpdateWorkUnitExecutions per experiment.",
@@ -105,7 +105,7 @@ var (
 		[]string{"xid", "reason"},
 	)
 
-	updateWorkUnitExecutionsDuration = metricsFactory.NewHistogramVec(
+	updateWorkUnitExecutionsDuration = MetricsFactory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "xmc_actuator_batcher_update_duration_seconds",
 			Help:    "Duration of UpdateWorkUnitExecutions calls.",
@@ -114,7 +114,7 @@ var (
 		[]string{"xid"},
 	)
 
-	updatesPerBatch = metricsFactory.NewHistogramVec(
+	updatesPerBatch = MetricsFactory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "xmc_actuator_batcher_updates_per_batch",
 			Help:    "Number of work unit updates per batch call to UpdateWorkUnitExecutions.",
