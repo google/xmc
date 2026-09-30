@@ -22,6 +22,7 @@ import (
 
 	"golang/uuid/uuid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -58,6 +59,7 @@ type ResumptionWorker struct {
 	pausedTaskRepo        pausedtask.Repository
 	taskQueue             TaskQueue
 	claimExtender         ClaimExtender
+	txRunner              storage.TransactionRunner
 	throttlePauseDuration time.Duration
 }
 
@@ -67,12 +69,14 @@ func NewResumptionWorker(
 	pausedTaskRepo pausedtask.Repository,
 	taskQueue TaskQueue,
 	claimExtender ClaimExtender,
+	txRunner storage.TransactionRunner,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
 		pauseStateRepo:        pauseStateRepo,
 		pausedTaskRepo:        pausedTaskRepo,
 		taskQueue:             taskQueue,
 		claimExtender:         claimExtender,
+		txRunner:              txRunner,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
@@ -94,32 +98,38 @@ func (w *ResumptionWorker) StartResumption(ctx context.Context, req Request) err
 }
 
 func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get pause state: %w", err)
-	}
-	if state.SchedulingPaused {
-		logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
-			"resumption_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
-	if state.ResumptionRunID != runID {
-		logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
-			"expected_run_id", state.ResumptionRunID,
-			"trigger_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
+	registered := false
+	err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, _ *storage.Transaction) error {
+		registered = false
+		// TODO(pausescheduling): Read and persist through the transaction-scoped pause state repository.
+		state, err := w.pauseStateRepo.Get(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get pause state: %w", err)
+		}
+		if state.SchedulingPaused {
+			logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
+				"resumption_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
+		if state.ResumptionRunID != runID {
+			logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
+				"expected_run_id", state.ResumptionRunID,
+				"trigger_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
 
-	state.ResumptionWorkerID = resumptionWorkerID
-	state.UpdatedAt = time.Now().UTC()
+		state.ResumptionWorkerID = resumptionWorkerID
+		state.UpdatedAt = time.Now().UTC()
 
-	// TODO(pausescheduling): Execute Get-and-Set atomically inside a Spanner ReadWriteTransaction once transactional repository support is introduced.
-	if err := w.pauseStateRepo.Set(ctx, state); err != nil {
-		return false, fmt.Errorf("failed to set pause state for worker registration: %w", err)
-	}
-	return true, nil
+		if err := w.pauseStateRepo.Set(ctx, state); err != nil {
+			return fmt.Errorf("failed to set pause state for worker registration: %w", err)
+		}
+		registered = true
+		return nil
+	})
+	return registered, err
 }
 
 func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resumptionWorkerID string) error {

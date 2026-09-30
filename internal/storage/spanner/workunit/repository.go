@@ -104,3 +104,12 @@ func (r *TxRepository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, 
 	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
 	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }
+
+// UpdateWorkUnitStatus updates the status of the current work unit execution using the bound read-write transaction.
+func (r *TxRepository) UpdateWorkUnitStatus(ctx context.Context, xid, wid, eid int64, statusMsg *essmsgpb.WorkUnitStatus) error {
+	if statusMsg == nil {
+		return fmt.Errorf("status must not be nil: %w", status.ErrInvalidArgument)
+	}
+	mutation := spannerdata.CurrentWorkUnitExecutionStatusProtoToUpdateMutation(xid, wid, eid, statusMsg)
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
+}

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	fmpb "protobuf/field_mask_go_proto"
+	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
@@ -34,11 +34,6 @@ import (
 // PausedTaskRepository defines operations for persisting paused tasks.
 type PausedTaskRepository interface {
 	Create(ctx context.Context, task *pausedtask.PausedTask) error
-}
-
-// WorkUnitStatusUpdater defines operations for updating work unit execution status.
-type WorkUnitStatusUpdater interface {
-	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // PauseHandler defines the interface for handling actuation tasks when scheduling is paused.
@@ -55,27 +50,27 @@ var _ PauseHandler = (*TaskPauseHandler)(nil)
 
 // TaskPauseHandler handles task buffering and status updates during scheduling pause.
 type TaskPauseHandler struct {
-	cache                 Cache
-	pausedTaskRepo        PausedTaskRepository
-	workUnitStatusUpdater WorkUnitStatusUpdater
+	cache          Cache
+	pausedTaskRepo PausedTaskRepository
+	txRunner       storage.TransactionRunner
 }
 
 // NewPauseHandler creates a new TaskPauseHandler instance.
-func NewPauseHandler(cache Cache, repo PausedTaskRepository, updater WorkUnitStatusUpdater) (*TaskPauseHandler, error) {
+func NewPauseHandler(cache Cache, repo PausedTaskRepository, txRunner storage.TransactionRunner) (*TaskPauseHandler, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("pause cache cannot be nil")
 	}
 	if repo == nil {
 		return nil, fmt.Errorf("paused task repository cannot be nil")
 	}
-	if updater == nil {
-		return nil, fmt.Errorf("work unit status updater cannot be nil")
+	if txRunner == nil {
+		return nil, fmt.Errorf("transaction runner cannot be nil")
 	}
 
 	return &TaskPauseHandler{
-		cache:                 cache,
-		pausedTaskRepo:        repo,
-		workUnitStatusUpdater: updater,
+		cache:          cache,
+		pausedTaskRepo: repo,
+		txRunner:       txRunner,
 	}, nil
 }
 
@@ -125,15 +120,18 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 		return err
 	}
 
-	// TODO(pausescheduling): Buffer paused task and update work unit execution status atomically within a single Spanner transaction.
-	if err := h.pausedTaskRepo.Create(ctx, task); err != nil {
-		return fmt.Errorf("failed to buffer paused task: %w", err)
-	}
-
-	if updateStatus {
-		if err := h.updateExecutionStatus(ctx, payload); err != nil {
-			return err
+	err = h.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		// TODO(pausescheduling): Buffer the paused task through the transaction-scoped repository.
+		if err := h.pausedTaskRepo.Create(ctx, task); err != nil {
+			return fmt.Errorf("failed to buffer paused task: %w", err)
 		}
+		if !updateStatus {
+			return nil
+		}
+		return updateExecutionStatus(ctx, tx.WorkUnits, payload)
+	})
+	if err != nil {
+		return err
 	}
 
 	logging.Info(ctx, fmt.Sprintf("Buffered %s task during scheduling pause", actionLabel), "target", payload.GetTarget())
@@ -178,27 +176,26 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 	return payload.GetTarget()
 }
 
-func (h *TaskPauseHandler) updateExecutionStatus(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+// updateExecutionStatus sets the current execution state to SCHEDULING_PAUSED, preserving other status fields.
+func updateExecutionStatus(ctx context.Context, workUnits storage.WorkUnitTxRepository, payload *actuatortaskpb.ActuatorPayload) error {
 	targetToUpdate := resolveExecutionTarget(payload)
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(targetToUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to validate execution target %q: %w", targetToUpdate, err)
 	}
 
-	execUpdate := &storage.WorkUnitExecutionUpdate{
-		WID: wid,
-		EID: eid,
-		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
-			Name: targetToUpdate,
-			Status: &essmsgpb.WorkUnitStatus{
-				State:           essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED,
-				StateUpdateTime: timestamppb.Now(),
-			},
-		},
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
+	wu, err := workUnits.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		return fmt.Errorf("failed to fetch work unit for %q: %w", targetToUpdate, err)
 	}
+	status := &essmsgpb.WorkUnitStatus{}
+	if current := wu.GetCurrentWorkUnitExecution().GetStatus(); current != nil {
+		status = proto.Clone(current).(*essmsgpb.WorkUnitStatus)
+	}
+	status.State = essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED
+	status.StateUpdateTime = timestamppb.Now()
 
-	if _, err := h.workUnitStatusUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
+	if err := workUnits.UpdateWorkUnitStatus(ctx, xid, wid, eid, status); err != nil {
 		return fmt.Errorf("failed to update work unit execution status to SCHEDULING_PAUSED for %q: %w", targetToUpdate, err)
 	}
 	return nil

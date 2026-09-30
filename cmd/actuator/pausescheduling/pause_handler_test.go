@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
@@ -43,49 +42,34 @@ func (m *mockPausedTaskRepo) Create(ctx context.Context, task *pausedtask.Paused
 	return nil
 }
 
-type mockStatusUpdater struct {
-	err             error
-	callCount       int
-	recordedUpdates []*storage.WorkUnitExecutionUpdate
-}
-
-func (m *mockStatusUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
-	m.callCount++
-	if m.err != nil {
-		return nil, m.err
-	}
-	m.recordedUpdates = append(m.recordedUpdates, updates...)
-	return make(map[int64]*essmsgpb.WorkUnitExecution), nil
-}
-
 func TestNewPauseHandler(t *testing.T) {
 	cache := NewCache()
 	repo := &mockPausedTaskRepo{}
-	updater := &mockStatusUpdater{}
+	txRunner := &storage.MockStorage{}
 
 	t.Run("nil_cache", func(t *testing.T) {
-		h, err := NewPauseHandler(nil, repo, updater)
+		h, err := NewPauseHandler(nil, repo, txRunner)
 		if err == nil || h != nil {
 			t.Errorf("expected error for nil cache, got %v", err)
 		}
 	})
 
 	t.Run("nil_repo", func(t *testing.T) {
-		h, err := NewPauseHandler(cache, nil, updater)
+		h, err := NewPauseHandler(cache, nil, txRunner)
 		if err == nil || h != nil {
 			t.Errorf("expected error for nil repo, got %v", err)
 		}
 	})
 
-	t.Run("nil_updater", func(t *testing.T) {
+	t.Run("nil_tx_runner", func(t *testing.T) {
 		h, err := NewPauseHandler(cache, repo, nil)
 		if err == nil || h != nil {
-			t.Errorf("expected error for nil updater, got %v", err)
+			t.Errorf("expected error for nil transaction runner, got %v", err)
 		}
 	})
 
 	t.Run("valid_construction", func(t *testing.T) {
-		h, err := NewPauseHandler(cache, repo, updater)
+		h, err := NewPauseHandler(cache, repo, txRunner)
 		if err != nil || h == nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -94,10 +78,8 @@ func TestNewPauseHandler(t *testing.T) {
 
 func TestTaskPauseHandler_IsPaused(t *testing.T) {
 	cache := NewCache()
-	repo := &mockPausedTaskRepo{}
-	updater := &mockStatusUpdater{}
 
-	h, err := NewPauseHandler(cache, repo, updater)
+	h, err := NewPauseHandler(cache, &mockPausedTaskRepo{}, &storage.MockStorage{})
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
 	}
@@ -123,11 +105,7 @@ func TestTaskPauseHandler_IsPaused(t *testing.T) {
 }
 
 func TestTaskPauseHandler_ShouldPause(t *testing.T) {
-	cache := NewCache()
-	repo := &mockPausedTaskRepo{}
-	updater := &mockStatusUpdater{}
-
-	h, err := NewPauseHandler(cache, repo, updater)
+	h, err := NewPauseHandler(NewCache(), &mockPausedTaskRepo{}, &storage.MockStorage{})
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
 	}
@@ -182,15 +160,28 @@ func TestTaskPauseHandler_ShouldPause(t *testing.T) {
 }
 
 func TestHandlePause(t *testing.T) {
+	storedUpdateTime := timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	storedWorkUnit := &essmsgpb.WorkUnit{
+		Name: "experiments/100/workUnits/200",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Status: &essmsgpb.WorkUnitStatus{
+				State:      essmsgpb.WorkUnitStatus_INITIALIZING,
+				UpdateTime: storedUpdateTime,
+			},
+		},
+	}
+
 	tests := []struct {
 		name                   string
 		payload                *actuatortaskpb.ActuatorPayload
 		repoErr                error
-		updaterErr             error
+		fetchErr               error
+		updateStatusErr        error
 		expectError            bool
 		expectBadRequest       bool
 		expectedBufferedTarget string
-		expectedStatusTarget   string
+		// expectedStatusEID is the execution ID whose status is updated; 0 means no status update.
+		expectedStatusEID int64
 	}{
 		{
 			name: "nil_action_error",
@@ -226,7 +217,7 @@ func TestHandlePause(t *testing.T) {
 				CreateTime: timestamppb.Now(),
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
-			expectedStatusTarget:   "experiments/100/workUnits/200/executions/1",
+			expectedStatusEID:      1,
 		},
 		{
 			name: "restart_action_buffered_with_old_target_and_status_updated_with_new_target",
@@ -248,7 +239,7 @@ func TestHandlePause(t *testing.T) {
 				CreateTime: timestamppb.Now(),
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
-			expectedStatusTarget:   "experiments/100/workUnits/200/executions/2",
+			expectedStatusEID:      2,
 		},
 		{
 			name: "update_action_buffered_without_status_update",
@@ -277,28 +268,22 @@ func TestHandlePause(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "repo_error",
-			payload: &actuatortaskpb.ActuatorPayload{
-				Target: proto.String("experiments/100/workUnits/200/executions/1"),
-				Action: &actuatortaskpb.Action{
-					Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
-				},
-				WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
-			},
+			name:        "repo_error",
+			payload:     newCreatePayload(),
 			repoErr:     errors.New("spanner repo error"),
 			expectError: true,
 		},
 		{
-			name: "status_updater_error",
-			payload: &actuatortaskpb.ActuatorPayload{
-				Target: proto.String("experiments/100/workUnits/200/executions/1"),
-				Action: &actuatortaskpb.Action{
-					Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
-				},
-				WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
-			},
-			updaterErr:  errors.New("spanner status update error"),
+			name:        "fetch_work_unit_error",
+			payload:     newCreatePayload(),
+			fetchErr:    errors.New("spanner fetch error"),
 			expectError: true,
+		},
+		{
+			name:            "update_status_error",
+			payload:         newCreatePayload(),
+			updateStatusErr: errors.New("spanner status update error"),
+			expectError:     true,
 		},
 	}
 
@@ -307,9 +292,13 @@ func TestHandlePause(t *testing.T) {
 			cache := NewCache()
 			cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
 			repo := &mockPausedTaskRepo{err: tc.repoErr}
-			updater := &mockStatusUpdater{err: tc.updaterErr}
+			txRunner := &storage.MockStorage{
+				WorkUnit:                storedWorkUnit,
+				FetchWorkUnitErr:        tc.fetchErr,
+				UpdateWorkUnitStatusErr: tc.updateStatusErr,
+			}
 
-			h, err := NewPauseHandler(cache, repo, updater)
+			h, err := NewPauseHandler(cache, repo, txRunner)
 			if err != nil {
 				t.Fatalf("failed to create handler: %v", err)
 			}
@@ -322,8 +311,8 @@ func TestHandlePause(t *testing.T) {
 				t.Errorf("HandlePause() error = %v, want BadRequest error", err)
 			}
 			if tc.expectError {
-				if tc.repoErr != nil && updater.callCount != 0 {
-					t.Errorf("updater should not be called if repo fails, got %d calls", updater.callCount)
+				if tc.repoErr != nil && txRunner.UpdateWorkUnitStatusCalls != 0 {
+					t.Errorf("status should not be updated if repo fails, got %d calls", txRunner.UpdateWorkUnitStatusCalls)
 				}
 				return
 			}
@@ -341,37 +330,44 @@ func TestHandlePause(t *testing.T) {
 				}
 			}
 
-			verifyStatusUpdate(t, updater, tc.expectedStatusTarget, tc.name)
+			verifyStatusUpdate(t, txRunner, tc.expectedStatusEID, storedUpdateTime)
 		})
 	}
 }
 
-func verifyStatusUpdate(t *testing.T, updater *mockStatusUpdater, expectedTarget, testName string) {
+func newCreatePayload() *actuatortaskpb.ActuatorPayload {
+	return &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+	}
+}
+
+func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantEID int64, wantUpdateTime *timestamppb.Timestamp) {
 	t.Helper()
-	if expectedTarget == "" {
-		if updater.callCount != 0 {
-			t.Errorf("expected 0 status updater calls for %s, got %d", testName, updater.callCount)
+	if wantEID == 0 {
+		if got.UpdateWorkUnitStatusCalls != 0 {
+			t.Errorf("expected 0 status updates, got %d", got.UpdateWorkUnitStatusCalls)
 		}
 		return
 	}
-	if updater.callCount != 1 {
-		t.Fatalf("expected 1 status updater call for %s, got %d", testName, updater.callCount)
+	if got.UpdateWorkUnitStatusCalls != 1 {
+		t.Fatalf("expected 1 status update, got %d", got.UpdateWorkUnitStatusCalls)
 	}
-	if len(updater.recordedUpdates) != 1 {
-		t.Fatalf("expected 1 recorded update for %s, got %d", testName, len(updater.recordedUpdates))
+	if got.GotWorkUnitStatusXID != 100 || got.GotWorkUnitStatusWID != 200 || got.GotWorkUnitStatusEID != wantEID {
+		t.Errorf("status update key mismatch: got %d/%d/%d, want 100/200/%d",
+			got.GotWorkUnitStatusXID, got.GotWorkUnitStatusWID, got.GotWorkUnitStatusEID, wantEID)
 	}
-	up := updater.recordedUpdates[0]
-	if up.WorkUnitExecution.GetName() != expectedTarget {
-		t.Errorf("status update target mismatch: got %q, want %q", up.WorkUnitExecution.GetName(), expectedTarget)
+	status := got.GotWorkUnitStatus
+	if status.GetState() != essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED {
+		t.Errorf("status state mismatch: got %v, want SCHEDULING_PAUSED", status.GetState())
 	}
-	if up.WorkUnitExecution.GetStatus().GetState() != essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED {
-		t.Errorf("status state mismatch: got %v, want SCHEDULING_PAUSED", up.WorkUnitExecution.GetStatus().GetState())
+	if status.GetStateUpdateTime() == nil {
+		t.Errorf("status state_update_time must be set")
 	}
-	if up.WorkUnitExecution.GetStatus().GetStateUpdateTime() == nil {
-		t.Errorf("status state_update_time must be set when updating status.state")
-	}
-	expectedMask := []string{"status.state"}
-	if diff := cmp.Diff(expectedMask, up.UpdateMask.GetPaths()); diff != "" {
-		t.Errorf("update mask paths mismatch (-want +got):\n%s", diff)
+	if !proto.Equal(status.GetUpdateTime(), wantUpdateTime) {
+		t.Errorf("status update_time not preserved: got %v, want %v", status.GetUpdateTime(), wantUpdateTime)
 	}
 }

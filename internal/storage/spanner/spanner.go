@@ -25,6 +25,8 @@ import (
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/storage/spanner/workunit"
@@ -51,6 +53,8 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
+	pauseStateRepository pausestate.Repository
+	pausedTaskRepository pausedtask.Repository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
@@ -69,6 +73,16 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		return fn(txCtx, tx)
 	})
 	return err
+}
+
+// PauseState returns the repository for global pause scheduling state.
+func (s *Storage) PauseState() pausestate.Repository {
+	return s.pauseStateRepository
+}
+
+// PausedTasks returns the repository for pending paused actuation tasks.
+func (s *Storage) PausedTasks() pausedtask.Repository {
+	return s.pausedTaskRepository
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -121,6 +135,10 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
+	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
+	pauseStateRepo := pausestate.NewFake()
+	pausedTaskRepo := pausedtask.NewFake()
+
 	return &Storage{
 		client:                  client,
 		ExperimentRepository:    expRepo,
@@ -130,5 +148,7 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 		StatusMessageRepository: statusMsgRepo,
 		OperationRepository:     opRepo,
 		StatusHistoryRepository: statusHistoryRepo,
+		pauseStateRepository:    pauseStateRepo,
+		pausedTaskRepository:    pausedTaskRepo,
 	}, nil
 }

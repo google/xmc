@@ -33,8 +33,6 @@ import (
 	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
@@ -270,7 +268,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	}
 
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient)
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}
@@ -289,14 +287,11 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 
 // startResumptionConsumer wires the resumption worker to the Redis trigger stream.
 // The Redis consumer also serves as the worker's ClaimExtender.
-func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue) (*resumption.Consumer, error) {
-	// TODO(pausescheduling): Replace in-memory fake repositories with Spanner repositories once implemented.
-	pauseStateRepo := pausestate.NewFake()
-	pausedTaskRepo := pausedtask.NewFake()
+func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage) (*resumption.Consumer, error) {
 	redisConsumer, err := resumption.NewRedisConsumer(cfg.RedisAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resumption redis consumer: %w", err)
 	}
-	worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueue, redisConsumer)
+	worker := resumption.NewResumptionWorker(storageClient.PauseState(), storageClient.PausedTasks(), taskQueue, redisConsumer, storageClient)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
 }
