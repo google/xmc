@@ -291,12 +291,28 @@ type StatusHistoryTxRepository interface {
 	SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
 }
 
+// PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
+type PauseStateTxRepository interface {
+	// Get retrieves the current global scheduling pause state within the transaction.
+	Get(ctx context.Context) (*pausestate.PauseSchedulingState, error)
+	// Set updates or initializes the global scheduling pause state within the transaction.
+	Set(ctx context.Context, state *pausestate.PauseSchedulingState) error
+}
+
+// PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
+type PausedTaskTxRepository interface {
+	// Create persists a new paused task within the transaction.
+	Create(ctx context.Context, task *pausedtask.PausedTask) error
+}
+
 // Transaction holds the domain repositories scoped to a single read-write transaction.
 type Transaction struct {
 	WorkUnits      WorkUnitTxRepository
 	Experiments    ExperimentTxRepository
 	StatusMessages StatusMessageTxRepository
 	StatusHistory  StatusHistoryTxRepository
+	PauseState     PauseStateTxRepository
+	PausedTasks    PausedTaskTxRepository
 }
 
 // TransactionRunner executes an operation within a read-write transaction.

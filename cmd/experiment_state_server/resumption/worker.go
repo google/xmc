@@ -99,10 +99,9 @@ func (w *ResumptionWorker) StartResumption(ctx context.Context, req Request) err
 
 func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
 	registered := false
-	err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, _ *storage.Transaction) error {
+	err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		registered = false
-		// TODO(pausescheduling): Read and persist through the transaction-scoped pause state repository.
-		state, err := w.pauseStateRepo.Get(ctx)
+		state, err := tx.PauseState.Get(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get pause state: %w", err)
 		}
@@ -123,7 +122,7 @@ func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumption
 		state.ResumptionWorkerID = resumptionWorkerID
 		state.UpdatedAt = time.Now().UTC()
 
-		if err := w.pauseStateRepo.Set(ctx, state); err != nil {
+		if err := tx.PauseState.Set(ctx, state); err != nil {
 			return fmt.Errorf("failed to set pause state for worker registration: %w", err)
 		}
 		registered = true

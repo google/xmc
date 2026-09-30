@@ -278,7 +278,7 @@ func initPauseHandler(cfg *Config, cache pausescheduling.Cache, storageClient st
 	if storageClient == nil {
 		return nil, fmt.Errorf("cannot enable pause scheduling without spanner storage client")
 	}
-	handler, err := pausescheduling.NewPauseHandler(cache, storageClient.PausedTasks(), storageClient)
+	handler, err := pausescheduling.NewPauseHandler(cache, storageClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pause handler: %w", err)
 	}
