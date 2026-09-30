@@ -386,8 +386,6 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 
 *Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`) are always enabled.
 
-The Log Monitor is deployed by default in production but not on KinD: the generated values set `logMonitorDeployment.enabled: false`, because there is no logging sink or Pub/Sub subscription for it to consume locally. As a result, the local Admin Panel reports it as unhealthy.
-
 ### Dynamic Resource Naming Rules
 
 When resource names are omitted from the YAML configuration, `LocalDevConfig` automatically derives dynamic naming conventions from the active `environment`:

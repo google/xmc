@@ -129,6 +129,36 @@ vars:
             self.assertIsNone(proj)
             self.assertFalse(enable_components)
 
+    def test_resolve_log_monitor_deployment_enabled_from_env(self):
+        with mock.patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "true"}, clear=True):
+            self.assertTrue(verify_xmc._resolve_log_monitor_deployment_enabled())
+
+        with mock.patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "false"}, clear=True):
+            self.assertFalse(verify_xmc._resolve_log_monitor_deployment_enabled())
+
+    def test_resolve_log_monitor_deployment_enabled_from_yaml(self):
+        yaml_content = """
+vars:
+  log_monitor_deployment_enabled: true
+"""
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = True
+        mock_path.read_text.return_value = yaml_content
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(
+                verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
+            )
+
+    def test_resolve_log_monitor_deployment_enabled_default_false(self):
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = False
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(
+                verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
+            )
+
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_k8s_resources(self, mock_run):
         mock_run.return_value = "NAME   READY   STATUS\npod-1   1/1     Running\n"
@@ -161,6 +191,60 @@ vars:
         self.assertIn("Gateway IP Address: 35.240.10.20", output)
         self.assertIn("Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output)
 
+    def test_check_log_monitor_missing_env(self):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor(None, "us-central1", "proj")
+
+        output = captured.getvalue()
+        self.assertIn("Skipping Log Monitor check", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_deployment_enabled_skips_cloud_run(self, mock_run):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor(
+                "dev", "us-central1", "proj", log_monitor_deployment_enabled=True
+            )
+
+        mock_run.assert_not_called()
+        output = captured.getvalue()
+        self.assertIn(
+            "Skipping Cloud Run Log Monitor check: log_monitor_deployment_enabled is true",
+            output,
+        )
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_ready(self, mock_run):
+        mock_run.return_value = "True\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+
+        output = captured.getvalue()
+        self.assertIn("Service Status (Ready): True", output)
+        self.assertIn("Log Monitor Cloud Run service is running and Ready.", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_not_ready(self, mock_run):
+        mock_run.return_value = "False\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+
+        output = captured.getvalue()
+        self.assertIn("Log Monitor Cloud Run service is NOT Ready.", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_not_found(self, mock_run):
+        mock_run.return_value = ""
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+
+        output = captured.getvalue()
+        self.assertIn("not found or status is unavailable", output)
+
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_components_disabled(self, mock_run):
         captured = io.StringIO()
@@ -169,7 +253,7 @@ vars:
 
         mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 7. Component Controllers Status ---", output)
+        self.assertIn("--- 8. Component Controllers Status ---", output)
         self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
 
     @mock.patch.object(verify_xmc, "_run_command")
@@ -180,23 +264,28 @@ vars:
 
         mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 7. Component Controllers Status ---", output)
+        self.assertIn("--- 8. Component Controllers Status ---", output)
         self.assertIn("Foundational Component Controllers enabled.", output)
 
     @mock.patch.object(verify_xmc, "_check_components")
+    @mock.patch.object(verify_xmc, "_check_log_monitor")
     @mock.patch.object(verify_xmc, "_check_connectivity")
     @mock.patch.object(verify_xmc, "_check_k8s_resources")
+    @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled")
     @mock.patch.object(verify_xmc, "_resolve_config")
     @mock.patch.object(verify_xmc, "ensure_venv")
     def test_main(
         self,
         mock_ensure_venv,
         mock_resolve_config,
+        mock_resolve_lm_enabled,
         mock_k8s,
         mock_connectivity,
+        mock_log_monitor,
         mock_components,
     ):
         mock_resolve_config.return_value = ("dev", "us-central1", "test-proj", True)
+        mock_resolve_lm_enabled.return_value = False
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             exit_code = verify_xmc.main()
@@ -204,8 +293,10 @@ vars:
         self.assertEqual(exit_code, 0)
         mock_ensure_venv.assert_called_once()
         mock_resolve_config.assert_called_once()
+        mock_resolve_lm_enabled.assert_called_once()
         mock_k8s.assert_called_once()
         mock_connectivity.assert_called_once()
+        mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj", False)
         mock_components.assert_called_once_with(True)
 
 

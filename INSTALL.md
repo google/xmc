@@ -580,7 +580,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `image_tag` | No | `"latest"` | OCI container image tag to deploy (e.g. git commit hash or release version) |
 | `namespace` | No | `"xmc"` | Target Kubernetes namespace for services |
 | `gcp_public_cidrs_access_enabled` | No | `false` | Toggles public endpoints on the GKE Control Plane |
-| `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases) |
+| `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases, Cloud Run) |
 | `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
 | `task_signature_ttl_seconds` | No | `86400` | Validity duration of task signature tokens |
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |

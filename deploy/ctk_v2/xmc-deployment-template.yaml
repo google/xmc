@@ -96,6 +96,9 @@ vars:
   # Enable Resource Optimization & Diagnostics (ROD) Data Provider
   rod_deployment_enabled: true
 
+  # Run Log Monitor as a GKE Deployment instead of a Cloud Run service
+  log_monitor_deployment_enabled: false
+
   # Enable Health Service (backs the Admin Panel)
   health_service_deployment_enabled: true
 

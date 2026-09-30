@@ -148,9 +148,9 @@ is broken.
 ### 2.1 Stand up an XMC environment
 
 **Layers.** Cluster Toolkit blueprints (`deploy/ctk_v2`) provision the GKE cluster, Spanner
-databases, the Log Monitor's logging sink and Pub/Sub topics, and networking. A Helm chart
-(`deploy/helm`) installs the in-cluster services, the Log Monitor included. Optional addons
-(`deploy/addons`) bring Redpanda and ClickHouse for the metrics pipeline.
+databases, Pub/Sub topics, the Log Monitor Cloud Run service, and networking. A Helm chart
+(`deploy/helm`) installs the in-cluster services. Optional addons (`deploy/addons`) bring Redpanda
+and ClickHouse for the metrics pipeline.
 
 **What is optional.** More than you might expect, and deliberately:
 
@@ -201,7 +201,7 @@ served from a watch-backed cache so dashboards do not translate into API server 
 ### 2.4 Answer "is XMC up?"
 
 `GetHealthStatus` probes ESS, Actuator, and Reconciler over HTTP `/readyz`, XID over gRPC health,
-the Log Monitor over HTTP `/healthz`, and both Spanner databases.
+the Log Monitor via Cloud Run, and both Spanner databases.
 
 The Spanner checks also compare live schema versions against what the binaries expect, so a
 partially applied migration reports as unhealthy immediately instead of manifesting later as

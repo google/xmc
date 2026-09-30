@@ -73,6 +73,7 @@ vars:
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
   rod_deployment_enabled: true
+  log_monitor_deployment_enabled: false
   health_status_cache_ttl: 15s
   health_status_force_refresh_max_requests: 5
   health_status_force_refresh_window: 5s
@@ -165,6 +166,7 @@ deployment_groups:
       project_roles:
       - logging.logWriter
       - monitoring.metricWriter
+      - run.viewer
       - iam.securityReviewer
       - serviceusage.serviceUsageConsumer
 
@@ -386,15 +388,18 @@ deployment_groups:
         client_id: $(vars.iap_client_id)
         client_secret: $(vars.iap_client_secret)
 
-  # Provisions the Cloud Logging sink, Pub/Sub topics and subscription the Log Monitor consumes.
-  # The Log Monitor itself runs in GKE, deployed by xmc_app_helm below from this module's outputs.
+  # Provisions the Cloud Logging sink, Pub/Sub topics and subscription the Log Monitor consumes,
+  # plus the Cloud Run service when log_monitor_deployment_enabled is false.
   - id: log_monitor
     source: ./deploy/ctk_v2/modules/log_monitor
     use: [log_monitor_service_account]
     settings:
       project_id: $(vars.project_id)
+      region: $(vars.region)
       environment: $(vars.environment)
+      image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
+      log_monitor_deployment_enabled: $(vars.log_monitor_deployment_enabled)
 
   - id: xmc_app_helm
     source: community/modules/management/direct-helm-install
@@ -435,6 +440,8 @@ deployment_groups:
         value: $(vars.admin_panel_observability_url)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
+      - name: healthService.logMonitorResourceName
+        value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
       - name: log_monitor_custom_image
         value: $(vars.log_monitor_image)
       - name: logMonitor.gcpServiceAccount
@@ -533,6 +540,9 @@ deployment_groups:
         type: auto
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
+        type: auto
+      - name: logMonitorDeployment.enabled
+        value: $(vars.log_monitor_deployment_enabled)
         type: auto
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)

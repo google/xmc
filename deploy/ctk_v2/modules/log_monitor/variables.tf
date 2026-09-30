@@ -16,9 +16,20 @@ variable "project_id" {
   description = "The GCP project ID where the resources will be created."
 }
 
+variable "region" {
+  type        = string
+  description = "The region for Cloud Run service."
+  default     = "us-central1"
+}
+
+variable "image_url" {
+  type        = string
+  description = "The URL of the container image to deploy."
+}
+
 variable "service_account_email" {
   type        = string
-  description = "The email of the pre-existing service account the Log Monitor workload runs as; it is granted subscriber access to the subscription."
+  description = "The email of the pre-existing service account to use for the Cloud Run service."
 }
 
 variable "pubsub_topic_name" {
@@ -48,4 +59,16 @@ variable "logging_sink_custom_keyword" {
 variable "environment" {
   type        = string
   description = "The environment name."
+}
+
+variable "max_concurrent_updates" {
+  type        = number
+  description = "The maximum number of concurrent updates to Spanner during one batch log processing."
+  default     = 10
+}
+
+variable "log_monitor_deployment_enabled" {
+  type        = bool
+  description = "When true, the Log Monitor runs as a GKE Deployment managed by Helm instead of a Cloud Run service."
+  default     = false
 }

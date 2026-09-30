@@ -11,6 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+output "service_url" {
+  value       = var.log_monitor_deployment_enabled ? "" : google_cloud_run_v2_service.log_monitor[0].uri
+  description = "The URL of the deployed Cloud Run service (empty when log_monitor_deployment_enabled is true)."
+}
+
 output "subscription_id" {
   value       = google_pubsub_subscription.log_monitor_subscription.name
   description = "The Pub/Sub subscription ID the Log Monitor pulls from (passed to Helm as logMonitor.subscriptionId)."
