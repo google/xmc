@@ -270,13 +270,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	}
 
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		// TODO(pausescheduling): Replace in-memory fake repositories with Spanner repositories once implemented.
-		pauseStateRepo := pausestate.NewFake()
-		pausedTaskRepo := pausedtask.NewFake()
-		worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueueClient)
-		consumer, err := resumption.StartConsumer(ctx, resumption.ConsumerConfig{
-			RedisAddr: cfg.RedisAddr,
-		}, worker)
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}
@@ -291,4 +285,18 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		bgTaskWG:        &bgTaskWG,
 		cleanup:         func() error { return runCleanups(cleanups) },
 	}, nil
+}
+
+// startResumptionConsumer wires the resumption worker to the Redis trigger stream.
+// The Redis consumer also serves as the worker's ClaimExtender.
+func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue) (*resumption.Consumer, error) {
+	// TODO(pausescheduling): Replace in-memory fake repositories with Spanner repositories once implemented.
+	pauseStateRepo := pausestate.NewFake()
+	pausedTaskRepo := pausedtask.NewFake()
+	redisConsumer, err := resumption.NewRedisConsumer(cfg.RedisAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resumption redis consumer: %w", err)
+	}
+	worker := resumption.NewResumptionWorker(pauseStateRepo, pausedTaskRepo, taskQueue, redisConsumer)
+	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
 }
