@@ -27,8 +27,10 @@ logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
 _EXP_NAME = flags.DEFINE_string("exp_name", "xmc-lite-job", "Title of the experiment in SQLite.")
-_NUM_WORK_UNITS = flags.DEFINE_integer("num_work_units", 1, "Number of WorkUnits to launch.")
-_DURATION = flags.DEFINE_integer("duration", 30, "Worker sleep duration in seconds.")
+_NUM_WORK_UNITS = flags.DEFINE_integer(
+    "num_work_units", 1, "Number of WorkUnits to launch.", lower_bound=1
+)
+_DURATION = flags.DEFINE_integer("duration", 30, "Worker sleep duration in seconds.", lower_bound=0)
 _IMAGE = flags.DEFINE_string("image", "python:3.11-slim", "Container image URI to execute on GKE.")
 
 
