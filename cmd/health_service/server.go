@@ -39,15 +39,20 @@ type healthChecker interface {
 	Close() error
 }
 
+// LazyComponentsProvider provides lazy access to the custom components info provider.
+type LazyComponentsProvider interface {
+	ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error)
+}
+
 var _ spb.HealthServiceServer = (*server)(nil)
 
 type server struct {
 	spb.UnimplementedHealthServiceServer
-	cfg                *Config
-	checker            healthChecker
-	guard              AdminRoleGuard
-	componentsProvider summary.CustomComponentsInfoProvider
-	pauseScheduler     PauseScheduler
+	cfg            *Config
+	checker        healthChecker
+	guard          AdminRoleGuard
+	lazySpanner    LazyComponentsProvider
+	pauseScheduler PauseScheduler
 
 	// Caching
 	cacheMu      sync.RWMutex
@@ -63,7 +68,7 @@ func newServer(
 	cfg *Config,
 	checker healthChecker,
 	guard AdminRoleGuard,
-	componentsProvider summary.CustomComponentsInfoProvider,
+	lazySpanner LazyComponentsProvider,
 	pauseScheduler PauseScheduler,
 ) *server {
 	var limiter *rate.Limiter
@@ -74,7 +79,7 @@ func newServer(
 		cfg:                 cfg,
 		checker:             checker,
 		guard:               guard,
-		componentsProvider:  componentsProvider,
+		lazySpanner:         lazySpanner,
 		pauseScheduler:      pauseScheduler,
 		forceRefreshLimiter: limiter,
 	}
@@ -247,10 +252,18 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
-	if s.componentsProvider == nil {
+	if s.cfg == nil || !s.cfg.EnableComponents || s.lazySpanner == nil {
 		return nil, nil
 	}
-	customConfigs, err := s.componentsProvider.GetComponentsConfig(ctx)
+	provider, err := s.lazySpanner.ComponentsProvider(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		logging.Warn(ctx, "Failed to initialize custom components provider", "error", err)
+		return nil, nil
+	}
+	customConfigs, err := provider.GetComponentsConfig(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

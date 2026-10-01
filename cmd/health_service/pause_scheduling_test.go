@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
@@ -50,13 +51,33 @@ func (r *failingPauseStateRepo) Set(ctx context.Context, state *pausestate.Pause
 	return r.err
 }
 
+type fakeLazyStorage struct {
+	storage storage.Storage
+	err     error
+}
+
+func (f *fakeLazyStorage) Storage(ctx context.Context) (storage.Storage, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.storage, nil
+}
+
+func newFakeLazyStorage(repo pausestate.Repository) LazyStorageProvider {
+	return &fakeLazyStorage{
+		storage: &storage.MockStorage{
+			PauseStateRepository: repo,
+		},
+	}
+}
+
 // newFakePauseScheduler builds a PauseScheduler wired to in-memory publishers for tests
 // that only exercise state transitions.
 func newFakePauseScheduler(pauseStateRepository pausestate.Repository) PauseScheduler {
 	return NewPauseScheduler(PauseSchedulerParams{
-		PauseStateRepository: pauseStateRepository,
-		BroadcastPublisher:   broadcast.NewFakeClient(""),
-		TaskQueuePublisher:   redisclient.NewFakeClient(),
+		LazyStorage:        newFakeLazyStorage(pauseStateRepository),
+		BroadcastPublisher: broadcast.NewFakeClient(""),
+		TaskQueuePublisher: redisclient.NewFakeClient(),
 	})
 }
 
@@ -191,12 +212,36 @@ func TestPauseScheduler_Pause(t *testing.T) {
 		}
 	})
 
+	t.Run("returns error when lazy storage initialization fails", func(t *testing.T) {
+		storageErr := errors.New("spanner client init failed")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        &fakeLazyStorage{err: storageErr},
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+		})
+
+		err := scheduler.Pause(ctx)
+		if !errors.Is(err, storageErr) {
+			t.Fatalf("expected wrapped storageErr, got %v", err)
+		}
+	})
+
+	t.Run("fails when lazy storage is not configured", func(t *testing.T) {
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+		})
+
+		err := scheduler.Pause(ctx)
+		if !errors.Is(err, errStorageNotConfigured) {
+			t.Fatalf("expected errStorageNotConfigured, got %v", err)
+		}
+	})
+
 	t.Run("successfully broadcasts pause event when publisher provided", func(t *testing.T) {
 		fakeRepo := pausestate.NewFake()
 		fakePublisher := broadcast.NewFakeClient("")
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
 		})
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -211,8 +256,8 @@ func TestPauseScheduler_Pause(t *testing.T) {
 		fakePublisher := broadcast.NewFakeClient("")
 		fakePublisher.SetPublishError(errors.New("broadcast stream failure"))
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
 		})
 
 		err := scheduler.Pause(ctx)
@@ -224,7 +269,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	t.Run("fails when broadcast publisher is not configured", func(t *testing.T) {
 		fakeRepo := pausestate.NewFake()
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
+			LazyStorage: newFakeLazyStorage(fakeRepo),
 		})
 
 		err := scheduler.Pause(ctx)
@@ -364,6 +409,32 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		}
 	})
 
+	t.Run("returns error when lazy storage initialization fails", func(t *testing.T) {
+		storageErr := errors.New("spanner client init failed")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        &fakeLazyStorage{err: storageErr},
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
+		})
+
+		_, err := scheduler.Resume(ctx)
+		if !errors.Is(err, storageErr) {
+			t.Fatalf("expected wrapped storageErr, got %v", err)
+		}
+	})
+
+	t.Run("fails when lazy storage is not configured", func(t *testing.T) {
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
+		})
+
+		_, err := scheduler.Resume(ctx)
+		if !errors.Is(err, errStorageNotConfigured) {
+			t.Fatalf("expected errStorageNotConfigured, got %v", err)
+		}
+	})
+
 	t.Run("successfully broadcasts resume event and publishes task queue trigger", func(t *testing.T) {
 		fakeRepo := pausestate.NewFake()
 		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
@@ -372,11 +443,11 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		fakePublisher := broadcast.NewFakeClient("")
 		fakeRedis := redisclient.NewFakeClient()
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
-			TaskQueuePublisher:   fakeRedis,
-			BatchSize:            42,
-			MaxBacklogThreshold:  150,
+			LazyStorage:         newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher:  fakePublisher,
+			TaskQueuePublisher:  fakeRedis,
+			BatchSize:           42,
+			MaxBacklogThreshold: 150,
 		})
 
 		runID, err := scheduler.Resume(ctx)
@@ -398,9 +469,9 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		fakePublisher := broadcast.NewFakeClient("")
 		fakeRedis := redisclient.NewFakeClient()
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
-			TaskQueuePublisher:   fakeRedis,
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
 		})
 
 		runID, err := scheduler.Resume(ctx)
@@ -427,9 +498,9 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		fakePublisher.SetPublishError(errors.New("broadcast stream failure"))
 		fakeRedis := redisclient.NewFakeClient()
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
-			TaskQueuePublisher:   fakeRedis,
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
 		})
 
 		_, err := scheduler.Resume(ctx)
@@ -445,8 +516,8 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		fakeRepo := pausestate.NewFake()
 		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			TaskQueuePublisher:   redisclient.NewFakeClient(),
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
 		})
 
 		_, err := scheduler.Resume(ctx)
@@ -461,8 +532,8 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
 		fakePublisher := broadcast.NewFakeClient("")
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			PauseStateRepository: fakeRepo,
-			BroadcastPublisher:   fakePublisher,
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
 		})
 
 		_, err := scheduler.Resume(ctx)
@@ -544,6 +615,27 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 		}
 		if !errors.Is(err, repoErr) {
 			t.Errorf("expected wrapped repoErr, got %v", err)
+		}
+	})
+
+	t.Run("returns error when lazy storage initialization fails", func(t *testing.T) {
+		storageErr := errors.New("spanner client init failed")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage: &fakeLazyStorage{err: storageErr},
+		})
+
+		_, err := scheduler.IsPaused(ctx)
+		if !errors.Is(err, storageErr) {
+			t.Fatalf("expected wrapped storageErr, got %v", err)
+		}
+	})
+
+	t.Run("fails when lazy storage is not configured", func(t *testing.T) {
+		scheduler := NewPauseScheduler(PauseSchedulerParams{})
+
+		_, err := scheduler.IsPaused(ctx)
+		if !errors.Is(err, errStorageNotConfigured) {
+			t.Fatalf("expected errStorageNotConfigured, got %v", err)
 		}
 	})
 }
