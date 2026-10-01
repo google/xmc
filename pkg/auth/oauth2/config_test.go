@@ -17,7 +17,9 @@ package oauth2
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetEnvOrFile(t *testing.T) {
@@ -459,6 +461,51 @@ func TestIsNonProdAuth(t *testing.T) {
 			got := tc.config.IsNonProdAuth()
 			if got != tc.expected {
 				t.Errorf("IsNonProdAuth() = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestLoadConfigSessionTTL(t *testing.T) {
+	t.Setenv("MOCK_AUTH", "true")
+	for _, tc := range []struct {
+		name    string
+		value   string
+		unset   bool
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "default", unset: true, want: time.Hour},
+		{name: "one second", value: "1s", want: time.Second},
+		{name: "one week", value: "168h", want: 7 * 24 * time.Hour},
+		{name: "thirty days", value: "720h", want: 30 * 24 * time.Hour},
+		{name: "empty", value: "", wantErr: true},
+		{name: "invalid", value: "one week", wantErr: true},
+		{name: "unsupported unit", value: "7d", wantErr: true},
+		{name: "zero", value: "0s", wantErr: true},
+		{name: "negative", value: "-1h", wantErr: true},
+		{name: "subsecond", value: "500ms", wantErr: true},
+		{name: "overflow", value: "999999999999h", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SESSION_TTL", tc.value)
+			if tc.unset {
+				if err := os.Unsetenv("SESSION_TTL"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadConfig()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "SESSION_TTL") {
+					t.Fatalf("LoadConfig() error = %v, want a session lifetime error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadConfig() failed: %v", err)
+			}
+			if cfg.SessionTTL != tc.want {
+				t.Errorf("SessionTTL = %v, want %v", cfg.SessionTTL, tc.want)
 			}
 		})
 	}

@@ -19,6 +19,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "clickhouse_metrics_job_verify.py",
     "common.py",
     "common_test.py",
     "format_visual_audit_summary.js",
@@ -81,6 +82,16 @@ py_library(
 py_binary(
     name = "simple_job_verify",
     srcs = ["simple_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "clickhouse_metrics_job_verify",
+    srcs = ["clickhouse_metrics_job_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",

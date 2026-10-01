@@ -27,6 +27,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/internal/storage/spanner/xid"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -382,9 +383,10 @@ func TestExtractXidEntryCursor(t *testing.T) {
 				UpdateTime: nowProto,
 			},
 			want: map[string]any{
-				"xid":     int64(123),
-				"created": now,
-				"updated": now,
+				"xid":              int64(123),
+				"bit_reversed_xid": spannerutils.ReverseBits(123),
+				"created":          now,
+				"updated":          now,
 			},
 			wantErr: false,
 		},
@@ -394,7 +396,8 @@ func TestExtractXidEntryCursor(t *testing.T) {
 				Name: proto.String("xids/456"),
 			},
 			want: map[string]any{
-				"xid": int64(456),
+				"xid":              int64(456),
+				"bit_reversed_xid": spannerutils.ReverseBits(456),
 			},
 			wantErr: false,
 		},

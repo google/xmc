@@ -112,9 +112,13 @@ func ExtractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	}
 
 	cursor := map[string]any{
-		"xid":          xid,
-		"work_unit_id": wid,
-		"artifact_id":  aid,
+		"xid":              xid,
+		"bit_reversed_xid": spannerutils.ReverseBits(xid),
+		"work_unit_id":     nil,
+		"artifact_id":      aid,
+	}
+	if wid != 0 {
+		cursor["work_unit_id"] = wid
 	}
 
 	if artifact.CreateTime != nil {

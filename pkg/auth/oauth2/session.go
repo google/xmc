@@ -36,7 +36,10 @@ type SessionClaims struct {
 
 // GenerateSessionToken issues a new signed JWT session token.
 func GenerateSessionToken(email, name, picture string, expiry time.Duration, secretKey []byte) (string, error) {
-	now := time.Now()
+	return generateSessionTokenAt(email, name, picture, expiry, secretKey, time.Now())
+}
+
+func generateSessionTokenAt(email, name, picture string, expiry time.Duration, secretKey []byte, now time.Time) (string, error) {
 	claims := &SessionClaims{
 		Email:   email,
 		Name:    name,

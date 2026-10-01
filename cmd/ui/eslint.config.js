@@ -16,6 +16,7 @@
 
 import tseslint from 'typescript-eslint';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
+import unusedImports from 'eslint-plugin-unused-imports';
 import angular from '@angular-eslint/eslint-plugin';
 import angularTemplate from '@angular-eslint/eslint-plugin-template';
 import angularTemplateParser from '@angular-eslint/template-parser';
@@ -24,7 +25,7 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.scss', '**/*.css'],
   },
   {
     files: ['**/*.ts'],
@@ -34,6 +35,7 @@ export default tseslint.config(
     },
     plugins: {
       'simple-import-sort': simpleImportSort,
+      'unused-imports': unusedImports,
       '@angular-eslint': angular,
     },
     rules: {
@@ -43,6 +45,7 @@ export default tseslint.config(
       'no-var': 'error',
       'no-console': ['error', { allow: ['warn', 'error', 'info'] }],
 
+      'unused-imports/no-unused-imports': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
@@ -144,6 +147,7 @@ export default tseslint.config(
       '**/screenshot_tests/**',
     ],
     rules: {
+      'unused-imports/no-unused-imports': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@angular-eslint/prefer-standalone': 'off',

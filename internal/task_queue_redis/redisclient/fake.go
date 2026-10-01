@@ -25,6 +25,15 @@ type FakeClient struct {
 	taskHandler     func(context.Context, string, string) TaskResult
 	PingError       error
 	AddMessageError error
+	// Backlog and BacklogError are returned by BacklogLength.
+	Backlog      int64
+	BacklogError error
+	// BacklogGroup and BacklogThreshold record the last BacklogLength arguments.
+	BacklogGroup     string
+	BacklogThreshold int
+	// ExtendClaimError is returned by ExtendClaim; ExtendClaimCalls counts its invocations.
+	ExtendClaimError error
+	ExtendClaimCalls int
 }
 
 // NewFakeClient creates a new FakeClient.
@@ -43,6 +52,15 @@ func (c *FakeClient) AddMessage(ctx context.Context, data string, failedAttempts
 	}
 	c.Messages = append(c.Messages, data)
 	return nil
+}
+
+// BacklogLength records its arguments and returns the configured Backlog and BacklogError.
+func (c *FakeClient) BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.BacklogGroup = group
+	c.BacklogThreshold = maxThreshold
+	return c.Backlog, c.BacklogError
 }
 
 // GetStreamLen returns the number of messages added.
@@ -83,6 +101,14 @@ func (c *FakeClient) SetTaskHandler(taskHandler func(context.Context, string, st
 // Ping is a fake implementation of RedisClient.Ping.
 func (c *FakeClient) Ping(ctx context.Context) error {
 	return c.PingError
+}
+
+// ExtendClaim is a fake implementation of Consumer.ExtendClaim.
+func (c *FakeClient) ExtendClaim(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ExtendClaimCalls++
+	return c.ExtendClaimError
 }
 
 // Close is a fake implementation of RedisClient.Close.

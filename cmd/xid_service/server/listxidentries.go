@@ -26,6 +26,8 @@ import (
 )
 
 const (
+	// defaultXidPageSize is the default page size when page_size is omitted (0) in ListXidEntriesRequest.
+	defaultXidPageSize = 10
 	// maxPageSize is the maximum page size that can be specified in a ListXidEntriesRequest.
 	// We guarantee that this is at least as large as the largest page size used by any client.
 	maxPageSize = 100000
@@ -56,8 +58,13 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 		return nil, fmt.Errorf("invalid ListXidEntriesRequest %v: %w", err, status.ErrInvalidArgument)
 	}
 
+	pageSize := in.GetPageSize()
+	if pageSize == 0 {
+		pageSize = defaultXidPageSize
+	}
+
 	// 3. Get the list of XidEntries from the storage layer.
-	xids, nextPageToken, err := s.storage.ListXidEntries(ctx, in.GetPageSize(), in.GetPageToken(), in.GetFilter(), in.GetOrderBy(), staleness)
+	xids, nextPageToken, err := s.storage.ListXidEntries(ctx, pageSize, in.GetPageToken(), in.GetFilter(), in.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if ok {

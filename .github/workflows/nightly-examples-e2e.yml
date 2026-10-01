@@ -60,7 +60,15 @@ jobs:
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=60 --gpus=0'
             verify_module: 'tools.nightly_tests.simple_job_verify'
-            expected_queue: 'cpu-queue'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'clickhouse_metrics_job'
+            name: 'ClickHouse Metrics Job'
+            example_path: 'examples/clickhouse_metrics_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
 
     env:
@@ -106,6 +114,13 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
+      - name: 'Get GKE Cluster Credentials'
+        if: steps.filter-check.outputs.should_run == 'true'
+        uses: 'google-github-actions/get-gke-credentials@64bc7249bbcf78056bb92f14d3cedc2da193946c' # v2.3.5
+        with:
+          cluster_name: 'xmc-xmc-nightly-xmc-nightly'
+          location: '${{ secrets.GCP_REGION }}'
+
       - name: 'Set up Python 3.13'
         if: steps.filter-check.outputs.should_run == 'true'
         uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
@@ -119,6 +134,7 @@ jobs:
         run: |
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
           if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
@@ -195,6 +211,7 @@ jobs:
           EXAMPLE_ID: '${{ matrix.example.id }}'
           VERIFY_MODULE: '${{ matrix.example.verify_module }}'
           EXPECTED_QUEUE: '${{ matrix.example.expected_queue }}'
+          REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
           XID: '${{ steps.launch-example.outputs.xid }}'
         run: |
           set -euo pipefail
@@ -208,6 +225,34 @@ jobs:
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
 
+          # Bridge the external GitHub Actions runner to the internal ClickHouse ClusterIP
+          # service in the GKE cluster via an ephemeral, health-checked port-forward with
+          # automated trap cleanup. This allows verification scripts to assert metrics ingestion
+          # without exposing ClickHouse publicly. Conditionally appends
+          # --require_clickhouse_metrics=true to the verification arguments for ClickHouse-enabled workloads.
+          EXTRA_VERIFY_ARGS=()
+          if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
+            if ! curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
+              echo "Starting ClickHouse HTTP port-forward for verification..."
+              kubectl port-forward svc/clickhouse 8123:8123 -n xmc-metrics >/tmp/clickhouse-pf-verify.log 2>&1 &
+              VERIFY_PF_PID=$!
+              trap 'kill "${VERIFY_PF_PID}" 2>/dev/null || true' EXIT
+              for i in $(seq 1 15); do
+                if curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
+                  echo "ClickHouse port-forward ready on http://127.0.0.1:8123"
+                  break
+                fi
+                sleep 1
+              done
+              if ! curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
+                echo "::error::ClickHouse port-forward failed to become ready on http://127.0.0.1:8123"
+                cat /tmp/clickhouse-pf-verify.log || true
+                exit 1
+              fi
+            fi
+            EXTRA_VERIFY_ARGS+=("--require_clickhouse_metrics=true")
+          fi
+
           echo "================================================================="
           echo " Verifying Example: ${EXAMPLE_NAME} (${EXAMPLE_ID})"
           echo " Identifier       : ${XID}"
@@ -220,7 +265,8 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m "${VERIFY_MODULE}" \
             --xid="${XID}" \
             --endpoint="${XMANAGER_ENDPOINT}" \
-            --expected_queue="${EXPECTED_QUEUE}"
+            --expected_queue="${EXPECTED_QUEUE}" \
+            "${EXTRA_VERIFY_ARGS[@]}"
 
           echo "================================================================="
           echo " Verification Passed for: ${EXAMPLE_NAME}"

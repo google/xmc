@@ -125,6 +125,34 @@ class RunLinterTest(unittest.TestCase):
         dirs = run_linter.discover_manifest_dirs([self.temp_dir / "profiles"])
         self.assertEqual(dirs, [self.temp_dir / chart_rel])
 
+    def test_discover_lint_targets_profile_with_rules_and_subcharts(self) -> None:
+        """Tests that a profile root with rules.yaml and components/ is discovered alongside sub-charts."""
+        prof_rel = "profiles/stable-2026a"
+        rules_file = self.create_file(f"{prof_rel}/rules.yaml", "staticChecks: {}\n")
+        for comp in ("ingestion-gateway", "redpanda"):
+            self.create_file(
+                f"{prof_rel}/components/{comp}/Chart.yaml",
+                f"apiVersion: v2\nname: {comp}\nversion: 0.1.0\n",
+            )
+            self.create_file(f"{prof_rel}/components/{comp}/values.yaml", "enabled: false\n")
+            self.create_file(
+                f"{prof_rel}/components/{comp}/templates/component.yaml",
+                "apiVersion: xmc.dev/v1alpha1\nkind: Component\n",
+            )
+
+        targets = run_linter.discover_lint_targets([self.temp_dir / "profiles"])
+        self.assertEqual(len(targets), 3)
+        self.assertEqual(targets[0].manifests_dir, self.temp_dir / prof_rel)
+        self.assertEqual(targets[0].rules_config, rules_file)
+        self.assertEqual(
+            targets[1].manifests_dir,
+            self.temp_dir / f"{prof_rel}/components/ingestion-gateway",
+        )
+        self.assertEqual(
+            targets[2].manifests_dir,
+            self.temp_dir / f"{prof_rel}/components/redpanda",
+        )
+
     def test_resolve_linter_binary(self) -> None:
         """Tests resolving explicit binary or pre-built executable candidates."""
         self.assertEqual(

@@ -23,7 +23,9 @@ const (
 	// defaultMaxPageSize is the maximum page size for list requests.
 	defaultMaxPageSize = 1000
 	// maxPageTokenLen is the maximum allowed length of a page token string.
-	maxPageTokenLen = 256
+	// Multi-field base64-encoded JSON cursors (e.g. Artifacts with bit_reversed_xid,
+	// RFC3339Nano timestamps, and display_name) can exceed 256 characters.
+	maxPageTokenLen = 1024
 )
 
 // ValidateAIPCompliantList checks if a list request's parameters are IAP compliant.

@@ -56,6 +56,11 @@ on:
         type: boolean
         required: false
         default: false
+      enable_metrics:
+        description: 'Enable Metrics system (ClickHouse & Redpanda) deployment'
+        type: boolean
+        required: false
+        default: false
     secrets:
       GCP_PROJECT_ID:
         required: false
@@ -150,6 +155,11 @@ on:
         default: true
       skip_verification:
         description: 'Skip post-deployment verification'
+        type: boolean
+        required: false
+        default: false
+      enable_metrics:
+        description: 'Enable Metrics system (ClickHouse & Redpanda) deployment'
         type: boolean
         required: false
         default: false
@@ -275,6 +285,7 @@ jobs:
           HEALTH_SERVICE_ENABLED: '${{ inputs.health_service_deployment_enabled }}'
           DASHBOARD_SERVICE_ENABLED: '${{ inputs.dashboard_service_deployment_enabled }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
+          ENABLE_METRICS: '${{ inputs.enable_metrics }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
           terraform_backend_defaults:
@@ -307,6 +318,7 @@ jobs:
             health_service_deployment_enabled: ${HEALTH_SERVICE_ENABLED}
             dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
+            enable_metrics: ${ENABLE_METRICS}
           EOF_YAML
 
       - name: 'Execute GKE Deployment Pipeline'
@@ -315,6 +327,28 @@ jobs:
             --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
             --dns-project "${DNS_PROJECT_ID}" \
             --dns-zone "${DNS_ZONE_NAME}"
+
+      - name: 'Deploy Metrics Addons (ClickHouse & Redpanda)'
+        if: ${{ inputs.enable_metrics == true }}
+        run: |
+          gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
+          # 1. Ensure the dedicated xmc-metrics namespace exists for analytical storage infrastructure.
+          kubectl create namespace xmc-metrics --dry-run=client -o yaml | kubectl apply -f -
+          # 2. SOT: Create ClickHouse format schema ConfigMap sourcing directly from api/protos/metrics/metrics.proto.
+          kubectl create configmap clickhouse-format-schemas \
+            --namespace=xmc-metrics \
+            --from-file=metrics.proto=api/protos/metrics/metrics.proto \
+            --dry-run=client -o yaml | kubectl apply -f -
+          # 3. Deploy lightweight metrics addons (Redpanda and ClickHouse).
+          kubectl apply -f deploy/addons/metrics/manifests/metrics-addons.yaml
+          # 4. Block until Redpanda finishes starting so the message broker is ready to accept topic creation and ingester connections.
+          kubectl rollout status statefulset/redpanda -n xmc --timeout=180s
+          # 5. Initialize the target Kafka topic ('xmc-metrics') partitioned across workers before Ingestion Gateway publishes metrics.
+          kubectl exec -n xmc redpanda-0 -- rpk topic create xmc-metrics --partitions 128 --replicas 1 || true
+          # 6. Block until ClickHouse server is healthy and listening on ports 8123 (HTTP) and 9000 (native TCP).
+          kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
+          # 7. Apply schema.sql to initialize xmc_metrics MergeTree table, xmc_metrics_queue Kafka engine table, and xmc_metrics_mv materialized view.
+          kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}

@@ -28,12 +28,12 @@ check_bazel() {
   bazel_files=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
   if [ -n "$bazel_files" ]; then
     if [ "$MODE" = "check" ]; then
-      if ! $buildifier_bin -mode=check $bazel_files; then
+      if ! $buildifier_bin -lint=warn -warnings=unused-variable -mode=check $bazel_files; then
         echo "❌ Bazel buildifier check failed."
         FAILED=1
       fi
     else
-      $buildifier_bin -lint=fix -mode=fix $bazel_files
+      $buildifier_bin -lint=fix -warnings=unused-variable -mode=fix $bazel_files
     fi
   fi
 }
@@ -101,6 +101,18 @@ check_go() {
     echo "--> Running Go Test Determinism & State Leakage Checker..."
     if ! go run ./tools/lint/check_go_determinism; then
       FAILED=1
+    fi
+  fi
+
+  if command -v go >/dev/null 2>&1; then
+    echo "--> Checking Go Module Dependencies (go mod tidy)..."
+    if [ "$MODE" = "check" ]; then
+      if ! go mod tidy -diff >/dev/null 2>&1; then
+        echo "❌ Unused or missing Go module dependencies found. Run 'go mod tidy' to sync."
+        FAILED=1
+      fi
+    else
+      go mod tidy
     fi
   fi
 }

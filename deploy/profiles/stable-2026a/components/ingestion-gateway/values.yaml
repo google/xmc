@@ -1,0 +1,26 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+enabled: false
+deployWorkload: false
+namespace: xmc
+global: { imageTag: "" }
+image: { repository: "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway", tag: "latest" }
+imageTag: ""
+deletionProtection: true
+deletionPolicy: "Delete"
+dependencies: ["redpanda", "clickhouse"]
+parameters:
+  port: 8080
+  redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+  topicName: "xmc-metrics"
+  minPartitions: 128
+  minReplicas: 1
+minReplicas: 2
+maxReplicas: 10
+enableComponents: true
+serviceAccountName: "default"
+projectId: ""
+sasl: { enabled: false, mechanism: "SCRAM-SHA-256", secretName: "" }
+tls: { enabled: false, secretName: "" }
+resources: { requests: { cpu: "10m", memory: "64Mi" }, limits: { cpu: "100m", memory: "256Mi" } }
+ingestionGatewayDeployment: {}

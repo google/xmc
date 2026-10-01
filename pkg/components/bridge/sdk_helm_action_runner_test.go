@@ -16,10 +16,85 @@ package bridge
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+
 	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
+
+// newFakeAPIServerGetter returns a RESTClientGetter pointing at an in-process API server that only serves /version,
+// which is sufficient for Helm's reachability check when using the in-memory storage driver.
+func newFakeAPIServerGetter(t *testing.T) genericclioptions.RESTClientGetter {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"major":"1","minor":"30","gitVersion":"v1.30.0"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
+	content := "apiVersion: v1\nkind: Config\nclusters:\n- name: test\n  cluster:\n    server: " + srv.URL +
+		"\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\ncurrent-context: test\nusers:\n- name: test\n  user: {}\n"
+	if err := os.WriteFile(kubeconfig, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+	flags := genericclioptions.NewConfigFlags(false)
+	flags.KubeConfig = &kubeconfig
+	return flags
+}
+
+func TestSDKHelmActionRunner_Status(t *testing.T) {
+	tests := []struct {
+		name           string
+		runner         func(t *testing.T) *SDKHelmActionRunner
+		wantErr        bool
+		wantNotFoundIs bool
+	}{
+		{
+			name:    "nil runner",
+			runner:  func(t *testing.T) *SDKHelmActionRunner { return nil },
+			wantErr: true,
+		},
+		{
+			name:    "nil restClientGetter",
+			runner:  func(t *testing.T) *SDKHelmActionRunner { return NewSDKHelmActionRunner(nil) },
+			wantErr: true,
+		},
+		{
+			name: "missing release maps to driver.ErrReleaseNotFound",
+			runner: func(t *testing.T) *SDKHelmActionRunner {
+				return NewSDKHelmActionRunner(newFakeAPIServerGetter(t), WithDriver("memory"))
+			},
+			wantErr:        true,
+			wantNotFoundIs: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel, err := tt.runner(t).Status(context.Background(), "xmc-cmp-ingestion-gateway", "xmc")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Status() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if rel != nil {
+				t.Errorf("Status() release = %v, want nil", rel)
+			}
+			if got := errors.Is(err, driver.ErrReleaseNotFound); got != tt.wantNotFoundIs {
+				t.Errorf("errors.Is(err, driver.ErrReleaseNotFound) = %v, want %v (err: %v)", got, tt.wantNotFoundIs, err)
+			}
+		})
+	}
+}
 
 func TestSDKHelmActionRunner_Options(t *testing.T) {
 	var nilRunner *SDKHelmActionRunner

@@ -185,8 +185,45 @@ python3 tools/release/publish_release.py --tag 0.6.0 --notes-file /tmp/release_n
 
 ---
 
-## 6. Package Architecture
+## 6. Workflow Dispatch & Monitoring (`dispatch_and_watch.py`)
 
+`dispatch_and_watch.py` is a streamlined CLI helper tool that triggers GitHub Actions workflows, polls for run registration with commit SHA verification, watches execution to completion, extracts GitHub Pages URLs, and updates release state files.
+
+### CLI Usage
+
+```bash
+# Dispatch a nightly deployment and watch outcome
+python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-build.yml \
+  --target-sha "$(git rev-parse origin/main)" \
+  --state-file /tmp/release_state.json
+
+# Reuse an existing successful run matching target SHA if already executed
+python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-build.yml \
+  --target-sha "$(git rev-parse origin/main)" \
+  --find-existing \
+  --state-file /tmp/release_state.json
+```
+
+### CLI Arguments Reference
+
+| Flag | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--workflow` | `-w` | *(required)* | Workflow filename (e.g. `nightly-build.yml`) |
+| `--target-sha` | `-s`, `--sha` | `""` | Expected git commit SHA to correlate with the workflow run |
+| `--ref` | `-r` | `main` | Target git branch or reference |
+| `--find-existing` | | `false` | Check for and reuse an existing successful run matching `target_sha` |
+| `--state-file` | | `None` | Path to JSON state file to persist run metadata and outcomes |
+| `--poll-interval` | | `5.0` | Seconds to wait between polling attempts for run registration |
+| `--poll-attempts` | | `12` | Maximum number of polling attempts before timing out |
+| `--repo-dir` | | `.` | Root directory of the repository |
+
+---
+
+## 7. Package Architecture
+
+- [`dispatch_and_watch.py`](dispatch_and_watch.py): CLI tool to dispatch GitHub Actions release workflows, poll for correlation, watch execution outcomes, and persist release state.
 - [`extract_release_metadata.py`](extract_release_metadata.py): CLI entrypoint orchestrating git extraction, feature flag analysis, SemVer recommendation, and output generation.
 - [`feature_flags.py`](feature_flags.py): Discovers feature toggles from CTK and Helm manifests and computes flag transitions between releases.
 - [`git_ops.py`](git_ops.py): Subprocess execution wrappers for `git log`, `git describe`, `git remote`, `git show`, and annotated tag lifecycle operations (`verify_local_tag`, `verify_remote_tag`, `create_git_tag`, `push_git_tag`).
@@ -198,12 +235,19 @@ python3 tools/release/publish_release.py --tag 0.6.0 --notes-file /tmp/release_n
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 Run unit tests via Bazel:
 
 ```bash
-bazel test //tools/release:extract_release_metadata_test \
+bazel test //tools/release:all
+```
+
+Or execute individual test targets:
+
+```bash
+bazel test //tools/release:dispatch_and_watch_test \
+  //tools/release:extract_release_metadata_test \
   //tools/release:feature_flags_test \
   //tools/release:git_ops_test \
   //tools/release:github_release_client_test \

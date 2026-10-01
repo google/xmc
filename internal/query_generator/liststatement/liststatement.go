@@ -15,6 +15,7 @@
 package liststatement
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -239,11 +240,31 @@ func DecodeAfterCursorPageToken(pageToken string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode pageToken %q, %w: %w", pageToken, err, status.ErrInvalidArgument)
 	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var afterCursor map[string]any
-	if err := json.Unmarshal(data, &afterCursor); err != nil {
+	if err := dec.Decode(&afterCursor); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pageToken %q, %w: %w", pageToken, err, status.ErrInvalidArgument)
 	}
+	if len(afterCursor) == 0 {
+		return nil, fmt.Errorf("decoded pageToken %q has empty cursor: %w", pageToken, status.ErrInvalidArgument)
+	}
+	normalizeCursorNumbers(afterCursor)
 	return afterCursor, nil
+}
+
+func normalizeCursorNumbers(cursor map[string]any) {
+	for k, v := range cursor {
+		num, ok := v.(json.Number)
+		if !ok {
+			continue
+		}
+		if i, err := num.Int64(); err == nil {
+			cursor[k] = i
+		} else if f, err := num.Float64(); err == nil {
+			cursor[k] = f
+		}
+	}
 }
 
 // EncodeAfterCursorPageToken encodes a cursor map into a page token.

@@ -1,11 +1,12 @@
 # Copyright 2025 Google LLC
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "redisclient",
     srcs = [
+        "backlog.go",
         "common.go",
         "consumer.go",
         "fake.go",
@@ -16,4 +17,15 @@ go_library(
         "//internal/logging",
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
+)
+
+go_test(
+    name = "redisclient_test",
+    srcs = [
+        "backlog_test.go",
+        "consumer_test.go",
+        "fake_test.go",
+    ],
+    embed = [":redisclient"],
+    deps = ["@com_github_redis_go_redis_v9//:go-redis"],
 )

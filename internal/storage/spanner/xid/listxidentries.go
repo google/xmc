@@ -22,6 +22,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
 	"xmanager_cloud/query_generator/liststatement"
 	"xmanager_cloud/query_generator/normalizer/normalizer"
@@ -99,7 +100,8 @@ func ExtractXidEntryCursor(entry *xidpb.XidEntry) (map[string]any, error) {
 	}
 
 	cursor := map[string]any{
-		"xid": xid,
+		"xid":              xid,
+		"bit_reversed_xid": spannerutils.ReverseBits(xid),
 	}
 
 	if entry.CreateTime != nil {

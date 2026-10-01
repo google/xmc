@@ -169,10 +169,17 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
             if is_helm_chart:
                 dirnames[:] = []
 
-            has_manifests = is_helm_chart or any(
-                f.lower().endswith((".yaml", ".yml"))
-                and f.lower() not in ("rules.yaml", "rules.yml")
-                for f in filenames
+            is_profile_with_rules = (
+                "components" in dirnames and find_rules_config(dir_path) is not None
+            )
+            has_manifests = (
+                is_helm_chart
+                or is_profile_with_rules
+                or any(
+                    f.lower().endswith((".yaml", ".yml"))
+                    and f.lower() not in ("rules.yaml", "rules.yml")
+                    for f in filenames
+                )
             )
             if has_manifests:
                 resolved = dir_path.resolve()
