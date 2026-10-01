@@ -40,6 +40,11 @@ fi
 if [[ "${PROVISION_CLUSTER}" == "true" ]]; then
   : "${XMANAGER_ENV:?Error: XMANAGER_ENV environment variable is required to provision a cluster}"
   GCLUSTER_BIN="${GCLUSTER_BIN:-${REPO_ROOT}/cluster-toolkit/gcluster}"
+  if [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "Error: gcluster not found or not executable at '${GCLUSTER_BIN}'." >&2
+    echo "Build it (see examples/xmc_lite_job/README.md, section 1C) or set GCLUSTER_BIN." >&2
+    exit 1
+  fi
   GCLUSTER_VARS="project_id=${PROJECT_ID},deployment_name=${GKE_CLUSTER},region=${GCP_REGION},environment=${XMANAGER_ENV},namespace=${K8S_NAMESPACE}"
 
   "${GCLUSTER_BIN}" create "${SCRIPT_DIR}/xmc-lite-gke.yaml" \
@@ -59,6 +64,7 @@ gcloud container clusters get-credentials "${GKE_CLUSTER}" \
 
 if [[ "${PROVISION_CLUSTER}" == "true" ]]; then
   kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl rollout status deployment/kueue-controller-manager -n kueue-system --timeout=300s
   kubectl apply -n "${K8S_NAMESPACE}" -f "${SCRIPT_DIR}/kueue-queues.yaml"
 fi
 
