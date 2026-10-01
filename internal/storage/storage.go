@@ -266,8 +266,9 @@ type WorkUnitTxRepository interface {
 	SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error
 	// UpdateCurrentWorkUnitExecution updates the current work unit execution within the transaction.
 	UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error
-	// UpdateWorkUnitStatus updates the status of the current work unit execution within the transaction.
-	UpdateWorkUnitStatus(ctx context.Context, xid, wid, eid int64, status *essmsgpb.WorkUnitStatus) error
+	// UpdateWorkUnitExecutions applies execution updates within the transaction, including state
+	// transition guards, status history and experiment status denormalization.
+	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // ExperimentTxRepository defines experiment operations scoped to a read-write transaction.

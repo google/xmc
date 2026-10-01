@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"golang/cmp/cmp"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
@@ -160,28 +161,17 @@ func TestTaskPauseHandler_ShouldPause(t *testing.T) {
 }
 
 func TestHandlePause(t *testing.T) {
-	storedUpdateTime := timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	storedWorkUnit := &essmsgpb.WorkUnit{
-		Name: "experiments/100/workUnits/200",
-		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-			Status: &essmsgpb.WorkUnitStatus{
-				State:      essmsgpb.WorkUnitStatus_INITIALIZING,
-				UpdateTime: storedUpdateTime,
-			},
-		},
-	}
-
 	tests := []struct {
 		name                   string
 		payload                *actuatortaskpb.ActuatorPayload
 		repoErr                error
-		fetchErr               error
 		updateStatusErr        error
 		expectError            bool
 		expectBadRequest       bool
 		expectedBufferedTarget string
-		// expectedStatusEID is the execution ID whose status is updated; 0 means no status update.
-		expectedStatusEID int64
+		// expectedStatusTarget is the execution whose status is updated; empty means no status update.
+		expectedStatusTarget string
+		expectedStatusEID    int64
 	}{
 		{
 			name: "nil_action_error",
@@ -217,6 +207,7 @@ func TestHandlePause(t *testing.T) {
 				CreateTime: timestamppb.Now(),
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
+			expectedStatusTarget:   "experiments/100/workUnits/200/executions/1",
 			expectedStatusEID:      1,
 		},
 		{
@@ -239,6 +230,7 @@ func TestHandlePause(t *testing.T) {
 				CreateTime: timestamppb.Now(),
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
+			expectedStatusTarget:   "experiments/100/workUnits/200/executions/2",
 			expectedStatusEID:      2,
 		},
 		{
@@ -274,12 +266,6 @@ func TestHandlePause(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "fetch_work_unit_error",
-			payload:     newCreatePayload(),
-			fetchErr:    errors.New("spanner fetch error"),
-			expectError: true,
-		},
-		{
 			name:            "update_status_error",
 			payload:         newCreatePayload(),
 			updateStatusErr: errors.New("spanner status update error"),
@@ -293,9 +279,7 @@ func TestHandlePause(t *testing.T) {
 			cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
 			repo := &mockPausedTaskRepo{err: tc.repoErr}
 			txRunner := &storage.MockStorage{
-				WorkUnit:                storedWorkUnit,
-				FetchWorkUnitErr:        tc.fetchErr,
-				UpdateWorkUnitStatusErr: tc.updateStatusErr,
+				UpdateWorkUnitExecutionsErr: tc.updateStatusErr,
 			}
 
 			h, err := NewPauseHandler(cache, repo, txRunner)
@@ -311,8 +295,8 @@ func TestHandlePause(t *testing.T) {
 				t.Errorf("HandlePause() error = %v, want BadRequest error", err)
 			}
 			if tc.expectError {
-				if tc.repoErr != nil && txRunner.UpdateWorkUnitStatusCalls != 0 {
-					t.Errorf("status should not be updated if repo fails, got %d calls", txRunner.UpdateWorkUnitStatusCalls)
+				if tc.repoErr != nil && len(txRunner.GotWorkUnitExecutionUpdates) != 0 {
+					t.Errorf("status should not be updated if repo fails, got %d updates", len(txRunner.GotWorkUnitExecutionUpdates))
 				}
 				return
 			}
@@ -330,7 +314,7 @@ func TestHandlePause(t *testing.T) {
 				}
 			}
 
-			verifyStatusUpdate(t, txRunner, tc.expectedStatusEID, storedUpdateTime)
+			verifyStatusUpdate(t, txRunner, tc.expectedStatusTarget, tc.expectedStatusEID)
 		})
 	}
 }
@@ -345,29 +329,35 @@ func newCreatePayload() *actuatortaskpb.ActuatorPayload {
 	}
 }
 
-func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantEID int64, wantUpdateTime *timestamppb.Timestamp) {
+func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantTarget string, wantEID int64) {
 	t.Helper()
-	if wantEID == 0 {
-		if got.UpdateWorkUnitStatusCalls != 0 {
-			t.Errorf("expected 0 status updates, got %d", got.UpdateWorkUnitStatusCalls)
+	if wantTarget == "" {
+		if len(got.GotWorkUnitExecutionUpdates) != 0 {
+			t.Errorf("expected 0 status updates, got %d", len(got.GotWorkUnitExecutionUpdates))
 		}
 		return
 	}
-	if got.UpdateWorkUnitStatusCalls != 1 {
-		t.Fatalf("expected 1 status update, got %d", got.UpdateWorkUnitStatusCalls)
+	if len(got.GotWorkUnitExecutionUpdates) != 1 {
+		t.Fatalf("expected 1 status update, got %d", len(got.GotWorkUnitExecutionUpdates))
 	}
-	if got.GotWorkUnitStatusXID != 100 || got.GotWorkUnitStatusWID != 200 || got.GotWorkUnitStatusEID != wantEID {
-		t.Errorf("status update key mismatch: got %d/%d/%d, want 100/200/%d",
-			got.GotWorkUnitStatusXID, got.GotWorkUnitStatusWID, got.GotWorkUnitStatusEID, wantEID)
+	if got.GotWorkUnitExecutionsXID != 100 {
+		t.Errorf("status update XID mismatch: got %d, want 100", got.GotWorkUnitExecutionsXID)
 	}
-	status := got.GotWorkUnitStatus
-	if status.GetState() != essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED {
-		t.Errorf("status state mismatch: got %v, want SCHEDULING_PAUSED", status.GetState())
+	up := got.GotWorkUnitExecutionUpdates[0]
+	if up.WID != 200 || up.EID != wantEID {
+		t.Errorf("status update key mismatch: got WID/EID %d/%d, want 200/%d", up.WID, up.EID, wantEID)
 	}
-	if status.GetStateUpdateTime() == nil {
-		t.Errorf("status state_update_time must be set")
+	if up.WorkUnitExecution.GetName() != wantTarget {
+		t.Errorf("status update target mismatch: got %q, want %q", up.WorkUnitExecution.GetName(), wantTarget)
 	}
-	if !proto.Equal(status.GetUpdateTime(), wantUpdateTime) {
-		t.Errorf("status update_time not preserved: got %v, want %v", status.GetUpdateTime(), wantUpdateTime)
+	if up.WorkUnitExecution.GetStatus().GetState() != essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED {
+		t.Errorf("status state mismatch: got %v, want SCHEDULING_PAUSED", up.WorkUnitExecution.GetStatus().GetState())
+	}
+	if up.WorkUnitExecution.GetStatus().GetStateUpdateTime() == nil {
+		t.Errorf("status state_update_time must be set when updating status.state")
+	}
+	expectedMask := []string{"status.state"}
+	if diff := cmp.Diff(expectedMask, up.UpdateMask.GetPaths()); diff != "" {
+		t.Errorf("update mask paths mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -40,12 +40,3 @@ func TestTxRepository_UpdateCurrentWorkUnitExecution_NilExecution(t *testing.T) 
 		t.Errorf("UpdateCurrentWorkUnitExecution(nil) returned %v, want %v", err, status.ErrInvalidArgument)
 	}
 }
-
-func TestTxRepository_UpdateWorkUnitStatus_NilStatus(t *testing.T) {
-	ctx := context.Background()
-	repo := &workunit.TxRepository{}
-
-	if err := repo.UpdateWorkUnitStatus(ctx, 1, 1, 1, nil); !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateWorkUnitStatus(nil) returned %v, want %v", err, status.ErrInvalidArgument)
-	}
-}

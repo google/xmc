@@ -83,14 +83,12 @@ type MockStorage struct {
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
 
-	PauseStateRepository      pausestate.Repository
-	PausedTaskRepository      pausedtask.Repository
-	UpdateWorkUnitStatusCalls int
-	GotWorkUnitStatus         *essmsgpb.WorkUnitStatus
-	GotWorkUnitStatusXID      int64
-	GotWorkUnitStatusWID      int64
-	GotWorkUnitStatusEID      int64
-	UpdateWorkUnitStatusErr   error
+	PauseStateRepository pausestate.Repository
+	PausedTaskRepository pausedtask.Repository
+	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
+	// UpdateWorkUnitExecutions call.
+	GotWorkUnitExecutionsXID    int64
+	GotWorkUnitExecutionUpdates []*WorkUnitExecutionUpdate
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -196,8 +194,10 @@ func (s *MockStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid i
 	return s.LROOp, nil
 }
 
-// UpdateWorkUnitExecutions mocks updating work unit executions.
+// UpdateWorkUnitExecutions mocks updating work unit executions and records the updates.
 func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+	s.GotWorkUnitExecutionsXID = xid
+	s.GotWorkUnitExecutionUpdates = append(s.GotWorkUnitExecutionUpdates, updates...)
 	return nil, s.UpdateWorkUnitExecutionsErr
 }
 
@@ -234,16 +234,6 @@ func (s *MockStorage) PausedTasks() pausedtask.Repository {
 		s.PausedTaskRepository = pausedtask.NewFake()
 	}
 	return s.PausedTaskRepository
-}
-
-// UpdateWorkUnitStatus mocks updating the status of the current work unit execution.
-func (s *MockStorage) UpdateWorkUnitStatus(ctx context.Context, xid, wid, eid int64, status *essmsgpb.WorkUnitStatus) error {
-	s.UpdateWorkUnitStatusCalls++
-	s.GotWorkUnitStatus = status
-	s.GotWorkUnitStatusXID = xid
-	s.GotWorkUnitStatusWID = wid
-	s.GotWorkUnitStatusEID = eid
-	return s.UpdateWorkUnitStatusErr
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.

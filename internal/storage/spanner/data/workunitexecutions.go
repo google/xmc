@@ -15,7 +15,6 @@ package spannerdata
 
 import (
 	"fmt"
-	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
@@ -166,34 +165,4 @@ func CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid int64, executio
 		},
 	)
 	return m
-}
-
-// CurrentWorkUnitExecutionStatusProtoToUpdateMutation creates a Spanner Mutation to update
-// only the execution status, execution update time, and update time columns on the WorkUnits table.
-func CurrentWorkUnitExecutionStatusProtoToUpdateMutation(xid, wid, eid int64, status *pb.WorkUnitStatus) *spanner.Mutation {
-	now := time.Now()
-	stateTime := now
-	if status.GetStateUpdateTime() != nil {
-		stateTime = status.GetStateUpdateTime().AsTime()
-	}
-
-	return spanner.Update(
-		workunitschema.WorkUnitTableName,
-		[]string{
-			"BitReversedXid",
-			"WorkUnitId",
-			"ExecutionId",
-			"ExecutionUpdateTime",
-			"WorkUnitStatus",
-			"UpdateTime",
-		},
-		[]any{
-			data.ReverseBits(xid),
-			wid,
-			eid,
-			stateTime,
-			status,
-			now,
-		},
-	)
 }

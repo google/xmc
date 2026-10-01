@@ -14,7 +14,7 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
-        "//internal/compat/proto",
+        "//internal/compat/field_mask",
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner/pausedtask",
