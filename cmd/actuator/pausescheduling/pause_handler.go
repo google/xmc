@@ -36,11 +36,6 @@ type PausedTaskRepository interface {
 	Create(ctx context.Context, task *pausedtask.PausedTask) error
 }
 
-// WorkUnitStatusUpdater defines operations for updating work unit execution status.
-type WorkUnitStatusUpdater interface {
-	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
-}
-
 // PauseHandler defines the interface for handling actuation tasks when scheduling is paused.
 type PauseHandler interface {
 	// IsPaused returns whether scheduling is currently paused.
@@ -55,27 +50,27 @@ var _ PauseHandler = (*TaskPauseHandler)(nil)
 
 // TaskPauseHandler handles task buffering and status updates during scheduling pause.
 type TaskPauseHandler struct {
-	cache                 Cache
-	pausedTaskRepo        PausedTaskRepository
-	workUnitStatusUpdater WorkUnitStatusUpdater
+	cache          Cache
+	pausedTaskRepo PausedTaskRepository
+	txRunner       storage.TransactionRunner
 }
 
 // NewPauseHandler creates a new TaskPauseHandler instance.
-func NewPauseHandler(cache Cache, repo PausedTaskRepository, updater WorkUnitStatusUpdater) (*TaskPauseHandler, error) {
+func NewPauseHandler(cache Cache, repo PausedTaskRepository, txRunner storage.TransactionRunner) (*TaskPauseHandler, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("pause cache cannot be nil")
 	}
 	if repo == nil {
 		return nil, fmt.Errorf("paused task repository cannot be nil")
 	}
-	if updater == nil {
-		return nil, fmt.Errorf("work unit status updater cannot be nil")
+	if txRunner == nil {
+		return nil, fmt.Errorf("transaction runner cannot be nil")
 	}
 
 	return &TaskPauseHandler{
-		cache:                 cache,
-		pausedTaskRepo:        repo,
-		workUnitStatusUpdater: updater,
+		cache:          cache,
+		pausedTaskRepo: repo,
+		txRunner:       txRunner,
 	}, nil
 }
 
@@ -125,15 +120,18 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 		return err
 	}
 
-	// TODO(pausescheduling): Buffer paused task and update work unit execution status atomically within a single Spanner transaction.
-	if err := h.pausedTaskRepo.Create(ctx, task); err != nil {
-		return fmt.Errorf("failed to buffer paused task: %w", err)
-	}
-
-	if updateStatus {
-		if err := h.updateExecutionStatus(ctx, payload); err != nil {
-			return err
+	err = h.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		// TODO(pausescheduling): Buffer the paused task through the transaction-scoped repository.
+		if err := h.pausedTaskRepo.Create(ctx, task); err != nil {
+			return fmt.Errorf("failed to buffer paused task: %w", err)
 		}
+		if !updateStatus {
+			return nil
+		}
+		return markExecutionSchedulingPaused(ctx, tx.WorkUnits, payload)
+	})
+	if err != nil {
+		return err
 	}
 
 	logging.Info(ctx, fmt.Sprintf("Buffered %s task during scheduling pause", actionLabel), "target", payload.GetTarget())
@@ -178,7 +176,9 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 	return payload.GetTarget()
 }
 
-func (h *TaskPauseHandler) updateExecutionStatus(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+// markExecutionSchedulingPaused sets the target execution's state to SCHEDULING_PAUSED within the
+// transaction.
+func markExecutionSchedulingPaused(ctx context.Context, workUnits storage.WorkUnitTxRepository, payload *actuatortaskpb.ActuatorPayload) error {
 	targetToUpdate := resolveExecutionTarget(payload)
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(targetToUpdate)
 	if err != nil {
@@ -198,7 +198,7 @@ func (h *TaskPauseHandler) updateExecutionStatus(ctx context.Context, payload *a
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
 	}
 
-	if _, err := h.workUnitStatusUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
+	if _, err := workUnits.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
 		return fmt.Errorf("failed to update work unit execution status to SCHEDULING_PAUSED for %q: %w", targetToUpdate, err)
 	}
 	return nil

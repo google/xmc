@@ -23,6 +23,8 @@ import (
 	longrunningpb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -249,6 +251,13 @@ type XidEntryStore interface {
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
+// PauseSchedulingStore exposes repository accessors for global pause scheduling state
+// and pending paused actuation tasks.
+type PauseSchedulingStore interface {
+	PauseState() pausestate.Repository
+	PausedTasks() pausedtask.Repository
+}
+
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
 type WorkUnitTxRepository interface {
 	// FetchWorkUnit retrieves a work unit by its unique ID within the transaction.
@@ -257,6 +266,9 @@ type WorkUnitTxRepository interface {
 	SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error
 	// UpdateCurrentWorkUnitExecution updates the current work unit execution within the transaction.
 	UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error
+	// UpdateWorkUnitExecutions applies execution updates within the transaction, including state
+	// transition guards, status history and experiment status denormalization.
+	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // ExperimentTxRepository defines experiment operations scoped to a read-write transaction.
@@ -305,4 +317,5 @@ type Storage interface {
 	ArtifactStore
 	OperationStore
 	XidEntryStore
+	PauseSchedulingStore
 }

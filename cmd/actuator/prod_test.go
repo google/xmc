@@ -253,7 +253,7 @@ func TestInitPauseListener(t *testing.T) {
 				PauseSchedulingEnabled: false,
 			},
 		}
-		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache(), nil)
 		if err != nil {
 			t.Errorf("initPauseListener() error = %v, want nil", err)
 		}
@@ -271,12 +271,30 @@ func TestInitPauseListener(t *testing.T) {
 				RedisAddr: "",
 			},
 		}
-		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache())
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache(), nil)
 		if err == nil {
 			t.Fatalf("initPauseListener() expected error for empty redis address, got nil (listener: %v)", listener)
 		}
 		if !strings.Contains(err.Error(), "redis address must be provided") {
 			t.Errorf("initPauseListener() error = %q, want 'redis address must be provided'", err.Error())
+		}
+	})
+
+	t.Run("missing_storage_client", func(t *testing.T) {
+		cfg := &Config{
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+			RedisConfig: RedisConfig{
+				RedisAddr: "localhost:6379",
+			},
+		}
+		listener, err := initPauseListener(ctx, cfg, pausescheduling.NewCache(), nil)
+		if err == nil {
+			t.Fatalf("initPauseListener() expected error for nil storage client, got nil (listener: %v)", listener)
+		}
+		if !strings.Contains(err.Error(), "without spanner storage client") {
+			t.Errorf("initPauseListener() error = %q, want 'without spanner storage client'", err.Error())
 		}
 	})
 }

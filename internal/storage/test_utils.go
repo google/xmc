@@ -20,6 +20,8 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	lropb "longrunning/operations_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -80,6 +82,13 @@ type MockStorage struct {
 	RunInTransactionAttempts int
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
+
+	PauseStateRepository pausestate.Repository
+	PausedTaskRepository pausedtask.Repository
+	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
+	// UpdateWorkUnitExecutions call.
+	GotWorkUnitExecutionsXID    int64
+	GotWorkUnitExecutionUpdates []*WorkUnitExecutionUpdate
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -185,8 +194,10 @@ func (s *MockStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid i
 	return s.LROOp, nil
 }
 
-// UpdateWorkUnitExecutions mocks updating work unit executions.
+// UpdateWorkUnitExecutions mocks updating work unit executions and records the updates.
 func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+	s.GotWorkUnitExecutionsXID = xid
+	s.GotWorkUnitExecutionUpdates = append(s.GotWorkUnitExecutionUpdates, updates...)
 	return nil, s.UpdateWorkUnitExecutionsErr
 }
 
@@ -207,6 +218,22 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		}
 	}
 	return fn(ctx, tx)
+}
+
+// PauseState returns the mock pause state repository, initializing a fake if nil.
+func (s *MockStorage) PauseState() pausestate.Repository {
+	if s.PauseStateRepository == nil {
+		s.PauseStateRepository = pausestate.NewFake()
+	}
+	return s.PauseStateRepository
+}
+
+// PausedTasks returns the mock paused task repository, initializing a fake if nil.
+func (s *MockStorage) PausedTasks() pausedtask.Repository {
+	if s.PausedTaskRepository == nil {
+		s.PausedTaskRepository = pausedtask.NewFake()
+	}
+	return s.PausedTaskRepository
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.
