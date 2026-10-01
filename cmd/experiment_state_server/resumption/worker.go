@@ -24,7 +24,6 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -53,30 +52,31 @@ type Worker interface {
 	StartResumption(ctx context.Context, req Request) error
 }
 
+// Store provides the pause scheduling repositories and transactions used by the
+// resumption worker, so reads and transactional writes share a single backend.
+type Store interface {
+	storage.TransactionRunner
+	storage.PauseSchedulingStore
+}
+
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
-	pauseStateRepo        pausestate.Repository
-	pausedTaskRepo        pausedtask.Repository
+	store                 Store
 	taskQueue             TaskQueue
 	claimExtender         ClaimExtender
-	txRunner              storage.TransactionRunner
 	throttlePauseDuration time.Duration
 }
 
 // NewResumptionWorker creates a new ResumptionWorker with required dependencies.
 func NewResumptionWorker(
-	pauseStateRepo pausestate.Repository,
-	pausedTaskRepo pausedtask.Repository,
+	store Store,
 	taskQueue TaskQueue,
 	claimExtender ClaimExtender,
-	txRunner storage.TransactionRunner,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
-		pauseStateRepo:        pauseStateRepo,
-		pausedTaskRepo:        pausedTaskRepo,
+		store:                 store,
 		taskQueue:             taskQueue,
 		claimExtender:         claimExtender,
-		txRunner:              txRunner,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
@@ -99,7 +99,7 @@ func (w *ResumptionWorker) StartResumption(ctx context.Context, req Request) err
 
 func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
 	registered := false
-	err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		registered = false
 		state, err := tx.PauseState.Get(ctx)
 		if err != nil {
@@ -158,7 +158,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			continue
 		}
 
-		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
+		batch, err := w.store.PausedTasks().ListPending(ctx, batchSize)
 		if err != nil {
 			return fmt.Errorf("failed to list pending paused tasks: %w", err)
 		}
@@ -241,7 +241,7 @@ func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 }
 
 func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
+	state, err := w.store.PauseState().Get(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get pause state during batch iteration: %w", err)
 	}
@@ -322,7 +322,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 	}
 
 	if len(resolutions) > 0 {
-		if err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		if err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 			return tx.PausedTasks.MarkProcessed(ctx, resolutions)
 		}); err != nil {
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))

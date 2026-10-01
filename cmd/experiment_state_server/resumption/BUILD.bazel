@@ -34,7 +34,6 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner/pausedtask",
-        "//internal/storage/spanner/pausestate",
         "//internal/task_queue_redis/redisclient",
         "//internal/validator",
     ],
