@@ -10,21 +10,31 @@ Each WorkUnit is scheduled directly onto GKE as either a Kubernetes **`JobSet`**
 
 ### A. Google Cloud Project
 - A Google Cloud Project (`PROJECT_ID`) with billing enabled.
-- Required GCP APIs enabled:
+- Required GCP APIs enabled (automatically enabled if using `./setup.sh --provision-cluster`):
   - `container.googleapis.com` (Kubernetes Engine API)
   - `compute.googleapis.com` (Compute Engine API)
+  - `iam.googleapis.com` (Identity and Access Management API, provisioning only)
+  - `cloudresourcemanager.googleapis.com` (Cloud Resource Manager API, provisioning only)
   - `artifactregistry.googleapis.com` (Artifact Registry API, if pulling private images)
 
 ### B. GKE Cluster
-- An existing, reachable GKE cluster (`GKE_CLUSTER` in `GCP_REGION`) with:
-  - **JobSet Controller** (`jobset.x-k8s.io/v1alpha2` CRD installed), required for `--workload_mode=jobset` (the default).
-  - **Kueue Controller** (`kueue.x-k8s.io/v1beta1` CRD installed) and a `LocalQueue` in the target namespace, required **only** when using `--local_queue`.
+Either provisioned automatically via `./setup.sh --provision-cluster` using Cluster Toolkit (`gcluster`), [`xmc-lite-gke.yaml`](xmc-lite-gke.yaml) and [`kueue-queues.yaml`](kueue-queues.yaml), **or** an existing, reachable GKE cluster (`GKE_CLUSTER` in `GCP_REGION`) with:
+- **JobSet Controller** (`jobset.x-k8s.io/v1alpha2` CRD installed), required for `--workload_mode=jobset` (the default).
+- **Kueue Controller** (`kueue.x-k8s.io` CRDs installed) and a `LocalQueue` in the target namespace, required **only** when using `--local_queue`.
+
+A provisioned cluster gets cert-manager, JobSet and Kueue, plus a `default-flavor` ResourceFlavor, a `cluster-queue` ClusterQueue (6 CPU / 24Gi) and a `default-queue` LocalQueue in `${K8S_NAMESPACE}`.
 
 ### C. Local Workstation CLI Tools
 - `gcloud` CLI + `gke-gcloud-auth-plugin`
 - `kubectl`
 - Python 3.11+ with `venv` (`python3 -m venv`)
 - `sqlite3` CLI (optional, for inspecting `~/.xmanager/experiments.sqlite3` directly)
+- Provisioning only: `terraform` >= 1.12.2, `helm`, and the Cluster Toolkit `gcluster` binary at `./cluster-toolkit/gcluster` (override with `GCLUSTER_BIN`). Build it from source (requires Go and `make`):
+  ```bash
+  git clone https://github.com/GoogleCloudPlatform/cluster-toolkit.git
+  make -C cluster-toolkit
+  ./cluster-toolkit/gcluster --version
+  ```
 
 ---
 
@@ -34,7 +44,8 @@ Each WorkUnit is scheduled directly onto GKE as either a Kubernetes **`JobSet`**
 
 | Workflow Step | Required GCP IAM Roles on `PROJECT_ID` | Purpose |
 | :--- | :--- | :--- |
-| **Run Experiments on Existing Cluster** (`python3 -m examples.xmc_lite_job.launch`) | `roles/container.developer`<br>`roles/artifactregistry.reader` *(if using private images)* | Fetches `kubeconfig` (`container.clusters.get`) and submits `JobSet` / `Job` objects to GKE. |
+| **1. Provision GKE Cluster** (`./setup.sh --provision-cluster`) | `roles/container.admin`<br>`roles/compute.networkAdmin`<br>`roles/iam.serviceAccountAdmin`<br>`roles/iam.serviceAccountUser`<br>`roles/resourcemanager.projectIamAdmin`<br>`roles/serviceusage.serviceUsageAdmin` | Enables APIs, creates the VPC network, GKE cluster and node pool, creates the `wl-sa` / `np-sa` service accounts and grants them project roles, and applies the Kueue queues. |
+| **2. Run Experiments** (`python3 -m examples.xmc_lite_job.launch`) | `roles/container.developer`<br>`roles/artifactregistry.reader` *(if using private images)* | Fetches `kubeconfig` (`container.clusters.get`) and submits `JobSet` / `Job` objects to GKE. |
 
 ### B. Kubernetes RBAC Permissions (in `${K8S_NAMESPACE}`, default `default`)
 
@@ -56,7 +67,7 @@ This example uses the same `.env` variable conventions as the root repository.
 | `PROJECT_ID` | **Yes** | `"my-gcp-project"` | Google Cloud Project ID hosting the GKE cluster. |
 | `GKE_CLUSTER` | **Yes** | `"xmc-lite-dev-1"` | Name of the GKE cluster. |
 | `GCP_REGION` | **Yes** | `"europe-west1"` | GCP region where the GKE cluster resides. |
-| `XMANAGER_ENV` | Optional | `"dev-1"` | Environment name used to isolate `KUBECONFIG`. |
+| `XMANAGER_ENV` | Provisioning only | `"dev-1"` | Environment name used to name the provisioned network resources and isolate `KUBECONFIG`. |
 | `K8S_NAMESPACE` | Optional | `"default"` | Kubernetes namespace where `JobSet` / `Job` workloads are submitted. |
 | `KUBECONFIG` | Derived | `"${HOME}/Documents/Development/envs/kubeconfig.${XMANAGER_ENV}"` | Isolated kubeconfig path preventing context collisions across worktrees (defaults to `~/.kube/config`). |
 | `XMC_BASE_DOMAIN`, `IAP_CLIENT_ID`, `XMC_CLIENT_SA`, `XMANAGER_ENDPOINT` | **No** *(Full XMC only)* | N/A | Required only by Full XMC (`xm_cloud`) for IAP/gRPC ingress; **unused** in XMC Lite. |
@@ -75,7 +86,12 @@ export KUBECONFIG="${HOME}/Documents/Development/envs/kubeconfig.${XMANAGER_ENV}
 ## 4. Setup & Running the Example
 
 ### Step 1: Run `setup.sh`
-Configure `KUBECONFIG` for the existing cluster and create the local Python virtual environment (`.venv`):
+To provision a new GKE cluster with **JobSet**, **Kueue** and the example queues via `gcluster`, configure `KUBECONFIG`, and create the local Python virtual environment (`.venv`):
+```bash
+./examples/xmc_lite_job/setup.sh --provision-cluster
+```
+
+If your GKE cluster is already running, omit `--provision-cluster` to only configure `KUBECONFIG` and `.venv`:
 ```bash
 ./examples/xmc_lite_job/setup.sh
 ```
@@ -180,6 +196,14 @@ rm ~/.xmanager/experiments.sqlite3
 
 > [!WARNING]
 > `--all` removes **every** `JobSet` / `Job` in the namespace. On a shared cluster, delete the example's workloads by name instead (`kubectl get jobsets,jobs -n "${NS}"`).
+
+If the cluster was created with `./setup.sh --provision-cluster`, destroy it (cluster, node pool, network and service accounts) with:
+```bash
+./cluster-toolkit/gcluster destroy "ctk-out/${GKE_CLUSTER}" --auto-approve
+```
+
+> [!CAUTION]
+> `gcluster destroy` permanently deletes the GKE cluster and every workload on it. The blueprint sets `deletion_protection: false`, so there is no extra safeguard.
 
 ---
 

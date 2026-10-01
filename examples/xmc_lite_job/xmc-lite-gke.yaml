@@ -1,0 +1,108 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+blueprint_name: xmc-lite-gke
+
+# Variables are populated from .env (PROJECT_ID, GKE_CLUSTER, GCP_REGION,
+# XMANAGER_ENV, K8S_NAMESPACE) by setup.sh via gcluster --vars.
+vars:
+  deployment_name:
+  project_id:
+  region:
+  environment:
+  namespace: default
+  gcp_public_cidrs_access_enabled: true
+  authorized_cidr: 0.0.0.0/0
+  deletion_protection: false
+
+deployment_groups:
+- group: apis
+  modules:
+  - id: cloud_api
+    source: community/modules/project/service-enablement
+    settings:
+      gcp_service_list: [compute.googleapis.com, container.googleapis.com, iam.googleapis.com, cloudresourcemanager.googleapis.com, artifactregistry.googleapis.com]
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+    settings:
+      network_name: xmc-lite-$(vars.environment)-net
+      subnetworks:
+      - {subnet_name: xmc-lite-$(vars.environment)-sub, subnet_region: $(vars.region), subnet_ip: 10.0.0.0/16}
+      secondary_ranges_list:
+      - subnetwork_name: xmc-lite-$(vars.environment)-sub
+        ranges: [{range_name: pods, ip_cidr_range: 10.4.0.0/14}, {range_name: services, ip_cidr_range: 10.8.0.0/20}]
+  - id: workload_service_account
+    source: modules/project/service-account
+    settings:
+      name: wl-sa
+      project_roles: [logging.logWriter, monitoring.metricWriter, monitoring.viewer, stackdriver.resourceMetadata.writer, storage.objectViewer, artifactregistry.reader, serviceusage.serviceUsageConsumer]
+- group: compute
+  modules:
+  - id: node_pool_service_account
+    source: modules/project/service-account
+    settings:
+      name: np-sa
+      project_roles: [logging.logWriter, monitoring.metricWriter, monitoring.viewer, stackdriver.resourceMetadata.writer, storage.objectViewer, artifactregistry.reader]
+  - id: compute_cluster
+    source: modules/scheduler/gke-cluster
+    use: [network, workload_service_account]
+    settings:
+      deployment_name: $(vars.deployment_name)
+      region: $(vars.region)
+      system_node_pool_machine_type: n2-standard-4
+      enable_persistent_disk_csi: true
+      enable_private_endpoint: false
+      gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
+      configure_workload_identity_sa: true
+      enable_vertical_pod_autoscaling: true
+      master_authorized_networks: [{cidr_block: $(vars.authorized_cidr), display_name: Authorized}]
+  - id: compute_pool
+    source: modules/compute/gke-node-pool
+    use: [compute_cluster, node_pool_service_account]
+    settings: {machine_type: n2-standard-4, static_node_count: 2}
+- group: kubernetes_prereqs
+  modules:
+  - id: install_cert_manager
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: cert-manager
+      chart_name: oci://quay.io/jetstack/charts/cert-manager
+      chart_version: v1.19.2
+      namespace: cert-manager
+      create_namespace: true
+      set_values: [{name: crds.enabled, value: "true", type: auto}]
+  - id: install_kueue
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: kueue
+      chart_name: oci://registry.k8s.io/kueue/charts/kueue
+      chart_version: 0.18.2
+      namespace: kueue-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+  - id: install_jobset
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: jobset
+      chart_name: oci://registry.k8s.io/jobset/charts/jobset
+      chart_version: 0.12.0
+      namespace: jobset-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+      set_values: [{name: certs.certManager.enabled, value: "true"}]
