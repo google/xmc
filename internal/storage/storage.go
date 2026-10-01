@@ -303,6 +303,8 @@ type PauseStateTxRepository interface {
 type PausedTaskTxRepository interface {
 	// Create persists a new paused task within the transaction.
 	Create(ctx context.Context, task *pausedtask.PausedTask) error
+	// MarkProcessed soft-deletes a batch of paused tasks within the transaction.
+	MarkProcessed(ctx context.Context, resolutions []pausedtask.TaskResolution) error
 }
 
 // Transaction holds the domain repositories scoped to a single read-write transaction.

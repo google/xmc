@@ -322,8 +322,8 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 	}
 
 	if len(resolutions) > 0 {
-		if err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, _ *storage.Transaction) error {
-			return w.pausedTaskRepo.MarkProcessed(ctx, resolutions)
+		if err := w.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+			return tx.PausedTasks.MarkProcessed(ctx, resolutions)
 		}); err != nil {
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
 		}
