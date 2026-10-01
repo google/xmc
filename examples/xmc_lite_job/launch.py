@@ -38,8 +38,10 @@ _NAMESPACE = flags.DEFINE_string(
     "namespace", os.environ.get("K8S_NAMESPACE", "default"), "K8s namespace."
 )
 _LOCAL_QUEUE = flags.DEFINE_string("local_queue", "", "Optional Kueue LocalQueue name.")
-_NUM_WORK_UNITS = flags.DEFINE_integer("num_work_units", 1, "Number of WorkUnits to launch.")
-_DURATION = flags.DEFINE_integer("duration", 30, "Worker sleep duration in seconds.")
+_NUM_WORK_UNITS = flags.DEFINE_integer(
+    "num_work_units", 1, "Number of WorkUnits to launch.", lower_bound=1
+)
+_DURATION = flags.DEFINE_integer("duration", 30, "Worker sleep duration in seconds.", lower_bound=0)
 _IMAGE = flags.DEFINE_string("image", "python:3.11-slim", "Container image URI to execute on GKE.")
 _DRY_RUN = flags.DEFINE_bool(
     "dry_run", False, "Record manifests and SQLite state without calling GKE."

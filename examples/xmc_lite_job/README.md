@@ -118,7 +118,7 @@ source examples/xmc_lite_job/.venv/bin/activate
   ```
 
 ### Step 3: Inspect the Local SQLite Database & Kubernetes Resources
-`~/.xmanager/experiments.sqlite3` is initialized on the first `launch.py` run (`inspect_sqlite_state.py` raises `FileNotFoundError` if called before any experiment has been created):
+`~/.xmanager/experiments.sqlite3` is initialized on the first `launch.py` run (`inspect_sqlite_state.py` exits with an error if called before any experiment has been created):
 ```bash
 # Decode and print experiment, work_unit, and job protobuf records from ~/.xmanager/experiments.sqlite3:
 python3 -m examples.xmc_lite_job.inspect_sqlite_state
@@ -173,13 +173,13 @@ NS="${K8S_NAMESPACE:-default}"
 kubectl delete jobsets --all -n "${NS}"
 kubectl delete jobs --all -n "${NS}"
 kubectl delete svc experiments -n "${NS}"
-
-# Optionally remove local experiment metadata:
-rm ~/.xmanager/experiments.sqlite3
 ```
 
 > [!WARNING]
 > `--all` removes **every** `JobSet` / `Job` in the namespace. On a shared cluster, delete the example's workloads by name instead (`kubectl get jobsets,jobs -n "${NS}"`).
+
+> [!NOTE]
+> `~/.xmanager/experiments.sqlite3` is shared by **all** `xm_local` experiments on this machine, not just this example. Delete it only if you want to wipe all local XManager experiment history.
 
 ---
 
