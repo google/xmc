@@ -30,7 +30,9 @@ import (
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
+// mockPausedTaskRepo overrides Create; the embedded Repository is nil and must not be called.
 type mockPausedTaskRepo struct {
+	pausedtask.Repository
 	err         error
 	storedTasks []*pausedtask.PausedTask
 }
@@ -45,32 +47,24 @@ func (m *mockPausedTaskRepo) Create(ctx context.Context, task *pausedtask.Paused
 
 func TestNewPauseHandler(t *testing.T) {
 	cache := NewCache()
-	repo := &mockPausedTaskRepo{}
 	txRunner := &storage.MockStorage{}
 
 	t.Run("nil_cache", func(t *testing.T) {
-		h, err := NewPauseHandler(nil, repo, txRunner)
+		h, err := NewPauseHandler(nil, txRunner)
 		if err == nil || h != nil {
 			t.Errorf("expected error for nil cache, got %v", err)
 		}
 	})
 
-	t.Run("nil_repo", func(t *testing.T) {
-		h, err := NewPauseHandler(cache, nil, txRunner)
-		if err == nil || h != nil {
-			t.Errorf("expected error for nil repo, got %v", err)
-		}
-	})
-
 	t.Run("nil_tx_runner", func(t *testing.T) {
-		h, err := NewPauseHandler(cache, repo, nil)
+		h, err := NewPauseHandler(cache, nil)
 		if err == nil || h != nil {
 			t.Errorf("expected error for nil transaction runner, got %v", err)
 		}
 	})
 
 	t.Run("valid_construction", func(t *testing.T) {
-		h, err := NewPauseHandler(cache, repo, txRunner)
+		h, err := NewPauseHandler(cache, txRunner)
 		if err != nil || h == nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -80,7 +74,7 @@ func TestNewPauseHandler(t *testing.T) {
 func TestTaskPauseHandler_IsPaused(t *testing.T) {
 	cache := NewCache()
 
-	h, err := NewPauseHandler(cache, &mockPausedTaskRepo{}, &storage.MockStorage{})
+	h, err := NewPauseHandler(cache, &storage.MockStorage{})
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
 	}
@@ -106,7 +100,7 @@ func TestTaskPauseHandler_IsPaused(t *testing.T) {
 }
 
 func TestTaskPauseHandler_ShouldPause(t *testing.T) {
-	h, err := NewPauseHandler(NewCache(), &mockPausedTaskRepo{}, &storage.MockStorage{})
+	h, err := NewPauseHandler(NewCache(), &storage.MockStorage{})
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
 	}
@@ -280,9 +274,10 @@ func TestHandlePause(t *testing.T) {
 			repo := &mockPausedTaskRepo{err: tc.repoErr}
 			txRunner := &storage.MockStorage{
 				UpdateWorkUnitExecutionsErr: tc.updateStatusErr,
+				PausedTaskRepository:        repo,
 			}
 
-			h, err := NewPauseHandler(cache, repo, txRunner)
+			h, err := NewPauseHandler(cache, txRunner)
 			if err != nil {
 				t.Fatalf("failed to create handler: %v", err)
 			}

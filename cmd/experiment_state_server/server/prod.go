@@ -292,6 +292,6 @@ func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resumption redis consumer: %w", err)
 	}
-	worker := resumption.NewResumptionWorker(storageClient.PauseState(), storageClient.PausedTasks(), taskQueue, redisConsumer, storageClient)
+	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
 }

@@ -31,11 +31,6 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// PausedTaskRepository defines operations for persisting paused tasks.
-type PausedTaskRepository interface {
-	Create(ctx context.Context, task *pausedtask.PausedTask) error
-}
-
 // PauseHandler defines the interface for handling actuation tasks when scheduling is paused.
 type PauseHandler interface {
 	// IsPaused returns whether scheduling is currently paused.
@@ -50,27 +45,22 @@ var _ PauseHandler = (*TaskPauseHandler)(nil)
 
 // TaskPauseHandler handles task buffering and status updates during scheduling pause.
 type TaskPauseHandler struct {
-	cache          Cache
-	pausedTaskRepo PausedTaskRepository
-	txRunner       storage.TransactionRunner
+	cache    Cache
+	txRunner storage.TransactionRunner
 }
 
 // NewPauseHandler creates a new TaskPauseHandler instance.
-func NewPauseHandler(cache Cache, repo PausedTaskRepository, txRunner storage.TransactionRunner) (*TaskPauseHandler, error) {
+func NewPauseHandler(cache Cache, txRunner storage.TransactionRunner) (*TaskPauseHandler, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("pause cache cannot be nil")
-	}
-	if repo == nil {
-		return nil, fmt.Errorf("paused task repository cannot be nil")
 	}
 	if txRunner == nil {
 		return nil, fmt.Errorf("transaction runner cannot be nil")
 	}
 
 	return &TaskPauseHandler{
-		cache:          cache,
-		pausedTaskRepo: repo,
-		txRunner:       txRunner,
+		cache:    cache,
+		txRunner: txRunner,
 	}, nil
 }
 
@@ -121,8 +111,7 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 	}
 
 	err = h.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		// TODO(pausescheduling): Buffer the paused task through the transaction-scoped repository.
-		if err := h.pausedTaskRepo.Create(ctx, task); err != nil {
+		if err := tx.PausedTasks.Create(ctx, task); err != nil {
 			return fmt.Errorf("failed to buffer paused task: %w", err)
 		}
 		if !updateStatus {

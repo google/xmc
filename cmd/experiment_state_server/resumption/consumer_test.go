@@ -41,7 +41,7 @@ func TestStartConsumer_Validation(t *testing.T) {
 
 	t.Run("empty RedisAddr returns error", func(t *testing.T) {
 		t.Parallel()
-		_, err := StartConsumer(ctx, ConsumerConfig{RedisAddr: ""}, NewResumptionWorker(nil, nil, nil, nil, nil))
+		_, err := StartConsumer(ctx, ConsumerConfig{RedisAddr: ""}, NewResumptionWorker(nil, nil, nil))
 		if err == nil {
 			t.Fatal("StartConsumer with empty RedisAddr want error, got nil")
 		}
@@ -57,7 +57,7 @@ func TestStartConsumer_SuccessWithFakeClient(t *testing.T) {
 	ctx := context.Background()
 	fakeClient := redisclient.NewFakeClient()
 
-	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil, nil, nil))
+	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil))
 	if err != nil {
 		t.Fatalf("StartConsumer with fake client failed: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestConsumer_CloseIdempotent(t *testing.T) {
 	ctx := context.Background()
 	fakeClient := redisclient.NewFakeClient()
 
-	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil, nil, nil))
+	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil))
 	if err != nil {
 		t.Fatalf("StartConsumer failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestConsumer_DrainTimeout(t *testing.T) {
 	ctx := context.Background()
 	fakeClient := redisclient.NewFakeClient()
 
-	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil, nil, nil))
+	consumer, err := StartConsumer(ctx, ConsumerConfig{Client: fakeClient}, NewResumptionWorker(nil, nil, nil))
 	if err != nil {
 		t.Fatalf("StartConsumer failed: %v", err)
 	}

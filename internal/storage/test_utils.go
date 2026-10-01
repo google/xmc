@@ -211,6 +211,8 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		Experiments:    s,
 		StatusMessages: s,
 		StatusHistory:  s,
+		PauseState:     s.PauseState(),
+		PausedTasks:    s.PausedTasks(),
 	}
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
 		if err := fn(ctx, tx); err != nil {

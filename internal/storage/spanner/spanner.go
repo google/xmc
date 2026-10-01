@@ -69,6 +69,9 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
 			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
+			// TODO(pausescheduling): Bind to spannerTx once the Spanner-backed repositories replace the fakes.
+			PauseState:  s.pauseStateRepository,
+			PausedTasks: s.pausedTaskRepository,
 		}
 		return fn(txCtx, tx)
 	})
