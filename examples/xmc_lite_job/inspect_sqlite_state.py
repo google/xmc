@@ -15,6 +15,7 @@
 
 """Inspects XMC Lite experiments stored in ~/.xmanager/experiments.sqlite3."""
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -88,9 +89,9 @@ def read_sqlite_experiments(
     if experiment_id is not None:
         query += " WHERE e.experiment_id = ?"
     query += " ORDER BY e.experiment_id DESC, w.work_unit_id ASC, j.job_name ASC"
-    if not os.path.exists(db_path):
+    if not os.path.isfile(db_path):
         raise FileNotFoundError(f"SQLite database file not found at: {db_path}")
-    with sqlite3.connect(db_path) as conn:
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute(query, params).fetchall()
     return [_row_to_stored_job(row) for row in rows]
 
@@ -99,7 +100,10 @@ def main(argv: Sequence[str]) -> None:
     """CLI entrypoint to print decoded SQLite records as JSON."""
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
-    records = read_sqlite_experiments(_DB_PATH.value, _EXPERIMENT_ID.value)
+    try:
+        records = read_sqlite_experiments(_DB_PATH.value, _EXPERIMENT_ID.value)
+    except FileNotFoundError as e:
+        raise app.UsageError(str(e)) from e
     print(json.dumps([asdict(r) for r in records], indent=2))
 
 
