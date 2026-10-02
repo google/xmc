@@ -1026,6 +1026,8 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 		return false
 	}
 	status := releaseStatus(rel)
+	// TODO(components): Treat "uninstalling" (and other transient statuses) consistently with releaseNeedsRepair so
+	// cold-start hydration doesn't force a re-actuation on bridge restart.
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
