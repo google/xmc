@@ -192,18 +192,18 @@ func parseWrapperRef(m map[string]any) *componentspb.WrapperRef {
 		return nil
 	}
 	return &componentspb.WrapperRef{
-		CrdGroup:        firstNonEmpty(extractStr(wr, "crdGroup"), extractStr(wr, "group")),
-		CrdVersion:      firstNonEmpty(extractStr(wr, "crdVersion"), extractStr(wr, "version")),
-		CrdKind:         firstNonEmpty(extractStr(wr, "crdKind"), extractStr(wr, "kind")),
-		TargetName:      firstNonEmpty(extractStr(wr, "targetName"), extractStr(wr, "name")),
-		TargetNamespace: firstNonEmpty(extractStr(wr, "targetNamespace"), extractStr(wr, "namespace")),
+		CrdGroup:        firstStr(wr, "crdGroup", "group"),
+		CrdVersion:      firstStr(wr, "crdVersion", "version"),
+		CrdKind:         firstStr(wr, "crdKind", "kind"),
+		TargetName:      firstStr(wr, "targetName", "name"),
+		TargetNamespace: firstStr(wr, "targetNamespace", "namespace"),
 	}
 }
 
-// firstNonEmpty returns the first string in values that is not empty, or "" if all are empty.
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
+// firstStr returns the first non-empty string value in m among the alias keys, or "" if none is set.
+func firstStr(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v := extractStr(m, k); v != "" {
 			return v
 		}
 	}
@@ -250,28 +250,20 @@ func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {
 	if !ok || wrapperRaw == nil {
 		return WrapperRef{}
 	}
-	getString := func(keys ...string) string {
-		for _, k := range keys {
-			if v, exists := wrapperRaw[k].(string); exists && v != "" {
-				return v
-			}
-		}
-		return ""
-	}
-	ns := getString("targetNamespace", "namespace")
+	ns := firstStr(wrapperRaw, "targetNamespace", "namespace")
 	if ns == "" {
 		ns = defaultNamespace
 	}
 	return WrapperRef{
-		Group:                    getString("crdGroup", "group"),
-		Version:                  getString("crdVersion", "version"),
-		Kind:                     getString("crdKind", "kind"),
-		Name:                     getString("targetName", "name"),
+		Group:                    firstStr(wrapperRaw, "crdGroup", "group"),
+		Version:                  firstStr(wrapperRaw, "crdVersion", "version"),
+		Kind:                     firstStr(wrapperRaw, "crdKind", "kind"),
+		Name:                     firstStr(wrapperRaw, "targetName", "name"),
 		Namespace:                ns,
-		ObservedGenerationPath:   getString("observedGenerationPath", "observed_generation_path"),
-		ReadyConditionPath:       getString("readyConditionPath", "ready_condition_path", "readyPath"),
-		ExpectedReadyValue:       getString("expectedReadyValue", "expected_ready_value"),
-		EndpointJSONPath:         getString("endpointJsonPath", "endpoint_json_path", "endpointJsonpath"),
-		ConnectionSecretJSONPath: getString("connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath"),
+		ObservedGenerationPath:   firstStr(wrapperRaw, "observedGenerationPath", "observed_generation_path"),
+		ReadyConditionPath:       firstStr(wrapperRaw, "readyConditionPath", "ready_condition_path", "readyPath"),
+		ExpectedReadyValue:       firstStr(wrapperRaw, "expectedReadyValue", "expected_ready_value"),
+		EndpointJSONPath:         firstStr(wrapperRaw, "endpointJsonPath", "endpoint_json_path", "endpointJsonpath"),
+		ConnectionSecretJSONPath: firstStr(wrapperRaw, "connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath"),
 	}
 }

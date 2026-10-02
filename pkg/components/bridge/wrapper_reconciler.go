@@ -51,16 +51,16 @@ func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
 // querying the dynamic StatusDetector to evaluate CR readiness and reporting state to CMS.
 func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if r.prober == nil {
-		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
+		// Without a status detector there is nothing to verify; report the wrapper as ready.
+		return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
 	}
 	ref, unreadyReason, unreadyMsg := resolveAndValidateWrapperRef(in)
 	if unreadyReason != "" {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
 	}
 	if ref.Name == "" {
-		if endpoint := resolveOperatorlessEndpoint(in); endpoint != "" {
-			return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, endpoint)
-		}
+		// resolveAndValidateWrapperRef guarantees an operator-less endpoint when the target name is empty.
+		return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, resolveOperatorlessEndpoint(in))
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
@@ -93,18 +93,6 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	}
 
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
-}
-
-// reconcile3PWrapperFallback performs health evaluation when no dynamic status detector is configured.
-func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	isHealthy, healthMsg := true, "Component is active"
-	if r.prober != nil {
-		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
-	}
-	if !isHealthy {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonHealthProbeFailed, healthMsg)
-	}
-	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
 }
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
@@ -158,16 +146,9 @@ func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComp
 	if message == "" {
 		message = fmt.Sprintf("3P wrapper %s is not ready: %s", in.Name, reason)
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
+	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, message)
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
-	}
-	return res, nil
+	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusFalse)
 }
 
 // handle3PReadyStatus transitions component state to COMPONENT_STATE_ENABLED and populates Ready=True conditions.
@@ -178,17 +159,8 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	populateAccessEnvVars(res, resStatus)
-
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, ReasonComponentHealthy, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, ReasonComponentHealthy, msg)
-
-	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusTrue, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
-	}
-	return res, nil
+	setReadiness(res, in, ConditionStatusTrue, ConditionStatusFalse, ReasonComponentHealthy, msg)
+	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusTrue)
 }
 
 func populateAccessEnvVars(res *ReconcileResult, resStatus *ResourceStatus) {

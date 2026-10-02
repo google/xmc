@@ -46,14 +46,12 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	if in.DeletionProtection {
 		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeletionBlocked, ConditionStatusTrue, in.Generation, "DeletionProtectionEnabled", fmt.Sprintf("Cannot delete %q: deletionProtection is enabled", in.Name))
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		if status.Code(err) != codes.NotFound {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "CMSDeletionFailed", err.Error())
+			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "CMSDeletionFailed", err.Error())
 			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
 		}
 		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
@@ -75,15 +73,13 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 	ref := resolveComponentRef(in)
 	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
 		if err := r.helmManager.Orphan1PComponent(ctx, ref); err != nil {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmOrphanFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmOrphanFailed", err.Error())
+			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmOrphanFailed", err.Error())
 			return fmt.Errorf("failed to orphan 1P Helm component: %w", err)
 		}
 		return nil
 	}
 	if err := r.helmManager.Purge1PComponent(ctx, ref); err != nil {
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmDeletionFailed", err.Error())
 		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
 	}
 	return nil
@@ -126,8 +122,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
+	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
@@ -187,8 +182,7 @@ func markDeactivationFailed(in ReconcileComponentInput, res *ReconcileResult, re
 		reason = ReasonDeactivationIncomplete
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, msg)
+	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, msg)
 }
 
 func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
@@ -206,8 +200,7 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 	}
 	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmDeletionFailed", err.Error())
 		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
 	}
 	return nil
