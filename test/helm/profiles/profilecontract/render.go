@@ -17,12 +17,16 @@
 // renders one Component CR per catalog component by reading components/<name>/ through .Files.
 //
 // A profile-specific test describes its chart with a Spec, calls Run for the generic contract,
-// and uses the exported building blocks for assertions that only hold for that profile.
+// and uses the exported building blocks for assertions that only hold for that profile. Each
+// exported helper that takes a *testing.T wraps an unexported variant that returns an error, so
+// the library's own tests can show that every check detects the violation it guards against.
 package profilecontract
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,7 +46,7 @@ const DefaultRelease = "xmc-profile"
 // Spec describes a profile meta-chart under test.
 type Spec struct {
 	// ChartRelPath is the profile chart directory relative to the repository root, for example
-	// "deploy/profiles/stable-2026a".
+	// "deploy/profiles/stable-2026a", or an absolute directory.
 	ChartRelPath string
 	// ProfileName is the expected profile identity, for example "stable-2026a".
 	ProfileName string
@@ -50,60 +54,102 @@ type Spec struct {
 	Components []string
 }
 
-// ChartDir locates the profile chart in Bazel runfiles (TEST_SRCDIR) or, under plain go test, in
-// the closest ancestor of the working directory that contains it.
+// ChartDir locates the profile chart: s.ChartRelPath itself when absolute, otherwise in Bazel
+// runfiles (TEST_SRCDIR) or, under plain go test, in the closest ancestor of the working
+// directory that contains it.
 func ChartDir(t *testing.T, s Spec) string {
 	t.Helper()
+	dir, err := chartDir(s)
+	fatalOnError(t, err)
+	return dir
+}
+
+func chartDir(s Spec) (string, error) {
 	rel := filepath.FromSlash(s.ChartRelPath)
-	var candidates []string
-	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
-		candidates = append(candidates, filepath.Join(srcDir, "_main", rel), filepath.Join(srcDir, "xmanager_cloud", rel))
-	}
-	if wd, err := os.Getwd(); err == nil {
-		for dir := wd; filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-			candidates = append(candidates, filepath.Join(dir, rel))
+	candidates := []string{rel}
+	if !filepath.IsAbs(rel) {
+		candidates = nil
+		if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
+			candidates = append(candidates, filepath.Join(srcDir, "_main", rel), filepath.Join(srcDir, "xmanager_cloud", rel))
+		}
+		if wd, err := os.Getwd(); err == nil {
+			for dir := wd; filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+				candidates = append(candidates, filepath.Join(dir, rel))
+			}
 		}
 	}
 	for _, dir := range candidates {
 		if _, err := os.Stat(filepath.Join(dir, "Chart.yaml")); err == nil {
-			return dir
+			return dir, nil
 		}
 	}
-	t.Fatalf("profile chart %s not found in %v", s.ChartRelPath, candidates)
-	return ""
+	return "", fmt.Errorf("profile chart %s not found in %v", s.ChartRelPath, candidates)
+}
+
+// fatalOnError fails the test with err when it is non-nil.
+func fatalOnError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // LoadChart loads the chart at dir through the Helm SDK, applying .helmignore.
 func LoadChart(t *testing.T, dir string) *chart.Chart {
 	t.Helper()
+	ch, err := loadChart(dir)
+	fatalOnError(t, err)
+	return ch
+}
+
+func loadChart(dir string) (*chart.Chart, error) {
 	ch, err := loader.Load(dir)
 	if err != nil {
-		t.Fatalf("failed to load chart %s: %v", dir, err)
+		return nil, fmt.Errorf("failed to load chart %s: %w", dir, err)
 	}
-	return ch
+	return ch, nil
 }
 
 // LoadProfile loads a fresh copy of the profile meta-chart, which tests may modify in memory.
 func LoadProfile(t *testing.T, s Spec) *chart.Chart {
 	t.Helper()
-	return LoadChart(t, ChartDir(t, s))
+	ch, err := loadProfile(s)
+	fatalOnError(t, err)
+	return ch
+}
+
+func loadProfile(s Spec) (*chart.Chart, error) {
+	dir, err := chartDir(s)
+	if err != nil {
+		return nil, err
+	}
+	return loadChart(dir)
 }
 
 // LoadProfileWithFileEdit loads the profile chart and, in memory only, replaces the content of
 // the file at path with data, or removes the file when remove is true.
 func LoadProfileWithFileEdit(t *testing.T, s Spec, path, data string, remove bool) *chart.Chart {
 	t.Helper()
-	ch := LoadProfile(t, s)
+	ch, err := loadProfileWithFileEdit(s, path, data, remove)
+	fatalOnError(t, err)
+	return ch
+}
+
+func loadProfileWithFileEdit(s Spec, path, data string, remove bool) (*chart.Chart, error) {
+	ch, err := loadProfile(s)
+	if err != nil {
+		return nil, err
+	}
 	i := slices.IndexFunc(ch.Files, func(f *chart.File) bool { return f.Name == path })
 	if i < 0 {
-		t.Fatalf("profile chart has no file %q", path)
+		return nil, fmt.Errorf("profile chart has no file %q", path)
 	}
 	if remove {
 		ch.Files = slices.Delete(ch.Files, i, i+1)
-		return ch
+		return ch, nil
 	}
 	ch.Files[i] = &chart.File{Name: path, Data: []byte(data)}
-	return ch
+	return ch, nil
 }
 
 // Render renders ch with overrides through the Helm SDK, including values.schema.json
@@ -117,30 +163,58 @@ func Render(ch *chart.Chart, releaseName string, overrides map[string]any) (map[
 	return engine.Render(ch, vals)
 }
 
-// RenderDocs renders a profile chart and returns the decoded documents of its
-// templates/components.yaml.
+// RenderDocs renders a profile chart and returns the decoded documents of every rendered
+// manifest: templates/components.yaml first, then the other templates in path order. Decoding
+// every template, not just components.yaml, makes anything else the profile emits visible.
 func RenderDocs(t *testing.T, ch *chart.Chart, overrides map[string]any) []map[string]any {
 	t.Helper()
+	docs, err := renderDocs(ch, overrides)
+	fatalOnError(t, err)
+	return docs
+}
+
+func renderDocs(ch *chart.Chart, overrides map[string]any) ([]map[string]any, error) {
 	rendered, err := Render(ch, DefaultRelease, overrides)
 	if err != nil {
-		t.Fatalf("Render(%s, %v) failed: %v", ch.Name(), overrides, err)
+		return nil, fmt.Errorf("Render(%s, %v) failed: %w", ch.Name(), overrides, err)
 	}
-	return DecodeDocs(t, rendered[ch.Name()+"/templates/components.yaml"])
+	components := ch.Name() + "/templates/components.yaml"
+	paths := []string{components}
+	for _, p := range slices.Sorted(maps.Keys(rendered)) {
+		if p != components && !strings.HasSuffix(p, "NOTES.txt") {
+			paths = append(paths, p)
+		}
+	}
+	var docs []map[string]any
+	for _, p := range paths {
+		d, err := decodeDocs(rendered[p])
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		docs = append(docs, d...)
+	}
+	return docs, nil
 }
 
 // DecodeDocs decodes every non-empty YAML document in manifest.
 func DecodeDocs(t *testing.T, manifest string) []map[string]any {
 	t.Helper()
+	docs, err := decodeDocs(manifest)
+	fatalOnError(t, err)
+	return docs
+}
+
+func decodeDocs(manifest string) ([]map[string]any, error) {
 	var docs []map[string]any
 	dec := yaml.NewDecoder(strings.NewReader(manifest))
 	for {
 		var doc map[string]any
 		err := dec.Decode(&doc)
 		if errors.Is(err, io.EOF) {
-			return docs
+			return docs, nil
 		}
 		if err != nil {
-			t.Fatalf("failed to decode rendered manifest: %v\n%s", err, manifest)
+			return nil, fmt.Errorf("failed to decode rendered manifest: %w\n%s", err, manifest)
 		}
 		if doc != nil {
 			docs = append(docs, doc)
@@ -167,13 +241,18 @@ func DocName(doc map[string]any) string {
 // DocByName returns the document named name, failing the test when there is none.
 func DocByName(t *testing.T, docs []map[string]any, name string) map[string]any {
 	t.Helper()
+	doc, err := docByName(docs, name)
+	fatalOnError(t, err)
+	return doc
+}
+
+func docByName(docs []map[string]any, name string) (map[string]any, error) {
 	for _, doc := range docs {
 		if DocName(doc) == name {
-			return doc
+			return doc, nil
 		}
 	}
-	t.Fatalf("no rendered document named %q", name)
-	return nil
+	return nil, fmt.Errorf("no rendered document named %q", name)
 }
 
 // ComponentOverrides builds admin values that override a single catalog component.
@@ -184,7 +263,12 @@ func ComponentOverrides(name string, vals map[string]any) map[string]any {
 // AssertErrorContains fails the test unless err is non-nil and its message contains want.
 func AssertErrorContains(t *testing.T, err error, want string) {
 	t.Helper()
+	fatalOnError(t, errorContains(err, want))
+}
+
+func errorContains(err error, want string) error {
 	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("Render() error = %v, want error containing %q", err, want)
+		return fmt.Errorf("Render() error = %v, want error containing %q", err, want)
 	}
+	return nil
 }
