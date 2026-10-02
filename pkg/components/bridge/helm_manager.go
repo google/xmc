@@ -68,6 +68,10 @@ type HelmManager interface {
 	IsComponentActive(ref ComponentRef) bool
 	// IsComponentActuated checks if the component is currently active and was actuated at the specified generation.
 	IsComponentActuated(ref ComponentRef, generation int64) bool
+	// NeedsRepair reports whether the component's release, already actuated at the specified generation, was found
+	// missing, failed, or drifted and must be re-applied. A repair re-applies an approved spec, so it is not held for
+	// unready dependencies.
+	NeedsRepair(ref ComponentRef, generation int64) bool
 	// RecordActuation records that the component was successfully actuated at the specified generation.
 	RecordActuation(ref ComponentRef, generation int64)
 	// HydrateComponentState synchronizes in-memory active and actuated generation state from existing CR status and cluster storage on cold start.
@@ -897,8 +901,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	return nil
 }
 
-// IsComponentActuated returns true if the component is active, was actuated at the given generation without errors,
-// and its release has not since been found missing, failed, or drifted.
+// IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
 func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
@@ -906,7 +909,7 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	key := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.activeState[key] || m.repairNeeded[key] {
+	if !m.activeState[key] {
 		return false
 	}
 	if m.upgradeErrs != nil && m.upgradeErrs[key] != nil {
@@ -916,6 +919,19 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 		return false
 	}
 	return m.actuatedGenerations[key] == generation
+}
+
+// NeedsRepair returns true if the component is active, was actuated at the given generation, and its release has
+// since been found missing, failed, or drifted. A pending repair for an older generation does not count: a new spec
+// goes through the regular (dependency-gated) upgrade path instead.
+func (m *K8sHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
+	if m == nil || ref.Name == "" || ref.Namespace == "" {
+		return false
+	}
+	key := componentKey(ref.Namespace, ref.Name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.repairNeeded[key] && m.activeState[key] && m.actuatedGenerations[key] == generation
 }
 
 // RecordActuation records the generation at which the component was successfully actuated. A new generation resets

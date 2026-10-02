@@ -320,7 +320,8 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 }
 
 // ensure1PComponent sets component enablement and parameter values in the Helm release. When
-// holdUpgrade is true (dependencies unready), a pending install/upgrade is skipped and held is true.
+// holdUpgrade is true (dependencies unready), a pending install/upgrade is skipped and held is true;
+// a repair of the already-actuated generation is not held, since it re-applies an approved spec.
 func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult, holdUpgrade bool) (held bool, err error) {
 	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		return false, nil
@@ -334,11 +335,12 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	if err := r.helmManager.HydrateComponentState(ctx, ref, in.Generation, readyAtGen); err != nil {
 		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
 	}
-	if r.helmManager.IsComponentActuated(ref, in.Generation) {
+	repair := r.helmManager.NeedsRepair(ref, in.Generation)
+	if !repair && r.helmManager.IsComponentActuated(ref, in.Generation) {
 		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
 		return false, nil
 	}
-	if holdUpgrade {
+	if holdUpgrade && !repair {
 		logging.Debug(ctx, "Holding 1P Helm upgrade until dependencies are ready", "name", in.Name, "generation", in.Generation)
 		return true, nil
 	}

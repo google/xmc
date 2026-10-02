@@ -1593,10 +1593,10 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 	opts := HelmComponentOptions{Ref: ref, Enabled: true, ImageTag: "v1.0.0"}
 	releaseKey := componentKey(ref.Namespace, ComponentReleaseName(ref.Name))
 	type result struct {
-		Reason              string
-		ActuatedAfterHealth bool
-		Reupgraded          bool
-		FinalReason         string
+		Reason      string
+		NeedsRepair bool
+		Reupgraded  bool
+		FinalReason string
 	}
 	tests := []struct {
 		name   string
@@ -1606,42 +1606,42 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 		{
 			name:   "drifted release is re-upgraded and recovers",
 			mutate: func(r *mockHelmActionRunner) { r.missing = []string{"Role/ingestion-gateway-components-reader"} },
-			want:   result{Reason: ReasonHelmReleaseDrifted, Reupgraded: true, FinalReason: ReasonComponentHealthy},
+			want:   result{Reason: ReasonHelmReleaseDrifted, NeedsRepair: true, Reupgraded: true, FinalReason: ReasonComponentHealthy},
 		},
 		{
 			name:   "release deleted after actuation is re-installed",
 			mutate: func(r *mockHelmActionRunner) { delete(r.installed, releaseKey) },
-			want:   result{Reason: ReasonHelmReleaseNotFound, Reupgraded: true, FinalReason: ReasonComponentHealthy},
+			want:   result{Reason: ReasonHelmReleaseNotFound, NeedsRepair: true, Reupgraded: true, FinalReason: ReasonComponentHealthy},
 		},
 		{
 			name:   "terminally failed release is re-upgraded and recovers",
 			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusFailed },
-			want:   result{Reason: ReasonHelmReleaseNotReady, Reupgraded: true, FinalReason: ReasonComponentHealthy},
+			want:   result{Reason: ReasonHelmReleaseNotReady, NeedsRepair: true, Reupgraded: true, FinalReason: ReasonComponentHealthy},
 		},
 		{
 			name:   "transient status error keeps actuation",
 			mutate: func(r *mockHelmActionRunner) { r.statusErr = errors.New("connection refused") },
-			want:   result{Reason: ReasonHelmStatusUnavailable, ActuatedAfterHealth: true, FinalReason: ReasonHelmStatusUnavailable},
+			want:   result{Reason: ReasonHelmStatusUnavailable, FinalReason: ReasonHelmStatusUnavailable},
 		},
 		{
 			name:   "transient resource lookup error keeps actuation",
 			mutate: func(r *mockHelmActionRunner) { r.missingErr = errors.New("connection refused") },
-			want:   result{Reason: ReasonComponentHealthy, ActuatedAfterHealth: true, FinalReason: ReasonComponentHealthy},
+			want:   result{Reason: ReasonComponentHealthy, FinalReason: ReasonComponentHealthy},
 		},
 		{
 			name:   "stuck pending release keeps actuation",
 			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusPendingUpgrade },
-			want:   result{Reason: ReasonHelmReleaseStuck, ActuatedAfterHealth: true, FinalReason: ReasonHelmReleaseStuck},
+			want:   result{Reason: ReasonHelmReleaseStuck, FinalReason: ReasonHelmReleaseStuck},
 		},
 		{
 			name:   "release uninstalled with kept history is re-upgraded and recovers",
 			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusUninstalled },
-			want:   result{Reason: ReasonHelmReleaseNotReady, Reupgraded: true, FinalReason: ReasonComponentHealthy},
+			want:   result{Reason: ReasonHelmReleaseNotReady, NeedsRepair: true, Reupgraded: true, FinalReason: ReasonComponentHealthy},
 		},
 		{
 			name:   "release being uninstalled is not repaired",
 			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusUninstalling },
-			want:   result{Reason: ReasonHelmReleaseNotReady, ActuatedAfterHealth: true, FinalReason: ReasonHelmReleaseNotReady},
+			want:   result{Reason: ReasonHelmReleaseNotReady, FinalReason: ReasonHelmReleaseNotReady},
 		},
 	}
 	for _, tt := range tests {
@@ -1660,7 +1660,13 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 
 			var got result
 			_, got.Reason, _ = mgr.ComponentHealth(ctx, ref)
-			got.ActuatedAfterHealth = mgr.IsComponentActuated(ref, generation)
+			got.NeedsRepair = mgr.NeedsRepair(ref, generation)
+			if !mgr.IsComponentActuated(ref, generation) {
+				t.Error("IsComponentActuated() = false after health check, want true (repair is reported by NeedsRepair)")
+			}
+			if mgr.NeedsRepair(ref, generation+1) {
+				t.Error("NeedsRepair() = true for a generation that was never actuated, want false")
+			}
 			if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
 				t.Fatalf("repair Ensure1PComponent failed: %v", err)
 			}
@@ -1673,8 +1679,8 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("release repair mismatch (-want +got):\n%s", diff)
 			}
-			if tt.want.Reupgraded && !mgr.IsComponentActuated(ref, generation) {
-				t.Error("IsComponentActuated() = false after repair upgrade, want true")
+			if mgr.NeedsRepair(ref, generation) {
+				t.Error("NeedsRepair() = true after repair upgrade, want false")
 			}
 		})
 	}
