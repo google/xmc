@@ -57,6 +57,7 @@ use_repo(
     "com_github_clickhouse_clickhouse_go_v2",
     "com_github_evanphx_json_patch_v5",
     "com_github_fsnotify_fsnotify",
+    "com_github_go_logr_logr",
     "com_github_golang_jwt_jwt_v5",
     "com_github_golang_migrate_migrate_v4",
     "com_github_google_go_cmp",

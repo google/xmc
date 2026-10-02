@@ -22,18 +22,19 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	k8serrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
-	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
 	"golang/prometheus/client/prometheus/testutil/testutil"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -41,18 +42,6 @@ import (
 	"xmanager_cloud/logging/logging"
 	storagepkg "xmanager_cloud/storage/storage"
 )
-
-type clientWithError struct {
-	client.Client
-	getErr error
-}
-
-func (c *clientWithError) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if c.getErr != nil {
-		return c.getErr
-	}
-	return c.Client.Get(ctx, key, obj)
-}
 
 type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
@@ -135,12 +124,13 @@ func TestNewReconciler_Validation(t *testing.T) {
 
 func TestWorkloadReconciler_GetErrors(t *testing.T) {
 	scheme := newScheme()
-	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	rec, err := NewReconciler(Params{
-		Client: &clientWithError{
-			Client: cl,
-			getErr: k8serrors.NewInternalError(errors.New("API server unavailable")),
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return k8serrors.NewInternalError(errors.New("API server unavailable"))
 		},
+	}).Build()
+	rec, err := NewReconciler(Params{
+		Client:  cl,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
 		ManagementClusterInfo: &spb.ClusterInfo{
@@ -494,7 +484,7 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 	p := workloadPredicate(context.Background())
 	testCases := []struct {
 		name string
-		obj  client.Object
+		obj  *v1beta1.Workload
 		want bool
 	}{
 		{
@@ -535,11 +525,6 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "not a workload object",
-			obj:  &metav1.PartialObjectMetadata{},
-			want: false,
-		},
-		{
 			name: "nil object",
 			obj:  nil,
 			want: false,
@@ -548,7 +533,7 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.CreateEvent{Object: tc.obj}
+			evt := event.TypedCreateEvent[*v1beta1.Workload]{Object: tc.obj}
 			if got := p.Create(evt); got != tc.want {
 				t.Errorf("Predicate CreateFunc() = %v, want %v", got, tc.want)
 			}
@@ -642,11 +627,17 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 			}(),
 			want: false,
 		},
+		{
+			name: "nil old object",
+			old:  nil,
+			new:  baseWorkload,
+			want: false,
+		},
 	}
 
 	for _, tc := range updateCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.UpdateEvent{
+			evt := event.TypedUpdateEvent[*v1beta1.Workload]{
 				ObjectOld: tc.old,
 				ObjectNew: tc.new,
 			}
@@ -654,5 +645,16 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 				t.Errorf("Predicate UpdateFunc() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestWorkloadPredicate_DeleteAndGeneric(t *testing.T) {
+	p := workloadPredicate(context.Background())
+	obj := &v1beta1.Workload{Spec: workloadSpecWithNecessaryLabels}
+	if p.Delete(event.TypedDeleteEvent[*v1beta1.Workload]{Object: obj}) {
+		t.Error("Predicate DeleteFunc() = true, want false")
+	}
+	if p.Generic(event.TypedGenericEvent[*v1beta1.Workload]{Object: obj}) {
+		t.Error("Predicate GenericFunc() = true, want false")
 	}
 }

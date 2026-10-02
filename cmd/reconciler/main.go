@@ -19,8 +19,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/go-logr/logr"
 	"go/google"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -31,6 +32,7 @@ func main() {
 	cfg := Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.RuntimeConfig.QuotaProjectID)
 	slog.SetDefault(logger)
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
 	ctx = logging.WithLogger(ctx, logger)
 
 	if err := run(ctx, cfg); err != nil {

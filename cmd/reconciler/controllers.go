@@ -18,7 +18,7 @@ import (
 	"errors"
 	"fmt"
 
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
