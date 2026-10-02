@@ -16,10 +16,12 @@ package workload
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"testing"
 	"time"
 
+	"golang/cmp/cmp"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	k8serrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
@@ -36,6 +38,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	"xmanager_cloud/logging/logging"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 
@@ -407,6 +410,81 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 			}
 			if slices.Contains(update.UpdateMask.GetPaths(), "status.scheduling_information") {
 				t.Errorf("Expected status.scheduling_information to not be in update mask, got %v", update.UpdateMask.GetPaths())
+			}
+		})
+	}
+}
+
+// levelRecorder is a slog.Handler that records the level of every log record
+// it receives, so tests can assert on emitted log severities. Handlers derived
+// via WithAttrs/WithGroup are new instances (per the slog.Handler contract) that
+// share the same levels slice.
+type levelRecorder struct {
+	levels *[]slog.Level
+}
+
+func (h *levelRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *levelRecorder) Handle(_ context.Context, r slog.Record) error {
+	*h.levels = append(*h.levels, r.Level)
+	return nil
+}
+
+func (h *levelRecorder) WithAttrs([]slog.Attr) slog.Handler { return &levelRecorder{levels: h.levels} }
+
+func (h *levelRecorder) WithGroup(string) slog.Handler { return &levelRecorder{levels: h.levels} }
+
+func TestHasValidXMCLabels(t *testing.T) {
+	testCases := []struct {
+		name       string
+		podLabels  map[string]string
+		want       bool
+		wantLevels []slog.Level
+	}{
+		{
+			name:       "valid labels logs nothing",
+			podLabels:  workloadSpecWithNecessaryLabels.PodSets[0].Template.Labels,
+			want:       true,
+			wantLevels: nil,
+		},
+		{
+			name:       "missing labels logs warning",
+			podLabels:  nil,
+			want:       false,
+			wantLevels: []slog.Level{slog.LevelWarn},
+		},
+		{
+			name: "invalid labels logs error",
+			podLabels: map[string]string{
+				constants.ExperimentIDLabel: "invalid",
+				constants.WorkUnitIDLabel:   "1",
+				constants.ExecutionIDLabel:  "1",
+			},
+			want:       false,
+			wantLevels: []slog.Level{slog.LevelError},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var recordedLevels []slog.Level
+			ctx := logging.WithLogger(t.Context(), slog.New(&levelRecorder{levels: &recordedLevels}))
+			workload := &v1beta1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-workload"},
+				Spec: v1beta1.WorkloadSpec{
+					PodSets: []v1beta1.PodSet{{
+						Template: corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{Labels: tc.podLabels},
+						},
+					}},
+				},
+			}
+
+			if got := hasValidXMCLabels(ctx, workload); got != tc.want {
+				t.Errorf("hasValidXMCLabels() = %v, want %v", got, tc.want)
+			}
+			if diff := cmp.Diff(tc.wantLevels, recordedLevels); diff != "" {
+				t.Errorf("hasValidXMCLabels() logged unexpected levels (-want +got):\n%s", diff)
 			}
 		})
 	}

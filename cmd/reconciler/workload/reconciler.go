@@ -111,12 +111,15 @@ func NewReconciler(p Params) (*Reconciler, error) {
 
 func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
 	_, err := parseXMCLabelsFromPodSet(ctx, workload)
+	if err == nil {
+		return true
+	}
 	if errors.Is(err, labels.ErrMissingXMCLabels) {
 		logging.Warn(ctx, "Workload is missing XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
-	} else {
-		logging.Error(ctx, "Workload has invalid XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
+		return false
 	}
-	return err == nil
+	logging.Error(ctx, "Workload has invalid XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
+	return false
 }
 
 func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (labels.XMCLabels, error) {

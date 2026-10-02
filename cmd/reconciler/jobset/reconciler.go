@@ -460,11 +460,12 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 	return StartupPodCheckResult{Result: result, StartupWarningMsg: warningMsg}
 }
 
-// listJobSetPods returns all pods belonging to the given JobSet.
+// listJobSetPods returns all pods belonging to the given JobSet. JobSet stamps
+// v1alpha2.JobSetNameKey as a label on every pod it creates.
 func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet) ([]corev1.Pod, error) {
 	var podList corev1.PodList
 	if err := r.List(logging.Strip(ctx), &podList, client.InNamespace(jobSet.Namespace),
-		client.MatchingFields{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
+		client.MatchingLabels{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 	return podList.Items, nil
@@ -537,6 +538,12 @@ func isNodeSelectorMismatchMessage(msg string) bool {
 	return strings.Contains(lower, "node affinity/selector") || strings.Contains(lower, "nodeselector") || strings.Contains(lower, "didn't match")
 }
 
+// tpuNodeListTimeout bounds the cached Node list call in listAvailableTPUTopologies
+// so an unsynced Node informer (e.g. on missing RBAC or API server latency) fails
+// fast and falls back to the generic unschedulable warning instead of blocking the
+// reconcile worker.
+const tpuNodeListTimeout = 5 * time.Second
+
 // listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
 func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
 	var nodeList corev1.NodeList
@@ -544,7 +551,9 @@ func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
 	}
-	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	listCtx, cancel := context.WithTimeout(logging.Strip(ctx), tpuNodeListTimeout)
+	defer cancel()
+	if err := r.List(listCtx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
 	}
 
