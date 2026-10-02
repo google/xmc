@@ -607,7 +607,7 @@ func TestJobSetPredicate_Update(t *testing.T) {
 				js.ResourceVersion = "2"
 				return js
 			}(),
-			want: false,
+			want: true,
 		},
 		{
 			name:   "WorkUnitIDLabel changed",
@@ -627,6 +627,17 @@ func TestJobSetPredicate_Update(t *testing.T) {
 				js := baseJobSet.DeepCopy()
 				js.ResourceVersion = "2"
 				js.Labels[constants.ExperimentIDLabel] = "456"
+				return js
+			}(),
+			want: true,
+		},
+		{
+			name:   "ExecutionIDLabel changed",
+			oldObj: baseJobSet,
+			newObj: func() *v1alpha2.JobSet {
+				js := baseJobSet.DeepCopy()
+				js.ResourceVersion = "2"
+				js.Labels[constants.ExecutionIDLabel] = "2"
 				return js
 			}(),
 			want: true,
@@ -723,33 +734,39 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
 
 	testCases := []struct {
-		name       string
-		patchErr   error
-		wantResult ctrl.Result
-		wantErr    bool
+		name           string
+		patchErr       error
+		wantResult     ctrl.Result
+		wantErr        bool
+		wantErrorCount float64
 	}{
 		{
-			name:       "NotFound",
-			patchErr:   &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonNotFound}},
-			wantResult: ctrl.Result{},
-			wantErr:    false,
+			name:           "NotFound",
+			patchErr:       &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonNotFound}},
+			wantResult:     ctrl.Result{},
+			wantErr:        false,
+			wantErrorCount: 0,
 		},
 		{
-			name:       "Conflict",
-			patchErr:   &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonConflict}},
-			wantResult: ctrl.Result{},
-			wantErr:    true,
+			name:           "Conflict",
+			patchErr:       &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonConflict}},
+			wantResult:     ctrl.Result{Requeue: true},
+			wantErr:        false,
+			wantErrorCount: 0,
 		},
 		{
-			name:       "OtherError",
-			patchErr:   errors.New("other error"),
-			wantResult: ctrl.Result{},
-			wantErr:    true,
+			name:           "OtherError",
+			patchErr:       errors.New("other error"),
+			wantResult:     ctrl.Result{},
+			wantErr:        true,
+			wantErrorCount: 1,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			reconcileErrorsTotal.Reset()
+			updatesSentTotal.Reset()
 			initialJobSet := jobSetWithLabelsAndFinalizer.DeepCopy()
 			initialJobSet.DeletionTimestamp = &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
 			cl := fake.NewClientBuilder().
@@ -774,11 +791,20 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 			if result != tc.wantResult {
 				t.Errorf("Reconcile() result = %v, want %v", result, tc.wantResult)
 			}
+			if gotErrs := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); gotErrs != tc.wantErrorCount {
+				t.Errorf("reconcileErrorsTotal = %v, want %v", gotErrs, tc.wantErrorCount)
+			}
+			if gotSent := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); gotSent != 0 {
+				t.Errorf("updatesSentTotal = %v, want 0 when patch fails", gotSent)
+			}
+			if len(batcher.Updates) != 0 {
+				t.Errorf("batcher.Updates len = %d, want 0 when patch fails", len(batcher.Updates))
+			}
 		})
 	}
 }
 
-func TestActuatorReconcilerFinalizer_PatchUsesOptimisticLock(t *testing.T) {
+func TestActuatorReconcilerFinalizer_PatchTestsFinalizerIndex(t *testing.T) {
 	scheme, err := newScheme()
 	if err != nil {
 		t.Fatalf("Failed to create scheme: %v", err)
@@ -792,16 +818,18 @@ func TestActuatorReconcilerFinalizer_PatchUsesOptimisticLock(t *testing.T) {
 				constants.WorkUnitIDLabel:   "1",
 				constants.ExecutionIDLabel:  "1",
 			},
-			Finalizers:        []string{constants.JobSetFinalizer},
+			Finalizers:        []string{"other-finalizer", constants.JobSetFinalizer},
 			DeletionTimestamp: &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)},
 		},
 	}
+	var patchType types.PatchType
 	var patchData string
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithRuntimeObjects(initialJobSet).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patchType = patch.Type()
 				data, err := patch.Data(obj)
 				if err != nil {
 					return err
@@ -824,8 +852,12 @@ func TestActuatorReconcilerFinalizer_PatchUsesOptimisticLock(t *testing.T) {
 	if _, err := reconciler.Reconcile(context.Background(), req); err != nil {
 		t.Fatalf("Reconcile() unexpected error: %v", err)
 	}
-	if !strings.Contains(patchData, `"resourceVersion"`) {
-		t.Errorf("finalizer patch = %s, want it to carry resourceVersion for optimistic locking", patchData)
+	if patchType != types.JSONPatchType {
+		t.Errorf("finalizer patch type = %q, want %q", patchType, types.JSONPatchType)
+	}
+	wantPatch := `[{"op":"test","path":"/metadata/finalizers/1","value":"jobset.xmanager.cloud/finalizer"},{"op":"remove","path":"/metadata/finalizers/1"}]`
+	if patchData != wantPatch {
+		t.Errorf("finalizer patch = %s, want %s", patchData, wantPatch)
 	}
 }
 

@@ -216,6 +216,7 @@ func TestWorkloadReconciler(t *testing.T) {
 }
 
 func TestWorkloadReconciler_NoLabels(t *testing.T) {
+	reconcileErrorsTotal.Reset()
 	scheme := newScheme()
 	workload := &v1beta1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -247,6 +248,52 @@ func TestWorkloadReconciler_NoLabels(t *testing.T) {
 	}
 	if len(rec.Batcher.Updates) != 0 {
 		t.Errorf("Expected 0 updates in batcher, got %d", len(rec.Batcher.Updates))
+	}
+	if val := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); val != 1 {
+		t.Errorf("reconcileErrorsTotal counter mismatch: got %v, want 1", val)
+	}
+}
+
+func TestWorkloadReconciler_ConvertError(t *testing.T) {
+	reconcileErrorsTotal.Reset()
+	scheme := newScheme()
+	workload := &v1beta1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-workload",
+			Namespace: "default",
+		},
+		Spec: workloadSpecWithNecessaryLabels,
+		Status: v1beta1.WorkloadStatus{
+			ClusterName: ptr.To("missing-worker-cluster"),
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{workload}...).Build()
+	rec, err := NewReconciler(Params{
+		Client:  cl,
+		Scheme:  scheme,
+		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+		ManagementClusterInfo: &spb.ClusterInfo{
+			Project: "mgmt-project",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-workload",
+			Namespace: "default",
+		},
+	})
+	if err == nil {
+		t.Fatal("Reconcile() error = nil, want non-nil conversion error")
+	}
+	if errors.Is(err, reconcile.TerminalError(nil)) {
+		t.Errorf("Reconcile() error = %v, want retryable (non-terminal) error", err)
+	}
+	if val := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); val != 1 {
+		t.Errorf("reconcileErrorsTotal counter mismatch: got %v, want 1", val)
 	}
 }
 
@@ -627,6 +674,21 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 				return w
 			}(),
 			want: false,
+		},
+		{
+			name: "labels added on update",
+			old: func() *v1beta1.Workload {
+				w := baseWorkload.DeepCopy()
+				w.Spec.PodSets[0].Template.Labels = nil
+				return w
+			}(),
+			new: func() *v1beta1.Workload {
+				w := baseWorkload.DeepCopy()
+				w.ResourceVersion = "2"
+				w.Generation = 2
+				return w
+			}(),
+			want: true,
 		},
 		{
 			name: "nil old object",

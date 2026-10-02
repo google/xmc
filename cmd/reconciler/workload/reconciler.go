@@ -168,7 +168,7 @@ func shouldProcessWorkloadUpdate(ctx context.Context, oldWorkload, newWorkload *
 	}
 
 	ctx = logging.Strip(ctx)
-	return hasValidXMCLabels(ctx, oldWorkload) && hasValidXMCLabels(ctx, newWorkload)
+	return hasValidXMCLabels(ctx, newWorkload)
 }
 
 // Reconcile fetches the Workload and updates the WorkUnitExecution status.
@@ -183,7 +183,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		reconcileDuration.WithLabelValues().Observe(float64(duration.Nanoseconds()) / 1e6)
 		if recErr != nil {
 			reconcileErrorsTotal.WithLabelValues().Inc()
-			logging.Error(ctx, "Reconcile Workload returned an error", "workload", req.NamespacedName, "error", recErr)
 		} else {
 			logging.Info(ctx, "Reconciled Workload", "workload", req.NamespacedName)
 		}
@@ -229,7 +228,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.WorkloadSource)
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, recErr
 }
 
 func (r *Reconciler) getStuckWorkloadCondition(ctx context.Context, workload *v1beta1.Workload, experimentID, workUnitID, executionID int64) (bool, metav1.Condition) {

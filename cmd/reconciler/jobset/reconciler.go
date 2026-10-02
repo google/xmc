@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -34,10 +35,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -215,7 +216,7 @@ func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alph
 	}
 
 	ctx = logging.Strip(ctx)
-	if !hasValidXMCLabels(ctx, newJobSet) || !hasValidXMCLabels(ctx, oldJobSet) {
+	if !hasValidXMCLabels(ctx, newJobSet) {
 		return false
 	}
 
@@ -232,7 +233,8 @@ func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alph
 func jobSetChanged(oldJobSet, newJobSet *v1alpha2.JobSet) bool {
 	generationSame := oldJobSet.Generation == newJobSet.Generation
 	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
-		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
+		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel] &&
+		oldJobSet.Labels[constants.ExecutionIDLabel] == newJobSet.Labels[constants.ExecutionIDLabel]
 	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
 	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
 
@@ -283,11 +285,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	return result, err
 }
 
+// removeFinalizerPatch builds an RFC 6902 JSON Patch that tests and removes the
+// finalizer at idx, guarding against concurrent metadata.finalizers mutations
+// without pinning metadata.resourceVersion (which changes on status updates).
+func removeFinalizerPatch(idx int, finalizer string) client.Patch {
+	path := fmt.Sprintf("/metadata/finalizers/%d", idx)
+	payload := fmt.Sprintf(`[{"op":"test","path":%q,"value":%q},{"op":"remove","path":%q}]`, path, finalizer, path)
+	return client.RawPatch(types.JSONPatchType, []byte(payload))
+}
+
 // handleJobSetFinalizerRemoval processes a JobSet that is being deleted.
 func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
-	if !controllerutil.ContainsFinalizer(jobSet, constants.JobSetFinalizer) {
+	finalizerIdx := slices.Index(jobSet.Finalizers, constants.JobSetFinalizer)
+	if finalizerIdx < 0 {
 		logging.Debug(ctx, "JobSet is being deleted but finalizer is already gone.", "namespace", jobSet.Namespace)
 		return ctrl.Result{}, nil
 	}
@@ -297,6 +309,16 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	parsedLabels, labelsErr := labels.ParseXMCLabels(jobSet.Labels)
 	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
+
+	// Patch the object in the API server using an RFC 6902 JSON Patch that tests
+	// and removes the finalizer at its index without pinning metadata.resourceVersion
+	// (so concurrent .status updates by the JobSet controller do not cause conflicts).
+	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
+	// it blocks the entire logging system for some reason.
+	if err := r.Patch(logging.Strip(ctx), jobSet, removeFinalizerPatch(finalizerIdx, constants.JobSetFinalizer)); err != nil {
+		return r.handlePatchError(ctx, jobSet, err)
+	}
+
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
 		updatesSentTotal.WithLabelValues().Inc()
@@ -304,22 +326,6 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 		logging.Debug(ctx, "Added STOPPED update to batch for JobSet", "namespace", jobSet.Namespace)
 	} else {
 		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
-	}
-
-	// Create a deep copy to use as the base for the patch
-	patchBase := jobSet.DeepCopy()
-
-	// Modify the jobSet object in-place to remove the finalizer
-	controllerutil.RemoveFinalizer(jobSet, constants.JobSetFinalizer)
-
-	// Patch the object in the API server. The optimistic lock makes the patch carry
-	// the resourceVersion, so a concurrent change to the finalizers list results in
-	// a Conflict instead of silently overwriting another controller's finalizer.
-	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
-	// it blocks the entire logging system for some reason.
-	patch := client.MergeFromWithOptions(patchBase, client.MergeFromWithOptimisticLock{})
-	if err := r.Patch(logging.Strip(ctx), jobSet, patch); err != nil {
-		return r.handlePatchError(ctx, jobSet, err)
 	}
 
 	logging.Debug(ctx, "Successfully patched finalizer from JobSet", "namespace", jobSet.Namespace)
@@ -334,9 +340,10 @@ func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobS
 		return ctrl.Result{}, nil
 	}
 	if apierrors.IsConflict(err) {
-		// Returning the error lets the workqueue rate limiter retry with exponential backoff.
-		logging.Debug(ctx, "Conflict patching finalizer for JobSet, retrying with backoff.", "namespace", jobSet.Namespace)
-		return ctrl.Result{}, fmt.Errorf("conflict patching finalizer for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
+		// Requeue without returning an error so expected conflicts are not counted
+		// in reconcileErrorsTotal or logged at ERROR by controller-runtime.
+		logging.Debug(ctx, "Conflict patching finalizer for JobSet, requeuing.", "namespace", jobSet.Namespace)
+		return ctrl.Result{Requeue: true}, nil
 	}
 	logging.Error(ctx, "Failed to patch finalizer for JobSet", "namespace", jobSet.Namespace, "error", err)
 	return ctrl.Result{}, fmt.Errorf("failed to patch finalizer for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
@@ -393,12 +400,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	}
 
-	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
-	if err != nil {
-		// Not retried: fields used in the update are monitored by the predicate, so a
-		// relevant change triggers a new reconcile.
-		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to convert JobSet %s/%s to WorkUnitExecutionUpdate: %w", jobSet.Namespace, jobSet.Name, err))
-	}
+	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
