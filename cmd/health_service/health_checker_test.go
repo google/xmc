@@ -668,7 +668,7 @@ func TestRunChecks(t *testing.T) {
 
 func TestRunChecks_LogMonitorURL(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" {
+		if r.URL.Path != "/readyz" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -687,7 +687,7 @@ func TestRunChecks_LogMonitorURL(t *testing.T) {
 	for _, comp := range res.Components {
 		if comp.Name == "Log Monitor" {
 			if comp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
-				t.Fatalf("expected Log Monitor to be healthy via HTTP /healthz, got %v (err: %q)", comp.HealthState, comp.ErrorMessage)
+				t.Fatalf("expected Log Monitor to be healthy via HTTP /readyz, got %v (err: %q)", comp.HealthState, comp.ErrorMessage)
 			}
 			return
 		}

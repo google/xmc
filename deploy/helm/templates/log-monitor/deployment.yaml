@@ -59,11 +59,11 @@ spec:
         - "-quota_project_id={{ .Values.projectId }}"
         - "-log_keyword={{ .Values.logMonitor.logKeyword }}"
         - "-max_concurrent_updates={{ .Values.logMonitor.maxConcurrentUpdates }}"
-        # /healthz actively checks Spanner and the Pub/Sub listener, so it gates both readiness and
-        # liveness.
+        # /readyz checks Spanner and the Pub/Sub listener. /healthz checks only the listener, so a
+        # Spanner outage does not restart the pod but a stopped listener does.
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /readyz
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 5

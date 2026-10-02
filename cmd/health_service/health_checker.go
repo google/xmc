@@ -243,7 +243,7 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 			name: "Log Monitor",
 			checkFn: func(ctx context.Context) *spb.ComponentHealth {
 				if c.cfg.LogMonitorURL != "" {
-					return c.checkHTTPComponent(ctx, "Log Monitor", c.cfg.LogMonitorURL, "/healthz")
+					return c.checkHTTPComponent(ctx, "Log Monitor", c.cfg.LogMonitorURL, "/readyz")
 				}
 				return c.checkCloudRunComponent(ctx, "Log Monitor", c.cfg.LogMonitorResourceName)
 			},

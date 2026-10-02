@@ -302,6 +302,9 @@ deployment_groups:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: xid-service
 
+  # Created even when log_monitor_deployment_enabled is false: blueprints cannot include a module
+  # conditionally, and this matches the dashboard-service binding above, whose deployment is also
+  # off by default. Until the KSA exists, the grant names a principal nothing can act as.
   - id: xmc_wi_binding_log_monitor
     source: modules/project/workload_identity_binding
     settings:
