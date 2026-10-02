@@ -134,6 +134,13 @@ func initSpannerAndStorage(ctx context.Context, cfg Config) (*spanner.Client, st
 	return spannerClient, storage, nil
 }
 
+func metricsBindAddress(port int) string {
+	if port <= 0 {
+		return "0"
+	}
+	return fmt.Sprintf(":%d", port)
+}
+
 func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	scheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(scheme)
@@ -149,7 +156,7 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 
 	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: ":8081"},
+		Metrics:                metricsserver.Options{BindAddress: metricsBindAddress(cfg.MetricsPort)},
 		HealthProbeBindAddress: ":8080",
 		Cache: cache.Options{
 			ByObject: map[runtimeclient.Object]cache.ByObject{

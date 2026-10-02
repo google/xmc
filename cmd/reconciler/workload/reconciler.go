@@ -22,7 +22,6 @@ import (
 	"regexp"
 	"time"
 
-	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,23 +46,23 @@ import (
 )
 
 var (
-	reconcileTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_reconcile_total",
 		Help: "Total number of Workload reconciliations started",
 	}, []string{})
 
-	reconcileErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileErrorsTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_reconcile_errors_total",
 		Help: "Total number of Workload reconciliations that returned an error",
 	}, []string{})
 
-	reconcileDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	reconcileDuration = shared.MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "workload_reconcile_duration_milliseconds",
 		Help:    "Duration of Workload Reconcile calls in milliseconds",
 		Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000},
 	}, []string{})
 
-	updatesSentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesSentTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the Workload reconciler",
 	}, []string{})

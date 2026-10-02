@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -2654,5 +2655,26 @@ func TestBuildMLRunLabels(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("buildMLRunLabels(12, 3) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
+	// Label-less vectors only appear in Gather once a child exists.
+	reconcileTotal.WithLabelValues()
+	reconcileErrorsTotal.WithLabelValues()
+	reconcileDuration.WithLabelValues()
+	updatesSentTotal.WithLabelValues()
+	mfs, err := ctrlmetrics.Registry.Gather()
+	if err != nil {
+		t.Fatalf("ctrlmetrics.Registry.Gather() failed: %v", err)
+	}
+	registered := make(map[string]bool, len(mfs))
+	for _, mf := range mfs {
+		registered[mf.GetName()] = true
+	}
+	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_reconciler_mlrun_sync_duration_seconds"} {
+		if !registered[name] {
+			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
+		}
 	}
 }

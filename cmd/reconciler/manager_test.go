@@ -215,3 +215,35 @@ func TestManager_CtrlManager(t *testing.T) {
 		}
 	})
 }
+
+func TestMetricsBindAddress(t *testing.T) {
+	tests := []struct {
+		name string
+		port int
+		want string
+	}{
+		{
+			name: "zero port disables metrics server",
+			port: 0,
+			want: "0",
+		},
+		{
+			name: "negative port disables metrics server",
+			port: -1,
+			want: "0",
+		},
+		{
+			name: "positive port formats bind address",
+			port: 8082,
+			want: ":8082",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := metricsBindAddress(tt.port); got != tt.want {
+				t.Errorf("metricsBindAddress(%d) = %q, want %q", tt.port, got, tt.want)
+			}
+		})
+	}
+}
