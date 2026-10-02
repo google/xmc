@@ -253,13 +253,13 @@ class RunLinterTest(unittest.TestCase):
     def test_run_linter_on_target_success(self, mock_run: MagicMock) -> None:
         """Tests successful linter target execution."""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["xmc-linter"],
+            args=["component-linter"],
             returncode=0,
             stdout="All component manifests passed static validation successfully!\n",
             stderr="",
         )
         target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
-        res = run_linter.run_linter_on_target(target, "/bin/xmc-linter", "text")
+        res = run_linter.run_linter_on_target(target, "/bin/component-linter", "text")
 
         self.assertTrue(res.success)
         self.assertEqual(res.returncode, 0)
@@ -269,13 +269,13 @@ class RunLinterTest(unittest.TestCase):
     def test_run_linter_on_target_failure(self, mock_run: MagicMock) -> None:
         """Tests failed linter target execution with error diagnostics."""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["xmc-linter"],
+            args=["component-linter"],
             returncode=1,
             stdout="",
             stderr="[ERROR] missing required field\n",
         )
         target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
-        res = run_linter.run_linter_on_target(target, "/bin/xmc-linter", "text")
+        res = run_linter.run_linter_on_target(target, "/bin/component-linter", "text")
 
         self.assertFalse(res.success)
         self.assertEqual(res.returncode, 1)
@@ -286,13 +286,13 @@ class RunLinterTest(unittest.TestCase):
         """Tests json output parsing from linter."""
         json_payload = json.dumps({"valid": True, "diagnostics": [], "errors": [], "warnings": []})
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["xmc-linter"],
+            args=["component-linter"],
             returncode=0,
             stdout=json_payload,
             stderr="",
         )
         target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
-        res = run_linter.run_linter_on_target(target, "/bin/xmc-linter", "json")
+        res = run_linter.run_linter_on_target(target, "/bin/component-linter", "json")
 
         self.assertTrue(res.success)
         self.assertIsNotNone(res.json_data)
@@ -303,13 +303,13 @@ class RunLinterTest(unittest.TestCase):
     def test_run_linter_on_target_invalid_json(self, mock_run: MagicMock) -> None:
         """Tests handling of invalid JSON stdout from linter process."""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["xmc-linter"],
+            args=["component-linter"],
             returncode=1,
             stdout="non-json output",
             stderr="",
         )
         target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
-        res = run_linter.run_linter_on_target(target, "/bin/xmc-linter", "json")
+        res = run_linter.run_linter_on_target(target, "/bin/component-linter", "json")
 
         self.assertFalse(res.success)
         self.assertIsNone(res.json_data)
@@ -320,7 +320,7 @@ class RunLinterTest(unittest.TestCase):
         """Tests handling of OSError (e.g. missing executable) when running linter."""
         mock_run.side_effect = FileNotFoundError("Executable not found")
         target = run_linter.LintTarget(manifests_dir=Path("/path/to/dir"))
-        res = run_linter.run_linter_on_target(target, "/nonexistent/xmc-linter", "text")
+        res = run_linter.run_linter_on_target(target, "/nonexistent/component-linter", "text")
 
         self.assertFalse(res.success)
         self.assertEqual(res.returncode, -1)
@@ -410,7 +410,7 @@ class RunLinterTest(unittest.TestCase):
         """Tests successful end-to-end execution of main."""
         self.create_file("profile/comp.yaml", "kind: Component")
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["xmc-linter"],
+            args=["component-linter"],
             returncode=0,
             stdout="OK",
             stderr="",

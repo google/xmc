@@ -23,7 +23,7 @@ The following fields are structural constants of the Ingestion Gateway blueprint
 
 ## 2. Configuration & Parameter Mapping ([`values.yaml`](values.yaml))
 
-All entries in `spec.parameters` are serialized as quoted strings (`| toString | quote`) to comply with the `components.xmc.dev` CRD schema (`additionalProperties: { type: string }`) and `xmc-linter` validation:
+All entries in `spec.parameters` are serialized as quoted strings (`| toString | quote`) to comply with the `components.xmc.dev` CRD schema (`additionalProperties: { type: string }`) and `component-linter` validation:
 
 | Parameter | Default | Target Flag / Spec Field | Description |
 | :--- | :--- | :--- | :--- |
