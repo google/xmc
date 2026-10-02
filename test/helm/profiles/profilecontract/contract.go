@@ -15,6 +15,7 @@
 package profilecontract
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -57,6 +58,7 @@ var contractChecks = []contractCheck{
 //   - MetadataIsConsistent: the profile name and profile.yaml metadata are consistent.
 func Run(t *testing.T, s Spec) {
 	t.Helper()
+	fatalOnError(t, validateSpec(s))
 	for _, c := range contractChecks {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -79,6 +81,26 @@ func reportError(t *testing.T, err error) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+// validateSpec rejects a Spec that the contract cannot meaningfully check: without a chart, a
+// profile name or a catalog, the checks would fail obscurely or pass vacuously.
+func validateSpec(s Spec) error {
+	fields := []struct {
+		name  string
+		empty bool
+	}{
+		{name: "ChartRelPath", empty: s.ChartRelPath == ""},
+		{name: "ProfileName", empty: s.ProfileName == ""},
+		{name: "Components", empty: len(s.Components) == 0},
+	}
+	var errs []error
+	for _, f := range fields {
+		if f.empty {
+			errs = append(errs, fmt.Errorf("profilecontract: Spec.%s must not be empty", f.name))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // AssertRendersComponents checks that rendering the profile with overrides produces exactly the
@@ -217,7 +239,7 @@ func rejectsInvalidInstallsCases(s Spec) []contractCase {
 	tests := []invalidInstall{
 		{name: "unknown component", overrides: ComponentOverrides("not-a-catalog-component", map[string]any{"enabled": true}), wantErr: "not-a-catalog-component"},
 		{name: "wrong platformProfile", overrides: map[string]any{"global": map[string]any{"platformProfile": "not-" + s.ProfileName}}, wantErr: "platformProfile"},
-		{name: "xmc-bridge component release name", releaseName: "xmc-cmp-" + s.Components[0], wantErr: "must not be installed as an xmc-cmp-* component release"},
+		{name: "xmc-bridge component release name", releaseName: "xmc-cmp-" + DefaultRelease, wantErr: "must not be installed as an xmc-cmp-* component release"},
 	}
 	for _, c := range s.Components {
 		tests = append(tests, componentKeyRejections(c)...)

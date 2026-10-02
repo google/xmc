@@ -104,6 +104,29 @@ func TestRun_PassesOnUnmodifiedProfileCopy(t *testing.T) {
 
 const extraConfigMap = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: extra\n"
 
+func TestValidateSpec(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mutate  func(*Spec)
+		wantErr string
+	}{
+		{name: "valid", mutate: func(*Spec) {}},
+		{name: "empty Components", mutate: func(s *Spec) { s.Components = nil }, wantErr: "Spec.Components must not be empty"},
+		{name: "empty ChartRelPath", mutate: func(s *Spec) { s.ChartRelPath = "" }, wantErr: "Spec.ChartRelPath must not be empty"},
+		{name: "empty ProfileName", mutate: func(s *Spec) { s.ProfileName = "" }, wantErr: "Spec.ProfileName must not be empty"},
+	}
+	for _, tt := range tests {
+		s := realProfile
+		tt.mutate(&s)
+		err := validateSpec(s)
+		if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+			t.Errorf("%s: validateSpec() error = %v, want %q", tt.name, err, tt.wantErr)
+		}
+	}
+}
+
 // TestContractChecks_DetectViolations breaks one property of a valid profile per case and checks
 // that the contract check guarding that property reports it.
 func TestContractChecks_DetectViolations(t *testing.T) {
