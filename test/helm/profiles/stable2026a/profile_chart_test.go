@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package stable2026a_test holds contract tests for the deploy/profiles/stable-2026a meta-chart.
-// They live outside the chart directory so the Bazel test binary never lands inside the chart
-// that Helm's loader reads.
+// Package stable2026a_test tests the deploy/profiles/stable-2026a meta-chart. The file has three
+// sections:
+//   - Shared helpers: load and render the chart through the Helm SDK and inspect rendered docs.
+//   - Generic profile contract: checks that hold for any profile meta-chart that renders one
+//     Component CR per components/<name> chart. Their table cases use the stable-2026a
+//     components and fixtures.
+//   - stable-2026a specifics: expectations that only hold for this profile's components.
+//
+// A follow-up change extracts the generic contract into a reusable library parameterized by the
+// profile. The tests live outside the chart directory so the Bazel test binary never lands inside
+// the chart that Helm's loader reads.
 package stable2026a_test
 
 import (
@@ -37,6 +45,8 @@ import (
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
 )
+
+// --- Shared helpers ---
 
 const (
 	profileRelPath        = "deploy/profiles/stable-2026a"
@@ -158,6 +168,8 @@ func docByName(t *testing.T, docs []map[string]any, name string) map[string]any 
 	return nil
 }
 
+// --- Generic profile contract (table cases use stable-2026a components and fixtures) ---
+
 func TestProfileChart_RendersOnlyCatalogComponentCRs(t *testing.T) {
 	t.Parallel()
 
@@ -216,32 +228,6 @@ func TestProfileChart_MatchesStandaloneComponentCharts(t *testing.T) {
 			got := docByName(t, renderProfileDocs(t, profileChart(t), componentOverrides(tt.component, tt.overrides)), tt.component)
 			if diff := cmp.Diff(want, []map[string]any{got}); diff != "" {
 				t.Errorf("profile-rendered %s differs from standalone chart (-standalone +profile):\n%s", tt.component, diff)
-			}
-		})
-	}
-}
-
-func TestProfileChart_HonorsExplicitFalsyOverrides(t *testing.T) {
-	t.Parallel()
-
-	docs := renderProfileDocs(t, profileChart(t), map[string]any{"global": map[string]any{"imageTag": "v2"}, "components": map[string]any{
-		"redpanda": map[string]any{"deletionProtection": false}, "ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}}}})
-	tests := []struct {
-		name      string
-		component string
-		field     string
-		want      any
-	}{
-		{name: "deletionProtection false wins over default true", component: "redpanda", field: "deletionProtection", want: false},
-		{name: "untouched component keeps default", component: "clickhouse", field: "deletionProtection", want: true},
-		{name: "empty dependencies list replaces defaults", component: "ingestion-gateway", field: "dependencies", want: nil},
-		{name: "global imageTag reaches component", component: "ingestion-gateway", field: "imageTag", want: "v2"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if diff := cmp.Diff(tt.want, lookup(docByName(t, docs, tt.component), "spec", tt.field)); diff != "" {
-				t.Errorf("%s spec.%s mismatch (-want +got):\n%s", tt.component, tt.field, diff)
 			}
 		})
 	}
@@ -432,5 +418,35 @@ func assertSupportWindow(t *testing.T, start, end string) {
 	}
 	if !startMonth.Before(endMonth) {
 		t.Errorf("profile.yaml supportWindow start %q must be before end %q", start, end)
+	}
+}
+
+// --- stable-2026a specifics ---
+
+// TestProfileChart_HonorsExplicitFalsyOverrides checks how stable-2026a component fields react to
+// falsy admin overrides and to global.imageTag, which only the 1P ingestion-gateway renders.
+func TestProfileChart_HonorsExplicitFalsyOverrides(t *testing.T) {
+	t.Parallel()
+
+	docs := renderProfileDocs(t, profileChart(t), map[string]any{"global": map[string]any{"imageTag": "v2"}, "components": map[string]any{
+		"redpanda": map[string]any{"deletionProtection": false}, "ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}}}})
+	tests := []struct {
+		name      string
+		component string
+		field     string
+		want      any
+	}{
+		{name: "deletionProtection false wins over default true", component: "redpanda", field: "deletionProtection", want: false},
+		{name: "untouched component keeps default", component: "clickhouse", field: "deletionProtection", want: true},
+		{name: "empty dependencies list replaces defaults", component: "ingestion-gateway", field: "dependencies", want: nil},
+		{name: "global imageTag reaches component", component: "ingestion-gateway", field: "imageTag", want: "v2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if diff := cmp.Diff(tt.want, lookup(docByName(t, docs, tt.component), "spec", tt.field)); diff != "" {
+				t.Errorf("%s spec.%s mismatch (-want +got):\n%s", tt.component, tt.field, diff)
+			}
+		})
 	}
 }
