@@ -45,6 +45,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           AUTH_HEADER="Authorization: Basic $(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          # TODO: Drop `|| true` so this fetch fails loudly (refs are consumed below), per .agents/rules/github_authoring_and_prs.md §6.3.
           git -c "http.extraheader=${AUTH_HEADER}" fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" --depth=1 || true
           git checkout "origin/${BASE_REF}" -- .github/scripts/ .github/workflows/ OWNERS
 

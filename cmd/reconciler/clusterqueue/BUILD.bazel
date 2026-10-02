@@ -24,11 +24,9 @@ compat_go_library(
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@io_k8s_sigs_controller_runtime//pkg/builder",
         "@io_k8s_sigs_controller_runtime//pkg/client",
-        "@io_k8s_sigs_controller_runtime//pkg/controller",
-        "@io_k8s_sigs_controller_runtime//pkg/handler",
         "@io_k8s_sigs_controller_runtime//pkg/predicate",
-        "@io_k8s_sigs_controller_runtime//pkg/source",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )

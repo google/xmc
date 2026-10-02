@@ -19,7 +19,8 @@ import (
 	"net/http"
 
 	"golang/go_sync/errgroup/errgroup"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
@@ -52,7 +53,7 @@ func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spHealt
 		return errors.New("manager cannot be nil")
 	}
 
-	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error { return nil }); err != nil {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, spHealth)); err != nil {

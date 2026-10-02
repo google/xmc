@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 from tools.nightly_tests import xmc_entities_validator
@@ -602,6 +603,117 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
         stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
         results = xmc_entities_validator.wait_for_experiment_state(stub, "16", timeout_sec=5)
         self.assertEqual(len(results), 1)
+
+    def test_validate_clickhouse_metrics_success(self) -> None:
+        mock_response = {
+            "data": [
+                {"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25},
+                {"metric_name": "train/accuracy", "row_count": 200, "avg_val": 0.85},
+            ]
+        }
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            return_value=mock_response,
+        ):
+            res = xmc_entities_validator.validate_clickhouse_metrics(
+                endpoint="http://localhost:8123",
+                xid="22",
+                expected_metric_names={"train/loss", "train/accuracy"},
+                expected_min_rows=100,
+                timeout_sec=5,
+            )
+            self.assertEqual(res["total_rows"], 400)
+            self.assertEqual(len(res["metrics"]), 2)
+
+    def test_validate_clickhouse_metrics_missing_metric_raises(self) -> None:
+        mock_response = {
+            "data": [
+                {"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25},
+            ]
+        }
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            return_value=mock_response,
+        ):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_clickhouse_metrics(
+                    endpoint="http://localhost:8123",
+                    xid="22",
+                    expected_metric_names={"train/loss", "train/accuracy"},
+                    timeout_sec=0.05,
+                    poll_interval_sec=0.01,
+                )
+            self.assertIn("Expected metrics ['train/accuracy'] not found", str(ctx.exception))
+
+    def test_validate_clickhouse_metrics_retries_on_incomplete_metrics_until_success(self) -> None:
+        responses = [
+            {"data": [{"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25}]},
+            {
+                "data": [
+                    {"metric_name": "train/loss", "row_count": 200, "avg_val": 1.25},
+                    {"metric_name": "train/accuracy", "row_count": 200, "avg_val": 0.85},
+                ]
+            },
+        ]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            side_effect=responses,
+        ):
+            res = xmc_entities_validator.validate_clickhouse_metrics(
+                endpoint="http://localhost:8123",
+                xid="22",
+                expected_metric_names={"train/loss", "train/accuracy"},
+                timeout_sec=1.0,
+                poll_interval_sec=0.01,
+            )
+            self.assertEqual(res["total_rows"], 400)
+            self.assertEqual(len(res["metrics"]), 2)
+
+    def test_validate_clickhouse_metrics_non_strict_returns_skipped_on_timeout(self) -> None:
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            return_value=None,
+        ):
+            res = xmc_entities_validator.validate_clickhouse_metrics(
+                endpoint="http://localhost:8123",
+                xid="22",
+                expected_metric_names={"train/loss"},
+                timeout_sec=0.05,
+                poll_interval_sec=0.01,
+                strict_required=False,
+            )
+            self.assertTrue(res.get("skipped"))
+            self.assertEqual(res["total_rows"], 0)
+
+    def test_validate_dashboard_chart_data_success(self) -> None:
+        dash_response = {"chartIds": ["dashboards/exp_22_training_overview/charts/loss_chart"]}
+        chart_response = {
+            "plotsData": [
+                {
+                    "scatterSeries": {
+                        "points": [{"step": 1, "value": 0.5}, {"step": 2, "value": 0.4}]
+                    }
+                }
+            ]
+        }
+
+        def mock_query(url: str, **kwargs: Any) -> Any:
+            if url.endswith(":getData"):
+                return chart_response
+            return dash_response
+
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            side_effect=mock_query,
+        ):
+            res = xmc_entities_validator.validate_dashboard_chart_data(
+                base_endpoint="http://localhost:8080",
+                dashboard_id="exp_22_training_overview",
+                timeout_sec=5,
+            )
+            self.assertEqual(res["dashboard_id"], "exp_22_training_overview")
+            self.assertEqual(res["chart_id"], "loss_chart")
+            self.assertEqual(res["total_points"], 2)
 
 
 if __name__ == "__main__":

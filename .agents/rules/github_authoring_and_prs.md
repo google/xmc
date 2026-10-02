@@ -96,7 +96,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
   TAG=agy
   CONV=<conversation_id>
   ```
-- **Environment & URL Sanitization Policy**: PR descriptions and public commit messages must never expose specific development environment identifiers, private cluster names, internal domain hostnames (`*.example.com`), or test GCP project IDs. Use generalized phrasing (e.g. "Live GKE Development Environment via deployment script") for manual verification evidence.
+- **Environment & URL Sanitization Policy**: All tracked public markdown (`**/*.md`, including `docs/**`, `.agents/**`, root `README.md`/`INSTALL.md`/`CONTRIBUTING.md`, and component READMEs), PR descriptions, and public commit messages must never expose specific development environment identifiers, private cluster names, internal domain hostnames (`*.example.com`), test GCP project IDs, or live internal cluster/runner capacity sizing numbers (e.g., exact GKE node pool `minNodeCount`/`maxNodeCount` or ARC `minRunners`/`maxRunners` replica counts). Use generalized phrasing (e.g., "Live GKE Development Environment via deployment script" or generic example placeholders) in public docs and manual verification evidence.
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback Policy
@@ -109,8 +109,8 @@ This document defines standards and policy rules for AI agents acting as **Code 
 - **Staging Hygiene**: Ensure temporary commit message drafts (`commit_*_msg.txt`), scratch files, or un-formatted logs are not staged or tracked prior to committing.
 - **Incremental Work Checkpoints**: For multi-step tasks, push incremental WIP commits to a dedicated feature branch to prevent uncommitted work loss on session termination.
 
-## 6. GitHub Actions Workflow Security & Zizmor Compliance
-Whenever creating, modifying, or reviewing GitHub Actions workflow files under `.github/workflows/*.{yml,yaml}`:
+## 6. GitHub Actions Workflow & Composite Action Security (`zizmor` Compliance)
+Whenever creating, modifying, or reviewing GitHub Actions workflow files under `.github/workflows/*.{yml,yaml}` or composite actions under `.github/actions/*/action.{yml,yaml}`:
 
 1. **Pin Action References to Full Commit SHAs (`zizmor/unpinned-uses`)**:
    - NEVER use mutable version tags or branch names in `uses:` steps (e.g., `actions/checkout@v4`, `actions/github-script@v7`).
@@ -131,4 +131,11 @@ Whenever creating, modifying, or reviewing GitHub Actions workflow files under `
        # Required to grant PR write permissions for auto-approving ABSENCE.md updates on fork PRs.
        pull_request_target:
      ```
+
+3. **Post-Checkout Git Credentials & Ref Availability (`persist-credentials: false`)**:
+   - Because `actions/checkout` with `persist-credentials: false` strips the Git HTTP authorization header at the end of the `Checkout` step itself, subsequent workflow or composite action steps MUST NOT run unauthenticated `git fetch` or `git pull` commands (e.g., `git fetch origin ... || true`), which fail authentication on private repositories.
+   - Instead, either rely on refs already fetched during checkout by specifying `fetch-depth: 0` on `actions/checkout` (which fetches `+refs/heads/*:refs/remotes/origin/*`), or explicitly pass `GITHUB_TOKEN` via an `http.extraheader` configuration when live remote ref fetching is required.
+   - **Scope the auth header per invocation only**: Pass it via `git -c "http.extraheader=AUTHORIZATION: basic <base64(x-access-token:${GITHUB_TOKEN})>" fetch ...` or via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` environment variables. NEVER persist it with `git config http.extraheader ...`, which writes the token into `.git/config` for the rest of the job and re-introduces the credential persistence (`zizmor/artipacked`) that `persist-credentials: false` prevents. The header MUST use the `basic` scheme with base64-encoded `x-access-token:<token>`; raw or `Bearer` token values fail silently. Canonical examples: [`incremental-pr-approval.yml`](../../.github/workflows/incremental-pr-approval.yml) (`git -c`) and [`git-range-diff.js`](../../.github/scripts/git-range-diff.js) (`GIT_CONFIG_*`).
+   - **Fail loudly**: Fetches whose refs are consumed by later steps MUST NOT be wrapped in `|| true` (or otherwise have errors suppressed); a masked failure lets later steps run against stale or missing refs without any signal. Also avoid re-running `--depth=1` fetches after a `fetch-depth: 0` checkout, which re-shallows the fetched ref.
+
 

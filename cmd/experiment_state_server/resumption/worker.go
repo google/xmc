@@ -22,8 +22,8 @@ import (
 
 	"golang/uuid/uuid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -52,10 +52,16 @@ type Worker interface {
 	StartResumption(ctx context.Context, req Request) error
 }
 
+// Store provides the pause scheduling repositories and transactions used by the
+// resumption worker, so reads and transactional writes share a single backend.
+type Store interface {
+	storage.TransactionRunner
+	storage.PauseSchedulingStore
+}
+
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
-	pauseStateRepo        pausestate.Repository
-	pausedTaskRepo        pausedtask.Repository
+	store                 Store
 	taskQueue             TaskQueue
 	claimExtender         ClaimExtender
 	throttlePauseDuration time.Duration
@@ -63,14 +69,12 @@ type ResumptionWorker struct {
 
 // NewResumptionWorker creates a new ResumptionWorker with required dependencies.
 func NewResumptionWorker(
-	pauseStateRepo pausestate.Repository,
-	pausedTaskRepo pausedtask.Repository,
+	store Store,
 	taskQueue TaskQueue,
 	claimExtender ClaimExtender,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
-		pauseStateRepo:        pauseStateRepo,
-		pausedTaskRepo:        pausedTaskRepo,
+		store:                 store,
 		taskQueue:             taskQueue,
 		claimExtender:         claimExtender,
 		throttlePauseDuration: defaultThrottlePauseDuration,
@@ -94,32 +98,37 @@ func (w *ResumptionWorker) StartResumption(ctx context.Context, req Request) err
 }
 
 func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get pause state: %w", err)
-	}
-	if state.SchedulingPaused {
-		logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
-			"resumption_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
-	if state.ResumptionRunID != runID {
-		logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
-			"expected_run_id", state.ResumptionRunID,
-			"trigger_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
+	registered := false
+	err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		registered = false
+		state, err := tx.PauseState.Get(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get pause state: %w", err)
+		}
+		if state.SchedulingPaused {
+			logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
+				"resumption_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
+		if state.ResumptionRunID != runID {
+			logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
+				"expected_run_id", state.ResumptionRunID,
+				"trigger_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
 
-	state.ResumptionWorkerID = resumptionWorkerID
-	state.UpdatedAt = time.Now().UTC()
+		state.ResumptionWorkerID = resumptionWorkerID
+		state.UpdatedAt = time.Now().UTC()
 
-	// TODO(pausescheduling): Execute Get-and-Set atomically inside a Spanner ReadWriteTransaction once transactional repository support is introduced.
-	if err := w.pauseStateRepo.Set(ctx, state); err != nil {
-		return false, fmt.Errorf("failed to set pause state for worker registration: %w", err)
-	}
-	return true, nil
+		if err := tx.PauseState.Set(ctx, state); err != nil {
+			return fmt.Errorf("failed to set pause state for worker registration: %w", err)
+		}
+		registered = true
+		return nil
+	})
+	return registered, err
 }
 
 func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resumptionWorkerID string) error {
@@ -149,7 +158,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			continue
 		}
 
-		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
+		batch, err := w.store.PausedTasks().ListPending(ctx, batchSize)
 		if err != nil {
 			return fmt.Errorf("failed to list pending paused tasks: %w", err)
 		}
@@ -232,7 +241,7 @@ func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 }
 
 func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
+	state, err := w.store.PauseState().Get(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get pause state during batch iteration: %w", err)
 	}
@@ -313,7 +322,9 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 	}
 
 	if len(resolutions) > 0 {
-		if err := w.pausedTaskRepo.MarkProcessed(ctx, resolutions); err != nil {
+		if err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+			return tx.PausedTasks.MarkProcessed(ctx, resolutions)
+		}); err != nil {
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
 		}
 	}
