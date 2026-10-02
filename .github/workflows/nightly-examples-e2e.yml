@@ -69,6 +69,7 @@ jobs:
             args: ''
             verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
             timeout_minutes: 15
 
     env:

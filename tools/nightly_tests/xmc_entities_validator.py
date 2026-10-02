@@ -24,6 +24,9 @@ import json
 import logging
 import os
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any
@@ -706,3 +709,223 @@ def resolve_ui_base_url() -> str:
     if domain.startswith(("localhost", "127.0.0.1")):
         return f"http://{domain}"
     return f"https://{domain}"
+
+
+def _http_get(
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout_sec: int = 10,
+    service_name: str = "",
+) -> Any:
+    """Executes an HTTP GET request and returns decoded JSON or text."""
+    prefix = f"{service_name} " if service_name else ""
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            content = resp.read().decode("utf-8")
+            if not content.strip():
+                return None
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                return content.strip()
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="replace")
+        if "data engine is not configured" in body.lower():
+            raise AssertionError(
+                f"Dashboard Service returned 'data engine is not configured' for {url}: {body}"
+            ) from err
+        raise RuntimeError(f"{prefix}HTTP request failed ({err.code}) for {url}: {body}") from err
+
+
+def query_clickhouse_sql(
+    endpoint: str,
+    query: str,
+    database: str = "default",
+    timeout_sec: int = 10,
+) -> Any:
+    """Executes a SQL query against ClickHouse HTTP interface and returns parsed JSON."""
+    params = {"query": query, "database": database}
+    return _http_get(
+        f"{endpoint}/?{urllib.parse.urlencode(params)}",
+        timeout_sec=timeout_sec,
+        service_name="ClickHouse",
+    )
+
+
+def _verify_clickhouse_sql_metrics_once(
+    endpoint: str,
+    xid: str,
+    expected_metric_names: Sequence[str] | set[str] | None = None,
+    expected_min_rows: int = 1,
+) -> dict[str, Any] | None:
+    """Queries ClickHouse once and asserts row arrival and metric subset presence."""
+    numeric_xid = int(xid) if xid.isdigit() else 0
+    query = (
+        f"SELECT metric_name, count() as row_count, avg(metric_value) as avg_val, "
+        f"min(metric_value) as min_val, max(metric_value) as max_val "
+        f"FROM xmc_metrics WHERE xid = {numeric_xid} "
+        f"GROUP BY metric_name FORMAT JSON"
+    )
+    res = query_clickhouse_sql(endpoint, query)
+    if not res or "data" not in res or not res["data"]:
+        return None
+    rows = res["data"]
+    total_rows = sum(int(r.get("row_count", 0)) for r in rows)
+    if total_rows < expected_min_rows:
+        return None
+
+    metric_names = {r["metric_name"] for r in rows}
+    print(f"  [✓] ClickHouse Table 'xmc_metrics': {total_rows} total rows found for XID {xid}.")
+    for r in rows:
+        m_name = r["metric_name"]
+        c = r["row_count"]
+        avg_v = float(r["avg_val"])
+        print(f"    - Metric '{m_name}': {c} samples, avg={avg_v:.4f}")
+
+    if expected_metric_names:
+        expected_set = set(expected_metric_names)
+        if not expected_set.issubset(metric_names):
+            missing = expected_set - metric_names
+            raise AssertionError(
+                f"Expected metrics {sorted(missing)} not found in ClickHouse for XID {xid}. "
+                f"Found: {sorted(metric_names)}"
+            )
+
+    return {"total_rows": total_rows, "metrics": rows}
+
+
+def validate_clickhouse_metrics(
+    endpoint: str,
+    xid: str,
+    expected_metric_names: Sequence[str] | set[str] | None = None,
+    expected_min_rows: int = 1,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 3,
+    strict_required: bool = True,
+) -> dict[str, Any]:
+    """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
+    start_time = time.monotonic()
+    last_error: Exception | None = None
+    while time.monotonic() - start_time < timeout_sec:
+        try:
+            if res := _verify_clickhouse_sql_metrics_once(
+                endpoint,
+                xid,
+                expected_metric_names=expected_metric_names,
+                expected_min_rows=expected_min_rows,
+            ):
+                return res
+        except Exception as e:
+            last_error = e
+
+        time.sleep(poll_interval_sec)
+
+    if strict_required:
+        raise AssertionError(
+            f"ClickHouse SQL metrics validation timed out after {timeout_sec}s for XID {xid}. "
+            f"Last error: {last_error}"
+        )
+    print(f"  [i] ClickHouse check skipped/notice: {last_error}")
+    return {"total_rows": 0, "metrics": [], "skipped": True}
+
+
+def _build_dashboard_headers() -> dict[str, str]:
+    """Builds HTTP request headers for Dashboard Service REST calls."""
+    headers = {"Accept": "application/json", "User-Agent": "xmc-validator/1.0"}
+    if token := (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip():
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def query_dashboard_http(url: str, timeout_sec: int = 10) -> dict[str, Any]:
+    """Executes an HTTP GET request against the Dashboard Service REST gateway."""
+    return _http_get(
+        url,
+        headers=_build_dashboard_headers(),
+        timeout_sec=timeout_sec,
+        service_name="Dashboard",
+    )
+
+
+def _count_hydrated_chart_points(plots_data: list[dict[str, Any]]) -> int:
+    """Counts hydrated series points and summary KPI values across plotsData."""
+    total_points = 0
+    for plot in plots_data:
+        scatter = plot.get("scatterSeries") or plot.get("scatter_series") or {}
+        total_points += len(scatter.get("points") or [])
+        summary = plot.get("summaryData") or plot.get("summary_data") or {}
+        if summary.get("metricName") or summary.get("metric_name"):
+            total_points += 1
+    return total_points
+
+
+def _verify_dashboard_and_chart_data_once(
+    base_endpoint: str,
+    dashboard_id: str,
+    expected_chart_id: str | None = None,
+    min_hydrated_points: int = 1,
+) -> dict[str, Any]:
+    """Fetches dashboard metadata and GetChartData once and asserts hydrated points."""
+    clean_base = base_endpoint.rstrip("/").removesuffix("/v1/dashboards")
+    dash_data = query_dashboard_http(f"{clean_base}/v1/dashboards/{dashboard_id}")
+    chart_ids = dash_data.get("chartIds") or dash_data.get("chart_ids") or []
+    if not chart_ids:
+        raise AssertionError(f"Dashboard '{dashboard_id}' has no associated chartIds.")
+
+    chart_id = expected_chart_id or str(chart_ids[0]).split("/")[-1]
+
+    chart_data_url = f"{clean_base}/v1/dashboards/{dashboard_id}/charts/{chart_id}:getData"
+    chart_data = query_dashboard_http(chart_data_url)
+    plots_data = chart_data.get("plotsData") or chart_data.get("plots_data") or []
+    if not plots_data:
+        raise AssertionError(f"GetChartData for '{chart_id}' returned empty plotsData.")
+    total_points = _count_hydrated_chart_points(plots_data)
+    if total_points < min_hydrated_points:
+        raise AssertionError(
+            f"GetChartData for '{chart_id}' returned {total_points} hydrated data points, "
+            f"expected at least {min_hydrated_points}."
+        )
+    print(
+        f"  [✓] Verified Dashboard '{dashboard_id}' & GetChartData ('{chart_id}'): "
+        f"{len(plots_data)} plots, {total_points} hydrated data points."
+    )
+    return {"dashboard_id": dashboard_id, "chart_id": chart_id, "total_points": total_points}
+
+
+def validate_dashboard_chart_data(
+    base_endpoint: str,
+    dashboard_id: str,
+    expected_chart_id: str | None = None,
+    min_hydrated_points: int = 1,
+    timeout_sec: int = 20,
+    poll_interval_sec: int = 2,
+    strict_required: bool = True,
+) -> dict[str, Any]:
+    """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
+    start_time = time.monotonic()
+    last_error: Exception | None = None
+    while time.monotonic() - start_time < timeout_sec:
+        try:
+            return _verify_dashboard_and_chart_data_once(
+                base_endpoint=base_endpoint,
+                dashboard_id=dashboard_id,
+                expected_chart_id=expected_chart_id,
+                min_hydrated_points=min_hydrated_points,
+            )
+        except AssertionError as err:
+            if "data engine is not configured" in str(err).lower():
+                raise
+            last_error = err
+        except Exception as err:
+            last_error = err
+            if not strict_required:
+                print(f"  [i] Dashboard check skipped/notice: {err}")
+                return {"skipped": True}
+        time.sleep(poll_interval_sec)
+    if strict_required:
+        raise AssertionError(
+            f"Dashboard GetChartData verification failed after {timeout_sec}s for '{dashboard_id}': {last_error}"
+        )
+    print(f"  [i] Dashboard check skipped/notice: {last_error}")
+    return {"skipped": True}
