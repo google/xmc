@@ -21,12 +21,15 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -41,6 +44,10 @@ import (
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
 )
+
+// healthProbeBindAddress is the address on which the manager serves the
+// /healthz and /readyz probes.
+const healthProbeBindAddress = ":8080"
 
 // Manager encapsulates the controller-runtime Manager and its underlying dependencies and lifecycle.
 type Manager struct {
@@ -141,11 +148,43 @@ func metricsBindAddress(port int) string {
 	return fmt.Sprintf(":%d", port)
 }
 
-func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
+func newScheme() (*runtime.Scheme, error) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
-	v1alpha2.AddToScheme(scheme)
-	v1beta1.AddToScheme(scheme)
+	builder := runtime.NewSchemeBuilder(clientgoscheme.AddToScheme, v1alpha2.AddToScheme, v1beta1.AddToScheme)
+	if err := builder.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to build scheme: %w", err)
+	}
+	return scheme, nil
+}
+
+// newCacheOptions restricts the informer cache to the objects the reconcilers
+// actually need: XMC-managed JobSets and Pods that belong to a JobSet.
+func newCacheOptions() (cache.Options, error) {
+	hasJobSetName, err := labels.NewRequirement(v1alpha2.JobSetNameKey, selection.Exists, nil)
+	if err != nil {
+		return cache.Options{}, fmt.Errorf("failed to build pod label selector: %w", err)
+	}
+	return cache.Options{
+		ByObject: map[runtimeclient.Object]cache.ByObject{
+			&v1alpha2.JobSet{}: {
+				Label: labels.SelectorFromSet(labels.Set{constants.ManagedByLabel: constants.XmcLabelValue}),
+			},
+			&corev1.Pod{}: {
+				Label: labels.NewSelector().Add(*hasJobSetName),
+			},
+		},
+	}, nil
+}
+
+func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
+	scheme, err := newScheme()
+	if err != nil {
+		return nil, err
+	}
+	cacheOpts, err := newCacheOptions()
+	if err != nil {
+		return nil, err
+	}
 
 	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
@@ -157,26 +196,16 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsBindAddress(cfg.MetricsPort)},
-		HealthProbeBindAddress: ":8080",
-		Cache: cache.Options{
-			ByObject: map[runtimeclient.Object]cache.ByObject{
-				&v1alpha2.JobSet{}: {
-					Label: labels.SelectorFromSet(labels.Set{
-						constants.ManagedByLabel: constants.XmcLabelValue,
-					}),
-				},
-				&v1beta1.MultiKueueCluster{}: {},
-				&v1beta1.ResourceFlavor{}:    {},
-			},
-		},
+		HealthProbeBindAddress: healthProbeBindAddress,
+		Cache:                  cacheOpts,
+		Controller:             config.Controller{ReconciliationTimeout: cfg.ReconciliationTimeout},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to start manager: %w", err)
+		return nil, fmt.Errorf("unable to create manager: %w", err)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(ctx, &v1alpha2.JobSet{}, "metadata.name", func(rawObj runtimeclient.Object) []string {
-		jobset := rawObj.(*v1alpha2.JobSet)
-		return []string{jobset.Name}
+		return []string{rawObj.GetName()}
 	}); err != nil {
 		return nil, fmt.Errorf("unable to index JobSet metadata.name: %w", err)
 	}
