@@ -18,7 +18,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -220,16 +223,30 @@ func TestValidateDirectory_NestedChartRoots(t *testing.T) {
 		chartYAML    = "apiVersion: v2\nname: %s\nversion: 0.1.0\n"
 		validComp    = "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: %s }\nspec: { version: 0.1.0 }\n"
 		missingDepOf = "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: %s }\nspec: { version: 0.1.0, enabled: true, dependencies: [missing-dep] }\n"
+		// renderNestedA is a meta-chart template that renders nested chart a's Component itself.
+		renderNestedA = "{{ tpl (.Files.Get \"components/a/templates/component.yaml\") . }}\n"
+		// brokenTemplate fails to compile, so rendering its chart fails.
+		brokenTemplate = "{{ end }}\n"
 	)
 	// Charts render invalid or conflicting Components, so the diagnostics reveal which charts the
-	// walker rendered.
+	// walker rendered and which file each diagnostic is attributed to.
 	tree := t.TempDir()
 	writeTestTree(t, tree, map[string]string{
-		// Profile meta-chart with a nested component chart it renders itself.
+		// Profile meta-chart that renders its nested component chart a through .Files.
 		"profiles/profile/Chart.yaml":                            fmt.Sprintf(chartYAML, "profile"),
-		"profiles/profile/templates/components.yaml":             fmt.Sprintf(validComp, "a"),
+		"profiles/profile/templates/components.yaml":             renderNestedA,
 		"profiles/profile/components/a/Chart.yaml":               fmt.Sprintf(chartYAML, "a"),
 		"profiles/profile/components/a/templates/component.yaml": fmt.Sprintf(missingDepOf, "a"),
+		// Meta-chart that does not render its nested chart b.
+		"partial/Chart.yaml":                            fmt.Sprintf(chartYAML, "partial"),
+		"partial/templates/components.yaml":             fmt.Sprintf(validComp, "p"),
+		"partial/components/b/Chart.yaml":               fmt.Sprintf(chartYAML, "b"),
+		"partial/components/b/templates/component.yaml": fmt.Sprintf(missingDepOf, "b"),
+		// Meta-chart whose nested chart c has a template that the meta-chart never reads.
+		"broken/Chart.yaml":                             fmt.Sprintf(chartYAML, "broken"),
+		"broken/templates/components.yaml":              fmt.Sprintf(validComp, "w"),
+		"broken/components/c/Chart.yaml":                fmt.Sprintf(chartYAML, "c"),
+		"broken/components/c/templates/deployment.yaml": brokenTemplate,
 		// Chart with a vendored Helm subchart under charts/.
 		"vendored/Chart.yaml":                          fmt.Sprintf(chartYAML, "vendored"),
 		"vendored/templates/components.yaml":           fmt.Sprintf(validComp, "v"),
@@ -242,17 +259,23 @@ func TestValidateDirectory_NestedChartRoots(t *testing.T) {
 		"catalog/b/templates/component.yaml": fmt.Sprintf(validComp, "dup"),
 	})
 
+	const (
+		outerA  = "MISSING_DEPENDENCY profiles/profile/templates/components.yaml"
+		nestedA = "MISSING_DEPENDENCY profiles/profile/components/a/templates/component.yaml"
+	)
 	tests := []struct {
-		name     string
-		lintDir  string
-		wantRule string // Empty means the directory must lint with zero diagnostics.
+		name    string
+		lintDir string
+		want    []string // Every diagnostic as "<rule> <file relative to tree>", sorted.
 	}{
-		{name: "outer chart root skips nested chart", lintDir: "profiles/profile"},
-		{name: "directory above outer chart root skips nested chart", lintDir: "profiles"},
-		{name: "nested chart linted on its own is rendered", lintDir: "profiles/profile/components/a", wantRule: "MISSING_DEPENDENCY"},
-		{name: "chart-free directory renders charts whose parent is outside the walk", lintDir: "profiles/profile/components", wantRule: "MISSING_DEPENDENCY"},
-		{name: "vendored charts/ subchart is still rendered", lintDir: "vendored", wantRule: "MISSING_DEPENDENCY"},
-		{name: "sibling charts under chart-free directory are both rendered", lintDir: "catalog", wantRule: "DUPLICATE_COMPONENT_NAME"},
+		{name: "outer chart reports rendered nested Component once", lintDir: "profiles/profile", want: []string{outerA}},
+		{name: "directory above outer chart reports rendered nested Component once", lintDir: "profiles", want: []string{outerA}},
+		{name: "nested chart linted on its own", lintDir: "profiles/profile/components/a", want: []string{nestedA}},
+		{name: "chart-free directory renders charts whose parent is outside the walk", lintDir: "profiles/profile/components", want: []string{nestedA}},
+		{name: "nested Component not rendered by outer chart is still linted", lintDir: "partial", want: []string{"MISSING_DEPENDENCY partial/components/b/templates/component.yaml"}},
+		{name: "nested template error surfaces", lintDir: "broken", want: []string{"YAML_SYNTAX broken/components/c/templates/deployment.yaml"}},
+		{name: "vendored charts/ subchart is rendered", lintDir: "vendored", want: []string{"MISSING_DEPENDENCY vendored/charts/sub/templates/component.yaml"}},
+		{name: "sibling charts under chart-free directory are both rendered", lintDir: "catalog", want: []string{"DUPLICATE_COMPONENT_NAME catalog/b/templates/component.yaml"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -261,15 +284,26 @@ func TestValidateDirectory_NestedChartRoots(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ValidateDirectory(%q) error: %v", tt.lintDir, err)
 			}
-			if tt.wantRule == "" && len(res.Diagnostics) != 0 {
-				t.Fatalf("ValidateDirectory(%q) diagnostics = %+v, want none", tt.lintDir, res.Diagnostics)
+			if diff := cmp.Diff(tt.want, diagnosticKeys(t, tree, res)); diff != "" {
+				t.Errorf("ValidateDirectory(%q) diagnostics mismatch (-want +got):\n%s\nfull diagnostics: %+v", tt.lintDir, diff, res.Diagnostics)
 			}
-			if tt.wantRule != "" && res.Valid {
-				t.Fatalf("ValidateDirectory(%q) valid = true, want %s error", tt.lintDir, tt.wantRule)
-			}
-			assertDiagnosticRule(t, res, tt.wantRule)
 		})
 	}
+}
+
+// diagnosticKeys returns every diagnostic in res as "<rule> <file relative to root>", sorted.
+func diagnosticKeys(t *testing.T, root string, res *linter.ValidationResult) []string {
+	t.Helper()
+	keys := make([]string, 0, len(res.Diagnostics))
+	for _, d := range res.Diagnostics {
+		rel, err := filepath.Rel(root, d.File)
+		if err != nil {
+			t.Fatalf("filepath.Rel(%q, %q) error: %v", root, d.File, err)
+		}
+		keys = append(keys, d.Rule+" "+filepath.ToSlash(rel))
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // writeTestTree writes files (keyed by slash-separated path relative to root), creating parent directories.
