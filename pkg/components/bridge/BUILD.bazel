@@ -35,6 +35,7 @@ go_library(
         "sdk_helm_action_runner.go",
         "spec_parser.go",
         "status_detector.go",
+        "wrapper_reconciler.go",
     ],
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
@@ -83,6 +84,7 @@ go_test(
         "reconciler_test.go",
         "sdk_helm_action_runner_test.go",
         "spec_parser_test.go",
+        "wrapper_reconciler_test.go",
     ],
     data = [
         "//deploy/helm:chart",
