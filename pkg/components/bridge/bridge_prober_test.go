@@ -108,6 +108,43 @@ func TestBridgeProber(t *testing.T) {
 	}
 }
 
+func TestBridgeProber_ProbeHealthMessageFallbacks(t *testing.T) {
+	const endpoint = "http://my-crd.xmc:8080"
+	detector := NewFakeStatusDetector()
+	detector.SetStatus("xmc/my-crd", &ResourceStatus{Found: true, Ready: true, Endpoint: endpoint, Message: "CR is ready"})
+	crSpec := &componentspb.ComponentSpec{
+		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{CrdGroup: "custom.io", CrdVersion: "v1", CrdKind: "Custom", TargetName: "my-crd", TargetNamespace: "xmc"},
+	}
+	operatorlessSpec := &componentspb.ComponentSpec{
+		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		Parameters: map[string]string{"endpoint": endpoint},
+	}
+
+	tests := []struct {
+		name     string
+		spec     *componentspb.ComponentSpec
+		probeRes *HealthProbeResult
+		wantOK   bool
+		wantMsg  string
+	}{
+		{name: "CR unhealthy without message", spec: crSpec, probeRes: &HealthProbeResult{}, wantMsg: "health probe failed"},
+		{name: "CR unhealthy with message", spec: crSpec, probeRes: &HealthProbeResult{Message: "HTTP 503"}, wantMsg: "HTTP 503"},
+		{name: "CR healthy without message", spec: crSpec, probeRes: &HealthProbeResult{Healthy: true}, wantOK: true, wantMsg: "CR is ready"},
+		{name: "operator-less unhealthy without message", spec: operatorlessSpec, probeRes: &HealthProbeResult{}, wantMsg: "health probe failed"},
+		{name: "operator-less healthy without message", spec: operatorlessSpec, probeRes: &HealthProbeResult{Healthy: true}, wantOK: true, wantMsg: "Component healthy"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bp := NewBridgeProber(detector, &mockProberDirect{probeRes: tt.probeRes}, time.Second)
+			ok, msg := bp.ProbeHealth(context.Background(), tt.spec, "xmc")
+			if ok != tt.wantOK || msg != tt.wantMsg {
+				t.Errorf("ProbeHealth() = (%v, %q), want (%v, %q)", ok, msg, tt.wantOK, tt.wantMsg)
+			}
+		})
+	}
+}
+
 type mockDetector struct {
 	status *ResourceStatus
 	err    error
