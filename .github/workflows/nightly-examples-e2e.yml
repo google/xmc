@@ -85,6 +85,8 @@ jobs:
           build_and_push metrics-job            metrics_job            .
           build_and_push chart-artifact-job     chart_artifact_job     .
           build_and_push metrics-dashboard-job  metrics_dashboard_job  .
+          build_and_push programmatic-xprof-job managed_xprof_artifact_job
+          build_and_push per-job-node-selector  per_job_node_selector
 
   run-and-verify-examples:
     name: 'Run & Verify: ${{ matrix.example.name }}'
@@ -148,7 +150,7 @@ jobs:
             entrypoint: 'launch.py'
             args: '--queue_name=${QUEUE_NAME}'
             verify_module: 'tools.nightly_tests.managed_xprof_artifact_job_verify'
-            expected_queue: 'cpu-queue'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'chart_artifact_job'
             name: 'Chart Artifact Job'
@@ -183,7 +185,7 @@ jobs:
             entrypoint: 'launch.py'
             args: ''
             verify_module: 'tools.nightly_tests.per_job_node_selector_verify'
-            expected_queue: 'cpu-queue'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'pathways_job'
             name: 'Pathways JobSet Job'
@@ -191,7 +193,7 @@ jobs:
             entrypoint: 'launch.py'
             args: ''
             verify_module: 'tools.nightly_tests.pathways_job_verify'
-            expected_queue: 'cpu-queue'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'xdash_dashboard'
             name: 'xDash Dashboard Builder'
@@ -209,7 +211,7 @@ jobs:
       XMC_DOMAIN: 'xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       XMANAGER_ENDPOINT: 'grpc.xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}:443'
       XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
-      XMC_DASHBOARD_ENDPOINT: 'localhost:8080'
+      XMC_DASHBOARD_ENDPOINT: 'localhost:50051'
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
       QUEUE_NAME: ${{ inputs.queue_name || 'cpu-queue' }}
