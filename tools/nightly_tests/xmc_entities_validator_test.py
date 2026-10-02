@@ -16,7 +16,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 import unittest
+import urllib.error
+import urllib.request
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
@@ -965,6 +969,228 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 poll_interval_sec=0,
             )
         self.assertIn("Found URL artifact 'artifacts/99' with empty URL field", str(ctx.exception))
+
+    # =========================================================================
+    # Phase 2: validate_dashboard Tests
+    # =========================================================================
+
+    def test_validate_dashboard_success_with_charts(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/example_vcc",
+            "title": "VCC Comparative Dashboard",
+            "chart_ids": ["chart_1", "chart_2"],
+        }
+        mock_chart_1 = {"name": "charts/chart_1", "title": "Loss vs Steps"}
+        mock_chart_2 = {"name": "charts/chart_2", "title": "Accuracy vs Steps"}
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            url = req.full_url
+            if "/v1/dashboards/example_vcc" in url:
+                resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            if "/v1/charts/chart_1" in url:
+                resp = io.BytesIO(json.dumps(mock_chart_1).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            if "/v1/charts/chart_2" in url:
+                resp = io.BytesIO(json.dumps(mock_chart_2).encode("utf-8"))
+                resp.status = 200  # type: ignore
+                return resp
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)  # type: ignore
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=[
+                    {
+                        "dashboard_id": "example_vcc",
+                        "expected_title": "VCC Comparative",
+                        "expected_chart_ids": ["chart_1", "chart_2"],
+                    }
+                ],
+                timeout_sec=5,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "example_vcc")
+            self.assertEqual(results[0]["title"], "VCC Comparative Dashboard")
+            self.assertEqual(len(results[0]["charts"]), 2)
+
+    def test_validate_dashboard_string_identifier(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/simple_dash",
+            "title": "Simple Dashboard",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="http://dashboard-service:8080",
+                expected_dashboards=["simple_dash"],
+                timeout_sec=5,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "simple_dash")
+
+    def test_validate_dashboard_title_mismatch_fails(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Production Overview",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {"dashboard_id": "dash_1", "expected_title": "Experimental"}
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn(
+                "title mismatch: expected 'Experimental', found 'Production Overview'",
+                str(ctx.exception),
+            )
+
+    def test_validate_dashboard_missing_expected_chart_ids(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Dashboard",
+            "chart_ids": ["chart_a"],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {
+                            "dashboard_id": "dash_1",
+                            "expected_chart_ids": ["chart_a", "chart_b"],
+                        }
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("missing expected chart IDs: ['chart_b']", str(ctx.exception))
+
+    def test_validate_dashboard_non_200_status(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_dashboard_network_error_timeout(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.URLError("Connection refused")
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_dashboard_retry_on_assertion_error_success(self) -> None:
+        attempts = 0
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                # First attempt: incomplete title
+                data = {"name": "dashboards/dash_1", "title": "Pending...", "chart_ids": []}
+            else:
+                # Second attempt: ready title
+                data = {"name": "dashboards/dash_1", "title": "Ready Title", "chart_ids": []}
+            resp = io.BytesIO(json.dumps(data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=[{"dashboard_id": "dash_1", "expected_title": "Ready Title"}],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["title"], "Ready Title")
+            self.assertEqual(attempts, 2)
+
+    def test_validate_dashboard_retry_on_json_decode_error_success(self) -> None:
+        attempts = 0
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                # First attempt: transient HTML 502/error text
+                resp = io.BytesIO(b"<html>502 Bad Gateway</html>")
+            else:
+                # Second attempt: valid JSON response
+                resp = io.BytesIO(
+                    json.dumps(
+                        {"name": "dashboards/dash_1", "title": "Ready", "chart_ids": []}
+                    ).encode("utf-8")
+                )
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=["dash_1"],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["title"], "Ready")
+            self.assertEqual(attempts, 2)
+
+    def test_validate_dashboard_json_decode_error_timeout(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(b"Invalid Non-JSON response")
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
 
 
 if __name__ == "__main__":

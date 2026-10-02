@@ -823,6 +823,142 @@ def validate_artifacts(
         time.sleep(poll_interval_sec)
 
 
+def _normalize_expected_dashboards(
+    expected_dashboards: Sequence[dict[str, Any] | str],
+) -> list[dict[str, Any]]:
+    """Normalizes expected dashboard specifications to standard dictionary format."""
+    normalized: list[dict[str, Any]] = []
+    for item in expected_dashboards:
+        if isinstance(item, str):
+            normalized.append({"dashboard_id": item})
+        else:
+            normalized.append(dict(item))
+    return normalized
+
+
+def _fetch_json_from_url(url: str, timeout: int = 10) -> dict[str, Any]:
+    """Performs HTTP GET request with standard headers and parses JSON response."""
+    headers = {"Accept": "application/json", "User-Agent": "xmc-validator/1.0"}
+    token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _validate_dashboard_charts(base_endpoint: str, chart_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetches and verifies individual chart definitions referenced by a dashboard."""
+    verified_charts: list[dict[str, Any]] = []
+    for cid in chart_ids:
+        chart_slug = cid.split("/", 1)[1] if cid.startswith("charts/") else cid
+        chart_url = f"{base_endpoint}/v1/charts/{chart_slug}"
+        verified_charts.append(_fetch_json_from_url(chart_url))
+    return verified_charts
+
+
+def _extract_dashboard_id(exp_dash: dict[str, Any]) -> str:
+    """Extracts and normalizes the target dashboard ID."""
+    raw_id = exp_dash.get("dashboard_id") or exp_dash.get("id") or exp_dash.get("name", "")
+    dash_id = raw_id.split("/", 1)[1] if raw_id.startswith("dashboards/") else raw_id
+    if not dash_id:
+        raise AssertionError("Expected dashboard specification missing dashboard_id.")
+    return dash_id
+
+
+def _assert_dashboard_metadata(
+    dash_id: str, dash_data: dict[str, Any], exp_dash: dict[str, Any]
+) -> list[str]:
+    """Asserts title pattern and expected chart IDs for fetched dashboard data."""
+    dash_title = dash_data.get("title", "")
+    if "expected_title" in exp_dash and exp_dash["expected_title"] not in dash_title:
+        raise AssertionError(
+            f"Dashboard '{dash_id}' title mismatch: "
+            f"expected '{exp_dash['expected_title']}', found '{dash_title}'."
+        )
+    chart_ids = dash_data.get("chart_ids") or dash_data.get("chartIds") or []
+    if "expected_chart_ids" in exp_dash:
+        exp_cids = exp_dash["expected_chart_ids"]
+        missing = set(exp_cids) - set(chart_ids)
+        if missing:
+            raise AssertionError(
+                f"Dashboard '{dash_id}' missing expected chart IDs: {sorted(missing)}. "
+                f"Found: {sorted(chart_ids)}."
+            )
+    return chart_ids
+
+
+def _validate_single_dashboard(base_endpoint: str, exp_dash: dict[str, Any]) -> dict[str, Any]:
+    """Fetches and validates metadata and charts for a single dashboard."""
+    dash_id = _extract_dashboard_id(exp_dash)
+    dash_url = f"{base_endpoint}/v1/dashboards/{dash_id}"
+    dash_data = _fetch_json_from_url(dash_url)
+    chart_ids = _assert_dashboard_metadata(dash_id, dash_data, exp_dash)
+    verified_charts = _validate_dashboard_charts(base_endpoint, chart_ids)
+    return {
+        "id": dash_id,
+        "dashboard_id": dash_id,
+        "title": dash_data.get("title", ""),
+        "chart_ids": chart_ids,
+        "charts": verified_charts,
+        "raw_response": dash_data,
+    }
+
+
+def _normalize_dashboard_endpoint(endpoint: str) -> str:
+    """Ensures dashboard endpoint has valid scheme and no trailing slash."""
+    ep = endpoint.strip().rstrip("/")
+    if not ep.startswith(("http://", "https://")):
+        return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
+    return ep
+
+
+def _poll_dashboard_iteration(
+    base_endpoint: str,
+    norm_dashboards: list[dict[str, Any]],
+    elapsed: float,
+    timeout_sec: int,
+) -> list[dict[str, Any]] | None:
+    """Attempts to validate all dashboards for a single poll step."""
+    try:
+        return [_validate_single_dashboard(base_endpoint, d) for d in norm_dashboards]
+    except AssertionError as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Dashboard assertions not yet satisfied: %s. Retrying...", e)
+        return None
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as e:
+        if elapsed >= timeout_sec:
+            raise TimeoutError(f"Dashboard verification failed after {int(elapsed)}s: {e}") from e
+        logging.warning("Transient error fetching dashboard: %s. Retrying...", e)
+        return None
+
+
+def validate_dashboard(
+    endpoint: str = "",
+    expected_dashboards: Sequence[dict[str, Any] | str] | None = None,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 2,
+    dashboard_endpoint: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetches and validates dashboard definitions and referenced charts via REST API."""
+    target_ep = dashboard_endpoint or endpoint
+    if not target_ep:
+        raise ValueError("endpoint or dashboard_endpoint must be specified.")
+    if expected_dashboards is None:
+        expected_dashboards = []
+    base_endpoint = _normalize_dashboard_endpoint(target_ep)
+    norm_dashboards = _normalize_expected_dashboards(expected_dashboards)
+    start_time = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - start_time
+        res = _poll_dashboard_iteration(base_endpoint, norm_dashboards, elapsed, timeout_sec)
+        if res is not None:
+            return res
+        time.sleep(poll_interval_sec)
+
+
 def resolve_ui_base_url() -> str:
     """Resolves the XMC UI origin URL from environment variables."""
     if ui_url := os.environ.get("XMANAGER_UI_URL", "").strip():
