@@ -58,6 +58,7 @@ compat_go_library(
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/config",
         "@io_k8s_sigs_controller_runtime//pkg/healthz",
+        "@io_k8s_sigs_controller_runtime//pkg/manager",
         "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
@@ -80,6 +81,7 @@ compat_go_test(
         "@io_k8s_apimachinery//pkg/version",
         "@io_k8s_client_go//discovery",
         "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//kubernetes/fake",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
     ],
 )

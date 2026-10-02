@@ -40,7 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -581,10 +580,6 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	if r == nil {
 		return errors.New("reconciler cannot be nil")
 	}
-	if r.Batcher == nil {
-		return errors.New("batcher is not initialized")
-	}
-
 	logging.Debug(ctx, "Setting up jobset reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
 	err := ctrl.NewControllerManagedBy(mgr).
 		Named("jobset").
@@ -598,10 +593,6 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		Complete(r)
 	if err != nil {
 		return fmt.Errorf("failed to create jobset controller: %w", err)
-	}
-
-	if err := mgr.Add(manager.RunnableFunc(r.Batcher.BatchProcessor)); err != nil {
-		return fmt.Errorf("failed to add batch processor runnable: %w", err)
 	}
 	return nil
 }

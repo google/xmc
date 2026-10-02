@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
@@ -56,12 +57,12 @@ type controllerRegistrationParams struct {
 	clusterName string
 }
 
-func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, *kueuesync.Reconciler, error) {
+func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, error) {
 	if p.mgr == nil {
-		return nil, nil, errors.New("manager cannot be nil")
+		return nil, errors.New("manager cannot be nil")
 	}
 	if p.k8sClient == nil {
-		return nil, nil, errors.New("k8sClient cannot be nil")
+		return nil, errors.New("k8sClient cannot be nil")
 	}
 
 	cqReconciler, err := clusterqueue.NewReconciler(clusterqueue.Params{
@@ -70,10 +71,10 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		Cache:  p.cqCache,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create clusterqueue reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create clusterqueue reconciler: %w", err)
 	}
 	if err := cqReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
+		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
 	batcher := shared.NewUpdateBatcher(
@@ -98,10 +99,10 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		MLRunClient:              p.mlRunClient,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
 	}
 	if err := jobsetReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup jobset controller: %w", err)
+		return nil, fmt.Errorf("unable to setup jobset controller: %w", err)
 	}
 
 	workloadReconciler, err := workload.NewReconciler(workload.Params{
@@ -116,12 +117,21 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		MaxConcurrentReconciles: p.cfg.MaxConcurrentReconciles,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create workload reconciler: %w", err)
+		return nil, fmt.Errorf("failed to create workload reconciler: %w", err)
 	}
 	if err := workloadReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup workload controller: %w", err)
+		return nil, fmt.Errorf("unable to setup workload controller: %w", err)
 	}
 
+	if err := addBackgroundRunnables(p, batcher); err != nil {
+		return nil, err
+	}
+	return batcher, nil
+}
+
+// addBackgroundRunnables registers the non-controller background loops with
+// the manager so they start and stop together with the controllers.
+func addBackgroundRunnables(p controllerRegistrationParams, batcher *shared.UpdateBatcher) error {
 	kueueSyncReconciler, err := kueuesync.NewReconciler(kueuesync.Params{
 		Client:                           p.mgr.GetClient(),
 		Clientset:                        p.k8sClient.Clientset(),
@@ -132,8 +142,18 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		MaxConcurrentKueueSyncReconciles: p.cfg.MaxConcurrentKueueSyncReconciles,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create kueuesync reconciler: %w", err)
+		return fmt.Errorf("failed to create kueuesync reconciler: %w", err)
 	}
 
-	return batcher, kueueSyncReconciler, nil
+	if err := p.mgr.Add(manager.RunnableFunc(batcher.BatchProcessor)); err != nil {
+		return fmt.Errorf("unable to add update batcher runnable: %w", err)
+	}
+	kueueSync := func(ctx context.Context) error {
+		kueueSyncReconciler.RunPositionInQueueSync(ctx)
+		return nil
+	}
+	if err := p.mgr.Add(manager.RunnableFunc(kueueSync)); err != nil {
+		return fmt.Errorf("unable to add kueuesync runnable: %w", err)
+	}
+	return nil
 }
