@@ -93,6 +93,11 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 // active dependents exist (the workload keeps running; re-checked every deactivationRecheckInterval).
 // Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
 // component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
+//
+// TODO(vluk): ReconcileComponent calls applyIntent before reconcileDisabled on every pass, which
+// resets CMS state to PENDING_RECONCILIATION even when already disabled at this generation or
+// throttled by recentDeactivationBlock, and fails on unregistered dependencies (unlike
+// registerIntent on the enabled path). Skip redundant intent writes and tolerate unregistered deps.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if msg, ok := recentDeactivationBlock(in); ok {
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
@@ -161,6 +166,8 @@ func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in Reconcile
 		cond.LastTransitionTime = time.Now().UTC()
 	}
 	if wasTornDown(in) {
+		// TODO(vluk): this branch returns without updating CMS observed generation/state, leaving
+		// CMS stale after applyIntent mutated it. Report the DeactivationIncomplete outcome to CMS.
 		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
 		return res, nil
 	}
@@ -208,6 +215,12 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 
 // wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
 // gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated.
+//
+// TODO(vluk): pre-actuation failures (IntentApplicationFailed, CMSDeactivationFailed) and
+// DeactivationIncomplete (already torn down) are treated as active. Combined with
+// HydrateComponentState(ctx, ref, 0, true) in deleteDisabledHelmComponent, this overrides an
+// inactive ConfigMap record and forces redundant Delete1PComponent calls. Exclude those reasons
+// and avoid forcing active state when the ConfigMap records the component as inactive.
 func wasComponentPreviouslyActive(existing []Condition) bool {
 	ready := findCondition(existing, ConditionTypeReady)
 	if ready == nil {

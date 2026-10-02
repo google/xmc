@@ -80,6 +80,8 @@ type mockProber struct {
 	hasProbeRes bool
 }
 
+// TODO(vluk): resStatus and status overlap, and the second resStatus check below is unreachable.
+// Consolidate them into a single field; summarizeGate also lacks a nil guard on res.
 func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
 	if m == nil {
 		return &ResourceStatus{Found: true, Ready: true}, nil
