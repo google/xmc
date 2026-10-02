@@ -51,7 +51,9 @@ batcher is what keeps Spanner write volume proportional to *experiments per tick
 *Kubernetes events per second*.
 
 Concurrency is bounded per controller by `max_concurrent_reconciles` (default 10), and Kubernetes
-API pressure by `kube_api_qps` / `kube_api_burst` (100 / 200).
+API pressure by `kube_api_qps` / `kube_api_burst` (100 / 200). Each `Reconcile` call's context is
+bounded by `reconciliation_timeout` (default 2 minutes), so a hung API or Spanner call cannot pin a
+worker indefinitely.
 
 > [!NOTE]
 > Every reconciler tunable named in this document is a `snake_case` name — a flag on the binary

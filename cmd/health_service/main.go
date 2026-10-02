@@ -263,7 +263,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 }
 
-// TODO(pausescheduling): Replace with real Spanner-backed repository implementation once available.
+// TODO(pausescheduling): Replace the fake with lazily-initialized Spanner storage (must not fail startup when
+// Spanner is unavailable, similar to LazySpannerHealthClient) and run Pause/Resume state changes via RunInTransaction.
 // TODO(pausescheduling): Consider introducing a lazy Redis broadcast publisher wrapper (similar to LazySpannerHealthClient)
 // in a follow-up PR to allow deferred connection initialization and reconnection handling without failing startup.
 func initPauseScheduler(ctx context.Context, cfg *Config, taskQueuePublisher redisclient.Publisher) PauseScheduler {

@@ -26,6 +26,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -193,7 +194,7 @@ func TestResumptionWorker_Registration(t *testing.T) {
 			_ = pauseRepo.Set(ctx, tt.initialState)
 			taskRepo := pausedtask.NewFake()
 			publisher := &mockPublisher{}
-			worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+			worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 
 			if err := worker.StartResumption(ctx, Request{ResumptionRunID: tt.triggerRunID}); err != nil {
 				t.Fatalf("StartResumption() unexpected error: %v", err)
@@ -265,7 +266,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		Priority:      90,
 	})
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -418,7 +419,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 		WorkUnit:      wuValid,
 	})
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-filter", BatchSize: 10}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -476,7 +477,7 @@ func TestResumptionWorker_MultipleBatches(t *testing.T) {
 		))
 	}
 
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 	if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-multi", BatchSize: 2}); err != nil {
 		t.Fatalf("StartResumption() unexpected error: %v", err)
 	}
@@ -511,7 +512,7 @@ func TestResumptionWorker_ExtendsClaimAfterEachBatch(t *testing.T) {
 			claimExtender := redisclient.NewFakeClient()
 			claimExtender.ExtendClaimError = tt.extendErr
 
-			worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), claimExtender)
+			worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), claimExtender)
 			if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 1}); err != nil {
 				t.Fatalf("StartResumption() unexpected error: %v", err)
 			}
@@ -532,6 +533,7 @@ func TestResumptionWorker_Errors(t *testing.T) {
 	tests := []struct {
 		name       string
 		cancelCtx  bool
+		txErr      error
 		getErr     error
 		setErr     error
 		listErr    error
@@ -539,6 +541,7 @@ func TestResumptionWorker_Errors(t *testing.T) {
 		markErr    error
 		wantErr    error
 	}{
+		{name: "registration transaction fails", txErr: testErr, wantErr: testErr},
 		{name: "pause state Get fails", getErr: testErr, wantErr: testErr},
 		{name: "pause state Set fails", setErr: testErr, wantErr: testErr},
 		{name: "context canceled before batch loop", cancelCtx: true, wantErr: context.Canceled},
@@ -564,7 +567,8 @@ func TestResumptionWorker_Errors(t *testing.T) {
 			taskRepo := &errPausedTaskRepo{Fake: baseTaskRepo, listPendingErr: tt.listErr, markProcessedErr: tt.markErr}
 			publisher := &mockPublisher{err: tt.publishErr}
 
-			worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+			store := &storage.MockStorage{RunInTransactionErr: tt.txErr, PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}
+			worker := NewResumptionWorker(store, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 			err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("StartResumption() error = %v, want %v", err, tt.wantErr)
@@ -585,7 +589,7 @@ func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 
 	publishErr := errors.New("redis publish failure")
 	publisher := &mockPublisher{err: publishErr, failAfter: 1}
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 
 	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 10})
 	if !errors.Is(err, publishErr) {
@@ -646,7 +650,7 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 				},
 			}
 			publisher := &mockPublisher{}
-			worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+			worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 
 			if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-1", BatchSize: 2}); err != nil {
 				t.Fatalf("StartResumption() unexpected error: %v", err)
@@ -681,7 +685,7 @@ func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
 	})
 
 	publisher := &mockPublisher{}
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 
 	err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-invalid", BatchSize: 10})
 	if err == nil {
@@ -753,7 +757,7 @@ func newThrottleTestWorker(t *testing.T, backlogCalc *mockBacklogCalculator) (*R
 	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 
 	publisher := &mockPublisher{}
-	worker := NewResumptionWorker(pauseRepo, taskRepo, newMockTaskQueue(publisher, backlogCalc), redisclient.NewFakeClient())
+	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, backlogCalc), redisclient.NewFakeClient())
 	worker.throttlePauseDuration = time.Millisecond
 	return worker, publisher, pauseRepo
 }

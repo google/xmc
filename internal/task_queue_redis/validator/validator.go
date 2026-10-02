@@ -88,6 +88,7 @@ func main() {
 		{"TestLoadBalancing", testLoadBalancing, 0, 15, 0},
 		{"TestTimeout", testTimeout, 0, maxFailedAttempts + 1, 1},
 		{"TestBatchRead", testBatchRead, 0, 5, 0},
+		{"TestExtendClaim", testExtendClaim, 0, 1, 0},
 	}
 
 	allPassed := true
@@ -547,5 +548,62 @@ func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, pu
 		return stats, errors.Join(validationErrors...)
 	}
 
+	return stats, nil
+}
+
+func testExtendClaim(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
+	logging.Info(ctx, "Testing claim extension beyond process and abandoned message timeouts...")
+	// Setup: the handler runs longer than both processTimeout and abandonedMessageTimeout,
+	// but extends its claim more often than processTimeout.
+	const extensions = 4
+	extendInterval := processTimeout * 7 / 10
+	var mu sync.Mutex
+	runs := 0
+	var extendErrs []error
+	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		for i := 0; i < extensions; i++ {
+			time.Sleep(extendInterval)
+			if err := consumer.ExtendClaim(ctx); err != nil {
+				mu.Lock()
+				extendErrs = append(extendErrs, err)
+				mu.Unlock()
+			}
+		}
+		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
+	})
+
+	cleanupHandle := runWorkerInBackground(ctx, "cleanup-1", consumer.RunCleanup)
+	workerHandle := runWorkerInBackground(ctx, "worker-1", consumer.StartWorker)
+
+	logging.Info(ctx, "Publishing message 'extend'...")
+	publisher.AddMessage(ctx, "extend", "0")
+
+	// Assertion: without extensions the worker would time out and the cleanup worker would
+	// reclaim the message, re-queueing it and running the handler again.
+	logging.Info(ctx, "Waiting for long-running message to be ACKed...")
+	time.Sleep(8 * time.Second)
+
+	pending, _ := consumer.FetchPendingCount(ctx)
+	streamLen, _ := consumer.FetchStreamLen(ctx, streamName)
+	dlqLen, _ := consumer.FetchStreamLen(ctx, dlqStreamName)
+
+	workerHandle.cancel()
+	cleanupHandle.cancel()
+	workerHandle.wg.Wait()
+	cleanupHandle.wg.Wait()
+
+	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
+	mu.Lock()
+	defer mu.Unlock()
+	validationErrors := extendErrs
+	if runs != 1 {
+		validationErrors = append(validationErrors, fmt.Errorf("handler ran %d times, expected 1", runs))
+	}
+	if len(validationErrors) > 0 {
+		return stats, errors.Join(validationErrors...)
+	}
 	return stats, nil
 }

@@ -28,5 +28,7 @@ go_library(
         "//internal/compat/field_mask",
         "//internal/compat/longrunning",
         "//internal/compat/proto",
+        "//internal/storage/spanner/pausedtask",
+        "//internal/storage/spanner/pausestate",
     ],
 )

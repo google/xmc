@@ -19,6 +19,9 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "bridge",
     srcs = [
+        "bridge_prober.go",
+        "cms_client.go",
+        "conditions.go",
         "coordinates.go",
         "dependency_readiness.go",
         "fake_health_prober.go",
@@ -28,9 +31,12 @@ go_library(
         "helm_builder.go",
         "helm_manager.go",
         "k8s_status_detector.go",
+        "lifecycle.go",
         "reconciler.go",
         "sdk_helm_action_runner.go",
+        "spec_parser.go",
         "status_detector.go",
+        "wrapper_reconciler.go",
     ],
     importpath = "xmanager_cloud/pkg/components/bridge",
     deps = [
@@ -65,6 +71,9 @@ go_library(
 go_test(
     name = "bridge_test",
     srcs = [
+        "bridge_prober_test.go",
+        "cms_client_test.go",
+        "conditions_test.go",
         "coordinates_test.go",
         "dependency_readiness_test.go",
         "fake_helm_manager_test.go",
@@ -73,8 +82,12 @@ go_test(
         "helm_builder_test.go",
         "helm_manager_test.go",
         "k8s_status_detector_test.go",
+        "lifecycle_test.go",
         "reconciler_test.go",
         "sdk_helm_action_runner_test.go",
+        "spec_parser_test.go",
+        "test_doubles_test.go",
+        "wrapper_reconciler_test.go",
     ],
     data = [
         "//deploy/helm:chart",

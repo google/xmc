@@ -22,18 +22,17 @@ import (
 	"regexp"
 	"time"
 
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
@@ -47,23 +46,23 @@ import (
 )
 
 var (
-	reconcileTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_reconcile_total",
 		Help: "Total number of Workload reconciliations started",
 	}, []string{})
 
-	reconcileErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileErrorsTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_reconcile_errors_total",
 		Help: "Total number of Workload reconciliations that returned an error",
 	}, []string{})
 
-	reconcileDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	reconcileDuration = shared.MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "workload_reconcile_duration_milliseconds",
 		Help:    "Duration of Workload Reconcile calls in milliseconds",
 		Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000},
 	}, []string{})
 
-	updatesSentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesSentTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "workload_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the Workload reconciler",
 	}, []string{})
@@ -111,12 +110,15 @@ func NewReconciler(p Params) (*Reconciler, error) {
 
 func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
 	_, err := parseXMCLabelsFromPodSet(ctx, workload)
+	if err == nil {
+		return true
+	}
 	if errors.Is(err, labels.ErrMissingXMCLabels) {
 		logging.Warn(ctx, "Workload is missing XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
-	} else {
-		logging.Error(ctx, "Workload has invalid XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
+		return false
 	}
-	return err == nil
+	logging.Error(ctx, "Workload has invalid XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
+	return false
 }
 
 func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (labels.XMCLabels, error) {
@@ -128,54 +130,44 @@ func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (
 	return labels.ParseXMCLabels(workload.Spec.PodSets[0].Template.Labels)
 }
 
-func workloadPredicate(ctx context.Context) predicate.Predicate {
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
+func workloadPredicate(ctx context.Context) predicate.TypedPredicate[*v1beta1.Workload] {
+	return predicate.TypedFuncs[*v1beta1.Workload]{
+		CreateFunc: func(e event.TypedCreateEvent[*v1beta1.Workload]) bool {
 			ctx := logging.Strip(ctx)
 			if e.Object == nil {
 				logging.Error(ctx, "CreateEvent object is nil")
 				return false
 			}
-			workload, ok := e.Object.(*v1beta1.Workload)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in CreateEvent", "type", fmt.Sprintf("%T", e.Object))
-				return false
-			}
-
-			return hasValidXMCLabels(ctx, workload)
+			return hasValidXMCLabels(ctx, e.Object)
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(event.TypedDeleteEvent[*v1beta1.Workload]) bool {
 			return false
 		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldWorkload, okOld := e.ObjectOld.(*v1beta1.Workload)
-			newWorkload, okNew := e.ObjectNew.(*v1beta1.Workload)
-			if !okOld || !okNew {
-				return false
-			}
-
-			if oldWorkload.GetResourceVersion() == newWorkload.GetResourceVersion() {
-				return false
-			}
-
-			generationSame := oldWorkload.Generation == newWorkload.Generation
-			statusSame := areWorkloadStatusEqual(oldWorkload, newWorkload)
-
-			if generationSame && statusSame {
-				return false
-			}
-
-			ctx := logging.Strip(ctx)
-			if !hasValidXMCLabels(ctx, oldWorkload) || !hasValidXMCLabels(ctx, newWorkload) {
-				return false
-			}
-
-			return true
+		UpdateFunc: func(e event.TypedUpdateEvent[*v1beta1.Workload]) bool {
+			return shouldProcessWorkloadUpdate(ctx, e.ObjectOld, e.ObjectNew)
 		},
-		GenericFunc: func(e event.GenericEvent) bool {
+		GenericFunc: func(event.TypedGenericEvent[*v1beta1.Workload]) bool {
 			return false
 		},
 	}
+}
+
+func shouldProcessWorkloadUpdate(ctx context.Context, oldWorkload, newWorkload *v1beta1.Workload) bool {
+	if oldWorkload == nil || newWorkload == nil {
+		return false
+	}
+	if oldWorkload.GetResourceVersion() == newWorkload.GetResourceVersion() {
+		return false
+	}
+
+	generationSame := oldWorkload.Generation == newWorkload.Generation
+	statusSame := areWorkloadStatusEqual(oldWorkload, newWorkload)
+	if generationSame && statusSame {
+		return false
+	}
+
+	ctx = logging.Strip(ctx)
+	return hasValidXMCLabels(ctx, oldWorkload) && hasValidXMCLabels(ctx, newWorkload)
 }
 
 // Reconcile fetches the Workload and updates the WorkUnitExecution status.
@@ -290,14 +282,20 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		return errors.New("reconciler cannot be nil")
 	}
 	logging.Debug(ctx, "Setting up workload reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
-	c, err := controller.New("workload", mgr, controller.Options{
-		Reconciler:              r,
-		MaxConcurrentReconciles: r.MaxConcurrentReconciles,
-	})
+	err := ctrl.NewControllerManagedBy(mgr).
+		Named("workload").
+		WatchesRawSource(source.Kind(
+			mgr.GetCache(),
+			&v1beta1.Workload{},
+			&handler.TypedEnqueueRequestForObject[*v1beta1.Workload]{},
+			workloadPredicate(ctx),
+		)).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
+		Complete(r)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create workload controller: %w", err)
 	}
-	return c.Watch(&source.Kind{Type: &v1beta1.Workload{}}, &handler.EnqueueRequestForObject{}, workloadPredicate(ctx))
+	return nil
 }
 
 func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {

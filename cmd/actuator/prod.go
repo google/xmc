@@ -26,8 +26,6 @@ import (
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/internal/broadcast"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
 	constants "xmanager_cloud/kubernetes/common/constants"
@@ -138,7 +136,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
 	pauseCache := pausescheduling.NewCache()
-	pauseListener, err := initPauseListener(ctx, cfg, pauseCache)
+	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, storageClient)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +236,7 @@ func initJWKSTokenValidator(cfg *Config) workunittaskhandler.TokenValidator {
 	})
 }
 
-func initPauseListener(ctx context.Context, cfg *Config, cache pausescheduling.Cache) (*pausescheduling.Listener, error) {
+func initPauseListener(ctx context.Context, cfg *Config, cache pausescheduling.Cache, storageClient storage.Storage) (*pausescheduling.Listener, error) {
 	if !cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, nil
 	}
@@ -246,17 +244,19 @@ func initPauseListener(ctx context.Context, cfg *Config, cache pausescheduling.C
 	if cfg.RedisConfig.RedisAddr == "" {
 		return nil, fmt.Errorf("redis address must be provided for pause scheduling listener")
 	}
+	if storageClient == nil {
+		return nil, fmt.Errorf("cannot enable pause scheduling listener without spanner storage client")
+	}
 
 	redisClient := redisclient.NewClient(redisclient.Config{
 		Addr: cfg.RedisConfig.RedisAddr,
 	})
 	consumer := broadcast.NewConsumer(redisClient, constants.RedisPauseStream)
 
-	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
 	listener, err := pausescheduling.New(pausescheduling.Params{
 		Cache:                cache,
 		Subscriber:           consumer,
-		PauseStateRepository: pausestate.NewFake(),
+		PauseStateRepository: storageClient.PauseState(),
 	})
 	if err != nil {
 		_ = consumer.Close()
@@ -278,8 +278,7 @@ func initPauseHandler(cfg *Config, cache pausescheduling.Cache, storageClient st
 	if storageClient == nil {
 		return nil, fmt.Errorf("cannot enable pause scheduling without spanner storage client")
 	}
-	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
-	handler, err := pausescheduling.NewPauseHandler(cache, pausedtask.NewFake(), storageClient)
+	handler, err := pausescheduling.NewPauseHandler(cache, storageClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pause handler: %w", err)
 	}

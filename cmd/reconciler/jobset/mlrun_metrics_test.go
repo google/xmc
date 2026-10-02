@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"golang/prometheus/client/prometheus/testutil/testutil"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 )
 
@@ -156,5 +157,23 @@ func TestInstrumentedMLRunCreatorDelegatesAndRecords(t *testing.T) {
 				t.Errorf("delegation mismatch: create=%d get=%d update=%d, want 1 each", fake.createCalls, fake.getCalls, fake.updateCalls)
 			}
 		})
+	}
+	assertMLRunMetricsOnManagerRegistry(t)
+}
+
+func assertMLRunMetricsOnManagerRegistry(t *testing.T) {
+	t.Helper()
+	mfs, err := ctrlmetrics.Registry.Gather()
+	if err != nil {
+		t.Fatalf("ctrlmetrics.Registry.Gather() failed: %v", err)
+	}
+	registered := make(map[string]bool, len(mfs))
+	for _, mf := range mfs {
+		registered[mf.GetName()] = true
+	}
+	for _, name := range []string{"jobset_reconciler_mlrun_requests_total", "jobset_reconciler_mlrun_request_duration_seconds"} {
+		if !registered[name] {
+			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
+		}
 	}
 }

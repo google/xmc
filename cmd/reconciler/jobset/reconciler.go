@@ -28,22 +28,20 @@ import (
 	"strings"
 	"time"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	k8slabels "golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controllerutil/controllerutil"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/manager/manager"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -55,23 +53,23 @@ import (
 )
 
 var (
-	reconcileTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_reconcile_total",
 		Help: "Total number of JobSet reconciliations started",
 	}, []string{})
 
-	reconcileErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	reconcileErrorsTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_reconcile_errors_total",
 		Help: "Total number of JobSet reconciliations that returned an error",
 	}, []string{})
 
-	reconcileDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	reconcileDuration = shared.MetricsFactory.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "jobset_reconcile_duration_milliseconds",
 		Help:    "Duration of JobSet Reconcile calls in milliseconds",
 		Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000},
 	}, []string{})
 
-	updatesSentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	updatesSentTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "jobset_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the JobSet reconciler",
 	}, []string{})
@@ -79,7 +77,7 @@ var (
 	// mlRunSyncDuration measures the wall-clock the reconcile loop spends in the
 	// MLRun path, so we can tell how much MLRun creation adds to a reconcile
 	// (compare against jobset_reconcile_duration_milliseconds).
-	mlRunSyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	mlRunSyncDuration = shared.MetricsFactory.NewHistogram(prometheus.HistogramOpts{
 		Name:    "jobset_reconciler_mlrun_sync_duration_seconds",
 		Help:    "Wall-clock time the reconciler spends in the MLRun path per reconcile.",
 		Buckets: mlRunLatencyBuckets,
@@ -166,6 +164,9 @@ type MLRunCreator interface {
 }
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
+	if jobSet == nil {
+		return false
+	}
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, nil)
 
 	_, err := labels.ParseXMCLabels(jobSet.Labels)
@@ -180,62 +181,35 @@ func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
 	return true
 }
 
-func jobSetPredicate(ctx context.Context) predicate.Predicate {
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			ctx := logging.Strip(ctx)
-
-			jobSet, ok := e.Object.(*v1alpha2.JobSet)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in CreateEvent", "type", fmt.Sprintf("%T", e.Object))
-				return true
-			}
-			return hasValidXMCLabels(ctx, jobSet)
+func jobSetPredicate(ctx context.Context) predicate.TypedPredicate[*v1alpha2.JobSet] {
+	return predicate.TypedFuncs[*v1alpha2.JobSet]{
+		CreateFunc: func(e event.TypedCreateEvent[*v1alpha2.JobSet]) bool {
+			return hasValidXMCLabels(logging.Strip(ctx), e.Object)
 		},
 
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(event.TypedDeleteEvent[*v1alpha2.JobSet]) bool {
 			return false
 		},
 
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldJobSet, okOld := e.ObjectOld.(*v1alpha2.JobSet)
-			newJobSet, okNew := e.ObjectNew.(*v1alpha2.JobSet)
-			if !okOld || !okNew {
-				return true
-			}
-			return shouldProcessJobSetUpdate(ctx, oldJobSet, newJobSet)
+		UpdateFunc: func(e event.TypedUpdateEvent[*v1alpha2.JobSet]) bool {
+			return shouldProcessJobSetUpdate(ctx, e.ObjectOld, e.ObjectNew)
 		},
 
-		GenericFunc: func(e event.GenericEvent) bool {
-			ctx := logging.Strip(ctx)
-
-			// Reconcile existing resources on controller startup.
-			jobSet, ok := e.Object.(*v1alpha2.JobSet)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in GenericEvent", "type", fmt.Sprintf("%T", e.Object))
-				return true
-			}
-			return hasValidXMCLabels(ctx, jobSet)
+		// Reconcile existing resources on controller startup.
+		GenericFunc: func(e event.TypedGenericEvent[*v1alpha2.JobSet]) bool {
+			return hasValidXMCLabels(logging.Strip(ctx), e.Object)
 		},
 	}
 }
 
 func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alpha2.JobSet) bool {
+	if oldJobSet == nil || newJobSet == nil {
+		return false
+	}
 	if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
 		return false
 	}
-
-	generationSame := oldJobSet.Generation == newJobSet.Generation
-	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
-		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
-	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
-	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
-
-	oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
-	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
-	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
-
-	if specSame && labelsSame && statusSame && deletionSame {
+	if !jobSetChanged(oldJobSet, newJobSet) {
 		return false
 	}
 
@@ -249,6 +223,23 @@ func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alph
 	}
 
 	return newJobSet.GetDeletionTimestamp() == nil
+}
+
+// jobSetChanged reports whether any field the reconciler acts on differs
+// between oldJobSet and newJobSet: spec (generation, suspension, replica
+// count), XMC identity labels, status, or deletion state.
+func jobSetChanged(oldJobSet, newJobSet *v1alpha2.JobSet) bool {
+	generationSame := oldJobSet.Generation == newJobSet.Generation
+	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
+		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
+	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
+	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
+
+	oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
+	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
+	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
+
+	return !(specSame && labelsSame && statusSame && deletionSame)
 }
 
 // Reconcile fetches the JobSet and logs its name and a summary of its ReplicatedJobsStatus.
@@ -460,11 +451,12 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 	return StartupPodCheckResult{Result: result, StartupWarningMsg: warningMsg}
 }
 
-// listJobSetPods returns all pods belonging to the given JobSet.
+// listJobSetPods returns all pods belonging to the given JobSet. JobSet stamps
+// v1alpha2.JobSetNameKey as a label on every pod it creates.
 func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet) ([]corev1.Pod, error) {
 	var podList corev1.PodList
 	if err := r.List(logging.Strip(ctx), &podList, client.InNamespace(jobSet.Namespace),
-		client.MatchingFields{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
+		client.MatchingLabels{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 	return podList.Items, nil
@@ -537,6 +529,12 @@ func isNodeSelectorMismatchMessage(msg string) bool {
 	return strings.Contains(lower, "node affinity/selector") || strings.Contains(lower, "nodeselector") || strings.Contains(lower, "didn't match")
 }
 
+// tpuNodeListTimeout bounds the cached Node list call in listAvailableTPUTopologies
+// so an unsynced Node informer (e.g. on missing RBAC or API server latency) fails
+// fast and falls back to the generic unschedulable warning instead of blocking the
+// reconcile worker.
+const tpuNodeListTimeout = 5 * time.Second
+
 // listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
 func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
 	var nodeList corev1.NodeList
@@ -544,7 +542,9 @@ func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
 	}
-	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	listCtx, cancel := context.WithTimeout(logging.Strip(ctx), tpuNodeListTimeout)
+	defer cancel()
+	if err := r.List(listCtx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
 	}
 
@@ -580,32 +580,20 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	if r == nil {
 		return errors.New("reconciler cannot be nil")
 	}
-	logging.Debug(ctx, "Setting up jobset reconciler")
-	if r.Batcher == nil {
-		return errors.New("batcher is not initialized")
-	}
-
-	logging.Debug(ctx, "Starting jobset reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
-	c, err := controller.New("jobset", mgr, controller.Options{
-		Reconciler:              r,
-		MaxConcurrentReconciles: r.MaxConcurrentReconciles,
-	})
+	logging.Debug(ctx, "Setting up jobset reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
+	err := ctrl.NewControllerManagedBy(mgr).
+		Named("jobset").
+		WatchesRawSource(source.Kind(
+			mgr.GetCache(),
+			&v1alpha2.JobSet{},
+			&handler.TypedEnqueueRequestForObject[*v1alpha2.JobSet]{},
+			jobSetPredicate(ctx),
+		)).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
+		Complete(r)
 	if err != nil {
-		return fmt.Errorf("failed to create controller: %w", err)
+		return fmt.Errorf("failed to create jobset controller: %w", err)
 	}
-
-	err = c.Watch(&source.Kind{Type: &v1alpha2.JobSet{}}, &handler.EnqueueRequestForObject{}, jobSetPredicate(ctx))
-	if err != nil {
-		return fmt.Errorf("failed to watch JobSet: %w", err)
-	}
-	logging.Debug(ctx, "Jobset reconciler controller started")
-
-	logging.Debug(ctx, "Adding batch processor runnable")
-	if err := mgr.Add(manager.RunnableFunc(r.Batcher.BatchProcessor)); err != nil {
-		return fmt.Errorf("failed to add batch processor runnable: %w", err)
-	}
-	logging.Debug(ctx, "Batch processor runnable added")
-
 	return nil
 }
 

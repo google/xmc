@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
-	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"

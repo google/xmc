@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: 'Run Angular UI Unit Tests'
-description: 'Resolves test scope and executes Angular UI unit and screenshot tests'
+description: 'Resolves test scope and executes Angular UI unit and screenshot tests (requires actions/checkout with fetch-depth: 0)'
 
 inputs:
   node-version:
@@ -30,21 +30,9 @@ runs:
   steps:
     - name: 'Resolve UI Test Scope'
       id: 'scope'
-      env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
       shell: bash
-      run: |
-        BASE_REF="${PR_BASE_SHA:-origin/main}"
-        python3 tools/benchmark/resolve_test_scope.py \
-          --base "${BASE_REF}" \
-          --head "${GITHUB_SHA}" \
-          --event "${EVENT_NAME}" \
-          --ref "${GITHUB_REF}" \
-          --no-rdeps \
-          --github-output "${GITHUB_OUTPUT}"
+      # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
+      run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
     - name: 'Set up Node.js'
       if: steps.scope.outputs.run_ui == 'true'
