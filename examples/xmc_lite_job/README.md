@@ -56,18 +56,19 @@ This example uses the same `.env` variable conventions as the root repository.
 | `PROJECT_ID` | **Yes** | `"my-gcp-project"` | Google Cloud Project ID hosting the GKE cluster. |
 | `GKE_CLUSTER` | **Yes** | `"xmc-lite-dev-1"` | Name of the GKE cluster. |
 | `GCP_REGION` | **Yes** | `"europe-west1"` | GCP region where the GKE cluster resides. |
-| `XMANAGER_ENV` | Optional | `"dev-1"` | Environment name used to isolate `KUBECONFIG`. |
-| `K8S_NAMESPACE` | Optional | `"default"` | Kubernetes namespace where `JobSet` / `Job` workloads are submitted. |
-| `KUBECONFIG` | Derived | `"${HOME}/Documents/Development/envs/kubeconfig.${XMANAGER_ENV}"` | Isolated kubeconfig path preventing context collisions across worktrees (defaults to `~/.kube/config`). |
+| `XMANAGER_ENV` | Optional | `"dev-1"` | Environment name, handy for keeping one `KUBECONFIG` per environment (see below). |
+| `K8S_NAMESPACE` | Optional | `"default"` | Kubernetes namespace where `JobSet` / `Job` workloads are submitted. Defaults to `default`. **Note:** the root [`.env.example`](../../.env.example) sets `K8S_NAMESPACE="xmc"` (the Full XMC namespace); set it explicitly if you reuse that file. |
+| `KUBECONFIG` | Optional | `"${HOME}/.kube/config.${XMANAGER_ENV}"` | Kubeconfig file written by `setup.sh` and used by `launch.py` and `kubectl`. Defaults to `~/.kube/config`. |
 | `XMC_BASE_DOMAIN`, `IAP_CLIENT_ID`, `XMC_CLIENT_SA`, `XMANAGER_ENDPOINT` | **No** *(Full XMC only)* | N/A | Required only by Full XMC (`xm_cloud`) for IAP/gRPC ingress; **unused** in XMC Lite. |
 
+Example `.env` (same `KEY="VALUE"` format as the root [`.env.example`](../../.env.example)):
 ```bash
-export PROJECT_ID="my-gcp-project"
-export GKE_CLUSTER="xmc-lite-dev-1"
-export GCP_REGION="europe-west1"
-export XMANAGER_ENV="dev-1"
-export K8S_NAMESPACE="default"
-export KUBECONFIG="${HOME}/Documents/Development/envs/kubeconfig.${XMANAGER_ENV}"
+PROJECT_ID="my-gcp-project"
+GKE_CLUSTER="xmc-lite-dev-1"
+GCP_REGION="europe-west1"
+XMANAGER_ENV="dev-1"
+K8S_NAMESPACE="default"
+KUBECONFIG="${HOME}/.kube/config.${XMANAGER_ENV}"
 ```
 
 ---
@@ -81,8 +82,9 @@ Configure `KUBECONFIG` for the existing cluster and create the local Python virt
 ```
 
 ### Step 2: Launch an Experiment (`JobSet` or `Job`)
+Load `.env` with `allexport` (as in [`INSTALL.md`](../../INSTALL.md)) so `KUBECONFIG` also reaches `kubectl` in the later steps:
 ```bash
-source .env
+set -o allexport; source .env; set +o allexport
 source examples/xmc_lite_job/.venv/bin/activate
 ```
 
