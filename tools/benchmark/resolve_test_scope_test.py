@@ -40,6 +40,16 @@ from tools.benchmark.resolve_test_scope import (
     write_github_output,
 )
 
+# Isolates real-git tests from host/user git config (signing, hooks, identity).
+HERMETIC_GIT_ENV: dict[str, str] = {
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "Test User",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "Test User",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
 
 class TestResolveTestScope(unittest.TestCase):
     def test_is_non_code_file(self):
@@ -604,6 +614,7 @@ class TestResolveTestScope(unittest.TestCase):
             "sha_m1",
         )
 
+    @patch.dict(os.environ, HERMETIC_GIT_ENV)
     def test_gh_stack_shenanigans_real_git_repo(self):
         """Verifies all gh-stack topologies and review edge cases in a real Git repository."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -611,7 +622,7 @@ class TestResolveTestScope(unittest.TestCase):
 
             def git(*args: str) -> str:
                 res = subprocess.run(
-                    ["git", *args],
+                    ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
                     cwd=repo,
                     capture_output=True,
                     text=True,
