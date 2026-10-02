@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,23 @@ type HelmManager interface {
 // healthCacheTTL bounds how long a deployed-release verdict is reused before ComponentHealth re-queries Helm.
 const healthCacheTTL = time.Minute
 
+// Repair backoff rate-limits re-upgrades of a release that keeps drifting (e.g. another actor keeps deleting one of
+// its objects): each repair writes a Helm revision, so repairs back off exponentially from repairBackoffBase up to
+// repairBackoffMax, with up to repairBackoffJitter extra randomized delay. This is separate from, and deliberately
+// longer than, transient-error retry backoff.
+const (
+	repairBackoffBase   = 30 * time.Second
+	repairBackoffMax    = 10 * time.Minute
+	repairBackoffJitter = 0.1
+)
+
+// repairAttempt records the repairs consumed for a component since its backoff was last reset.
+type repairAttempt struct {
+	count     int
+	last      time.Time
+	notBefore time.Time
+}
+
 // upgradeRequest encapsulates a component upgrade request for debounced asynchronous execution.
 type upgradeRequest struct {
 	ref       ComponentRef
@@ -121,6 +139,10 @@ type K8sHelmManager struct {
 	// repairNeeded marks component keys whose actuated release was found missing, failed, or drifted from its manifest;
 	// it forces the next Ensure1PComponent to re-run the Helm upgrade at the current generation.
 	repairNeeded map[string]bool
+	// repairBackoff rate-limits repairs per component key; see repairBackoffBase.
+	repairBackoff map[string]repairAttempt
+	// jitter returns a value in [0, 1) that randomizes repair backoff; tests may replace it for determinism.
+	jitter func() float64
 
 	stopMu      sync.RWMutex
 	stopped     bool
@@ -199,6 +221,8 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		pendingUpgrades:     make(map[string]uint64),
 		healthVerifiedAt:    make(map[string]time.Time),
 		repairNeeded:        make(map[string]bool),
+		repairBackoff:       make(map[string]repairAttempt),
+		jitter:              rand.Float64,
 		upgradeSem:          make(chan struct{}, 1),
 		upgradeChan:         make(chan upgradeRequest, 100),
 		stopCh:              make(chan struct{}),
@@ -748,6 +772,9 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 		return nil
 	}
 
+	if repair {
+		m.recordRepairAttempt(ctx, resolved)
+	}
 	if err := m.triggerUpgrade(ctx, resolved, values); err != nil {
 		return err
 	}
@@ -757,7 +784,6 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 		m.activeState = make(map[string]bool)
 	}
 	m.activeState[key] = opts.Enabled
-	delete(m.repairNeeded, key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled, "repair", repair)
@@ -797,7 +823,7 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 	if m.actuatedGenerations != nil {
 		delete(m.actuatedGenerations, key)
 	}
-	delete(m.repairNeeded, key)
+	m.clearRepairLocked(key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -838,7 +864,7 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 		delete(m.actuatedGenerations, key)
 	}
 	delete(m.componentChartPaths, key)
-	delete(m.repairNeeded, key)
+	m.clearRepairLocked(key)
 	m.mu.Unlock()
 
 	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
@@ -865,7 +891,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 		delete(m.actuatedGenerations, key)
 	}
 	delete(m.componentChartPaths, key)
-	delete(m.repairNeeded, key)
+	m.clearRepairLocked(key)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
 	return nil
@@ -892,7 +918,8 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	return m.actuatedGenerations[key] == generation
 }
 
-// RecordActuation records the generation at which the component was successfully actuated.
+// RecordActuation records the generation at which the component was successfully actuated. A new generation resets
+// the component's repair backoff.
 func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return
@@ -902,6 +929,9 @@ func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	defer m.mu.Unlock()
 	if m.actuatedGenerations == nil {
 		m.actuatedGenerations = make(map[string]int64)
+	}
+	if m.actuatedGenerations[key] != generation {
+		delete(m.repairBackoff, key)
 	}
 	m.actuatedGenerations[key] = generation
 }
@@ -1036,28 +1066,84 @@ func (m *K8sHelmManager) releaseResourceHealth(ctx context.Context, releaseName 
 	if len(missing) == 0 {
 		return true, ReasonComponentHealthy, deployedMsg
 	}
-	return false, ReasonHelmReleaseDrifted, fmt.Sprintf("Helm release %q is missing %d resource(s) (%s); re-applying the release", releaseName, len(missing), strings.Join(missing, ", "))
+	return false, ReasonHelmReleaseDrifted, fmt.Sprintf("Helm release %q is missing %d resource(s) (%s); the bridge re-applies the release, rate-limited by repair backoff", releaseName, len(missing), strings.Join(missing, ", "))
 }
 
-// recordReleaseHealth caches a healthy verdict, or marks the component for repair when the release needs re-applying.
+// recordReleaseHealth caches a healthy verdict, or marks the component for repair when the release needs re-applying
+// and its repair backoff has elapsed.
 func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentRef, healthy, repair bool, reason string) {
+	key := componentKey(ref.Namespace, ref.Name)
+	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if healthy {
 		if m.healthVerifiedAt == nil {
 			m.healthVerifiedAt = make(map[string]time.Time)
 		}
-		m.healthVerifiedAt[ref.String()] = time.Now()
+		m.healthVerifiedAt[ref.String()] = now
+		m.resetRepairBackoffIfStableLocked(key, now)
 		return
 	}
 	if !repair {
 		return
 	}
+	if attempt, ok := m.repairBackoff[key]; ok && now.Before(attempt.notBefore) {
+		logging.Info(ctx, "Component Helm release needs repair; deferring re-upgrade until repair backoff elapses", "name", ref.Name, "namespace", ref.Namespace, "reason", reason, "attempts", attempt.count, "notBefore", attempt.notBefore)
+		return
+	}
 	if m.repairNeeded == nil {
 		m.repairNeeded = make(map[string]bool)
 	}
-	m.repairNeeded[componentKey(ref.Namespace, ref.Name)] = true
+	m.repairNeeded[key] = true
 	logging.Warn(ctx, "Component Helm release needs repair; scheduling re-upgrade at current generation", "name", ref.Name, "namespace", ref.Namespace, "reason", reason)
+}
+
+// resetRepairBackoffIfStableLocked drops the repair backoff once the release has stayed healthy for repairBackoffMax
+// after the last repair. Resetting on any healthy verdict would defeat the backoff: a repaired release is briefly
+// healthy before an actor that keeps deleting its objects strikes again. Callers must hold m.mu.
+func (m *K8sHelmManager) resetRepairBackoffIfStableLocked(key string, now time.Time) {
+	attempt, ok := m.repairBackoff[key]
+	if ok && now.Sub(attempt.last) >= repairBackoffMax {
+		delete(m.repairBackoff, key)
+	}
+}
+
+// recordRepairAttempt consumes the component's repair marker and arms its backoff for the next repair.
+func (m *K8sHelmManager) recordRepairAttempt(ctx context.Context, ref ComponentRef) {
+	key := componentKey(ref.Namespace, ref.Name)
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.repairNeeded, key)
+	if m.repairBackoff == nil {
+		m.repairBackoff = make(map[string]repairAttempt)
+	}
+	attempt := m.repairBackoff[key]
+	attempt.count++
+	attempt.last = now
+	attempt.notBefore = now.Add(m.repairDelay(attempt.count))
+	m.repairBackoff[key] = attempt
+	logging.Info(ctx, "Repairing component Helm release", "name", ref.Name, "namespace", ref.Namespace, "attempt", attempt.count, "nextRepairNotBefore", attempt.notBefore)
+}
+
+// repairDelay returns the jittered backoff that must elapse after the attempt-th repair before the next one:
+// repairBackoffBase doubled per attempt, capped at repairBackoffMax, plus up to repairBackoffJitter of extra delay.
+func (m *K8sHelmManager) repairDelay(attempt int) time.Duration {
+	delay := repairBackoffMax
+	if shift := attempt - 1; shift < 16 && repairBackoffBase<<shift < repairBackoffMax {
+		delay = repairBackoffBase << shift
+	}
+	jitter := rand.Float64
+	if m.jitter != nil {
+		jitter = m.jitter
+	}
+	return delay + time.Duration(float64(delay)*repairBackoffJitter*jitter())
+}
+
+// clearRepairLocked drops the component's repair marker and backoff. Callers must hold m.mu.
+func (m *K8sHelmManager) clearRepairLocked(key string) {
+	delete(m.repairNeeded, key)
+	delete(m.repairBackoff, key)
 }
 
 // releaseNeedsRepair reports whether a health verdict means the release must be re-applied: it is missing, its

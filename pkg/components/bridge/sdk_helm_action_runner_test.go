@@ -32,6 +32,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/resource"
 
+	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
@@ -367,5 +368,17 @@ func TestSDKHelmActionRunner_ResolveChart_DefaultFallback(t *testing.T) {
 	}
 	if resolved.Metadata == nil || resolved.Metadata.APIVersion != "v2" {
 		t.Errorf("expected v2 metadata, got %v", resolved.Metadata)
+	}
+}
+
+// TestNewUpgradeAction_CapsReleaseHistory guards against component release Secrets accumulating without bound when
+// a release is upgraded repeatedly (e.g. by drift repairs): the SDK default MaxHistory of 0 means unlimited.
+func TestNewUpgradeAction_CapsReleaseHistory(t *testing.T) {
+	upgrade := newUpgradeAction(&action.Configuration{}, "xmc")
+	if upgrade.MaxHistory != componentReleaseMaxHistory {
+		t.Errorf("MaxHistory = %d, want %d", upgrade.MaxHistory, componentReleaseMaxHistory)
+	}
+	if upgrade.Namespace != "xmc" {
+		t.Errorf("Namespace = %q, want %q", upgrade.Namespace, "xmc")
 	}
 }

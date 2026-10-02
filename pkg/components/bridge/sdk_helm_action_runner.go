@@ -46,6 +46,10 @@ type HelmActionRunner interface {
 	MissingResources(ctx context.Context, rel *release.Release) ([]string, error)
 }
 
+// componentReleaseMaxHistory caps the revisions Helm keeps per component release, so repeated upgrades (including
+// drift repairs) never accumulate unbounded release Secrets. The SDK default of 0 means unlimited.
+const componentReleaseMaxHistory = 10
+
 // SDKHelmActionRunner executes Helm upgrades using the Helm Go SDK action engine.
 type SDKHelmActionRunner struct {
 	restClientGetter  genericclioptions.RESTClientGetter
@@ -124,13 +128,21 @@ func (r *SDKHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespac
 		return rel, nil
 	}
 
-	upgrade := action.NewUpgrade(actionConfig)
-	upgrade.Namespace = namespace
+	upgrade := newUpgradeAction(actionConfig, namespace)
 	rel, err := upgrade.RunWithContext(ctx, releaseName, targetChart, values)
 	if err != nil {
 		return nil, fmt.Errorf("helm upgrade failed for release %q in namespace %q: %w", releaseName, namespace, err)
 	}
 	return rel, nil
+}
+
+// newUpgradeAction configures a Helm upgrade of a component release in namespace, capped at
+// componentReleaseMaxHistory stored revisions.
+func newUpgradeAction(actionConfig *action.Configuration, namespace string) *action.Upgrade {
+	upgrade := action.NewUpgrade(actionConfig)
+	upgrade.Namespace = namespace
+	upgrade.MaxHistory = componentReleaseMaxHistory
+	return upgrade
 }
 
 // Uninstall uninstalls a Helm release using the Helm Go SDK action engine.
